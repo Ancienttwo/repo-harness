@@ -3,20 +3,18 @@
  * minimization / D8 provenance). Single materializer for the two surviving
  * repo-local recovery views -- handoff (`handoff/current.md`) and the merged
  * resume (`handoff/resume.md`) -- plus the task-handoff payload (the
- * Codex-global packet's per-repo section). See
- * `tasks/contracts/20260722-2246-epc-07-recovery-view-cutover.contract.md`
- * for the full Phase A inventory and reconciled D9 verdicts.
+ * Codex-global packet's per-repo section).
  *
  * Single-hop discipline: every EVIDENCE claim in a rendered view traces to
  * `resolveLastPublishedCheckpoint`'s already-validated projection (EPC-06,
  * read-only import) -- this module never reads `.ai/harness/checks/*` or the
  * event ledger directly. Workflow CONTEXT (goal, next step, changed files,
- * active plan/contract, active sprint row) is a different kind
+ * active plan) is a different kind
  * of fact -- "where work stands," not "what was proven" -- and is read fresh
  * from the live repo on every call, exactly as the retired writers did.
  *
  * Determinism: `renderRecoveryHandoff`/`renderRecoveryResume` are pure
- * functions of (context, evidence, contractPath, now) -- the same inputs
+ * functions of (context, evidence, now) -- the same inputs
  * (including the same injected clock) always render the same bytes.
  * `content_hash` inside each view's own Provenance block is computed over
  * that view's body EXCLUDING the Provenance block itself (mirrors
@@ -28,7 +26,6 @@ import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { escapeDecisionMarkdown, type CheckpointDecision } from '../../core/evidence/checkpoint';
-import { artifactStemFromPlan, planSlugFromPath } from '../../core/state/artifact-parsers';
 import { resolveHarnessPaths } from '../state/resolve-effective-state';
 import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
 import {
@@ -58,7 +55,7 @@ export const LEGACY_RESUME_MARKER = '<!-- generated-by: repo-harness codex-hando
 // Small generic helpers. Duplicated deliberately rather than imported across
 // module boundaries, matching this repo's established convention for tiny
 // generic helpers (see the retired verify producer/`attested-import.ts`'s duplicated
-// `worktreeIdFor`/`sha256Hex`/`gitOutput`, each documented "necessarily
+// `sha256Hex`/`gitOutput`, each documented "necessarily
 // duplicated, not imported").
 // ---------------------------------------------------------------------------
 
@@ -97,23 +94,6 @@ function metadataValue(path: string, label: string): string {
   }
 }
 
-function declaredPath(repoRoot: string, plan: string, label: string): string {
-  if (!plan || !existsSync(join(repoRoot, plan))) return '';
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = readFileSync(join(repoRoot, plan), 'utf8').match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+)$`, 'm'));
-  return match?.[1]?.replace(/`/g, '').trim() ?? '';
-}
-
-/** Contract-path-derived worktree identity (pattern reference:
- * the retired verify producer/the retired checks projection's own `worktreeIdFor` --
- * necessarily duplicated, same reasoning as the block comment above). Used
- * only as the fallback when no checkpoint is available to source
- * `worktree_id` from directly. */
-function worktreeIdFor(contractRelative: string): string {
-  const base = contractRelative.split('/').pop() ?? contractRelative;
-  return base.replace(/\.contract\.md$/, '');
-}
-
 // ---------------------------------------------------------------------------
 // Workflow context (ported verbatim from `stop-handler.ts`'s prior private
 // `projection()` helpers -- single source of truth going forward; the Stop
@@ -122,17 +102,6 @@ function worktreeIdFor(contractRelative: string): string {
 
 export interface RecoveryArtifactPaths {
   readonly plan: string;
-  readonly contract: string;
-}
-
-/** The preferred (stamped-stem) candidate wins if it exists; else the legacy
- * (slug-only) candidate wins if IT exists; else the preferred candidate is
- * named anyway -- a recovery view may legitimately point at where an
- * artifact SHOULD live before it has been created. */
-function preferredOrLegacyArtifactPath(repoRoot: string, preferred: string, legacy: string): string {
-  if (existsSync(join(repoRoot, preferred))) return preferred;
-  if (!existsSync(join(repoRoot, legacy))) return preferred;
-  return legacy;
 }
 
 /** A recovery view names no plan when another worktree owns the marker. */
@@ -166,41 +135,12 @@ export function recoveryArtifacts(
   repoRoot: string,
   activePlan: string | null,
 ): RecoveryArtifactPaths {
-  const plan = activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '';
-  if (!plan) return { plan: '', contract: '' };
-  const stem = artifactStemFromPlan(plan, readFileSync(join(repoRoot, plan), 'utf8'));
-  const slug = planSlugFromPath(plan);
-  const derived = (directory: string, suffix: string): string => {
-    if (!stem || !slug) return '';
-    return preferredOrLegacyArtifactPath(repoRoot, `${directory}/${stem}${suffix}`, `${directory}/${slug}${suffix}`);
-  };
-  return {
-    plan,
-    contract: declaredPath(repoRoot, plan, 'Task Contract') || declaredPath(repoRoot, plan, 'Sprint Contract') || derived('tasks/contracts', '.contract.md'),
-  };
+  return { plan: activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '' };
 }
 
 function todoSourcePlan(repoRoot: string, todoFile: string): string {
   const value = metadataValue(join(repoRoot, todoFile), 'Source Plan');
   return value === '(none)' ? '' : value;
-}
-
-function activeSprintRow(repoRoot: string, activePlan: string): string {
-  let sprint = '';
-  try {
-    sprint = readFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), 'utf8').trim();
-  } catch {
-    return '(none)';
-  }
-  if (!sprint || sprint.startsWith('/') || sprint === '..' || sprint.startsWith('../') || sprint.includes('/../')) return '(none)';
-  try {
-    const row = readFileSync(join(repoRoot, sprint), 'utf8')
-      .split('\n')
-      .find((line) => /^\|\s*\d+\s*\|/.test(line) && activePlan && line.includes(activePlan));
-    return row || `Active sprint: ${sprint}`;
-  } catch {
-    return '(none)';
-  }
 }
 
 function firstTaskBreakdown(planText: string): { total: number; done: number; next: string } {
@@ -320,7 +260,6 @@ export interface RecoveryWorkflowContext {
   readonly workingDirectory: string;
   readonly artifacts: RecoveryArtifactPaths;
   readonly sourcePlan: string;
-  readonly activeSprintRowText: string;
   readonly action: RecoveryNextAction;
   readonly nextTask: string;
   readonly goal: string;
@@ -382,7 +321,6 @@ export function buildRecoveryContext(
     workingDirectory: repoRoot,
     artifacts,
     sourcePlan,
-    activeSprintRowText: activeSprintRow(repoRoot, artifacts.plan),
     action,
     nextTask,
     goal,
@@ -507,19 +445,12 @@ export interface RecoveryProvenance {
   readonly subject_hash: null;
   readonly content_hash: string;
   readonly worktree_id: string;
-  readonly contract_id: string | null;
-}
-
-function resolveWorktreeId(evidence: RecoveryEvidence, contractPath: string): string {
-  if (evidence.available) return evidence.worktreeId;
-  if (contractPath) return worktreeIdFor(contractPath);
-  return 'unbound';
+  readonly contract_id: null;
 }
 
 function buildProvenance(
   context: RecoveryWorkflowContext,
   evidence: RecoveryEvidence,
-  contractPath: string,
   body: string,
 ): RecoveryProvenance {
   return {
@@ -530,8 +461,8 @@ function buildProvenance(
     source_checkpoint_id: evidence.available ? evidence.checkpointId : null,
     subject_hash: null,
     content_hash: `sha256:${sha256Hex(body)}`,
-    worktree_id: resolveWorktreeId(evidence, contractPath),
-    contract_id: contractPath || null,
+    worktree_id: evidence.available ? evidence.worktreeId : 'unbound',
+    contract_id: null,
   };
 }
 
@@ -546,14 +477,14 @@ function renderProvenanceSection(provenance: RecoveryProvenance): string[] {
     `- Source event ids: ${provenance.source_event_ids.length > 0 ? `${provenance.source_event_ids.length} covered` : '(none)'}`,
     '- Subject hash: (none -- recovery view is not subject-bound)',
     `- Worktree: ${provenance.worktree_id}`,
-    `- Contract: ${provenance.contract_id ?? '(none)'}`,
+    '- Contract: (none -- recovery view is not contract-bound)',
     `- Content hash: ${provenance.content_hash}`,
   ];
 }
 
 // ---------------------------------------------------------------------------
 // Renderers (pure: no fs, no process -- everything comes from the context +
-// evidence + contract path already resolved by the caller).
+// evidence already resolved by the caller).
 // ---------------------------------------------------------------------------
 
 function decisionLines(evidence: RecoveryEvidence): string[] {
@@ -574,7 +505,6 @@ function decisionLines(evidence: RecoveryEvidence): string[] {
 export function renderRecoveryHandoff(
   context: RecoveryWorkflowContext,
   evidence: RecoveryEvidence,
-  contractPath: string,
 ): string {
   const bodyLines = [
     '# Harness Handoff',
@@ -607,8 +537,6 @@ export function renderRecoveryHandoff(
     '## Active Artifacts',
     '',
     `- Active plan: ${context.artifacts.plan || '(none)'}`,
-    `- Active contract: ${context.artifacts.contract || '(none)'}`,
-    `- Active sprint row: ${context.activeSprintRowText}`,
     `- Resume packet: ${context.paths.resume}`,
     '',
     '## Exact Next Step',
@@ -625,7 +553,6 @@ export function renderRecoveryHandoff(
     '- Spec: docs/spec.md',
     `- Plan: ${context.artifacts.plan || '(none)'}`,
     `- Todo Source Plan: ${context.sourcePlan || '(none)'}`,
-    `- Contract: ${context.artifacts.contract || '(none)'}`,
     `- Resume Packet: ${context.paths.resume}`,
     `- Policy: ${context.paths.policyFile}`,
     `- Context Map: ${context.paths.contextMap}`,
@@ -646,14 +573,13 @@ export function renderRecoveryHandoff(
     '',
   ];
   const body = `${bodyLines.join('\n')}`;
-  const provenance = buildProvenance(context, evidence, contractPath, body);
+  const provenance = buildProvenance(context, evidence, body);
   return `${body}\n${renderProvenanceSection(provenance).join('\n')}\n`;
 }
 
 export function renderRecoveryResume(
   context: RecoveryWorkflowContext,
   evidence: RecoveryEvidence,
-  contractPath: string,
 ): string {
   const bodyLines = [
     '# Codex Resume Packet',
@@ -679,7 +605,6 @@ export function renderRecoveryResume(
     '',
     'Conditional first reads:',
     `- Active plan: ${context.artifacts.plan || '(none)'}`,
-    `- Active contract: ${context.artifacts.contract || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
     'Execution rules:',
@@ -696,12 +621,11 @@ export function renderRecoveryResume(
     `- Todo: ${context.paths.todoFile}`,
     `- Research: ${context.paths.researchDir}/`,
     `- Plan: ${context.artifacts.plan || '(none)'}`,
-    `- Contract: ${context.artifacts.contract || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
   ];
   const body = `${bodyLines.join('\n')}`;
-  const provenance = buildProvenance(context, evidence, contractPath, body);
+  const provenance = buildProvenance(context, evidence, body);
   return `${body}\n${renderProvenanceSection(provenance).join('\n')}\n`;
 }
 
@@ -822,10 +746,9 @@ export function materializeRecoveryViews(
 ): MaterializeRecoveryViewsResult {
   const context = buildRecoveryContext(repoRoot, activePlan, env, options);
   const evidence = resolveRecoveryEvidence(repoRoot);
-  const contractPath = context.artifacts.contract;
   return {
-    handoff: renderRecoveryHandoff(context, evidence, contractPath),
-    resume: renderRecoveryResume(context, evidence, contractPath),
+    handoff: renderRecoveryHandoff(context, evidence),
+    resume: renderRecoveryResume(context, evidence),
     context,
     evidence,
   };
