@@ -13,14 +13,14 @@ export interface EngineerRuntimeFixtureOptions {
   authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
 }
 /** Public binding lifecycle with injected offline transport; no live service is claimed. */
-export async function bindEngineerRuntimeSession(root: string, engineerId: string, options: EngineerRuntimeFixtureOptions) {
+export async function bindTaskRuntimeFixture(root: string, options: EngineerRuntimeFixtureOptions, engineerId?: string) {
   const task = options.task ?? '1'.repeat(64), role = options.role ?? 'deep-reasoner';
   const spec = { task, role, harness_kind: 'codex' };
   const approved = seedReviewAdmissionFixture(root, options.authorityHome);
-  const selected = loadEngineerProfile(root, engineerId);
-  const profile = { engineer_id: engineerId, engineer_contract_revision: selected.engineer_contract_revision };
+  const selected = engineerId === undefined ? undefined : loadEngineerProfile(root, engineerId);
+  const profile = selected === undefined ? undefined : { engineer_id: selected.profile.engineer_id, engineer_contract_revision: selected.engineer_contract_revision };
   const claim = options.claim ?? { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-runtime', revision: `sha256:${'c'.repeat(64)}` };
-  async function bind() {
+  async function bind(role = spec.role) {
     const repository = taskRepository(root);
     const workspace = { workspace_id: 'fixture-workspace', worktree: {
       repo_key: repository.repository_id, checkout_path: repository.execution_root, repo_root: repository.primary_root,
@@ -53,14 +53,22 @@ export async function bindEngineerRuntimeSession(root: string, engineerId: strin
   const binding = await bind();
   const source = { authority: { source: approved.source, claim, engineer_profile: profile }, session: { task, role } };
   const admission = binding.task_admission!;
-  const endpoint = observeAgentRuntimeEndpoint(root, source);
-  return { source, binding, admission, endpoint, approved, dir: taskSessionDirectory(root, task, role),
+  return { source, binding, admission, approved, dir: taskSessionDirectory(root, task, role),
+    async rebind(nextRole: string) {
+      const replacement = await bind(nextRole);
+      return { binding: replacement, source: { ...source, session: { task, role: nextRole } } };
+    },
     revoke() {
       const current = readActiveReviewAdmission({ ...approved.source, expectedGoal: approved.admission.goal });
       revokeReviewAdmission({ repoRoot: root, authorityHome: options.authorityHome,
         repository_id: approved.admission.repository_id, issue_id: approved.admission.issue_id,
         campaign_id: approved.admission.campaign_id, expectedRevision: current.revision });
     } };
+}
+
+export async function bindEngineerRuntimeSession(root: string, engineerId: string, options: EngineerRuntimeFixtureOptions) {
+  const bound = await bindTaskRuntimeFixture(root, options, engineerId);
+  return { ...bound, endpoint: observeAgentRuntimeEndpoint(root, bound.source) };
 }
 
 export async function seedEngineerTaskMessage(repoRoot: string, engineerId: string, messageId: string, body: string, options: EngineerRuntimeFixtureOptions) {

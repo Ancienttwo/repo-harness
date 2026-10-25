@@ -1,11 +1,11 @@
 import { canonicalEngineerJson, engineerSha256 } from '../../../core/engineers/profile-binding';
 import { validateAgentRuntimeHostAction, type AgentRuntimeAdapterObservationV2, type AgentRuntimeHostActionV2, type AgentRuntimeOperation } from '../../../core/engineers/agent-runtime-effect';
-import { herdrCommand, herdrResult, spawnHerdr, type HerdrEndpoint, type HerdrSpawn } from '../../terminal/herdr';
+import { herdrCommand, herdrResult, spawnHerdr, validateHerdrEndpoint, type HerdrEndpoint, type HerdrSpawn } from '../../terminal/herdr';
 
 /** Identifies the exact named local transport configuration, not a physical host or credential. */
 export function herdrEndpointIdentity(endpoint: HerdrEndpoint): string {
   return engineerSha256(canonicalEngineerJson({ domain: 'repo-harness-herdr-transport/v2', session: endpoint.session,
-    configPath: endpoint.configPath ?? null, home: endpoint.home ?? null }));
+    configPath: endpoint.configPath ?? null, socket: validateHerdrEndpoint(endpoint) }));
 }
 
 export const HERDR_CLI_AGENT_OPERATIONS: readonly AgentRuntimeOperation[] = Object.freeze(['notify_inbox', 'wake_for_offer']);

@@ -1,4 +1,4 @@
-import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, writeClaimTokenFixture, fixtureTaskId } from './helpers/sprint-fixture';
+import { bindTaskRuntimeFixture } from './helpers/engineer-runtime-fixture';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -17,8 +17,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { resolveCompatibleNodeRuntime } from '../src/effects/architecture/archctx-provider';
 import { runHook } from '../src/cli/hook/runtime';
-import { buildTaskMessageEvent } from '../src/core/fleet/task-message';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../src/core/state/coordination-identity';
+import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
 import { sendTaskMessage } from '../src/effects/fleet/task-inbox';
 
 const RUNTIME_MODULE = join(import.meta.dir, '../src/cli/hook/runtime.ts');
@@ -453,40 +452,18 @@ process.exit(child.status ?? 1);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('Codex UserPromptSubmit.inbox stays installed and delivers no retired task messages', () => {
+  test('Codex UserPromptSubmit.inbox stays installed and does not deliver admitted messages without an explicit session source', async () => {
     const root = owedFixture();
+    const authorityHome = realpathSync(mkdtempSync(join(tmpdir(), 'hook-inbox-authority-')));
     try {
-      const sprintPath = 'plans/sprints/inbox.sprint.md';
-      const taskCell = 'deliver the inbox envelope';
-      const unitRef = 'plans/plan-inbox.md';
-      const claimId = '44444444-4444-4444-8444-444444444444';
-      mkdirSync(join(root, 'plans/sprints'), { recursive: true });
-      writeFileSync(join(root, sprintPath), [
-        '# Sprint: inbox', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-        '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|',
-        `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | envelope | (pending) |`, '',
-      ].join('\n'));
-      execFileSync('git', ['add', sprintPath], { cwd: root });
-      execFileSync('git', ['commit', '-q', '-m', 'task authority'], { cwd: root });
-      const taskId = fixtureTaskId(taskCell);
-      const taskRevision = deriveTaskRevision({ taskCell, taskId, modeCell: 'contract', acceptanceCell: 'envelope' });
-      // The lease names the canonical worktree path, as the hook runtime resolves it.
-      const worktree = realpathSync(root);
-      const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'inbox-session', sourceWorktree: worktree });
-      const bound = boundLeaseFixture(claimed, { executionWorktree: worktree, branch: 'feature', unitRef });
-      seedLeaseDirectory(root, taskId);
-      writeHistoricalLease(root, taskId, bound);
-      writeClaimTokenFixture({ task_id: taskId, claim_id: claimId, worktree, sprint: sprintPath, task: taskCell, unit_ref: unitRef });
-      writeFileSync(join(root, '.ai/harness/active-plan'), `${unitRef}\n`);
-      sendTaskMessage({
-        repo_root: root,
-        canonical_source: { targetRef: 'HEAD', sprintPath },
-        event: buildTaskMessageEvent({
-          message_id: '66666666-6666-4666-8666-666666666666', task_id: taskId, task_revision: taskRevision,
-          scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'inbox-test',
-          sender_trust: 'local_operator', audience: 'owner', body: 'peer body for the owner', created_at: '2026-10-13T01:00:00.000Z', in_reply_to: null,
-        }),
-      });
+      const bound = await bindTaskRuntimeFixture(realpathSync(root), { authorityHome });
+      const admitted = bound.admission;
+      sendTaskMessage({ repo_root: root, source: bound.source,
+        event: buildTaskMessageEvent({ message_id: '66666666-6666-4666-8666-666666666666', task_id: bound.source.session.task,
+          task_identity: { repository_id: admitted.identity.repository_id, issue_id: admitted.identity.issue_id, campaign_id: admitted.identity.campaign_id },
+          admission_sha256: admitted.approval.admission_sha256, scope: 'claim', target_claim: admitted.identity.claim,
+          sender_kind: 'operator', sender_id: 'inbox-test', sender_trust: 'local_operator', audience: 'owner',
+          body: 'peer body for the owner', created_at: '2026-10-13T01:00:00.000Z', in_reply_to: null }) });
 
       const inbox = host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' });
       expect(inbox.status).toBe(0);
@@ -495,7 +472,7 @@ process.exit(child.status ?? 1);
       expect(host(root, 'codex', 'UserPromptSubmit', 'inbox', { prompt: 'continue' }).stdout).toBe('');
       expect(host(root, 'claude', 'UserPromptSubmit', 'inbox', { prompt: 'continue' }).stdout).toBe('');
       expect(inbox.stderr).toBe('');
-    } finally { rmSync(root, { recursive: true, force: true }); }
+    } finally { rmSync(root, { recursive: true, force: true }); rmSync(authorityHome, { recursive: true, force: true }); }
   }, 60_000);
 
   test('Stop: Claude gets one envelope per id set across events; Codex Stop writes no bytes', () => {
