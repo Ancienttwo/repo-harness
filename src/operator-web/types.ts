@@ -438,6 +438,17 @@ function decodeReadinessBlockers(value: unknown): OperatorFleetCardV1['readiness
   if (value === null) return null;
   return Object.freeze(requireArray(value).map(value => {
     const blocker = requireRecord(value);
+    if (blocker.code === 'provider_ineligible') {
+      requireExactKeys(blocker, ['code', 'attention_owner', 'eligibility_reasons']);
+      const reasons = requireArray(blocker.eligibility_reasons);
+      if (blocker.attention_owner !== 'user' || reasons.length > 100
+        || !reasons.every((reason): reason is string => typeof reason === 'string' && reason.length > 0
+          && reason.length <= 1024 && reason.trim() === reason && !/[\u0000-\u001f\u007f]/u.test(reason))
+        || new Set(reasons).size !== reasons.length
+        || JSON.stringify(reasons) !== JSON.stringify([...reasons].sort())) throw new OperatorPayloadError();
+      return Object.freeze({ code: 'provider_ineligible' as const, attention_owner: 'user' as const,
+        eligibility_reasons: Object.freeze([...reasons]) });
+    }
     requireExactKeys(blocker, ['code', 'attention_owner']);
     return Object.freeze({ code: requireOneOf(blocker.code, [
       'repo_read_only', 'repo_unavailable', 'canonical_unavailable', 'canonical_target_mismatch', 'row_not_pending',

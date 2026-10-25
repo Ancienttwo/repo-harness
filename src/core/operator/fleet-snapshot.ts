@@ -99,7 +99,9 @@ function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
           : { kind: 'preparation' as const }),
     attention_owner: card.attention_owner,
     execution_readiness: card.execution_readiness,
-    readiness_blockers: card.readiness_blockers === null ? null : Object.freeze(card.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
+    readiness_blockers: card.readiness_blockers === null ? null : Object.freeze(card.readiness_blockers.map(blocker => Object.freeze(blocker.code === 'provider_ineligible'
+      ? { code: blocker.code, attention_owner: blocker.attention_owner, eligibility_reasons: Object.freeze([...blocker.eligibility_reasons]) }
+      : { code: blocker.code, attention_owner: blocker.attention_owner }))),
     merge_readiness: mergeReadiness,
     blocker_codes: Object.freeze(card.blocker_codes.map((code) => code)),
     feedback: Object.freeze({

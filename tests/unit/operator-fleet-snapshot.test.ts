@@ -1,3 +1,4 @@
+import { decodeOperatorFleetSnapshot } from '../../src/operator-web/types';
 import { describe, expect, test } from 'bun:test';
 import { basename } from 'path';
 
@@ -236,4 +237,34 @@ test('notification evidence is copied by allowlist without exposing raw runtime 
     expect(() => projectOperatorFleetSnapshot(sourceSnapshot(), epoch as string, basename)).toThrow('invalid operator service epoch');
   }
   expect(projectOperatorFleetSnapshot(sourceSnapshot(), serviceEpoch, basename).service_epoch).toBe(serviceEpoch);
+});
+
+test('provider eligibility reasons survive the public projection and strict browser decoder', () => {
+  const source = sourceSnapshot();
+  const reasons = ['assignee_not_allowed', 'missing_label:ready'];
+  const first = source.repositories[0]!;
+  const input = { ...source, registry_revision: `sha256:${'a'.repeat(64)}`,
+    counts: { ...source.counts, available: 0, unreadable: 0, preparation: 1 },
+    repositories: [{ ...first, cards: [{ ...first.cards[0]!, execution_readiness: 'unsupported' as const,
+      placement: { kind: 'preparation' as const },
+      readiness_blockers: [{ code: 'provider_ineligible' as const, attention_owner: 'user' as const, eligibility_reasons: reasons }],
+    }] }] };
+  const wire = projectOperatorFleetSnapshot(input, serviceEpoch, basename);
+  const blocker = wire.repositories[0]!.cards[0]!.readiness_blockers![0]!;
+  expect(blocker).toEqual({ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: reasons });
+  const decoded = decodeOperatorFleetSnapshot(JSON.parse(JSON.stringify(wire)));
+  expect(decoded.repositories[0]!.cards[0]!.readiness_blockers).toEqual([blocker]);
+  reasons.push('later_mutation');
+  expect(blocker).toEqual({ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: ['assignee_not_allowed', 'missing_label:ready'] });
+  for (const bad of [
+    { ...blocker, extra: true }, { ...blocker, code: 'unknown_provider_blocker' }, { code: 'provider_ineligible', attention_owner: 'user' },
+    { ...blocker, attention_owner: 'agent' },
+    ...[null, [1], [''], [' trailing '], ['bad\u0000reason'], ['x'.repeat(1025)], Array.from({ length: 101 }, (_, i) => String(i).padStart(3, '0')), ['a', 'a'], ['z', 'a']]
+      .map(eligibility_reasons => ({ ...blocker, eligibility_reasons })),
+    { code: 'repo_read_only', attention_owner: 'user', eligibility_reasons: [] },
+  ]) {
+    const malformed = JSON.parse(JSON.stringify(wire));
+    malformed.repositories[0].cards[0].readiness_blockers = [bad];
+    expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow();
+  }
 });
