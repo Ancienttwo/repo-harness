@@ -117,7 +117,16 @@ describe('explicit PR readiness effects', () => {
   });
   test('pending exit 8 and mismatched CI base remain blocked', async () => {
     expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh() }).blockers.map(b => b.code)).toContain('checks_pending');
-    expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh(true) }).ready).toBe(false);
+    const passing = passingGh();
+    const wrongBase = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
+      const result = passing(args);
+      if (args[0] !== 'api' || args[1] !== 'repos/example/repo-harness/actions/runs/123') return result;
+      const run = JSON.parse(result.stdout);
+      run.pull_requests[0].base.sha = '9'.repeat(40);
+      return { ...result, stdout: JSON.stringify(run) };
+    } });
+    expect(wrongBase.ready).toBe(false);
+    expect(wrongBase.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external' }]);
     let calls = 0; const controller = new AbortController(); controller.abort();
     const verdict = await collectPullRequestMergeReadinessAbortable({ ...input, signal: controller.signal,
       gh_runner_async: async args => { calls++; return fakeGh()(args); } });
