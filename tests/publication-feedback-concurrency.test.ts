@@ -17,7 +17,7 @@ import {
   projectFleetFeedback,
   projectPendingFeedbackOffer,
   type FeedbackObservationInput,
-} from '../src/effects/publication/feedback';
+} from '../src/effects/fleet/provider-feedback';
 import { readFeedbackDeliveryReceipts, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../src/effects/publication/feedback-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 

@@ -11,7 +11,7 @@ import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelectio
 import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
 import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
-import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
+import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/fleet/provider-feedback';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/publication/feedback-store';
 
 function outputError(error: unknown): void {

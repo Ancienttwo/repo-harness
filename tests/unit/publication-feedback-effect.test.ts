@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync } from 'node:fs';
 import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent } from '../../src/core/publication/feedback';
-import { FeedbackError, observeGitHubFeedback, showGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/publication/feedback';
+import { FeedbackError, observeGitHubFeedback, showGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
 import { readFeedbackDeliveryReceipt, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
 
 const HEAD = 'a'.repeat(40);

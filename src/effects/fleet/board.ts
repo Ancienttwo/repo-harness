@@ -31,7 +31,7 @@ import {
   MergeReadinessError,
   type AbortablePullRequestReadinessInput,
 } from '../publication/merge-readiness';
-import { FeedbackError, projectFleetFeedback, prepareFeedbackSubject } from '../publication/feedback';
+import { FeedbackError, projectFleetFeedback, prepareFeedbackSubject } from './provider-feedback';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
 import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeEffectStoreError, type AgentRuntimeEffectStatus } from '../engineers/agent-runtime-effect-store';
 

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { observeGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/publication/feedback';
+import { observeGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const subject: FeedbackSubject = { publication_id: `sha256:${'1'.repeat(64)}`,
   selection: { repository: 'acme/widgets', provider_repository_id: '42', pr_number: 7, expected_head_sha: head, expected_base_sha: base },

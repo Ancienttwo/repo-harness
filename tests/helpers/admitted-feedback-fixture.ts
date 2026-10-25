@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { admittedInboxFixture } from './admitted-inbox-fixture';
-import { prepareFeedbackSubject } from '../../src/effects/publication/feedback';
+import { prepareFeedbackSubject } from '../../src/effects/fleet/provider-feedback';
 
 /** Public task admission plus an explicit provider subject. No publication or lease authority. */
 export async function admittedFeedbackFixture(pr_number = 9) {
