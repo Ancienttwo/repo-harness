@@ -10,7 +10,7 @@ import {
   type Capability,
 } from "../src/core/capabilities/registry";
 
-import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
+import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/architecture/archcontext-owners";
 import { ArchctxClientError, readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
 import { withReadonlyObservation } from "../src/effects/readonly-observation";
 

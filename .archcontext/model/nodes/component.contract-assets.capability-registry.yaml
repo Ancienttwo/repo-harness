@@ -14,7 +14,7 @@ source:
   include:
     - .archcontext/**
     - src/core/capabilities/**
-    - src/effects/capabilities/**
+    - src/effects/architecture/archcontext-owners.ts
     - scripts/capability-*.ts
     - src/cli/commands/capability-context.ts
     - scripts/workstream-sync.sh

@@ -341,7 +341,7 @@ type ArchcontextPathResolver = (repo: string, owners: ArchcontextCapabilityOwner
 // The standalone projection of this helper has no package-local archctx, so the
 // import fails there and archcontext mode fails closed instead of guessing. The
 // specifier is not a literal, so the projection type-checks without that module.
-const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owners";
+const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/architecture/archcontext-owners";
 
 function archcontextModule(): {
   readArchcontextCapabilityAuthority(repo: string): ArchcontextCapabilityResolution;

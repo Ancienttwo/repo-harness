@@ -11,7 +11,7 @@ import {
   type CapabilityRegistry,
   type ContractFiles,
 } from '../../../scripts/capability-resolver';
-import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
+import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/architecture/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 

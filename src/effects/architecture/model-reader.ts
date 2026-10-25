@@ -8,7 +8,7 @@ import { buildModuleReviewPrompt, moduleStaleCitations, ModuleReadError, sha256,
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { repoHarnessRepoIdFor } from '../repo-registry';
-import { resolveArchcontextCapabilityPaths } from '../capabilities/archcontext-owners';
+import { resolveArchcontextCapabilityPaths } from './archcontext-owners';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, readArchitectureNativeContext, type ArchctxProviderOptions } from './archctx-provider';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 

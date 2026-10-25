@@ -3,7 +3,7 @@ import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } fr
 import { join } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
-import { readArchcontextCapabilityAuthority } from "../../src/effects/capabilities/archcontext-owners";
+import { readArchcontextCapabilityAuthority } from "../../src/effects/architecture/archcontext-owners";
 import {
   archcontextNodeId,
   architectureModulePathFor,
@@ -44,7 +44,7 @@ function recordedOwners(): ArchcontextCapabilityOwners {
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 }
 
-// The same field reduction as readOwners in src/effects/capabilities/archcontext-owners.ts.
+// The same field reduction as readOwners in src/effects/architecture/archcontext-owners.ts.
 function recordedResults(): ArchcontextPathOwner[] {
   const envelope = JSON.parse(readFileSync(join(RECORDED, "ownership-0.7.2.json"), "utf-8")) as {
     data: { results: Array<{ path: string; matched: boolean; ambiguous: boolean; owningCapabilityId: string | null; candidates?: string[] }> };
