@@ -3,12 +3,12 @@ import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:cryp
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { createReviewAdmission, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
-import { verifyControlApproval, type ControlDelegation, type ControlApprovalDecision } from '../../src/core/review/control-delegation';
+import { verifyControlApproval, verifyReviewApproval, type ControlDelegation, type ControlApprovalDecision } from '../../src/core/review/control-delegation';
 
 const now = 1_800_000_000_000;
 const repositoryRoot = '/work/repository';
 const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(value as JsonValue)).digest('hex')}`;
-const signature = (payload: unknown, key: KeyObject) => ({ payload, signature: sign(null, Buffer.from(canonicalize(payload as JsonValue)), key).toString('base64') });
+const signature = <T,>(payload: T, key: KeyObject) => ({ payload, signature: sign(null, Buffer.from(canonicalize(payload as JsonValue)), key).toString('base64') });
 function fixture() {
   const user = generateKeyPairSync('ed25519'), bot = generateKeyPairSync('ed25519');
   const input: ReviewAdmissionInput = {
@@ -149,4 +149,20 @@ test('a valid Bot signature cannot substitute another delegation digest or an en
   expect(() => f.verify({ delegation: valid.decision, decision: valid.delegation })).toThrow();
   expect(() => verifyControlApproval(valid, f.trust, Number.NaN, createReviewAdmission(f.input), repositoryRoot, 0)).toThrow('integer');
   expect(() => verifyControlApproval(valid, f.trust, now, createReviewAdmission(f.input), repositoryRoot, -1)).toThrow('integer');
+});
+
+
+test('direct user approval is signed separately and is never a Bot waiver delegation', () => {
+  const f = fixture(); f.input.policy.user_waiver = 'allowed';
+  const admission = createReviewAdmission(f.input);
+  const payload = { protocol: 1, kind: 'repo-harness-human-admission', admission_sha256: admission.admission_sha256,
+    repository_root: repositoryRoot, expected_revision: 0, expires_at: now + 500 };
+  const envelope = { human_approval: signature(payload, f.user.privateKey) };
+  const value = verifyReviewApproval(envelope, f.trust, now, admission, repositoryRoot, 0);
+  expect(value.bot_id).toBeNull();
+  expect(value.user_id).toMatch(/^sha256:[0-9a-f]{64}$/);
+  expect(() => verifyReviewApproval({ human_approval: signature(payload, f.bot.privateKey) }, f.trust, now, admission, repositoryRoot, 0)).toThrow('signature');
+  expect(() => verifyReviewApproval(envelope, f.trust, now, admission, repositoryRoot, 1)).toThrow('subject');
+  expect(() => verifyReviewApproval(envelope, f.trust, now + 500, admission, repositoryRoot, 0)).toThrow('expired');
+  expect(() => f.verify()).toThrow('waiver');
 });

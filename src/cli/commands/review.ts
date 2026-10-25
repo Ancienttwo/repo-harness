@@ -1,3 +1,4 @@
+import { approveDelegatedReviewAdmission } from '../../effects/review/control-admission';
 import { readReviewAdmissionSource } from '../../effects/review/admission-source';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
@@ -6,6 +7,23 @@ import { recordCircuitAttempt } from '../hook/circuit-breaker';
 
 export function buildReviewCommand(): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
+  command.command('admit').description('Apply a signed, user-delegated control Bot approval')
+    .requiredOption('--request <file>', 'JSON {admission, envelope, expectedRevision}; no private keys')
+    .option('--repo <path>', 'Execution repository', process.cwd())
+    .action(opts => {
+      try {
+        const request = JSON.parse(readFileSync(opts.request, 'utf8'));
+        if (!request || typeof request !== 'object' || Array.isArray(request)
+          || JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(['admission', 'envelope', 'expectedRevision'])) {
+          throw new Error('review_control_request_invalid');
+        }
+        console.log(JSON.stringify(approveDelegatedReviewAdmission({ repoRoot: opts.repo,
+          admission: request.admission, envelope: request.envelope, expectedRevision: request.expectedRevision })));
+      } catch (error) {
+        console.error(`review admit: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
+    });
   for (const operation of ['round', 'status', 'close', 'cancel'] as const) {
     const child = command.command(operation).requiredOption('--repository-id <id>', 'Approved provider repository identity')
       .requiredOption('--issue-id <id>', 'Approved provider issue identity')

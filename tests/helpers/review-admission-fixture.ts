@@ -1,3 +1,4 @@
+import { signedHumanAdmissionFixture } from './control-approval-fixture';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,8 +37,9 @@ export function seedReviewAdmissionFixture(root: string, home: string, options: 
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const active = join(directory, 'active.json');
   const revision = existsSync(active) ? JSON.parse(readFileSync(active, 'utf8')).revision + 1 : 1;
-  const content = canonicalize({ protocol: 1, kind: 'repo-harness-review-approval', repository_root: root,
-    actor_id: admission.actor_id, activation_id: randomUUID(), admission } as unknown as JsonValue) + '\n';
+  const content = canonicalize({ protocol: 2, kind: 'repo-harness-review-approval', repository_root: root,
+    actor_id: admission.actor_id, activation_id: randomUUID(), admission,
+    control_approval: { envelope: signedHumanAdmissionFixture(home, root, admission, revision - 1), expected_revision: revision - 1 } } as unknown as JsonValue) + '\n';
   const grant = hash(content);
   writeFileSync(join(directory, `${grant.slice(7)}.json`), content, { mode: 0o600 });
   writeFileSync(active, JSON.stringify({ protocol: 1, revision, grant_sha256: grant }), { mode: 0o600 });

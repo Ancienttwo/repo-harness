@@ -1,3 +1,5 @@
+import { verifyReviewApproval } from '../../core/review/control-delegation';
+import { readReviewControlTrust } from './control-trust';
 import { randomUUID, createHash } from 'node:crypto';
 import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -15,8 +17,9 @@ interface StoreInput { repoRoot: string; authorityHome?: string }
 interface CampaignIdentity { repository_id: string; issue_id: string; campaign_id: string }
 interface ActiveGrant { protocol: 1; revision: number; grant_sha256: string | null }
 interface ApprovalRecord {
-  protocol: 1; kind: 'repo-harness-review-approval'; repository_root: string;
+  protocol: 2; kind: 'repo-harness-review-approval'; repository_root: string;
   actor_id: string; activation_id: string; admission: ReviewAdmission;
+  control_approval: { envelope: unknown; expected_revision: number };
 }
 const HASH = /^sha256:[0-9a-f]{64}$/;
 function fail(reason: string): never { throw new Error(`review_admission_${reason}`); }
@@ -79,23 +82,28 @@ function publishActive(path: string, next: ActiveGrant): void {
   syncDirectoryDurably(dirname(path));
 }
 
-/** Explicit operator approval only. The CLI must present this exact digest for
- * approval; no review round, candidate file or PR body may call this implicitly.
+/** Authenticated user or delegated control approval. The exact signed digest
+ * authorizes this transition; a candidate file or PR body alone cannot.
  * A new activation has a distinct identity even when its policy bytes repeat.
  */
 export function approveReviewAdmission(input: StoreInput & {
   admission: ReviewAdmissionInput; expectedAdmissionSha256: string;
-  approvedActor: string; expectedRevision: number;
+  expectedRevision: number; controlEnvelope: unknown;
 }): { revision: number; grant_sha256: string } {
   if (currentReadonlyObservation()) rejectObservation('Observation cannot approve a review admission');
   const admission = createReviewAdmission(input.admission);
-  if (admission.admission_sha256 !== input.expectedAdmissionSha256 || input.approvedActor !== admission.actor_id) fail('approval_mismatch');
+  if (admission.admission_sha256 !== input.expectedAdmissionSha256) fail('approval_mismatch');
+  if (input.controlEnvelope === undefined) fail('control_approval_required');
+  const envelope = JSON.parse(JSON.stringify(input.controlEnvelope));
+  verifyReviewApproval(envelope, readReviewControlTrust(input.authorityHome),
+    Date.now(), admission, realpathSync(input.repoRoot), input.expectedRevision);
   const loc = location(input, admission, true);
   return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
     const previous = active(loc.active);
     if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
-    const record: ApprovalRecord = { protocol: 1, kind: 'repo-harness-review-approval', repository_root: loc.root,
-      actor_id: input.approvedActor, activation_id: randomUUID(), admission };
+    const record: ApprovalRecord = { protocol: 2, kind: 'repo-harness-review-approval', repository_root: loc.root,
+      actor_id: admission.actor_id, activation_id: randomUUID(), admission,
+      control_approval: { envelope, expected_revision: input.expectedRevision } };
     const content = bytes(record), sha = digest(content);
     createFileExclusiveDurably(join(loc.directory, `${sha.slice(7)}.json`), content);
     syncDirectoryDurably(loc.directory);
@@ -127,11 +135,18 @@ export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity &
   const content = readProtected(join(loc.directory, `${input.expectedGrantSha256.slice(7)}.json`));
   if (digest(content) !== input.expectedGrantSha256) fail('grant_digest');
   const value = JSON.parse(content.toString('utf8')) as ApprovalRecord;
-  if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['activation_id', 'actor_id', 'admission', 'kind', 'protocol', 'repository_root'])
-    || value.protocol !== 1 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
+  if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['activation_id', 'actor_id', 'admission', 'control_approval', 'kind', 'protocol', 'repository_root'])
+    || value.protocol !== 2 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
     || value.actor_id !== input.expectedActor || typeof value.activation_id !== 'string'
     || !/^[0-9a-f-]{36}$/.test(value.activation_id)) fail('grant_binding');
   const admitted = validateReviewAdmission(value.admission);
+  {
+    const proof = value.control_approval;
+    if (!proof || JSON.stringify(Object.keys(proof).sort()) !== JSON.stringify(['envelope', 'expected_revision'])
+      || proof.expected_revision + 1 !== before.revision) fail('control_approval_binding');
+    verifyReviewApproval(proof.envelope, readReviewControlTrust(input.authorityHome), Date.now(), admitted,
+      loc.root, proof.expected_revision);
+  }
   if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id
     || admitted.actor_id !== input.expectedActor || admitted.goal.revision !== input.expectedGoal.revision
     || admitted.goal.content !== input.expectedGoal.content) fail('goal_or_actor_changed');

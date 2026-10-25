@@ -149,3 +149,40 @@ export function verifyControlApproval(
   return Object.freeze({ delegation_id: delegation.id as string, delegation_sha256: delegationSha256,
     bot_id: delegation.bot_id as string, user_id: delegation.user_id as string, expires_at: decision.expires_at });
 }
+
+/** A separate user-signed admission can retain human-only policy eligibility.
+ * This is not a Bot delegation or a waiver receipt. It never follows from an
+ * execution actor string, and it does not grant Bot waiver permission.
+ */
+export function verifyReviewApproval(
+  envelope: unknown, trust: { userPublicKey: string; revokedDelegationIds: readonly string[] },
+  now: number, admission: ReviewAdmission, repositoryRoot: string, expectedRevision: number,
+): { readonly bot_id: string | null; readonly user_id: string; readonly delegation_sha256: string; readonly expires_at: number } {
+  const detached = snapshot(envelope);
+  if (detached && typeof detached === 'object' && !Array.isArray(detached) && Object.hasOwn(detached, 'delegation')) {
+    return verifyControlApproval(detached, trust, now, admission, repositoryRoot, expectedRevision);
+  }
+  integer(now); integer(expectedRevision); text(repositoryRoot);
+  const current = validateReviewAdmission(snapshot(admission) as unknown as ReviewAdmission);
+  const root = record(detached, ['human_approval']);
+  const decision = record(signed(root.human_approval, trust.userPublicKey), [
+    'protocol', 'kind', 'admission_sha256', 'repository_root', 'expected_revision', 'expires_at',
+  ]);
+  if (decision.protocol !== 1 || decision.kind !== 'repo-harness-human-admission') fail('human_decision_kind');
+  hash(decision.admission_sha256); text(decision.repository_root);
+  integer(decision.expected_revision); integer(decision.expires_at);
+  if (decision.expires_at <= now) fail('human_decision_expired');
+  if (decision.admission_sha256 !== current.admission_sha256 || decision.repository_root !== repositoryRoot
+    || decision.expected_revision !== expectedRevision) fail('human_decision_subject');
+  const user = `sha256:${createHash('sha256').update(publicKey(trust.userPublicKey).export({ format: 'der', type: 'spki' })).digest('hex')}`;
+  return Object.freeze({ bot_id: null, user_id: user,
+    delegation_sha256: `sha256:${createHash('sha256').update(canonicalize(decision)).digest('hex')}`,
+    expires_at: decision.expires_at });
+}
+
+/** Shared signature primitive for a domain-specific, closed human decision.
+ * The caller must validate its exact fields, kind, subject and expiry before use.
+ */
+export function verifyHumanSignedPayload(envelope: unknown, publicKeyPem: string): Record<string, JsonValue> {
+  return signed(snapshot(envelope), publicKeyPem);
+}

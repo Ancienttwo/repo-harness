@@ -1,3 +1,5 @@
+import { approveDelegatedReviewAdmission } from '../../src/effects/review/control-admission';
+import { signedHumanAdmissionFixture, signedBotAdmissionFixture } from '../helpers/control-approval-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -28,8 +30,9 @@ function fixture(goal = { revision: 'goal-1', content: 'Preserve feedback and ac
     verification: { plan_sha256: hashVerificationPlan(input.verification_plan), source_sha256: hash('source'), evidence_sha256: hash('report'), tree_sha256: hash('tree') } };
   function seed() {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const content = canonicalize({ protocol: 1, kind: 'repo-harness-review-approval', repository_root: root, actor_id: input.actor_id,
-      activation_id: '11111111-1111-4111-8111-111111111111', admission } as unknown as JsonValue) + '\n';
+    const content = canonicalize({ protocol: 2, kind: 'repo-harness-review-approval', repository_root: root, actor_id: input.actor_id,
+      activation_id: '11111111-1111-4111-8111-111111111111', admission,
+      control_approval: { envelope: signedHumanAdmissionFixture(home, root, admission, 0), expected_revision: 0 } } as unknown as JsonValue) + '\n';
     const digest = hash(content);
     writeFileSync(join(directory, `${digest.slice(7)}.json`), content, { mode: 0o600 });
     writeFileSync(join(directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: digest }), { mode: 0o600 });
@@ -73,7 +76,8 @@ test('protected read refuses a candidate-local authority home and linked grant f
 test('operator approval uses revision CAS and reapproval never resurrects an old grant identity', () => {
   const f = fixture();
   const approve = (revision: number) => approveReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
-    admission: f.input, expectedAdmissionSha256: f.admission.admission_sha256, approvedActor: f.input.actor_id, expectedRevision: revision });
+    admission: f.input, expectedAdmissionSha256: f.admission.admission_sha256, expectedRevision: revision,
+    controlEnvelope: signedHumanAdmissionFixture(f.home, f.root, f.admission, revision) });
   const first = approve(0);
   expect(readReviewAdmission(f.args(first.grant_sha256)).revision).toBe(1);
   expect(() => approve(0)).toThrow('revision_changed');
@@ -153,4 +157,31 @@ test('protected read exposes the approved plan before execution without fabricat
   expect(Object.isFrozen(value.admission.verification_plan.checks)).toBe(true);
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
   expect(() => readActiveReviewAdmission(args)).toThrow('revoked_or_replaced');
+});
+
+
+test('control admission writes a signed Bot grant and later reads recheck parent revocation', () => {
+  const f = fixture();
+  const envelope = signedBotAdmissionFixture(f.home, f.root, f.admission, 0);
+  const result = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, envelope, expectedRevision: 0 });
+  expect(result.approved_by).toBe('fixture-bot');
+  expect(result.execution_actor).toBe(f.input.actor_id);
+  expect(readReviewAdmission(f.args(result.grant_sha256)).admission).toEqual(f.admission);
+  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, envelope, expectedRevision: 0 })).toThrow('revision_changed');
+  const trustPath = join(f.home, '.repo-harness/control-trust.json');
+  const trust = JSON.parse(readFileSync(trustPath, 'utf8'));
+  writeFileSync(trustPath, JSON.stringify({ ...trust, revoked_delegation_ids: ['fixture-delegation'] }));
+  expect(() => readReviewAdmission(f.args(result.grant_sha256))).toThrow('revoked');
+});
+
+test('protected read rejects unsigned records even when the record digest matches', () => {
+  const f = fixture(), grant = f.seed();
+  const raw = JSON.parse(readFileSync(join(f.directory, `${grant.slice(7)}.json`), 'utf8'));
+  delete raw.control_approval;
+  const content = canonicalize(raw) + '\n', forged = hash(content);
+  writeFileSync(join(f.directory, `${forged.slice(7)}.json`), content, { mode: 0o600 });
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: forged }));
+  expect(() => readReviewAdmission(f.args(forged))).toThrow('grant_binding');
 });
