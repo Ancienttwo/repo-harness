@@ -2,6 +2,7 @@ import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
+import { globalRuntimeScope, runtimeTransactionRoot } from './runtime-host-lock';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -661,7 +662,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.claude.json'),
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
-    configurationReceiptPath(env),
+    configurationReceiptPath(home),
     join(home, '.agents', '.skill-lock.json'),
   ];
   for (const host of ['.codex', '.claude']) {
@@ -724,7 +725,7 @@ export function beginInstallHostTransaction(
   env: NodeJS.ProcessEnv = process.env,
   options: { readonly retainBackup?: boolean } = {},
 ): InstallHostTransaction {
-  const transactionRoot = join(env.HOME ?? homedir(), '.repo-harness', 'transactions');
+  const transactionRoot = runtimeTransactionRoot(globalRuntimeScope(env));
   mkdirSync(transactionRoot, { recursive: true });
   const backupRoot = mkdtempSync(join(transactionRoot, 'install-'));
   try {

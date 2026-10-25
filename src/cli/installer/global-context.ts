@@ -371,7 +371,7 @@ export function formatGlobalContextWrite(path: string, current: string | null, m
  */
 export function globalContextPathRefusal(path: string, home: string): string | null {
   try {
-    assertConfigurationPath(path, { HOME: home });
+    assertConfigurationPath(path, home);
     return null;
   } catch (error) {
     // The guard names the refused component: the file, a linked parent such

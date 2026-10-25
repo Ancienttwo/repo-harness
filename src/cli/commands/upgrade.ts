@@ -21,7 +21,7 @@ import {
   rollbackInstallHostTransaction,
   type InstallHostTransaction,
 } from '../installer/install-profile';
-import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
+import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
 
 export interface UpgradeOptions {
@@ -395,7 +395,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))] };
     if (!apply || !items.some(removable)) return emptyResult;
-    return withRuntimeHostTransactionLock(env, (lock) => {
+    return withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
       const underHostLock = supportedItems(planLegacyLeftovers(options).items);
       const paths = [...new Set(underHostLock.filter((item) => item.location === 'project' && removable(item)).map((item) => item.path))].sort();
       return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths)));
