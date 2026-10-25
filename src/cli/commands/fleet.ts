@@ -189,7 +189,7 @@ export function buildFleetCommand(): Command {
     .command('board')
     .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Project every authorized repository as one deterministic fleet board snapshot')
-    .requiredOption('--json', 'Output the FleetBoardSnapshotV1 document as JSON')
+    .requiredOption('--json', 'Output the FleetBoardSnapshotV2 document as JSON')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
     .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
@@ -553,8 +553,9 @@ function readPrAssociations(path?: string): readonly FleetBoardPullRequestSelect
   if (!Array.isArray(values)) throw new Error('PR associations must be an array');
   return values.map(value => {
     if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.repository_id !== 'string'
+      || typeof value.provider_issue_id !== 'string' || !/^[1-9][0-9]*$/u.test(value.provider_issue_id)
       || (value.task_id !== undefined && typeof value.task_id !== 'string')
-      || Object.keys(value).some(key => !['repository_id','task_id','pull_request'].includes(key))) throw new Error('invalid PR association');
-    return { repository_id: value.repository_id, ...(value.task_id === undefined ? {} : { task_id: value.task_id }), pull_request: validatePullRequestSelection(value.pull_request) };
+      || Object.keys(value).some(key => !['repository_id','provider_issue_id','task_id','pull_request'].includes(key))) throw new Error('invalid PR association');
+    return { repository_id: value.repository_id, provider_issue_id: value.provider_issue_id, ...(value.task_id === undefined ? {} : { task_id: value.task_id }), pull_request: validatePullRequestSelection(value.pull_request) };
   });
 }

@@ -2,11 +2,11 @@ import { createHash } from 'crypto';
 
 import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness } from './task-offer';
 import type { MergeReadinessBlockerCode, PullRequestReadinessV2 } from '../publication/merge-readiness';
-import type { BoardLeaseState, TaskState } from '../state/types';
+import type { OperatorTaskSession } from '../operator/task-sessions';
 import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
 /** A fleet projection is its own read model; it never changes BoardColumn. */
-export const FLEET_BOARD_PROTOCOL = 5 as const;
+export const FLEET_BOARD_PROTOCOL = 6 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
 export type FleetBoardColumn = 'available' | 'working' | 'in_review' | 'ready_to_merge' | 'done';
@@ -54,6 +54,7 @@ export interface FleetBoardDeliveryEvidenceV1 {
 }
 
 export interface FleetBoardInboxSummaryV1 {
+  readonly observation_status: 'observed' | 'unavailable';
   readonly delivery_evidence: FleetBoardDeliveryEvidenceV1 | null;
   readonly unread_count: number;
   readonly addressed_to_current_claim: boolean;
@@ -64,35 +65,27 @@ export interface FleetBoardInboxSummaryV1 {
 }
 
 export interface FleetBoardFeedbackSummaryV1 {
+  readonly observation_status: 'observed' | 'unavailable';
   readonly pending_count: number;
   readonly no_progress: boolean;
   readonly repair_actions: readonly never[];
 }
 
-export interface FleetBoardCardV1 {
+export interface FleetBoardCardV2 {
   readonly repository_id: string;
-  readonly task_id: string;
-  readonly task_revision: string;
-  /**
-   * The sprint row's own task cell -- the human-readable preimage of
-   * `task_id`, carried verbatim from the same authority that derived the
-   * digest. Null means the card has no canonical row to name, which is a
-   * snapshot fact and never a placeholder for an unread label.
-   */
+  readonly provider_repository_id: string;
+  readonly provider_issue_id: string;
+  readonly issue_state: 'open' | 'closed' | null;
+  readonly issue_revision: string | null;
+  readonly execution_status: 'observed' | 'unavailable';
+  readonly execution: OperatorTaskSession | null;
+  readonly task_id: string | null;
   readonly task_label: string | null;
-  /** The sprint row's own index cell, null under the same no-row condition. */
   readonly task_index: number | null;
-  readonly claim_id: string | null;
-  readonly generation: number | null;
-  readonly task_state: TaskState;
   readonly placement: FleetBoardPlacement;
   readonly attention_owner: FleetBoardAttentionOwner;
   readonly execution_readiness: TaskOfferExecutionReadiness | null;
   readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
-  readonly lease_state: BoardLeaseState;
-  /** Exact reviewing-pointer facts only; neither value is inferred from a branch or provider response. */
-  readonly publication_id: string | null;
-  readonly head_sha: string | null;
   readonly merge_readiness: PullRequestReadinessV2 | null;
   readonly blocker_codes: readonly MergeReadinessBlockerCode[];
   readonly feedback: FleetBoardFeedbackSummaryV1;
@@ -106,13 +99,13 @@ export interface FleetBoardCardV1 {
   readonly error: FleetBoardErrorV1 | null;
 }
 
-export interface FleetRepositoryBoardV1 {
+export interface FleetRepositoryBoardV2 {
   readonly repository_id: string;
   readonly repo_root: string;
   readonly access_mode: 'read_only' | 'read_write';
   readonly status: FleetRepositoryStatus;
   readonly snapshot_consistency: FleetBoardSnapshotConsistency;
-  readonly cards: readonly FleetBoardCardV1[];
+  readonly cards: readonly FleetBoardCardV2[];
   readonly error: FleetBoardErrorV1 | null;
 }
 
@@ -131,28 +124,28 @@ export interface FleetBoardCountsV1 {
   readonly unclassified: number;
 }
 
-export interface FleetBoardSnapshotV1 {
+export interface FleetBoardSnapshotV2 {
   readonly protocol: typeof FLEET_BOARD_PROTOCOL;
   readonly kind: typeof FLEET_BOARD_KIND;
   readonly registry_revision: string;
   readonly sequence: number;
   readonly observed_at: string;
   readonly snapshot_consistency: FleetBoardSnapshotConsistency;
-  readonly repositories: readonly FleetRepositoryBoardV1[];
+  readonly repositories: readonly FleetRepositoryBoardV2[];
   readonly counts: FleetBoardCountsV1;
   readonly snapshot_sha256: string;
 }
 
-export interface FleetBoardCardInputV1 {
-  readonly task_id: string;
-  readonly task_revision: string;
+export interface FleetBoardCardInputV2 {
+  readonly provider_repository_id: string;
+  readonly provider_issue_id: string;
+  readonly issue_state: 'open' | 'closed' | null;
+  readonly issue_revision: string | null;
+  readonly execution_status: 'observed' | 'unavailable';
+  readonly execution: OperatorTaskSession | null;
+  readonly task_id: string | null;
   readonly task_label: string | null;
   readonly task_index: number | null;
-  readonly task_state: TaskState;
-  readonly lease_state: BoardLeaseState;
-  readonly claim_id: string | null;
-  readonly generation: number | null;
-  readonly current_publication: { readonly publication_id: string; readonly head_sha: string } | null;
   readonly merge_readiness: PullRequestReadinessV2 | null;
   readonly execution_readiness: TaskOfferExecutionReadiness | null;
   readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
@@ -162,21 +155,21 @@ export interface FleetBoardCardInputV1 {
   readonly error: FleetBoardErrorV1 | null;
 }
 
-export interface FleetRepositoryBoardInputV1 {
+export interface FleetRepositoryBoardInputV2 {
   readonly repository_id: string;
   readonly repo_root: string;
   readonly access_mode: 'read_only' | 'read_write';
   readonly status: FleetRepositoryStatus;
   readonly snapshot_consistency: FleetBoardSnapshotConsistency;
-  readonly cards: readonly FleetBoardCardInputV1[];
+  readonly cards: readonly FleetBoardCardInputV2[];
   readonly error: FleetBoardErrorV1 | null;
 }
 
-export interface FleetBoardProjectionInputV1 {
+export interface FleetBoardProjectionInputV2 {
   readonly registry_revision: string;
   readonly sequence: number;
   readonly observed_at: string;
-  readonly repositories: readonly FleetRepositoryBoardInputV1[];
+  readonly repositories: readonly FleetRepositoryBoardInputV2[];
 }
 
 function compare(left: string, right: string): number {
@@ -213,69 +206,56 @@ function feedbackAttention(summary: FleetBoardFeedbackSummaryV1): FleetBoardAtte
   return 'none';
 }
 
-const PREPARATION_BLOCKERS = new Set<TaskOfferBlockerV1['code']>([
-  'repo_read_only', 'plan_missing', 'plan_not_approved', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable',
-]);
-
-/** Existing execution facts precede reacquisition readiness. */
-export function classifyFleetBoardPlacement(input: FleetBoardCardInputV1): FleetBoardPlacement {
-  const unclassified = (reason: Extract<FleetBoardPlacement, { kind: 'unclassified' }>['reason']): FleetBoardPlacement => Object.freeze({ kind: 'unclassified', reason });
-  const column = (column: FleetBoardColumn): FleetBoardPlacement => Object.freeze({ kind: 'column', column });
-  if (input.error !== null) return unclassified('observation_failed');
-  if (input.task_state === 'missing') return unclassified('canonical_missing');
-  if (input.task_state === 'drifted') return unclassified('task_drifted');
-  if (input.task_state === 'done') return column('done');
-  if (input.merge_readiness !== null) {
-    return column(input.merge_readiness.ready ? 'ready_to_merge' : 'in_review');
-  }
-  if (input.lease_state === 'reviewing' && input.current_publication !== null) return unclassified('readiness_unavailable');
-  if (input.lease_state === 'reserving' || input.lease_state === 'bound' || input.lease_state === 'completing') return column('working');
-  if (input.task_state !== 'pending' || input.lease_state !== 'available') return unclassified('state_unmapped');
-  const blockers = input.readiness_blockers;
-  if (input.execution_readiness === null || blockers === null) return unclassified('readiness_unavailable');
-  if (input.execution_readiness === 'execution_ready' && blockers.length === 0) return column('available');
-  if (input.execution_readiness === 'inline_ready' && blockers.length === 0) return Object.freeze({ kind: 'alternate_workflow', workflow: 'inline' });
-  if ((input.execution_readiness === 'planning_required' || input.execution_readiness === 'unsupported')
-    && blockers.length > 0 && blockers.every(blocker => PREPARATION_BLOCKERS.has(blocker.code))) return Object.freeze({ kind: 'preparation' });
-  return unclassified('unsupported_readiness');
+/** Provider issue status and admitted execution are separate observations. */
+export function classifyFleetBoardPlacement(input: FleetBoardCardInputV2): FleetBoardPlacement {
+  if (input.error !== null) return { kind: 'unclassified', reason: 'observation_failed' };
+  if (input.issue_state === null) return { kind: 'unclassified', reason: 'canonical_missing' };
+  if (input.issue_state === 'closed') return { kind: 'column', column: 'done' };
+  if (input.merge_readiness !== null) return { kind: 'column', column: input.merge_readiness.ready ? 'ready_to_merge' : 'in_review' };
+  if (input.execution_status === 'unavailable') return { kind: 'unclassified', reason: 'readiness_unavailable' };
+  return { kind: 'column', column: input.execution === null ? 'available' : 'working' };
 }
 
-export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCardInputV1): FleetBoardCardV1 {
+export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCardInputV2): FleetBoardCardV2 {
+  if (!/^[1-9][0-9]*$/u.test(input.provider_repository_id) || !/^[1-9][0-9]*$/u.test(input.provider_issue_id)
+    || input.task_id !== (input.execution?.selector.task ?? null)
+    || (input.execution !== null && (input.execution.selector.repository_id !== repositoryId
+      || input.execution.selector.provider_repository_id !== input.provider_repository_id
+      || input.execution.selector.issue_id !== input.provider_issue_id || input.execution_status !== 'observed'))) throw new Error('Fleet provider/session identity mismatch');
   const readinessAttention = input.merge_readiness?.attention_owner ?? 'none';
-  const publication = input.current_publication;
   const error = input.error;
   const placement = classifyFleetBoardPlacement(input);
   const preExecution = placement.kind !== 'column' || placement.column === 'available';
-  if (error === null && input.inbox.delivery_evidence === null) throw new Error('Readable Fleet card requires delivery evidence');
   return Object.freeze({
     repository_id: repositoryId,
+    provider_repository_id: input.provider_repository_id,
+    provider_issue_id: input.provider_issue_id,
+    issue_state: input.issue_state,
+    issue_revision: input.issue_revision,
+    execution_status: input.execution_status,
+    execution: input.execution,
     task_id: input.task_id,
-    task_revision: input.task_revision,
     task_label: input.task_label,
     task_index: input.task_index,
-    claim_id: input.claim_id,
-    generation: input.generation,
-    task_state: input.task_state,
     placement,
     attention_owner: attention(
-      ...(preExecution && input.task_state === 'pending' ? input.readiness_blockers?.map(blocker => blocker.attention_owner) ?? [] : []),
+      ...(preExecution && input.issue_state === 'open' ? input.readiness_blockers?.map(blocker => blocker.attention_owner) ?? [] : []),
       readinessAttention,
       feedbackAttention(input.feedback),
       input.inbox.addressed_to_current_claim ? 'agent' : 'none',
     ),
     execution_readiness: input.execution_readiness,
     readiness_blockers: input.readiness_blockers === null ? null : Object.freeze(input.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
-    lease_state: input.lease_state,
-    publication_id: publication?.publication_id ?? null,
-    head_sha: publication?.head_sha ?? null,
     merge_readiness: input.merge_readiness,
     blocker_codes: Object.freeze(input.merge_readiness?.blockers.map((blocker) => blocker.code) ?? []),
     feedback: Object.freeze({
+      observation_status: input.feedback.observation_status,
       pending_count: input.feedback.pending_count,
       no_progress: input.feedback.no_progress,
       repair_actions: Object.freeze([...input.feedback.repair_actions]),
     }),
     inbox: Object.freeze({
+      observation_status: input.inbox.observation_status,
       delivery_evidence: error !== null || input.inbox.delivery_evidence === null ? null : Object.freeze({
         candidate_count: input.inbox.delivery_evidence.candidate_count,
         latest: input.inbox.delivery_evidence.latest === null ? null : Object.freeze({
@@ -299,7 +279,11 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
   });
 }
 
-function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryBoardV1 {
+export function fleetCardIdentity(card: Pick<FleetBoardCardV2, 'provider_repository_id' | 'provider_issue_id' | 'execution'>): string {
+  return `${card.provider_repository_id}/${card.provider_issue_id}/${card.execution?.selector.session_binding_sha256 ?? 'unassigned'}`;
+}
+
+function projectRepository(input: FleetRepositoryBoardInputV2): FleetRepositoryBoardV2 {
   if (input.status === 'unreadable') {
     if (input.error === null) throw new Error(`unreadable repository ${input.repository_id} requires an error`);
     return Object.freeze({
@@ -314,8 +298,8 @@ function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryB
   }
   const cards = input.cards
     .map((card) => projectFleetBoardCard(input.repository_id, card))
-    .sort((left, right) => compare(left.task_id, right.task_id) || compare(left.task_revision, right.task_revision));
-  if (new Set(cards.map(card => card.task_id)).size !== cards.length) throw new Error('Fleet repository contains duplicate task identities');
+    .sort((left, right) => compare(fleetCardIdentity(left), fleetCardIdentity(right)));
+  if (new Set(cards.map(fleetCardIdentity)).size !== cards.length) throw new Error('Fleet repository contains duplicate task identities');
   const unclassified = cards.some((card) => card.placement.kind === 'unclassified');
   const changedCard = cards.some((card) => card.snapshot_consistency === 'changed_during_read');
   const consistency = input.snapshot_consistency === 'degraded' || unclassified
@@ -337,7 +321,7 @@ function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryB
   });
 }
 
-export function fleetBoardSnapshotDigest(input: Omit<FleetBoardSnapshotV1, 'snapshot_sha256' | 'observed_at' | 'sequence'>): string {
+export function fleetBoardSnapshotDigest(input: Omit<FleetBoardSnapshotV2, 'snapshot_sha256' | 'observed_at' | 'sequence'>): string {
   return `sha256:${createHash('sha256').update(canonicalJson(input), 'utf-8').digest('hex')}`;
 }
 
@@ -352,7 +336,7 @@ export function canonicalJson(value: unknown): string {
   return `{${Object.keys(record).sort(compare).map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`;
 }
 
-export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): FleetBoardSnapshotV1 {
+export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV2): FleetBoardSnapshotV2 {
   if (!Number.isSafeInteger(input.sequence) || input.sequence < 1) throw new Error('fleet board sequence must be a positive integer');
   const repositories = input.repositories
     .map(projectRepository)
@@ -372,7 +356,7 @@ export function projectFleetBoardSnapshot(input: FleetBoardProjectionInputV1): F
     if (repository.snapshot_consistency === 'degraded') consistency = 'degraded';
     else if (repository.snapshot_consistency === 'changed_during_read' && consistency === 'stable') consistency = 'changed_during_read';
     for (const card of repository.cards) {
-      if (card.task_state === 'missing') { counts.isolated_execution += 1; continue; }
+      if (card.issue_state === null) { counts.isolated_execution += 1; continue; }
       counts.known_tasks += 1;
       if (card.placement.kind === 'column') counts[card.placement.column] += 1;
       else counts[card.placement.kind] += 1;

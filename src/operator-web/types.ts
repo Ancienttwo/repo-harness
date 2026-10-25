@@ -1,3 +1,4 @@
+import { decodeOperatorTaskSessions } from '../core/operator/task-sessions';
 import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
@@ -30,7 +31,7 @@ import type {
  * module's literal type, so a drift from the core constant fails typecheck
  * here rather than at runtime.
  */
-export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 7;
+export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 8;
 
 /**
  * The repository protocol the browser transport accepts, restated for the
@@ -450,23 +451,30 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const card = requireRecord(value);
   if (Object.hasOwn(card, 'column')) throw new OperatorPayloadError();
   if (!hasRequiredString(card.repository_id) || card.repository_id !== repositoryId) throw new OperatorPayloadError();
-  const taskId = requireTaskDigest(card.task_id);
-  const taskRevision = requireTaskDigest(card.task_revision);
+  requireExactKeys(card, ['repository_id', 'provider_repository_id', 'provider_issue_id', 'issue_state', 'issue_revision', 'execution_status', 'execution',
+    'task_id', 'task_label', 'task_index', 'placement', 'readiness_blockers', 'attention_owner', 'execution_readiness', 'merge_readiness', 'blocker_codes', 'feedback', 'inbox', 'snapshot_consistency', 'error']);
+  const providerRepositoryId = requireString(card.provider_repository_id), providerIssueId = requireString(card.provider_issue_id);
+  if (!/^[1-9][0-9]*$/u.test(providerRepositoryId) || !/^[1-9][0-9]*$/u.test(providerIssueId)) throw new OperatorPayloadError();
+  const issueState = card.issue_state === null ? null : requireOneOf(card.issue_state, ['open', 'closed'] as const);
+  const issueRevision = card.issue_revision === null ? null : requireSha256(card.issue_revision);
+  const executionStatus = requireOneOf(card.execution_status, ['observed', 'unavailable'] as const);
+  let execution: OperatorFleetCardV1['execution'] = null;
+  if (card.execution !== null) {
+    try { execution = decodeOperatorTaskSessions({ protocol: 1, kind: 'operator_task_sessions', repository_id: repositoryId,
+      observed_at: '1970-01-01T00:00:00.000Z', sessions: [card.execution] }, { repository_id: repositoryId }).sessions[0]!; }
+    catch { throw new OperatorPayloadError(); }
+    if (execution.selector.provider_repository_id !== providerRepositoryId || execution.selector.issue_id !== providerIssueId || executionStatus !== 'observed') throw new OperatorPayloadError();
+  }
+  const taskId = requireNullableString(card.task_id);
+  if (taskId !== (execution?.selector.task ?? null)) throw new OperatorPayloadError();
   const taskLabel = requireNullableString(card.task_label);
   const taskIndex = card.task_index === null ? null : requireNonNegativeInteger(card.task_index);
-  const claimId = card.claim_id === null ? null : requireUuid(card.claim_id);
-  const generation = card.generation === null ? null : requirePositiveInteger(card.generation);
-  if ((claimId === null) !== (generation === null)) throw new OperatorPayloadError();
   const placement = decodePlacement(card.placement);
-  const taskState = requireOneOf(card.task_state, ['pending', 'done', 'missing', 'drifted'] as const);
   const readinessBlockers = decodeReadinessBlockers(card.readiness_blockers);
   const attentionOwner = requireOneOf(card.attention_owner, ATTENTION_OWNERS);
   const executionReadiness = card.execution_readiness === null
     ? null
     : requireOneOf(card.execution_readiness, EXECUTION_READINESS);
-  const leaseState = requireOneOf(card.lease_state, LEASE_STATES);
-  const publicationId = requireNullableString(card.publication_id);
-  const headSha = card.head_sha === null ? null : requireGitOid(card.head_sha);
   const mergeReadiness = decodeMergeReadiness(card.merge_readiness);
   const blockerCodes = requireArray(card.blocker_codes).map((code) => requireOneOf(code, MERGE_BLOCKERS));
   const feedback = requireRecord(card.feedback);
@@ -488,9 +496,11 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const snapshotConsistency = requireOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const);
   const error = decodeError(card.error);
   if (error !== null && (placement.kind !== 'unclassified' || placement.reason !== 'observation_failed')) throw new OperatorPayloadError();
-  if ((taskState === 'missing' || taskState === 'drifted') && placement.kind !== 'unclassified') throw new OperatorPayloadError();
+  if (issueState === null && placement.kind !== 'unclassified') throw new OperatorPayloadError();
   const evidence = inbox.delivery_evidence === null ? null : requireRecord(inbox.delivery_evidence);
-  if ((error !== null) !== (evidence === null)) throw new OperatorPayloadError();
+  if (error !== null && evidence !== null) throw new OperatorPayloadError();
+  const inboxObservation = requireOneOf(inbox.observation_status, ['observed', 'unavailable'] as const);
+  if (inboxObservation === 'observed' && evidence === null) throw new OperatorPayloadError();
   const candidateCount = evidence === null ? 0 : requireNonNegativeInteger(evidence.candidate_count);
   const latest = evidence === null || evidence.latest === null ? null : requireRecord(evidence.latest);
   if ((candidateCount === 1) !== (latest !== null)) throw new OperatorPayloadError();
@@ -507,28 +517,23 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   });
   return Object.freeze({
     repository_id: repositoryId,
-    task_id: taskId,
-    task_revision: taskRevision,
-    task_label: taskLabel,
-    task_index: taskIndex,
-    claim_id: claimId,
-    generation,
-    task_state: taskState,
+    provider_repository_id: providerRepositoryId, provider_issue_id: providerIssueId,
+    issue_state: issueState, issue_revision: issueRevision, execution_status: executionStatus, execution,
+    task_id: taskId, task_label: taskLabel, task_index: taskIndex,
     placement,
     readiness_blockers: readinessBlockers,
     attention_owner: attentionOwner,
     execution_readiness: executionReadiness,
-    lease_state: leaseState,
-    publication_id: publicationId,
-    head_sha: headSha,
     merge_readiness: mergeReadiness,
     blocker_codes: Object.freeze(blockerCodes),
     feedback: Object.freeze({
+      observation_status: requireOneOf(feedback.observation_status, ['observed', 'unavailable'] as const),
       pending_count: pendingCount,
       no_progress: noProgress,
       repair_actions: Object.freeze([]),
     }),
     inbox: Object.freeze({
+      observation_status: inboxObservation,
       unread_count: unreadCount,
       addressed_to_current_claim: addressedToCurrentClaim,
       delivery_state: deliveryState,
@@ -554,7 +559,7 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
   if (status === 'unreadable' && (error === null || cards.length !== 0 || snapshotConsistency !== 'degraded')) {
     throw new OperatorPayloadError();
   }
-  if (new Set(cards.map(card => card.task_id)).size !== cards.length) throw new OperatorPayloadError();
+  if (new Set(cards.map(card => `${card.provider_repository_id}/${card.provider_issue_id}/${card.execution?.selector.session_binding_sha256 ?? 'unassigned'}`)).size !== cards.length) throw new OperatorPayloadError();
   if (cards.some(card => card.placement.kind === 'unclassified') && snapshotConsistency !== 'degraded') throw new OperatorPayloadError();
   const cardChanged = cards.some((card) => card.snapshot_consistency === 'changed_during_read');
   if (cardChanged && snapshotConsistency === 'stable') throw new OperatorPayloadError();
@@ -640,7 +645,7 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
   for (const repository of repositories) {
     if (repository.status === 'unreadable') { actualCounts.unreadable++; continue; }
     for (const card of repository.cards) {
-      if (card.task_state === 'missing') { actualCounts.isolated_execution++; continue; }
+      if (card.issue_state === null) { actualCounts.isolated_execution++; continue; }
       actualCounts.known_tasks++;
       if (card.placement.kind === 'column') actualCounts[card.placement.column]++;
       else actualCounts[card.placement.kind]++;

@@ -1,3 +1,4 @@
+import { projectFleetBoardSnapshot, type FleetBoardCardInputV2 } from '../../src/core/fleet/board';
 import { expect, test } from 'bun:test';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
 import { buildExternalSourceProjection } from '../../src/core/external-sources/projection';
@@ -36,4 +37,31 @@ test('unavailable discovery preserves issue rows and unknown provider associatio
   const unobserved = projectProviderBoard({ ...input, sessions: { ...input.sessions, sessions: [session('c', '201')] } });
   expect(unobserved.cards.map(row => [row.provider_issue_id, row.issue_status])).toEqual([['200', 'observed'], ['201', 'unavailable']]);
   expect(unobserved.cards[0]!.sessions).toEqual([]);
+});
+
+function fleetCard(execution: OperatorTaskSession | null, issueState: 'open' | 'closed' | null = 'open'): FleetBoardCardInputV2 {
+  return { provider_repository_id: '100', provider_issue_id: '200', issue_state: issueState, issue_revision: digest,
+    execution_status: 'observed', execution, task_id: execution?.selector.task ?? null, task_label: 'Provider title', task_index: 7,
+    merge_readiness: null, execution_readiness: null, readiness_blockers: null,
+    feedback: { observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: [] },
+    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null, delivery_evidence: null },
+    snapshot_consistency: 'stable', error: null };
+}
+function fleet(cards: readonly FleetBoardCardInputV2[]) {
+  return projectFleetBoardSnapshot({ registry_revision: digest, sequence: 1, observed_at: '2026-08-31T00:00:00.000Z', repositories: [{ repository_id: 'repo_1', repo_root: '/repo', access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards, error: null }] });
+}
+test('fleet preserves simultaneous sessions without deriving issue completion from execution', () => {
+  const result = fleet([fleetCard(session('a')), fleetCard(session('b'))]);
+  expect(result.protocol).toBe(6);
+  expect(result.repositories[0]!.cards).toHaveLength(2);
+  expect(result.counts.working).toBe(2);
+  expect(result.repositories[0]!.cards.map(card => card.execution!.selector.task)).toEqual(['a', 'b']);
+  expect(fleet([fleetCard(session('a'), 'closed')]).counts.done).toBe(1);
+  expect(fleet([fleetCard(null)]).repositories[0]!.cards[0]!.task_id).toBeNull();
+});
+test('unknown provider state or execution observations remain visible and unclassified', () => {
+  expect(fleet([fleetCard(session('a'), null)]).counts.isolated_execution).toBe(1);
+  const result = fleet([{ ...fleetCard(null), execution_status: 'unavailable' }]);
+  expect(result.repositories[0]!.cards[0]!.placement).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
+  expect(result.snapshot_consistency).toBe('degraded');
 });

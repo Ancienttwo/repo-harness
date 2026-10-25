@@ -41,7 +41,7 @@ import {
   type FleetBoardFatalErrorCode,
   type FleetBoardCollectorOptions,
 } from '../fleet/board';
-import type { FleetBoardSnapshotV1 } from '../../core/fleet/board';
+import type { FleetBoardSnapshotV2 } from '../../core/fleet/board';
 
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
@@ -156,7 +156,7 @@ export interface OperatorServerOptions {
   readonly timeout_ms?: number;
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
-  ) => Promise<FleetBoardSnapshotV1>;
+  ) => Promise<FleetBoardSnapshotV2>;
   readonly read_repository_snapshot?: (
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
@@ -584,7 +584,7 @@ function readDefaultRepositorySnapshot(
 type OperatorFleetCollectorResponse =
   | {
       readonly ok: true;
-      readonly snapshot: FleetBoardSnapshotV1;
+      readonly snapshot: FleetBoardSnapshotV2;
     }
   | {
       readonly ok: false;
@@ -598,7 +598,7 @@ type OperatorFleetCollectorResponse =
 function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
   if (value.ok === true && 'protocol' in value && value.protocol === 2 && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1 };
+    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV2 };
   }
   if (
     value.ok === false
@@ -686,7 +686,7 @@ function readDefaultFleetSnapshot(
     readonly env?: NodeJS.ProcessEnv;
     readonly signal: AbortSignal;
   },
-): Promise<FleetBoardSnapshotV1> {
+): Promise<FleetBoardSnapshotV2> {
   return readSupervisedOperatorProcess({
     process_path: fleetCollectorProcessPath(), env: input.env, signal: input.signal,
     start: { type:'start', protocol:2,

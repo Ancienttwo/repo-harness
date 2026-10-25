@@ -5,27 +5,25 @@ import { sep } from 'path';
 import {
   projectFleetBoardSnapshot,
   fleetBoardErrorMessage,
-  type FleetBoardCardInputV1,
+  type FleetBoardCardInputV2,
   type FleetBoardErrorCode,
   type FleetBoardFeedbackSummaryV1,
   type FleetBoardInboxSummaryV1,
-  type FleetBoardProjectionInputV1,
-  type FleetBoardSnapshotV1,
-  type FleetRepositoryBoardInputV1,
+  type FleetBoardProjectionInputV2,
+  type FleetBoardSnapshotV2,
+  type FleetRepositoryBoardInputV2,
 } from '../../core/fleet/board';
-import type { TaskOfferV1 } from '../../core/fleet/task-offer';
-import {
-  collectRepoTaskOffers,
-  FleetOffersError,
-} from './acquire';
 import {
   readRepoHarnessRegistryStrictSnapshot,
   RepoHarnessRegistryStrictError,
   type RepoHarnessRegisteredRepo,
   type RepoHarnessRegistryStrictSnapshot,
 } from '../repo-registry';
-import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { resolveBoard } from '../state/resolve-board';
+import { resolveProviderBoard } from '../state/collect-provider-board-inputs';
+import type { ProviderBoardCardV2 } from '../../core/state/provider-board';
+import type { OperatorTaskSession } from '../../core/operator/task-sessions';
+import { observeOperatorTaskDiffSource } from '../operator/task-diff';
+import { readReviewAdmissionSource } from '../review/admission-source';
 import {
   assertLocalPullRequestRepository,
   collectPullRequestMergeReadinessAbortable,
@@ -33,7 +31,7 @@ import {
   MergeReadinessError,
   type AbortablePullRequestReadinessInput,
 } from '../publication/merge-readiness';
-import { FeedbackError, projectFleetFeedback } from '../publication/feedback';
+import { FeedbackError, projectFleetFeedback, prepareFeedbackSubject } from '../publication/feedback';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
 import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeEffectStoreError, type AgentRuntimeEffectStatus } from '../engineers/agent-runtime-effect-store';
 
@@ -61,6 +59,7 @@ class FleetRepositoryError extends Error {
 /** task_id associates a row for display only; provider identity is the authority. */
 export interface FleetBoardPullRequestSelection {
   readonly repository_id: string;
+  readonly provider_issue_id: string;
   readonly task_id?: string;
   readonly pull_request: import('../../core/publication/merge-readiness').PullRequestSelectionV2;
 }
@@ -88,6 +87,7 @@ export interface FleetRepositoryCollectionOptions extends Required<Pick<FleetBoa
   readonly signal: AbortSignal;
   readonly deadline_exceeded: () => boolean;
   readonly provider_limiter: FleetProviderObservationLimiter;
+  readonly env?: NodeJS.ProcessEnv;
   readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
 }
 
@@ -97,7 +97,7 @@ export interface FleetBoardDependencies {
     repo: RepoHarnessRegisteredRepo,
     registry: RepoHarnessRegistryStrictSnapshot,
     options: FleetRepositoryCollectionOptions,
-  ) => Promise<FleetRepositoryBoardInputV1>;
+  ) => Promise<FleetRepositoryBoardInputV2>;
 }
 
 function positiveInteger(value: number | undefined, name: string, minimum: number, maximum: number): number {
@@ -108,7 +108,7 @@ function positiveInteger(value: number | undefined, name: string, minimum: numbe
   return result;
 }
 
-function repositoryError(repo: RepoHarnessRegisteredRepo, code: FleetBoardErrorCode, error: unknown): FleetRepositoryBoardInputV1 {
+function repositoryError(repo: RepoHarnessRegisteredRepo, code: FleetBoardErrorCode, error: unknown): FleetRepositoryBoardInputV2 {
   // Keep the raw cause only in the rejected promise / process diagnostics. A
   // snapshot is a portable public artifact and must not carry paths or stderr.
   void error;
@@ -159,27 +159,13 @@ function assertRepositoryAuthority(repo: RepoHarnessRegisteredRepo): void {
   }
 }
 
-function feedbackSummary(repoRoot: string, publicationId: string): {
-  readonly summary: FleetBoardFeedbackSummaryV1;
-  readonly snapshot_consistency: 'stable' | 'changed_during_read';
-} {
-  const projection = projectFleetFeedback({ repo_root: repoRoot, publication_id: publicationId });
-  return Object.freeze({
-    summary: Object.freeze({
-      pending_count: projection.pending_count,
-      no_progress: projection.no_progress,
-      repair_actions: projection.repair_actions,
-    }),
-    snapshot_consistency: projection.snapshot_consistency,
-  });
-}
-
 function emptyFeedback(): FleetBoardFeedbackSummaryV1 {
-  return Object.freeze({ pending_count: 0, no_progress: false, repair_actions: Object.freeze([]) });
+  return Object.freeze({ observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: Object.freeze([]) });
 }
 
 function emptyInbox(): FleetBoardInboxSummaryV1 {
   return Object.freeze({
+    observation_status: 'unavailable',
     unread_count: 0,
     addressed_to_current_claim: false,
     delivery_state: 'pending',
@@ -212,12 +198,7 @@ function mapRepositoryError(error: unknown): FleetBoardErrorCode {
   if (error instanceof MergeReadinessError) {
     return 'repo_readiness_unavailable';
   }
-  if (error instanceof FleetOffersError) return error.code === 'repo_unavailable' ? 'repo_unreadable' : 'repo_board_unavailable';
   return 'repo_board_unavailable';
-}
-
-function offerIndex(offers: readonly TaskOfferV1[]): ReadonlyMap<string, TaskOfferV1> {
-  return new Map(offers.map((offer) => [offer.task_id, offer]));
 }
 
 function collectionAbortError(deadlineExceeded: () => boolean): FleetRepositoryError | FleetBoardError {
@@ -231,223 +212,96 @@ function assertCollectionActive(signal: AbortSignal, deadlineExceeded: () => boo
   if (deadlineExceeded() || signal.aborted) throw collectionAbortError(deadlineExceeded);
 }
 
-async function cardInput(
-  repo: RepoHarnessRegisteredRepo,
-  card: ReturnType<typeof resolveBoard>['cards'][number],
-  offers: ReadonlyMap<string, TaskOfferV1>,
-  options: FleetRepositoryCollectionOptions,
-  boardConsistency: 'stable' | 'changed_during_read',
-  runtimeEffects: readonly AgentRuntimeEffectStatus[],
-  runtimeRevision: string,
-): Promise<FleetBoardCardInputV1> {
+function baseCard(card: ProviderBoardCardV2, execution: OperatorTaskSession | null, consistency: 'stable' | 'changed_during_read'): FleetBoardCardInputV2 {
+  return { provider_repository_id: card.provider_repository_id, provider_issue_id: card.provider_issue_id,
+    issue_state: card.issue_status === 'observed' ? card.issue!.state : null, issue_revision: card.issue?.source_revision ?? null,
+    execution_status: card.execution_status, execution, task_id: execution?.selector.task ?? null,
+    task_label: card.issue?.title ?? null, task_index: card.issue ? Number(/#(\d+)$/u.exec(card.issue.display_ref)?.[1]) || null : null,
+    merge_readiness: null, execution_readiness: null, readiness_blockers: null,
+    feedback: emptyFeedback(), inbox: emptyInbox(), snapshot_consistency: consistency, error: null };
+}
+async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: OperatorTaskSession | null,
+  options: FleetRepositoryCollectionOptions, consistency: 'stable' | 'changed_during_read',
+  runtimeEffects: readonly AgentRuntimeEffectStatus[], runtimeRevision: string): Promise<FleetBoardCardInputV2> {
   await yieldToEventLoop();
   assertCollectionActive(options.signal, options.deadline_exceeded);
-  const currentPublication = card.claim?.current_publication ?? null;
+  const base = baseCard(card, execution, consistency);
+  const selections = (options.pull_requests ?? []).filter(value => value.repository_id === repo.id
+    && value.provider_issue_id === card.provider_issue_id && value.pull_request.provider_repository_id === card.provider_repository_id);
+  if (selections.length > 1) throw new MergeReadinessError('provider_data_incomplete', 'board issue requires one explicit PR association');
   let readiness = null;
-  let feedback = emptyFeedback();
-  let feedbackConsistency: 'stable' | 'changed_during_read' = 'stable';
-  const selections = (options.pull_requests ?? []).filter(selection => selection.repository_id === repo.id && selection.task_id === card.task_id);
-  if (selections.length > 1) throw new MergeReadinessError('provider_data_incomplete', 'board readiness requires one explicit PR display association');
   if (selections.length === 1) {
-    assertLocalPullRequestRepository(repo.path, selections[0]!.pull_request.repository);
-    const input: AbortablePullRequestReadinessInput = {
-      ...selections[0]!.pull_request, repo_root: repo.path,
-      gh_bin: process.env.REPO_HARNESS_GH_BIN, signal: options.signal,
-    };
-    // The resolver owns individual gh child lifetime. The fleet round owns the
-    // shared cardinality limit, so many reviewing cards cannot burst providers.
+    const selection = selections[0]!.pull_request;
+    assertLocalPullRequestRepository(repo.path, selection.repository);
     readiness = await options.provider_limiter.run(async () => {
       assertCollectionActive(options.signal, options.deadline_exceeded);
-      return collectPullRequestMergeReadinessAbortable(input);
+      return collectPullRequestMergeReadinessAbortable({ ...selection, repo_root: repo.path, gh_bin: process.env.REPO_HARNESS_GH_BIN, signal: options.signal });
     });
     assertCollectionActive(options.signal, options.deadline_exceeded);
   }
-  if (card.lease_state === 'reviewing' && currentPublication !== null) {
-    const feedbackProjection = feedbackSummary(repo.path, currentPublication.publication_id);
-    feedback = feedbackProjection.summary;
-    feedbackConsistency = feedbackProjection.snapshot_consistency;
+  let inbox = base.inbox, feedback = base.feedback;
+  let observedConsistency = consistency;
+  // Arbitrary runtime labels are valid sessions but cannot address the stable task inbox.
+  if (execution && /^[0-9a-f]{64}$/u.test(execution.selector.task)) {
+    const current_claim = { reference: execution.selector.claim_ref, revision: execution.selector.claim_revision };
+    const input = { repo_root: repo.path, task_id: execution.selector.task, admission_sha256: execution.admission_sha256, current_claim };
+    const messages = summarizeTaskInboxForFleet(input);
+    const runtime = projectTaskAgentRuntimeState({ ...input, session_binding_sha256: execution.selector.session_binding_sha256, statuses: runtimeEffects, env: options.env });
+    inbox = { observation_status: 'observed', unread_count: messages.unread_count, addressed_to_current_claim: messages.addressed_to_current_claim, ...runtime };
+    if (messages.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
+    if (selections.length === 1) {
+      const observed = observeOperatorTaskDiffSource({ ...execution.selector, env: options.env });
+      if (observed.approval.admission_sha256 !== execution.admission_sha256) throw new FeedbackError('publication_claim_mismatch', 'session admission changed');
+      const source = readReviewAdmissionSource(observed.sourceRoot, { 'repository-id': execution.selector.provider_repository_id,
+        'issue-id': execution.selector.issue_id, 'campaign-id': execution.selector.campaign_id, 'grant-sha256': execution.selector.grant_sha256,
+        'policy-sha256': execution.selector.policy_sha256, actor: execution.selector.actor_id });
+      const feedbackInput = { repo_root: repo.path, selection: selections[0]!.pull_request,
+        source: { authority: { source, claim: current_claim, engineer_profile: observed.identity.engineer_profile }, session: { task: execution.selector.task, role: execution.selector.role } } };
+      const subject = prepareFeedbackSubject(feedbackInput);
+      const projection = projectFleetFeedback({ ...feedbackInput, publication_id: subject.publication_id });
+      feedback = { observation_status: 'observed', pending_count: projection.pending_count, no_progress: projection.no_progress, repair_actions: projection.repair_actions };
+      if (projection.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
+    }
   }
-  assertCollectionActive(options.signal, options.deadline_exceeded);
-  const inbox = summarizeTaskInboxForFleet({
-    repo_root: repo.path,
-    task_id: card.task_id,
-    task_revision: card.task_revision,
-    current_claim: card.claim === null ? null : { claim_id: card.claim.claim_id, generation: card.claim.generation },
-  });
-  const runtime = projectTaskAgentRuntimeState({
-    repo_root: repo.path,
-    task_id: card.task_id,
-    task_revision: card.task_revision,
-    current_claim: card.claim === null ? null : { claim_id: card.claim.claim_id, generation: card.claim.generation },
-    statuses: runtimeEffects,
-  });
-  // The runtime statuses were read once for the repository but joined against
-  // this card's receipts just now; re-reading the store is what makes a torn
-  // join observable instead of silently labelled stable.
-  const runtimeConsistency = runtimeEffectsRevision(observeAgentRuntimeEffects(repo.path)) === runtimeRevision
-    ? 'stable'
-    : 'changed_during_read';
-  return Object.freeze({
-    task_id: card.task_id,
-    task_revision: card.task_revision,
-    task_label: rowTaskLabel(card.task),
-    task_index: rowTaskIndex(card.row_index),
-    task_state: card.task_state,
-    lease_state: card.lease_state,
-    claim_id: card.claim?.claim_id ?? null,
-    generation: card.claim?.generation ?? null,
-    current_publication: currentPublication === null ? null : {
-      publication_id: currentPublication.publication_id,
-      head_sha: currentPublication.head_sha,
-    },
-    merge_readiness: readiness,
-    execution_readiness: offers.get(card.task_id)?.execution_readiness ?? null,
-    readiness_blockers: offers.get(card.task_id)?.blockers ?? null,
-    feedback,
-    inbox: Object.freeze({
-      unread_count: inbox.unread_count,
-      addressed_to_current_claim: inbox.addressed_to_current_claim,
-      ...runtime,
-    }),
-    snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency, feedbackConsistency, runtimeConsistency),
-    error: null,
-  });
+  if (runtimeEffectsRevision(observeAgentRuntimeEffects(repo.path)) !== runtimeRevision) observedConsistency = 'changed_during_read';
+  return { ...base, merge_readiness: readiness, inbox, feedback, snapshot_consistency: observedConsistency };
 }
-
-/**
- * A card whose own observation threw keeps only what the board already proved
- * -- identity, row cells, lease pointer -- and reports every observation-derived
- * field in its empty form. Nothing is invented to fill the failed read.
- */
-function failedCardInput(
-  card: ReturnType<typeof resolveBoard>['cards'][number],
-  boardConsistency: 'stable' | 'changed_during_read',
-  code: FleetBoardErrorCode,
-): FleetBoardCardInputV1 {
-  const currentPublication = card.claim?.current_publication ?? null;
-  return Object.freeze({
-    task_id: card.task_id,
-    task_revision: card.task_revision,
-    task_label: rowTaskLabel(card.task),
-    task_index: rowTaskIndex(card.row_index),
-    task_state: card.task_state,
-    lease_state: card.lease_state,
-    claim_id: card.claim?.claim_id ?? null,
-    generation: card.claim?.generation ?? null,
-    current_publication: currentPublication === null ? null : {
-      publication_id: currentPublication.publication_id,
-      head_sha: currentPublication.head_sha,
-    },
-    merge_readiness: null,
-    execution_readiness: null,
-    readiness_blockers: null,
-    feedback: emptyFeedback(),
-    inbox: emptyInbox(),
-    snapshot_consistency: boardConsistency,
-    error: Object.freeze({ code, message: fleetBoardErrorMessage(code) }),
-  });
-}
-
-/** Round-level preemption is never contained at the card boundary. */
 function isCollectionPreemption(error: unknown): boolean {
-  return error instanceof FleetBoardError
-    || (error instanceof FleetRepositoryError && error.code === 'repo_collection_timeout');
+  return error instanceof FleetBoardError || (error instanceof FleetRepositoryError && error.code === 'repo_collection_timeout');
 }
-
-/**
- * `projectBoard` flattens a missing canonical row into empty cells, so the
- * fleet card restores the distinction the board erased: an empty cell is "no
- * row to name", not a label. Neither value is re-derived from the task digest.
- */
-function rowTaskLabel(task: string): string | null {
-  return task === '' ? null : task;
-}
-
-function rowTaskIndex(rowIndex: string): number | null {
-  return /^[0-9]+$/u.test(rowIndex) ? Number.parseInt(rowIndex, 10) : null;
-}
-
-function cardInputConsistency(
-  board: 'stable' | 'changed_during_read',
-  inbox: 'stable' | 'changed_during_read',
-  feedback: 'stable' | 'changed_during_read',
-  runtime: 'stable' | 'changed_during_read',
-): 'stable' | 'changed_during_read' {
-  return board === 'stable' && inbox === 'stable' && feedback === 'stable' && runtime === 'stable'
-    ? 'stable'
-    : 'changed_during_read';
-}
-
-async function collectRepository(
-  repo: RepoHarnessRegisteredRepo,
-  registry: RepoHarnessRegistryStrictSnapshot,
-  options: FleetRepositoryCollectionOptions,
-): Promise<FleetRepositoryBoardInputV1> {
+async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: RepoHarnessRegistryStrictSnapshot,
+  options: FleetRepositoryCollectionOptions): Promise<FleetRepositoryBoardInputV2> {
   const controller = new AbortController();
   const abort = () => controller.abort();
-  options.signal?.addEventListener('abort', abort, { once: true });
+  options.signal.addEventListener('abort', abort, { once: true });
   if (options.signal.aborted) controller.abort();
   try {
-    // Controller creation deliberately precedes every synchronous board/offer
-    // read so an already-arrived outer abort cannot start a provider child.
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     assertRepositoryAuthority(repo);
+    const board = resolveProviderBoard({ repository_id: repo.id, env: options.env });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
-    const sprintPath = readActiveSprintPath(repo.path);
-    if (sprintPath === null && options.pull_requests?.some(selection => selection.repository_id === repo.id)) throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no board display rows');
-    assertCollectionActive(controller.signal, options.deadline_exceeded);
-    if (sprintPath === null) {
-      return Object.freeze({
-        repository_id: repo.id,
-        repo_root: repo.path,
-        access_mode: repo.accessMode,
-        status: 'ok',
-        snapshot_consistency: 'stable',
-        cards: Object.freeze([]),
-        error: null,
-      });
-    }
-    const targetRef = readCanonicalTargetRef(repo.path);
-    assertCollectionActive(controller.signal, options.deadline_exceeded);
-    const board = resolveBoard(repo.path, { sprintPath, targetRef, nowMs: options.now_ms });
     for (const association of options.pull_requests ?? []) {
       if (association.repository_id !== repo.id) continue;
-      validatePullRequestSelection(association.pull_request);
-      if (!association.task_id || !board.cards.some(card => card.task_id === association.task_id)) {
-        throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no known display row association');
+      const card = board.cards.find(card => card.provider_repository_id === association.pull_request.provider_repository_id && card.provider_issue_id === association.provider_issue_id);
+      if (!card || (association.task_id !== undefined && !card.sessions.some(session => session.selector.task === association.task_id))) {
+        throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no exact provider issue display association');
       }
     }
-
-    assertCollectionActive(controller.signal, options.deadline_exceeded);
-    const offered = collectRepoTaskOffers(repo, registry, { now_ms: options.now_ms });
-    assertCollectionActive(controller.signal, options.deadline_exceeded);
-    const offers = offerIndex(offered?.offers ?? []);
-    const runtimeEffects = observeAgentRuntimeEffects(repo.path);
-    const runtimeRevision = runtimeEffectsRevision(runtimeEffects);
-    const cardOptions = { ...options, signal: controller.signal };
-    const cards = await collectBounded(board.cards, options.max_concurrency, async (card) => {
-      try {
-        return await cardInput(repo, card, offers, cardOptions, board.snapshot_consistency, runtimeEffects, runtimeRevision);
-      } catch (error) {
-        // One damaged card is one damaged card. Only round preemption, which
-        // owns no card of its own, still fails the whole repository.
+    const runtimeEffects = observeAgentRuntimeEffects(repo.path), runtimeRevision = runtimeEffectsRevision(runtimeEffects);
+    const rows = board.cards.flatMap(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
+    const cards = await collectBounded(rows, options.max_concurrency, async ({ card, execution }) => {
+      try { return await cardInput(repo, card, execution, { ...options, signal: controller.signal }, board.snapshot_consistency, runtimeEffects, runtimeRevision); }
+      catch (error) {
         if (isCollectionPreemption(error)) throw error;
-        return failedCardInput(card, board.snapshot_consistency, mapRepositoryError(error));
+        const code = mapRepositoryError(error);
+        return { ...baseCard(card, execution, board.snapshot_consistency), error: { code, message: fleetBoardErrorMessage(code) } };
       }
     });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
-    return Object.freeze({
-      repository_id: repo.id,
-      repo_root: repo.path,
-      access_mode: repo.accessMode,
-      status: 'ok',
-      snapshot_consistency: board.snapshot_consistency,
-      cards: Object.freeze(cards),
-      error: null,
-    });
-  } finally {
-    options.signal?.removeEventListener('abort', abort);
-  }
+    return { repository_id: repo.id, repo_root: repo.path, access_mode: repo.accessMode, status: 'ok',
+      snapshot_consistency: board.source_status === 'unavailable' ? 'degraded' : board.snapshot_consistency,
+      cards, error: board.source_status === 'unavailable' ? { code: 'repo_board_unavailable', message: fleetBoardErrorMessage('repo_board_unavailable') } : null };
+  } finally { options.signal.removeEventListener('abort', abort); }
 }
 
 export const productionFleetBoardDependencies: FleetBoardDependencies = Object.freeze({
@@ -519,7 +373,7 @@ export function createFleetProviderObservationLimiter(maxConcurrency: number): F
 export async function collectFleetBoard(
   options: FleetBoardCollectorOptions = {},
   dependencies: FleetBoardDependencies = productionFleetBoardDependencies,
-): Promise<FleetBoardSnapshotV1> {
+): Promise<FleetBoardSnapshotV2> {
   if (options.repository_id !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(options.repository_id)) {
     throw new FleetBoardError('fleet_board_argument_invalid', 'invalid repository selector');
   }
@@ -557,6 +411,7 @@ export async function collectFleetBoard(
       for (const association of options.pull_requests ?? []) {
         if (!registry.repos.some(repo => repo.id === association.repository_id)
           || (options.repository_id !== undefined && options.repository_id !== association.repository_id)) throw new FleetBoardError('fleet_board_argument_invalid', 'PR association selects a repository outside this board');
+        if (!/^[1-9][0-9]*$/u.test(association.provider_issue_id)) throw new FleetBoardError('fleet_board_argument_invalid', 'explicit provider issue identity is required');
         validatePullRequestSelection(association.pull_request);
       }
 
@@ -603,7 +458,7 @@ export async function collectFleetBoard(
           signal: controller.signal,
           deadline_exceeded: deadlineExceededNow,
           provider_limiter: providerLimiter,
-          pull_requests: options.pull_requests,
+          pull_requests: options.pull_requests, env: options.env,
         });
         return preempted.has(token)
           ? repositoryError(repo, 'repo_collection_timeout', new Error('fleet collection round deadline exceeded'))
@@ -615,7 +470,7 @@ export async function collectFleetBoard(
       }
     });
     if (options.signal?.aborted) throw collectionAbortError(() => false);
-    const input: FleetBoardProjectionInputV1 = {
+    const input: FleetBoardProjectionInputV2 = {
       registry_revision: registry.registryRevision,
       sequence,
       observed_at: options.observed_at ?? new Date(nowMs).toISOString(),
@@ -651,11 +506,11 @@ function sleepAbortable(delayMs: number, signal: AbortSignal | undefined): Promi
 export async function* watchFleetBoard(
   options: FleetBoardWatchOptions = {},
   dependencies: FleetBoardDependencies = productionFleetBoardDependencies,
-): AsyncGenerator<FleetBoardSnapshotV1> {
+): AsyncGenerator<FleetBoardSnapshotV2> {
   const intervalMs = positiveInteger(options.interval_ms ?? 30_000, 'interval-ms', 1_000, 300_000);
   let sequence = 1;
   while (!options.signal?.aborted) {
-    let snapshot: FleetBoardSnapshotV1;
+    let snapshot: FleetBoardSnapshotV2;
     try {
       snapshot = await collectFleetBoard({ ...options, sequence }, dependencies);
     } catch (error) {
