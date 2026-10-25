@@ -232,12 +232,12 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 以下是回边与边界缺口。它们是重构证据，不是声明的关系。
 
-- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`，`:316` 内联导入 `lease-liveness.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
+- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
 - **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
 - **历史 coordination-plane → engineer-scheduling 回边。** [archived sprint-schema-migration.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/src/effects/state/sprint-schema-migration.ts) 曾导入 engineers scheduling。#820 已删除该迁移文件。
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
-- **持久写原语在 evidence 目录。** 保留的 worktree 支持代码仍使用 `src/effects/evidence/atomic-append.ts`（例如 `src/effects/state/coordination-cutover.ts`）。lease store 已改为读取历史记录。它是通用持久写原语。候选做法：移到 execution-primitives。
+- **持久写原语在 evidence 目录。** 保留的 worktree 支持代码仍使用 `src/effects/evidence/atomic-append.ts`（例如 `src/effects/state/coordination-worktree-topology.ts`）。lease store 已改为读取历史记录。它是通用持久写原语。候选做法：移到 execution-primitives。
 - **`readonly-observation.ts` 被下层导入。** `src/effects/git/common-directory.ts:1` 与 `readonly-virtual-tree.ts:4` 导入它，evidence 与 `scripts/acceptance-receipt.ts:3` 也导入它。候选做法：移到 execution-primitives。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** `effective-state-authority.md` 把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。

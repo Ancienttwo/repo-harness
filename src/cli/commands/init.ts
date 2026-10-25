@@ -38,13 +38,6 @@ import { ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
-import {
-  cutoverMarkerPath,
-  formatCutoverBlockers,
-  inspectCutoverQuiescence,
-  isCutoverInstalled,
-  recordCutoverInstalled,
-} from "../../effects/state/coordination-cutover";
 import type { AdoptionMode } from "../../core/adoption/modes";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -323,45 +316,6 @@ export function runInit(
     };
   }
 
-  // Quiescent cutover gate, one-shot. The shared lease protocol relocates
-  // sprint execution ownership; crossing over while legacy per-worktree
-  // markers, an executing contract worktree, or an unfinished closeout are live
-  // would let a fresh agent re-claim work that is actively in flight.
-  //
-  // The crossing happens once per clone, so the gate is guarded by the
-  // installed-protocol marker. Live contract worktrees are the normal steady
-  // state of an adopted repository; a permanently armed gate would refuse every
-  // later upgrade, including ones that have nothing to do with sprint leases.
-  // A null marker path means the target is not a git clone, where there is no
-  // coordination plane and nothing to be quiescent about.
-  //
-  // The gate runs here, before anything is written, but the marker that
-  // disarms it is written only after the adoption apply below succeeds.
-  // Recording it here would disarm a one-shot gate on a run that never
-  // finished adopting: a later legacy marker produced under an old helper
-  // would then be crossed without any quiescence check at all.
-  const cutoverMarker = apply ? cutoverMarkerPath(repoRoot) : null;
-  const cutoverPending = cutoverMarker !== null && !isCutoverInstalled(repoRoot);
-  if (cutoverPending) {
-    const quiescence = inspectCutoverQuiescence(repoRoot);
-    if (!quiescence.quiescent) {
-      const blocked: InitStep[] = [
-        {
-          step: "cutover quiescence",
-          status: "failed",
-          detail: "outstanding sprint execution state; finish or release it before upgrading",
-          stderr: formatCutoverBlockers(quiescence),
-        },
-      ];
-      return {
-        exitCode: 1,
-        repoRoot,
-        steps: blocked,
-        lines: blocked.flatMap(renderStep),
-      };
-    }
-  }
-
   steps.push(requiredHerdrSkillReadiness(target, commandEnv));
 
   const adoptionApply = apply
@@ -375,12 +329,6 @@ export function runInit(
     stdout: adoption.output,
   };
   steps.push(migrate);
-
-  // The crossing is recorded only now: the gate stays armed for every run that
-  // did not finish adopting this clone.
-  if (cutoverPending && migrate.status === "ok") {
-    recordCutoverInstalled(cutoverMarker!);
-  }
 
   const registration = adoptionApply?.report.registration;
   if (apply && migrate.status === "ok" && registration) {
