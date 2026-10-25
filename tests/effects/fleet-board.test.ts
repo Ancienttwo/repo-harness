@@ -1,3 +1,4 @@
+import { readReviewAdmissionSourceForIssue } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
@@ -63,10 +64,10 @@ function card(index: number): FleetBoardCardInputV2 {
     inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
     snapshot_consistency: 'stable', error: null };
 }
-function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = []): void {
+function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = [], firstIssueNumber = 1): void {
   const digest = `sha256:${'a'.repeat(64)}`;
   const issues = titles.map((title, index) => buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
-    provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${index + 1}`, url: `https://github.com/example/fleet/issues/${index + 1}`,
+    provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${firstIssueNumber + index}`, url: `https://github.com/example/fleet/issues/${firstIssueNumber + index}`,
     observed_at: '2026-08-31T00:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
     comments_policy: 'omitted', policy_revision: digest, eligible: eligibilityReasons.length === 0, eligibility_reasons: [...eligibilityReasons].sort() }));
   issues.forEach(issue => writeProviderIssueObservation(root, issue));
@@ -177,7 +178,7 @@ function createReviewingProviderFixture(
   };
 }
 
-function createPlainBoardFixture(root: string, rows: number, repoId: string): RepoHarnessRegisteredRepo {
+function createPlainBoardFixture(root: string, rows: number, repoId: string, firstIssueNumber = 1): RepoHarnessRegisteredRepo {
   const sprintPath = 'plans/sprints/fleet-plain.sprint.md';
   git(root, 'init', '-b', 'main');
   git(root, 'config', 'user.name', 'Fleet Plain Test');
@@ -197,29 +198,43 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'plain fixture');
   const entry = registerFixture(root);
-  seedIssues(root, entry.id, rowNames);
+  seedIssues(root, entry.id, rowNames, [], firstIssueNumber);
   return entry;
 }
 
 describe('fleet board collector', () => {
-  test.each(['inline', 'contract'] as const)('selects only a fresh explicit %s campaign for an eligible issue', async executionMode => {
+  test.each([['inline', 'labels'], ['contract', 'issue_numbers']] as const)('selects a fresh explicit %s campaign through the real %s policy reader', async (executionMode, selectionKind) => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-mode-')));
     const authorityHome = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-home-')));
     onTestFinished(() => { rmSync(root, { recursive: true, force: true }); rmSync(authorityHome, { recursive: true, force: true }); });
-    const registered = createPlainBoardFixture(root, 1, 'unused');
+    const registered = createPlainBoardFixture(root, 1, 'unused', 903);
     const entry = { ...registered, accessMode: 'read_write' as const };
     const approved = seedReviewAdmissionFixture(root, authorityHome, { repositoryId: '1001', issueId: '2001', executionMode });
+    const policyPath = join(root, '.ai/harness/policy.json');
+    const policyBytes = JSON.stringify({ external_sources: { version: 1, mode: 'manual', github: {
+      enabled: true, repository: 'acme/widgets',
+      selection: selectionKind === 'labels' ? { kind: 'labels', labels_all: ['ready'], assignees_any: [] }
+        : { kind: 'issue_numbers', issue_numbers: [902, 903] },
+      limits: { max_pages: 2, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 },
+    } } });
+    writeFileSync(policyPath, policyBytes);
     const association = { repository_id: entry.id, provider_repository_id: '1001', provider_issue_id: '2001',
       admission: { campaign_id: approved.admission.campaign_id, grant_sha256: approved.grant,
         policy_sha256: approved.admission.policy.policy_sha256, actor_id: approved.admission.actor_id } };
     let reads = 0;
     const dependencies: FleetBoardDependencies = { ...productionFleetBoardDependencies,
       read_registry: () => registry([entry]),
-      read_admission_source: (selectedRoot, values) => {
+      read_admission_source: (selectedRoot, values, issueNumber) => {
         expect(realpathSync(selectedRoot)).toBe(root);
         expect(values).toEqual({ 'repository-id': '1001', 'issue-id': '2001', 'campaign-id': association.admission.campaign_id,
           'grant-sha256': approved.grant, 'policy-sha256': association.admission.policy_sha256, actor: association.admission.actor_id });
-        return { ...approved.source, runner: (args, options) => {
+        expect(issueNumber).toBe(903);
+        const source = readReviewAdmissionSourceForIssue(selectedRoot, values, issueNumber);
+        expect(source.issuePolicy).toMatchObject({ mode: 'manual', github: { repository: 'acme/widgets',
+          selection: { kind: 'issue_numbers', issue_numbers: [903] },
+          limits: { max_pages: 2, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 } } });
+        // Only the account-owned test home and offline provider transport are injected.
+        return { ...source, authorityHome, runner: (args, options) => {
           reads++; expect(options.timeout_ms).toBeGreaterThan(0); expect(options.timeout_ms).toBeLessThanOrEqual(30_000);
           return approved.source.runner!(args, options);
         } };
@@ -234,11 +249,17 @@ describe('fleet board collector', () => {
       placement: executionMode === 'inline' ? { kind: 'alternate_workflow', workflow: 'inline' } : { kind: 'column', column: 'available' },
     });
     expect(reads).toBe(8);
+    expect(readFileSync(policyPath, 'utf8')).toBe(policyBytes);
+    approved.issue.id = '2002';
+    const wrongIssue = await collectFleetBoard({ admission_associations: [association] }, dependencies);
+    expect(wrongIssue.repositories[0]!.cards[0]).toMatchObject({ execution_readiness: null,
+      placement: { kind: 'unclassified', reason: 'readiness_unavailable' } });
+    approved.issue.id = '2001';
     reads = 0;
     const readOnly = await collectFleetBoard({ admission_associations: [association] }, { ...dependencies, read_registry: () => registry([registered]) });
     expect(readOnly.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
     expect(reads).toBe(0);
-    seedIssues(root, entry.id, ['ineligible'], ['missing_label:ready']);
+    seedIssues(root, entry.id, ['ineligible'], ['missing_label:ready'], 903);
     const ineligible = await collectFleetBoard({ admission_associations: [association] }, dependencies);
     expect(ineligible.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
     expect(reads).toBe(0);
