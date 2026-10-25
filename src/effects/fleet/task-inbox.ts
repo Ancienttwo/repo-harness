@@ -945,6 +945,13 @@ function readReplyChain(input: { repo_root: string; task_id: string; recipient: 
   return { intent, event, commit, acknowledgement, observation: inspectTaskReplyChain({ parent, acknowledgement, intent, event, commit }) };
 }
 
+export interface TaskActivityCoverage {
+  readonly complete: boolean;
+  readonly reason: 'scan' | 'bytes' | 'deadline' | 'page' | null;
+  readonly scanned: number;
+  readonly bytes: number;
+}
+
 /** Historical observations never acquire a Lease/Binding lock or perform delivery. */
 export function readHistoricalTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
@@ -1033,8 +1040,8 @@ export function readHistoricalTaskActivity(input: {
   } catch (error) { if (!exhausted) throw error; }
   const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
   const reason = exhausted ?? (more ? 'page' as const : null);
-  return { history_exists: historyExists, entries,
-    coverage: { complete: reason === null, reason, scanned, bytes },
+  const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
+  return { history_exists: historyExists, entries, coverage,
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
   })();
   assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
@@ -1165,8 +1172,8 @@ export function readAdmittedTaskActivity(input: {
   } catch (error) { if (!exhausted) throw error; }
   const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
   const reason = exhausted ?? (more ? 'page' as const : null);
-  return { history_exists: historyExists, entries,
-    coverage: { complete: reason === null, reason, scanned, bytes },
+  const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
+  return { history_exists: historyExists, entries, coverage,
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
   })();
   assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
