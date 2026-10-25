@@ -219,8 +219,33 @@ describe('repository snapshot failure recovery', () => {
     expect(detail().querySelector('#detail-pane-title')?.textContent).toBe(fixtureTasks.blocked.task_label);
     expect(document.querySelector('.organization-summary')?.textContent).toContain(organization.overlay.scheduling!.profiles[0]!.engineer_id);
     await tab('planning');
-    expect(document.querySelector(`[data-planning-task="${fixtureTasks.blocked.task_id}"]`)).not.toBeNull();
+    expect(document.querySelector(`[data-planning-task="1001:${2000 + fixtureTasks.blocked.task_index}"]`)).not.toBeNull();
     expect(window.location.search).toBe(selectedSearch);
     expect(detail().querySelector('#detail-pane-title')?.textContent).toBe(fixtureTasks.blocked.task_label);
   });
+});
+
+test('Planning preserves authored provider graph dependencies and explicit session choices', async () => {
+  const {PlanningView}=await import('../../src/operator-web/PlanningView');
+  const {readFileSync}=await import('node:fs');
+  const repository=stableSnapshot.repositories[0]!;
+  const planning=planningObservationFixture(repository.repository_id,repository.cards);
+  const task=planning.scheduling.tasks.find(row=>row.sessions.length>0)!;
+  const definition=JSON.parse(readFileSync(new URL('../fixtures/provider-work-graph-v2/graph.json',import.meta.url),'utf8')).work_packages[0];
+  const edge={repository_id:repository.repository_id,work_package_id:'dependency',required_state:'provider_closed' as const,acceptance_authority:null};
+  const graph={packages:[{...definition,repository_id:repository.repository_id,task:{provider_repository_id:task.provider_repository_id,issue_id:task.issue_id},issue:task.issue,
+    work_package_revision:'sha256:'+'f'.repeat(64),depends_on:[edge],dependencies:[{...edge,status:'unsatisfied' as const,authority_revision:'sha256:'+'e'.repeat(64)}]}],
+    sources:[{repository_id:repository.repository_id,commit:'a'.repeat(40),graph_path:'.ai/harness/work-graph.v2.json',work_graph_revision:'sha256:'+'d'.repeat(64)}]};
+  const observed={...planning,graph:{status:'observed' as const,snapshot:graph}};
+  const {decodeOperatorPlanningSnapshot}=await import('../../src/core/operator/planning-snapshot');
+  expect(decodeOperatorPlanningSnapshot(observed,repository.repository_id)).toEqual(observed);
+  const selected: string[]=[];
+  await mount(<PlanningView state={{kind:'ready',snapshot:{...repositoryObservationFixture(repository.repository_id),planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:observed}}}}
+    repositoryId={repository.repository_id} cards={repository.cards} onSelect={card=>selected.push(card.execution?.selector.session_binding_sha256 ?? 'unassigned')} t={key=>translate('en',key)} />);
+  expect(document.body.textContent).toContain('provider_closed');expect(document.body.textContent).toContain('unsatisfied');
+  expect(document.body.textContent).toContain('affected-checks');expect(document.body.textContent).toContain('.ai/harness/work-graph.v2.json');
+  expect(selected).toEqual([]);
+  const item=document.querySelector(`[data-planning-task="${task.provider_repository_id}:${task.issue_id}"]`)!;
+  await act(async()=>item.querySelector<HTMLButtonElement>('button')!.click());
+  expect(selected).toEqual([task.sessions[0]!.session.selector.session_binding_sha256]);
 });

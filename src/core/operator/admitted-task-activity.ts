@@ -92,7 +92,9 @@ export function decodeAdmittedTaskActivity(value: unknown, request: AdmittedTask
   let previous = r.after;
   for (const entry of r.entries) {
     if (!exact(entry, ['event','receipts','replies']) || !eventValid(entry.event, r.selector) || !Array.isArray(entry.receipts) || !Array.isArray(entry.replies)
-      || entry.receipts.length > TASK_ACTIVITY_MAX_SCAN || entry.replies.length > TASK_ACTIVITY_MAX_SCAN || !entry.receipts.every(v => receiptValid(v, entry.event)) || !entry.replies.every(replyValid)) return invalid();
+      || entry.receipts.length > TASK_ACTIVITY_MAX_SCAN || entry.replies.length > TASK_ACTIVITY_MAX_SCAN || !entry.replies.every(replyValid)) return invalid();
+    const event = entry.event;
+    if (!entry.receipts.every(v => receiptValid(v, event))) return invalid();
     if ((previous !== null && entry.event.message_id <= previous) || (r.message_id !== null && entry.event.message_id !== r.message_id)) return invalid();
     previous = entry.event.message_id;
   }

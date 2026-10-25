@@ -10,7 +10,7 @@ import type { OperatorTaskDiff, OperatorTaskDiffRequest } from '../../src/core/o
 
 let root: Root;
 let window: Window;
-const card = allCards(stableSnapshot).find(c => c.claim_id !== null && c.placement.kind === 'column' && c.placement.column === 'working')!;
+const card = allCards(stableSnapshot).find(c => c.execution !== null && c.placement.kind === 'column' && c.placement.column === 'working')!;
 const t = (key: Parameters<typeof translate>[1]) => translate('en', key);
 const selector: OperatorTaskDiffRequest = { repository_id: card.repository_id, provider_repository_id: '123', issue_id: '456',
   campaign_id: 'review', task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2',

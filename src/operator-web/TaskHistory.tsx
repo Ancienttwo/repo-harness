@@ -1,3 +1,4 @@
+import { HistoricalTaskActivity, type TaskActivityReader } from './TaskEvidence';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { decodeOperatorTaskHistory, TASK_HISTORY_FAILURES, type OperatorTaskHistory } from '../core/operator/task-history';
 import { fetchTaskHistory } from './task-history';
@@ -6,7 +7,7 @@ import type { OperatorTranslate } from './i18n';
 export type TaskHistoryReader = typeof fetchTaskHistory;
 
 /** Historical evidence never mounts current-task actions or constructs a card. */
-export function TaskHistory({repositoryId,taskId,revision,generation,read=fetchTaskHistory,onClose,t}:{repositoryId:string;taskId:string;revision:string|null;generation:number;read?:TaskHistoryReader;onClose:()=>void;t:OperatorTranslate}) {
+export function TaskHistory({repositoryId,taskId,revision,generation,read=fetchTaskHistory,readActivity,onClose,t}:{repositoryId:string;taskId:string;revision:string|null;generation:number;read?:TaskHistoryReader;readActivity?:TaskActivityReader;onClose:()=>void;t:OperatorTranslate}) {
   const identity=JSON.stringify([repositoryId,taskId,revision]);
   const [state,setState]=useState<{identity:string;value:OperatorTaskHistory|null;loading:boolean;failure:string|null}>({identity,value:null,loading:true,failure:null});
   const heading=useRef<HTMLHeadingElement>(null);
@@ -45,5 +46,6 @@ export function TaskHistory({repositoryId,taskId,revision,generation,read=fetchT
       <p>{t('history.coverage',{count:current.value.coverage.commits_examined})}</p>
       <h3>{t('history.source')}</h3><pre>{JSON.stringify(current.value.source,null,2)}</pre>
     </>}
+    <HistoricalTaskActivity repositoryId={repositoryId} taskId={taskId} generation={generation} readActivity={readActivity} t={t} />
   </section>;
 }

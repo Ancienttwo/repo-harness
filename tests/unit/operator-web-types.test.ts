@@ -21,24 +21,22 @@ const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
 
-test('Planning transport binds canonical task observations and requires independent source isolation',()=>{
+test('Planning transport binds provider tasks, explicit admitted sessions and independent graph observations',()=>{
   const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(repositorySnapshot.repository_id,repository.cards);
   const envelope={...repositorySnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
   expect(decodeOperatorRepositorySnapshot(envelope).planning).toEqual(envelope.planning);
   const {planning:_,...missing}=envelope;
   expect(()=>decodeOperatorRepositorySnapshot(missing)).toThrow();
-  expect(()=>decodeOperatorRepositorySnapshot({...envelope,protocol:3})).toThrow();
-  const canonical=snapshot.canonical!,task=snapshot.tasks[0]!;
+  const task=snapshot.scheduling.tasks[0]!;
   for(const bad of [
     {...snapshot,repository_id:'another-repo'},
-    {...snapshot,canonical:{...canonical,commit:'d'.repeat(40)}},
-    {...snapshot,tasks:[task,task]},
-    {...snapshot,tasks:Array.from({length:201},()=>task)},
-    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'engineering-v2',work_graph_revision:snapshotDigest,packages:[],sources:Array.from({length:9},(_,index)=>({repository_id:`repo_${index.toString(16).padStart(16,'0')}`,commit:canonical.commit,work_graph_revision:snapshotDigest}))}}},
-    {...snapshot,tasks:[{...task,observation:{...task.observation,authorization_revision:2}}]},
-    {...snapshot,tasks:[{...task,canonical:{...canonical,sprint_path:'../secret'}}]},
-    {...snapshot,graph:{...snapshot.graph,observed_at:'2025-01-01T00:00:00Z'}},
-    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:snapshotDigest,packages:[],sources:[]}}},
+    {...snapshot,protocol:1},
+    {...snapshot,scheduling:{...snapshot.scheduling,tasks:[task,task]}},
+    {...snapshot,scheduling:{...snapshot.scheduling,tasks:Array.from({length:201},()=>task)}},
+    {...snapshot,scheduling:{...snapshot.scheduling,repository_id:'another-repo'}},
+    {...snapshot,graph:{status:'unavailable',code:'unclassified'}},
+    {...snapshot,graph:{status:'observed',snapshot:{packages:[],sources:[]}}},
+    {...snapshot,observation:{...snapshot.observation,authorization_revision:-1}},
   ])expect(()=>decodeOperatorPlanningSnapshot(bad,repositorySnapshot.repository_id)).toThrow();
   const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
   expect(decodeOperatorRepositorySnapshot({...envelope,planning:unavailable}).organization.status).toBe('unavailable');
@@ -458,4 +456,15 @@ test('admitted activity requires a closed selected session and unique pagination
   expect(()=>decodeAdmittedTaskActivity({...value,selector:{...selector,grant_sha256:'sha256:'+'9'.repeat(64)}},request)).toThrow();
   expect(()=>decodeAdmittedTaskActivity({...value,source_root:'/tmp/private'},request)).toThrow();
   expect(()=>decodeAdmittedTaskActivity({...value,protocol:1,kind:'operator_task_activity'},request)).toThrow();
+});
+
+
+test('current provider links select an exact session without falling back to task history', async () => {
+  const {parseTaskLocation,taskLocationSearch}=await import('../../src/operator-web/task-location');
+  const current=parseTaskLocation(`?repository=repo-a&provider_repository_id=123&issue_id=456&session_binding_sha256=${snapshotDigest}`);
+  expect(current.invalid).toBe(false);expect(current.selection?.historical).toBe(false);
+  expect(parseTaskLocation(taskLocationSearch(current.repositoryId,current.selection))).toEqual(current);
+  const unassigned=parseTaskLocation('?repository=repo-a&provider_repository_id=123&issue_id=456');
+  expect(unassigned.selection).toMatchObject({historical:false,sessionBinding:null,key:'repo-a:123:456:unassigned'});
+  for(const query of [`?repository=repo-a&task=${taskId}`, '?repository=repo-a&provider_repository_id=123&issue_id=456&issue_id=789', '?repository=repo-a&provider_repository_id=123&issue_id=456&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
 });

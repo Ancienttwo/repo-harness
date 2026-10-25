@@ -333,14 +333,25 @@ export function repositoryObservationFixture(repositoryId = 'repo_a5b76eee64af71
 export const repositorySnapshot = repositoryObservationFixture();
 
 export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
-  const tasks = cards.filter(card => card.task_state !== 'missing').map(card => ({
-    ...taskContextFixture({repository_id:repositoryId,task_id:card.task_id,expected_task_revision:card.task_revision}),
-    task: {title:card.task_label ?? card.task_id,mode:'contract',acceptance:'Read the canonical requirements and preserve the exact Task identity.',state:card.task_state},
-  }));
-  const canonical = tasks[0]?.canonical ?? null;
-  const observation = {observed_at:'2026-09-22T07:00:00+08:00',authorization_revision:1,board_revision:canonical ? `sha256:${'b'.repeat(64)}` : null};
-  return {protocol:1,kind:'operator_planning_snapshot',repository_id:repositoryId,canonical,tasks,observation,
-    graph:{status:'observed',observed_at:observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:null,packages:[],sources:[]}}};
+  const hash = `sha256:${'b'.repeat(64)}`, at = '2026-09-22T07:00:00+08:00';
+  const tasks: import('../core/engineers/scheduling').ProviderEngineerSchedulingSnapshot['tasks'][number][] = [];
+  for (const card of cards) {
+    let row = tasks.find(task => task.provider_repository_id === card.provider_repository_id && task.issue_id === card.provider_issue_id);
+    const issue: import('../core/external-sources/issue-observation').ProviderIssueObservationV1 | null = card.issue_state === null ? null : {
+      protocol:1,kind:'repo-harness-provider-issue-observation',registered_repository_id:repositoryId,provider:'github',provider_host:'github.com',
+      provider_repository_id:card.provider_repository_id,provider_issue_id:card.provider_issue_id,display_ref:'example/fixture',url:`https://github.com/example/fixture/issues/${card.task_index}`,
+      observed_at:at,provider_created_at:at,provider_updated_at:at,state:card.issue_state,title:card.task_label ?? card.provider_issue_id,
+      body:'Read the provider issue and preserve its admitted execution identity.',labels:[],assignees:[],comments_policy:'omitted',policy_revision:hash,eligible:true,eligibility_reasons:[],source_revision:card.issue_revision ?? hash,observation_sha256:hash,
+    };
+    if (!row) { row={provider_repository_id:card.provider_repository_id,issue_id:card.provider_issue_id,issue,sessions:[]};tasks.push(row); }
+    if (card.execution) {
+      const selection = card.execution.profile_selection.state === 'unassigned' ? {state:'unassigned' as const} : {state:'profile_missing' as const,engineer_id:card.execution.profile_selection.engineer_id,engineer_contract_revision:card.execution.profile_selection.engineer_contract_revision};
+      tasks[tasks.indexOf(row)]={...row,sessions:[...row.sessions,{session:card.execution,selection}]};
+    }
+  }
+  return {protocol:2,kind:'operator_planning_snapshot',repository_id:repositoryId,
+    scheduling:{protocol:2,kind:'provider_engineer_scheduling',repository_id:repositoryId,profiles:[],tasks,source_revision:hash},
+    observation:{observed_at:at,authorization_revision:1},graph:{status:'unavailable',code:'needs_provider_graph'}};
 }
 /** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
 export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {

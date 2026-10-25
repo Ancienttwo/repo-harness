@@ -15,8 +15,9 @@ import { localizeApiError } from './fleet-api';
 import { relativeAge, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { OrganizationSummary } from './OrganizationSummary';
 import { PlanningView } from './PlanningView';
-import { TaskSessions } from './TaskDiff';
-import { TaskEvidence, type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
+import { AdmittedTaskActivity } from './AdmittedTaskActivity';
+import { TaskDiff, TaskSessions } from './TaskDiff';
+import { type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
 import { TaskHistory, type TaskHistoryReader } from './TaskHistory';
 import type { TaskLocation } from './task-location';
 import {
@@ -480,9 +481,9 @@ function DeliveryView({ repository, selectedKey, onSelect, t }: {
     <section className="delivery-view" aria-labelledby="delivery-heading">
       <h2 id="delivery-heading" className="sr-only">{t('view.delivery')}</h2>
       {repository.status === 'unreadable' ? <UnreadableRepositoryRow repository={repository} t={t} /> : <>
-        <div className="delivery-columns">{OPERATOR_COLUMNS.map(column => group(column.id, t(stageKey({ kind: 'column', column: column.id })), cards.filter(card => card.task_state !== 'missing' && card.placement.kind === 'column' && card.placement.column === column.id)))}</div>
-        <div className="delivery-other">{(['preparation', 'alternate_workflow', 'unclassified'] as const).map(kind => group(kind, t(`stage.${kind}`), cards.filter(card => card.task_state !== 'missing' && card.placement.kind === kind)))}
-          {group('isolated', t('repo.isolatedHeading'), cards.filter(card => card.task_state === 'missing'))}
+        <div className="delivery-columns">{OPERATOR_COLUMNS.map(column => group(column.id, t(stageKey({ kind: 'column', column: column.id })), cards.filter(card => card.issue_state !== null && card.placement.kind === 'column' && card.placement.column === column.id)))}</div>
+        <div className="delivery-other">{(['preparation', 'alternate_workflow', 'unclassified'] as const).map(kind => group(kind, t(`stage.${kind}`), cards.filter(card => card.issue_state !== null && card.placement.kind === kind)))}
+          {group('isolated', t('repo.isolatedHeading'), cards.filter(card => card.issue_state === null))}
         </div>
       </>}
     </section>
@@ -508,12 +509,12 @@ function StageMatrix({ snapshot, t }: { readonly snapshot: Pick<OperatorFleetSna
           {snapshot.repositories.map((repository) => (
             <tr key={repository.repository_id}>
               <th scope="row">{repository.display_name}</th>
-              {(['preparation', 'alternate_workflow'] as const).map(kind => <td key={kind}>{count(repository, card => card.task_state !== 'missing' && card.placement.kind === kind)}</td>)}
+              {(['preparation', 'alternate_workflow'] as const).map(kind => <td key={kind}>{count(repository, card => card.issue_state !== null && card.placement.kind === kind)}</td>)}
               {OPERATOR_COLUMNS.map((column) => (
-                <td key={column.id}>{count(repository, card => card.task_state !== 'missing' && card.placement.kind === 'column' && card.placement.column === column.id)}</td>
+                <td key={column.id}>{count(repository, card => card.issue_state !== null && card.placement.kind === 'column' && card.placement.column === column.id)}</td>
               ))}
-              <td>{count(repository, card => card.task_state !== 'missing' && card.placement.kind === 'unclassified')}</td>
-              <td>{count(repository, card => card.task_state === 'missing')}</td>
+              <td>{count(repository, card => card.issue_state !== null && card.placement.kind === 'unclassified')}</td>
+              <td>{count(repository, card => card.issue_state === null)}</td>
             </tr>
           ))}
         </tbody>
@@ -527,8 +528,8 @@ function RepositoryHealth({ snapshot, t }: { readonly snapshot: Pick<OperatorFle
     <div className="repository-list">
       {snapshot.repositories.map((repository) => {
         const repoStatus: DotTone = repository.status === 'unreadable' ? 'danger' : repository.snapshot_consistency === 'stable' ? 'ok' : 'warn';
-        const tasks = repository.cards.filter(card => card.task_state !== 'missing').length;
-        const isolated = repository.cards.filter(card => card.task_state === 'missing').length;
+        const tasks = repository.cards.filter(card => card.issue_state !== null).length;
+        const isolated = repository.cards.filter(card => card.issue_state === null).length;
         return (
           <article className={`repository-row repository-row--${repoStatus}`} key={repository.repository_id}>
             <div className="repository-row__main">
@@ -604,7 +605,7 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
           <WarningIcon size={15} />
           <div>
             <strong>{t('detail.revisionChanged')}</strong>
-            <span>{t('detail.revisionChangedBody', { previous: revisionChangedFrom, current: card.task_revision })}</span>
+            <span>{t('detail.revisionChangedBody', { previous: revisionChangedFrom, current: card.issue_revision ?? t('field.none') })}</span>
           </div>
         </div>
       )}
@@ -630,14 +631,14 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
       <section className="detail-block" aria-labelledby="detail-identity-heading">
         <h3 className="detail-eyebrow" id="detail-identity-heading">{t('detail.identity')}</h3>
         <CopyValue label={t('field.taskId')} value={card.task_id} t={t} />
-        <CopyValue label={t('field.publication')} value={card.publication_id} t={t} />
-        <CopyValue label={t('field.headSha')} value={card.head_sha} t={t} />
+        <CopyValue label={t('field.providerIssue')} value={`${card.provider_repository_id} / ${card.provider_issue_id}`} t={t} />
+        <CopyValue label={t('field.sessionBinding')} value={card.execution?.selector.session_binding_sha256 ?? null} t={t} />
         <dl className="detail-list">
           <div><dt>{t('field.repository')}</dt><dd className="mono-value">{card.repository_id}</dd></div>
-          <div><dt>{t('field.revision')}</dt><dd className="mono-value">{card.task_revision}</dd></div>
-          <div><dt>{t('field.claim')}</dt><dd className="mono-value">{card.claim_id ?? t('field.notClaimed')}</dd></div>
-          <div><dt>{t('field.generation')}</dt><dd className="mono-value">{card.generation ?? t('field.none')}</dd></div>
-          <div><dt>{t('field.lease')}</dt><dd>{t(`lease.${card.lease_state}` as OperatorMessageKey)}</dd></div>
+          <div><dt>{t('field.revision')}</dt><dd className="mono-value">{card.issue_revision ?? t('field.none')}</dd></div>
+          <div><dt>{t('field.claim')}</dt><dd className="mono-value">{card.execution?.selector.claim_ref ?? t('field.notClaimed')}</dd></div>
+          <div><dt>{t('field.claimRevision')}</dt><dd className="mono-value">{card.execution?.selector.claim_revision ?? t('field.none')}</dd></div>
+          <div><dt>{t('field.session')}</dt><dd>{card.execution_status} · {card.execution?.selector.role ?? t('field.none')}</dd></div>
           <div>
             <dt>{t('field.execution')}</dt>
             <dd>{card.execution_readiness ? t(`execution.${card.execution_readiness}` as OperatorMessageKey) : t('field.notApplicable')}</dd>
@@ -648,7 +649,7 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
         <h3 className="detail-eyebrow" id="detail-delivery-heading">{t('detail.deliveryRuntime')}</h3>
         <p className="detail-description">{t('deliveryEvidence.explanation')}</p>
         {evidence === null ? <p>{t('deliveryEvidence.unavailable')}</p>
-          : evidence.candidate_count === 0 ? <p>{t(card.claim_id === null ? 'deliveryEvidence.noClaim' : 'deliveryEvidence.empty')}</p>
+          : evidence.candidate_count === 0 ? <p>{t(card.execution === null ? 'deliveryEvidence.noClaim' : 'deliveryEvidence.empty')}</p>
           : evidence.candidate_count > 1 ? <p>{t('deliveryEvidence.multiple', { count: evidence.candidate_count })}</p>
           : null}
         {observation && <dl className="detail-list">
@@ -717,7 +718,7 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
       <div className="detail-pane__title min-w-0">
         <p className="detail-eyebrow">{t('detail.taskDetail')}</p>
         <h2 id="detail-pane-title" className={cn('text-lg font-semibold text-kumo-strong', !label.isLabel && 'mono-value')}>{label.text}</h2>
-        {label.isLabel && <code className="detail-pane__id text-xs text-kumo-subtle">{card.task_id.slice(0, 12)}</code>}
+        {label.isLabel && <code className="detail-pane__id text-xs text-kumo-subtle">{card.provider_issue_id}</code>}
       </div>
       <div className="detail-pane__actions flex shrink-0 items-center gap-1">
         <Button size="sm" variant="secondary" className="operator-button" icon={<ArrowClockwiseIcon />} onClick={onRefresh}>{t('status.refresh')}</Button>
@@ -732,7 +733,7 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
       <div className="detail-pane__body flex flex-col gap-5 pt-4">
         {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
         <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
-        <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
+        <div key={JSON.stringify(card.execution?.selector)}>{card.execution ? <><TaskDiff selector={card.execution.selector} t={t} /><AdmittedTaskActivity selector={card.execution.selector} t={t} /></> : <p role="status">{t(card.execution_status === 'unavailable' ? 'sessions.unavailable' : 'sessions.noIssueSession')}</p>}</div>
       </div>
     </DrawerFrame>
   );
@@ -807,9 +808,10 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         <FleetFacts snapshot={snapshot} stale={state.kind === 'stale'} now={props.now} t={t} />
       </header>
       {props.location.invalid && <p role="alert" className="text-sm text-kumo-danger">{t('history.invalidLink')}</p>}
-      {selection && (selection.historical || (snapshot !== null && !selectedCard)) && <TaskHistory
+      {selection?.historical && <TaskHistory
         repositoryId={props.activeRepositoryId} taskId={selection.taskId} revision={selection.revision}
-        generation={props.refreshGeneration} read={props.readTaskHistory} onClose={props.onCloseSelection} t={t} />}
+        generation={props.refreshGeneration} read={props.readTaskHistory} readActivity={props.readTaskActivity} onClose={props.onCloseSelection} t={t} />}
+      {selection && !selection.historical && snapshot !== null && !selectedCard && <p role="status">{t('sessions.selectionStale')}</p>}
       {activeRepository && <TaskSessions key={JSON.stringify([snapshot?.service_epoch, activeRepository.repository_id, props.refreshGeneration])} repositoryId={activeRepository.repository_id} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">

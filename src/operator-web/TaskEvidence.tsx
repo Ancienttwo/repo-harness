@@ -78,7 +78,7 @@ interface EvidenceProps {
   generation: number;
   t: OperatorTranslate;
 }
-function ActivityEvidence({ repositoryId, taskId, generation, readActivity, t }: EvidenceProps & { readActivity: TaskActivityReader }) {
+function ActivityEvidence({ repositoryId, taskId, generation, readActivity, t }: Omit<EvidenceProps, 'revision'> & { readActivity: TaskActivityReader }) {
   const [page, setPage] = useState<{ after: string | null; message: string | null }>({ after: null, message: null });
   const read = useCallback(async (signal: AbortSignal): Promise<OperatorTaskActivity> => {
     const request: OperatorTaskActivityRequest = { repository_id: repositoryId, task_id: taskId, limit: page.message === null ? 50 : 1, after: page.after, message_id: page.message };
@@ -129,4 +129,8 @@ export function TaskEvidence(props: EvidenceProps & { readContext?: TaskContextR
     <ContextEvidence {...props} key={`context:${identity}`} readContext={props.readContext ?? fetchTaskContext} />
     <ActivityEvidence {...props} key={`activity:${identity}`} readActivity={props.readActivity ?? fetchTaskActivity} />
   </div>;
+}
+
+export function HistoricalTaskActivity(props: Omit<EvidenceProps, 'revision'> & { readActivity?: TaskActivityReader }) {
+  return <ActivityEvidence {...props} key={JSON.stringify([props.repositoryId,props.taskId])} readActivity={props.readActivity ?? fetchTaskActivity} />;
 }
