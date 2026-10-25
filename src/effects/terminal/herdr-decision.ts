@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { constants, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, fchmodSync, fstatSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { OPTIONS, type PaneOption } from '../../core/decision/pane-status.mjs';
+import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock.ts';
 
 const runFile = promisify(execFile);
 const LOG_LIMIT = 20 * 1024 * 1024;
@@ -67,8 +68,13 @@ export async function labelDecision(input: { next?: boolean; eventId?: string; o
   if (input.next ? input.eventId !== undefined || input.option !== undefined
     : !input.eventId || !OPTIONS.includes(input.option as PaneOption)) throw new Error('Invalid label arguments.');
   const dir = await stateDirectory(input.stateDir);
-  const lock = join(dir, 'decision-labels.lock');
-  mkdirSync(lock, { mode: 0o700 });
+  // A label command never waits: a held lock fails this command.
+  const lock = acquireExclusiveDirectoryLock(realpathSync(dir), 'decision-labels.lock', {
+    waitTimeoutMs: 1,
+    // Legacy writers hold a bare directory for their entire read/modify/write.
+    // Age cannot prove they exited, so an ownerless lock must fail closed.
+    reclaimStaleEmptyDirectory: false,
+  });
   try {
     const records = shadowRecords(dir);
     const saved = labels(dir);
@@ -88,5 +94,5 @@ export async function labelDecision(input: { next?: boolean; eventId?: string; o
       renameSync(temporary, path);
     } finally { try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } }
     return label;
-  } finally { rmdirSync(lock); }
+  } finally { lock.release(); }
 }
