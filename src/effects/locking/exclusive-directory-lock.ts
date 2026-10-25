@@ -16,7 +16,7 @@ import {
 } from 'fs';
 import { randomUUID } from 'crypto';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
-import { currentProcessStartTime, readProcessStartTime } from './process-start-time';
+import { currentProcessStartTime, readProcessStartTime } from './process-start-time.ts';
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;

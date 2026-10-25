@@ -4,7 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
 import { OPTIONS, type PaneOption } from '../../core/decision/pane-status.mjs';
-import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock.ts';
 
 const runFile = promisify(execFile);
 const LOG_LIMIT = 20 * 1024 * 1024;

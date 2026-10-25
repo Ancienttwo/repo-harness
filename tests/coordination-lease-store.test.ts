@@ -336,7 +336,7 @@ describe('per-task lock', () => {
     mkdirSync(lockPath, { recursive: true });
     const deadPid = 2 ** 22 - 1;
     const token = `${deadPid}-${Date.now()}-33333333-3333-4333-8333-333333333333`;
-    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: deadPid, created_at: Date.now(), token })}\n`);
+    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: deadPid, start_time: 'fixture-exited-owner', created_at: Date.now(), token })}\n`);
 
     const reclaimed: string[] = [];
     const acquired = withExclusiveDirectoryLock(common, relativeLockPath, () => existsSync(lockPath), {

@@ -60,6 +60,7 @@ describe('Effective State lock and source-stability characterization', () => {
       const lockPath = join(fixture.cwd, '.ai/harness/state/effective.lock');
       writeFixtureStateLock(fixture.cwd, {
         pid: 99999999,
+        start_time: 'fixture-exited-owner',
         created_at: Date.now() - 60_000,
         token: '99999999-0-00000000-0000-4000-8000-000000000001',
       });
@@ -187,6 +188,7 @@ describe('Effective State lock and source-stability characterization', () => {
     try {
       writeFixtureStateLock(fixture.cwd, {
         pid: 99999999,
+        start_time: 'fixture-exited-owner',
         created_at: Date.now() - 60_000,
         token: '99999999-0-00000000-0000-4000-8000-000000000002',
       });
