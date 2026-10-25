@@ -15,7 +15,7 @@ import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '.
 import { taskRepository } from '../terminal/task-worktree';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
-  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
+  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
@@ -29,6 +29,7 @@ interface ReviewSession {
   owner_root: string;
   campaign_sha256: string;
   task_claim: TaskClaimReference;
+  engineer_profile?: TaskEngineerProfile;
   goal_sha256: string;
   task: string;
   reviewer_repo: string;
@@ -47,6 +48,7 @@ export interface ReviewOptions {
   repoRoot: string;
   authority: ReviewAdmissionSource;
   taskClaim: TaskClaimReference;
+  engineerProfile?: TaskEngineerProfile;
   verification?: string;
   reviewerRepo: string;
   /** Herdr launch addressing. An app-terminal launch has neither field. */
@@ -217,7 +219,8 @@ export function runReviewRound(options: ReviewOptions & { launch?: 'herdr' }, ef
 export function runReviewRound(options: ReviewOptions, effects?: ReviewEffects): Promise<ReviewRoundResult | ReviewLaunchRequired>;
 export async function runReviewRound(options: ReviewOptions, effects: ReviewEffects = {}): Promise<ReviewRoundResult | ReviewLaunchRequired> {
   const taskClaim = validateTaskClaimReference(options.taskClaim);
-  const taskAuthority = { source: options.authority, claim: taskClaim };
+  const engineerProfile = validateTaskEngineerProfile(options.authority.repoRoot, options.engineerProfile);
+  const taskAuthority = { source: options.authority, claim: taskClaim, ...(engineerProfile ? { engineer_profile: engineerProfile } : {}) };
   const terminal = options.launch === 'app-terminal';
   if (terminal ? options.endpoint || options.parentPane : !options.endpoint || !options.parentPane) throw new Error('review_launch_addressing_invalid');
   if (!terminal) validateHerdrEndpoint(options.endpoint!);
@@ -243,6 +246,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
       if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
         || JSON.stringify(session.task_claim) !== JSON.stringify(taskClaim)
+        || canonicalize(JSON.parse(JSON.stringify(session.engineer_profile ?? null))) !== canonicalize(JSON.parse(JSON.stringify(engineerProfile ?? null)))
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
         || session.control_directory !== dir || session.parent_pane !== parentPane || (options.harness && options.harness !== session.actual_harness)) throw new Error('review_session_spec_changed');
     } else {
@@ -260,7 +264,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
       options.admitSession();
-      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
+      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, ...(engineerProfile ? { engineer_profile: engineerProfile } : {}), goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
         endpoint, parent_pane: parentPane, requested_harness: requested, actual_harness: actual,
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);

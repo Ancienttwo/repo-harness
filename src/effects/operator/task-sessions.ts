@@ -59,7 +59,7 @@ export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { 
           grant_sha256: source.expectedGrantSha256, policy_sha256: source.expectedPolicySha256, actor_id: source.expectedActor,
           session_binding_sha256: `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}` };
         const observed = observeOperatorTaskDiffSource({ ...selector, env }, { admissionSource: () => source });
-        sessions.push({ selector, admission_sha256: observed.approval.admission_sha256, branch: observed.branch, runtime: binding.runtime, harness_kind: binding.harness_kind });
+        sessions.push({ selector, profile_selection: identity.engineer_profile ? { state: 'selected', ...identity.engineer_profile } : { state: 'unassigned' }, admission_sha256: observed.approval.admission_sha256, branch: observed.branch, runtime: binding.runtime, harness_kind: binding.harness_kind });
       }
       return { root, revision: registry.authorizationRevision, sessions };
     };

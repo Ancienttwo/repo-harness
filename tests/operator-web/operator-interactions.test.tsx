@@ -1490,7 +1490,7 @@ test('automatic epoch change cancels associated evidence and late responses cann
       return new Promise<Response>(resolve => { finishDiff = resolve; });
     }
     if (String(input).includes('/task-sessions/')) return Response.json({ protocol: 1, kind: 'operator_task_sessions', repository_id: selector.repository_id,
-      observed_at: '2026-10-25T00:00:00Z', sessions: [{ selector, admission_sha256: 'sha256:' + 'e'.repeat(64), branch: 'codex/review', runtime: 'terminal', harness_kind: 'codex' }] });
+      observed_at: '2026-10-25T00:00:00Z', sessions: [{ selector, profile_selection: { state: 'unassigned' as const }, admission_sha256: 'sha256:' + 'e'.repeat(64), branch: 'codex/review', runtime: 'terminal', harness_kind: 'codex' }] });
     return Response.json({ code: 'unavailable' }, { status: 503 });
   }) as typeof fetch;
   try {

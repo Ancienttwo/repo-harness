@@ -4,6 +4,7 @@ export const TASK_SESSIONS_MAX_BYTES = 512 * 1024;
 export interface OperatorTaskSessionsRequest { readonly repository_id: string }
 export interface OperatorTaskSession {
   readonly selector: OperatorTaskDiffRequest;
+  readonly profile_selection: { readonly state: 'unassigned' } | { readonly state: 'selected'; readonly engineer_id: string; readonly engineer_contract_revision: string };
   readonly admission_sha256: string;
   readonly branch: string;
   readonly runtime: 'herdr' | 'terminal';
@@ -30,11 +31,16 @@ export function decodeOperatorTaskSessions(value: unknown, request: OperatorTask
     || new TextEncoder().encode(JSON.stringify(value)).length > TASK_SESSIONS_MAX_BYTES) return invalid();
   const seen = new Set<string>();
   for (const session of value.sessions) {
-    if (!exact(session, ['selector', 'admission_sha256', 'branch', 'runtime', 'harness_kind']) || !isTaskDiffRequest(session.selector)
+    if (!exact(session, ['selector', 'admission_sha256', 'profile_selection', 'branch', 'runtime', 'harness_kind']) || !isTaskDiffRequest(session.selector)
       || typeof session.admission_sha256 !== 'string' || !/^sha256:[0-9a-f]{64}$/u.test(session.admission_sha256)
       || session.selector.repository_id !== request.repository_id || typeof session.branch !== 'string' || !session.branch || session.branch.length > 1024
       || !['herdr', 'terminal'].includes(session.runtime as string) || typeof session.harness_kind !== 'string' || !session.harness_kind || session.harness_kind.length > 128
       || seen.has(session.selector.session_binding_sha256)) return invalid();
+    const profile = session.profile_selection;
+    if (!(exact(profile, ['state']) && profile.state === 'unassigned')
+      && !(exact(profile, ['state', 'engineer_id', 'engineer_contract_revision']) && profile.state === 'selected'
+        && typeof profile.engineer_id === 'string' && profile.engineer_id.length > 0 && profile.engineer_id.length <= 2048
+        && typeof profile.engineer_contract_revision === 'string' && /^sha256:[0-9a-f]{64}$/u.test(profile.engineer_contract_revision))) return invalid();
     seen.add(session.selector.session_binding_sha256);
   }
   return value as unknown as OperatorTaskSessions;

@@ -311,6 +311,7 @@ test('discovery returns current protected selection, requires explicit sessions,
   expect(first.sessions).toHaveLength(1);
   expect(first.sessions[0]!.selector).toEqual(f.selector);
   expect(first.sessions[0]!.admission_sha256).toBe(f.approved.admission.admission_sha256);
+  expect(first.sessions[0]!.profile_selection).toEqual({ state: 'unassigned' });
   expect(JSON.stringify(first)).not.toContain(f.sourceRoot);
   const next = seedReviewAdmissionFixture(f.sourceRoot, f.home);
   const renewed = discover().sessions[0]!;

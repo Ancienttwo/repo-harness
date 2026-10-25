@@ -1,23 +1,31 @@
 import { expect, test } from 'bun:test';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { observeTaskSessionAdmission, collectTaskResult, startTaskAgent, taskSessionDirectory,
   ensureSessionDirectory, writeSessionArtifact, type HerdrTaskBinding, type TaskRequest } from '../../src/effects/terminal/task-session';
+import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { taskRepository } from '../../src/effects/terminal/task-worktree';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 
 const claim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: `sha256:${'c'.repeat(64)}` };
 const spec = { task: 'review-fixture', role: 'deep-reasoner', harness_kind: 'codex' };
-function fixture() {
+function fixture(withEngineer = false) {
   const directory = tmpWorkspace('task-session-admission');
   const root = join(directory, 'owner'), execution = join(directory, 'reviewer'), home = join(directory, 'authority');
   mkdirSync(root); mkdirSync(home, { mode: 0o700 });
   initGitRepo(root);
   writeFileSync(join(root, '.gitignore'), '.ai/\n');
   writeFileSync(join(root, 'source.txt'), 'source\n');
+  if (withEngineer) {
+    mkdirSync(join(root, '.archcontext/model'), { recursive: true });
+    cpSync(join(import.meta.dir, '../../.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+    cpSync(join(import.meta.dir, '../../.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
+    mkdirSync(join(root, 'agents'), { recursive: true });
+    cpSync(join(import.meta.dir, '../../agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
+  }
   commitAll(root, 'fixture');
   expect(run('git', ['worktree', 'add', '-b', 'reviewer', execution], root).status).toBe(0);
   const approved = seedReviewAdmissionFixture(root, home);
@@ -129,5 +137,29 @@ test('collection rechecks the complete request approval at the final publication
     }, f.authority)).rejects.toThrow('request_context_changed');
     expect(checks).toBe(3);
     expect(existsSync(join(saved.dir, 'collected-1.json'))).toBe(false);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+
+test('explicit engineer profile selection is frozen, revalidated, and never inferred from actor identity', async () => {
+  const f = fixture(true);
+  try {
+    const resolved = loadEngineerProfile(f.root, 'engineer:capability.verification.evals-checks');
+    const engineer_profile = { engineer_id: resolved.profile.engineer_id, engineer_contract_revision: resolved.engineer_contract_revision };
+    expect(observeTaskSessionAdmission(f.execution, spec, 'herdr', f.authority).identity.engineer_profile).toBeUndefined();
+    const authority = { ...f.authority, engineer_profile };
+    const admission = observeTaskSessionAdmission(f.execution, spec, 'herdr', authority);
+    expect(admission.identity.engineer_profile).toEqual(engineer_profile);
+    expect(admission.identity.execution_actor).toBe(f.approved.admission.actor_id);
+    expect(admission.identity.execution_actor).not.toBe(engineer_profile.engineer_id);
+    expect(() => observeTaskSessionAdmission(f.execution, spec, 'herdr', { ...authority,
+      engineer_profile: { ...engineer_profile, engineer_contract_revision: 'sha256:' + '0'.repeat(64) } })).toThrow('engineer_profile_stale');
+    expect(() => observeTaskSessionAdmission(f.execution, spec, 'herdr', { ...authority,
+      engineer_profile: { ...engineer_profile, injected: true } as typeof engineer_profile })).toThrow('engineer_profile_invalid');
+    const saved = storedRuntime({ ...f, authority });
+    await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, f.authority)).rejects.toThrow('admission_changed');
+    expect(await collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, authority)).toEqual(saved.result);
+    appendFileSync(join(f.root, resolved.profile.sop_ref), '\nChanged profile instructions.\n');
+    await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, authority)).rejects.toThrow('engineer_profile_stale');
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });

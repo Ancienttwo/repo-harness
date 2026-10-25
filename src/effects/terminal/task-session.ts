@@ -2,6 +2,7 @@ import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdir
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { dirname, isAbsolute, join, relative } from 'path';
+import { loadEngineerProfile } from '../engineers/profile-store';
 import { observeActiveReviewAdmission } from '../review/issue-goal';
 import type { ReviewAdmissionSource } from '../review/admission-source';
 import { gitExecFileSync } from '../git/runner';
@@ -20,11 +21,23 @@ export interface ProcessProof { pid: number; identity: string }
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
 /** Upstream coordination provenance. This is not an authorization credential. */
 export interface TaskClaimReference { reference: string; revision: string }
-export interface TaskSessionAuthority { source: ReviewAdmissionSource; claim: TaskClaimReference }
+export interface TaskEngineerProfile { engineer_id: string; engineer_contract_revision: string }
+export interface TaskSessionAuthority { source: ReviewAdmissionSource; claim: TaskClaimReference; engineer_profile?: TaskEngineerProfile }
+/** Explicit descriptive selection, validated against the canonical profile; not authorization. */
+export function validateTaskEngineerProfile(repoRoot: string, selection: TaskEngineerProfile | undefined): TaskEngineerProfile | undefined {
+  if (selection === undefined) return undefined;
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)
+    || Object.keys(selection).length !== 2 || !Object.keys(selection).every(key => key === 'engineer_id' || key === 'engineer_contract_revision')
+    || typeof selection.engineer_id !== 'string' || !selection.engineer_id
+    || typeof selection.engineer_contract_revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(selection.engineer_contract_revision)) throw new Error('task_agent_engineer_profile_invalid');
+  const resolved = loadEngineerProfile(repoRoot, selection.engineer_id);
+  if (resolved.engineer_contract_revision !== selection.engineer_contract_revision) throw new Error('task_agent_engineer_profile_stale');
+  return { engineer_id: resolved.profile.engineer_id, engineer_contract_revision: resolved.engineer_contract_revision };
+}
 export interface TaskSessionAdmission {
   identity: {
     repository_id: string; issue_id: string; campaign_id: string; campaign_sha256: string;
-    execution_actor: string; claim: TaskClaimReference;
+    execution_actor: string; claim: TaskClaimReference; engineer_profile?: TaskEngineerProfile;
     source_root: string; execution_root: string; branch: string | null; task: string; role: string;
     harness_kind: string; runtime: 'herdr' | 'terminal';
   };
@@ -51,6 +64,7 @@ export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<TaskAge
       throw new Error('task_agent_admission_repository_mismatch');
     }
   }
+  const engineer = validateTaskEngineerProfile(owner.execution_root, authority.engineer_profile);
   const active = observeActiveReviewAdmission(authority.source), admitted = active.admission;
   let branch: string | null = null;
   try { branch = gitExecFileSync(['symbolic-ref', '--quiet', 'HEAD'], { cwd: execution.execution_root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -59,7 +73,7 @@ export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<TaskAge
   return {
     identity: { repository_id: admitted.repository_id, issue_id: admitted.issue_id,
       campaign_id: admitted.campaign_id, campaign_sha256: admitted.campaign_sha256, execution_actor: admitted.actor_id,
-      claim, source_root: owner.execution_root, execution_root: execution.execution_root, branch, task: spec.task, role: spec.role,
+      ...(engineer ? { engineer_profile: engineer } : {}), claim, source_root: owner.execution_root, execution_root: execution.execution_root, branch, task: spec.task, role: spec.role,
       harness_kind: spec.harness_kind, runtime },
     approval: { admission_sha256: admitted.admission_sha256, grant_sha256: active.grant_sha256, revision: active.revision,
       goal_revision: admitted.goal.revision, scope_sha256: sessionDigest(admitted.allowed_paths) },

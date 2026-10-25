@@ -52,7 +52,7 @@ test('shows refused reads distinctly from an empty diff', async () => {
 
 test('discovery never selects the first session implicitly and changing selection aborts old diff', async () => {
   const other = { ...selector, task: 'another-task', session_binding_sha256: 'sha256:' + 'e'.repeat(64) };
-  const sessions = [selector, other].map(selector => ({ selector, admission_sha256: 'sha256:' + 'f'.repeat(64), branch: 'codex/task', runtime: 'terminal' as const, harness_kind: 'codex' }));
+  const sessions = [selector, other].map(selector => ({ selector, profile_selection: { state: 'unassigned' as const }, admission_sha256: 'sha256:' + 'f'.repeat(64), branch: 'codex/task', runtime: 'terminal' as const, harness_kind: 'codex' }));
   let calls = 0, signal!: AbortSignal, finish!: (value: OperatorTaskDiff) => void;
   await act(async () => root.render(<TaskSessions repositoryId={card.repository_id} t={t}
     read={async request => ({ protocol: 1, kind: 'operator_task_sessions', repository_id: request.repository_id, observed_at: '2026-10-25T00:00:00Z', sessions })}
