@@ -191,3 +191,30 @@ After repair: `bun run check:type` passed;
 passed 13 tests / 46 assertions. Existing assertions remain intact. These results
 supersede neither the old clean-room receipt failure nor the missing real
 integration run. Independent review of the delta remains required.
+
+## Restored integration acceptance (2026-10-25)
+
+PR951 was restored after its external closure. Main 846c6d1a was merged without
+conflicts at eb508d766733dca3f3d3ec2e16c2e58fac6f797b. Typecheck passed;
+13 cleanup tests / 46 assertions and 8 contract tests / 356 assertions passed.
+The earlier failed receipt assertion remains historical evidence.
+
+The formal tool approval path permitted the isolated acceptance on this same
+host. The command was:
+
+```sh
+bun scripts/axr5-archctx-clean-room.ts --arch-context-root <local-arch-context-checkout> --revision 0e08d30cb9e3daf87730a7126ca9b785d7663f72 --out <temporary-receipt.json>
+```
+
+It exited 0. The resulting receipt is committed as
+`axr5-archctx-clean-room-readback.json`. Both packages report 0.9.3. The script
+confirmed daemon shutdown before cleanup and receipt publication. It used a
+new temporary HOME/state and did not operate the global runtime.
+The projection returned `human-action-required`; CodeGraph was `unavailable`.
+This proves the packed provider contract, not a fully indexed projection.
+The source archive was rebuilt with the consumer version. Published tarball
+byte evidence remains separate; this receipt does not replace that evidence.
+
+The old six-file CI admission does not match this final receipt-bearing diff.
+Required CI and independent review must bind the final candidate before merge.
+No full test suite, release, deployment or main publication was performed.
