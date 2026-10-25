@@ -17,7 +17,7 @@
   [Global Hook Runtime](global-hook-runtime.md) and
   [Transactional Adoption Planner](transactional-adoption-planner.md).
 - Current hand-written view: [functional architecture and runtime sequences](current-architecture.md).
-- Historical `d7e92f43d` review views and their original Remarks: [layered architecture and sequences](layered-architecture.md)
+- Archived review views, started at `d7e92f43d` and retaining later revisions through `d04211d5`: [layered architecture and sequences](layered-architecture.md)
   and [process, namespace and mount topology](process-namespace-topology.md).
 
 ## System Boundary

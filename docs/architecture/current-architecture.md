@@ -5,7 +5,8 @@ This hand-written view records source inspection, not a product execution or a
 performance measurement. Model inventory and generated proof stamps keep their
 own revisions. The [layered view](layered-architecture.md) and
 [namespace view](process-namespace-topology.md) retain the historical `d7e92f43d`
-review, including its original counts and Remarks.
+review and subsequent edits through the source baseline above. Their file
+histories identify those edits; the archived pages are not single-revision snapshots.
 
 ## Functional Domains
 
@@ -114,8 +115,11 @@ resolution does not mean that all hook events perform zero writes.
 
 `src/effects/adoption/` builds the repository plan.
 `src/effects/fs-transaction.ts#applyAdoptionPlan` preflights all operations and the
-manifest, applies sequentially, stops on the first failure, then rolls back
-applied operations. The result includes rollback failures. Host install/update
+manifest, applies sequentially and accumulates results in memory. It stops on
+the first operation failure, then finalizes the manifest after the loop. An
+operation failure or manifest-finalization failure triggers rollback of applied
+operations. The result includes rollback failures; this is not a per-operation
+durable journal. Host install/update
 is a separate locked transaction, not an init step. `applyAdoptionPlan`
 does not acquire that host lock or a repository-wide transaction lock.
 
@@ -130,9 +134,11 @@ sequenceDiagram
     T-->>C: Failure, no operations applied
   else Preflight passes
     loop Until completion or first failure
-      T->>F: Apply next operation and record result
+      T->>F: Apply next operation
+      T->>T: Accumulate result in memory
     end
-    alt Operation fails
+    T->>F: Finalize and persist transaction manifest
+    alt Operation or manifest-finalization fails
       T->>F: Roll back applied operations
       F-->>T: Rollback results, including failures
     end
