@@ -15,7 +15,7 @@ import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '.
 import { taskRepository } from '../terminal/task-worktree';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
-  readSessionArtifact, writeSessionArtifact, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
+  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
@@ -28,6 +28,7 @@ interface ReviewSession {
   protocol: 1;
   owner_root: string;
   campaign_sha256: string;
+  task_claim: TaskClaimReference;
   goal_sha256: string;
   task: string;
   reviewer_repo: string;
@@ -45,6 +46,7 @@ interface RoundRecord { subject_sha256: string; context_sha256: string; task_req
 export interface ReviewOptions {
   repoRoot: string;
   authority: ReviewAdmissionSource;
+  taskClaim: TaskClaimReference;
   verification?: string;
   reviewerRepo: string;
   /** Herdr launch addressing. An app-terminal launch has neither field. */
@@ -214,6 +216,8 @@ export interface ReviewRoundResult {
 export function runReviewRound(options: ReviewOptions & { launch?: 'herdr' }, effects?: ReviewEffects): Promise<ReviewRoundResult>;
 export function runReviewRound(options: ReviewOptions, effects?: ReviewEffects): Promise<ReviewRoundResult | ReviewLaunchRequired>;
 export async function runReviewRound(options: ReviewOptions, effects: ReviewEffects = {}): Promise<ReviewRoundResult | ReviewLaunchRequired> {
+  const taskClaim = validateTaskClaimReference(options.taskClaim);
+  const taskAuthority = { source: options.authority, claim: taskClaim };
   const terminal = options.launch === 'app-terminal';
   if (terminal ? options.endpoint || options.parentPane : !options.endpoint || !options.parentPane) throw new Error('review_launch_addressing_invalid');
   if (!terminal) validateHerdrEndpoint(options.endpoint!);
@@ -238,6 +242,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (existsSync(join(dir, 'session.json'))) {
       session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
       if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
+        || JSON.stringify(session.task_claim) !== JSON.stringify(taskClaim)
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
         || session.control_directory !== dir || session.parent_pane !== parentPane || (options.harness && options.harness !== session.actual_harness)) throw new Error('review_session_spec_changed');
     } else {
@@ -255,7 +260,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
       options.admitSession();
-      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
+      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
         endpoint, parent_pane: parentPane, requested_harness: requested, actual_harness: actual,
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
@@ -315,7 +320,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     let binding: TaskPaneBinding;
     if (session.endpoint === null) {
       const bound = await client.bindTerminal(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
-        max_requests: REVIEW_MAX_ROUNDS }, command, () => client.launched(dir));
+        max_requests: REVIEW_MAX_ROUNDS }, command, () => client.launched(dir), taskAuthority);
       // Nothing was sent. The operator runs the command once in an app terminal, then repeats this round.
       if (!bound) {
         const launch: ReviewLaunchRequired = { status: 'launch_required', round, requested_harness: session.requested_harness, actual_harness: session.actual_harness,
@@ -326,7 +331,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     } else {
       binding = await client.start(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
         endpoint: session.endpoint, parent_pane: session.parent_pane!, args: [], max_requests: REVIEW_MAX_ROUNDS },
-        command, () => client.ready(join(dir, 'ready.json')));
+        command, () => client.ready(join(dir, 'ready.json')), undefined, taskAuthority);
     }
     client.assertBinding(binding);
     if (binding.runtime === 'herdr' && binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
@@ -338,7 +343,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
     const request = await client.send(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, relative(reviewerRepo, packetPath), 'repeatable',
-      request => client.ready(join(dir, `ack-${request.round}.json`)));
+      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority);
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
     const deadline = Date.now() + timeout;
     let collected;
@@ -350,7 +355,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       // The host writes observed after the turn ends, and the reviewer writes
       // the Result during the turn. A missing Result at this point is final.
       if (existsSync(join(dir, `observed-${request.round}.json`))) {
-        collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round);
+        collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round, undefined, taskAuthority);
         if (!collected) throw new Error('review_result_missing; inspect the same request; do not resend');
         break;
       }

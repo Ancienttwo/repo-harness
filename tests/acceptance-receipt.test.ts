@@ -594,7 +594,7 @@ function reviewFixture() {
   };
   const options = { repoRoot: fixture.root, authority: authorityFor(fixture.root), verification: '.ai/harness/runs/acceptance.report.json', reviewerRepo,
     endpoint: { session: 'private-fixture', home: endpointHome }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
-    admitSession: () => { calls.push('admit'); } };
+    taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } };
   return { ...fixture, reviewerRepo, calls, effects, options, sent: () => sent,
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
 }

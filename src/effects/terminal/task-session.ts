@@ -2,6 +2,9 @@ import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdir
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { dirname, isAbsolute, join, relative } from 'path';
+import { observeActiveReviewAdmission } from '../review/issue-goal';
+import type { ReviewAdmissionSource } from '../review/admission-source';
+import { gitExecFileSync } from '../git/runner';
 import { configuredGitBinary } from '../git/common-directory';
 import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from './task-worktree';
@@ -14,6 +17,60 @@ import { oarObservationFile, readOarObservation } from './task-runtime-observati
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
 export interface ProcessProof { pid: number; identity: string }
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
+/** Upstream coordination provenance. This is not an authorization credential. */
+export interface TaskClaimReference { reference: string; revision: string }
+export interface TaskSessionAuthority { source: ReviewAdmissionSource; claim: TaskClaimReference }
+export interface TaskSessionAdmission {
+  identity: {
+    repository_id: string; issue_id: string; campaign_id: string; campaign_sha256: string;
+    execution_actor: string; claim: TaskClaimReference;
+    execution_root: string; branch: string | null; task: string; role: string;
+    harness_kind: string; runtime: 'herdr' | 'terminal';
+  };
+  approval: { admission_sha256: string; grant_sha256: string; revision: number; goal_revision: string; scope_sha256: string };
+  /** A normal commit does not change task ownership or reset request budgets. */
+  head_revision: string;
+}
+export function validateTaskClaimReference(claim: TaskClaimReference): TaskClaimReference {
+  if (!claim || typeof claim.reference !== 'string' || !claim.reference.trim() || /[\x00-\x1f\x7f]/.test(claim.reference)
+    || typeof claim.revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(claim.revision)
+    || Object.keys(claim).sort().join(',') !== 'reference,revision') throw new Error('task_agent_claim_invalid');
+  return { reference: claim.reference, revision: claim.revision };
+}
+
+/** Observe the existing approval; do not create a second claim or task state. */
+export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<TaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
+  runtime: 'herdr' | 'terminal', authority: TaskSessionAuthority): TaskSessionAdmission {
+  const claim = validateTaskClaimReference(authority.claim);
+  const execution = taskRepository(repoRoot), owner = taskRepository(authority.source.repoRoot);
+  if (execution.repository_id !== owner.repository_id) throw new Error('task_agent_admission_repository_mismatch');
+  const active = observeActiveReviewAdmission(authority.source), admitted = active.admission;
+  let branch: string | null = null;
+  try { branch = gitExecFileSync(['symbolic-ref', '--quiet', 'HEAD'], { cwd: execution.execution_root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+  catch (error) { if ((error as { status?: number }).status !== 1) throw error; }
+  const head = gitExecFileSync(['rev-parse', 'HEAD'], { cwd: execution.execution_root, encoding: 'utf8' }).trim();
+  return {
+    identity: { repository_id: admitted.repository_id, issue_id: admitted.issue_id,
+      campaign_id: admitted.campaign_id, campaign_sha256: admitted.campaign_sha256, execution_actor: admitted.actor_id,
+      claim, execution_root: execution.execution_root, branch, task: spec.task, role: spec.role,
+      harness_kind: spec.harness_kind, runtime },
+    approval: { admission_sha256: admitted.admission_sha256, grant_sha256: active.grant_sha256, revision: active.revision,
+      goal_revision: admitted.goal.revision, scope_sha256: sessionDigest(admitted.allowed_paths) },
+    head_revision: head,
+  };
+}
+function sessionDigest(value: unknown): string {
+  return `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
+}
+function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, 'task' | 'role' | 'harness_kind' | 'runtime' | 'task_admission'>,
+  authority?: TaskSessionAuthority): TaskSessionAdmission | undefined {
+  if (!binding.task_admission && !authority) return undefined; // Generic runtime use has no task admission.
+  if (!binding.task_admission || !authority) throw new Error('task_agent_admission_required');
+  const current = observeTaskSessionAdmission(repoRoot, binding, binding.runtime, authority);
+  if (!sameSessionData(current.identity, binding.task_admission.identity)) throw new Error('task_agent_admission_changed');
+  return current;
+}
+
 interface TaskBindingCommon {
   protocol: 2;
   repository_id: string;
@@ -24,6 +81,7 @@ interface TaskBindingCommon {
   ownership: ObjectOwnership;
   provider: OwnedProcess;
   max_requests: number;
+  task_admission?: TaskSessionAdmission;
 }
 export interface HerdrTaskBinding extends TaskBindingCommon {
   runtime: 'herdr';
@@ -52,10 +110,12 @@ export interface TaskAgentSpec {
   max_requests: number;
 }
 export type TerminalHostSpec = Pick<TaskAgentSpec, 'task' | 'role' | 'harness_kind' | 'max_requests'>;
-interface StartIntent { protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
-interface TerminalStartIntent { protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
+interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
+interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
 interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
 export interface TaskRequest {
+  task_admission?: TaskSessionAdmission;
+  session_binding_sha256?: string;
   protocol: 2;
   result_contract: { required_fields: string[]; atomic_write: 'temp_rename' };
   task: string;
@@ -209,6 +269,12 @@ function assertTerminalProcess(provider: ProcessProof, command: readonly string[
 }
 export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider = false): void {
   if (binding.protocol !== 2) throw new Error('task_agent_binding_invalid');
+  if (binding.task_admission) {
+    const identity = binding.task_admission.identity;
+    validateTaskClaimReference(identity.claim);
+    if (identity.task !== binding.task || identity.role !== binding.role || identity.runtime !== binding.runtime
+      || identity.harness_kind !== binding.harness_kind || identity.execution_root !== binding.execution_root) throw new Error('task_agent_admission_changed');
+  }
   if (binding.runtime === 'terminal') {
     assertCreated(binding.ownership);
     if (processProofAlive(binding.provider)) assertTerminalProcess(binding.provider, binding.command);
@@ -415,7 +481,7 @@ function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBind
   const proof = captureTaskPane(intent.spec.endpoint, pane.pane_id, intent.agent_name, provider, ownership);
   const binding: HerdrTaskBinding = { protocol: 2, repository_id: intent.repository.repository_id, execution_root: intent.repository.execution_root, runtime: 'herdr', task: intent.spec.task, role: intent.spec.role,
     harness_kind: intent.spec.harness_kind, endpoint: intent.spec.endpoint,
-    max_requests: intent.spec.max_requests, ...proof };
+    max_requests: intent.spec.max_requests, ...proof, ...(intent.task_admission ? { task_admission: intent.task_admission } : {}) };
   assertTaskBinding(binding);
   return binding;
 }
@@ -431,7 +497,8 @@ function reconcile(dir: string, intent: StartIntent): HerdrTaskBinding {
   const launch = readSessionArtifact<{ intent_id: string }>(join(dir, 'launch-intent.json'));
   if (launch.intent_id !== intent.intent_id) throw new Error('task_agent_start_identity_unknown');
   const binding = readSessionArtifact<HerdrTaskBinding>(join(dir, 'provider-created.json'));
-  if (binding.task !== intent.spec.task || binding.role !== intent.spec.role || binding.pane_id !== pane.pane_id
+  if (!sameSessionData(binding.task_admission ?? null, intent.task_admission ?? null)
+    || binding.task !== intent.spec.task || binding.role !== intent.spec.role || binding.pane_id !== pane.pane_id
     || binding.terminal_id !== pane.terminal_id || binding.agent_name !== intent.agent_name
     || binding.ownership.disposition !== 'created' || binding.ownership.intent_id !== intent.intent_id) throw new Error('task_agent_start_identity_unknown');
   assertTaskBinding(binding);
@@ -451,47 +518,54 @@ export interface TaskStartEffects {
   contended?: () => void;
   /** Trusted caller fence checked after lock waits and before side effects. */
   guard?: () => void;
+  taskAuthority?: TaskSessionAuthority;
 }
 export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effects: TaskStartEffects): Promise<HerdrTaskBinding> {
   effects.guard?.();
   spec = structuredClone(spec);
   validateSpec(spec);
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, spec.task, spec.role);
+  const taskAdmission = effects.taskAuthority ? observeTaskSessionAdmission(repoRoot, spec, 'herdr', effects.taskAuthority) : undefined;
+  const recheck = () => { effects.guard?.(); recheckTaskAdmission(repoRoot,
+    { ...spec, runtime: 'herdr', task_admission: taskAdmission }, effects.taskAuthority); };
+  recheck();
   ensureSessionDirectory(root, dir);
   return locked(root, dir, async () => {
-    effects.guard?.();
+    recheck();
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     if (existsSync(join(dir, 'binding.json'))) {
       const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
       if (!sameSessionData(intent.spec, spec)) throw new Error('task_agent_spec_changed');
       const binding = readSessionArtifact<TaskPaneBinding>(join(dir, 'binding.json'));
       if (binding.runtime !== 'herdr') throw new Error('task_agent_spec_changed');
+      recheckTaskAdmission(repoRoot, binding, effects.taskAuthority);
       assertTaskBinding(binding); return binding;
     }
     if (existsSync(join(dir, 'intent.json'))) {
       const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
       if (!sameSessionData(intent.spec, spec)) throw new Error('task_agent_spec_changed');
+      recheckTaskAdmission(repoRoot, { ...intent.spec, runtime: 'herdr', task_admission: intent.task_admission }, effects.taskAuthority);
       return reconcile(dir, intent);
     }
-    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, effects.guard);
-    effects.guard?.();
-    const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec };
+    const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, recheck);
+    recheck();
+    const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec, ...(taskAdmission ? { task_admission: taskAdmission } : {}) };
     writeSessionArtifact(join(dir, 'intent.json'), intent);
     await effects.boundary?.('intent');
-    effects.guard?.();
+    recheck();
     writeSessionArtifact(join(dir, 'split-intent.json'), { intent_id: intent.intent_id, workspace_id: workspace.workspace_id });
     const result = info(spec.endpoint, ['pane', 'split', '--pane', workspace.root_pane.pane_id, '--direction', 'right', '--cwd', repository.execution_root, '--no-focus']);
     if (typeof result.pane?.pane_id !== 'string' || typeof result.pane.terminal_id !== 'string') throw new Error('task_agent_split_response_invalid');
     await effects.boundary?.('split');
-    effects.guard?.();
+    recheck();
     const pane: CreatedPane = { pane_id: result.pane.pane_id, terminal_id: result.pane.terminal_id, intent_id: intent.intent_id };
     writeSessionArtifact(join(dir, 'pane-created.json'), pane);
     await effects.boundary?.('pane');
-    effects.guard?.();
+    recheck();
     writeSessionArtifact(join(dir, 'launch-intent.json'), { intent_id: intent.intent_id });
     try {
       await effects.start(spec.endpoint, intent.agent_name, pane.pane_id, spec.harness_kind, spec.args);
-      effects.guard?.();
+      recheck();
     } catch (error) {
       writeSessionArtifact(join(dir, 'launch-unknown.json'), { intent_id: intent.intent_id, error: String(error) });
       throw new Error('task_agent_ambiguous_launch; inspect or cancel the same start; never replay');
@@ -499,7 +573,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     const binding = bindStartedAgent(intent, pane);
     writeSessionArtifact(join(dir, 'provider-created.json'), binding);
     await effects.boundary?.('launched');
-    effects.guard?.();
+    recheck();
     assertTaskBinding(binding);
     writeSessionArtifact(join(dir, 'binding.json'), binding);
     return binding;
@@ -525,10 +599,10 @@ export function assertTerminalHostCommand(command: readonly string[]): void {
   if (command.some(arg => /\s/.test(arg))) throw new Error('task_agent_terminal_host_path_whitespace');
 }
 export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
-  command: readonly string[], ready: () => Promise<void>, guard?: () => void): Promise<HerdrTaskBinding> {
+  command: readonly string[], ready: () => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority): Promise<HerdrTaskBinding> {
   if (spec.args.length !== 0) throw new Error('task_agent_application_host_command_invalid');
   assertApplicationHostCommand(command);
-  return startTaskAgent(repoRoot, spec, { guard, start: async (endpoint, name, pane, kind) => {
+  return startTaskAgent(repoRoot, spec, { guard, taskAuthority, start: async (endpoint, name, pane, kind) => {
     guard?.();
     mutate(endpoint, ['pane', 'run', pane, ...command]);
     await ready();
@@ -544,35 +618,42 @@ export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgent
  * or null while nothing was launched; then the caller asks the operator to run
  * the same command. The intent fixes that command; a later bind never changes it. */
 export async function bindTerminalApplicationHost(repoRoot: string, spec: TerminalHostSpec, command: readonly string[],
-  launched: () => Promise<ProcessProof | null>): Promise<TaskPaneBinding | null> {
+  launched: () => Promise<ProcessProof | null>, taskAuthority?: TaskSessionAuthority): Promise<TaskPaneBinding | null> {
   spec = { task: spec.task, role: spec.role, harness_kind: spec.harness_kind, max_requests: spec.max_requests };
   if (!spec.task?.trim() || !/^[a-z][a-z0-9_-]{0,31}$/.test(spec.role) || !spec.harness_kind?.trim()
     || !Number.isSafeInteger(spec.max_requests) || spec.max_requests < 1 || spec.max_requests > 100) throw new Error('task_agent_spec_invalid');
   assertTerminalHostCommand(command);
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, spec.task, spec.role);
+  const taskAdmission = taskAuthority ? observeTaskSessionAdmission(repoRoot, spec, 'terminal', taskAuthority) : undefined;
+  const recheck = () => recheckTaskAdmission(repoRoot, { ...spec, runtime: 'terminal', task_admission: taskAdmission }, taskAuthority);
+  recheck();
   ensureSessionDirectory(root, dir);
   return locked(root, dir, async () => {
+    recheck();
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     let intent: TerminalStartIntent;
     if (existsSync(join(dir, 'intent.json'))) {
       intent = readSessionArtifact<TerminalStartIntent>(join(dir, 'intent.json'));
       if (intent.runtime !== 'terminal' || !sameSessionData(intent.spec, spec) || !sameSessionData(intent.command, command)) throw new Error('task_agent_spec_changed');
     } else {
-      intent = { protocol: 2, runtime: 'terminal', repository, intent_id: randomUUID(), spec, command: [...command] };
+      intent = { ...(taskAdmission ? { task_admission: taskAdmission } : {}), protocol: 2, runtime: 'terminal', repository, intent_id: randomUUID(), spec, command: [...command] };
       writeSessionArtifact(join(dir, 'intent.json'), intent);
     }
+    recheckTaskAdmission(repoRoot, { ...intent.spec, runtime: 'terminal', task_admission: intent.task_admission }, taskAuthority);
     if (existsSync(join(dir, 'binding.json'))) {
       const binding = readTaskAgent(root, spec.task, spec.role).binding;
+      recheckTaskAdmission(repoRoot, binding, taskAuthority);
       assertTaskBinding(binding); return binding;
     }
     const reported = await launched();
+    recheck();
     if (reported === null) return null;
     const ownership: ObjectOwnership = { disposition: 'created', intent_id: intent.intent_id };
     const provider = { pid: reported.pid, identity: reported.identity };
     assertTerminalProcess(provider, command);
     const binding: TerminalTaskBinding = { protocol: 2, repository_id: repository.repository_id, execution_root: repository.execution_root,
       runtime: 'terminal', task: spec.task, role: spec.role, harness_kind: spec.harness_kind, command: [...command],
-      ownership, provider: { ...provider, ownership }, max_requests: spec.max_requests };
+      ownership, provider: { ...provider, ownership }, max_requests: spec.max_requests, ...(intent.task_admission ? { task_admission: intent.task_admission } : {}) };
     writeSessionArtifact(join(dir, 'provider-created.json'), binding);
     writeSessionArtifact(join(dir, 'binding.json'), binding);
     return binding;
@@ -590,13 +671,13 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
     assertCreated(binding.ownership);
     const intent = readSessionArtifact<TerminalStartIntent>(join(dir, 'intent.json'));
     const created = readSessionArtifact<TerminalTaskBinding>(join(dir, 'provider-created.json'));
-    if (intent.runtime !== 'terminal' || intent.intent_id !== binding.ownership.intent_id || !sameSessionData(intent.command, binding.command)
+    if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || intent.runtime !== 'terminal' || intent.intent_id !== binding.ownership.intent_id || !sameSessionData(intent.command, binding.command)
       || intent.spec.task !== binding.task || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind
       || intent.spec.max_requests !== binding.max_requests || !sameSessionData(created, binding)) throw new Error('task_agent_binding_invalid');
   } else if (binding.ownership.disposition === 'created') {
     const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
     const pane = readSessionArtifact<CreatedPane>(join(dir, 'pane-created.json'));
-    if (!sameSessionData(intent.spec.endpoint, binding.endpoint) || intent.spec.task !== binding.task
+    if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || !sameSessionData(intent.spec.endpoint, binding.endpoint) || intent.spec.task !== binding.task
       || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind || intent.spec.max_requests !== binding.max_requests) throw new Error('task_agent_binding_invalid');
     if (intent.intent_id !== binding.ownership.intent_id || pane.intent_id !== intent.intent_id
       || pane.pane_id !== binding.pane_id || pane.terminal_id !== binding.terminal_id) throw new Error('task_agent_pane_identity_lost');
@@ -616,6 +697,10 @@ function assertTaskRequest(root: string, dir: string, request: TaskRequest): { b
     || !sameSessionData(readSessionArtifact<TaskRequest>(join(dir, `request-${request.round}.json`)), request)
     || request.result_ref !== join(outbox, `result-${request.round}.json`)
     || request.context_ref !== join(outbox, `context-${request.round}.txt`)) throw new Error('task_agent_result_ref_mismatch');
+  if (binding.task_admission) {
+    if (request.session_binding_sha256 !== sessionDigest(binding) || !request.task_admission
+      || !sameSessionData(request.task_admission.identity, binding.task_admission.identity)) throw new Error('task_agent_request_admission_mismatch');
+  } else if (request.task_admission || request.session_binding_sha256) throw new Error('task_agent_request_admission_mismatch');
   assertSessionDirectory(binding.execution_root, outbox);
   return { binding, outbox };
 }
@@ -635,14 +720,17 @@ export function readTaskRequestResult(root: string, dir: string, request: TaskRe
   return validateTaskResult(request, value);
 }
 /** The owner validates the transport result before immutable primary ingestion. */
-export async function collectTaskResult(repoRoot: string, task: string, role: string, round: number, guard?: () => void): Promise<TaskResult | null> {
+export async function collectTaskResult(repoRoot: string, task: string, role: string, round: number, guard?: () => void, taskAuthority?: TaskSessionAuthority): Promise<TaskResult | null> {
   guard?.();
   const repository = taskRepository(repoRoot);
-  const { dir } = readTaskAgent(repoRoot, task, role);
+  const { dir, binding } = readTaskAgent(repoRoot, task, role);
+  recheckTaskAdmission(repoRoot, binding, taskAuthority);
   if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
   return locked(repository.primary_root, dir, async () => {
     guard?.();
     const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
+    const current = recheckTaskAdmission(repoRoot, binding, taskAuthority);
+    if (current && request.task_admission?.approval.admission_sha256 !== current.approval.admission_sha256) throw new Error('task_agent_request_context_changed');
     const result = readTaskRequestResult(repoRoot, dir, request);
     if (!result) return null;
     const path = join(dir, `collected-${round}.json`);
@@ -652,16 +740,23 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
       return previous;
     }
     guard?.();
+    recheckTaskAdmission(repoRoot, binding, taskAuthority);
     writeSessionArtifact(path, result);
     return result;
   });
 }
 export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only', applicationDelivery: (request: TaskRequest) => Promise<void>,
   /** Internal fixture barrier. It is never accepted from CLI or PM input. */
-  publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void): Promise<TaskRequest> {
+  publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
-  return locked(root, dir, async () => {
+  const current = recheckTaskAdmission(repoRoot, binding, taskAuthority);
+  const recheck = () => {
     guard?.();
+    const observed = recheckTaskAdmission(repoRoot, binding, taskAuthority);
+    if (current && observed?.approval.admission_sha256 !== current.approval.admission_sha256) throw new Error('task_agent_request_context_changed');
+  };
+  return locked(root, dir, async () => {
+    recheck();
     if (!['repeatable', 'changed_only'].includes(contextPolicy)) throw new Error('task_agent_context_policy_invalid');
     assertTaskBinding(binding);
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
@@ -677,15 +772,15 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     }, 'started');
     const outbox = requestOutbox(binding, dir);
     ensureSessionDirectory(binding.execution_root, outbox);
-    const request: TaskRequest = { protocol: 2, task, role, round, request_id: randomUUID(),
+    const request: TaskRequest = { ...(current ? { task_admission: current, session_binding_sha256: sessionDigest(binding) } : {}), protocol: 2, task, role, round, request_id: randomUUID(),
       context_ref: join(outbox, `context-${round}.txt`), source_ref: contextPath,
       context_sha256: digest, result_ref: join(outbox, `result-${round}.json`),
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
     const requestPath = join(dir, `request-${round}.json`);
-    guard?.();
+    recheck();
     writeSessionArtifact(requestPath, request);
     if (publicationBoundary) await publicationBoundary(request);
-    guard?.();
+    recheck();
     writeSessionBytes(request.context_ref, content);
     beginSessionRound(dir, round, { request_id: request.request_id, provider: binding.provider });
     // Once this marker exists, a crash/nonzero/timeout can mean input was sent.
@@ -699,7 +794,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     // Successful transport ACK is a durable fact. A later authority denial
     // refuses further work, but must not turn accepted delivery into unknown.
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { request_id: request.request_id, state: 'accepted' });
-    guard?.();
+    recheck();
     return request;
   });
 }

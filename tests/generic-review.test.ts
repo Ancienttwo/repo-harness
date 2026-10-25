@@ -51,7 +51,7 @@ test('generic review refuses tampered empty and missing approved plans before an
     };
     await expect(runReviewRound({ repoRoot: root, authority, verification, reviewerRepo, authorityHome: home,
       endpoint: { session: 'private-gp', home }, parentPane: 'fixture-owner-pane',
-      admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow('grant_digest');
+      taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow('grant_digest');
     expect(calls).toEqual([]);
     expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
   }
@@ -108,7 +108,9 @@ function packetRoundFixture() {
   const calls: string[] = [];
   const effects: ReviewEffects = {
     installation: async (_kind, executable) => { calls.push('installation'); return { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }; },
-    start: async () => {
+    start: async (_repo, _spec, _command, _ready, _guard, taskAuthority) => {
+      expect(taskAuthority?.source).toBe(fixture.authority);
+      expect(taskAuthority?.claim).toEqual(options.taskClaim);
       calls.push('start');
       expect(readFileSync(packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
       expect(lstatSync(packetPath()).mode & 0o777).toBe(0o600);
@@ -127,7 +129,7 @@ function packetRoundFixture() {
   };
   const options = { repoRoot: fixture.root, authority: fixture.authority, verification: fixture.verification, reviewerRepo,
     authorityHome: fixture.home, endpoint, parentPane: 'fixture-owner-pane',
-    harness: 'claude' as const, admitSession: () => { calls.push('admit'); } };
+    harness: 'claude' as const, taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } };
   return { ...fixture, ...location, options, effects, calls, packetPath, refresh };
 }
 
@@ -183,6 +185,8 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   expect(first.cwd).toBe(realpathSync(f.options.reviewerRepo));
   const session = readSessionArtifact<Record<string, unknown>>(join(f.dir, 'session.json'));
   expect([session.endpoint, session.parent_pane, session.actual_harness]).toEqual([null, null, 'claude']);
+  expect(session.task_claim).toEqual(options.taskClaim);
+  await expect(runReviewRound({ ...options, taskClaim: { ...options.taskClaim, revision: 'sha256:' + 'b'.repeat(64) } }, f.effects)).rejects.toThrow('review_session_spec_changed');
   expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);
   expect(readFileSync(f.packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
   // Repeating the round before any host claims the directory returns the same command and admits no new session.
