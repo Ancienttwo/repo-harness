@@ -94,7 +94,10 @@ function organizationBoardFixture(repositoryId = 'repo_a5b76eee64af71c3') {
       { session: { ...session, selector: { ...selector, task: 'unassigned-task', session_binding_sha256: `sha256:${'c'.repeat(64)}` }, profile_selection: { state: 'unassigned' as const } }, selection: { state: 'unassigned' as const } },
     ] }] };
   const overlay = buildAdmittedEngineeringOverlay({ repository_id: repositoryId, registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
-    scheduling, components: [{ component: 'scheduling', support: 'available', observation_before: hash, observation_after: hash }],
+    scheduling, components: [
+      { component: 'scheduling', support: 'available', observation_before: hash, observation_after: hash },
+      { component: 'runtime_effects', support: 'available', observation_before: hash, observation_after: hash },
+    ],
     runtime_effects: { support: 'available', engineers: [{ engineer_id: engineerId, effects: { support: 'available', active: 1, reconciliation_required: 1, failed: 0,
       wake: { pending: 1, delivered: 0, failed: 0, reconciliation_required: 1 }, revision: hash } }] } });
   return { overlay, attention: projectAdmittedOrganizationAttention(overlay) };
@@ -107,6 +110,10 @@ describe('Organization observation boundary', () => {
     const bytes = JSON.stringify(view);
     for (const privateValue of ['private-thread', 'private-host', '/private/worktree', 'provider_thread_id', 'host_id', 'worktree_path', 'source_root']) expect(bytes).not.toContain(privateValue);
     expect(view.organization_attention).toEqual(board.attention);
+    expect(view.overlay.components.map(component => component.component)).toEqual(['scheduling', 'runtime_effects']);
+    expect(view.overlay.runtime_effects.engineers[0]!.effects.reconciliation_required).toBe(1);
+    expect(view.organization_attention.attention).toContainEqual({ session_binding_sha256: null,
+      engineer_id: view.overlay.scheduling!.profiles[0]!.engineer_id, reason: 'runtime_reconciliation_required', owner: 'runtime_operator' });
     expect(view.overlay.scheduling!.tasks[0]!.sessions[0]!.selection.state).toBe('selected');
     expect(view.overlay.scheduling!.tasks[0]!.sessions[1]!.selection.state).toBe('unassigned');
     expect(decodeOperatorOrganizationSnapshot(JSON.parse(bytes), repositoryId)).toEqual(view);
@@ -115,6 +122,9 @@ describe('Organization observation boundary', () => {
       { ...view, overlay: { ...view.overlay, repository_id: 'repo_other' } },
       { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, profiles: [...scheduling.profiles, ...scheduling.profiles] } } },
       { ...view, host_id: 'private-host' },
+      { ...view, overlay: { ...view.overlay, components: view.overlay.components.slice(0, 1) } },
+      { ...view, overlay: { ...view.overlay, components: [view.overlay.components[0], view.overlay.components[0]] } },
+      { ...view, overlay: { ...view.overlay, runtime_effects: { support: 'unreadable', engineers: [] } } },
       { ...view, overlay: { ...view.overlay, snapshot_consistency: 'degraded' } },
       { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, tasks: scheduling.tasks.map(task => ({ ...task, sessions: task.sessions.map(row => ({ ...row, session: { ...row.session, host_id: 'private-host' } })) })) } } },
       { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, profiles: Array.from({length:201}, () => scheduling.profiles[0]) } } },
