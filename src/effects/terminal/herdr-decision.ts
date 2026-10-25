@@ -71,7 +71,9 @@ export async function labelDecision(input: { next?: boolean; eventId?: string; o
   // A label command never waits: a held lock fails this command.
   const lock = acquireExclusiveDirectoryLock(realpathSync(dir), 'decision-labels.lock', {
     waitTimeoutMs: 1,
-    reclaimStaleEmptyDirectory: true,
+    // Legacy writers hold a bare directory for their entire read/modify/write.
+    // Age cannot prove they exited, so an ownerless lock must fail closed.
+    reclaimStaleEmptyDirectory: false,
   });
   try {
     const records = shadowRecords(dir);

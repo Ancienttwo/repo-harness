@@ -721,12 +721,28 @@ describe('shipped Herdr notify event handler', () => {
       expect((await labelDecision({ next: true, stateDir: f.state }) as { event_id: string }).event_id).toBe(eventId);
       expect(existsSync(lockPath)).toBe(false);
 
-      // An older version locked with a bare directory and no owner record.
+    } finally { f.cleanup(); }
+  });
+
+  test('an aged live legacy label lock keeps its read-modify-write ownership', async () => {
+    const f = shadowFixture();
+    try {
+      const lockPath = join(f.state, 'decision-labels.lock');
       mkdirSync(lockPath, { mode: 0o700 });
       const old = new Date(Date.now() - 60_000);
       utimesSync(lockPath, old, old);
-      expect((await labelDecision({ next: true, stateDir: f.state }) as { event_id: string }).event_id).toBe(eventId);
-      expect(existsSync(lockPath)).toBe(false);
+      const path = join(f.state, 'decision-labels.jsonl');
+      writeFileSync(path, 'legacy snapshot\n', { mode: 0o600 });
+      const snapshot = readFileSync(path, 'utf8');
+      // The legacy owner paused after its read. A new writer must not steal
+      // its bare-directory lock, even though the directory is older than TTL.
+      await expect(labelDecision({ next: true, stateDir: f.state })).rejects.toThrow('timed out waiting for exclusive lock');
+      expect(existsSync(lockPath)).toBe(true);
+      expect(readFileSync(path, 'utf8')).toBe(snapshot);
+      const temporary = join(f.state, 'legacy-labels.tmp');
+      writeFileSync(temporary, snapshot + 'legacy publication\n', { mode: 0o600 });
+      renameSync(temporary, path);
+      expect(readFileSync(path, 'utf8')).toBe('legacy snapshot\nlegacy publication\n');
     } finally { f.cleanup(); }
   });
 
