@@ -486,3 +486,28 @@ The event route registry remains the host adapter authority. Ordinary edits and 
 - route-runtime 与 handler 组件之间的环（§3.3）。如果 archctx 的环检测开始阻塞，把 handler 契约移到叶子组件。
 - `write-all-sync.ts` 归 global-runtime-reconciliation，但 hook 热路径也用它。它造成 hook-adapters → global-runtime-reconciliation 的一条边，而 global-runtime-reconciliation 也调用 hook-adapters。这个 26 行的工具可以移到 `execution-primitives`（G2 新建），以去掉这条 capability 级回边。
 - host-installer 与 edit-guards → acceptance-review 没有声明。`relation.acceptance-review.hook-adapters` 已经声明反向（review 命令调用 circuit breaker）。本方向有 5 条边，反向有 2 条。集成不新增反向关系。是否翻转方向是开放问题。
+
+### Controlled native-session inbox delivery
+
+Controlled review starts persist the native Claude session ID or Codex thread ID
+reported by pinned OAR, bound to the immutable admitted task-session binding and
+actual host process. A native SessionStart can precede that ready record: hooks
+must not wait for readiness and cannot deliver task messages at that point.
+
+Before a controlled request is published, the owner observes current provider
+admission, selects bounded inbox events, and uses the existing delivery ledger's
+`controlled_request` channel with an exact request reference. An immutable
+companion binds the request, native session, session-binding digest, protected
+approval, and a 60-second expiry. Retry retains the same intent and expiry; it
+never acquires a new approval or reuses another request's receipt. The OAR host
+checks the digest, native identity, current local grant and session closure
+before rendering the messages with the existing untrusted-message wrapper.
+The reviewer consumes context only; no inbox lock/receipt writes or additional
+sandbox permissions are granted to it.
+
+New controlled review sessions use the full existing campaign key as their task
+label. Historical `review-*` sessions retain their identity and round budget and
+report inbox delivery as unsupported until a new admitted session is created.
+This path restores controlled pre-prompt delivery. It does not bind independent
+native sessions, deliver during the first SessionStart, or establish a callback
+for arbitrary mid-turn hook events. Ordinary hook notices remain independent.

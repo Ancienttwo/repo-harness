@@ -136,7 +136,9 @@ export type TerminalHostSpec = Pick<TaskAgentSpec, 'task' | 'role' | 'harness_ki
 interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
 interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
 interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
+export type TaskPrePromptInbox = { status: 'bound'; path: string; sha256: string } | { status: 'unsupported'; reason: 'historical_task_label' };
 export interface TaskRequest {
+  pre_prompt_inbox?: TaskPrePromptInbox;
   task_admission?: TaskSessionAdmission;
   session_binding_sha256?: string;
   protocol: 2;
@@ -749,7 +751,8 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
 }
 export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only', applicationDelivery: (request: TaskRequest) => Promise<void>,
   /** Internal fixture barrier. It is never accepted from CLI or PM input. */
-  publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority): Promise<TaskRequest> {
+  publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority,
+  preparePrePrompt?: (request: TaskRequest) => TaskPrePromptInbox): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);
   const current = recheckTaskAdmission(repoRoot, binding, taskAuthority);
   const recheck = () => {
@@ -778,6 +781,20 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
       context_ref: join(outbox, `context-${round}.txt`), source_ref: contextPath,
       context_sha256: digest, result_ref: join(outbox, `result-${round}.json`),
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
+    if (preparePrePrompt) {
+      // An unpublished preparation keeps its exact request identity and budget.
+      const draftPath = join(dir, `request-draft-${round}.json`);
+      if (existsSync(draftPath)) {
+        const draft = readSessionArtifact<TaskRequest>(draftPath);
+        if (draft.task !== request.task || draft.role !== request.role || draft.round !== round
+          || draft.context_sha256 !== request.context_sha256 || draft.source_ref !== request.source_ref
+          || draft.session_binding_sha256 !== request.session_binding_sha256
+          || !sameSessionData(draft.task_admission, request.task_admission)) throw new Error('task_agent_request_context_changed');
+        Object.assign(request, draft);
+      } else writeSessionArtifact(draftPath, request);
+      request.pre_prompt_inbox = preparePrePrompt(request);
+      recheck();
+    }
     const requestPath = join(dir, `request-${round}.json`);
     recheck();
     writeSessionArtifact(requestPath, request);

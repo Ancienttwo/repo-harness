@@ -1,3 +1,4 @@
+import { preparePrePromptInbox } from './pre-prompt-inbox';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { osAccountHome } from '../runtime/os-account-home';
 import { reviewCampaignKey } from '../../core/review/authority-context';
@@ -132,7 +133,7 @@ export async function probeReviewInstallation(kind: Harness, executable?: string
 }
 const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApplicationHost, launched: terminalHostLaunched, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
   cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
-  owner: boundOwner, model: completedModel,
+  owner: boundOwner, model: completedModel, bindNative: bindNativeTaskSession,
   installation: probeReviewInstallation,
   ready: waitHostFile,
   dispose: async (repo: string, task: string, output: string, terminal = false): Promise<void> => {
@@ -265,7 +266,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
       options.admitSession();
-      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, ...(engineerProfile ? { engineer_profile: engineerProfile } : {}), goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
+      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, ...(engineerProfile ? { engineer_profile: engineerProfile } : {}), goal_sha256: identity.goal_sha256, task: key, reviewer_repo: reviewerRepo,
         endpoint, parent_pane: parentPane, requested_harness: requested, actual_harness: actual,
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
@@ -339,7 +340,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         command, () => client.ready(join(dir, 'ready.json')), undefined, taskAuthority);
     }
     client.assertBinding(binding);
-    bindNativeTaskSession({ repo_root: reviewerRepo, binding, ready_path: join(dir, 'ready.json') });
+    client.bindNative({ repo_root: reviewerRepo, binding, ready_path: join(dir, 'ready.json') });
     if (binding.runtime === 'herdr' && binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
     const recheck = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
@@ -349,7 +350,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
     const request = await client.send(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, relative(reviewerRepo, packetPath), 'repeatable',
-      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority);
+      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority,
+      request => preparePrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }));
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
     const deadline = Date.now() + timeout;
     let collected;
