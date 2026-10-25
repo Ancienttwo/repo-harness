@@ -7,6 +7,7 @@ import {
   openSync,
   lstatSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   rmSync,
@@ -28,6 +29,7 @@ import type {
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
 import { runProcess } from "./process-runner";
+import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
 
 const BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";
@@ -56,6 +58,11 @@ export interface ApplyAdoptionPlanResult {
   readonly dryRun: boolean;
   readonly results: readonly ApplyOperationResult[];
   readonly transactionManifestPath?: string;
+  /** Automatic rollback, by manifest, of the operations applied before the transaction failed. */
+  readonly rollback?: {
+    readonly ok: boolean;
+    readonly results: readonly RollbackOperationResult[];
+  };
 }
 
 export interface FsTransactionManifestOperation {
@@ -224,28 +231,9 @@ function transactionDirFor(): string {
 }
 
 export function withTargetLock<T>(targetPath: string, fn: () => T): T {
-  const lockPath = `${targetPath}${LOCK_SUFFIX}`;
-  let fd: number | null = null;
-  let locked = false;
-  try {
-    fd = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    locked = true;
-    writeSync(fd, `${process.pid}\n`);
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = null;
-    return fn();
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EEXIST") throw new Error(`target is locked: ${lockPath}`);
-    throw error;
-  } finally {
-    if (fd !== null) closeSync(fd);
-    if (locked) {
-      rmSync(lockPath, { force: true });
-      fsyncDirectory(dirname(targetPath));
-    }
-  }
+  // The shared primitive needs a canonical root; the lock stays beside its target,
+  // and a lock left by a dead writer is reclaimed instead of blocking the target.
+  return withExclusiveDirectoryLock(realpathSync(dirname(targetPath)), `${basename(targetPath)}${LOCK_SUFFIX}`, fn);
 }
 
 export interface AtomicWriteResult {
@@ -511,9 +499,8 @@ export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrack
     : failure(operation, result.stderr || result.error || "git rm --cached failed");
 }
 
-function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, results: readonly ApplyOperationResult[]): string {
-  const manifestPath = `${transactionDir}/manifest.json`;
-  const manifest: FsTransactionManifest = {
+function buildTransactionManifest(plan: AdoptionPlan, manifestPath: string, results: readonly ApplyOperationResult[]): FsTransactionManifest {
+  return {
     protocol: 1,
     // protocol-1 frozen literal (see FsTransactionManifest.command); not the CLI verb.
     command: "adopt",
@@ -539,19 +526,25 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
       command: `repo-harness init rollback --transaction ${manifestPath}`,
     },
   };
-  atomicWriteFile(plan.repoRoot, manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  return manifestPath;
 }
 
 function finalizeTransactionManifest(
   plan: AdoptionPlan,
   transactionDir: string,
   results: readonly ApplyOperationResult[],
-): { readonly results: readonly ApplyOperationResult[]; readonly transactionManifestPath?: string } {
+): {
+  readonly results: readonly ApplyOperationResult[];
+  readonly manifest: FsTransactionManifest;
+  readonly transactionManifestPath?: string;
+} {
+  const manifestPath = `${transactionDir}/manifest.json`;
+  const manifest = buildTransactionManifest(plan, manifestPath, results);
   try {
-    return { results, transactionManifestPath: writeTransactionManifest(plan, transactionDir, results) };
+    atomicWriteFile(plan.repoRoot, manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    return { results, manifest, transactionManifestPath: manifestPath };
   } catch (error) {
     return {
+      manifest,
       results: [
         ...results,
         {
@@ -649,7 +642,7 @@ export function applyAdoptionPlan(plan: AdoptionPlan, dryRun = false): ApplyAdop
     }
     const finalized = transactionDir && !manifestPreflightError
       ? finalizeTransactionManifest(plan, transactionDir, results)
-      : { results };
+      : { results, transactionManifestPath: undefined };
     return {
       ok: false,
       dryRun,
@@ -658,33 +651,66 @@ export function applyAdoptionPlan(plan: AdoptionPlan, dryRun = false): ApplyAdop
     };
   }
 
-  const results = plan.operations.map((operation) => {
-    switch (operation.kind) {
-      case "mkdir":
-        return applyMkdirOperation(plan.repoRoot, operation, dryRun);
-      case "writeFile":
-        return applyWriteFileOperation(plan.repoRoot, operation, dryRun, transactionDir);
-      case "appendManagedBlock":
-        return applyAppendManagedBlockOperation(plan.repoRoot, operation, dryRun, transactionDir);
-      case "move":
-        return applyMoveOperation(plan.repoRoot, operation, dryRun);
-      case "remove":
-        return applyRemoveOperation(plan.repoRoot, operation, dryRun, transactionDir);
-      case "gitUntrack":
-        return applyGitUntrackOperation(plan.repoRoot, operation, dryRun);
-      default:
-        return failure(operation, `unsupported operation kind: ${operation.kind}`);
-    }
-  });
-  const finalized = transactionDir ? finalizeTransactionManifest(plan, transactionDir, results) : { results };
+  const results: ApplyOperationResult[] = [];
+  for (const operation of plan.operations) {
+    const result = applyOperation(plan.repoRoot, operation, dryRun, transactionDir);
+    results.push(result);
+    if (result.status === "failed") break;
+  }
+  // Operations after the first failure never run; they stay planned in the report and manifest.
+  for (const operation of plan.operations.slice(results.length)) {
+    results.push({ id: operation.id, kind: operation.kind, path: operation.path, status: "planned" });
+  }
+  if (!transactionDir) {
+    return { ok: results.every((result) => result.status !== "failed"), dryRun, results };
+  }
+
+  const finalized = finalizeTransactionManifest(plan, transactionDir, results);
   const ok = finalized.results.every((result) => result.status !== "failed");
+  // A failed transaction, including one whose manifest could not be persisted, rolls back
+  // its applied operations from the same manifest records `init rollback` would read.
+  const rollbackResults = ok ? undefined : rollbackManifestOperations(resolve(plan.repoRoot), finalized.manifest.operations);
 
   return {
     ok,
     dryRun,
     results: finalized.results,
     transactionManifestPath: finalized.transactionManifestPath,
+    rollback: rollbackResults && {
+      ok: rollbackResults.every((result) => result.status !== "failed"),
+      results: rollbackResults,
+    },
   };
+}
+
+function applyOperation(
+  repoRoot: string,
+  operation: AdoptionOperation,
+  dryRun: boolean,
+  transactionDir: string | undefined,
+): ApplyOperationResult {
+  // A thrown error is this operation's failure: it must stop the transaction and
+  // trigger rollback, not escape with earlier operations applied and unrecorded.
+  try {
+    switch (operation.kind) {
+      case "mkdir":
+        return applyMkdirOperation(repoRoot, operation, dryRun);
+      case "writeFile":
+        return applyWriteFileOperation(repoRoot, operation, dryRun, transactionDir);
+      case "appendManagedBlock":
+        return applyAppendManagedBlockOperation(repoRoot, operation, dryRun, transactionDir);
+      case "move":
+        return applyMoveOperation(repoRoot, operation, dryRun);
+      case "remove":
+        return applyRemoveOperation(repoRoot, operation, dryRun, transactionDir);
+      case "gitUntrack":
+        return applyGitUntrackOperation(repoRoot, operation, dryRun);
+      default:
+        return failure(operation, `unsupported operation kind: ${operation.kind}`);
+    }
+  } catch (error) {
+    return failure(operation, errorMessage(error));
+  }
 }
 
 function resolveTransactionManifest(repoRoot: string, transaction: string): { ok: true; path: string; rel: string } | { ok: false; error: string } {
@@ -936,7 +962,22 @@ export function rollbackAdoptionTransaction(opts: { readonly repoRoot: string; r
     };
   }
 
-  const reversed = [...loaded.manifest.operations].reverse();
+  const results = rollbackManifestOperations(repoRoot, loaded.manifest.operations);
+  return {
+    protocol: 1,
+    command: "init rollback",
+    repoRoot,
+    transactionManifestPath: loaded.rel,
+    ok: results.every((result) => result.status !== "failed"),
+    results,
+  };
+}
+
+function rollbackManifestOperations(
+  repoRoot: string,
+  operations: readonly FsTransactionManifestOperation[],
+): RollbackOperationResult[] {
+  const reversed = [...operations].reverse();
   const restoreIndex = reversed.filter((operation) => operation.kind === "gitUntrack");
   const results = reversed.filter((operation) => operation.kind !== "gitUntrack").map((operation) => {
     if (operation.status !== "applied") {
@@ -955,13 +996,5 @@ export function rollbackAdoptionTransaction(opts: { readonly repoRoot: string; r
         : { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "none" },
     );
   }
-
-  return {
-    protocol: 1,
-    command: "init rollback",
-    repoRoot,
-    transactionManifestPath: loaded.rel,
-    ok: results.every((result) => result.status !== "failed"),
-    results,
-  };
+  return results;
 }

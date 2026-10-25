@@ -7,8 +7,10 @@ import { join } from "path";
 import { planAdoption } from "../../src/core/adoption/plan";
 import { isRepoHarnessSourceCheckout } from "../../src/core/adoption/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
+import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
 
 const ROOT = join(import.meta.dir, "..", "..");
+const FS_TRANSACTION = join(ROOT, "src/effects/fs-transaction.ts");
 const CLI = join(ROOT, "src/cli/index.ts");
 const HRD09_LEGACY_FIXTURE = join(ROOT, "tests/fixtures/hrd09-legacy-hook-runtime");
 
@@ -18,6 +20,14 @@ function tempRepo(): string {
 
 function cleanup(path: string): void {
   rmSync(path, { recursive: true, force: true });
+}
+
+function planWith(repo: string, operations: readonly AdoptionOperation[]): AdoptionPlan {
+  return { ...planAdoption({ repoRoot: repo, mode: "minimal" }), apply: true, operations };
+}
+
+function writeOperation(path: string, content: string): AdoptionOperation {
+  return { id: `writeFile:${path}`, kind: "writeFile", path, content, reason: "test", risk: "low", status: "planned" };
 }
 
 describe("canonical adoption plan", () => {
@@ -518,6 +528,70 @@ describe("canonical adoption plan", () => {
       cleanup(repo);
     }
   });
+
+  test("apply stops at the first failed operation and rolls back the applied ones by manifest", () => {
+    const repo = tempRepo();
+    try {
+      const original = Buffer.from("original bytes ✓\n");
+      writeFileSync(join(repo, "existing.txt"), original);
+      // The fourth write passes preflight, then fails because the third write turns its parent into a file.
+      const plan = planWith(repo, [
+        writeOperation("existing.txt", "replaced\n"),
+        { id: "mkdir:created-dir", kind: "mkdir", path: "created-dir", reason: "test", risk: "low", status: "planned" },
+        writeOperation("blocker", "file in the way\n"),
+        writeOperation("blocker/nested.txt", "never written\n"),
+        writeOperation("after.txt", "never written\n"),
+      ]);
+      const apply = applyAdoptionPlan(plan);
+
+      expect(apply.ok).toBe(false);
+      expect(apply.results.map((result) => result.status)).toEqual(["applied", "applied", "applied", "failed", "planned"]);
+      expect(existsSync(join(repo, "after.txt"))).toBe(false);
+      expect(apply.rollback?.ok).toBe(true);
+      expect(readFileSync(join(repo, "existing.txt")).equals(original)).toBe(true);
+      expect(existsSync(join(repo, "created-dir"))).toBe(false);
+      expect(existsSync(join(repo, "blocker"))).toBe(false);
+      const manifest = JSON.parse(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8"));
+      expect(manifest.operations.map((operation: { status: string }) => operation.status))
+        .toEqual(["applied", "applied", "applied", "failed", "planned"]);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("apply reclaims a target lock left by a SIGKILLed writer", async () => {
+    const repo = tempRepo();
+    try {
+      const target = join(repo, "locked.txt");
+      writeFileSync(target, "before\n");
+      const holder = Bun.spawn([process.execPath, "-e", `
+        const { writeSync } = require("fs");
+        const { withTargetLock } = require(${JSON.stringify(FS_TRANSACTION)});
+        withTargetLock(${JSON.stringify(target)}, () => {
+          writeSync(1, "locked\\n");
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+        });
+      `], { stdout: "pipe", stderr: "inherit" });
+      const reader = holder.stdout.getReader();
+      let output = "";
+      while (!output.includes("locked")) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error(`lock holder exited before locking: ${output}`);
+        output += new TextDecoder().decode(chunk.value);
+      }
+      holder.kill("SIGKILL");
+      await holder.exited;
+      expect(existsSync(`${target}.repo-harness.lock`)).toBe(true);
+
+      const apply = applyAdoptionPlan(planWith(repo, [writeOperation("locked.txt", "after\n")]));
+      expect(apply.results).toEqual([expect.objectContaining({ status: "applied" })]);
+      expect(apply.ok).toBe(true);
+      expect(readFileSync(target, "utf-8")).toBe("after\n");
+      expect(existsSync(`${target}.repo-harness.lock`)).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
+  }, 30_000);
 
   test("preflight symlink failures never write a transaction manifest outside the repo", () => {
     const repo = tempRepo();
