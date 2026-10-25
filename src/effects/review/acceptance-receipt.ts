@@ -308,7 +308,6 @@ function normalizedVerificationEvidence(content: string, subject: ReviewSubject,
   try { report = JSON.parse(content); } catch (error) { fail('verification evidence is invalid JSON: ' + (error as Error).message); }
   const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
   const current = execution.evaluateAdmittedVerification({ repoRoot: root, authority });
-  if (current.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + current.reason);
   if (!current.passed) fail('verification evidence is stale: current passing evaluation is unavailable');
   if (!isRecord(report) || !isRecord(report.target) || report.target.snapshot_hash !== current.target.snapshot_hash
     || report.target.plan_hash !== current.target.plan_hash) fail('verification evidence is stale for the current source snapshot');
@@ -672,11 +671,11 @@ export function revokeUserWaiverGrant(args: { root: string; authorityHome: strin
 }
 
 export async function acceptanceContext(args: {
-  root: string; authority: ReviewAdmissionSource; verification: string; authorityHome?: string;
+  root: string; authority: ReviewAdmissionSource; verification: string; authorityHome?: string; targetRef?: string; targetRevision?: string;
 }) {
   const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
   const verification = verificationReportFile(root, args.verification);
-  const subject = currentSubject(root);
+  const subject = currentSubject(root, args.targetRef, args.targetRevision);
   const evidence = normalizedVerificationEvidence(verification.content, subject, root, args.authority);
   const report = JSON.parse(verification.content);
   const authorityContext = bindReviewAdmission(admission, {
@@ -900,7 +899,10 @@ export async function verifyAcceptance(args: {
 }): Promise<AcceptanceReceipt> {
   const root = realpathSync(args.root);
   const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-  const context = await acceptanceContext({ ...args, root, verification: args.verification ?? receipt.verification_file });
+  const subject = currentSubject(root, receipt.target_ref, receipt.target_revision);
+  if (subject.review_subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt semantic subject is stale');
+  const context = await acceptanceContext({ ...args, root, verification: args.verification ?? receipt.verification_file,
+    targetRef: receipt.target_ref, targetRevision: receipt.target_revision });
   return inspectAcceptanceCurrentBinding({ root, authorityHome: args.authorityHome, authority: args.authority,
     subject: context.subject, evidence: context.evidence });
 }
@@ -1044,9 +1046,9 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
   if (command === 'path') { console.log(acceptanceReceiptPath(root, authorityHome)); return 0; }
   if (command === 'revoke-waiver') { revokeUserWaiverGrant({ root, authorityHome }); return 0; }
   const authority = readReviewAdmissionSource(root, {
-    repositoryId: option(argv, '--repository-id')!, issueId: option(argv, '--issue-id')!,
-    campaignId: option(argv, '--campaign-id')!, grantSha256: option(argv, '--grant-sha256')!,
-    policySha256: option(argv, '--policy-sha256')!, actor: option(argv, '--actor')!,
+    'repository-id': option(argv, '--repository-id')!, 'issue-id': option(argv, '--issue-id')!,
+    'campaign-id': option(argv, '--campaign-id')!, 'grant-sha256': option(argv, '--grant-sha256')!,
+    'policy-sha256': option(argv, '--policy-sha256')!, actor: option(argv, '--actor')!,
   });
   if (command === 'evidence-requirement') {
     process.stdout.write(currentAdmission(root, authority).admission.benchmark); return 0;

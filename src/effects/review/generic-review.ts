@@ -163,8 +163,8 @@ const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApp
 export type ReviewEffects = Partial<typeof runtime>;
 
 export function reviewLocation(repoRoot: string, authority: ReviewAdmissionSource) {
-  const repository = taskRepository(repoRoot), root = repository.execution_root;
-  if (realpathSync(authority.repoRoot) !== root) throw new Error('review_admission_repository_mismatch');
+  const repository = taskRepository(authority.repoRoot), root = repository.execution_root;
+  if (taskRepository(repoRoot).repository_id !== repository.repository_id) throw new Error('review_admission_repository_mismatch');
   const campaign = reviewCampaignKey(authority), key = campaign.slice(7);
   const dir = join(repository.primary_root, '.ai/harness/runs/generic-review', key);
   ensureSessionDirectory(repository.primary_root, dir);

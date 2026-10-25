@@ -22,7 +22,10 @@ export function buildReviewCommand(): Command {
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
     child.action(async opts => {
       try {
-        const authority = readReviewAdmissionSource(opts.repo, opts);
+        const authority = readReviewAdmissionSource(opts.repo, {
+          'repository-id': opts.repositoryId, 'issue-id': opts.issueId, 'campaign-id': opts.campaignId,
+          'grant-sha256': opts.grantSha256, 'policy-sha256': opts.policySha256, actor: opts.actor,
+        });
         let result;
         if (operation === 'round') {
           if (!['herdr', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
