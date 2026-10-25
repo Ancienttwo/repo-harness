@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test';
-import { createReviewAuthorityContext, assertReviewAuthorityContext, reviewCampaignKey, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
+import { createReviewAuthorityContext, assertReviewAuthorityContext, reviewCampaignKey, createReviewAdmission, bindReviewAdmission, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
+
+import { hashVerificationPlan, type VerificationPlan } from '../../src/core/evidence/verification-plan';
 
 const digest = (c: string) => `sha256:${c.repeat(64)}`;
 function input(): ReviewAuthorityInput {
@@ -87,4 +89,42 @@ test('a serialization hook cannot replace the validated scope during snapshot co
     toJSON() { return { ...input(), allowed_paths: ['unapproved/**'] }; },
   });
   expect(createReviewAuthorityContext(candidate).allowed_paths).toEqual(['src/review/**', 'tests/review/**']);
+});
+
+const plan: VerificationPlan = { protocol: 1, checks: [{
+  id: 'behavior', kind: 'command', command: 'test -f feature.txt', cwd: '.', phase: 'verification',
+  cost: 'normal', evidence_policy: 'current_exact', necessity: 'Verify the candidate feature.', inputs: { env: [] },
+}] };
+function admissionInput() {
+  const { authorization, subject: _subject, verification: _verification, ...scope } = input();
+  return { ...scope, actor_id: authorization.actor_id, verification_plan: structuredClone(plan) };
+}
+
+test('admission binds the actual verification plan and a fixed goal while allowing later subject rounds', () => {
+  const admitted = createReviewAdmission(admissionInput());
+  const round = input(); round.verification.plan_sha256 = hashVerificationPlan(plan);
+  const first = bindReviewAdmission(admitted, round, digest('5'));
+  round.subject.review_subject_sha256 = digest('3');
+  const second = bindReviewAdmission(admitted, round, digest('5'));
+  expect(second.campaign_sha256).toBe(first.campaign_sha256);
+  expect(second.context_sha256).not.toBe(first.context_sha256);
+  expect(second.authorization.grant_sha256).toBe(digest('5'));
+  round.verification.plan_sha256 = digest('4');
+  expect(() => bindReviewAdmission(admitted, round, digest('5'))).toThrow('verification plan changed');
+  expect(() => bindReviewAdmission({ ...admitted, goal: { ...admitted.goal, content: 'Unapproved new goal' } }, input(), digest('5'))).toThrow('admission digest');
+});
+
+test('admission rejects empty plans and cannot mutate a retained execution plan through caller aliases', () => {
+  const spec = admissionInput(), admitted = createReviewAdmission(spec);
+  (spec.verification_plan.checks as unknown as { command: string }[])[0]!.command = 'echo bypass';
+  expect(admitted.verification_plan.checks[0]).toEqual(plan.checks[0]);
+  expect(Object.isFrozen(admitted.verification_plan.checks)).toBe(true);
+  expect(() => createReviewAdmission({ ...spec, verification_plan: { protocol: 1, checks: [] } })).toThrow('empty verification plan');
+});
+
+test('admission preserves directory scopes but rejects empty or traversing path segments', () => {
+  expect(createReviewAdmission({ ...admissionInput(), allowed_paths: ['src/'] }).allowed_paths).toEqual(['src/']);
+  for (const path of ['/', 'src//', 'src/../', 'src/./', 'src//review']) {
+    expect(() => createReviewAdmission({ ...admissionInput(), allowed_paths: [path] })).toThrow('unsafe allowed path');
+  }
 });

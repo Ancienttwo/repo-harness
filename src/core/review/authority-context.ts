@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
+import { validateVerificationPlan, hashVerificationPlan, type VerificationPlan } from '../evidence/verification-plan';
 
 /** An explicit input snapshot, not an authorization grant. Effects must verify
  * grant_sha256 against protected authority before constructing or consuming it.
@@ -59,25 +60,32 @@ export function reviewCampaignKey(input: Pick<ReviewAuthorityInput, 'repository_
   return digest({ purpose: 'review-campaign', repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id });
 }
 
-export function createReviewAuthorityContext(input: ReviewAuthorityInput): ReviewAuthorityContext {
-  const root = record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'authorization', 'policy', 'allowed_paths', 'benchmark', 'verification', 'subject'], 'input fields');
-  const campaign = reviewCampaignKey(input);
-  const goal = record(root.goal, ['revision', 'content'], 'goal');
+type ReviewScope = Pick<ReviewAuthorityInput, 'repository_id' | 'issue_id' | 'campaign_id' | 'goal' | 'policy' | 'allowed_paths' | 'benchmark'>;
+
+function validateScope(input: ReviewScope): void {
+  reviewCampaignKey(input);
+  const goal = record(input.goal, ['revision', 'content'], 'goal');
   text(goal.revision, 'goal revision'); text(goal.content, 'goal content');
-  const authorization = record(root.authorization, ['actor_id', 'grant_sha256'], 'authorization');
-  text(authorization.actor_id, 'actor'); hash(authorization.grant_sha256, 'admission grant');
-  const policy = record(root.policy, ['reviewer', 'user_waiver', 'policy_sha256'], 'policy');
+  const policy = record(input.policy, ['reviewer', 'user_waiver', 'policy_sha256'], 'policy');
   if ((policy.reviewer !== 'Claude' && policy.reviewer !== 'Codex')
     || (policy.user_waiver !== 'allowed' && policy.user_waiver !== 'forbidden')) fail('policy values');
   hash(policy.policy_sha256, 'policy digest');
-  if (!Array.isArray(root.allowed_paths) || !root.allowed_paths.length) fail('allowed paths');
-  for (const path of root.allowed_paths) {
+  if (!Array.isArray(input.allowed_paths) || !input.allowed_paths.length) fail('allowed paths');
+  for (const path of input.allowed_paths) {
     text(path, 'allowed path');
     if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.includes('\\')
-      || path.split('/').some(part => part === '..' || part === '.' || part === '')) fail('unsafe allowed path');
+      || (path.endsWith('/') ? path.slice(0, -1) : path).split('/').some(part => part === '..' || part === '.' || part === '')) fail('unsafe allowed path');
   }
-  if (new Set(root.allowed_paths).size !== root.allowed_paths.length) fail('duplicate allowed path');
-  if (root.benchmark !== 'required' && root.benchmark !== 'not_required') fail('benchmark requirement');
+  if (new Set(input.allowed_paths).size !== input.allowed_paths.length) fail('duplicate allowed path');
+  if (input.benchmark !== 'required' && input.benchmark !== 'not_required') fail('benchmark requirement');
+}
+
+export function createReviewAuthorityContext(input: ReviewAuthorityInput): ReviewAuthorityContext {
+  const root = record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'authorization', 'policy', 'allowed_paths', 'benchmark', 'verification', 'subject'], 'input fields');
+  const campaign = reviewCampaignKey(input);
+  validateScope(input);
+  const authorization = record(root.authorization, ['actor_id', 'grant_sha256'], 'authorization');
+  text(authorization.actor_id, 'actor'); hash(authorization.grant_sha256, 'admission grant');
   const verification = record(root.verification, ['plan_sha256', 'source_sha256', 'evidence_sha256', 'tree_sha256'], 'verification');
   for (const key of ['plan_sha256', 'source_sha256', 'evidence_sha256', 'tree_sha256']) hash(verification[key], key);
   const subject = record(root.subject, ['status', 'scope', 'target_ref', 'target_rev', 'head_rev', 'review_subject_sha256'], 'subject');
@@ -114,4 +122,55 @@ export function assertReviewAuthorityContext(value: unknown, current: ReviewAuth
   if (!value || typeof value !== 'object' || canonicalize(value as JsonValue) !== canonicalize(expected as unknown as JsonValue)) {
     throw new Error('review_context_changed');
   }
+}
+
+
+/** Approved policy carrier for one campaign. No execution state or receipt is
+ * stored here. Its digest is an approval subject, not proof that approval occurred.
+ */
+export interface ReviewAdmissionInput extends ReviewScope {
+  actor_id: string;
+  verification_plan: VerificationPlan;
+}
+export type ReviewAdmission = Frozen<ReviewAdmissionInput & {
+  protocol: 1;
+  kind: 'repo-harness-review-admission';
+  campaign_sha256: string;
+  admission_sha256: string;
+}>;
+
+export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmission {
+  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'verification_plan'], 'admission fields');
+  validateScope(input); text(input.actor_id, 'actor');
+  const plan = validateVerificationPlan(input.verification_plan);
+  if (!plan.checks.length) fail('empty verification plan');
+  // The plan validator owns syntax. Reparse its canonical JSON to detach nested
+  // arrays without invoking input-defined serialization methods.
+  const detachedPlan: VerificationPlan = JSON.parse(canonicalize(plan as unknown as JsonValue));
+  const basis = {
+    protocol: 1 as const, kind: 'repo-harness-review-admission' as const,
+    repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
+    goal: { revision: input.goal.revision, content: input.goal.content },
+    policy: { reviewer: input.policy.reviewer, user_waiver: input.policy.user_waiver, policy_sha256: input.policy.policy_sha256 },
+    allowed_paths: [...input.allowed_paths].sort(), benchmark: input.benchmark,
+    actor_id: input.actor_id, verification_plan: detachedPlan, campaign_sha256: reviewCampaignKey(input),
+  };
+  return freeze({ ...basis, admission_sha256: digest(basis) });
+}
+
+/** Effects first authenticate a current protected admission and then call this
+ * binding check. It does not read a self-reported grant from the candidate. */
+export function bindReviewAdmission(admission: ReviewAdmission, round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>, verifiedGrantSha256: string): ReviewAuthorityContext {
+  hash(verifiedGrantSha256, 'protected grant');
+  const { protocol, kind, campaign_sha256, admission_sha256, ...input } = admission;
+  const rebuilt = createReviewAdmission(input as ReviewAdmissionInput);
+  if (protocol !== 1 || kind !== rebuilt.kind || campaign_sha256 !== rebuilt.campaign_sha256
+    || admission_sha256 !== rebuilt.admission_sha256) fail('admission digest');
+  if (round.verification.plan_sha256 !== hashVerificationPlan(rebuilt.verification_plan)) fail('verification plan changed');
+  return createReviewAuthorityContext({
+    repository_id: rebuilt.repository_id, issue_id: rebuilt.issue_id, campaign_id: rebuilt.campaign_id,
+    goal: { ...rebuilt.goal }, policy: { ...rebuilt.policy }, allowed_paths: [...rebuilt.allowed_paths], benchmark: rebuilt.benchmark,
+    authorization: { actor_id: rebuilt.actor_id, grant_sha256: verifiedGrantSha256 },
+    subject: round.subject, verification: round.verification,
+  });
 }
