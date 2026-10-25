@@ -1477,6 +1477,9 @@ test('automatic epoch change cancels associated evidence and late responses cann
   const repositoryReads: Array<{signal: AbortSignal; finish: (value: typeof repositorySnapshot) => void}> = [];
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
+  const selector = { repository_id: stableSnapshot.repositories.find(repo => repo.cards.some(card => card.task_id === fixtureTasks.blocked.task_id))!.repository_id, provider_repository_id: '123', issue_id: '456', campaign_id: 'review',
+    task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2', claim_revision: 'sha256:' + 'a'.repeat(64),
+    grant_sha256: 'sha256:' + 'b'.repeat(64), policy_sha256: 'sha256:' + 'c'.repeat(64), actor_id: 'owner', session_binding_sha256: 'sha256:' + 'd'.repeat(64) };
   const next = { ...stableSnapshot, sequence: 1, service_epoch: '00000000-0000-4000-8000-000000000002' };
   globalThis.fetch = (async (input, init) => {
     // The explicit refresh generation now reaches the Notify
@@ -1486,6 +1489,8 @@ test('automatic epoch change cancels associated evidence and late responses cann
       diffSignal = init!.signal as AbortSignal;
       return new Promise<Response>(resolve => { finishDiff = resolve; });
     }
+    if (String(input).includes('/task-sessions/')) return Response.json({ protocol: 1, kind: 'operator_task_sessions', repository_id: selector.repository_id,
+      observed_at: '2026-10-25T00:00:00Z', sessions: [{ selector, admission_sha256: 'sha256:' + 'e'.repeat(64), branch: 'codex/review', runtime: 'terminal', harness_kind: 'codex' }] });
     return Response.json({ code: 'unavailable' }, { status: 503 });
   }) as typeof fetch;
   try {
@@ -1494,6 +1499,9 @@ test('automatic epoch change cancels associated evidence and late responses cann
       readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))}
       readTaskActivity={async request => taskActivityFixture(request)} />);
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.task-sessions > button')!.click());
+    await act(async () => { const select = document.querySelector<HTMLSelectElement>('.task-sessions select')!;
+      select.value = selector.session_binding_sha256; select.dispatchEvent(new Event('change', { bubbles: true })); });
     await act(async () => document.querySelector<HTMLButtonElement>('.task-diff button')!.click());
     expect(repositoryReads).toHaveLength(1); expect(contexts).toHaveLength(1);
     const previousDiff = document.querySelector('.task-diff');
@@ -1509,7 +1517,8 @@ test('automatic epoch change cancels associated evidence and late responses cann
       finishDiff(Response.json({ code:'stale' }, {status:409}));
     });
     expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
-    expect(document.querySelector<HTMLButtonElement>('.task-diff button')!.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('.task-sessions > button')!.disabled).toBe(false);
+    expect(document.querySelector('.task-diff')).toBeNull();
     expect(document.querySelector('.task-diff [role="status"]')).toBeNull();
     expect(contexts[1]!.signal.aborted).toBe(false);
   } finally {

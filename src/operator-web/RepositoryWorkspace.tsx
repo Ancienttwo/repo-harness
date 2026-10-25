@@ -15,7 +15,7 @@ import { localizeApiError } from './fleet-api';
 import { relativeAge, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { OrganizationSummary } from './OrganizationSummary';
 import { PlanningView } from './PlanningView';
-import { TaskDiff } from './TaskDiff';
+import { TaskSessions } from './TaskDiff';
 import { TaskEvidence, type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
 import { TaskHistory, type TaskHistoryReader } from './TaskHistory';
 import type { TaskLocation } from './task-location';
@@ -733,7 +733,6 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
         {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
         <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
         <TaskEvidence repositoryId={card.repository_id} taskId={card.task_id} revision={card.task_revision} generation={evidenceGeneration} readContext={readTaskContext} readActivity={readTaskActivity} t={t} />
-        {snapshot && <TaskDiff key={JSON.stringify([snapshot.service_epoch, card.repository_id, card.task_id, card.task_revision, card.claim_id, card.generation])} card={card} t={t} />}
       </div>
     </DrawerFrame>
   );
@@ -811,6 +810,7 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
       {selection && (selection.historical || (snapshot !== null && !selectedCard)) && <TaskHistory
         repositoryId={props.activeRepositoryId} taskId={selection.taskId} revision={selection.revision}
         generation={props.refreshGeneration} read={props.readTaskHistory} onClose={props.onCloseSelection} t={t} />}
+      {activeRepository && <TaskSessions key={JSON.stringify([snapshot?.service_epoch, activeRepository.repository_id, props.refreshGeneration])} repositoryId={activeRepository.repository_id} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">
         {activeRepository && <OrganizationSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} t={t} />}
