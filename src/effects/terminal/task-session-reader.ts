@@ -33,8 +33,6 @@ export function sameSessionData(left: unknown, right: unknown): boolean {
   // Compare the JSON wire values, using the existing canonical key order.
   return canonicalize(JSON.parse(JSON.stringify(left))) === canonicalize(JSON.parse(JSON.stringify(right)));
 }
-/** A contending starter waits this long for the lock holder, which can wait up to 50 s for its host to be ready. */
-const TASK_START_LOCK_WAIT_MS = 70_000;
 
 export function readTaskAgent(repoRoot: string, task: string, role: string): { dir: string; binding: TaskPaneBinding } {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);

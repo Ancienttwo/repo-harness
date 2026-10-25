@@ -491,6 +491,8 @@ function reconcile(dir: string, intent: StartIntent): HerdrTaskBinding {
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   return binding;
 }
+/** A contending starter waits this long for the lock holder, which can wait up to 50 s for its host to be ready. */
+const TASK_START_LOCK_WAIT_MS = 70_000;
 export interface TaskStartEffects {
   /** Launches the host in the new pane and names the agent. It is an internal seam, never CLI input. */
   start: (endpoint: HerdrEndpoint, name: string, pane: string, kind: string, args: string[]) => Promise<void>;
