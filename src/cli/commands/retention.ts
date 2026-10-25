@@ -47,6 +47,7 @@ export function retentionRoots(config: RetentionConfig): RetentionRoot[] {
     { path: '.ai/harness/runs/task-workspaces', rule: 'keep', detail: 'kept: a closed.json tombstone blocks a workspace restart' },
     { path: `{common}/${TASK_INBOX_V2_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
     { path: `{common}/${FEEDBACK_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
+    { path: '{common}/repo-harness/integration/v1', rule: 'keep', detail: 'Historical integration evidence; no active authority reader.' },
     { path: `{common}/${INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
   ];
 }
