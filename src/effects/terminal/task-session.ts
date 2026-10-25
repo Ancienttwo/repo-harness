@@ -3,6 +3,7 @@ import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { configuredGitBinary } from '../git/common-directory';
+import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -254,8 +255,7 @@ interface TaskWorkspaceBinding {
   root_pane: { pane_id: string; terminal_id: string; shell: ProcessProof; ownership: ObjectOwnership };
 }
 function workspaceDirectory(repository: TaskRepository): string {
-  const key = createHash('sha256').update(JSON.stringify([repository.repository_id, repository.execution_root])).digest('hex');
-  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', key);
+  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(repository.repository_id, repository.execution_root));
 }
 /** The session sweep cannot close an open runtime or contact Herdr. */
 export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
@@ -382,8 +382,7 @@ function validateSpec(spec: TaskAgentSpec): void {
 }
 export function taskSessionDirectory(root: string, task: string, role: string): string {
   const repository = taskRepository(root);
-  const key = createHash('sha256').update(JSON.stringify([repository.repository_id, task, role])).digest('hex');
-  return join(repository.primary_root, '.ai/harness/runs/task-agents', key);
+  return join(repository.primary_root, '.ai/harness/runs/task-agents', taskSessionKey(repository.repository_id, task, role));
 }
 export async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
   const deadline = Date.now() + waitTimeoutMs;

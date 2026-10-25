@@ -162,7 +162,7 @@ flowchart LR
   end
 
   Ignored -->|"git-common-dir 路径作 repository_id"| CLive
-  Tracked -->|"realpath 根：registry 取 16 hex，gates 取完整 sha256（R-T9）"| UH
+  Tracked -->|"worktree id 投影：gates 取完整 sha256；registry 按注册根取 16 hex"| UH
   UH -->|"install-state.json 记录所有权"| HC
   T -.->|"linked worktree"| CLive
 ```
@@ -179,13 +179,23 @@ flowchart LR
 
 身份命名空间：
 
-| 标识 | 推导 | 证据 |
-| --- | --- | --- |
-| registry repo id | `repo_` 加 sha256(realpath 根) 的前 16 位 hex | `src/effects/repo-registry.ts:106-108` |
-| gates id | sha256(realpath worktree 根)，64 位 hex | `scripts/acceptance-receipt.ts:576` |
-| coordination `repository_id` | `{common}` 路径 | `src/effects/state/coordination-canonical-source.ts:46-48`；`src/effects/terminal/task-worktree.ts:15-17` |
-| task-agent 会话键 | sha256(JSON[repository_id, task, role]) | `src/effects/terminal/task-session.ts:393-395` |
-| worktree trash 前缀 | sha256(`{common}`) 的前 32 位 | `worktree-trash.ts:37` |
+仓库身份由两个 id 定义，二者都由 Git 决定（`src/effects/git/repository-identity.ts`）：
+
+- repo id：`git rev-parse --git-common-dir` 的 realpath，即 `{common}`。同一 clone 的全部 linked worktree 共享它。解析函数是 `resolveRepoIdentity`。
+- worktree id：`git rev-parse --show-toplevel` 的 realpath。每个 checkout 各有一个。解析函数是 `resolveWorktreeId`。
+
+其余标识是这两个 id 的确定投影。每种标识只有一个派生函数。投影保持原有字节，所以已存的记录不移动。
+
+| 标识 | 来源 id | 推导 | 派生函数 |
+| --- | --- | --- | --- |
+| coordination `repository_id` | repo id | 原样 | `resolveRepoIdentity` |
+| worktree trash 前缀 | repo id | sha256 的前 32 位 hex | `worktreeTrashPrefix` |
+| task-agent 会话键 | repo id | sha256(JSON[repo id, task, role]) | `taskSessionKey` |
+| task-workspace 键 | repo id 与 worktree id | sha256(JSON[repo id, worktree id]) | `taskWorkspaceKey` |
+| gates id | worktree id | sha256，64 位 hex | `gatesDirectoryName` |
+| registry repo id | 注册根的 realpath | `repo_` 加 sha256 的前 16 位 hex | `repoHarnessRepoIdFor`（`src/effects/repo-registry.ts`） |
+
+gates 按 worktree 划分是有意的设计：acceptance receipt 绑定一个 checkout 的源快照。如果按 clone 划分，一个 linked worktree 的 receipt 会覆盖另一个 worktree 的 receipt。registry repo id 按注册路径计算，不按 `{common}` 计算；同一 clone 的两个 worktree 可以分别注册。改成按 repo id 计算需要迁移 `registered-repos.json`，这一项留给后续（R-T9 余项）。
 | Herdr agent 名 | `task-` 加 20 位 hex | `src/effects/terminal/task-session.ts:486` |
 | hook 身份 | 只取 payload 的 `session_id`、`run_id`、`turn_id`，不生成新 id | `src/cli/hook/hook-input.ts:63-72` |
 | hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/runtime/candidate-reconciliation.ts:329-331` |

@@ -12,7 +12,8 @@ import { collectFleetBoard, FleetBoardError, watchFleetBoard } from '../../effec
 import { ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/task-message';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
-import { readCanonicalSprint, resolveRepoIdentity } from '../../effects/state/coordination-canonical-source';
+import { readCanonicalSprint } from '../../effects/state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../../effects/git/repository-identity';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';
 import { FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/publication/feedback-store';

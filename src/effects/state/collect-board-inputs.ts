@@ -37,10 +37,8 @@ import {
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { ATTEMPT_LEDGER_PATH } from './attempt-ledger-store';
 import { readText, readTrimmed, safeRealpath } from './collect-state-inputs';
-import {
-  readCanonicalSprint,
-  resolveRepoIdentity,
-} from './coordination-canonical-source';
+import { readCanonicalSprint } from './coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 import { readLease, type LeaseRead } from './coordination-lease-store';
 import {
   StateResolutionUnstableError,
