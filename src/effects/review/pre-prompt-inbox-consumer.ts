@@ -27,12 +27,15 @@ export function requestSubject(request: TaskRequest) {
   const { pre_prompt_inbox: _companion, ...subject } = request;
   return subject;
 }
-export function assertCurrent(value: Companion, request: TaskRequest, now: number) {
+export function assertCompanionRequestIdentity(value: Companion, request: TaskRequest, now: number) {
   if (value.protocol !== 1 || value.request_id !== request.request_id || value.request_digest !== digest(requestSubject(request))
     || !Number.isSafeInteger(value.expires_at) || now >= value.expires_at || value.expires_at - now > MAX_AGE_MS
     || value.native.task !== request.task || value.native.role !== request.role
     || value.native.session_binding_sha256 !== request.session_binding_sha256
     || value.admission_sha256 !== request.task_admission?.approval.admission_sha256) throw new Error('pre_prompt_inbox_context_stale');
+}
+export function assertCurrent(value: Companion, request: TaskRequest, now: number) {
+  assertCompanionRequestIdentity(value, request, now);
   const current = readActiveReviewAdmission(value.local_approval);
   if (current.admission.admission_sha256 !== value.admission_sha256 || current.grant_sha256 !== request.task_admission?.approval.grant_sha256
     || current.revision !== request.task_admission?.approval.revision) throw new Error('pre_prompt_inbox_approval_changed');

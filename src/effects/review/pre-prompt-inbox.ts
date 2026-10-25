@@ -3,13 +3,13 @@ import type { PrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
-import { deliverTaskInbox, listTaskInbox, readTaskMessageDelivery, type TaskInboxSessionSource } from '../fleet/task-inbox';
+import { deliverTaskInbox, listTaskInbox, readTaskMessageDelivery, readAdmittedTaskActivity, type TaskInboxSessionSource } from '../fleet/task-inbox';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readTaskAgent } from '../terminal/task-session-reader';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { TaskRequest, TaskPrePromptInbox } from '../terminal/task-session';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
-import { canonical, digest, MAX_AGE_MS, requestSubject, assertCurrent, type Companion } from './pre-prompt-inbox-consumer';
+import { canonical, digest, MAX_AGE_MS, requestSubject, assertCurrent, assertCompanionRequestIdentity, type Companion } from './pre-prompt-inbox-consumer';
 /** Controller-only reservation. No delivery receipt is written before actual prompt acceptance. */
 export function preparePrePromptInbox(input: { source: TaskInboxSessionSource; request: TaskRequest; now?: number }): TaskPrePromptInbox {
   const { source, request } = input, now = input.now ?? Date.now();
@@ -75,6 +75,26 @@ export function commitPrePromptInbox(input: { source: TaskInboxSessionSource; re
     || !Number.isSafeInteger(receipt.observation_seq) || !observation || observation.control !== 'accepted'
     || observation.session_id !== receipt.native_session_id || observation.input_id !== request.request_id
     || observation.seq < receipt.observation_seq) throw new Error('pre_prompt_inbox_acceptance_mismatch');
+  // Settled delivery is historical evidence, not a request to act under its old
+  // grant again. Verify the exact accepted context and ledger before bypassing
+  // current authority; missing/partial evidence still takes the original fence.
+  assertCompanionRequestIdentity(companion, request, receipt.consumed_at);
+  if (digest(binding) !== companion.native.session_binding_sha256
+    || canonical(readSessionArtifact(join(dir, 'native-session.json'))) !== canonical(companion.native)) throw new Error('pre_prompt_inbox_session_changed');
+  const exactRef = `controlled-request:${request.request_id}:${request.session_binding_sha256}`;
+  const settled = companion.events.every(event => {
+    const history = readAdmittedTaskActivity({ repo_root, task_id: request.task, limit: 1, after: null, message_id: event.message_id,
+      budget: { max_scan: 200, max_bytes: 512 * 1024, deadline_ms: 1000 } });
+    if (!history.coverage.complete || history.entries.length !== 1) return false;
+    const entry = history.entries[0]!;
+    return canonical(entry.event) === canonical(event) && entry.receipts.some(record =>
+      record.delivery_channel === 'controlled_request' && record.delivery_ref === exactRef
+      && record.recipient_kind === 'claim' && canonical(record.recipient_claim) === canonical(request.task_admission!.identity.claim)
+      && record.recipient_admission_sha256 === companion.admission_sha256
+      && record.delivered_at === new Date(receipt.accepted_at).toISOString()
+      && ['delivered', 'acknowledged'].includes(record.delivery_state));
+  });
+  if (settled) return { status: 'committed' as const };
   // Expiry bounds the actual read, not later owner recovery. Current local approval
   // and immutable binding still fence recovery, and deliver reobserves provider authority.
   assertCurrent(companion, request, receipt.consumed_at);

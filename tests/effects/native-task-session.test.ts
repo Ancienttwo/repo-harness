@@ -112,7 +112,7 @@ test('reservation and unknown send stay pending; exact accepted host proof commi
   expect(() => commitPrePromptInbox({source:f.bound.source,request:{...f.request,request_id:randomUUID()}})).toThrow();
   f.bound.revoke();
   expect(() => consumePrePromptInbox(consume)).toThrow();
-  expect(() => commitPrePromptInbox({source:f.bound.source,request:f.request})).toThrow();
+  expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'committed'});
 });
 test('historical review label explicitly refuses automatic inbox without renaming its session', async () => {
   const f = await fixture(), native = bindNativeTaskSession(f.input);
@@ -120,4 +120,50 @@ test('historical review label explicitly refuses automatic inbox without renamin
   request.pre_prompt_inbox = preparePrePromptInbox({ source: f.bound.source, request });
   expect(request.pre_prompt_inbox).toEqual({ status: 'unsupported', reason: 'historical_task_label' });
   expect(consumePrePromptInbox({ request, requestDirectory: f.bound.dir, native_session_id: native.native_session_id, host: 'codex' })).toContain('historical session');
+});
+
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { nextSessionRound, observeTaskSessionAdmission } from '../../src/effects/terminal/task-session';
+function publishAccepted(f: Awaited<ReturnType<typeof fixture>>, request: TaskRequest, nativeSessionId: string) {
+  writeFileSync(join(f.bound.dir,`request-${request.round}.json`),JSON.stringify(request));
+  writeFileSync(join(f.bound.dir,`started-${request.round}.json`),JSON.stringify({request_id:request.request_id,provider:f.bound.binding.provider}));
+  const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:request.request_id, round:request.round,
+    host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:nativeSessionId,input_id:request.request_id,
+    seq:2,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:'accepted',rejection:null };
+  writeFileSync(join(f.bound.dir,oarObservationFile(request.round)),JSON.stringify(observation));
+  recordPrePromptInboxAccepted({ request,requestDirectory:f.bound.dir,native_session_id:nativeSessionId,host:'codex',consumed_at:Date.now(),observation });
+}
+for (const hasMessage of [false, true]) {
+  test(`settled ${hasMessage ? 'nonempty' : 'empty'} round survives same-campaign reapproval without resetting the request budget`, async () => {
+    const f = hasMessage ? await inboxFixture() : await (async () => {
+      const base = await fixture(), native = bindNativeTaskSession(base.input);
+      return {...base,native,request:requestFor(base,native.session_binding_sha256)};
+    })();
+    f.request.pre_prompt_inbox=preparePrePromptInbox({source:f.bound.source,request:f.request});
+    publishAccepted(f,f.request,f.native.native_session_id);
+    expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'committed'});
+    const priorBytes=readFileSync(join(f.bound.dir,'request-1.json'),'utf8');
+    const reapproved=seedReviewAdmissionFixture(f.root,f.bound.source.authority.source.authorityHome!,{repositoryId:'123456',issueId:'987654'});
+    expect(reapproved.grant).not.toBe(f.bound.source.authority.source.expectedGrantSha256);
+    const source={...f.bound.source,authority:{...f.bound.source.authority,source:reapproved.source}};
+    // Coordinator reconciliation observes exact settled receipts; it does not execute old authority again.
+    expect(commitPrePromptInbox({source,request:f.request})).toEqual({status:'committed'});
+    expect(readFileSync(join(f.bound.dir,'request-1.json'),'utf8')).toBe(priorBytes);
+    const round=nextSessionRound<TaskRequest>(f.bound.dir,f.bound.binding.max_requests,'next-subject',()=>'', 'started');
+    expect(round).toBe(2);
+    const admission=observeTaskSessionAdmission(f.root,f.bound.binding,f.bound.binding.runtime,source.authority);
+    expect(admission.approval.grant_sha256).toBe(reapproved.grant);
+    const second: TaskRequest={...requestFor(f,f.native.session_binding_sha256),round,task_admission:admission};
+    second.pre_prompt_inbox=preparePrePromptInbox({source,request:second});
+    expect(second.pre_prompt_inbox.status).toBe('bound');
+    expect(()=>nextSessionRound<TaskRequest>(f.bound.dir,1,'next-subject',()=>'', 'started')).toThrow('task_agent_round_budget_exhausted');
+  });
+}
+test('unfinished accepted delivery cannot recover under replacement approval', async () => {
+  const f=await inboxFixture();
+  f.request.pre_prompt_inbox=preparePrePromptInbox({source:f.bound.source,request:f.request});
+  publishAccepted(f,f.request,f.native.native_session_id);
+  const reapproved=seedReviewAdmissionFixture(f.root,f.bound.source.authority.source.authorityHome!,{repositoryId:'123456',issueId:'987654'});
+  const source={...f.bound.source,authority:{...f.bound.source.authority,source:reapproved.source}};
+  expect(()=>commitPrePromptInbox({source,request:f.request})).toThrow();
 });
