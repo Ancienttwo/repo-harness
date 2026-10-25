@@ -1,6 +1,6 @@
-schemaVersion: archcontext.relation/v1
-id: relation.workflow-state.coordination-plane.task-agent-host
-kind: reads
-source: component.workflow-state.coordination-plane
-target: capability.runtime-harness.task-agent-host
-intent: "Confirm that the task runtime is closed before a worktree prune"
+schemaVersion: "archcontext.relation/v1"
+id: "relation.workflow-state.coordination-plane.task-agent-host"
+kind: "reads"
+source: "component.workflow-state.coordination-plane"
+target: "capability.runtime-harness.task-agent-host"
+intent: "Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune"

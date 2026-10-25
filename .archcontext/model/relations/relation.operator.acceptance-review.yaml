@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.acceptance-review"
+kind: "imports"
+source: "capability.runtime-harness.operator"
+target: "capability.verification.acceptance-review"
+intent: "Read and reobserve protected current review admission for exact session discovery and current goal context"

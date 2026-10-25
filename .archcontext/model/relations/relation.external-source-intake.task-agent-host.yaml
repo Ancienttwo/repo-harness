@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.external-source-intake.task-agent-host"
+kind: "calls"
+source: "capability.runtime-harness.external-source-intake"
+target: "capability.runtime-harness.task-agent-host"
+intent: "Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding"

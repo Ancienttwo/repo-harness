@@ -1,14 +1,14 @@
-schemaVersion: archcontext.node/v2
-id: component.publication.primary
-kind: component
-name: Publication Record and Readiness Readers
-status: active
-parent: capability.organization.publication
-summary: Reads historical receipts and integration records, observes provider merge proof and derives PR readiness.
+schemaVersion: "archcontext.node/v2"
+id: "component.publication.primary"
+kind: "component"
+name: "Publication Record and Readiness Readers"
+status: "active"
+parent: "capability.organization.publication"
+summary: "Retains historical receipt reads and observes canonical provider PR readiness and actual merge commit/tree evidence."
 responsibilities:
-  - Validate and read historical PublicationReceipt protocol 3 records without creating receipts or editing PR markers.
-  - Read historical integration observations for dependency inspection without changing lease ownership.
-  - Read provider merge proof for worktree cleanup and project readiness with typed blockers.
+  - "Read historical publication and integration records without promoting them to current task or PR authority."
+  - "Use the shared explicit provider identity, facts and reobservation collector for readiness and integration evidence with typed unavailable results."
+  - "Provide provider merge proof to exact worktree cleanup and product integration consumers."
 source:
   include:
     - "src/core/publication/**"

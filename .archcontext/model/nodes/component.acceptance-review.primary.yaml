@@ -1,19 +1,25 @@
-schemaVersion: archcontext.node/v2
-id: component.acceptance-review.primary
-kind: component
-name: Generic Review Round
-status: active
-parent: capability.verification.acceptance-review
-summary: Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt.
+schemaVersion: "archcontext.node/v2"
+id: "component.acceptance-review.primary"
+kind: "component"
+name: "Generic Review Round"
+status: "active"
+parent: "capability.verification.acceptance-review"
+summary: "Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt."
 responsibilities:
-  - Save the complete review packet before any reviewer pane starts.
-  - Validate reviewer output against the closed review schema and prior findings.
-  - Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists.
-  - Record acceptance only for the exact live contract. Leave archives as historical documents.
+  - "Save the complete review packet before any reviewer pane starts."
+  - "Validate reviewer output against the closed review schema and prior findings."
+  - "Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists."
+  - "Record acceptance only for the exact live contract. Leave archives as historical documents."
+  - "Own the shared neutral admission service and trusted delegated approval binding; preserve the OS-account authority root and every exact approval and goal fence."
+  - "Own pre-prompt-inbox preparation and its Node-safe consumer under existing review footprints; delivery occurs only in owner preparation and the hook reads validated bounded context."
 source:
   include:
-    - src/core/review/**
-    - src/effects/review/**
-    - src/cli/commands/review.ts
-    - scripts/acceptance-receipt.ts
-    - scripts/change-assessment.ts
+    - "src/core/review/**"
+    - "src/effects/review/**"
+    - "src/cli/commands/review.ts"
+    - "scripts/acceptance-receipt.ts"
+    - "scripts/change-assessment.ts"
+    - "src/effects/admission/admission-store.ts"
+    - "src/effects/admission/admission-source.ts"
+    - "src/effects/admission/issue-goal.ts"
+    - "src/effects/admission/control-admission.ts"

@@ -1,33 +1,35 @@
-schemaVersion: archcontext.node/v2
-id: capability.organization.publication
-kind: capability
-name: Publication Observations
-status: active
-summary: Reads historical publication receipts, derives fenced PR readiness and records manual provider feedback without changing task ownership.
+schemaVersion: "archcontext.node/v2"
+id: "capability.organization.publication"
+kind: "capability"
+name: "Publication Observations"
+status: "active"
+summary: "Observes explicit canonical provider PR readiness and integration evidence, retains historical receipt reads and records admitted manual feedback."
 responsibilities:
-  - Read historical publication receipts and integration observations for operator and dependency views.
-  - Derive MergeReadinessV1 from the exact provider head, base, checks and review state without persisting a ready flag.
-  - Record manual provider feedback and delivery receipts. Read historical repair results to report repeated no-progress outcomes.
-  - Provide live provider merge proof for guarded worktree cleanup. Leave task status and publication authority with GitHub issues and PRs.
+  - "Keep historical publication receipt and integration records as explicit history, never current readiness or dependency authority."
+  - "Derive PullRequestReadinessV2 from explicit canonical REST repository identity, PR number and exact expected head/base through provider identity, facts and reobservation."
+  - "Bind registry-scoped readiness to the local GitHub origin before provider reads; preserve the standalone explicit PR CLI capability."
+  - "Record manual feedback against exact admitted claim and provider PR evidence with separate delivery receipts."
+  - "Provide live provider merge commit/tree evidence for exact integration candidates and guarded worktree cleanup without changing GitHub issue or PR authority."
 source:
   include:
-    - src/core/publication/**
-    - src/effects/publication/**
-    - src/cli/commands/publication.ts
+    - "src/core/publication/**"
+    - "src/effects/publication/**"
+    - "src/cli/commands/publication.ts"
+    - "src/effects/fleet/provider-feedback.ts"
   entrypoints:
-    - id: entrypoint.publication.command
-      path: src/cli/commands/publication.ts
+    - id: "entrypoint.publication.command"
+      path: "src/cli/commands/publication.ts"
       symbols:
-        - name: buildPublicationCommand
+        - name: "buildPublicationCommand"
           sinks:
-            - id: sink.publication.readiness
-              path: src/effects/publication/merge-readiness.ts
-              symbol: resolvePublicationReadiness
+            - id: "sink.publication.readiness"
+              path: "src/effects/publication/merge-readiness.ts"
+              symbol: "collectPullRequestMergeReadiness"
 extensions:
   contractFiles:
-    agents: AGENTS.md
-    claude: CLAUDE.md
-  lspProfile: typescript-lsp
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
   verification:
-    - bun run test:files tests/unit/publication-receipt.test.ts tests/unit/publication-recovery-reconcile.test.ts tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1
-    - bun run check:type
+    - "bun run test:files tests/unit/publication-receipt.test.ts tests/unit/publication-recovery-reconcile.test.ts tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

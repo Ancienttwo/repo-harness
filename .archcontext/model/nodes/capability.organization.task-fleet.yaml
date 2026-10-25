@@ -1,55 +1,41 @@
-{
-  "schemaVersion": "archcontext.node/v2",
-  "id": "capability.organization.task-fleet",
-  "kind": "capability",
-  "name": "Task Fleet",
-  "status": "active",
-  "summary": "Reads task offers and fleet boards for the operator and retains task message storage.",
-  "responsibilities": [
-    "Join registry authorization, canonical Sprint rows, lease availability and plan proof into immutable read-time task offers.",
-    "Store immutable task messages and separate per-recipient delivery receipts that never mutate a lease or wake a runtime.",
-    "Project the cross-repository fleet board from authority readers without persisting any column or readiness flag."
-  ],
-  "source": {
-    "include": [
-      "src/core/fleet/**",
-      "src/effects/fleet/**",
-      "src/cli/commands/fleet.ts",
-      "src/core/messages/mechanics.ts"
-    ],
-    "entrypoints": [
-      {
-        "id": "entrypoint.task-fleet.command",
-        "path": "src/cli/commands/fleet.ts",
-        "symbols": [
-          {
-            "name": "buildFleetCommand",
-            "sinks": [
-              {
-                "id": "sink.task-fleet.send-message",
-                "path": "src/effects/fleet/task-inbox.ts",
-                "symbol": "sendTaskMessage"
-              },
-              {
-                "id": "sink.task-fleet.deliver-message",
-                "path": "src/effects/fleet/task-inbox.ts",
-                "symbol": "deliverTaskInbox"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "extensions": {
-    "contractFiles": {
-      "agents": "AGENTS.md",
-      "claude": "CLAUDE.md"
-    },
-    "lspProfile": "typescript-lsp",
-    "verification": [
-      "bun run test:files tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1",
-      "bun run check:type"
-    ]
-  }
-}
+schemaVersion: "archcontext.node/v2"
+id: "capability.organization.task-fleet"
+kind: "capability"
+name: "Task Fleet"
+status: "active"
+summary: "Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage."
+responsibilities:
+  - "Join registered repositories to canonical provider issue observations and nullable exact admitted sessions; local task labels never establish provider identity."
+  - "Observe explicit provider PR readiness only after local repository binding and preserve independent issue state, runtime evidence and per-card failures."
+  - "Store immutable admitted messages and separate receipts fenced by admission digest and exact claim reference and revision; preserve explicit historical reads."
+  - "Project columns and preparation display without persisting readiness, acquiring tasks, implicitly waking runtimes or changing provider claims."
+source:
+  include:
+    - "src/core/fleet/**"
+    - "src/effects/fleet/**"
+    - "src/cli/commands/fleet.ts"
+    - "src/core/messages/mechanics.ts"
+    - "src/core/messages/task-message-claim.ts"
+    - "src/core/messages/task-message-error.ts"
+  entrypoints:
+    - id: "entrypoint.task-fleet.command"
+      path: "src/cli/commands/fleet.ts"
+      symbols:
+        - name: "buildFleetCommand"
+          sinks:
+            - id: "sink.task-fleet.send-message"
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "sendTaskMessage"
+            - id: "sink.task-fleet.deliver-message"
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "deliverTaskInbox"
+  exclude:
+    - "src/effects/fleet/provider-feedback.ts"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

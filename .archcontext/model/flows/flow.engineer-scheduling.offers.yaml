@@ -1,76 +1,50 @@
-{
-  "schemaVersion": "archcontext.flow/v1",
-  "id": "flow.engineer-scheduling.offers",
-  "capabilityId": "capability.runtime-harness.engineer-scheduling",
-  "name": "Read dependency evidence for operator observations",
-  "applicability": "required",
-  "participants": [
-    {
-      "id": "scheduling",
-      "nodeId": "capability.runtime-harness.engineer-scheduling"
-    },
-    {
-      "id": "acceptance",
-      "nodeId": "capability.runtime-harness.integration-acceptance"
-    }
-  ],
-  "steps": [
-    {
-      "id": "read",
-      "from": "scheduling",
-      "to": "acceptance",
-      "label": "Read existing product acceptance projections",
-      "evidence": {
-        "entrypointId": "entrypoint.engineer-scheduling.dependency-readers",
-        "sourceSymbol": "defaultDependencyAuthorityReaders",
-        "sinkId": "sink.engineer-scheduling.product-acceptance"
-      }
-    }
-  ],
-  "outcomes": [
-    {
-      "id": "success",
-      "kind": "success",
-      "label": "Return the retained observation",
-      "steps": [
-        {
-          "id": "success-read",
-          "from": "scheduling",
-          "to": "acceptance",
-          "label": "Read the exact current record",
-          "evidence": {
-            "entrypointId": "entrypoint.engineer-scheduling.dependency-readers",
-            "sourceSymbol": "defaultDependencyAuthorityReaders",
-            "sinkId": "sink.engineer-scheduling.product-acceptance"
-          }
-        }
-      ],
-      "terminal": {
-        "participant": "scheduling",
-        "label": "Return the read result"
-      }
-    },
-    {
-      "id": "error",
-      "kind": "error",
-      "label": "Refuse an unavailable or invalid observation",
-      "steps": [
-        {
-          "id": "error-read",
-          "from": "scheduling",
-          "to": "acceptance",
-          "label": "Keep a failed read unavailable",
-          "evidence": {
-            "entrypointId": "entrypoint.engineer-scheduling.dependency-readers",
-            "sourceSymbol": "defaultDependencyAuthorityReaders",
-            "sinkId": "sink.engineer-scheduling.product-acceptance"
-          }
-        }
-      ],
-      "terminal": {
-        "participant": "scheduling",
-        "label": "Report the read failure without task mutation"
-      }
-    }
-  ]
-}
+schemaVersion: "archcontext.flow/v1"
+id: "flow.engineer-scheduling.offers"
+capabilityId: "capability.runtime-harness.engineer-scheduling"
+name: "Reobserve exact provider integration evidence for declared dependencies"
+applicability: "required"
+participants:
+  - id: "scheduling"
+    nodeId: "capability.runtime-harness.engineer-scheduling"
+  - id: "acceptance"
+    nodeId: "capability.runtime-harness.integration-acceptance"
+steps:
+  - id: "read"
+    from: "scheduling"
+    to: "acceptance"
+    label: "Reobserve the explicitly selected PR integration against its exact final candidate"
+    evidence:
+      entrypointId: "entrypoint.engineer-scheduling.dependency-readers"
+      sourceSymbol: "defaultDependencyAuthorityReaders"
+      sinkId: "sink.engineer-scheduling.product-acceptance"
+outcomes:
+  - id: "success"
+    kind: "success"
+    label: "The exact selected integration evidence remains current"
+    steps:
+      - id: "success-read"
+        from: "scheduling"
+        to: "acceptance"
+        label: "Reobserve the explicitly selected PR integration against its exact final candidate"
+        evidence:
+          entrypointId: "entrypoint.engineer-scheduling.dependency-readers"
+          sourceSymbol: "defaultDependencyAuthorityReaders"
+          sinkId: "sink.engineer-scheduling.product-acceptance"
+    terminal:
+      participant: "scheduling"
+      label: "Return dependency evidence without acquiring a task"
+  - id: "error"
+    kind: "error"
+    label: "Provider integration evidence is stale, unavailable or forbidden in the readonly observation boundary"
+    steps:
+      - id: "error-read"
+        from: "scheduling"
+        to: "acceptance"
+        label: "Reobserve the explicitly selected PR integration against its exact final candidate"
+        evidence:
+          entrypointId: "entrypoint.engineer-scheduling.dependency-readers"
+          sourceSymbol: "defaultDependencyAuthorityReaders"
+          sinkId: "sink.engineer-scheduling.product-acceptance"
+    terminal:
+      participant: "scheduling"
+      label: "Refuse dependency proof without historical or latest-record fallback"

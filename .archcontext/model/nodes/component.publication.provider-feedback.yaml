@@ -1,16 +1,16 @@
-schemaVersion: archcontext.node/v2
-id: component.publication.provider-feedback
-kind: component
-name: Provider Feedback
-status: active
-parent: capability.organization.publication
-summary: Owns manual GitHub feedback observation, immutable feedback events, delivery receipts and historical repair-result projections.
+schemaVersion: "archcontext.node/v2"
+id: "component.publication.provider-feedback"
+kind: "component"
+name: "Provider Feedback"
+status: "active"
+parent: "capability.organization.publication"
+summary: "Owns admitted provider feedback orchestration, immutable feedback facts, delivery receipts and read-only repair projections; its fleet-layer location does not transfer Publication ownership."
 responsibilities:
-  - Persist provider facts as immutable events keyed by stable provider ids and keep mutable manual delivery state in separate files.
-  - Project historical repair offers and no-progress outcomes without dispatching repairs or changing leases.
-  - Read prior repair and completion records without creating new repair lifecycle records.
+  - "Observe explicit provider PR identity against the exact current admitted claim before recording immutable manual feedback events."
+  - "Keep feedback delivery separate from provider issue and admission authority; project repair and no-progress observations without dispatching repairs."
+  - "Read exact current admitted inbox context and provider readiness through their shared implementations; historical receipts never substitute for current admission."
 source:
   include:
     - "src/core/publication/feedback.ts"
-    - "src/effects/publication/feedback.ts"
+    - "src/effects/fleet/provider-feedback.ts"
     - "src/effects/publication/feedback-store.ts"

@@ -1,80 +1,50 @@
-schemaVersion: archcontext.flow/v1
-id: flow.workflow-state.board
-capabilityId: capability.workflow-engine.workflow-state
-name: Project the read-only coordination board
-applicability: required
+schemaVersion: "archcontext.flow/v1"
+id: "flow.workflow-state.board"
+capabilityId: "capability.workflow-engine.workflow-state"
+name: "Observe the provider issue and admitted session board"
+applicability: "required"
 participants:
-  - id: capability
-    nodeId: capability.workflow-engine.workflow-state
-  - id: plane
-    nodeId: component.workflow-state.coordination-plane
-  - id: primitives
-    nodeId: capability.workflow-engine.execution-primitives
-  - id: resolver
-    nodeId: component.workflow-state.primary
-  - id: ledger
-    nodeId: component.workflow-state.continuation-ledger
+  - id: "capability"
+    nodeId: "capability.workflow-engine.workflow-state"
+  - id: "plane"
+    nodeId: "component.workflow-state.coordination-plane"
 steps:
-  - id: collect
-    from: capability
-    to: plane
-    label: Collect canonical Sprint rows and leases without the task lock
+  - id: "collect"
+    from: "capability"
+    to: "plane"
+    label: "Collect exact provider issue observations and all current admitted session associations"
     evidence:
-      entrypointId: entrypoint.workflow-state.board
-      sourceSymbol: resolveBoard
-      sinkId: sink.workflow-state.board-inputs
-  - id: topology
-    from: plane
-    to: primitives
-    label: Read the Git worktree topology
-    evidence:
-      entrypointId: entrypoint.workflow-state.board-inputs
-      sourceSymbol: collectBoardInputs
-      sinkId: sink.workflow-state.worktree-topology
-  - id: owner-state
-    from: plane
-    to: resolver
-    label: Resolve each owner worktree Effective State read-only
-    evidence:
-      entrypointId: entrypoint.workflow-state.board-inputs
-      sourceSymbol: observeOwnerWorktree
-      sinkId: sink.workflow-state.owner-state
-  - id: owner-attempts
-    from: plane
-    to: ledger
-    label: Parse the owner attempt ledger as progress evidence
-    evidence:
-      entrypointId: entrypoint.workflow-state.board-inputs
-      sourceSymbol: observeOwnerWorktree
-      sinkId: sink.workflow-state.owner-attempts
+      entrypointId: "entrypoint.workflow-state.board"
+      sourceSymbol: "resolveProviderBoard"
+      sinkId: "sink.workflow-state.board-inputs"
 outcomes:
-  - id: success
-    kind: success
-    label: Board revisions match before and after the projection
+  - id: "success"
+    kind: "success"
+    label: "Board revisions match before and after the projection"
     steps:
-      - id: project-stable
-        from: capability
-        to: plane
-        label: Project the board between two collections with equal revisions
+      - id: "project-stable"
+        from: "capability"
+        to: "plane"
+        label: "Project the complete provider and session observation for bounded revision comparison"
         evidence:
-          entrypointId: entrypoint.workflow-state.board
-          sourceSymbol: collectProjectCollect
-          sinkId: sink.workflow-state.board-projection
+          entrypointId: "entrypoint.workflow-state.board"
+          sourceSymbol: "resolveProviderBoard"
+          sinkId: "sink.workflow-state.board-projection"
     terminal:
-      participant: capability
-      label: Return a stable board document
-  - id: error
-    kind: error
-    label: Inputs move during both rounds
+      participant: "capability"
+      label: "Return a stable provider board after equal complete revisions"
+  - id: "error"
+    kind: "error"
+    label: "Complete observations keep changing through the bounded retry"
     steps:
-      - id: project-torn
-        from: capability
-        to: plane
-        label: Discard the torn round and project one more round
+      - id: "project-torn"
+        from: "capability"
+        to: "plane"
+        label: "Project the complete provider and session observation for bounded revision comparison"
         evidence:
-          entrypointId: entrypoint.workflow-state.board
-          sourceSymbol: collectProjectCollect
-          sinkId: sink.workflow-state.board-projection
+          entrypointId: "entrypoint.workflow-state.board"
+          sourceSymbol: "resolveProviderBoard"
+          sinkId: "sink.workflow-state.board-projection"
     terminal:
-      participant: capability
-      label: Return the second round marked changed_during_read as diagnostic only
+      participant: "capability"
+      label: "Return the final observation marked changed_during_read without mutation"
