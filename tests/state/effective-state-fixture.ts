@@ -302,6 +302,19 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
   ].join('\n'));
   const reportPath = seedNativeVerification(cwd, CONTRACT);
   const fixture = fixtureAuthorities.get(cwd)!;
+  const waiverSummary = 'Fixture owner accepts the current change.';
+  const waiverRequest = '.ai/harness/fixtures/upstream-waiver.json';
+  const admission = fixture.admission;
+  // A separate upstream decision fixture, not a local authentication claim.
+  writeFixture(cwd, waiverRequest, JSON.stringify({
+    protocol: 1, kind: 'repo-harness-upstream-waiver-authorization', action: 'human-approved-user-waiver',
+    authorization_ref: 'fixture-separate-human-decision', bot_id: 'fixture-control-bot',
+    repository_root: realpathSync(cwd), repository_id: admission.repository_id,
+    issue_id: admission.issue_id, campaign_id: admission.campaign_id,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: fixture.grant, goal_sha256: admission.goal.revision,
+    actor: admission.actor_id, summary: waiverSummary, expires_at: Date.now() + 3_600_000,
+  }));
   // Inject only the fixture's provider response and protected home in process.
   // The child still reads and validates the real protected approval bytes.
   const adapter = `
@@ -312,7 +325,7 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
     process.exit(await runAcceptanceReceiptCli(process.argv.slice(1), { authorityHome: source.authorityHome, admissionSource: () => source }));
   `;
   for (const args of [
-    ['grant-waiver', '--actor', 'fixture-owner', '--summary', 'Fixture owner accepts the current change.'],
+    ['grant-waiver', '--actor', 'fixture-owner', '--summary', waiverSummary, '--authorization', waiverRequest],
     ['record', '--disposition', 'user_waiver', '--verification', reportPath],
   ]) {
     const receipt = spawnSync(process.execPath, ['-e', adapter, ...args], { cwd, encoding: 'utf8' });
