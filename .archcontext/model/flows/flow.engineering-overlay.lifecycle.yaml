@@ -9,6 +9,22 @@ participants:
   - id: "schema"
     nodeId: "component.engineering-overlay.primary"
 steps:
+  - id: "read-observations"
+    from: "overlay"
+    to: "overlay"
+    label: "Read scheduling and runtime observations in each pass of the consistency fence"
+    evidence:
+      entrypointId: "entrypoint.engineering-overlay.collect"
+      sourceSymbol: "collectEngineeringBoard"
+      sinkId: "sink.engineering-overlay.read-pass"
+  - id: "project-current-runtime"
+    from: "overlay"
+    to: "overlay"
+    label: "Project runtime evidence filtered to the exact admitted session and selected engineer profile"
+    evidence:
+      entrypointId: "entrypoint.engineering-overlay.collect"
+      sourceSymbol: "read"
+      sinkId: "sink.engineering-overlay.runtime-projection"
   - id: "project-overlay"
     from: "overlay"
     to: "schema"
