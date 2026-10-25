@@ -24,7 +24,7 @@ import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { seedAcceptanceFixture } from "./helpers/verification-plan-fixture";
-import { recordFixtureAcceptance } from "./helpers/repo-fixture";
+import { recordFixtureAcceptance } from "./helpers/acceptance-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 const ARCHIVE_REPORT = ".ai/harness/runs/archive.report.json";
@@ -362,7 +362,7 @@ function writeWorkflowChecks(cwd: string): void {
   prepareAssessment(cwd, fixture.source);
   if (readFileSync(join(cwd, 'tasks/reviews/20260711-1200-demo.review.md'), 'utf8').includes('> **External Acceptance**: pass')) {
     const result = runProcess(process.execPath, ['-e', `
-      import { recordFixtureAcceptance } from ${JSON.stringify(join(ROOT, 'tests/helpers/repo-fixture.ts'))};
+      import { recordFixtureAcceptance } from ${JSON.stringify(join(ROOT, 'tests/helpers/acceptance-fixture.ts'))};
       ${adapterSource(fixture)}
       await recordFixtureAcceptance({ root: source.repoRoot, authorityHome: source.authorityHome, authority: source,
         verification: ${JSON.stringify(ARCHIVE_REPORT)}, disposition: 'external_pass', reviewer: 'Codex', source: 'generic-review',
