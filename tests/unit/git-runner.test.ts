@@ -12,6 +12,8 @@ import {
   resolveGitTimeout,
 } from '../../src/effects/git/runner';
 
+import { withReadonlyObservation, ObservationViolation } from '../../src/effects/state/readonly-observation';
+
 const ROOT = join(import.meta.dir, '..', '..');
 const SRC = join(ROOT, 'src');
 
@@ -103,10 +105,31 @@ describe('git runner', () => {
     }
   });
 
+  test('pinned synchronous calls retain observation refusal and the default deadline', () => {
+    const denied = new ObservationViolation('fixture refuses git');
+    let calls = 0;
+    expect(() => withReadonlyObservation({
+      readFile() { throw new Error('unexpected read'); },
+      readDirectory() { throw new Error('unexpected directory'); },
+      validatePath() {},
+      exec(file, args, options) {
+        calls++;
+        expect(file).toBe('/fixture/pinned/git');
+        expect(args).toEqual(['rev-parse']);
+        expect(options.timeout).toBe(DEFAULT_GIT_TIMEOUT_MS);
+        expect(options.env?.FIXTURE_PIN).toBe('retained');
+        throw denied;
+      },
+    }, () => gitSpawnSync(['rev-parse'], {
+      gitBin: '/fixture/pinned/git', encoding: 'utf8', env: { FIXTURE_PIN: 'retained' },
+    }))).toThrow(denied);
+    expect(calls).toBe(1);
+  });
+
   test('src starts git only through the runner', () => {
     const patterns = [
       /\b(?:execFileSync|spawnSync|spawn|execFile|observationExecFileSync|observationSpawnSync|runProcess|runBoundedProcess)\(\s*['"]git['"]/g,
-      /\b(?:execFileSync|spawnSync)\(\s*(?:(?:gitBin|input\.gitBin|opts\.gitBin)\b|(?:gitBinary|configuredGitBinary)\s*\()/g,
+      /\b(?:execFileSync|spawnSync)\(\s*(?:(?:gitBin|input\.gitBin|opts\.gitBin|runtime\.gitBin)\b|(?:gitBinary|configuredGitBinary)\s*\()/g,
       /\brunBoundedProcess\(\s*runtime\?\.gitBin/g,
     ];
     for (const source of [
@@ -114,6 +137,7 @@ describe('git runner', () => {
       "spawnSync(gitBinary(), ['status'])",
       "execFileSync(gitBin, ['status'])",
       "spawnSync(input.gitBin, ['status'])",
+      "spawnSync(runtime.gitBin, ['status'])",
       "spawnSync(opts.gitBin, ['status'])",
     ]) {
       expect(patterns.some(pattern => {

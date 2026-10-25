@@ -18,7 +18,7 @@ import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepar
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
-  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
+  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from './acceptance-receipt';
 import { gitExecFileSync } from '../git/runner';
 
 type Harness = 'claude' | 'codex';

@@ -4,7 +4,7 @@ import { gitSpawnSync } from '../git/runner';
 import { existsSync, lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { validatePublicationReceipt, type PublicationReceiptV3 } from '../../core/publication/publication-receipt';
-import { resolveProtectedGitRuntime } from '../../../scripts/acceptance-receipt';
+import { resolveProtectedGitRuntime } from '../review/acceptance-receipt';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
 export const PUBLICATION_RECEIPTS_RELATIVE_PATH = 'repo-harness/publications/v1';
