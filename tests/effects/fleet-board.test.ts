@@ -1,3 +1,4 @@
+import type { FleetBoardPullRequestSelection } from '../../src/effects/fleet/board';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
 import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { describe, expect, onTestFinished, test } from 'bun:test';
@@ -82,7 +83,7 @@ function createReviewingProviderFixture(
   workspaceRoot: string,
   cards: number,
   options: { readonly omit_receipt_for?: number } = {},
-): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string } {
+): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string; readonly pull_requests: readonly FleetBoardPullRequestSelection[] } {
   const root = join(workspaceRoot, 'repo');
   mkdirSync(root);
   const sprintPath = 'plans/sprints/fleet-provider.sprint.md';
@@ -180,6 +181,8 @@ function createReviewingProviderFixture(
     },
     gh_bin: ghBin,
     counter_dir: counterDir,
+    pull_requests: taskNames.map((task, index) => ({ repository_id: 'repo-provider', task_id: fixtureTaskId(task),
+      pull_request: { repository: 'example/fleet', provider_repository_id: '1001', pr_number: index + 1, expected_head_sha: head, expected_base_sha: base } })),
   };
 }
 
@@ -401,7 +404,7 @@ describe('fleet board collector', () => {
       read_registry: () => registry([fixture.repo]),
       collect_repository: productionFleetBoardDependencies.collect_repository,
     };
-    collection = collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000, signal: controller.signal }, dependencies)
+    collection = collectFleetBoard({ pull_requests: fixture.pull_requests, max_concurrency: 2, timeout_ms: 30_000, signal: controller.signal }, dependencies)
       .then(snapshot => ({ snapshot }), error => ({ error }));
     const outcome = await collection;
     if (controller.signal.aborted) return;
@@ -486,7 +489,7 @@ describe('fleet board collector', () => {
       const fixture = createReviewingProviderFixture(root, 2, { omit_receipt_for: 2 });
       process.env.REPO_HARNESS_GH_BIN = fixture.gh_bin;
       process.env.FLEET_PROVIDER_COUNTER_DIR = fixture.counter_dir;
-      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000 }, {
+      const result = await collectFleetBoard({ pull_requests: fixture.pull_requests, max_concurrency: 2, timeout_ms: 30_000 }, {
         read_registry: () => registry([fixture.repo]),
         collect_repository: productionFleetBoardDependencies.collect_repository,
       });
@@ -501,7 +504,7 @@ describe('fleet board collector', () => {
         placement: { kind: 'unclassified', reason: 'observation_failed' },
         merge_readiness: null,
         execution_readiness: null, readiness_blockers: null,
-        error: { code: 'repo_publication_unreadable', message: 'repository publication observation is unavailable' },
+        error: { code: 'repo_feedback_unreadable', message: 'repository feedback observation is unavailable' },
       });
       expect(failed[0]?.blocker_codes).toEqual([]);
       expect(readable).toHaveLength(1);

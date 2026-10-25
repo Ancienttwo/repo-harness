@@ -6,9 +6,9 @@ import { randomUUID } from 'crypto';
 import { lstatSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { MergeReadinessError, resolveFleetReadiness } from '../../effects/publication/merge-readiness';
+import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
 import { FleetOffersError } from '../../effects/fleet/acquire';
-import { collectFleetBoard, FleetBoardError, watchFleetBoard } from '../../effects/fleet/board';
+import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
 import { ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/task-message';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
@@ -251,15 +251,15 @@ export function buildFleetCommand(): Command {
     });
   fleet
     .command('ready')
-    .description('Aggregate current reviewing publications in canonical sprint row order')
-    .requiredOption('--json', 'Output the FleetReadinessV1 document as JSON')
-    .action(() => {
+    .description('Observe an explicit ordered array of provider PR selections')
+    .requiredOption('--selections <path>', 'JSON array of canonical provider PR selections')
+    .requiredOption('--json', 'Output FleetReadinessV2')
+    .action((options: { selections: string }) => {
       try {
-        const result = resolveFleetReadiness({
-          repo_root: process.cwd(),
-          gh_bin: process.env.REPO_HARNESS_GH_BIN,
-          git_bin: process.env.REPO_HARNESS_GIT_BIN,
-        });
+        const selections: unknown = JSON.parse(readFileSync(options.selections, 'utf8'));
+        if (!Array.isArray(selections)) throw new Error('selections must be an array');
+        const result = resolveFleetReadiness({ repo_root: process.cwd(), pull_requests: selections.map(validatePullRequestSelection),
+          gh_bin: process.env.REPO_HARNESS_GH_BIN });
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
         outputError(error);
@@ -268,11 +268,12 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('board')
+    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Project every authorized repository as one deterministic fleet board snapshot')
     .requiredOption('--json', 'Output the FleetBoardSnapshotV1 document as JSON')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
-    .action(async (options: { readonly json?: boolean; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
+    .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
       let maxConcurrency: number | undefined;
       let timeoutMs: number | undefined;
       try {
@@ -287,6 +288,7 @@ export function buildFleetCommand(): Command {
       }
       try {
         const snapshot = await collectFleetBoard({
+          pull_requests: readPrAssociations(options.prAssociations),
           env: process.env,
           max_concurrency: maxConcurrency,
           timeout_ms: timeoutMs,
@@ -299,12 +301,14 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('watch')
+    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Emit immediate, non-overlapping fleet board snapshots as JSONL')
     .requiredOption('--format <format>', 'Output format (jsonl)')
     .option('--interval-ms <milliseconds>', 'Delay after each completed round (1000-300000)', '30000')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
     .action(async (options: {
+      readonly prAssociations?: string;
       readonly format?: string;
       readonly intervalMs?: string;
       readonly maxConcurrency?: string;
@@ -331,6 +335,7 @@ export function buildFleetCommand(): Command {
       let emitted = 0;
       try {
         for await (const snapshot of watchFleetBoard({
+          pull_requests: readPrAssociations(options.prAssociations),
           env: process.env,
           interval_ms: intervalMs,
           max_concurrency: maxConcurrency,
@@ -619,4 +624,16 @@ export function buildFleetCommand(): Command {
       }
     });
   return fleet;
+}
+
+function readPrAssociations(path?: string): readonly FleetBoardPullRequestSelection[] {
+  if (path === undefined) return [];
+  const values: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Array.isArray(values)) throw new Error('PR associations must be an array');
+  return values.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.repository_id !== 'string'
+      || (value.task_id !== undefined && typeof value.task_id !== 'string')
+      || Object.keys(value).some(key => !['repository_id','task_id','pull_request'].includes(key))) throw new Error('invalid PR association');
+    return { repository_id: value.repository_id, ...(value.task_id === undefined ? {} : { task_id: value.task_id }), pull_request: validatePullRequestSelection(value.pull_request) };
+  });
 }

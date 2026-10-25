@@ -27,9 +27,10 @@ import {
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { resolveBoard } from '../state/resolve-board';
 import {
-  resolvePublicationReadinessAbortable,
+  collectPullRequestMergeReadinessAbortable,
+  validatePullRequestSelection,
   MergeReadinessError,
-  type AbortablePublicationReadinessInput,
+  type AbortablePullRequestReadinessInput,
 } from '../publication/merge-readiness';
 import { FeedbackError, projectFleetFeedback } from '../publication/feedback';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
@@ -56,7 +57,15 @@ class FleetRepositoryError extends Error {
   }
 }
 
+/** task_id associates a row for display only; provider identity is the authority. */
+export interface FleetBoardPullRequestSelection {
+  readonly repository_id: string;
+  readonly task_id?: string;
+  readonly pull_request: import('../../core/publication/merge-readiness').PullRequestSelectionV2;
+}
+
 export interface FleetBoardCollectorOptions {
+  readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
   /** Exact registered identity, selected before any repository/provider observation. */
   readonly repository_id?: string;
   readonly env?: NodeJS.ProcessEnv;
@@ -78,6 +87,7 @@ export interface FleetRepositoryCollectionOptions extends Required<Pick<FleetBoa
   readonly signal: AbortSignal;
   readonly deadline_exceeded: () => boolean;
   readonly provider_limiter: FleetProviderObservationLimiter;
+  readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
 }
 
 export interface FleetBoardDependencies {
@@ -199,9 +209,7 @@ function mapRepositoryError(error: unknown): FleetBoardErrorCode {
   if (error instanceof AgentRuntimeEffectStoreError) return 'repo_runtime_effect_unreadable';
   if (error instanceof FeedbackError) return 'repo_feedback_unreadable';
   if (error instanceof MergeReadinessError) {
-    return error.code === 'receipt_unavailable' || error.code === 'publication_claim_mismatch' || error.code === 'publication_pointer_mismatch'
-      ? 'repo_publication_unreadable'
-      : 'repo_readiness_unavailable';
+    return 'repo_readiness_unavailable';
   }
   if (error instanceof FleetOffersError) return error.code === 'repo_unavailable' ? 'repo_unreadable' : 'repo_board_unavailable';
   return 'repo_board_unavailable';
@@ -237,22 +245,22 @@ async function cardInput(
   let readiness = null;
   let feedback = emptyFeedback();
   let feedbackConsistency: 'stable' | 'changed_during_read' = 'stable';
-  if (card.lease_state === 'reviewing' && currentPublication !== null) {
-    const input: AbortablePublicationReadinessInput = {
-      repo_root: repo.path,
-      publication_id: currentPublication.publication_id,
-      gh_bin: process.env.REPO_HARNESS_GH_BIN,
-      git_bin: process.env.REPO_HARNESS_GIT_BIN,
-      now_ms: options.now_ms,
-      signal: options.signal,
+  const selections = (options.pull_requests ?? []).filter(selection => selection.repository_id === repo.id && selection.task_id === card.task_id);
+  if (selections.length > 1) throw new MergeReadinessError('provider_data_incomplete', 'board readiness requires one explicit PR display association');
+  if (selections.length === 1) {
+    const input: AbortablePullRequestReadinessInput = {
+      ...selections[0]!.pull_request, repo_root: repo.path,
+      gh_bin: process.env.REPO_HARNESS_GH_BIN, signal: options.signal,
     };
     // The resolver owns individual gh child lifetime. The fleet round owns the
     // shared cardinality limit, so many reviewing cards cannot burst providers.
     readiness = await options.provider_limiter.run(async () => {
       assertCollectionActive(options.signal, options.deadline_exceeded);
-      return resolvePublicationReadinessAbortable(input);
+      return collectPullRequestMergeReadinessAbortable(input);
     });
     assertCollectionActive(options.signal, options.deadline_exceeded);
+  }
+  if (card.lease_state === 'reviewing' && currentPublication !== null) {
     const feedbackProjection = feedbackSummary(repo.path, currentPublication.publication_id);
     feedback = feedbackProjection.summary;
     feedbackConsistency = feedbackProjection.snapshot_consistency;
@@ -384,6 +392,7 @@ async function collectRepository(
     assertRepositoryAuthority(repo);
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     const sprintPath = readActiveSprintPath(repo.path);
+    if (sprintPath === null && options.pull_requests?.some(selection => selection.repository_id === repo.id)) throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no board display rows');
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     if (sprintPath === null) {
       return Object.freeze({
@@ -399,6 +408,14 @@ async function collectRepository(
     const targetRef = readCanonicalTargetRef(repo.path);
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     const board = resolveBoard(repo.path, { sprintPath, targetRef, nowMs: options.now_ms });
+    for (const association of options.pull_requests ?? []) {
+      if (association.repository_id !== repo.id) continue;
+      validatePullRequestSelection(association.pull_request);
+      if (!association.task_id || !board.cards.some(card => card.task_id === association.task_id)) {
+        throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no known display row association');
+      }
+    }
+
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     const offered = collectRepoTaskOffers(repo, registry, { now_ms: options.now_ms });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
@@ -535,7 +552,15 @@ export async function collectFleetBoard(
     let registry: RepoHarnessRegistryStrictSnapshot;
     try {
       registry = dependencies.read_registry({ env: options.env });
+      for (const association of options.pull_requests ?? []) {
+        if (!registry.repos.some(repo => repo.id === association.repository_id)
+          || (options.repository_id !== undefined && options.repository_id !== association.repository_id)) throw new FleetBoardError('fleet_board_argument_invalid', 'PR association selects a repository outside this board');
+        validatePullRequestSelection(association.pull_request);
+      }
+
     } catch (error) {
+      if (error instanceof FleetBoardError) throw error;
+      if (error instanceof MergeReadinessError) throw new FleetBoardError('fleet_board_argument_invalid', error.message, error);
       if (error instanceof RepoHarnessRegistryStrictError) throw new FleetBoardError(error.code, error.message, error);
       throw new FleetBoardError('fleet_registry_unavailable', 'cannot read fleet registry authority', error);
     }
@@ -576,6 +601,7 @@ export async function collectFleetBoard(
           signal: controller.signal,
           deadline_exceeded: deadlineExceededNow,
           provider_limiter: providerLimiter,
+          pull_requests: options.pull_requests,
         });
         return preempted.has(token)
           ? repositoryError(repo, 'repo_collection_timeout', new Error('fleet collection round deadline exceeded'))

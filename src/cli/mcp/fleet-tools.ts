@@ -10,7 +10,7 @@
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
-import { MergeReadinessError, resolvePublicationReadiness } from '../../effects/publication/merge-readiness';
+import { MergeReadinessError, collectPullRequestMergeReadiness } from '../../effects/publication/merge-readiness';
 import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
@@ -23,7 +23,7 @@ export const FLEET_MCP_TOOL_NAMES = [
 export type FleetMcpToolName = typeof FLEET_MCP_TOOL_NAMES[number];
 
 const FLEET_MCP_PARAMETER_NAMES: Readonly<Record<FleetMcpToolName, readonly string[]>> = Object.freeze({
-  publication_readiness: ['repo_id', 'repo_path', 'publication_id', 'pr_number'],
+  publication_readiness: ['repo_id', 'repo_path', 'repository', 'provider_repository_id', 'pr_number', 'expected_head_sha', 'expected_base_sha'],
 });
 
 export interface FleetMcpToolDefinition {
@@ -131,6 +131,12 @@ function optionalString(args: Record<string, unknown>, name: string): string | u
   return value.trim();
 }
 
+function requiredString(args: Record<string, unknown>, name: string): string {
+  const value = optionalString(args, name);
+  if (value === undefined) throw new FleetMcpError('INVALID_ARGUMENT', `${name} is required`);
+  return value;
+}
+
 function positiveInteger(args: Record<string, unknown>, name: string): number {
   const value = args[name];
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
@@ -199,14 +205,10 @@ function publicationEnvironment(): {
 
 function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
   const target = targetFromArgs(ctx, args);
-  const publicationId = optionalString(args, 'publication_id');
-  const prNumber = args.pr_number === undefined ? undefined : positiveInteger(args, 'pr_number');
-  const result = resolvePublicationReadiness({
-    ...publicationEnvironment(),
-    repo_root: target.repoRoot,
-    publication_id: publicationId,
-    pr_number: prNumber,
-  });
+  const result = collectPullRequestMergeReadiness({ ...publicationEnvironment(), repo_root: target.repoRoot,
+    repository: requiredString(args, 'repository'), provider_repository_id: requiredString(args, 'provider_repository_id'),
+    pr_number: positiveInteger(args, 'pr_number'), expected_head_sha: requiredString(args, 'expected_head_sha'),
+    expected_base_sha: requiredString(args, 'expected_base_sha') });
   audit(ctx, 'publication_readiness', 'ok', args);
   return textResult(result);
 }
@@ -234,15 +236,17 @@ export function buildFleetToolDefinitions(): FleetMcpToolDefinition[] {
     type: 'object',
     properties: {
       ...optionalRepoProperties,
-      publication_id: { type: 'string' },
+      repository: { type: 'string' }, provider_repository_id: { type: 'string' },
+      expected_head_sha: { type: 'string' }, expected_base_sha: { type: 'string' },
       pr_number: { type: 'number', minimum: 1 },
     },
+    required: ['repository', 'provider_repository_id', 'pr_number', 'expected_head_sha', 'expected_base_sha'],
     additionalProperties: false,
   };
   return [
     {
       name: 'publication_readiness',
-      description: 'Return one fenced MergeReadinessV1 verdict using the publication readiness effect.',
+      description: 'Return one explicit provider PullRequestReadinessV2 verdict.',
       inputSchema: readinessSchema,
       annotations: READ_ONLY_ANNOTATIONS,
     },

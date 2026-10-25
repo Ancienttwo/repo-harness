@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 
 import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness } from './task-offer';
-import type { MergeReadinessBlockerCode, MergeReadinessV1 } from '../publication/merge-readiness';
+import type { MergeReadinessBlockerCode, PullRequestReadinessV2 } from '../publication/merge-readiness';
 import type { BoardLeaseState, TaskState } from '../state/types';
 import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
@@ -93,7 +93,7 @@ export interface FleetBoardCardV1 {
   /** Exact reviewing-pointer facts only; neither value is inferred from a branch or provider response. */
   readonly publication_id: string | null;
   readonly head_sha: string | null;
-  readonly merge_readiness: MergeReadinessV1 | null;
+  readonly merge_readiness: PullRequestReadinessV2 | null;
   readonly blocker_codes: readonly MergeReadinessBlockerCode[];
   readonly feedback: FleetBoardFeedbackSummaryV1;
   readonly inbox: FleetBoardInboxSummaryV1;
@@ -153,7 +153,7 @@ export interface FleetBoardCardInputV1 {
   readonly claim_id: string | null;
   readonly generation: number | null;
   readonly current_publication: { readonly publication_id: string; readonly head_sha: string } | null;
-  readonly merge_readiness: MergeReadinessV1 | null;
+  readonly merge_readiness: PullRequestReadinessV2 | null;
   readonly execution_readiness: TaskOfferExecutionReadiness | null;
   readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
   readonly feedback: FleetBoardFeedbackSummaryV1;
@@ -225,9 +225,10 @@ export function classifyFleetBoardPlacement(input: FleetBoardCardInputV1): Fleet
   if (input.task_state === 'missing') return unclassified('canonical_missing');
   if (input.task_state === 'drifted') return unclassified('task_drifted');
   if (input.task_state === 'done') return column('done');
-  if (input.lease_state === 'reviewing' && input.current_publication !== null) {
-    return column(input.merge_readiness?.ready === true ? 'ready_to_merge' : 'in_review');
+  if (input.merge_readiness !== null) {
+    return column(input.merge_readiness.ready ? 'ready_to_merge' : 'in_review');
   }
+  if (input.lease_state === 'reviewing' && input.current_publication !== null) return unclassified('readiness_unavailable');
   if (input.lease_state === 'reserving' || input.lease_state === 'bound' || input.lease_state === 'completing') return column('working');
   if (input.task_state !== 'pending' || input.lease_state !== 'available') return unclassified('state_unmapped');
   const blockers = input.readiness_blockers;

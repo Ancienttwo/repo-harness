@@ -2,50 +2,22 @@ import { describe, expect, test } from 'bun:test';
 import { projectPullRequestMergeReadiness, type MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
 
 import {
-  buildPublicationReceipt,
-  decodePublicationMarker,
-  encodePublicationMarker,
-  publicationReceiptDigest,
-} from '../../src/core/publication/publication-receipt';
-import {
   MergeReadinessError,
   observeProviderReadinessFactsAbortable,
   observeProviderReadinessIdentityAbortable,
   observeProviderReadinessFacts,
   observeProviderReadinessIdentity,
   resolveFleetReadiness,
-  resolvePublicationReadiness,
-  productionMergeReadinessCollector,
   collectPullRequestMergeReadiness,
-  type FleetReadinessCollector,
-  type MergeReadinessCollector,
+  collectPullRequestMergeReadinessAbortable,
+  type PullRequestReadinessInput,
   type PublicationReadinessInput,
 } from '../../src/effects/publication/merge-readiness';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
-const TASK_ID = '1'.repeat(64);
-const TASK_REVISION = '2'.repeat(64);
-const CLAIM_ID = 'claim-readiness-effect';
-
-const receipt = buildPublicationReceipt({
-  repo_id: 'sha256:' + '3'.repeat(64),
-  task_id: TASK_ID,
-  task_revision: TASK_REVISION,
-  claim_id: CLAIM_ID,
-  generation: 1,
-  target_ref: 'main',
-  base_sha: BASE,
-  branch: 'codex/readiness-effect',
-  head_sha: HEAD,
-  tree_sha: 'c'.repeat(40),
-  candidate_diff_fingerprint: 'sha256:' + '4'.repeat(64),
-  provider: 'github',
-  provider_repo_id: 'R_readiness_effect',
-  pr_number: 42,
-  pr_url: 'https://example.invalid/pr/42',
-  created_at: '2026-08-22T22:40:00Z',
-});
+const receipt = { provider_repo_id: 'R_readiness_effect', pr_number: 42,
+  pr_url: 'https://github.com/example/repo-harness/pull/42', branch: 'codex/readiness-effect', target_ref: 'main' };
 
 const providerIdentity = {
   provider_repo_id: receipt.provider_repo_id,
@@ -58,22 +30,8 @@ const providerIdentity = {
   head_ref: receipt.branch,
   base_sha: BASE,
   base_ref: receipt.target_ref,
-  body: `PR body\n${encodePublicationMarker(receipt)}\n`,
+  body: 'Provider PR description',
   review_decision: null,
-  mergeable: 'MERGEABLE' as const,
-};
-
-const providerFacts = {
-  state: 'OPEN',
-  is_draft: false,
-  head_sha: HEAD,
-  base_sha: BASE,
-  review_decision: null,
-  unresolved_thread_count: 0,
-  rollback_boundary: { status: 'not_active' as const },
-  // Keep the fixture literal narrow: production validates provider buckets
-  // before passing them into the pure projection.
-  checks: [{ name: 'Required / CI', bucket: 'pass' as const }],
   mergeable: 'MERGEABLE' as const,
 };
 
@@ -87,7 +45,7 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     headRefName: receipt.branch,
     baseRefOid: BASE,
     baseRefName: receipt.target_ref,
-    body: `PR body\n${encodePublicationMarker(receipt)}\n`,
+    body: 'Provider PR description',
     reviewDecision: '',
     mergeable: 'MERGEABLE',
   };
@@ -115,216 +73,66 @@ function reviewGraph() {
   } } } };
 }
 
-const input: PublicationReadinessInput = {
-  repo_root: '/tmp/merge-readiness-effect-fixture',
-  publication_id: receipt.publication_id,
-};
+const input: PullRequestReadinessInput = { repo_root: '/tmp/merge-readiness-effect-fixture', repository: 'example/repo-harness',
+  provider_repository_id: '1001', pr_number: 42, expected_head_sha: HEAD, expected_base_sha: BASE };
 
-function collector(overrides: Partial<MergeReadinessCollector> = {}): MergeReadinessCollector {
-  return {
-    resolve_receipt: () => receipt,
-    observe_identity: () => providerIdentity,
-    observe_facts: () => providerFacts,
-    classify_integration: () => 'unmerged',
-    ...overrides,
+
+function passingGh(): NonNullable<PublicationReadinessInput['gh_runner']> {
+  const source = fakeGh();
+  return args => {
+    const result = source(args);
+    if (args[0] === 'pr' && args[1] === 'checks') return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
+    if (args[1]?.includes('/actions/runs/')) return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), status: 'completed', conclusion: 'success' }) };
+    return result;
   };
 }
 
-describe('MergeReadinessV1 effect', () => {
-  test('is read-only and accepts only a marker-carried receipt on the injected resolve path', () => {
-    const writes: string[] = [];
-    const body = `PR body\n${encodePublicationMarker(receipt)}\n`;
-    const decoded = decodePublicationMarker(body);
-    expect(decoded).not.toBeNull();
-    const verdict = resolvePublicationReadiness(
-      input,
-      collector({
-        resolve_receipt: () => {
-          // The effect's provider identity is the untrusted carrier. Decode
-          // the full immutable payload, but do not repair or rewrite it.
-          const markerReceipt = decodePublicationMarker(body);
-          if (markerReceipt === null) throw new Error('marker missing');
-          return markerReceipt;
-        },
-      }),
-    );
-
-    expect(verdict.ready).toBe(true);
-    expect(verdict.publication_id).toBe(receipt.publication_id);
-    expect(verdict.expected_head_sha).toBe(HEAD);
-    expect(verdict.expected_base_sha).toBe(BASE);
-    expect(writes).toEqual([]);
+describe('explicit PR readiness effects', () => {
+  test('rejects the retired publication selector even alongside an explicit PR', () => {
+    expect(() => collectPullRequestMergeReadiness({ ...input, publication_id: 'retired' } as PullRequestReadinessInput)).toThrow('publication_id');
   });
 
-  test('retries the whole provider identity→facts→identity round once after a torn read', () => {
-    const calls: string[] = [];
-    let identityCall = 0;
-    const verdict = resolvePublicationReadiness(input, collector({
-      observe_identity: () => {
-        calls.push('identity');
-        identityCall += 1;
-        return identityCall === 2
-          ? { ...providerIdentity, head_sha: 'd'.repeat(40) }
-          : providerIdentity;
-      },
-      observe_facts: (identity) => {
-        calls.push(`facts:${identity.head_sha}`);
-        return providerFacts;
-      },
-    }));
-
-    expect(verdict.ready).toBe(true);
-    expect(calls).toEqual([
-      'identity', `facts:${HEAD}`, 'identity',
-      'identity', `facts:${HEAD}`, 'identity',
-    ]);
+  test.each(['stable', 'one-torn', 'torn', 'body-only'] as const)('fences provider identity and retries once: %s', scenario => {
+    const source = passingGh(); let reads = 0;
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
+      const result = source(args);
+      if (args[0] !== 'pr' || args[1] !== 'view') return result;
+      reads++;
+      const changed = scenario === 'torn' ? reads % 2 === 0 : scenario === 'one-torn' && reads === 2;
+      return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout),
+        ...(changed ? { headRefOid: 'd'.repeat(40) } : {}), body: scenario === 'body-only' ? `body ${reads}` : '' }) };
+    } });
+    expect(verdict.ready).toBe(scenario !== 'torn');
+    expect(verdict.expected_head_sha).toBe(HEAD); expect(verdict.expected_base_sha).toBe(BASE);
+    expect(reads).toBe(['torn','one-torn'].includes(scenario) ? 4 : 2);
+    if (scenario === 'torn') expect(verdict.blockers).toContainEqual({ code: 'changed_during_read', attention_owner: 'external' });
+    expect('publication_id' in verdict).toBe(false);
   });
-
-  test('body observations cannot churn the actual PR/head/base merge fence', () => {
-    let reads = 0;
-    const verdict = resolvePublicationReadiness(input, collector({ observe_identity: () => ({ ...providerIdentity,
-      body: `description observation ${reads++}` }) }));
-    expect(verdict.ready).toBe(true); expect(reads).toBe(2);
+  test('unavailable and incomplete responses cannot authorize readiness', () => {
+    for (const response of [{ status: 1, stdout: '' }, { status: 0, stdout: '{}' }]) {
+      const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: () => response });
+      expect(verdict.ready).toBe(false);
+      expect(verdict.blockers[0]?.code).toBe(response.status ? 'provider_unavailable' : 'provider_data_incomplete');
+    }
   });
-
-  test('reports changed_during_read after the bounded second torn round and preserves receipt fences', () => {
-    let identityCall = 0;
-    const verdict = resolvePublicationReadiness(input, collector({
-      observe_identity: () => {
-        identityCall += 1;
-        return {
-          ...providerIdentity,
-          head_sha: identityCall % 2 === 1 ? HEAD : 'd'.repeat(40),
-        };
-      },
-    }));
-
-    expect(verdict.ready).toBe(false);
-    expect(verdict.expected_head_sha).toBe(HEAD);
-    expect(verdict.expected_base_sha).toBe(BASE);
-    expect(verdict.blockers).toContainEqual({ code: 'changed_during_read', attention_owner: 'external' });
-    expect(identityCall).toBe(4);
+  test('pending exit 8 and mismatched CI base remain blocked', async () => {
+    expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh() }).blockers.map(b => b.code)).toContain('checks_pending');
+    expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh(true) }).ready).toBe(false);
+    let calls = 0; const controller = new AbortController(); controller.abort();
+    const verdict = await collectPullRequestMergeReadinessAbortable({ ...input, signal: controller.signal,
+      gh_runner_async: async args => { calls++; return fakeGh()(args); } });
+    expect(verdict.blockers.map(b => b.code)).toContain('provider_unavailable'); expect(calls).toBe(0);
   });
-
-  test('provider unavailable is typed, fail-closed, and performs no write', () => {
-    const writes: string[] = [];
-    const verdict = resolvePublicationReadiness(input, collector({
-      observe_identity: () => {
-        writes.push('read-only observation');
-        throw new MergeReadinessError('provider_unavailable', 'gh unavailable');
-      },
-    }));
-
-    expect(verdict.ready).toBe(false);
-    expect(verdict.expected_head_sha).toBe(HEAD);
-    expect(verdict.expected_base_sha).toBe(BASE);
-    expect(verdict.blockers).toContainEqual({ code: 'provider_unavailable', attention_owner: 'external' });
-    expect(writes).toEqual(['read-only observation']);
+  test('explicit fleet order isolates provider failures', () => {
+    const source = passingGh(); let failed = false;
+    const { repo_root, ...selection } = input;
+    const aggregate = resolveFleetReadiness({ repo_root, pull_requests: [selection, selection], gh_runner: args => {
+      if (!failed) { failed = true; return { status: 1, stdout: '' }; } return source(args);
+    } });
+    expect(aggregate.pull_requests.map(item => item.pr_number)).toEqual([42,42]);
+    expect(aggregate.pull_requests[0]!.blockers[0]!.code).toBe('provider_unavailable');
+    expect(aggregate.pull_requests[1]!.ready).toBe(true);
   });
-
-  test('incomplete provider facts are typed and cannot produce readiness', () => {
-    const verdict = resolvePublicationReadiness(input, collector({
-      observe_facts: () => {
-        throw new MergeReadinessError('provider_data_incomplete', 'review threads are truncated');
-      },
-    }));
-
-    expect(verdict.ready).toBe(false);
-    expect(verdict.expected_head_sha).toBe(HEAD);
-    expect(verdict.expected_base_sha).toBe(BASE);
-    expect(verdict.blockers).toContainEqual({ code: 'provider_data_incomplete', attention_owner: 'external' });
-  });
-
-  test('marker mismatch is observed without any receipt, lease, provider, or marker write', () => {
-    const writes: string[] = [];
-    const mismatched = buildPublicationReceipt({
-      ...receipt,
-      head_sha: 'd'.repeat(40),
-    });
-    expect(() => resolvePublicationReadiness(input, collector({
-      resolve_receipt: () => {
-        const markerReceipt = decodePublicationMarker(`PR body\n${encodePublicationMarker(mismatched)}\n`);
-        if (markerReceipt === null || publicationReceiptDigest(markerReceipt) !== publicationReceiptDigest(receipt)) {
-          writes.push('marker mismatch observed');
-        }
-        return receipt;
-      },
-      observe_identity: () => {
-        writes.push('provider identity');
-        throw new MergeReadinessError('publication_claim_mismatch', 'marker mismatch');
-      },
-      observe_facts: () => {
-        writes.push('provider facts');
-        return providerFacts;
-      },
-    }))).toThrow(MergeReadinessError);
-
-    expect(writes).toEqual(['marker mismatch observed', 'provider identity']);
-  });
-
-  test('production fake-gh adapter accepts pending exit 8 and binds trusted CI to exact head/base', () => {
-    const effectInput = { ...input, gh_runner: fakeGh() };
-    const identity = observeProviderReadinessIdentity(receipt, effectInput);
-    const facts = observeProviderReadinessFacts(identity, receipt, effectInput);
-    expect(identity.head_sha).toBe(HEAD);
-    expect(facts.checks).toEqual([{ name: 'Required / CI', bucket: 'pending' }]);
-    expect(facts.unresolved_thread_count).toBe(0);
-  });
-
-  test('abortable provider adapter shares the synchronous parser and fails closed before a provider child starts', async () => {
-    const synchronous = fakeGh();
-    const asyncInput = {
-      ...input,
-      gh_runner_async: async (args: readonly string[]) => synchronous(args),
-    };
-    const identity = await observeProviderReadinessIdentityAbortable(receipt, asyncInput);
-    const facts = await observeProviderReadinessFactsAbortable(identity, receipt, asyncInput);
-    expect(identity.head_sha).toBe(HEAD);
-    expect(facts.checks).toEqual([{ name: 'Required / CI', bucket: 'pending' }]);
-
-    const controller = new AbortController();
-    controller.abort();
-    await expect(observeProviderReadinessIdentityAbortable(receipt, { ...asyncInput, signal: controller.signal }))
-      .rejects.toMatchObject({ code: 'provider_unavailable' });
-  });
-
-  test('production fake-gh adapter fails closed for CI from a different base', () => {
-    const effectInput = { ...input, gh_runner: fakeGh(true) };
-    const identity = observeProviderReadinessIdentity(receipt, effectInput);
-    expect(() => observeProviderReadinessFacts(identity, receipt, effectInput)).toThrow(MergeReadinessError);
-  });
-
-  test('fleet aggregate isolates a damaged publication and preserves later canonical order', () => {
-    const damaged = `sha256:${'d'.repeat(64)}`;
-    const readyVerdict = resolvePublicationReadiness(input, collector());
-    const fleetCollector: FleetReadinessCollector = {
-      collect_index: () => ({
-        sprint_path: 'plans/sprints/current.md',
-        snapshot_consistency: 'stable',
-        publication_ids: [damaged, receipt.publication_id],
-      }),
-      resolve_publication: (candidate) => {
-        if (candidate.publication_id === damaged) {
-          throw new MergeReadinessError('publication_claim_mismatch', 'damaged receipt cache');
-        }
-        return readyVerdict;
-      },
-    };
-    const aggregate = resolveFleetReadiness({ repo_root: input.repo_root }, fleetCollector);
-    expect(aggregate.publications.map((entry) => entry.publication_id)).toEqual([damaged, receipt.publication_id]);
-    expect(aggregate.publications[0]).toEqual({
-      publication_id: damaged,
-      error: 'publication_claim_mismatch',
-      message: 'damaged receipt cache',
-    });
-    expect(aggregate.publications[1]?.verdict?.ready).toBe(true);
-  });
-});
-
-test('production read-only collector has no local lease/review/artifact collector', () => {
-  expect(Object.keys(productionMergeReadinessCollector).sort()).toEqual([
-    'classify_integration', 'observe_facts', 'observe_identity', 'resolve_receipt',
-  ]);
 });
 
 test.each([
@@ -338,9 +146,9 @@ test.each([
       ? { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), reviewDecision: decision }) }
       : observed;
   };
-  expect(() => observeProviderReadinessIdentity(receipt, { ...input, gh_runner }))
+  expect(() => observeProviderReadinessIdentity({ ...input, gh_runner }))
     .toThrow('provider PR reviewDecision is unknown');
-  await expect(observeProviderReadinessIdentityAbortable(receipt, {
+  await expect(observeProviderReadinessIdentityAbortable({
     ...input, gh_runner_async: async args => gh_runner(args),
   })).rejects.toMatchObject({ code: 'provider_data_incomplete' });
 });
@@ -354,8 +162,8 @@ test.each([null, '', 'APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'] as cons
         ? { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), reviewDecision: decision }) }
         : observed;
     };
-    const synchronous = observeProviderReadinessIdentity(receipt, { ...input, gh_runner });
-    const abortable = await observeProviderReadinessIdentityAbortable(receipt, {
+    const synchronous = observeProviderReadinessIdentity({ ...input, gh_runner });
+    const abortable = await observeProviderReadinessIdentityAbortable({
       ...input, gh_runner_async: async args => gh_runner(args),
     });
     expect(synchronous.review_decision).toBe(decision === '' ? null : decision);
@@ -373,11 +181,11 @@ test.each([
     Object.assign(graph.data.node.pullRequest, { reviewDecision: decision });
     return { status: 0, stdout: JSON.stringify(graph) };
   };
-  const identity = observeProviderReadinessIdentity(receipt, { ...input, gh_runner });
+  const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
   expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
     .toThrow('provider review decision changed during read');
   const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };
-  const asyncIdentity = await observeProviderReadinessIdentityAbortable(receipt, asyncInput);
+  const asyncIdentity = await observeProviderReadinessIdentityAbortable(asyncInput);
   await expect(observeProviderReadinessFactsAbortable(asyncIdentity, receipt, asyncInput))
     .rejects.toMatchObject({ code: 'provider_data_incomplete' });
 });
@@ -462,14 +270,6 @@ test('ordinary provider collector blocks decision changes after normalized empty
     expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
   expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['changed_during_read']);
   expect(identityReads).toBe(4);
-});
-
-test('review decision movement after facts prevents a green verdict', () => {
-  let reads = 0;
-  const verdict = resolvePublicationReadiness(input, collector({ observe_identity: () => ({ ...providerIdentity,
-    review_decision: ++reads % 2 ? null : 'CHANGES_REQUESTED' }) }));
-  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['changed_during_read']);
-  expect(reads).toBe(4);
 });
 
 // Provider commit responses come from real Git objects, including root and merge commits.
@@ -597,32 +397,12 @@ test('rollback boundary binds the current base to one merged main PR and one rea
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('publication integration classification uses the installed helper without a repo-local merge lib copy', () => {
-  const root = mkdtempSync(join(tmpdir(), 'readiness-installed-helper-'));
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-  try {
-    git('init', '-b', 'main'); git('config', 'user.name', 'Readiness fixture'); git('config', 'user.email', 'readiness@test.invalid');
-    writeFileSync(join(root, 'feature'), 'base'); git('add', '.'); git('commit', '-qm', 'base');
-    git('switch', '-qc', 'codex/adopted');
-    writeFileSync(join(root, 'feature'), 'changed'); git('add', '.'); git('commit', '-qm', 'candidate');
-    const head = git('rev-parse', 'HEAD');
-    const tree = git('rev-parse', 'HEAD^{tree}');
-    git('switch', '-q', 'main'); git('merge', '--squash', 'codex/adopted'); git('commit', '-qm', 'squash');
-    const base = git('rev-parse', 'HEAD');
-    expect(existsSync(join(root, 'scripts/worktree-merge-lib.sh'))).toBe(false);
-    const adopted = buildPublicationReceipt({
-      repo_id: 'sha256:' + '5'.repeat(64), task_id: TASK_ID, task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
-      target_ref: 'main', base_sha: base, branch: 'codex/adopted', head_sha: head, tree_sha: tree,
-      candidate_diff_fingerprint: 'sha256:' + '6'.repeat(64), provider: 'github', provider_repo_id: 'R_readiness_adopted',
-      pr_number: 43, pr_url: 'https://example.invalid/pr/43', created_at: '2026-08-22T22:40:00Z',
-    });
-    const verdict = resolvePublicationReadiness({ repo_root: root, publication_id: adopted.publication_id }, {
-      ...productionMergeReadinessCollector,
-      resolve_receipt: () => adopted,
-      observe_identity: () => ({ ...providerIdentity, base_sha: base, head_sha: head }),
-      observe_facts: () => ({ ...providerFacts, head_sha: head, base_sha: base }),
-    });
-    expect(verdict.integration_mode).toBe('absorbed');
-    expect(verdict.blockers.map(blocker => blocker.code)).toContain('already_integrated');
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('merged provider PR remains blocked without local squash classification authority', () => {
+  const source = passingGh();
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
+    const result = source(args);
+    return args[0] === 'pr' && args[1] === 'view' ? { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), state: 'MERGED' }) } : result;
+  } });
+  expect(verdict.ready).toBe(false);
+  expect(verdict.blockers.map(blocker => blocker.code)).toContain('already_integrated');
 });

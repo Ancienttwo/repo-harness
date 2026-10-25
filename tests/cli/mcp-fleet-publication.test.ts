@@ -45,7 +45,7 @@ describe('fleet/publication MCP mirrors', () => {
   test('rejects undeclared publication parameters at dispatch time', async () => withRegistryHome(async (repoRoot) => {
     const policy = getMcpPolicy('planner', { allowedRoots: [repoRoot] });
     const result = parseResult(await callMcpTool({ repoRoot, policy }, 'publication_readiness', {
-      unexpected: true,
+      publication_id: 'retired-selector', unexpected: true,
     }));
     expect(result.error).toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(result.error.message).toContain('unexpected');
@@ -55,6 +55,6 @@ describe('fleet/publication MCP mirrors', () => {
   test('publication readiness mirrors its typed read-side failure without synthesizing a verdict', () => withRegistryHome((repoRoot) => {
     const policy = getMcpPolicy('planner', { allowedRoots: [repoRoot] });
     const result = parseResult(callFleetTool({ repoRoot, policy }, 'publication_readiness'));
-    expect(result.error).toMatchObject({ code: 'receipt_unavailable' });
+    expect(result.error).toMatchObject({ code: 'INVALID_ARGUMENT' });
   }));
 });

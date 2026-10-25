@@ -88,6 +88,19 @@ export interface MergeReadinessV1 {
   readonly blockers: readonly MergeReadinessBlockerV1[];
 }
 
+export interface PullRequestSelectionV2 {
+  readonly provider_repository_id: string;
+  readonly repository: string;
+  readonly pr_number: number;
+  readonly expected_head_sha: string;
+  readonly expected_base_sha: string;
+}
+
+export interface PullRequestReadinessV2 extends PullRequestSelectionV2, Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-pull-request-readiness';
+}
+
 const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttentionOwner>> = {
   receipt_unavailable: 'agent',
   publication_claim_mismatch: 'agent',

@@ -5,7 +5,7 @@ import type {
   OperatorFleetSnapshotV1,
 } from './types';
 
-import type { MergeReadinessV1 } from '../core/publication/merge-readiness';
+import type { PullRequestReadinessV2 } from '../core/publication/merge-readiness';
 
 const baseFeedback = {
   pending_count: 0,
@@ -23,14 +23,14 @@ const baseInbox = {
 } as const;
 
 function mergeReadiness(
-  publicationId: string,
+  _publicationId: string,
   ready: boolean,
-  blockers: MergeReadinessV1['blockers'] = [],
-): MergeReadinessV1 {
+  blockers: PullRequestReadinessV2['blockers'] = [],
+): PullRequestReadinessV2 {
   return {
-    protocol: 1,
-    kind: 'repo-harness-merge-readiness',
-    publication_id: publicationId,
+    protocol: 2,
+    kind: 'repo-harness-pull-request-readiness',
+    repository: 'example/fixture', provider_repository_id: '1001', pr_number: 1,
     ready,
     expected_head_sha: '0123456789abcdef0123456789abcdef01234567',
     expected_base_sha: 'fedcba9876543210fedcba9876543210fedcba98',

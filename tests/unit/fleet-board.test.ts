@@ -84,16 +84,16 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(projected.inbox.delivery_state).toBe('reconciliation_required');
   });
 
-  test('uses review readiness only with the lease pointer and preserves attention precedence', () => {
+  test('uses explicit provider readiness independently of the lease pointer and preserves attention precedence', () => {
     const reviewing = card({
       lease_state: 'reviewing',
       claim_id: '123e4567-e89b-42d3-a456-426614174001',
       generation: 2,
       current_publication: { publication_id: `sha256:${'c'.repeat(64)}`, head_sha: 'd'.repeat(40) },
       merge_readiness: {
-        protocol: 1,
-        kind: 'repo-harness-merge-readiness',
-        publication_id: `sha256:${'c'.repeat(64)}`,
+        protocol: 2,
+        kind: 'repo-harness-pull-request-readiness',
+        provider_repository_id: '1001', repository: 'example/repo', pr_number: 1,
         ready: false,
         expected_head_sha: 'd'.repeat(40),
         expected_base_sha: 'e'.repeat(40),
@@ -104,6 +104,8 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
       feedback: { pending_count: 2, no_progress: true, repair_actions: [] },
       inbox: { unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
     });
+    expect(classifyFleetBoardPlacement({ ...reviewing, current_publication: null, lease_state: 'available' })).toEqual({ kind: 'column', column: 'in_review' });
+    expect(classifyFleetBoardPlacement({ ...reviewing, merge_readiness: null })).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
     const result = projectFleetBoardSnapshot({
       registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
       repositories: [{
