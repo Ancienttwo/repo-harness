@@ -80,3 +80,11 @@ test('comma-bearing JSON keys cannot replace the four required verification fiel
   };
   expect(() => createReviewAuthorityContext(candidate as unknown as ReviewAuthorityInput)).toThrow('review_context_invalid: verification');
 });
+
+test('a serialization hook cannot replace the validated scope during snapshot construction', () => {
+  const candidate = input();
+  Object.setPrototypeOf(candidate, {
+    toJSON() { return { ...input(), allowed_paths: ['unapproved/**'] }; },
+  });
+  expect(createReviewAuthorityContext(candidate).allowed_paths).toEqual(['src/review/**', 'tests/review/**']);
+});

@@ -85,10 +85,24 @@ export function createReviewAuthorityContext(input: ReviewAuthorityInput): Revie
   text(subject.target_ref, 'target ref');
   for (const key of ['target_rev', 'head_rev']) if (typeof subject[key] !== 'string' || !OID.test(subject[key])) fail(key);
   hash(subject.review_subject_sha256, 'subject content');
-  // JSON cloning after validation prevents mutable aliases. Allowed-path order is
-  // not policy; canonicalize it before binding the snapshot.
-  const snapshot: ReviewAuthorityInput = JSON.parse(JSON.stringify(input));
-  snapshot.allowed_paths.sort();
+  // Copy only named validated values. Do not invoke input serialization hooks.
+  // Allowed-path order is not policy; canonicalize it before binding the snapshot.
+  const snapshot: ReviewAuthorityInput = {
+    repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
+    goal: { revision: input.goal.revision, content: input.goal.content },
+    authorization: { actor_id: input.authorization.actor_id, grant_sha256: input.authorization.grant_sha256 },
+    policy: { reviewer: input.policy.reviewer, user_waiver: input.policy.user_waiver, policy_sha256: input.policy.policy_sha256 },
+    allowed_paths: [...input.allowed_paths].sort(), benchmark: input.benchmark,
+    verification: {
+      plan_sha256: input.verification.plan_sha256, source_sha256: input.verification.source_sha256,
+      evidence_sha256: input.verification.evidence_sha256, tree_sha256: input.verification.tree_sha256,
+    },
+    subject: {
+      status: input.subject.status, scope: input.subject.scope, target_ref: input.subject.target_ref,
+      target_rev: input.subject.target_rev, head_rev: input.subject.head_rev,
+      review_subject_sha256: input.subject.review_subject_sha256,
+    },
+  };
   const basis = { protocol: 1 as const, kind: 'repo-harness-review-authority-context' as const, ...snapshot, campaign_sha256: campaign };
   return freeze({ ...basis, context_sha256: digest(basis) });
 }
