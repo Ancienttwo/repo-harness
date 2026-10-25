@@ -1,3 +1,4 @@
+import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { osAccountHome } from '../runtime/os-account-home';
 import { reviewCampaignKey } from '../../core/review/authority-context';
 import type { ReviewAdmissionSource } from './admission-source';
@@ -338,6 +339,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         command, () => client.ready(join(dir, 'ready.json')), undefined, taskAuthority);
     }
     client.assertBinding(binding);
+    bindNativeTaskSession({ repo_root: reviewerRepo, binding, ready_path: join(dir, 'ready.json') });
     if (binding.runtime === 'herdr' && binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
     const recheck = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
