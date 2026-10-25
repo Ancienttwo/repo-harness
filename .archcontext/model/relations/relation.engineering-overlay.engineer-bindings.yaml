@@ -1,6 +1,6 @@
 schemaVersion: "archcontext.relation/v1"
 id: "relation.engineering-overlay.engineer-bindings"
-kind: "imports"
+kind: "calls"
 source: "capability.runtime-harness.engineering-overlay"
 target: "capability.runtime-harness.engineer-bindings"
-intent: "Import canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores"
+intent: "Use canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores"

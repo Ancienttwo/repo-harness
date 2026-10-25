@@ -45,6 +45,14 @@ source:
             - id: "sink.operator.model-reader-list"
               path: "src/effects/architecture/model-reader.ts"
               symbol: "list"
+    - id: "entrypoint.operator.organization-validation"
+      path: "src/effects/operator/repository-snapshot.ts"
+      symbols:
+        - name: "assertOperatorRepositorySnapshotIdentity"
+          sinks:
+            - id: "sink.operator.organization-validation"
+              path: "src/core/operator/organization-snapshot.ts"
+              symbol: "decodeOperatorOrganizationSnapshot"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

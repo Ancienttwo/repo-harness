@@ -11,7 +11,7 @@ responsibilities:
   - "Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists."
   - "Record acceptance only for the exact live contract. Leave archives as historical documents."
   - "Own the shared neutral admission service and trusted delegated approval binding; preserve the OS-account authority root and every exact approval and goal fence."
-  - "Own pre-prompt-inbox preparation and its Node-safe consumer under existing review footprints; delivery occurs only in owner preparation and the hook reads validated bounded context."
+  - "Reserve bounded pre-prompt inbox context in the owner without delivery; consume it read-only in the host, record exact input-scoped accepted OAR proof, then commit delivery in the owner. Missing or unknown acceptance stays pending; recovery repeats the ledger commit without resending the prompt."
 source:
   include:
     - "src/core/review/**"

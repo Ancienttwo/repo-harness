@@ -1,6 +1,6 @@
 schemaVersion: "archcontext.relation/v1"
 id: "relation.workflow-state.coordination-plane.external-source-intake"
-kind: "imports"
+kind: "calls"
 source: "component.workflow-state.coordination-plane"
 target: "capability.runtime-harness.external-source-intake"
 intent: "Read immutable provider issue observations and complete refresh receipts"

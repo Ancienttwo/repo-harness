@@ -44,9 +44,12 @@ also select an exact observation and admitted session for the same provider issu
 
 Admitted inbox delivery uses the admission SHA and exact claim reference and
 revision. Runtime effects also bind the session digest and selected profile
-revision. Owner preparation may deliver messages and write a bounded pre-prompt
-companion. The Node-safe hook consumer checks native/request attribution, local
-approval and expiry without provider calls or delivery writes. Native host
+revision. Owner preparation reserves a bounded pre-prompt companion without
+marking messages delivered. The Node-safe host consumer checks native/request
+attribution, local approval and expiry, then reads the companion without provider
+calls or delivery writes. Exact input-scoped accepted OAR proof permits the owner
+to commit delivery receipts. Missing or unknown acceptance leaves delivery pending;
+recovery repeats the ledger commit without resending the prompt. Native host
 attribution itself grants no admission.
 
 The task mutex still resolves through the Git common directory and uses:

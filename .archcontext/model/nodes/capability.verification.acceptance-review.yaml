@@ -11,7 +11,7 @@ responsibilities:
   - "Record and verify the structured AcceptanceReceipt against the exact live contract. Reject archived contracts and do not search archives for receipt authority."
   - "Build bounded module review prompts for the module CLI and the operator architecture view."
   - "Provide shared protected admission storage, exact current source selection and provider goal reobservation to task sessions, evidence and external bindings independently of review execution."
-  - "Prepare bounded pre-prompt inbox companions in the trusted owner before delivery; the Node-safe hook consumer checks exact native/request attribution, current local approval and expiry without network or delivery writes."
+  - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
 source:
   include:
     - "src/core/review/**"
@@ -49,6 +49,45 @@ source:
             - id: "sink.acceptance-review.record-receipt"
               path: "src/effects/review/acceptance-receipt.ts"
               symbol: "recordAcceptance"
+            - id: "sink.acceptance-review.reserve-inbox"
+              path: "src/effects/review/pre-prompt-inbox.ts"
+              symbol: "preparePrePromptInbox"
+            - id: "sink.acceptance-review.commit-inbox"
+              path: "src/effects/review/pre-prompt-inbox.ts"
+              symbol: "commitPrePromptInbox"
+    - id: "entrypoint.acceptance-review.inbox-host"
+      path: "src/effects/review/oar-review-host.ts"
+      symbols:
+        - name: "runHostFileRequest"
+          sinks:
+            - id: "sink.acceptance-review.consume-inbox"
+              path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+              symbol: "consumePrePromptInbox"
+            - id: "sink.acceptance-review.accepted-inbox"
+              path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+              symbol: "recordPrePromptInboxAccepted"
+    - id: "entrypoint.acceptance-review.inbox-proof"
+      path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+      symbols:
+        - name: "recordPrePromptInboxAccepted"
+          sinks:
+            - id: "sink.acceptance-review.persist-inbox-proof"
+              path: "src/effects/terminal/task-session-io.ts"
+              symbol: "writeSessionArtifact"
+    - id: "entrypoint.acceptance-review.inbox-commit"
+      path: "src/effects/review/pre-prompt-inbox.ts"
+      symbols:
+        - name: "commitPrePromptInbox"
+          sinks:
+            - id: "sink.acceptance-review.inbox-session"
+              path: "src/effects/terminal/task-session-reader.ts"
+              symbol: "readTaskAgent"
+            - id: "sink.acceptance-review.inbox-oar-proof"
+              path: "src/effects/terminal/task-runtime-observation.ts"
+              symbol: "readOarObservation"
+            - id: "sink.acceptance-review.deliver-inbox"
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "deliverTaskInbox"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

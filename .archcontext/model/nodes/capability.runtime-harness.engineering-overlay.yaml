@@ -22,13 +22,18 @@ source:
           sinks:
             - id: "sink.engineering-overlay.read-pass"
               path: "src/effects/engineers/engineering-overlay.ts"
-              symbol: "runtimeProjection"
+              symbol: "read"
             - id: "sink.engineering-overlay.schema"
               path: "src/core/engineers/engineering-overlay.ts"
               symbol: "buildAdmittedEngineeringOverlay"
             - id: "sink.engineering-overlay.attention-schema"
               path: "src/core/engineers/engineering-overlay.ts"
               symbol: "projectAdmittedOrganizationAttention"
+        - name: "read"
+          sinks:
+            - id: "sink.engineering-overlay.runtime-projection"
+              path: "src/effects/engineers/engineering-overlay.ts"
+              symbol: "runtimeProjection"
     - id: "entrypoint.engineering-overlay.overlay-schema"
       path: "src/core/engineers/engineering-overlay.ts"
       symbols:

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.acceptance-review.primary.task-fleet"
+kind: "calls"
+source: "component.acceptance-review.primary"
+target: "capability.organization.task-fleet"
+intent: "Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending"

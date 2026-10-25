@@ -1,6 +1,6 @@
 schemaVersion: "archcontext.relation/v1"
 id: "relation.operator.imports.task-agent-host"
-kind: "imports"
+kind: "depends-on"
 source: "capability.runtime-harness.operator"
 target: "capability.runtime-harness.task-agent-host"
 intent: "Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations"
