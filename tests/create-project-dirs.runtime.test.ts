@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { defaultPolicy } from "../src/core/adoption/standard-plan";
-import { adoptionTemplateFile } from "../src/core/adoption/manifest-templates";
+import { defaultPolicy } from "../src/effects/adoption/standard-plan";
+import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
 
@@ -397,7 +397,7 @@ describe("create-project-dirs runtime smoke", () => {
         post_implementation_review: "waza:check",
       });
       // Parity guard: scripts/lib/project-init-lib.sh (pi_write_harness_policy, bash-generated
-      // above) and src/core/adoption/standard-plan.ts (defaultPolicy, TS-generated) are two
+      // above) and src/effects/adoption/standard-plan.ts (defaultPolicy, TS-generated) are two
       // independently hardcoded sources for the same agentic_development.routing map. Assert
       // they stay identical so the maps cannot silently diverge again.
       const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;

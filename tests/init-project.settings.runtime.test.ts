@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { adoptionTemplateFile } from "../src/core/adoption/manifest-templates";
+import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 
 const ROOT = join(import.meta.dir, "..");
 

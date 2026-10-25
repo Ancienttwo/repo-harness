@@ -6,7 +6,7 @@ const SOURCE_AUTHORITY_FILES = [
   "scripts/check-ci.sh",
   "src/cli/index.ts",
   "src/cli/hook-entry.ts",
-  "src/core/adoption/standard-plan.ts",
+  "src/effects/adoption/standard-plan.ts",
 ] as const;
 
 function regularFile(repoRoot: string, path: string): boolean {

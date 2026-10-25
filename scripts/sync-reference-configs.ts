@@ -8,7 +8,7 @@ import {
   sameProjectionBytes,
   writeProjectionFileAtomic,
   type ProjectionFileRecord,
-} from "../src/core/source-projection";
+} from "../src/effects/source-projection";
 import { TOOL_CATALOG, type ToolCatalogV1 } from "../src/core/tools/catalog";
 
 type Mode = "check" | "write";

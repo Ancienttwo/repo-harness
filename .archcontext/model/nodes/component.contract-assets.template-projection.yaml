@@ -17,7 +17,7 @@ source:
     - assets/plan-map.json
     - assets/versions.json
     - .claude/templates/**
-    - src/core/source-projection.ts
+    - src/effects/source-projection.ts
     - scripts/sync-helper-sources.ts
     - scripts/sync-reference-configs.ts
     - src/cli/commands/init.ts

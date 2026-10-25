@@ -31,7 +31,7 @@
       "assets/CLAUDE.md",
       ".archcontext/**",
       "src/core/capabilities/**",
-      "src/core/source-projection.ts",
+      "src/effects/source-projection.ts",
       "src/cli/commands/run.ts",
       "src/cli/commands/brain.ts",
       "src/cli/commands/brain-root.ts",
@@ -94,12 +94,12 @@
               },
               {
                 "id": "sink.contract-assets.projection-write",
-                "path": "src/core/source-projection.ts",
+                "path": "src/effects/source-projection.ts",
                 "symbol": "writeProjectionFileAtomic"
               },
               {
                 "id": "sink.contract-assets.projection-compare",
-                "path": "src/core/source-projection.ts",
+                "path": "src/effects/source-projection.ts",
                 "symbol": "sameProjectionBytes"
               }
             ]

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { basename } from 'path';
 
 import {
   projectFleetBoardSnapshot,
@@ -63,7 +64,7 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
 describe('OperatorFleetSnapshotV1 browser projection', () => {
   test('UX-local-human-control-board-v1-N1 removes local paths and preserves Fleet facts', () => {
     const source = sourceSnapshot();
-    const projected = projectOperatorFleetSnapshot(source, serviceEpoch);
+    const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
 
     expect(projected).toMatchObject({
       protocol: 7,
@@ -92,7 +93,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
 
   test('returns an immutable transport view without reclassifying cards or counts', () => {
     const source = sourceSnapshot();
-    const projected = projectOperatorFleetSnapshot(source, serviceEpoch);
+    const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
     const typed = projected as OperatorFleetSnapshotV1;
 
     expect(Object.isFrozen(typed)).toBe(true);
@@ -121,7 +122,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
         : repository),
     } as FleetBoardSnapshotV1;
 
-    const projected = projectOperatorFleetSnapshot(withRuntimeError, serviceEpoch);
+    const projected = projectOperatorFleetSnapshot(withRuntimeError, serviceEpoch, basename);
     expect(projected.repositories[1]?.error).toEqual({
       code: 'repo_runtime_effect_unreadable',
       message: 'repository Agent Runtime effect store is unavailable',
@@ -181,7 +182,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
       }],
     });
 
-    const projected = projectOperatorFleetSnapshot(source, serviceEpoch);
+    const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
     expect(projected.counts.unclassified).toBe(1);
     expect(projected.repositories[0]?.cards[1]).toMatchObject({
       placement: { kind: 'unclassified', reason: 'observation_failed' },
@@ -193,7 +194,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
 
   test('rejects an unsupported Fleet protocol before crossing the browser boundary', () => {
     const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV1;
-    expect(() => projectOperatorFleetSnapshot(invalid, serviceEpoch)).toThrow('unsupported Fleet snapshot protocol');
+    expect(() => projectOperatorFleetSnapshot(invalid, serviceEpoch, basename)).toThrow('unsupported Fleet snapshot protocol');
   });
 
   test('UX-local-human-control-board-v1-N1 allowlists every DTO level against hostile identity-shaped extras', () => {
@@ -207,7 +208,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     Object.defineProperty(card, 'future_control', { value: 'line\u0000break', enumerable: true });
     Object.defineProperty(card, 'future_windows_path', { value: 'C:\\Users\\operator\\token.txt', enumerable: true });
 
-    const projected = projectOperatorFleetSnapshot(source, serviceEpoch);
+    const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
     const rendered = JSON.stringify(projected);
     expect(rendered).not.toContain('future_env');
     expect(rendered).not.toContain('PLACEMENT_PRIVATE_CONTROL');
@@ -242,7 +243,7 @@ test('notification evidence is copied by allowlist without exposing raw runtime 
   const source = { ...baseline, repositories: baseline.repositories.map(repo => ({ ...repo,
     cards: repo.cards.map(card => ({ ...card, inbox: { ...card.inbox, delivery_evidence: { candidate_count: 1, latest } } })),
   })) };
-  const result = projectOperatorFleetSnapshot(source, serviceEpoch);
+  const result = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
   expect(JSON.stringify(result)).not.toContain('private-endpoint');
   expect(JSON.stringify(result)).not.toContain('private-host');
   expect(result.repositories[0]!.cards[0]!.inbox.delivery_evidence!.latest!.observation_sha256).toBe(latest.observation_sha256);
@@ -251,7 +252,7 @@ test('notification evidence is copied by allowlist without exposing raw runtime 
 
  test('Fleet projection requires the actual service epoch and never synthesizes one', () => {
   for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {
-    expect(() => projectOperatorFleetSnapshot(sourceSnapshot(), epoch as string)).toThrow('invalid operator service epoch');
+    expect(() => projectOperatorFleetSnapshot(sourceSnapshot(), epoch as string, basename)).toThrow('invalid operator service epoch');
   }
-  expect(projectOperatorFleetSnapshot(sourceSnapshot(), serviceEpoch).service_epoch).toBe(serviceEpoch);
+  expect(projectOperatorFleetSnapshot(sourceSnapshot(), serviceEpoch, basename).service_epoch).toBe(serviceEpoch);
 });
