@@ -11,12 +11,13 @@ import { readActiveReviewAdmission, revokeReviewAdmission } from '../../src/effe
 
 export interface EngineerRuntimeFixtureOptions {
   authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
+  repositoryId?: string; issueId?: string;
 }
 /** Public binding lifecycle with injected offline transport; no live service is claimed. */
 export async function bindTaskRuntimeFixture(root: string, options: EngineerRuntimeFixtureOptions, engineerId?: string) {
   const task = options.task ?? '1'.repeat(64), role = options.role ?? 'deep-reasoner';
   const spec = { task, role, harness_kind: 'codex' };
-  const approved = seedReviewAdmissionFixture(root, options.authorityHome);
+  const approved = seedReviewAdmissionFixture(root, options.authorityHome, { repositoryId: options.repositoryId, issueId: options.issueId });
   const selected = engineerId === undefined ? undefined : loadEngineerProfile(root, engineerId);
   const profile = selected === undefined ? undefined : { engineer_id: selected.profile.engineer_id, engineer_contract_revision: selected.engineer_contract_revision };
   const claim = options.claim ?? { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-runtime', revision: `sha256:${'c'.repeat(64)}` };

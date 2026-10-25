@@ -34,7 +34,8 @@ export function decodeAdmittedScheduling(value: unknown, repositoryId: string): 
     const id = text(profile.engineer_id, ENGINEER);
     if (ids.has(id)) invalid();
     ids.add(id);
-    text(profile.capability_id, /^capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/);
+    const capability = text(profile.capability_id, /^capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/);
+    if (id !== `engineer:${capability}`) invalid();
     text(profile.engineer_contract_revision, SHA);
   }
   const tasks = array(input.tasks), seen = new Set<string>(), sessions = new Set<string>();
@@ -87,6 +88,7 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
   if (!Number.isFinite(Date.parse(text(overlay.observed_at)))) invalid();
   if (overlay.scheduling !== null) decodeAdmittedScheduling(overlay.scheduling, repositoryId);
   const components = array(overlay.components, 2).map(raw => object(raw, ['component', 'support', 'observation_before', 'observation_after']));
+  if (components[0]?.component !== 'scheduling' || components[1]?.component !== 'runtime_effects') invalid();
   if (components.length !== 2 || new Set(components.map(component => component.component)).size !== 2
     || components.some(component => component.component !== 'scheduling' && component.component !== 'runtime_effects')) invalid();
   for (const component of components) {
