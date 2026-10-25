@@ -16,7 +16,7 @@
  *      write -> lift-hash -> rewrite loop that clobbers unread content.
  *   4. durable commit - temp file in the target directory, fsync, rename,
  *      parent-directory fsync (house idiom from
- *      `src/effects/evidence/atomic-append.ts` and
+ *      `src/effects/atomic-append.ts` and
  *      `general-repo-access.ts#atomicWriteFile`).
  *
  * Outcomes are a discriminated union in the `McpPathDecision` style; no

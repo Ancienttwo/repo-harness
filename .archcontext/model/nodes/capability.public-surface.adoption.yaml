@@ -11,6 +11,7 @@ source:
     - "src/cli/commands/adoption-plan.ts"
     - "src/core/adoption/**"
     - "src/effects/adoption/**"
+    - "src/effects/source-checkout.ts"
     - "src/effects/fs-transaction.ts"
     - "src/effects/path-safety.ts"
     - "tests/cli/adoption-plan.test.ts"

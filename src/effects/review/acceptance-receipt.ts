@@ -1,6 +1,6 @@
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
-import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../state/readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { createHash } from 'crypto';
 import {
   chmodSync,

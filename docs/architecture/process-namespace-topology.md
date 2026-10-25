@@ -1,12 +1,12 @@
 # 进程与命名空间拓扑 + 挂载层
 
-> **历史归档**：初始审查基线为 `d7e92f43d`；本页保留截至 `d04211d5e8f87e52e209e4b6b3ad364a4ee452b5` 的后续修订，不是单一提交的快照。
+> **历史归档**：初始审查基线为 `d7e92f43d`；本页保留截至 `2cee26d888af9dd34ed52982e13df0c16db00681` 的后续修订，不是单一提交的快照。
 > 当前规范见 [功能架构、时序与拓扑](current-architecture.md)。
 > #901/#902/#904 的只读状态、失败停止回滚、init 分离，以及 #947 的恢复修复已经合入当前基线。
 > 保留历史内容用于追踪审查；历史读者的退出决定继续引用 #917，不据此删除或恢复。
 
-> **来源**：初稿见 #900；后续段落和引用可能采用较新源码。各项来源见[截至归档基线的文件历史](https://github.com/Ancienttwo/repo-harness/commits/d04211d5e8f87e52e209e4b6b3ad364a4ee452b5/docs/architecture/process-namespace-topology.md)，不能把全页行号统一套用到 `d7e92f43d`。
-> 后续修订包括 #932、#941、#943、#946；repository/worktree 双 ID 规则来自 #943。
+> **来源**：初稿见 #900；后续段落和引用可能采用较新源码。各项来源见[截至归档基线的文件历史](https://github.com/Ancienttwo/repo-harness/commits/2cee26d888af9dd34ed52982e13df0c16db00681/docs/architecture/process-namespace-topology.md)，不能把全页行号统一套用到 `d7e92f43d`。
+> 后续修订包括 #932、#941、#943、#946、#945；repository/worktree 双 ID 规则来自 #943。
 > **事实优先级**：源码 > `.archcontext/model/` > 本文。本文是手写视图，archctx 不投影它。
 > **配套**：[总分层架构与时序](layered-architecture.md) · [Global Hook Runtime](global-hook-runtime.md) · [Architecture Index](index.md)
 > **用途**：精简重构的定位图。`R-Tx` 指向本文 [Remarks](#remarks)，`R-Lx` 指向[分层文档的 Remarks](layered-architecture.md#remarks)。
@@ -204,7 +204,7 @@ flowchart LR
 gates 按 worktree 划分是有意的设计：acceptance receipt 绑定一个 checkout 的源快照。如果按 clone 划分，一个 linked worktree 的 receipt 会覆盖另一个 worktree 的 receipt。registry repo id 按注册路径计算，不按 `{common}` 计算；同一 clone 的两个 worktree 可以分别注册。改成按 repo id 计算需要迁移 `registered-repos.json`，这一项留给后续（R-T9 余项）。
 | Herdr agent 名 | `task-` 加 20 位 hex | `src/effects/terminal/task-session.ts:486` |
 | hook 身份 | 只取 payload 的 `session_id`、`run_id`、`turn_id`，不生成新 id | `src/cli/hook/hook-input.ts:63-72` |
-| hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/runtime/candidate-reconciliation.ts:329-331` |
+| hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/commands/candidate-reconciliation.ts:329-331` |
 
 ## 4. 挂载层
 

@@ -143,7 +143,7 @@ sequenceDiagram
 | expensive-run 锁放在 Git common dir（PR #83） | 一个 clone 的所有 linked worktree 共用一把锁，昂贵的发布与基准测试不会重叠。代价是同一 clone 的并行 worktree 必须排队 |
 | 目录锁用 mkdir 加 owner 文件，而不是 OS 文件锁 | 在 Bun 与 Node 上可移植，不需要原生依赖。owner 记录保存 PID 与 OS 进程表中的启动时间（`src/effects/locking/process-start-time.ts`），PID 被复用时启动时间不同，锁判为过期（#915）。代价是每个进程第一次加锁时读一次进程表：Linux 读 `/proc`，macOS 运行一次 `/bin/ps`，Windows 运行一次 PowerShell |
 | 只回收“死 owner + 精确 token”的 owner；空目录默认不回收（`exclusive-directory-lock.ts`） | 死 owner 指 PID 不存在，或该 PID 的启动时间与记录不同。没有启动时间的 owner 记录（旧版本留下的锁）从不自动回收，要人工清理。活进程永远不会被抢锁，崩溃的 owner 可以被回收。空目录无法区分崩溃的创建者与暂停的创建者，所以只有调用方显式开启时，超过 30 s 的空目录才会被移除（`:18`、`:323-343`）。代价是默认等待只有 5 s（`:19`），争用方要自己重试 |
-| Git 读取经过 `readonly-observation` 的可选 IO 能力（PR #604） | strategy 等只读观察可以在一个作用域内拒绝写入并验证路径。代价是 `src/effects/git/*` 反向导入 `src/effects/state/readonly-observation.ts`（见 Optimization Backlog） |
+| Git 读取经过 `readonly-observation` 的可选 IO 能力（PR #604） | strategy 等只读观察可以在一个作用域内拒绝写入并验证路径。该能力在 `src/effects/readonly-observation.ts`，属于本 capability，所以 Git 读取不导入 workflow-state（#907） |
 
 ### 3.3 组件
 
@@ -162,8 +162,12 @@ sequenceDiagram
 - 本 capability 第一次进入架构模型。8 个文件之前没有 capability 节点。
 - 来源：PR #83（CRG-01，2026-07-18）引入超时类别、PGID 监督者与 Git common-dir expensive-run 锁。PR #101（HRD-07）把断路器序列化移到共享目录锁。
 
+### 2026-10-25 Observation and durable-write primitives moved in (#907)
+
+- `src/effects/state/readonly-observation.ts` 移到 `src/effects/readonly-observation.ts`。`src/effects/evidence/atomic-append.ts` 移到 `src/effects/atomic-append.ts`。两个文件只导入 Node 内置模块。
+- 结果：git、capabilities、evidence、review 与 state 目录之间的 4 对层内目录环消失。`bun run check:state-boundaries` 现在检查层内目录环。
+- `relation.execution-primitives.imports.workflow-state` 不再有源码边。
+
 ## Optimization Backlog
 
-- **回边：git → state。** `src/effects/git/common-directory.ts:1` 与 `src/effects/git/readonly-virtual-tree.ts:4` 导入 `src/effects/state/readonly-observation.ts`（workflow-state）。这让最底层的原语依赖工作流状态目录。候选做法：把 `readonly-observation.ts` 移到本 capability。evidence 与 `scripts/acceptance-receipt.ts:3` 也导入它，移动后它们都会指向下层。
-- **候选迁入：`src/effects/evidence/atomic-append.ts`。** workflow-state 的 7 个文件用它做持久写。它是通用持久写原语，不属于证据语义。
 - **可能的组件拆分。** 文件数超过约 15 个或行数超过约 4k 时，按进程生命周期、目录锁、Git 读取拆成三个组件。

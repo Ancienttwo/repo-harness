@@ -394,7 +394,7 @@ describe('mutation boundaries', () => {
             FIXTURE_ROOT: cwd,
             FIXTURE_PAYLOAD: JSON.stringify(payload),
             GUARD_MODULE: join(import.meta.dir, '../src/cli/hook/mutation-guard.ts'),
-            OWNERS_MODULE: join(import.meta.dir, '../src/effects/capabilities/archcontext-owners.ts'),
+            OWNERS_MODULE: join(import.meta.dir, '../src/effects/architecture/archcontext-owners.ts'),
           },
         });
         expect(child.status, child.stderr).toBe(0);

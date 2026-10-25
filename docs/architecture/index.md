@@ -17,7 +17,7 @@
   [Global Hook Runtime](global-hook-runtime.md) and
   [Transactional Adoption Planner](transactional-adoption-planner.md).
 - Current hand-written view: [functional architecture and runtime sequences](current-architecture.md).
-- Archived review views, started at `d7e92f43d` and retaining later revisions through `d04211d5`: [layered architecture and sequences](layered-architecture.md)
+- Archived review views, started at `d7e92f43d` and retaining later revisions through `2cee26d8`: [layered architecture and sequences](layered-architecture.md)
   and [process, namespace and mount topology](process-namespace-topology.md).
 
 ## System Boundary
@@ -127,6 +127,7 @@ flowchart LR
   Review["acceptance-review"]:::cap
   WS["workflow-state"]:::store
   EL["evidence-ledger"]:::store
+  EP["execution-primitives"]:::cap
 
   Bot -.-> CLI
   CLI --> Fleet
@@ -158,7 +159,7 @@ flowchart LR
   Closure -.-> Archctx
   Closure --> Review
   Review --> TAH
-  WS --> EL
+  WS --> EP
 ```
 
 | Edge | Evidence |
@@ -180,7 +181,7 @@ flowchart LR
 | archctx closure -> archctx | External. `src/effects/architecture/archctx-provider.ts` runs the package-local archctx binary. |
 | archctx closure -> acceptance-review | `relation.global-runtime-reconciliation.archctx-closure.acceptance-review`: build the module review prompt from the committed model. |
 | acceptance-review -> task-agent-host | `relation.acceptance-review.primary.task-agent-host`: run the persistent review session on a Herdr task agent. |
-| workflow-state -> evidence-ledger | `relation.workflow-state.coordination-plane.evidence-ledger`: persist topology safety records through the durable primitive. The model intent still mentions retired lease writes; its ChangeSet correction is pending. |
+| workflow-state -> execution-primitives | `relation.workflow-state.coordination-plane.execution-primitives`: topology safety uses locks, Git and durable primitives. #945 moved the primitive and removed the former evidence-ledger relation; this does not restore lease writers. |
 
 ## Authority and State Map
 
@@ -317,7 +318,7 @@ Project
 
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. The `repo-harness-hook` route registry is the hook implementation. Treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Run `bun scripts/capability-resolver.ts validate --format text` when capability data changes. The workflow helper remains a read-only diagnostic.
-- Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/capabilities/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
+- Path ownership under `capability_source: archcontext` comes from `archctx resolve` (`src/effects/architecture/archcontext-owners.ts`). Node includes and excludes can use any shape that ArchContext validation accepts.
 - Several capability pairs have declared relations in both directions (for example contract-assets and global-runtime-reconciliation). The module backlogs record each pair with its edge counts.
 
 <!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ae8bf3caebe771de9666335adb1f06b3f0bce74d9470461a8ab57a27ebaead1a" -->

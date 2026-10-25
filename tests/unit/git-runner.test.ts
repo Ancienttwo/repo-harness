@@ -12,7 +12,7 @@ import {
   resolveGitTimeout,
 } from '../../src/effects/git/runner';
 
-import { withReadonlyObservation, ObservationViolation } from '../../src/effects/state/readonly-observation';
+import { withReadonlyObservation, ObservationViolation } from '../../src/effects/readonly-observation';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const SRC = join(ROOT, 'src');

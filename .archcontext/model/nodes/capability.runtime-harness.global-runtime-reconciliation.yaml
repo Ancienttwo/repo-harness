@@ -18,6 +18,7 @@ source:
     - "bun.lock"
     - "src/cli/index.ts"
     - "src/cli/commands/global-runtime.ts"
+    - "src/cli/commands/candidate-reconciliation.ts"
     - "scripts/check-managed-runtime.ts"
     - "scripts/sync-codex-installed-copies.sh"
     - "src/effects/architecture/**"
@@ -52,6 +53,10 @@ source:
     - "install.sh"
     - "install.ps1"
     - "tsconfig.json"
+  exclude:
+    - src/effects/architecture/archcontext-owners.ts
+    - src/effects/architecture/archcontext-resolve-cache.ts
+    - src/effects/architecture/capability-resolver.ts
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.update
       path: "src/cli/commands/global-runtime.ts"

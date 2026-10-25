@@ -9,7 +9,7 @@ import { existsSync, lstatSync, readFileSync, readlinkSync } from "fs";
 import { join } from "path";
 import { resolveInsideRepo } from "../path-safety";
 import { resolveBlobsDir } from "./paths";
-import { createFileExclusiveDurably } from "./atomic-append";
+import { createFileExclusiveDurably } from "../atomic-append";
 
 export interface BlobWriteResult {
   readonly sha256: string;

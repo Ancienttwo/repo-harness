@@ -1,7 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { ArchitectureModelReader } from '../architecture/model-reader';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { ModuleReadError } from '../../core/review/module-review-prompt';
+import { ModuleReadError } from '../../core/architecture/module-view';
 import { SECRET_TOKEN_PATTERNS, containsSecret } from '../../core/security/secret-patterns';
 import { ARCHITECTURE_FAILURES, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, isArchitectureRequest, type ArchitectureRequest } from '../../core/operator/architecture';
 

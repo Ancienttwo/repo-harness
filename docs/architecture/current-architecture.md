@@ -1,6 +1,6 @@
 # Current Functional Architecture
 
-Source baseline: `d04211d5e8f87e52e209e4b6b3ad364a4ee452b5` (2026-10-25).
+Source baseline: `2cee26d888af9dd34ed52982e13df0c16db00681` (2026-10-25).
 This hand-written view records source inspection, not a product execution or a
 performance measurement. Model inventory and generated proof stamps keep their
 own revisions. The [layered view](layered-architecture.md) and
@@ -21,7 +21,7 @@ are implementation layers; scripts expose command entrypoints.
 | Session admission and context | Route host input, enforce admission, render context; Effective State is a local read projection | `src/cli/hook/route-registry.ts`, `src/cli/hook/runtime.ts`, `src/effects/state/resolve-effective-state.ts` |
 | Repository access and observation | MCP and operator expose bounded access; authentication, registration and task authorization remain separate | `src/cli/mcp/`, `src/effects/operator/`, `src/effects/dev-activity/collector.ts` |
 | Execution, review and evidence | Bound processes; bind review/verification to exact subjects; keep ledger, checkpoints and publication facts | `src/effects/review/generic-review.ts`, `src/effects/evidence/`, `src/effects/terminal/` |
-| Architecture governance and projection | Model intent uses ChangeSets; policy selects one ownership resolver; rolling writer publishes generated output | `src/effects/architecture/`, `src/effects/capabilities/archcontext-owners.ts`, architecture worker reference |
+| Architecture governance and projection | Model intent uses ChangeSets; policy selects one ownership resolver; rolling writer publishes generated output | `src/effects/architecture/`, `src/effects/architecture/archcontext-owners.ts`, architecture worker reference |
 | Shared primitives | Git, locks, process lifecycle, paths, durable writes and identity; callers supply task policy | `src/effects/git/`, `src/effects/locking/`, `src/effects/process-supervisor.ts` |
 | Historical compatibility | Retained Sprint, lease and Engineer readers support observation; they are not current orchestration | `src/effects/state/coordination-lease-store.ts`, `src/effects/engineers/`; product decision [#917](https://github.com/Ancienttwo/repo-harness/issues/917) |
 
@@ -162,7 +162,7 @@ moments. This describes source ordering, not measured cleanup latency.
 quarantine file, syncs its directory where supported, then truncates and fsyncs
 the log. It does not decode and re-encode the removed bytes. Quarantine failure
 prevents truncation. POSIX directory sync and Windows file flush have different
-platform guarantees; see `src/effects/evidence/atomic-append.ts`.
+platform guarantees; see `src/effects/atomic-append.ts`.
 
 ```mermaid
 sequenceDiagram
@@ -212,15 +212,20 @@ tracks the review-key migration. This view does not claim that migration shipped
 
 ## Model Follow-up and Validation Scope
 
-The relation `relation.workflow-state.coordination-plane.evidence-ledger` still
-says “Write lease and topology records”. Current
-`src/effects/state/coordination-worktree-topology.ts` imports the durable primitive,
-so retain that dependency. Correct the lease wording only through a supported
-ChangeSet. The managed provider handshake reported ready, and CodeGraph indexed this
-worktree. The ChangeSet plan nevertheless returned `AC_RUNTIME_UNAVAILABLE`
-with `EPERM` while creating its host-global worktree state. Model validation
-hit the same boundary. The model correction remains pending; no model YAML or
-generated output was changed.
+Main #945 moved the durable primitive to `src/effects/atomic-append.ts` and
+removed `relation.workflow-state.coordination-plane.evidence-ledger`. The retained
+`relation.workflow-state.coordination-plane.execution-primitives` now covers the
+valid topology persistence dependency. The old lease-write wording is no longer
+a pending edit to that removed relation. This PR does not recreate it or change
+model YAML.
+
+Model acceptance for #948 remains incomplete. Earlier ChangeSet planning and
+validation failed with `AC_RUNTIME_UNAVAILABLE` / `EPERM` on global state creation.
+An explicitly authorized isolated runtime then failed to listen on `127.0.0.1`
+with `EPERM`; status confirmed it was not running. No runtime workaround or new
+model validation is claimed for this main update. Six changed/new diagrams still
+lack visual rendering acceptance. The existing four sequence-parser passes do
+not prove the current topology diagram or full visual layout.
 
 Current source takes precedence over historical Remarks. Reuse the existing
 issues for library moves and retained-reader decisions. Count differences in

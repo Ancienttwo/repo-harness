@@ -1,5 +1,8 @@
 import type { Json } from 'archctx-contracts';
-import { ModuleReadError } from '../review/module-review-prompt';
+
+export class ModuleReadError extends Error {
+  constructor(public readonly code: string, public readonly path?: string) { super(path ? `${code}: ${path}` : code); }
+}
 
 export type ModelNodeKind = string;
 

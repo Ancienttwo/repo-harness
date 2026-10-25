@@ -13,6 +13,7 @@ responsibilities:
 source:
   include:
     - "src/cli/commands/global-runtime.ts"
+    - "src/cli/commands/candidate-reconciliation.ts"
     - "src/cli/runtime/**"
     - "src/effects/runtime/protected-helper-platform.ts"
     - "src/effects/skill-tree-integrity.ts"

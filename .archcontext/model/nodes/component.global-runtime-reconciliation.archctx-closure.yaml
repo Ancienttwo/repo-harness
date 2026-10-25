@@ -25,6 +25,11 @@
       "src/effects/runtime/node-candidates.ts",
       "scripts/axr5-archctx-clean-room.ts",
       "docs/verification/**"
+    ],
+    "exclude": [
+      "src/effects/architecture/archcontext-owners.ts",
+      "src/effects/architecture/archcontext-resolve-cache.ts",
+      "src/effects/architecture/capability-resolver.ts"
     ]
   }
 }

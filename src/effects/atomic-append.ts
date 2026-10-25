@@ -1,5 +1,5 @@
 /**
- * Low-level durable file primitives for the evidence store. Mirrors the
+ * Low-level durable file primitives for evidence, state and inbox stores. Mirrors the
  * open/write-loop/fsync idiom already used by `src/effects/fs-transaction.ts`
  * (that file's own `writeFileDurably` is a private, unexported helper, so an
  * equivalent is implemented locally here rather than modifying it -- see

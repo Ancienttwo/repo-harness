@@ -1,5 +1,5 @@
 import { captureReadonlyGitTree } from '../git/readonly-virtual-tree';
-import { currentReadonlyObservation, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync } from '../state/readonly-observation';
+import { currentReadonlyObservation, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync } from '../readonly-observation';
 import { createHash, randomUUID } from "crypto";
 import { accessSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
@@ -24,7 +24,7 @@ import {
 } from "../locking/exclusive-directory-lock";
 import { resolveInsideRepo } from "../path-safety";
 import { redactProcessOutput, runProcess } from "../process-runner";
-import { createFileExclusiveDurably, writeFileDurably } from "./atomic-append";
+import { createFileExclusiveDurably, writeFileDurably } from "../atomic-append";
 import { resolveBlobsDir } from "./paths";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "./event-log";

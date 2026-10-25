@@ -1,4 +1,4 @@
-import { assertObservationPath, observationReadFileSync as readFileSync } from './readonly-observation';
+import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { createHash } from 'crypto';
 import { lstatSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';

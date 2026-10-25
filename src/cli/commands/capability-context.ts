@@ -6,9 +6,9 @@ import {
   capabilitySourceMode,
   findMatch,
   readRegistry as readCapabilityRegistry,
-} from '../../effects/capabilities/capability-resolver';
+} from '../../effects/architecture/capability-resolver';
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
-import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
+import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/architecture/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { gitExecFileSync } from '../../effects/git/runner';

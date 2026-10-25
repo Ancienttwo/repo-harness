@@ -1,5 +1,5 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, decodeRuntimePaneObservation, runtimePaneKey, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
-  unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
+  unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type ProgramStatusV1, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
 /** Select only documented structured pane fields. No title, cwd or text inference. */
@@ -11,11 +11,6 @@ export function observeHerdrPane(value: unknown, binding: RuntimeIdentity): Runt
   const states = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done-unseen', unknown: 'unknown' } as const;
   const state = states[pane.agent_status as keyof typeof states] ?? 'unknown';
   return decodeRuntimeObservation({ identity, revision: runtimeInteger(pane.revision), state, reason: 'unknown', changed_at: null, source: 'herdr-agent' });
-}
-export interface ProgramStatusV1 {
-  protocol: 'repo-harness.program-status.v1'; identity: RuntimeIdentity; revision: number;
-  state: 'idle' | 'working' | 'blocked' | 'settled' | 'error' | 'aborted' | 'clear';
-  reason: 'permission' | 'question' | 'auth' | 'unknown'; changed_at: string | null;
 }
 /** Optional future contract. This does not implement or negotiate OSC reception. */
 export function observeProgramStatus(value: ProgramStatusV1): RuntimeObservation {

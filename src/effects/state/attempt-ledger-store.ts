@@ -11,7 +11,7 @@
  * and macOS ships no `flock(1)`, so this is the available equivalent and adds
  * no dependency) and lands as a single whole-line `O_APPEND` write plus
  * `fsync`, which is the house atomic-append pattern from
- * `src/effects/evidence/atomic-append.ts`.
+ * `src/effects/atomic-append.ts`.
  *
  * Reading is `readText`, exactly like every other state source: repository
  * confined, absent-tolerant, and write-free. Only the explicit repair writes
@@ -38,7 +38,7 @@ import {
   appendLineDurably,
   createFileExclusiveDurably,
   syncDirectoryDurably,
-} from '../evidence/atomic-append';
+} from '../atomic-append';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { readText, repoPath } from './collect-state-inputs';
 

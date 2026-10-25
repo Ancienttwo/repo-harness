@@ -23,7 +23,7 @@ import type { InstallTargetSpec } from './install';
 import { planLegacyLeftovers } from '../../effects/upgrade/legacy-inventory';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../effects/adoption/plan';
-import { isRepoHarnessSourceCheckout } from '../../effects/adoption/source-checkout';
+import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
 import {
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,

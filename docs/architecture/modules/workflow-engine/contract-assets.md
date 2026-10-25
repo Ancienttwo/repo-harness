@@ -192,7 +192,7 @@ regressions verify these separate boundaries.
 | I2 | `helpers.scripts` 与 `helpers.descriptions` 一一对应，描述非空 | `src/effects/runtime/helper-runner.ts:246-268` + `tests/workflow-contract.test.ts` |
 | I3 | `helpers.scripts` 是“有哪些 helper”的唯一 id 列表；descriptions 只挂显示数据 | 契约结构 + 上述双向校验 |
 | I4 | `context.capability_source` 选择唯一 capability 权威。本仓库是 `archcontext`，读 `.archcontext/model/nodes/*.yaml`；不双读，不回退 | `.ai/harness/policy.json:101-102`；`src/core/capabilities/registry.ts:514` |
-| I5 | archcontext 模式下，路径归属只由 `archctx resolve` 决定。注册表不检查 include 形状，也接受 `source.exclude`。歧义归属与 archctx 失败都 fail closed。registry 模式仍按最长前缀匹配，同长度歧义 fail closed | `registry.ts` 的 `capabilityPathResolutionFromArchcontextOwners`、`src/effects/capabilities/archcontext-owners.ts`、`registry.ts` 的 `matchCapabilityPath` |
+| I5 | archcontext 模式下，路径归属只由 `archctx resolve` 决定。注册表不检查 include 形状，也接受 `source.exclude`。歧义归属与 archctx 失败都 fail closed。registry 模式仍按最长前缀匹配，同长度歧义 fail closed | `registry.ts` 的 `capabilityPathResolutionFromArchcontextOwners`、`src/effects/architecture/archcontext-owners.ts`、`registry.ts` 的 `matchCapabilityPath` |
 | I6 | 受保护 helper 的 source、helper、HOME、PATH 与解释器解析不受调用者影响 | `protectedChildEnv()`（`helper-runner.ts:73`）、`resolveHelperRuntime(env, !protectedHelper)`（`:367`） |
 | I7 | merge gate 对每个候选都必需。它没有启用位，所以候选不能自我豁免。推送前，`fingerprint` 按目标 base 扫描候选 diff | `scripts/merge-gate.ts` 的 `runMergeGateCli`（`:284`，`const required = true`）；`scripts/ship-worktrees.sh:1076`（`merge-gate.ts fingerprint --base`） |
 | I8 | 55 个 helper 中 52 个与 `scripts/` 逐字节一致；3 个例外由投影脚本声明：`capability-resolver.ts` 与 `recovery-view-cli.ts` 带 `@generated-from` 头，`acceptance-receipt.ts` 只改写一条 import 路径 | `bun run check:helpers`；`scripts/sync-helper-sources.ts:48`、`:88`、`:108-113` |

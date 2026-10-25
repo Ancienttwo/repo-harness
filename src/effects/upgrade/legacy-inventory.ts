@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from '
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
 import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
+import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 

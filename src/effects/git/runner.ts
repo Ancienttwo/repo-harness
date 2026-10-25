@@ -17,7 +17,7 @@ import {
   currentReadonlyObservation,
   observationExecFileSync,
   observationSpawnSync,
-} from '../state/readonly-observation';
+} from '../readonly-observation';
 
 /**
  * Wall clock for a git call that does not set its own timeout.

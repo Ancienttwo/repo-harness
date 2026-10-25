@@ -5,7 +5,7 @@
 > **Historical ESA baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
 > **Protocol**: `repo-harness-effective-state`, version `1`
 
-> **Current source review**: `d04211d5e8f87e52e209e4b6b3ad364a4ee452b5`.
+> **Current source review**: `2cee26d888af9dd34ed52982e13df0c16db00681`.
 > See [current sequences](current-architecture.md#runtime-sequences). Historical ESA evidence below is not a new execution result.
 
 ## Decision
@@ -40,7 +40,7 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 - `src/core/workflow/profile.ts` owns deterministic risk/profile policy.
 - `src/core/capabilities/registry.ts` owns registry parsing, validation,
   normalization, diagnostics, and registry-mode longest-prefix matching.
-  In archcontext mode, `src/effects/capabilities/archcontext-owners.ts` delegates
+  In archcontext mode, `src/effects/architecture/archcontext-owners.ts` delegates
   ownership to package-local `archctx resolve`. Cache answers are reusable
   observations, not another authority. An unavailable provider does not select
   registry mode; read-only observation reports unavailable on a cache miss.

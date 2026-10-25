@@ -253,4 +253,5 @@ sequenceDiagram
 ## Optimization Backlog
 
 - `startOperatorServer` 仍集中处理路由、repository observation 队列、Fleet 队列和任务读取监督。拆分需要改动频率或性能证据。
+- `ModuleReadError` 现在在 `src/core/architecture/module-view.ts` 声明（#907）。architecture-view 与 primary 不再导入 acceptance-review。`relation.operator.architecture-view.acceptance-review` 与 `relation.operator.http-reader.acceptance-review` 没有源码边，需要删除。view-projections 仍导入 `ModuleReviewPromptV1` 类型。
 - 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。
