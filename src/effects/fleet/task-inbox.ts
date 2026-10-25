@@ -65,6 +65,7 @@ import { resolveRepoIdentity } from '../git/repository-identity';
 import { readClaimActorReceipt } from '../engineers/claim-actor-store';
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { withTaskLock } from '../locking/task-lock';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 
@@ -184,13 +185,17 @@ function fail(code: TaskInboxErrorCode, message: string, cause?: unknown): never
 
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
-    return withTaskLock(repoRoot, taskId, () => {
-      const common = resolveGitCommonDirectory(repoRoot);
-      inspectTaskInboxLayout(common);
-      const result = action();
-      inspectTaskInboxLayout(common);
-      return result;
-    });
+    const common = resolveGitCommonDirectory(repoRoot);
+    // Share the offline migration mutex, including writers for task directories
+    // that were not present when its inventory was captured. Always acquire it
+    // before the unchanged physical task lock, as the migration does.
+    return withExclusiveDirectoryLock(common, 'repo-harness/task-inbox-migration.lock', () =>
+      withTaskLock(repoRoot, taskId, () => {
+        inspectTaskInboxLayout(common);
+        const result = action();
+        inspectTaskInboxLayout(common);
+        return result;
+      }));
   } catch (error) {
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
   }

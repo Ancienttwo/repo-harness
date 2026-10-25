@@ -10,8 +10,10 @@ import { buildTaskMessageDeliveryReceipt, buildTaskMessageEvent, canonicalTaskMe
 import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import { migrateTaskInboxLayout, type InboxMigrationBoundary } from '../../src/effects/fleet/task-inbox-layout-migration';
 import { assertTaskInboxLayoutUnchanged, inboxLayoutPaths, inspectTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout';
-import { readTaskMessageDelivery, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
+import { readTaskMessageDelivery, sendTaskMessage, TaskInboxError, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, readExclusiveDirectoryLockOwner } from '../../src/effects/locking/exclusive-directory-lock';
+import { taskLockRelativePath } from '../../src/effects/locking/task-lock';
 
 const roots: string[] = [];
 const TASK = '1'.repeat(64), REVISION = '2'.repeat(64), ID = '123e4567-e89b-42d3-a456-426614174000';
@@ -199,12 +201,41 @@ test('source changes, wrong digest, and unconfirmed operation fail closed', () =
   expect(existsSync(f.paths.current)).toBeFalse();
 });
 
-test('unknown lease refuses mutation without interpreting historical recipients as live owners', () => {
+test('confirmed offline migration preserves historical lease bytes without treating them as execution authority', () => {
   const f = fixture(); seedLeaseDirectory(f.root, TASK);
-  expect(() => f.apply()).toThrow('quiescent');
-  expect(tree(f.paths.legacy)).toEqual(f.original);
-  expect(existsSync(f.paths.current)).toBeFalse();
+  const coordination = join(f.common, 'repo-harness/coordination/v1');
+  const before = tree(coordination);
+  let heldTaskLock = false;
+  expect(f.apply(boundary => {
+    if (boundary === 'staged-file') {
+      heldTaskLock = readExclusiveDirectoryLockOwner(f.common, taskLockRelativePath(TASK)) !== null;
+    }
+  }).state).toBe('committed');
+  expect(heldTaskLock).toBe(true);
+  expect(tree(coordination)).toEqual(before);
+  expect(tree(f.paths.backup)).toEqual(f.original);
 });
+
+test('inbox writers share the migration mutex even for a task outside its captured inventory', () => {
+  const f = fixture();
+  const lockPath = 'repo-harness/task-inbox-migration.lock';
+  const lock = acquireExclusiveDirectoryLock(f.common, lockPath);
+  const otherTask = '3'.repeat(64);
+  try {
+    let failure: unknown;
+    try {
+      sendTaskMessage({ repo_root: f.root, canonical_source: { targetRef: 'main', sprintPath: 'plans/sprints/unused.md' },
+        event: buildTaskMessageEvent({ ...f.event, task_id: otherTask }) });
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(TaskInboxError);
+    expect((failure as TaskInboxError).cause).toBeInstanceOf(ExclusiveLockContentionError);
+    expect(((failure as TaskInboxError).cause as ExclusiveLockContentionError).lockPath).toBe(join(f.common, lockPath));
+    lock.assertOwned();
+    expect(tree(f.paths.legacy)).toEqual(f.original);
+    expect(existsSync(join(f.paths.current, otherTask))).toBe(false);
+  } finally { lock.release(); }
+  expect(f.apply().state).toBe('committed');
+}, 15_000);
 
 test('invalid canonical bytes and forged path identities are rejected before a journal', () => {
   const f = fixture();
