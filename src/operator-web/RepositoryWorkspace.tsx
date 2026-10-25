@@ -633,6 +633,8 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
         <h3 className="detail-eyebrow" id="detail-identity-heading">{t('detail.identity')}</h3>
         <CopyValue label={t('field.taskId')} value={card.task_id} t={t} />
         <CopyValue label={t('field.providerIssue')} value={`${card.provider_repository_id} / ${card.provider_issue_id}`} t={t} />
+        <CopyValue label={t('field.pullRequest')} value={card.merge_readiness ? `${card.merge_readiness.repository}#${card.merge_readiness.pr_number}` : null} t={t} />
+        <CopyValue label={t('field.headSha')} value={card.merge_readiness?.expected_head_sha ?? null} t={t} />
         <CopyValue label={t('field.sessionBinding')} value={card.execution?.selector.session_binding_sha256 ?? null} t={t} />
         <dl className="detail-list">
           <div><dt>{t('field.repository')}</dt><dd className="mono-value">{card.repository_id}</dd></div>
@@ -734,7 +736,7 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
       <div className="detail-pane__body flex flex-col gap-5 pt-4">
         {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
         <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
-        <div key={JSON.stringify(card.execution?.selector)}>{card.execution ? <><AdmittedTaskContext selector={card.execution.selector} generation={evidenceGeneration} read={readTaskContext} t={t} /><TaskDiff selector={card.execution.selector} t={t} /><AdmittedTaskActivity selector={card.execution.selector} t={t} /></> : <p role="status">{t(card.execution_status === 'unavailable' ? 'sessions.unavailable' : 'sessions.noIssueSession')}</p>}</div>
+        <div className="task-evidence" key={JSON.stringify(card.execution?.selector)}>{card.execution ? <><AdmittedTaskContext selector={card.execution.selector} generation={evidenceGeneration} read={readTaskContext} t={t} /><TaskDiff selector={card.execution.selector} t={t} /><AdmittedTaskActivity selector={card.execution.selector} t={t} /></> : <p role="status">{t(card.execution_status === 'unavailable' ? 'sessions.unavailable' : 'sessions.noIssueSession')}</p>}</div>
       </div>
     </DrawerFrame>
   );

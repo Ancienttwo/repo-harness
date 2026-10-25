@@ -285,7 +285,8 @@ test('the existing context GET explicitly serves archived history with all selec
     const url=`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/context`;
     const response=await fetch(url+'?view=history');expect(response.status).toBe(200);
     const {env,...request}=f.input;expect(decodeOperatorTaskHistory(await response.json(),request).task.title).toBe(f.task);
-    expect((await fetch(url)).status).toBe(503);
+    // Historical reads require explicit selection; missing view never invokes a fallback reader.
+    expect((await fetch(url)).status).toBe(400);
     expect((await fetch(url+'?view=history&task_revision='+'f'.repeat(64))).status).toBe(404);
     for(const q of ['view=history&view=history','view=history&ref=HEAD','view=history&path=/private','view=unknown','view=history&task_revision=invalid'])expect((await fetch(url+'?'+q)).status).toBe(400);
     expect((await fetch(url+'?view=history',{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);

@@ -393,7 +393,7 @@ describe('bounded observation lifecycle',()=>{
 describe('operator web worklist projection', () => {
   test('assigns groups by who must act and keeps unclassified out of a collapsed group', () => {
     const groups = groupWorklist(stableSnapshot);
-    const byId = Object.fromEntries(groups.map((group) => [group.id, group.cards.map((card) => card.task_id)]));
+    const byLabel = Object.fromEntries(groups.map((group) => [group.id, group.cards.map((card) => card.task_label)]));
 
     expect(groups.map((group) => group.id)).toEqual([
       'needs_you',
@@ -406,15 +406,15 @@ describe('operator web worklist projection', () => {
       'external',
       'done',
     ]);
-    expect(byId.needs_you).toEqual([
-      fixtureTasks.console.task_id,
-      fixtureTasks.available.task_id,
-      fixtureTasks.blocked.task_id,
+    expect(byLabel.needs_you).toEqual([
+      fixtureTasks.console.task_label,
+      fixtureTasks.available.task_label,
+      fixtureTasks.blocked.task_label,
     ]);
-    expect(byId.ready_to_merge).toEqual([fixtureTasks.ready.task_id]);
-    expect(byId.external).toEqual([fixtureTasks.review.task_id]);
-    expect(byId.claimed).toEqual([fixtureTasks.working.task_id]);
-    expect(byId.done).toEqual([fixtureTasks.done.task_id]);
+    expect(byLabel.ready_to_merge).toEqual([fixtureTasks.ready.task_label]);
+    expect(byLabel.external).toEqual([fixtureTasks.review.task_label]);
+    expect(byLabel.claimed).toEqual([fixtureTasks.working.task_label]);
+    expect(byLabel.done).toEqual([fixtureTasks.done.task_label]);
 
     const externalUnclassified = {
       ...stableSnapshot,
@@ -662,7 +662,7 @@ describe('operator web interactions', () => {
     expect(consolePane).toContain('Feedback reports no progress');
   });
 
-  test('copies full task, publication, and head identifiers', async () => {
+  test('copies full task, pull request, and head identifiers', async () => {
     const copied: string[] = [];
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
@@ -674,12 +674,12 @@ describe('operator web interactions', () => {
     const expectedHead = '0123456789abcdef0123456789abcdef01234567';
     expect(paneText()).toContain(expectedHead);
 
-    for (const label of ['Copy task id', 'Copy publication', 'Copy head sha']) {
+    for (const label of ['Copy task id', 'Copy pull request', 'Copy head sha']) {
       const copy = document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
       if (!copy) throw new Error(`copy button not found: ${label}`);
       await act(async () => copy.click());
     }
-    expect(copied).toEqual([fixtureTasks.blocked.task_id, 'pub-blocked', expectedHead]);
+    expect(copied).toEqual([fixtureTasks.blocked.task_id, 'example/fixture#1', expectedHead]);
     expect(paneText()).toContain('head sha copied');
   });
 
@@ -795,6 +795,9 @@ describe('operator web interactions', () => {
     delete readiness.future_secret;
     expect(() => decodeOperatorFleetSnapshot(withExtras)).toThrow('Fleet snapshot response is invalid');
     delete blockers[0].future_secret;
+    // The provider/session card is also closed; envelope extras remain allowlisted.
+    expect(() => decodeOperatorFleetSnapshot(withExtras)).toThrow('Fleet snapshot response is invalid');
+    delete cards[2].future_secret;
     const decoded = decodeOperatorFleetSnapshot(withExtras);
     expect(JSON.stringify(decoded)).not.toContain('future_secret');
     expect(decoded).not.toBe(withExtras);
@@ -817,7 +820,7 @@ describe('operator web interactions', () => {
       (payload: Record<string, unknown>) => { payload.registry_revision = 'registry-not-a-digest'; },
       (payload: Record<string, unknown>) => {
         const nestedCards = ((payload.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
-        nestedCards[2].head_sha = 'not-a-git-oid';
+        (nestedCards[2].merge_readiness as Record<string, unknown>).expected_head_sha = 'not-a-git-oid';
       },
       (payload: Record<string, unknown>) => {
         const nestedCards = ((payload.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
@@ -970,15 +973,15 @@ describe('operator web interactions', () => {
       const dialog = document.querySelector('[role="dialog"]')!;
       const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
       const summaries = Array.from(dialog.querySelectorAll<HTMLElement>('summary'));
-      // The unclaimed task has no diff button and no publication or head copy
-      // control: the task id copy button is the last plain control, and native
+      // The provider-only issue has no runtime task identity or PR/head.
+      // Its provider identity copy is the last plain control; native
       // disclosure summaries follow it in the tab order.
       expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent))
-        .toEqual(['Refresh', 'Close task details', 'Copy task id']);
+        .toEqual(['Refresh', 'Close task details', 'Copy GitHub repository / issue']);
       const lastSummary = summaries.at(-1)!;
-      expect(elementKey(lastSummary)).toBe('SUMMARY:Original record');
+      expect(elementKey(lastSummary)).toBe('SUMMARY:Source evidence details');
       buttons.at(-1)!.focus();
-      expect(focusKey()).toBe('BUTTON:Copy task id');
+      expect(focusKey()).toBe('BUTTON:Copy GitHub repository / issue');
       await tab();
       // A summary still follows the last button, so focus must not wrap yet.
       expect(focusKey()).not.toBe('BUTTON:Refresh');
@@ -986,12 +989,12 @@ describe('operator web interactions', () => {
       await tab();
       expect(focusKey()).toBe('BUTTON:Refresh');
       await tab(true);
-      expect(focusKey()).toBe('SUMMARY:Original record');
+      expect(focusKey()).toBe('SUMMARY:Source evidence details');
     } finally { globalThis.fetch = originalFetch; }
   });
 
   test('modal Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
-    const available = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.available.task_id)!;
+    const available = stableSnapshot.repositories[0]!.cards.find((card) => card.task_label === fixtureTasks.available.task_label)!;
     const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
     // An unclaimed card with recorded delivery evidence: the closed
     // "Source evidence details" disclosure holds two copy buttons and is the
@@ -1324,7 +1327,7 @@ describe('preparation and available work', () => {
   test('keeps healthy preparation and inline work out of claimed execution', async () => {
     const groups = groupWorklist(preparationSnapshot);
     expect(groups.find(group => group.id === 'claimed')!.count).toBe(0);
-    expect(groups.find(group => group.id === 'preparation')!.cards.map(card => card.task_label)).toEqual([fixtureTasks.console.task_label, fixtureTasks.changed.task_label]);
+    expect(groups.find(group => group.id === 'preparation')!.cards.map(card => card.task_label)).toEqual([fixtureTasks.changed.task_label, fixtureTasks.console.task_label]);
     expect(groups.find(group => group.id === 'available')!.cards.map(card => card.task_label)).toEqual([fixtureTasks.available.task_label]);
     await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" />);
     expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stable');
@@ -1345,8 +1348,8 @@ function TaskEvidence(props:{repositoryId:string;taskId:string;revision:string;g
   readContext:import('../../src/operator-web/AdmittedTaskContext').TaskContextReader;readActivity:import('../../src/operator-web/TaskEvidence').TaskActivityReader}) {
   const card=stableSnapshot.repositories.flatMap(repo=>repo.cards).find(card=>card.task_id===props.taskId)!;
   const selector={...card.execution!.selector,repository_id:props.repositoryId,grant_sha256:'sha256:'+props.revision};
-  return <div className="task-evidence"><AdmittedTaskContext key={props.revision} selector={selector} generation={props.generation} read={props.readContext} t={props.t}/>
-    <HistoricalTaskActivity key={props.revision} repositoryId={props.repositoryId} taskId={props.taskId} generation={props.generation} readActivity={props.readActivity} t={props.t}/></div>;
+  return <div className="task-evidence"><AdmittedTaskContext key={`context:${props.revision}`} selector={selector} generation={props.generation} read={props.readContext} t={props.t}/>
+    <HistoricalTaskActivity key={`history:${props.revision}`} repositoryId={props.repositoryId} taskId={props.taskId} generation={props.generation} readActivity={props.readActivity} t={props.t}/></div>;
 }
 
 describe('task detail original evidence', () => {
