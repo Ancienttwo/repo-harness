@@ -116,13 +116,14 @@ export function collectBaseline(f: Fixture) {
   const source = temporalProvider(f);
   let current = source.current();
   const result = collectPullRequestMergeReadiness({
-    repo_root: '.', pr_number: f.pr.number, expected_head_sha: f.expectedHead, expected_base_sha: f.expectedBase,
+    repo_root: '.', repository: 'fixture/offline', provider_repository_id: '1001', pr_number: f.pr.number, expected_head_sha: f.expectedHead, expected_base_sha: f.expectedBase,
     gh_runner(args) {
       calls.push(args.slice(0, 3).join(' '));
       if (f.unavailable) return { status: 1, stdout: '', stderr: 'fixture unavailable' };
       let value: unknown;
       let status = 0;
       if (args[0] === 'repo' && args[1] === 'view') value = { id: 'R_fixture', nameWithOwner: 'fixture/offline' };
+      else if (args[0] === 'api' && args[1] === 'repos/fixture/offline') value = { id: 1001, node_id: 'R_fixture', full_name: 'fixture/offline' };
       else if (args[0] === 'pr' && args[1] === 'view') {
         current = source.readIdentity();
         value = current;
