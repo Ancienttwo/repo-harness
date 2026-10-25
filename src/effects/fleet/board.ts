@@ -27,6 +27,7 @@ import {
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { resolveBoard } from '../state/resolve-board';
 import {
+  assertLocalPullRequestRepository,
   collectPullRequestMergeReadinessAbortable,
   validatePullRequestSelection,
   MergeReadinessError,
@@ -248,6 +249,7 @@ async function cardInput(
   const selections = (options.pull_requests ?? []).filter(selection => selection.repository_id === repo.id && selection.task_id === card.task_id);
   if (selections.length > 1) throw new MergeReadinessError('provider_data_incomplete', 'board readiness requires one explicit PR display association');
   if (selections.length === 1) {
+    assertLocalPullRequestRepository(repo.path, selections[0]!.pull_request.repository);
     const input: AbortablePullRequestReadinessInput = {
       ...selections[0]!.pull_request, repo_root: repo.path,
       gh_bin: process.env.REPO_HARNESS_GH_BIN, signal: options.signal,

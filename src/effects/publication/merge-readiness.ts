@@ -1,3 +1,4 @@
+import { gitExecFileSync } from '../git/runner';
 import { spawn, spawnSync } from 'child_process';
 import {
   projectPullRequestMergeReadiness,
@@ -14,6 +15,24 @@ export class MergeReadinessError extends Error {
   constructor(readonly code: MergeReadinessErrorCode, message: string, readonly cause?: unknown) {
     super(message);
     this.name = 'MergeReadinessError';
+  }
+}
+
+/** Registry-bound adapters must bind local PR authority before querying the provider.
+ * Independent explicit PR CLI observations do not use this registry restriction. */
+export function assertLocalPullRequestRepository(repoRoot: string, repository: string): void {
+  let remote: string;
+  try {
+    remote = gitExecFileSync(['remote', 'get-url', 'origin'], {
+      cwd: repoRoot, encoding: 'utf8', timeout: 5_000, maxBuffer: 16_384,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    throw new MergeReadinessError('provider_data_incomplete', 'local GitHub origin is unavailable', error);
+  }
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/u.exec(remote);
+  if (!match || match[1]!.toLowerCase() !== repository.toLowerCase()) {
+    throw new MergeReadinessError('provider_data_incomplete', 'selected PR repository does not match local GitHub origin');
   }
 }
 

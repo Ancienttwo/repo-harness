@@ -5,6 +5,7 @@ import { describe, expect, onTestFinished, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -89,6 +90,7 @@ function createReviewingProviderFixture(
   const sprintPath = 'plans/sprints/fleet-provider.sprint.md';
   const taskNames = Array.from({ length: cards }, (_, index) => `observe provider card ${index + 1}`);
   git(root, 'init', '-b', 'main');
+  git(root, 'remote', 'add', 'origin', 'https://github.com/example/fleet.git');
   git(root, 'config', 'user.name', 'Fleet Provider Test');
   git(root, 'config', 'user.email', 'fleet-provider@test.invalid');
   mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
@@ -166,11 +168,22 @@ function createReviewingProviderFixture(
     'lock', 'active=$(cat "$counter/active")', 'active=$((active + 1))', 'printf "%s\\n" "$active" > "$counter/active"',
     'maximum=$(cat "$counter/maximum")', 'if [ "$active" -gt "$maximum" ]; then printf "%s\\n" "$active" > "$counter/maximum"; fi', 'unlock',
     'cleanup() { lock; active=$(cat "$counter/active"); printf "%s\\n" "$((active - 1))" > "$counter/active"; unlock; }',
-    'trap cleanup EXIT INT TERM', 'sleep 0.04',
+    'trap cleanup EXIT INT TERM', 'printf "%s\\n" "$*" >> "$counter/calls"', 'sleep 0.04',
     'if [ "$1" = "repo" ] && [ "$2" = "view" ]; then printf "%s\\n" \'{"id":"R_fleet_provider","nameWithOwner":"example/fleet"}\'; exit 0; fi',
     'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then case "$3" in', ...providerCases, '  *) exit 2 ;;', 'esac; exit 0; fi',
-    'if [ "$1" = "pr" ] && [ "$2" = "checks" ]; then printf "%s\\n" \'[{"bucket":"pass"}]\'; exit 0; fi',
-    'if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then printf "%s\\n" \'{"data":{"node":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}\'; exit 0; fi',
+    'if [ "$1" = "api" ] && [ "$2" = "repos/example/fleet" ]; then printf "%s\\n" \'{"id":1001,"node_id":"R_fleet_provider","full_name":"example/fleet"}\'; exit 0; fi',
+    ...taskNames.flatMap((_, index) => {
+      const number = index + 1;
+      const checks = [{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/fleet/actions/runs/${number}/job/1` }];
+      const run = { path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: head, pull_requests: [{ number, head: { sha: head }, base: { sha: base } }], status: 'completed', conclusion: 'success' };
+      const reviews = { data: { node: { id: 'R_fleet_provider', pullRequest: { number, headRefOid: head, baseRefOid: base, reviewDecision: null, latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] }, reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } };
+      return [
+        `if [ "$1" = "pr" ] && [ "$2" = "checks" ] && [ "$3" = "${number}" ]; then printf '%s\\n' ${shellSingleQuoted(JSON.stringify(checks))}; exit 0; fi`,
+        `if [ "$1" = "api" ] && [ "$2" = "repos/example/fleet/actions/runs/${number}" ]; then printf '%s\\n' ${shellSingleQuoted(JSON.stringify(run))}; exit 0; fi`,
+        `if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then for arg in "$@"; do if [ "$arg" = "number=${number}" ]; then printf '%s\\n' ${shellSingleQuoted(JSON.stringify(reviews))}; exit 0; fi; done; fi`,
+      ];
+    }),
+    'case "$2" in repos/example/fleet/contents/*) printf "%s\\n" \'{"status":"404"}\'; exit 1 ;; esac',
     'exit 2',
   ].join('\n'));
   chmodSync(ghBin, 0o755);
@@ -376,6 +389,23 @@ describe('fleet board collector', () => {
     });
   }, 5_000);
 
+  test('refuses a foreign PR association before querying its provider', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'fleet-board-foreign-pr-'));
+    try {
+      const fixture = createReviewingProviderFixture(root, 1);
+      const selected = fixture.pull_requests[0]!;
+      const snapshot = await collectFleetBoard({ pull_requests: [{ ...selected, pull_request: {
+        ...selected.pull_request, repository: 'example/foreign', provider_repository_id: '2002',
+      } }], timeout_ms: 30_000 }, {
+        read_registry: () => registry([fixture.repo]),
+        collect_repository: productionFleetBoardDependencies.collect_repository,
+      });
+      expect(snapshot.repositories[0]?.cards[0]?.error?.code).toBe('repo_readiness_unavailable');
+      expect(existsSync(join(fixture.counter_dir, 'calls'))).toBe(false);
+      expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('bounds real readiness provider children across reviewing cards with the fleet limiter', async () => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-provider-limit-'));
     const previousGhBin = process.env.REPO_HARNESS_GH_BIN;
@@ -411,6 +441,19 @@ describe('fleet board collector', () => {
     if ('error' in outcome) throw outcome.error;
     expect(outcome.snapshot.repositories[0]).toMatchObject({ status: 'ok' });
     expect(outcome.snapshot.repositories[0]?.cards).toHaveLength(4);
+    for (const card of outcome.snapshot.repositories[0]!.cards) {
+      const selected = fixture.pull_requests.find(selection => selection.task_id === card.task_id)!;
+      expect(card.merge_readiness).toMatchObject({ protocol: 2, ...selected.pull_request, ready: true, blockers: [] });
+    }
+    const calls = readFileSync(join(fixture.counter_dir, 'calls'), 'utf8');
+    expect(calls).toContain('api repos/example/fleet ');
+    for (let number = 1; number <= 4; number += 1) {
+      expect(calls).toContain(`pr checks ${number} `);
+      expect(calls).toContain(`api repos/example/fleet/actions/runs/${number} `);
+      expect(calls).toContain(`number=${number}`);
+      expect(calls.split('\n').filter(line => line.startsWith(`pr view ${number} `)).length).toBeGreaterThanOrEqual(2);
+    }
+
     expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
     expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
     expect(buildReviewSubject(fixture.repo.path)).toEqual(subjectBefore);
