@@ -182,6 +182,57 @@ describe('state architecture boundary checker', () => {
     expect(messages(result, 'EFFECTS_REVERSE_IMPORT')).toHaveLength(2);
   });
 
+  test('reports an intra-layer directory cycle across import forms', async () => {
+    const { result } = await checkWith((root) => {
+      write(root, 'src/effects/alpha/a.ts', "export { b } from '../beta/b';\nexport const a = 1;\n");
+      write(root, 'src/effects/beta/b.ts', "export const b = 2;\nexport type A = typeof import('../alpha/a').a;\n");
+    });
+    expect(result.violations.map((item) => `${item.code} ${item.file}:${item.line}`)).toEqual([
+      'INTRA_LAYER_CYCLE src/effects/alpha/a.ts:1',
+    ]);
+    expect(messages(result, 'INTRA_LAYER_CYCLE')).toEqual([
+      'intra-layer directory cycle src/effects/alpha <-> src/effects/beta: '
+        + 'src/effects/alpha/a.ts:1 imports ../beta/b; src/effects/beta/b.ts:2 imports ../alpha/a',
+    ]);
+
+    const dynamic = await checkWith((root) => {
+      write(root, 'src/cli/alpha/a.ts', "export async function load(): Promise<unknown> { return import('../beta/b'); }\n");
+      write(root, 'src/cli/beta/b.ts', "import '../alpha/a';\n");
+    });
+    expect(messages(dynamic.result, 'INTRA_LAYER_CYCLE')).toEqual([
+      expect.stringContaining('src/cli/alpha <-> src/cli/beta'),
+    ]);
+  });
+
+  test('accepts an allowed cycle and rejects a stale allowance', async () => {
+    const pair = 'src/effects/alpha <-> src/effects/beta';
+    const cyclic = createFixture();
+    write(cyclic, 'src/effects/alpha/a.ts', "import '../beta/b';\n");
+    write(cyclic, 'src/effects/beta/b.ts', "import '../alpha/a';\n");
+    const allowed = await checkStateBoundaries(cyclic, { [pair]: 'fixture reason' });
+    expect(allowed.ok).toBe(true);
+    expect(allowed.violations).toEqual([]);
+
+    const acyclic = createFixture();
+    write(acyclic, 'src/effects/alpha/a.ts', "import '../beta/b';\n");
+    write(acyclic, 'src/effects/beta/b.ts', 'export {};\n');
+    const stale = await checkStateBoundaries(acyclic, { [pair]: 'fixture reason' });
+    expect(stale.violations.map((item) => `${item.code} ${item.file}`)).toEqual([
+      'INTRA_LAYER_CYCLE_ALLOWANCE_STALE src/effects/alpha',
+    ]);
+  });
+
+  test('ignores one-way, top-level-file and cross-layer directory imports', async () => {
+    const { result } = await checkWith((root) => {
+      write(root, 'src/effects/alpha/a.ts', "import '../beta/b';\nimport '../top';\n");
+      write(root, 'src/effects/beta/b.ts', "import '../top';\n");
+      write(root, 'src/effects/top.ts', "import './alpha/a';\nimport './beta/b';\n");
+      write(root, 'src/cli/alpha/a.ts', "import '../../effects/alpha/a';\n");
+    });
+    expect(result.ok).toBe(true);
+    expect(result.violations).toEqual([]);
+  });
+
   test('rejects process execution from pure core', async () => {
     const { result } = await checkWith((root) => {
       write(

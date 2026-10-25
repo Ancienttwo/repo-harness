@@ -16,7 +16,9 @@ import {
   isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
+  isImportTypeNode,
   isInterfaceDeclaration,
+  isLiteralTypeNode,
   isMethodDeclaration,
   isNamedImports,
   isNamespaceImport,
@@ -48,6 +50,17 @@ const CORE_PURITY_EXCLUSIONS: ReadonlySet<string> = new Set([
   'src/core/operator/fleet-snapshot.ts', // #924: path
   'src/core/source-projection.ts', // #924: fs, path
 ]);
+
+const INTRA_LAYER_ROOTS = ['src/cli', 'src/core', 'src/effects'] as const;
+
+// Keyed by "<dir> <-> <dir>" in sorted order; each value states why the cycle remains.
+// Remove an entry when its cycle is gone; the checker reports a stale entry.
+export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {
+  'src/cli/chatgpt-browser <-> src/cli/mcp':
+    'browser file policy reuses resolveMcpPath; a shared path-policy helper is open mcp-sidecar backlog work',
+  'src/effects/engineers <-> src/effects/fleet':
+    'agent-runtime effects read task inbox deliveries and the fleet board reads runtime effects; the model declares both relations',
+};
 
 const CAPABILITY_SOURCE = 'src/core/capabilities/registry.ts';
 const CAPABILITY_SCRIPT = 'scripts/capability-resolver.ts';
@@ -263,6 +276,45 @@ function importSpecifier(node: Node): string | null {
   return null;
 }
 
+interface ModuleReference {
+  readonly node: Node;
+  readonly specifier: string;
+}
+
+interface ModuleReferences {
+  readonly resolved: readonly ModuleReference[];
+  readonly unresolvedLoads: readonly Node[];
+}
+
+function moduleReferences(source: SourceFile): ModuleReferences {
+  const resolved: ModuleReference[] = [];
+  const unresolvedLoads: Node[] = [];
+  visit(source, (node) => {
+    const staticSpecifier = importSpecifier(node);
+    if (staticSpecifier !== null) {
+      resolved.push({ node, specifier: staticSpecifier });
+      return;
+    }
+    if (isImportTypeNode(node)) {
+      if (isLiteralTypeNode(node.argument) && isStringLiteralLikeNode(node.argument.literal)) {
+        resolved.push({ node, specifier: node.argument.literal.text });
+      }
+      return;
+    }
+    if (!isCallExpression(node)) return;
+    const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
+    const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
+    if (!dynamicImport && !requireCall) return;
+    const argument = node.arguments[0];
+    if (argument && isStringLiteralLikeNode(argument)) {
+      resolved.push({ node, specifier: argument.text });
+    } else {
+      unresolvedLoads.push(node);
+    }
+  });
+  return { resolved, unresolvedLoads };
+}
+
 function callName(node: Node): string | null {
   if (isIdentifier(node)) return node.text;
   if (!isPropertyAccessExpression(node)) return null;
@@ -316,28 +368,20 @@ function checkCoreDependencies(
     }
   };
 
+  const references = moduleReferences(source);
+  for (const reference of references.resolved) inspectModule(reference.node, reference.specifier);
+  for (const node of references.unresolvedLoads) {
+    violations.push(nodeViolation(
+      repoRoot,
+      source,
+      node,
+      'CORE_DYNAMIC_IMPORT_UNRESOLVED',
+      'pure core dynamic module loads must use a literal so the boundary can be verified',
+    ));
+  }
+
   visit(source, (node) => {
-    const staticSpecifier = importSpecifier(node);
-    if (staticSpecifier !== null) inspectModule(node, staticSpecifier);
-
     if (isCallExpression(node)) {
-      const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
-      const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
-      if (dynamicImport || requireCall) {
-        const argument = node.arguments[0];
-        if (!argument || !isStringLiteralLikeNode(argument)) {
-          violations.push(nodeViolation(
-            repoRoot,
-            source,
-            node,
-            'CORE_DYNAMIC_IMPORT_UNRESOLVED',
-            'pure core dynamic module loads must use a literal so the boundary can be verified',
-          ));
-        } else {
-          inspectModule(node, argument.text);
-        }
-      }
-
       const name = callName(node.expression);
       if (
         name &&
@@ -395,26 +439,97 @@ function checkEffectDependencies(
     ));
   };
 
-  visit(source, (node) => {
-    const staticSpecifier = importSpecifier(node);
-    if (staticSpecifier !== null) inspectModule(node, staticSpecifier);
-    if (!isCallExpression(node)) return;
-    const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
-    const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
-    if (!dynamicImport && !requireCall) return;
-    const argument = node.arguments[0];
-    if (!argument || !isStringLiteralLikeNode(argument)) {
-      violations.push(nodeViolation(
-        repoRoot,
-        source,
-        node,
-        'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED',
-        'effect dynamic module loads must use a literal so reverse CLI dependencies can be verified',
-      ));
-      return;
+  const references = moduleReferences(source);
+  for (const reference of references.resolved) inspectModule(reference.node, reference.specifier);
+  for (const node of references.unresolvedLoads) {
+    violations.push(nodeViolation(
+      repoRoot,
+      source,
+      node,
+      'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED',
+      'effect dynamic module loads must use a literal so reverse CLI dependencies can be verified',
+    ));
+  }
+}
+
+function layerDirectoryOf(path: string, directories: ReadonlySet<string>): string | null {
+  for (const root of INTRA_LAYER_ROOTS) {
+    if (!path.startsWith(`${root}/`)) continue;
+    const directory = `${root}/${path.slice(root.length + 1).split('/')[0]}`;
+    return directories.has(directory) ? directory : null;
+  }
+  return null;
+}
+
+function layerOf(directory: string): string {
+  return directory.slice(0, directory.lastIndexOf('/'));
+}
+
+interface DirectoryEdge {
+  readonly node: Node;
+  readonly source: SourceFile;
+  readonly file: string;
+  readonly specifier: string;
+}
+
+function edgeLocation(edge: DirectoryEdge): string {
+  const position = edge.source.getLineAndCharacterOfPosition(edge.node.getStart(edge.source));
+  return `${edge.file}:${position.line + 1} imports ${edge.specifier}`;
+}
+
+function checkIntraLayerCycles(
+  repoRoot: string,
+  sources: ReadonlyMap<string, SourceFile>,
+  allowances: Readonly<Record<string, string>>,
+  violations: StateBoundaryViolation[],
+): void {
+  const directories = new Set<string>();
+  for (const file of sources.keys()) {
+    for (const root of INTRA_LAYER_ROOTS) {
+      const segments = file.startsWith(`${root}/`) ? file.slice(root.length + 1).split('/') : [];
+      if (segments.length > 1) directories.add(`${root}/${segments[0]}`);
     }
-    inspectModule(node, argument.text);
-  });
+  }
+
+  const edges = new Map<string, DirectoryEdge>();
+  for (const [file, source] of [...sources].sort(([left], [right]) => left.localeCompare(right))) {
+    const from = layerDirectoryOf(file, directories);
+    if (!from) continue;
+    for (const { node, specifier } of moduleReferences(source).resolved) {
+      if (!specifier.startsWith('.')) continue;
+      const to = layerDirectoryOf(relPath(repoRoot, resolve(dirname(source.fileName), specifier)), directories);
+      if (!to || to === from || layerOf(to) !== layerOf(from)) continue;
+      const key = `${from} -> ${to}`;
+      if (!edges.has(key)) edges.set(key, { node, source, file, specifier });
+    }
+  }
+
+  const reported = new Set<string>();
+  for (const [key, forward] of edges) {
+    const [from, to] = key.split(' -> ');
+    if (from > to) continue;
+    const backward = edges.get(`${to} -> ${from}`);
+    if (!backward) continue;
+    const pair = `${from} <-> ${to}`;
+    reported.add(pair);
+    if (allowances[pair]) continue;
+    violations.push(nodeViolation(
+      repoRoot,
+      forward.source,
+      forward.node,
+      'INTRA_LAYER_CYCLE',
+      `intra-layer directory cycle ${pair}: ${edgeLocation(forward)}; ${edgeLocation(backward)}`,
+    ));
+  }
+  for (const pair of Object.keys(allowances).sort()) {
+    // An allowance only goes stale against a tree that contains both directories.
+    if (reported.has(pair) || !pair.split(' <-> ').every((directory) => directories.has(directory))) continue;
+    violations.push(violation(
+      'INTRA_LAYER_CYCLE_ALLOWANCE_STALE',
+      pair.split(' <-> ')[0],
+      `intra-layer cycle allowance ${pair} no longer matches a cycle; remove it`,
+    ));
+  }
 }
 
 function bindingNames(name: BindingName): string[] {
@@ -738,7 +853,10 @@ function sortedViolations(violations: readonly StateBoundaryViolation[]): StateB
     left.message.localeCompare(right.message));
 }
 
-export async function checkStateBoundaries(repoInput = '.'): Promise<StateBoundaryCheckResult> {
+export async function checkStateBoundaries(
+  repoInput = '.',
+  intraLayerCycleAllowances = INTRA_LAYER_CYCLE_ALLOWANCES,
+): Promise<StateBoundaryCheckResult> {
   const repoRoot = resolve(repoInput);
   const violations: StateBoundaryViolation[] = [];
   try {
@@ -780,6 +898,7 @@ export async function checkStateBoundaries(repoInput = '.'): Promise<StateBounda
       const source = parsed.sources.get(file);
       if (source) checkEffectDependencies(repoRoot, source, violations);
     }
+    checkIntraLayerCycles(repoRoot, parsed.sources, intraLayerCycleAllowances, violations);
     checkCanonicalDeclarations(repoRoot, parsed.sources, violations);
     checkCapabilityScript(repoRoot, parsed.sources.get(CAPABILITY_SCRIPT), violations);
     checkStateSnapshotAdapter(repoRoot, parsed.sources.get(STATE_SNAPSHOT_ADAPTER), violations);
