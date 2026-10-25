@@ -158,7 +158,7 @@ describe('ME-1A closed scheduling schema', () => {
 
 
 test('module acceptance selector is a closed typed locator with exact approved digests', () => {
-  const selector = { protocol: 1, provider_repository_id: 'R_provider', issue_id: 'I_goal', campaign_id: 'campaign',
+  const selector = { protocol: 1 as const, provider_repository_id: 'R_provider', issue_id: 'I_goal', campaign_id: 'campaign',
     admission_sha256: DIGEST, grant_sha256: DIGEST, policy_sha256: DIGEST, actor_id: 'U_owner' };
   expect(validateModuleAcceptanceReference(selector)).toEqual(selector);
   expect(Object.isFrozen(validateModuleAcceptanceReference(selector))).toBe(true);

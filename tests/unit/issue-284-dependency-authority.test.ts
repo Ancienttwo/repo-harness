@@ -1117,6 +1117,7 @@ describe('issue #284 closed dependency authority', () => {
         contract_sha256: contract.contract_sha256,
         envelope_sha256: envelope.envelope_sha256,
         matrix_sha256: matrix.matrix_sha256,
+        review_authority: approvals.get(subject.root)!.source,
       },
       { verify_acceptance: async () => receipt, read_acceptance_receipt_bytes: () => receiptBytes },
     );

@@ -1,3 +1,5 @@
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
+import { runChangeAssessmentCli } from '../scripts/change-assessment';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -18,6 +20,8 @@ import {
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 
 const tempDirs: string[] = [];
+const admissions = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
+const authorityFor = (root: string) => admissions.get(root)!.source;
 const SOURCE_ROOT = join(import.meta.dir, '..');
 afterEach(() => { for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
@@ -63,14 +67,11 @@ function fixture(): string {
   git(root, 'config', 'user.name', 'Change Assessment Test');
   git(root, 'config', 'user.email', 'change-assessment@test.local');
   mkdirSync(join(root, '.ai', 'harness'), { recursive: true });
-  mkdirSync(join(root, 'tasks', 'contracts'), { recursive: true });
   writeFileSync(join(root, '.ai', 'harness', 'policy.json'), JSON.stringify({ worktree_strategy: { review_base: 'main' } }));
   writeFileSync(join(root, 'base.ts'), 'export const base = true;\n');
   commit(root, 'base');
-  writeFileSync(join(root, 'tasks', 'contracts', 'demo.contract.md'), [
-    '# Task Contract: demo', '', '## Change Assessment', '', '```json',
-    '{"protocol":1,"oracles":[{"id":"deterministic","kind":"deterministic_test","paths":["*"]}]}', '```', '',
-  ].join('\n'));
+  const home = mkdtempSync(join(tmpdir(), 'assessment-authority-')); tempDirs.push(home);
+  admissions.set(root, seedReviewAdmissionFixture(root, home));
   return root;
 }
 
@@ -128,7 +129,7 @@ describe('ChangeAssessment v1', () => {
 
     const root = fixture();
     writeFileSync(join(root, '.ai', 'harness', 'policy.json'), '{}\n');
-    expect(() => prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' }))
+    expect(() => prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) }))
       .toThrow('review base');
   });
 
@@ -161,7 +162,7 @@ describe('ChangeAssessment v1', () => {
     mkdirSync(join(root, 'src'), { recursive: true });
     writeFileSync(source, 'export const provisional = 1;\n');
     writeFileSync(source, 'export interface Adapter { run(): void }\n');
-    const first = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+    const first = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     expect(first.assessment.status).toBe('ready');
     expect(first.packet).not.toBeNull();
 
@@ -169,7 +170,7 @@ describe('ChangeAssessment v1', () => {
     // effect has no journal input, so the exact final subject and packet stay
     // byte-identical despite a different observer history.
     writeFileSync(join(root, '.ai', 'harness', 'events.jsonl'), '{"hook":"PostToolUse","sequence":99}\n');
-    const second = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+    const second = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     expect(second.assessment).toEqual(first.assessment);
     expect(second.packet).toEqual(first.packet);
     expect(second.packet?.reasons.map((entry) => entry.code)).toEqual(['pattern_novelty']);
@@ -184,7 +185,7 @@ describe('ChangeAssessment v1', () => {
     const frozenTarget = git(root, 'rev-parse', 'main');
     const beforeTargetMoves = prepareChangeAssessment({
       repoRoot: root,
-      contractPath: 'tasks/contracts/demo.contract.md',
+      authority: authorityFor(root),
       targetRevision: frozenTarget,
     });
     expect(beforeTargetMoves.packet?.target_revision).toBe(frozenTarget);
@@ -197,7 +198,7 @@ describe('ChangeAssessment v1', () => {
 
     const historical = prepareChangeAssessment({
       repoRoot: root,
-      contractPath: 'tasks/contracts/demo.contract.md',
+      authority: authorityFor(root),
       targetRevision: frozenTarget,
     });
     expect(historical).toEqual(beforeTargetMoves);
@@ -210,11 +211,11 @@ describe('ChangeAssessment v1', () => {
     writeFileSync(source, 'export interface Adapter {\n  run(): void\n}\n');
     commit(root, 'existing interface');
     writeFileSync(source, 'export interface Adapter {\n  run(): void\n  stop(): void\n}\n');
-    const edited = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+    const edited = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     expect(requireReady(edited.assessment).reasons.map((entry) => entry.code)).not.toContain('pattern_novelty');
 
     writeFileSync(join(root, 'src', 'new-interface.ts'), 'export interface NewAdapter { execute(): void }\n');
-    const added = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+    const added = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     expect(requireReady(added.assessment).reasons).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'pattern_novelty', paths: ['src/new-interface.ts'] }),
     ]));
@@ -226,7 +227,7 @@ describe('ChangeAssessment v1', () => {
     writeFileSync(join(renamed, 'src', 'old-adapter.ts'), 'export interface Adapter {\n  run(): void\n}\n');
     commit(renamed, 'existing adapter');
     git(renamed, 'mv', 'src/old-adapter.ts', 'src/renamed-adapter.ts');
-    const pureRename = prepareChangeAssessment({ repoRoot: renamed, contractPath: 'tasks/contracts/demo.contract.md' });
+    const pureRename = prepareChangeAssessment({ repoRoot: renamed, authority: authorityFor(renamed) });
     expect(requireReady(pureRename.assessment).reasons.map((entry) => entry.code)).not.toContain('pattern_novelty');
 
     const expanded = fixture();
@@ -235,7 +236,7 @@ describe('ChangeAssessment v1', () => {
     commit(expanded, 'existing implementation');
     git(expanded, 'mv', 'src/old-adapter.ts', 'src/renamed-adapter.ts');
     writeFileSync(join(expanded, 'src', 'renamed-adapter.ts'), 'export const run = () => undefined;\nexport interface AddedAdapter { run(): void }\n');
-    const renameWithAddition = prepareChangeAssessment({ repoRoot: expanded, contractPath: 'tasks/contracts/demo.contract.md' });
+    const renameWithAddition = prepareChangeAssessment({ repoRoot: expanded, authority: authorityFor(expanded) });
     expect(requireReady(renameWithAddition.assessment).reasons).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'pattern_novelty', paths: ['src/renamed-adapter.ts'] }),
     ]));
@@ -245,7 +246,7 @@ describe('ChangeAssessment v1', () => {
     const root = fixture();
     mkdirSync(join(root, 'src'), { recursive: true });
     writeFileSync(join(root, 'src', '接口.ts'), 'export interface ExternalPort { run(): void }\n');
-    const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: 'tasks/contracts/demo.contract.md' });
+    const prepared = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     expect(requireReady(prepared.assessment).reasons).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'pattern_novelty', paths: ['src/接口.ts'] }),
     ]));
@@ -266,25 +267,24 @@ describe('ChangeAssessment v1', () => {
     expect(() => validateReviewSelectionPacketAgainstAssessment(forged, assessment)).toThrow('fingerprint');
   });
 
-  test('CLI prepares and validates the exact policy-bound packet', () => {
+  test('CLI prepares and validates the exact policy-bound packet', async () => {
     const root = fixture();
     mkdirSync(join(root, 'src'), { recursive: true });
     writeFileSync(join(root, 'src', 'adapter.ts'), 'export interface Adapter { run(): void }\n');
+    const runCli = async (argv: string[]) => ({ status: await runChangeAssessmentCli(argv, { repoRoot: root, admissionSource: () => authorityFor(root) }), stderr: '' });
     const output = '.ai/harness/checks/change-assessment.fixture.json';
-    const prepare = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'change-assessment.ts'), 'prepare',
-      '--contract', 'tasks/contracts/demo.contract.md', '--output', output,
-    ], { cwd: root, encoding: 'utf-8' });
+    const prepare = await runCli(['prepare',
+      '--output', output,
+    ]);
     expect(prepare.status, prepare.stderr).toBe(0);
     const evidence = JSON.parse(readFileSync(join(root, output), 'utf-8'));
     expect(evidence.selection_packet.status).toBe('ready');
-    const validate = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'change-assessment.ts'), 'validate', '--contract', 'tasks/contracts/demo.contract.md', '--packet', output], {
-      cwd: root, encoding: 'utf-8',
-    });
+    const validate = await runCli(['validate', '--packet', output]);
     expect(validate.status, validate.stderr).toBe(0);
 
-    const escalate = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'change-assessment.ts'), 'escalate-disagreement',
-      '--contract', 'tasks/contracts/demo.contract.md', '--packet', output, '--paths', 'src/adapter.ts', '--summary', 'independent reviewer requires human review',
-    ], { cwd: root, encoding: 'utf-8' });
+    const escalate = await runCli(['escalate-disagreement',
+      '--packet', output, '--paths', 'src/adapter.ts', '--summary', 'independent reviewer requires human review',
+    ]);
     expect(escalate.status, escalate.stderr).toBe(0);
     const escalated = JSON.parse(readFileSync(join(root, output), 'utf-8'));
     expect(escalated.selection_packet.reasons.map((entry: { code: string }) => entry.code)).toEqual(['pattern_novelty', 'reviewer_disagreement']);
@@ -292,9 +292,9 @@ describe('ChangeAssessment v1', () => {
     // The next prepare is the atomic re-freeze boundary: it recomputes the
     // base from policy/subject, accepts only the monotonic overlay, and emits
     // a fresh envelope for canonical verify-sprint evidence.
-    const reprepare = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'change-assessment.ts'), 'prepare',
-      '--contract', 'tasks/contracts/demo.contract.md', '--packet', output, '--output', output,
-    ], { cwd: root, encoding: 'utf-8' });
+    const reprepare = await runCli(['prepare',
+      '--packet', output, '--output', output,
+    ]);
     expect(reprepare.status, reprepare.stderr).toBe(0);
     const refrozen = JSON.parse(readFileSync(join(root, output), 'utf-8'));
     expect(refrozen.selection_packet.packet_sha256).toBe(escalated.selection_packet.packet_sha256);
@@ -302,9 +302,9 @@ describe('ChangeAssessment v1', () => {
     writeFileSync(join(root, 'src', 'adapter.ts'), 'export interface Adapter { run(): void; stop(): void }\n');
     const preserved = readFileSync(join(root, output), 'utf-8');
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const drifted = spawnSync('bun', [join(SOURCE_ROOT, 'scripts', 'change-assessment.ts'), 'prepare',
-        '--contract', 'tasks/contracts/demo.contract.md', '--packet', output, '--output', output,
-      ], { cwd: root, encoding: 'utf-8' });
+      const drifted = await runCli(['prepare',
+        '--packet', output, '--output', output,
+      ]);
       expect(drifted.status).toBe(1);
       expect(readFileSync(join(root, output), 'utf-8')).toBe(preserved);
     }

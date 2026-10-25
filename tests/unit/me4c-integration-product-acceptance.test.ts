@@ -1,3 +1,4 @@
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { historicalPublicationPointer } from '../helpers/publication-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath } from '../helpers/sprint-fixture';
 import { seedPublicationReceipt } from '../helpers/publication-fixture';
@@ -51,6 +52,11 @@ const REV_B = '4'.repeat(64);
 const SUBJECT = `sha256:${'5'.repeat(64)}`;
 const DIGEST = `sha256:${'6'.repeat(64)}`;
 const roots: string[] = [];
+
+function fixtureAuthority(root: string) {
+  const home = mkdtempSync(join(tmpdir(), 'product-review-admission-')); roots.push(home);
+  return seedReviewAdmissionFixture(root, home).source;
+}
 
 function git(root: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -225,12 +231,10 @@ describe('ME-4C integration product acceptance', () => {
     const leaseA = readFileSync(leaseOwnerPath(value.root, TASK_A));
     const leaseB = readFileSync(leaseOwnerPath(value.root, TASK_B));
     const acceptance = {
-      protocol: 2,
+      protocol: 3,
       kind: 'repo-harness-acceptance-receipt',
       repository_root: value.root,
-      contract_file: 'tasks/contracts/integration.contract.md',
-      contract_sha256: DIGEST,
-      goal_file: 'plans/plan-integration.md',
+      campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
       goal_sha256: DIGEST,
       verification_file: '.ai/harness/runs/fixture.json',
       verification_evidence_sha256: DIGEST,
@@ -258,6 +262,7 @@ describe('ME-4C integration product acceptance', () => {
         contract_sha256: value.contract.contract_sha256,
         envelope_sha256: value.envelope.envelope_sha256,
         matrix_sha256: value.matrix.matrix_sha256,
+        review_authority: fixtureAuthority(value.root),
       },
       {
         verify_acceptance: async () => acceptance,
@@ -299,18 +304,17 @@ describe('ME-4C integration product acceptance', () => {
         contract_sha256: evidence.contract.contract_sha256,
         envelope_sha256: evidence.envelope.envelope_sha256,
         matrix_sha256: evidence.matrix.matrix_sha256,
+        review_authority: fixtureAuthority(evidence.root),
       },
       { verify_acceptance: async () => { throw new Error('must not run'); } },
     )).rejects.toMatchObject({ code: 'matrix_invalid' });
 
     const receiptRace = fixture();
     const acceptance = {
-      protocol: 2,
+      protocol: 3,
       kind: 'repo-harness-acceptance-receipt',
       repository_root: receiptRace.root,
-      contract_file: 'tasks/contracts/integration.contract.md',
-      contract_sha256: DIGEST,
-      goal_file: 'plans/plan-integration.md',
+      campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
       goal_sha256: DIGEST,
       verification_file: '.ai/harness/runs/fixture.json',
       verification_evidence_sha256: DIGEST,
@@ -337,6 +341,7 @@ describe('ME-4C integration product acceptance', () => {
         contract_sha256: receiptRace.contract.contract_sha256,
         envelope_sha256: receiptRace.envelope.envelope_sha256,
         matrix_sha256: receiptRace.matrix.matrix_sha256,
+        review_authority: fixtureAuthority(receiptRace.root),
       },
       {
         verify_acceptance: async () => acceptance,

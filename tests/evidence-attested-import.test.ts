@@ -1,3 +1,5 @@
+import { parseVerificationPlanFromContractText } from '../src/core/evidence/verification-plan';
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
@@ -13,8 +15,12 @@ import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
-import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { executeAdmittedVerification } from "../src/effects/evidence/verification-execution";
 
+const fixtureHomes: string[] = [];
+afterEach(() => { for (const home of fixtureHomes.splice(0)) rmSync(home, {recursive:true,force:true}); admissions.clear(); });
+const admissions = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
+const authorityFor = (root: string) => admissions.get(root)!.source;
 function git(repoRoot: string, args: readonly string[]): string {
   return execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf-8" });
 }
@@ -61,10 +67,12 @@ function setupFixtureRepo(
     git(repoRoot, ["commit", "-q", "-m", "contract"]);
   }
 
+  const home = mkdtempSync(join(tmpdir(), 'attested-admission-')); fixtureHomes.push(home);
+  admissions.set(repoRoot, seedReviewAdmissionFixture(repoRoot, home, { allowedPaths: [...allowedPaths], reviewer: 'Claude', userWaiver: 'allowed', actor: 'kito' }));
   return { contractRelative };
 }
 
-function baseReceipt(contractRelative: string, overrides: Partial<AttestedReceiptInput> = {}): AttestedReceiptInput {
+function baseReceipt(root: string, overrides: Partial<AttestedReceiptInput> = {}): AttestedReceiptInput {
   return {
     disposition: "external_pass",
     reviewer: "Claude",
@@ -74,7 +82,8 @@ function baseReceipt(contractRelative: string, overrides: Partial<AttestedReceip
     findings: [],
     subject_sha256: `sha256:${"a".repeat(64)}`,
     target_revision: "0".repeat(40),
-    contract_file: contractRelative,
+    campaign_sha256: admissions.get(root)!.admission.campaign_sha256,
+    admission_sha256: admissions.get(root)!.admission.admission_sha256, grant_sha256: admissions.get(root)!.grant,
     issued_at: "2026-07-22T18:10:00.000Z",
     ...overrides,
   };
@@ -84,7 +93,7 @@ describe("importAttestedEvidence: trust mapping", () => {
   test("external_pass maps to external_attested", () => {
     withTempRepo("attested-import-external-pass", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
+      const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.event.trust_class).toBe("external_attested");
@@ -102,8 +111,8 @@ describe("importAttestedEvidence: trust mapping", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, {
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, {
           disposition: "user_waiver",
           reviewer: "User",
           source: "user-waiver",
@@ -119,8 +128,8 @@ describe("importAttestedEvidence: trust mapping", () => {
   test("emits the complete D3 field set and a redaction-safe short payload", () => {
     withTempRepo("attested-import-d3-fields", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot, { allowedPaths: ["src/a.ts", "src/b.ts"] });
-      const receipt = baseReceipt(contractRelative);
-      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt });
+      const receipt = baseReceipt(repoRoot);
+      const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -129,7 +138,7 @@ describe("importAttestedEvidence: trust mapping", () => {
       expect(identity.base_commit).toBe(receipt.target_revision);
       expect(identity.target_commit).toMatch(/^[0-9a-f]{40}$/);
       expect(identity.authority_commit).toMatch(/^[0-9a-f]{40}$/);
-      expect(identity.contract_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect('admission_sha256' in identity && identity.admission_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(identity.scope_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(identity.command_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(identity.env_provider_id.length).toBeGreaterThan(0);
@@ -157,8 +166,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { disposition: "reject" }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { disposition: "reject" }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("unsupported_disposition");
@@ -173,8 +182,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { disposition: "totally-invented" }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { disposition: "totally-invented" }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("unsupported_disposition");
@@ -188,8 +197,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { reviewer: "" }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { reviewer: "" }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_actor");
@@ -204,8 +213,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { summary: "   " }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { summary: "   " }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_reason");
@@ -219,8 +228,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { subject_sha256: "" }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { subject_sha256: "" }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_subject");
@@ -234,8 +243,8 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { target_revision: "" }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { target_revision: "" }),
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_subject");
@@ -244,10 +253,11 @@ describe("importAttestedEvidence: fail-closed paths", () => {
     });
   }, 30_000);
 
-  test("an uncommitted contract file fails closed (no authority commit) and appends nothing", () => {
+  test("a revoked admission fails closed despite a contract file and appends nothing", () => {
     withTempRepo("attested-import-uncommitted-contract", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot, { commitContract: false });
-      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
+      writeFileSync(join(admissions.get(repoRoot)!.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
+      const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_subject");
       const { accepted } = readAcceptedEvents(repoRoot);
@@ -260,11 +270,11 @@ describe("importAttestedEvidence: default-deny at trust level", () => {
   test("an attested-only ledger leaves the authoritative filter empty", () => {
     withTempRepo("attested-import-default-deny", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
+      const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       const second = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, {
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, {
           disposition: "user_waiver",
           reviewer: "User",
           source: "user-waiver",
@@ -293,10 +303,10 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
   test("identical re-import dedups to one accepted event (two physical appends)", () => {
     withTempRepo("attested-import-idempotent", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const receipt = baseReceipt(contractRelative);
+      const receipt = baseReceipt(repoRoot);
 
-      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt, correlationRunId: "run-a" });
-      const second = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt, correlationRunId: "run-b" });
+      const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt, correlationRunId: "run-a" });
+      const second = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt, correlationRunId: "run-b" });
       expect(first.ok).toBe(true);
       expect(second.ok).toBe(true);
       if (!first.ok || !second.ok) return;
@@ -319,11 +329,11 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
   test("re-importing a receipt with a different subject is not deduped", () => {
     withTempRepo("attested-import-distinct-subject", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
+      const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       const second = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"c".repeat(64)}` }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { subject_sha256: `sha256:${"c".repeat(64)}` }),
       });
       expect(first.ok).toBe(true);
       expect(second.ok).toBe(true);
@@ -340,16 +350,16 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       expect(readGenesisRecord(repoRoot)).toBeNull();
 
-      const receipt = baseReceipt(contractRelative);
-      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt });
+      const receipt = baseReceipt(repoRoot);
+      const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt });
       expect(first.ok).toBe(true);
       if (!first.ok) return;
       expect(first.genesis.ledger_epoch_start_sha).toBe(LEDGER_EPOCH_START_SHA);
 
       const second = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"d".repeat(64)}` }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { subject_sha256: `sha256:${"d".repeat(64)}` }),
       });
       expect(second.ok).toBe(true);
 
@@ -370,7 +380,7 @@ describe("importAttestedEvidence: unterminated log tail", () => {
         if (tail === "sole genesis") {
           appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId: "attested-import-unterminated-tail" });
         } else {
-          expect(importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) }).ok).toBe(true);
+          expect(importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) }).ok).toBe(true);
         }
         const logPath = join(repoRoot, ".ai", "harness", "evidence", "events", "log.jsonl");
         const terminated = readFileSync(logPath);
@@ -379,8 +389,8 @@ describe("importAttestedEvidence: unterminated log tail", () => {
 
         const result = importAttestedEvidence({
           repoRoot,
-          authorityContractFile: contractRelative,
-          receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"e".repeat(64)}` }),
+          authority: authorityFor(repoRoot),
+          receipt: baseReceipt(repoRoot, { subject_sha256: `sha256:${"e".repeat(64)}` }),
         });
         expect(result.ok).toBe(false);
         if (result.ok) return;
@@ -396,15 +406,15 @@ describe("importAttestedEvidence: corrupt terminated log line", () => {
   test("a terminated line that does not parse fails closed as corrupt_log_tail and does not append", () => {
     withTempRepo("attested-import-corrupt-line", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      expect(importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) }).ok).toBe(true);
+      expect(importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) }).ok).toBe(true);
       const logPath = join(repoRoot, ".ai", "harness", "evidence", "events", "log.jsonl");
       writeFileSync(logPath, Buffer.concat([readFileSync(logPath), Buffer.from("{\"kind\":\"evidence_event\"}{\n")]));
       const corrupt = readFileSync(logPath);
 
       const result = importAttestedEvidence({
         repoRoot,
-        authorityContractFile: contractRelative,
-        receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"e".repeat(64)}` }),
+        authority: authorityFor(repoRoot),
+        receipt: baseReceipt(repoRoot, { subject_sha256: `sha256:${"e".repeat(64)}` }),
       });
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -433,7 +443,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
   }
 
   function changeAssessmentEvidence(root: string): Record<string, unknown> {
-    const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: "tasks/contracts/fixture-cli.contract.md" });
+    const prepared = prepareChangeAssessment({ repoRoot: root, authority: authorityFor(root) });
     if (prepared.assessment.status !== "ready" || !prepared.packet || prepared.packet.status !== "ready") {
       throw new Error("fixture Change Assessment must be ready");
     }
@@ -449,9 +459,9 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
   function writeNativeVerification(root: string): void {
     const subject = buildReviewSubject(root, { targetRef: "main" });
     expect(subject.status).toBe("ok");
-    const report = executeVerificationContract({
+    const report = executeAdmittedVerification({
       repoRoot: root,
-      contractPath: "tasks/contracts/fixture-cli.contract.md",
+      authority: authorityFor(root),
       reportFile: verificationReport,
     });
     if (report.kind !== "verification_execution_report" || !report.passed) {
@@ -554,6 +564,8 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     writeFileSync(join(root, "tasks", "reviews", "fixture-cli.review.md"), "# Review\n\n> **Recommendation**: pass\n");
     git(root, ["add", "-A"]);
     git(root, ["commit", "-q", "-m", "candidate"]);
+    admissions.set(root, seedReviewAdmissionFixture(root, home, { reviewer: 'Claude', userWaiver: 'allowed', actor: 'fixture-owner',
+      allowedPaths: ['*'], oracles: [], plan: parseVerificationPlanFromContractText(readFileSync(join(root, 'tasks/contracts/fixture-cli.contract.md'), 'utf8')) }));
     writeNativeVerification(root);
 
     return { root, home };
@@ -565,19 +577,18 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     process.chdir(root);
 
     const reviewResultFile = join(home, 'fixture-review-result.json');
-    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: verificationReport, reviewer: 'Claude', disposition: 'external_pass', summary: 'cli wiring dogfood fixture', findings: [] })));
+    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, authority: authorityFor(root), verification: verificationReport, reviewer: 'Claude', disposition: 'external_pass', summary: 'cli wiring dogfood fixture', findings: [] })));
     const before = ledgerState(root);
     const exitCode = await runAcceptanceReceiptCli(
       [
         "record", "--review-result", reviewResultFile,
-        "--contract", "tasks/contracts/fixture-cli.contract.md",
         "--verification", verificationReport,
         "--disposition", "external_pass",
         "--reviewer", "Claude",
         "--source", "generic-review",
         "--summary", "cli wiring dogfood fixture",
       ],
-      { authorityHome: home },
+      { authorityHome: home, admissionSource: () => authorityFor(root) },
     );
     expect(exitCode).toBe(0);
 
@@ -598,12 +609,11 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     process.chdir(root);
 
     const reviewResultFile = join(home, 'fixture-review-result.json');
-    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, contract: 'tasks/contracts/fixture-cli.contract.md', verification: verificationReport, reviewer: 'Claude', disposition: 'reject', summary: 'rejected in cli wiring fixture', findings: [{ severity: 'P1', message: 'blocking issue' }] })));
+    writeFileSync(reviewResultFile, JSON.stringify(await fixtureReviewResult({ root, authority: authorityFor(root), verification: verificationReport, reviewer: 'Claude', disposition: 'reject', summary: 'rejected in cli wiring fixture', findings: [{ severity: 'P1', message: 'blocking issue' }] })));
     const before = ledgerState(root);
     const exitCode = await runAcceptanceReceiptCli(
       [
         "record", "--review-result", reviewResultFile,
-        "--contract", "tasks/contracts/fixture-cli.contract.md",
         "--verification", verificationReport,
         "--disposition", "reject",
         "--reviewer", "Claude",
@@ -611,7 +621,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
         "--summary", "rejected in cli wiring fixture",
         "--findings-json", '[{"severity":"P1","message":"blocking issue"}]',
       ],
-      { authorityHome: home },
+      { authorityHome: home, admissionSource: () => authorityFor(root) },
     );
     // Existing, pre-EPC-04 behavior: reject still exits 1 (unaffected by this package's wiring).
     expect(exitCode).toBe(1);

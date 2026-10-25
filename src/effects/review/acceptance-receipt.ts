@@ -1,3 +1,4 @@
+import { osAccountHome } from '../runtime/os-account-home';
 import { observeActiveReviewAdmission } from './issue-goal';
 import { bindReviewAdmission, reviewAdmissionAllowsPath } from '../../core/review/authority-context';
 import { readReviewAdmissionSource, type ReviewAdmissionSource } from './admission-source';
@@ -108,6 +109,7 @@ function verifyReviewResult(root: string, authorityHome: string, receipt: Accept
 
 
 type Options = {
+  admissionSource?: (root: string, values: Readonly<Record<string, string | undefined>>) => ReviewAdmissionSource;
   authorityHome?: string;
   now?: () => Date;
 };
@@ -165,7 +167,7 @@ export function resolveProtectedGitRuntime(): ProtectedGitRuntime {
     protectedGitRuntimeCache = {
       gitBin,
       env: {
-        HOME: account.homedir,
+        HOME: osAccountHome(),
         USER: account.username,
         LOGNAME: account.username,
         PATH: protectedPath,
@@ -682,7 +684,8 @@ export async function acceptanceContext(args: {
     subject: { status: 'ok', scope: subject.scope, target_ref: subject.target_ref, target_rev: subject.target_rev,
       head_rev: subject.head_rev, review_subject_sha256: subject.review_subject_sha256 },
     verification: { plan_sha256: report.target.plan_hash, source_sha256: report.target.snapshot_hash,
-      tree_sha256: report.target.tree_hash, evidence_sha256: evidence.fingerprint },
+      // The validated snapshot SHA256 binds the Git tree OID; the OID itself may be SHA1.
+      tree_sha256: report.target.snapshot_hash, evidence_sha256: evidence.fingerprint },
   }, active.grant_sha256);
   if (currentAdmission(root, args.authority).revision !== active.revision) fail('review admission changed during evidence observation');
   const policy: AcceptancePolicy = { protocol: 1, ...admission.policy };
@@ -922,7 +925,8 @@ export function inspectAcceptanceCurrentBinding(args: {
   const report = JSON.parse(verificationReportFile(root, receipt.verification_file).content);
   const context = bindReviewAdmission(active.admission, {
     subject: { status: 'ok', scope: subject.scope, target_ref: subject.target_ref, target_rev: subject.target_rev, head_rev: subject.head_rev, review_subject_sha256: subject.review_subject_sha256 },
-    verification: { plan_sha256: report.target.plan_hash, source_sha256: report.target.snapshot_hash, tree_sha256: report.target.tree_hash, evidence_sha256: args.evidence.fingerprint },
+    verification: { plan_sha256: report.target.plan_hash, source_sha256: report.target.snapshot_hash, // The validated snapshot SHA256 binds the Git tree OID; the OID itself may be SHA1.
+      tree_sha256: report.target.snapshot_hash, evidence_sha256: args.evidence.fingerprint },
   }, active.grant_sha256);
   verifyReviewResult(root, args.authorityHome, receipt, context.context_sha256);
   const verdict = validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: root, admission: active.admission, grantSha256: active.grant_sha256,
@@ -1042,13 +1046,13 @@ function option(argv: string[], name: string, required = true): string | undefin
 export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}): Promise<number> {
   const command = argv[0];
   const root = repositoryRoot();
-  const authorityHome = opts.authorityHome ?? userInfo().homedir;
+  const authorityHome = opts.authorityHome ?? osAccountHome();
   if (command === 'path') { console.log(acceptanceReceiptPath(root, authorityHome)); return 0; }
   if (command === 'revoke-waiver') { revokeUserWaiverGrant({ root, authorityHome }); return 0; }
-  const authority = readReviewAdmissionSource(root, {
-    'repository-id': option(argv, '--repository-id')!, 'issue-id': option(argv, '--issue-id')!,
-    'campaign-id': option(argv, '--campaign-id')!, 'grant-sha256': option(argv, '--grant-sha256')!,
-    'policy-sha256': option(argv, '--policy-sha256')!, actor: option(argv, '--actor')!,
+  const authority = (opts.admissionSource ?? readReviewAdmissionSource)(root, {
+    'repository-id': option(argv, '--repository-id', false), 'issue-id': option(argv, '--issue-id', false),
+    'campaign-id': option(argv, '--campaign-id', false), 'grant-sha256': option(argv, '--grant-sha256', false),
+    'policy-sha256': option(argv, '--policy-sha256', false), actor: option(argv, '--actor', false),
   });
   if (command === 'evidence-requirement') {
     process.stdout.write(currentAdmission(root, authority).admission.benchmark); return 0;

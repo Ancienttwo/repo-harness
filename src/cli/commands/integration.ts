@@ -1,3 +1,4 @@
+import { readReviewAdmissionSource } from '../../effects/review/admission-source';
 import { Command } from 'commander';
 import { lstatSync, readFileSync, realpathSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';
@@ -27,7 +28,7 @@ type Format = 'json' | 'text';
 type BuildInputOptions = { input: string; format: Format };
 type EnvelopeOptions = { contract: string; base: string; head: string; format: Format };
 type MatrixOptions = { contract: string; envelope: string; input: string; format: Format };
-type AcceptOptions = { contract: string; envelope: string; matrix: string; workflowContract?: string; verification?: string; format: Format };
+type AcceptOptions = { contract: string; envelope: string; matrix: string; repositoryId: string; issueId: string; campaignId: string; grantSha256: string; policySha256: string; actor: string; verification?: string; format: Format };
 type ReadOptions = { kind: string; digest: string; format: Format };
 
 function requireExactKeys(record: Record<string, unknown>, expected: readonly string[], label: string): void {
@@ -163,7 +164,12 @@ export function buildIntegrationCommand(): Command {
     .requiredOption('--contract <sha256>', 'IntegrationContract digest')
     .requiredOption('--envelope <sha256>', 'IntegrationEnvelope digest')
     .requiredOption('--matrix <sha256>', 'AcceptanceMatrix digest')
-    .option('--workflow-contract <path>', 'Exact workflow contract passed to AcceptanceReceipt verification')
+    .requiredOption('--repository-id <id>', 'Provider repository ID')
+    .requiredOption('--issue-id <id>', 'Provider issue ID')
+    .requiredOption('--campaign-id <id>', 'Approved review campaign')
+    .requiredOption('--grant-sha256 <digest>', 'Active protected approval')
+    .requiredOption('--policy-sha256 <digest>', 'Approved policy identity')
+    .requiredOption('--actor <id>', 'Approved actor identity')
     .option('--verification <path>', 'Exact verification evidence passed to AcceptanceReceipt verification'))
     .action(async (options: AcceptOptions) => {
       try {
@@ -171,7 +177,8 @@ export function buildIntegrationCommand(): Command {
           contract_sha256: options.contract,
           envelope_sha256: options.envelope,
           matrix_sha256: options.matrix,
-          workflow_contract_ref: options.workflowContract,
+          review_authority: readReviewAdmissionSource(process.cwd(), { 'repository-id': options.repositoryId, 'issue-id': options.issueId,
+            'campaign-id': options.campaignId, 'grant-sha256': options.grantSha256, 'policy-sha256': options.policySha256, actor: options.actor }),
           verification_ref: options.verification,
         });
         process.stdout.write(`${formatValue('ProductAcceptanceProjectionV1', value.projection_sha256, canonicalProductAcceptanceProjectionBytes(value), options.format)}\n`);

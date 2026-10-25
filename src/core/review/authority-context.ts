@@ -1,3 +1,4 @@
+import { globMatch } from '../state/artifact-parsers';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
@@ -147,6 +148,7 @@ export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmiss
   const plan = validateVerificationPlan(input.verification_plan);
   if (!plan.checks.length) fail('empty verification plan');
   if (!Array.isArray(input.oracles)) fail('oracle declarations');
+  for (const oracle of input.oracles) record(oracle, ['id', 'kind', 'paths'], 'oracle declarations');
   const oracles = normalizeDeclaredReviewOracles(input.oracles);
   if (oracles === null) fail('oracle declarations');
   // The plan validator owns syntax. Reparse its canonical JSON to detach nested
@@ -184,4 +186,11 @@ export function bindReviewAdmission(admission: ReviewAdmission, round: Pick<Revi
     authorization: { actor_id: rebuilt.actor_id, grant_sha256: verifiedGrantSha256 },
     subject: round.subject, verification: round.verification,
   });
+}
+
+/** Preserve existing explicit scope semantics, without implicit contract-file access. */
+export function reviewAdmissionAllowsPath(allowedPaths: readonly string[], path: string): boolean {
+  if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.includes('\\') || path.includes('\0')
+    || path.split('/').some(part => part === '.' || part === '..' || part === '')) return false;
+  return allowedPaths.some(pattern => pattern.endsWith('/') ? path.startsWith(pattern) : globMatch(path, pattern));
 }

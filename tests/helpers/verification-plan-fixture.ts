@@ -1,4 +1,7 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { seedReviewAdmissionFixture } from './review-admission-fixture';
+import { parseVerificationPlanFromContractText } from '../../src/core/evidence/verification-plan';
+import type { ReviewAdmissionSource } from '../../src/effects/review/admission-source';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execFileSync } from "child_process";
@@ -6,7 +9,7 @@ import { createHash } from "crypto";
 import { canonicalize } from "../../src/core/evidence/canonical-json";
 import type { JsonValue } from "../../src/core/evidence/types";
 import { prepareChangeAssessment } from "../../src/effects/review/change-assessment";
-import { executeVerificationContract, type VerificationContractOutcome } from "../../src/effects/evidence/verification-execution";
+import { executeAdmittedVerification, type VerificationOutcome } from "../../src/effects/evidence/verification-execution";
 
 export const EMPTY_VERIFICATION_PLAN_SECTION = [
   "## Verification Plan",
@@ -22,8 +25,8 @@ export function withEmptyVerificationPlan(contractText: string): string {
 }
 
 /** Produce receipt-consumable evidence through the real execution authority. */
-export function emptyVerificationEvaluation(repoRoot: string, contractPath: string): VerificationContractOutcome {
-  return executeVerificationContract({ repoRoot, contractPath });
+export function emptyVerificationEvaluation(repoRoot: string, authority: ReviewAdmissionSource): VerificationOutcome {
+  return executeAdmittedVerification({ repoRoot, authority });
 }
 
 /** A genuine acceptance input shared by archive and receipt boundary tests. */
@@ -62,12 +65,16 @@ export function seedAcceptanceFixture(prefix = "repo-harness-native-acceptance")
     ] }), fence, "",
   ].join("\n"));
   git("add", "-A"); git("commit", "-q", "-m", "fixture candidate");
-  const report = executeVerificationContract({ repoRoot: root, contractPath: contract, reportFile: verification });
+  const admissionFixture = seedReviewAdmissionFixture(root, home, { reviewer: 'Claude', userWaiver: 'allowed', actor: 'kito',
+    allowedPaths: ['feature.txt', 'plans/', 'tasks/', '.ai/harness/policy.json'], oracles: [],
+    plan: parseVerificationPlanFromContractText(readFileSync(join(root, contract), 'utf8')) });
+  const authority = admissionFixture.source;
+  const report = executeAdmittedVerification({ repoRoot: root, authority, reportFile: verification });
   if (!report.passed) throw new Error("genuine feature check did not pass");
-  const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: contract });
+  const prepared = prepareChangeAssessment({ repoRoot: root, authority });
   const basis = { schema: "repo-harness-change-assessment-evidence.v1", status: "pass", assessment: prepared.assessment, selection_packet: prepared.packet };
   writeFileSync(join(root, ".ai/harness/checks/change-assessment.latest.json"), JSON.stringify({ ...basis,
     evidence_sha256: "sha256:" + createHash("sha256").update(canonicalize(basis as unknown as JsonValue)).digest("hex"),
   }, null, 2) + "\n");
-  return { root, home, contract, verification };
+  return { root, home, contract, verification, authority, admissionFixture };
 }

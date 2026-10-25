@@ -86,7 +86,7 @@ export function parseAllowedPaths(contractText: string | null): string[] {
   return paths;
 }
 
-function globMatch(text: string, pattern: string): boolean {
+export function globMatch(text: string, pattern: string): boolean {
   let regexSource = '';
   for (const ch of pattern) {
     if (ch === '*') regexSource += '.*';

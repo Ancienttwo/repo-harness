@@ -142,3 +142,20 @@ test('approved oracle declarations use assessment validation and bind the admiss
     expect(() => createReviewAdmission({ ...original, oracles: bad as never })).toThrow('oracle declarations');
   }
 });
+
+test('admission rejects unknown oracle policy fields instead of erasing them', () => {
+  const oracle = { id: 'behavior', kind: 'deterministic_test', paths: ['src/feature.ts'], unknown_policy_field: 'must-not-disappear' };
+  expect(() => createReviewAdmission({ ...admissionInput(), oracles: [oracle] as never })).toThrow('oracle declarations');
+});
+
+test('admitted path scope preserves glob and directory semantics without implicit contract access', async () => {
+  const { reviewAdmissionAllowsPath } = await import('../../src/core/review/authority-context');
+  expect(reviewAdmissionAllowsPath(['src/'], 'src/feature.ts')).toBe(true);
+  expect(reviewAdmissionAllowsPath(['src/**'], 'src/nested/feature.ts')).toBe(true);
+  // Existing scope matcher treats '*' as any suffix, including '/'. Preserve it.
+  expect(reviewAdmissionAllowsPath(['src/*'], 'src/nested/feature.ts')).toBe(true);
+  expect(reviewAdmissionAllowsPath(['src/'], 'tasks/contracts/demo.contract.md')).toBe(false);
+  for (const path of ['../src/a.ts', 'src/../secret', '/src/a.ts', 'src\\a.ts']) {
+    expect(reviewAdmissionAllowsPath(['*'], path)).toBe(false);
+  }
+});

@@ -99,7 +99,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       });
       const report = executeAdmittedVerification({ repoRoot: worktreePath, authority });
       expect(report.passed).toBe(true);
-      if (report.kind !== "verification_execution_report") throw new Error(report.reason);
+      expect(report.kind).toBe("verification_execution_report");
       expect(report.results).toHaveLength(1);
       expect(report.results[0]!.execution).toBe("executed");
       const runPath = join(worktreePath, report.results[0]!.run_file!);

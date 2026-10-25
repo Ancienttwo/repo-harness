@@ -1,3 +1,5 @@
+import { osAccountHome } from '../runtime/os-account-home';
+import type { ReviewAdmissionSource } from '../review/admission-source';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 import {
   closeSync,
@@ -14,7 +16,6 @@ import {
   unlinkSync,
   writeSync,
 } from 'fs';
-import { userInfo } from 'os';
 import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import { randomUUID } from 'crypto';
 
@@ -108,7 +109,7 @@ export interface CreateProductAcceptanceInput {
   readonly contract_sha256: string;
   readonly envelope_sha256: string;
   readonly matrix_sha256: string;
-  readonly workflow_contract_ref?: string;
+  readonly review_authority: ReviewAdmissionSource;
   readonly verification_ref?: string;
 }
 
@@ -122,7 +123,7 @@ export interface ProductAcceptanceDependencies {
   readonly verify_acceptance?: (args: {
     root: string;
     authorityHome: string;
-    contract?: string;
+    authority: ReviewAdmissionSource;
     verification?: string;
   }) => Promise<AcceptanceReceipt>;
   readonly read_acceptance_receipt_bytes?: (root: string, authorityHome: string) => Buffer;
@@ -528,7 +529,7 @@ export async function createProductAcceptanceProjection(
 ): Promise<ProductAcceptanceProjectionV1> {
   const repoRoot = realpathSync(environment.repo_root);
   const gitBin = environment.git_bin ?? 'git';
-  const authorityHome = realpathSync(environment.authority_home ?? userInfo().homedir);
+  const authorityHome = realpathSync(environment.authority_home ?? osAccountHome());
   const contract = readIntegrationContract(repoRoot, input.contract_sha256, gitBin);
   const envelope = readIntegrationEnvelope(repoRoot, input.envelope_sha256, gitBin);
   const matrix = readAcceptanceMatrix(repoRoot, input.matrix_sha256, gitBin);
@@ -546,7 +547,7 @@ export async function createProductAcceptanceProjection(
     receipt = await verifier({
       root: repoRoot,
       authorityHome,
-      contract: input.workflow_contract_ref,
+      authority: input.review_authority,
       verification: input.verification_ref,
     });
   } catch (error) {

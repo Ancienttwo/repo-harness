@@ -12,13 +12,15 @@ const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
 
 type ChangeAssessmentModule = typeof import('../src/core/review/change-assessment');
 type ChangeAssessmentEffects = typeof import('../src/effects/review/change-assessment');
+type AdmissionSourceModule = typeof import('../src/effects/review/admission-source');
+type ReviewAdmissionSource = import('../src/effects/review/admission-source').ReviewAdmissionSource;
 type DiffFingerprintModule = typeof import('../src/effects/review/diff-fingerprint');
 
 function usage(): string {
   return [
-    'usage: change-assessment.ts prepare --contract <repo-relative-contract> [--packet <repo-relative-json>] [--output <repo-relative-json>]',
-    '       change-assessment.ts escalate-disagreement --contract <repo-relative-contract> --packet <repo-relative-json> --paths <comma-separated-subject-paths> --summary <text>',
-    '       change-assessment.ts validate --contract <repo-relative-contract> --packet <repo-relative-json>',
+    'usage: change-assessment.ts prepare --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <digest> --policy-sha256 <digest> --actor <id> [--packet <repo-relative-json>] [--output <repo-relative-json>]',
+    '       change-assessment.ts escalate-disagreement --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <digest> --policy-sha256 <digest> --actor <id> --packet <repo-relative-json> --paths <comma-separated-subject-paths> --summary <text>',
+    '       change-assessment.ts validate --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <digest> --policy-sha256 <digest> --actor <id> --packet <repo-relative-json>',
   ].join('\n');
 }
 
@@ -102,10 +104,7 @@ function failureEnvelope(message: string): Record<string, unknown> {
   return { ...basis, evidence_sha256: sha256(basis) };
 }
 
-async function prepare(root: string, values: Record<string, string>): Promise<number> {
-  const contract = values.contract;
-  if (!contract) throw new Error('--contract is required');
-  safeRepoPath(root, contract);
+async function prepare(root: string, values: Record<string, string>, authority: ReviewAdmissionSource): Promise<number> {
   const output = safeRepoPath(root, values.output ?? '.ai/harness/checks/change-assessment.latest.json');
   let disagreementSource: string | null = null;
   try {
@@ -120,7 +119,7 @@ async function prepare(root: string, values: Record<string, string>): Promise<nu
         disagreementSource = packetPath;
       }
     }
-    const prepared = effects.prepareChangeAssessment({ repoRoot: root, contractPath: contract, targetRevision: values['target-revision'], reviewerDisagreementPacket });
+    const prepared = effects.prepareChangeAssessment({ repoRoot: root, authority, targetRevision: values['target-revision'], reviewerDisagreementPacket });
     const status = prepared.assessment.status === 'ready' && prepared.packet?.status === 'ready' ? 'pass' : 'fail';
     const evidence = envelope({ assessment: prepared.assessment, packet: prepared.packet, status });
     atomicWrite(output, evidence);
@@ -170,18 +169,16 @@ function validateEnvelope(value: Record<string, unknown>, core: ChangeAssessment
   return { assessment, selection_packet: packet };
 }
 
-async function escalate(root: string, values: Record<string, string>): Promise<number> {
+async function escalate(root: string, values: Record<string, string>, authority: ReviewAdmissionSource): Promise<number> {
   const packetPathValue = values.packet;
-  const contract = values.contract;
   const pathsValue = values.paths;
   const summary = values.summary;
-  if (!packetPathValue || !contract || !pathsValue || !summary) throw new Error('escalate-disagreement requires --contract, --packet, --paths, and --summary');
+  if (!packetPathValue || !pathsValue || !summary) throw new Error('escalate-disagreement requires --packet, --paths, and --summary');
   const packetPath = safeRepoPath(root, packetPathValue);
-  safeRepoPath(root, contract);
   const evidence = parseEnvelope(packetPath);
   const { core, effects, diff } = await modules();
   const prior = validateEnvelope(evidence, core);
-  const prepared = effects.prepareChangeAssessment({ repoRoot: root, contractPath: contract });
+  const prepared = effects.prepareChangeAssessment({ repoRoot: root, authority });
   if (prepared.assessment.status !== 'ready' || !prepared.packet) throw new Error('current base Change Assessment is unavailable');
   const packet = core.validateReviewSelectionPacketAgainstAssessment(prior.selection_packet, prepared.assessment);
   const reviewBase = diff.resolvePolicyReviewBase(root);
@@ -203,35 +200,35 @@ async function escalate(root: string, values: Record<string, string>): Promise<n
   return status === 'pass' ? 0 : 1;
 }
 
-async function validate(root: string, values: Record<string, string>): Promise<number> {
+async function validate(root: string, values: Record<string, string>, authority: ReviewAdmissionSource): Promise<number> {
   const packetPathValue = values.packet;
-  const contract = values.contract;
-  if (!packetPathValue || !contract) throw new Error('validate requires --contract and --packet');
+  if (!packetPathValue) throw new Error('validate requires --packet');
   const packetPath = safeRepoPath(root, packetPathValue);
-  safeRepoPath(root, contract);
   const evidence = parseEnvelope(packetPath);
   const { core, effects } = await modules();
   const prior = validateEnvelope(evidence, core);
-  const prepared = effects.prepareChangeAssessment({ repoRoot: root, contractPath: contract });
+  const prepared = effects.prepareChangeAssessment({ repoRoot: root, authority });
   if (prepared.assessment.status !== 'ready') throw new Error('current base Change Assessment is unavailable');
   const packet = core.validateReviewSelectionPacketAgainstAssessment(prior.selection_packet, prepared.assessment);
   process.stdout.write(`change-assessment: valid ${packet.packet_sha256}\n`);
   return 0;
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+export async function runChangeAssessmentCli(argv: readonly string[], options: { repoRoot?: string; admissionSource?: (root: string, values: Record<string, string>) => ReviewAdmissionSource } = {}): Promise<number> {
   const { command, values } = parseArgs(argv);
-  const root = repositoryRoot();
+  const root = options.repoRoot ?? repositoryRoot();
+  const source = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/review/admission-source.ts')).href) as AdmissionSourceModule;
+  const authority = (options.admissionSource ?? source.readReviewAdmissionSource)(root, values);
   switch (command) {
-    case 'prepare': return prepare(root, values);
-    case 'escalate-disagreement': return escalate(root, values);
-    case 'validate': return validate(root, values);
+    case 'prepare': return prepare(root, values, authority);
+    case 'escalate-disagreement': return escalate(root, values, authority);
+    case 'validate': return validate(root, values, authority);
     default: throw new Error(usage());
   }
 }
 
 if (import.meta.main) {
-  main(process.argv.slice(2)).then(
+  runChangeAssessmentCli(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (error) => {
       process.stderr.write(`change-assessment: ${(error as Error).message}\n${usage()}\n`);

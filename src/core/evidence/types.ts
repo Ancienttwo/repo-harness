@@ -18,16 +18,37 @@ export type TrustClass =
   | "external_attested";
 
 /** D3 subject identity, exact field list frozen by EPC-00. */
-export interface SubjectIdentity {
+interface SubjectIdentityBasis {
   readonly authority_commit: string;
   readonly base_commit: string;
   readonly target_commit: string;
   readonly scope_hash: string;
   readonly subject_hash: string;
-  readonly contract_hash: string;
   readonly command_hash: string;
   readonly env_provider_id: string;
 }
+
+/** Existing producers and retained historical records keep their original identity. */
+export interface ContractSubjectIdentity extends SubjectIdentityBasis {
+  readonly contract_hash: string;
+}
+
+/** Admitted review evidence never substitutes a grant digest for a contract hash. */
+export interface AdmittedReviewSubjectIdentity extends SubjectIdentityBasis {
+  readonly authority_kind: 'review-admission';
+  readonly campaign_sha256: string;
+  readonly admission_sha256: string;
+  readonly grant_sha256: string;
+  readonly plan_hash: string;
+}
+export interface EvalCatalogSubjectIdentity extends SubjectIdentityBasis {
+  readonly authority_kind: 'eval-catalog';
+  readonly catalog_sha256: string;
+  readonly eval_id: string;
+  readonly eval_sha256: string;
+  readonly plan_hash: string;
+}
+export type SubjectIdentity = ContractSubjectIdentity | AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity;
 
 /** First record of a fresh per-worktree store; hard precondition of the first append (D2). */
 export interface GenesisRecord {

@@ -1,3 +1,4 @@
+import { osAccountHome } from '../runtime/os-account-home';
 import { reviewCampaignKey } from '../../core/review/authority-context';
 import type { ReviewAdmissionSource } from './admission-source';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'fs';
@@ -373,7 +374,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const findings = output.findings.filter(finding => finding.status !== 'resolved').map(({ severity, message }) => ({ severity, message }));
     const reviewResult = { ...output, findings };
     const reviewer = session.actual_harness === 'codex' ? 'Codex' : 'Claude';
-    const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? userInfo().homedir, authority: options.authority,
+    const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? osAccountHome(), authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,
       summary: output.summary, findings, reviewResult });
@@ -407,7 +408,7 @@ function acceptedRounds(dir: string): number[] {
  * cancel. Round-1 admission and host start can hold the lock longer
  * than this bound; a timed-out cancel must be run again. */
 const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
-export async function closeReview(repoRoot: string, authority: ReviewAdmissionSource, cancel = false, authorityHome = userInfo().homedir,
+export async function closeReview(repoRoot: string, authority: ReviewAdmissionSource, cancel = false, authorityHome = osAccountHome(),
   effects: ReviewEffects = {}) {
   const { dir, primary, root } = reviewLocation(repoRoot, authority);
   // An active round holds caller.lock until it ends. Cancel first publishes the
