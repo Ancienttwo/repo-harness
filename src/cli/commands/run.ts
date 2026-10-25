@@ -53,7 +53,6 @@ export const RUN_HELP_GROUPS = [
     helpers: [
       'verification-plan',
       'migrate-verification-plan',
-      'run-bounded-verifier-command',
       'validate-harness-profile-benchmark',
       'summarize-failures',
       'check-task-sync',
@@ -91,6 +90,7 @@ export const RUN_HELP_GROUPS = [
 const RETIRED_HELPERS: ReadonlyMap<string, string> = new Map([
   ['check-brain-manifest', 'repo-harness brain check'],
   ['sync-brain-docs', 'repo-harness brain sync'],
+  ['run-bounded-verifier-command', 'repo-harness run verification-plan execute'],
 ]);
 
 function groupedHelperLines(helpers: ReturnType<typeof listHelpers>): string[] {
