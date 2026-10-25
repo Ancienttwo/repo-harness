@@ -95,7 +95,9 @@ describe('operator web control board', () => {
 
     const availableCard = stableSnapshot.repositories
       .flatMap((repository) => repository.cards)
-      .find((entry) => entry.task_id === fixtureTasks.available.task_id);
+      .find((entry) => entry.provider_repository_id === '1001'
+        && entry.provider_issue_id === String(2000 + fixtureTasks.available.task_index));
+    expect(availableCard).toBeDefined();
     expect(primaryCause(availableCard!)?.kind).toBe('unread');
     expect((markup.match(/1 unread(?!able)/gu) ?? []).length).toBe(1);
   });
