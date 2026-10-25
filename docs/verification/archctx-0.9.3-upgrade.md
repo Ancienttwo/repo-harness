@@ -132,3 +132,36 @@ These existing cleanup limits must be resolved or covered by an approved
 isolated execution plan before using it as current integration evidence.
 
 Raw capability output SHA-256: `849eb1a98e6eb9bd7e47e9e48b7ce238249c33b08533f4092e4eda4afc66a0d2`.
+
+## Approved AXR5 cleanup repair (after the static capability readback)
+
+The user approved repairing the verification script and preparing a bounded CI
+route. The CI route is owned by a separate worker; this slice does not edit it.
+
+AXR5 now assigns a private HOME and ARCHCONTEXT_STATE_DIR, removes an inherited
+ARCHCONTEXT_LOCAL_STORE_PATH, and registers the daemon target before snapshot.
+Snapshot, upgrade, projection and cleanup use the same runtime environment.
+Cleanup checks the stop response and polls bounded status reads. It requires
+`running: false` without a live lock owner or version-unsupported state. Failed
+or malformed cleanup keeps the workspace. When both the operation and cleanup
+fail, an AggregateError retains both failures. Receipt publication happens only
+after successful cleanup. The historical readback is unchanged.
+
+Validation on Node 24.18.0 / Bun 1.4.3:
+
+- `bun run check:type`: pass.
+- `bun run test:files tests/axr5-clean-room-runtime.test.ts --timeout 60000 --max-concurrency 1`: 10 pass, 40 assertions.
+- An earlier development run had 9 pass / 38 assertions, before adding the malformed-status case and aligning the fake stop payload with upstream `stopping: true`. No failed run was replaced by a pass.
+
+These tests inject commands and do not listen, run archctxd, or scan processes.
+They cover contaminated environment variables, snapshot failure after cleanup
+registration, stable cleanup environment, delayed shutdown/live lock, nonzero
+exit, command timeout, malformed/failed envelopes, dual-error retention, and
+unconfirmed shutdown. This is not an end-to-end execution of the build/install
+script. No pre-fix executable RED receipt is claimed for the new extracted
+helper. The old script's unsafe ordering and ignored stop were read directly.
+
+Real clean-room integration is still blocked by the execution restriction;
+there was no attempt to retry the earlier listen EPERM or choose another port.
+The unchanged provider test for the old 0.9.1 receipt remains unresolved.
+Required CI and independent review of this implementation delta are pending.
