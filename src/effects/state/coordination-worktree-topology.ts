@@ -11,7 +11,7 @@ import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-di
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { observeProviderBranchMergeCommit } from '../publication/publication-receipt';
+import { observeProviderBranchMergeCommit } from './coordination-provider-merge';
 import { resolveTrustedGhExecutable } from '../runtime/protected-helper-platform';
 import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, WorktreeTrashBudgetReached, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 
