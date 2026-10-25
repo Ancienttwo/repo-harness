@@ -1,4 +1,5 @@
-import { readReviewAdmissionSourceForIssue } from '../../src/effects/admission/admission-source';
+import { observeReviewIssueGoal } from '../../src/effects/admission/issue-goal';
+import { readReviewAdmissionSource, readReviewAdmissionSourceForIssue } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
@@ -203,6 +204,40 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string, fir
 }
 
 describe('fleet board collector', () => {
+  test.each(['labels', 'issue_numbers'] as const)('selected issue source reads %s policy without a protected-store fixture', selectionKind => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-selected-source-')));
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    mkdirSync(join(root, '.ai/harness'), { recursive: true });
+    const path = join(root, '.ai/harness/policy.json');
+    const bytes = JSON.stringify({ external_sources: { version: 1, mode: 'manual', github: {
+      enabled: true, repository: 'acme/widgets',
+      selection: selectionKind === 'labels' ? { kind: 'labels', labels_all: ['ready'], assignees_any: [] }
+        : { kind: 'issue_numbers', issue_numbers: [902, 903] },
+      limits: { max_pages: 1, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 },
+    } } });
+    writeFileSync(path, bytes);
+    const values = { 'repository-id': '1001', 'issue-id': '2001', 'campaign-id': 'review',
+      'grant-sha256': `sha256:${'a'.repeat(64)}`, 'policy-sha256': `sha256:${'b'.repeat(64)}`, actor: 'owner' };
+    const issue = { id: '2001', number: 903, html_url: 'https://github.com/acme/widgets/issues/903', state: 'open',
+      title: 'Approved goal', body: 'Selected issue only', updated_at: '2026-10-25T00:00:00Z' };
+    const calls: string[][] = [];
+    const runner = (args: readonly string[]) => {
+      calls.push([...args]);
+      return { stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903') ? issue
+        : { id: '1001', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) };
+    };
+    const unscoped = readReviewAdmissionSource(root, values);
+    expect(() => observeReviewIssueGoal({ policy: unscoped.issuePolicy, repository_id: '1001', issue_id: '2001', runner })).toThrow('review_goal_requires_one_issue');
+    expect(calls).toHaveLength(0);
+    const selected = readReviewAdmissionSourceForIssue(root, values, 903);
+    expect(observeReviewIssueGoal({ policy: selected.issuePolicy, repository_id: '1001', issue_id: '2001', runner }).content).toContain('Selected issue only');
+    expect(calls).toEqual([['api', '--method', 'GET', 'repos/acme/widgets', '--hostname', 'github.com'],
+      ['api', '--method', 'GET', 'repos/acme/widgets/issues/903', '--hostname', 'github.com']]);
+    issue.id = '2002';
+    expect(() => observeReviewIssueGoal({ policy: selected.issuePolicy, repository_id: '1001', issue_id: '2001', runner })).toThrow('review_goal_identity_changed');
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  });
+
   test.each([['inline', 'labels'], ['contract', 'issue_numbers']] as const)('selects a fresh explicit %s campaign through the real %s policy reader', async (executionMode, selectionKind) => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-mode-')));
     const authorityHome = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-home-')));
