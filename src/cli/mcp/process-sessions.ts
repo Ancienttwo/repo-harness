@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync, statSync } from 'fs';
 import { isAbsolute, relative } from 'path';
+import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../../effects/process-group-registry';
 import { signalProcessGroup, terminateProcessGroup } from '../../effects/process-group-termination';
 
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -365,6 +366,8 @@ export class McpProcessSessionManager {
     this.now = options.now ?? Date.now;
     this.onComplete = options.onComplete;
     this.onCompletionError = options.onCompletionError;
+    // Shell groups of a coding runtime that died with SIGKILL have no other owner.
+    reapOrphanedProcessGroups();
   }
 
   get runningCount(): number {
@@ -510,13 +513,13 @@ export class McpProcessSessionManager {
   private startPipe(session: ProcessSession): void {
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(this.shellPath, ['-c', session.command], {
+      child = spawnRegisteredProcessGroup('mcp-coding-shell', () => spawn(this.shellPath, ['-c', session.command], {
         cwd: session.cwd,
         env: { ...this.environment, TERM: 'dumb' },
         detached: process.platform !== 'win32',
         windowsHide: true,
         stdio: 'pipe',
-      });
+      }));
     } catch (_error) {
       this.appendOutput(session, Buffer.from('process failed to start\n'));
       this.finish(session, undefined, undefined, 'spawn_error');
