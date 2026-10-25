@@ -286,6 +286,9 @@ import { parseEnv } from 'node:util';
 import { spawn, spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { askMasked } from '../src/cli/commands/herdr';
+import { labelDecision } from '../src/effects/terminal/herdr-decision';
+import { acquireExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
+import { currentProcessStartTime } from '../src/effects/locking/process-start-time';
 
 function notifyFixture() {
   const root = mkdtempSync(join(tmpdir(), 'rh-herdr-notify-'));
@@ -694,6 +697,36 @@ describe('shipped Herdr notify event handler', () => {
       expect(run([blind.event_id, 'invalid']).status).toBe(1);
       expect(JSON.parse(run(['--next']).stdout).event_id).not.toBe(blind.event_id);
       expect(readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8')).toBe(original);
+    } finally { f.cleanup(); }
+  });
+
+  test('the label lock refuses a live owner and reclaims a dead or reused-PID owner', async () => {
+    const f = shadowFixture();
+    try {
+      await notify(f.env, f.send);
+      const eventId = f.records()[0].event_id;
+      const root = realpathSync(f.state);
+      const lockPath = join(root, 'decision-labels.lock');
+      const held = acquireExclusiveDirectoryLock(root, 'decision-labels.lock');
+      try {
+        await expect(labelDecision({ next: true, stateDir: f.state })).rejects.toThrow('timed out waiting for exclusive lock');
+      } finally { held.release(); }
+
+      // A live PID whose start time differs from the record was reused by another process.
+      mkdirSync(lockPath, { mode: 0o700 });
+      const token = `${process.pid}-${Date.now()}-00000000-0000-4000-8000-000000000915`;
+      writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({
+        pid: process.pid, start_time: `${currentProcessStartTime()}-earlier-process`, created_at: Date.now(), token,
+      })}\n`, { mode: 0o600 });
+      expect((await labelDecision({ next: true, stateDir: f.state }) as { event_id: string }).event_id).toBe(eventId);
+      expect(existsSync(lockPath)).toBe(false);
+
+      // An older version locked with a bare directory and no owner record.
+      mkdirSync(lockPath, { mode: 0o700 });
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lockPath, old, old);
+      expect((await labelDecision({ next: true, stateDir: f.state }) as { event_id: string }).event_id).toBe(eventId);
+      expect(existsSync(lockPath)).toBe(false);
     } finally { f.cleanup(); }
   });
 
