@@ -115,10 +115,11 @@ bun test
 
 ### Success looks like this
 
-Init writes only repo-local files and the repo registry entry. It does not
-write host runtime state under `HOME`. When the required Herdr skill or the
-architecture projection preference is missing, init reports a skipped step that
-names `repo-harness update`. repo-harness supplies tools and evidence; the Bot
+Init writes repo-local files and two files under `HOME`: the repo registry
+entry and, when verification runs, the global Codex handoff packet under
+`~/.codex/handoffs/`. It writes no install-managed host files. When the
+required Herdr skill or the architecture projection preference is missing, init
+reports a skipped step that names `repo-harness update`. repo-harness supplies tools and evidence; the Bot
 decides what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior

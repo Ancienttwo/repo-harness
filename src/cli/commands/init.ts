@@ -7,8 +7,9 @@ import { inspectArchitectureProjectionReadiness } from '../../effects/architectu
  * This backs the public `repo-harness init` command and
  * `repo-harness-setup`'s init mode: default the target repo to cwd, apply the
  * repo-local workflow migration, register the repo, then verify the installed
- * harness. Host runtime state belongs to the locked `install`/`update`
- * transaction; init only reports what is missing there.
+ * harness. Under HOME, init writes only the registry entry and, during verify,
+ * the global Codex handoff packet. Install-managed host files belong to the
+ * locked `install`/`update` transaction; init only reports what is missing.
  */
 
 import { homedir, userInfo } from "os";

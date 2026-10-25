@@ -4,7 +4,7 @@ This repo uses a shared long-running harness. The durable workflow lives in repo
 
 ## Adoption Model
 
-Use this file as the first onboarding map after `repo-harness init` installs
+Use this file as the first onboarding map after `repo-harness init` adopts
 or refreshes a repo. The harness gives agents three durable surfaces:
 
 - **Shared standards**: `docs/spec.md`, `docs/reference-configs/`, root
@@ -259,7 +259,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
   `repo-harness run <helper>`. Init preserves legacy repo copies of the retired
   shell library. Doctor reports them with migration steps.
 - Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; durable knowledge stays in repo-authored research and lessons.
-- `repo-harness install` bootstraps the package-owned Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. Mutable Waza and Mermaid providers are installed only after explicit selection. `repo-harness init` remains a compatibility alias for existing automation.
+- `repo-harness install` bootstraps the package-owned Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. Mutable Waza and Mermaid providers are installed only after explicit selection. `repo-harness init` adopts the repo-local workflow only and installs none of these host runtime pieces.
 - The recommended `reverse-skill-router` remains explicit-only through `--with-reverse-skill` because its upstream authorization assumption cannot replace independently verified scope; the pinned selected tree is integrity-checked before host projection.
 - Read-only external-tooling audit stays advisory: `repo-harness run check-agent-tooling --host both --check-updates`. The explicit mutating boundary is `repo-harness update`, which reconciles mandatory ArchContext packages and runtime and updates the global CodeGraph CLI/MCP; mutable Waza/Mermaid providers require `--with-external-skills`. It does not initialize or sync a repository CodeGraph index.
 - Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; sprint verification evidence -> `tasks/reviews/*.review.md`; durable capability progress -> `tasks/workstreams/`; release history -> `docs/CHANGELOG.md`.

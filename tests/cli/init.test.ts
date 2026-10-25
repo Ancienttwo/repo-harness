@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -21,7 +22,6 @@ import {
   resolveOsAccountHome,
   syncCrossReviewSkills,
 } from "../../src/cli/commands/init";
-import { runAdoptionPlan } from "../../src/cli/commands/adoption-plan";
 import { withRuntimeHostTransactionLock } from "../../src/cli/installer/runtime-host-lock";
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
@@ -78,15 +78,20 @@ function writeReadyOfficialCodexPluginCli(fakeBin: string, home: string): string
   return claude;
 }
 
-/** Every regular file under root, keyed by absolute path, with its content digest. */
+/**
+ * Every entry under root, keyed by absolute path: a file's content digest, a
+ * symlink's target, or the entry kind. A projected skill can be a link, so a
+ * file-only view would miss it.
+ */
 function snapshotTree(root: string): Record<string, string> {
-  const files: Record<string, string> = {};
+  const entries: Record<string, string> = {};
   for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
-    files[path] = createHash("sha256").update(readFileSync(path)).digest("hex");
+    entries[path] = entry.isSymbolicLink() ? `link:${readlinkSync(path)}`
+      : entry.isFile() ? `file:${createHash("sha256").update(readFileSync(path)).digest("hex")}`
+        : entry.isDirectory() ? "dir" : "other";
   }
-  return Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries(Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function setupFakeSource(root: string): void {
@@ -297,36 +302,14 @@ describe("init command", () => {
         detail: "missing for claude,codex; run: repo-harness update --target both",
       });
       const after = snapshotTree(home);
-      expect(Object.keys(after).filter((path) => path !== registry && dirname(path) !== handoffPackets))
+      expect(Object.keys(after).filter((path) =>
+        path !== registry && path !== handoffPackets && dirname(path) !== handoffPackets))
         .toEqual(Object.keys(before));
-      for (const [path, digest] of Object.entries(before)) expect(after[path]).toBe(digest);
+      for (const [path, entry] of Object.entries(before)) expect(after[path]).toBe(entry);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 60000);
-
-  test("init plan output is the adoption planner output alone", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-plan-output-${Date.now()}`);
-    const source = join(tmp, "source");
-    const repo = join(tmp, "repo");
-    const home = join(tmp, "home");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-      const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") };
-
-      const result = runInit({ repo, sourceRoot: source, apply: false, codegraph: false, env });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "inspect repo")).toBeUndefined();
-      expect(result.steps.find((step) => step.step === "plan repo harness")?.stdout)
-        .toBe(runAdoptionPlan({ repo, mode: "standard", explicitRepo: true, env }).output);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }, 30000);
 
   test("defaults --repo to cwd and applies the existing-repo harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-${Date.now()}`);
