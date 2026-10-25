@@ -87,6 +87,21 @@ describe("process runner", () => {
     }
   });
 
+  test("an expired unsupervised deadline refuses execution before executable lookup", () => {
+    const root = mkdtempSync(join(tmpdir(), "process-runner-expired-unsupervised-"));
+    try {
+      const result = runProcess(join(root, "must-not-be-looked-up"), [], {
+        deadlineMs: Date.now() - 1,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      expect(result.stdout).toBe("");
+      expect(result.error).not.toContain("ENOENT");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("a supervised deadline stays active after the group leader exits", async () => {
     if (process.platform === "win32") return;
     const root = mkdtempSync(join(tmpdir(), "process-runner-leader-exit-"));

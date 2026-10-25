@@ -214,12 +214,21 @@ export function runProcess(command: string, args: readonly string[], opts: RunPr
   }
   // A deadline's remaining budget sizes the unsupervised timeout, the
   // supervisor hard-timeout backstop and the timeout message.
-  const timeoutMs = opts.deadlineMs === undefined
+  const remainingMs = opts.deadlineMs === undefined ? undefined : opts.deadlineMs - Date.now();
+  const timeoutMs = remainingMs === undefined
     ? opts.timeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
-    : Math.max(1, opts.deadlineMs - Date.now());
+    : Math.max(1, remainingMs);
   const maxOutputBytes = opts.maxOutputBytes ?? DEFAULT_PROCESS_MAX_OUTPUT_BYTES;
   const redactions = opts.redactions ?? DEFAULT_REDACTIONS;
   const redactedCommand = [command, ...args].map((part) => redactProcessOutput(part, redactions));
+  if (remainingMs !== undefined && remainingMs <= 0) {
+    const message = `process deadline expired before start: ${redactedCommand.join(" ")}`;
+    return {
+      ok: false, status: 1, signal: null, timedOut: true,
+      command: redactedCommand, stdout: "",
+      stderr: capProcessOutput(message, maxOutputBytes), error: message,
+    };
+  }
   const supervised = opts.processGroup
     ? runSupervisedProcess(command, args, opts, timeoutMs, maxOutputBytes)
     : null;
