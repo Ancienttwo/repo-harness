@@ -158,7 +158,7 @@ describe('Admitted Task Inbox common-directory effects', () => {
     expect(delivered.deliveries.map((entry) => entry.event.message_id)).toEqual([task.message_id]);
     expect(JSON.stringify(delivered)).not.toContain(claim.body);
     expect(readTaskMessageDelivery({
-      repo_root: value.root, task_id: value.task_id, message_id: claim.message_id, recipient: c1,
+      repo_root: value.root, task_id: value.task_id, source: value.source, message_id: claim.message_id, recipient: c1,
     }).receipt?.delivery_state).toBe('superseded');
     // The task message now holds a delivered receipt for C1 and for C2.
     expect(unreadFor(CLAIM_TWO)).toEqual(unread(1));
