@@ -22,7 +22,6 @@ flowchart LR
   classDef sup fill:#155e75,stroke:#a5f3fc,color:#ffffff
   classDef long fill:#14532d,stroke:#bbf7d0,color:#ffffff
   classDef pane fill:#78350f,stroke:#fde68a,color:#ffffff
-  classDef dead fill:#7f1d1d,stroke:#fecaca,color:#ffffff,stroke-dasharray:4 3
 
   subgraph EXT["外部进程，repo-harness 不拥有"]
     Host["Claude Code / Codex"]:::ext
@@ -52,7 +51,6 @@ flowchart LR
   subgraph PANE["Herdr：外部 server 与 pane 内的 node 24 到 25 进程"]
     Herdr["Herdr server<br/>herdr.sock"]:::ext
     Rev["oar-review-host.js"]:::pane
-    Cod["oar-coding-host.js<br/>没有生产调用方（R-T1）"]:::dead
     Ven["claude / codex<br/>sandbox-exec"]:::pane
   end
 
@@ -71,7 +69,6 @@ flowchart LR
   Op -->|"spawn，stdin/stdout JSON"| Col
   CLI -->|"herdr pane split/run，10 s"| Herdr
   Herdr -->|"pane run node bundle spec"| Rev
-  Herdr -.->|"只在测试中"| Cod
   Rev -->|"OAR runtime"| Ven
   CLI -.->|"会话目录文件握手"| Rev
   Hook -->|"git 3 到 5 s"| Tools
@@ -90,8 +87,7 @@ flowchart LR
 | operator 服务 | `repo-harness operator serve` → `src/effects/operator/server.ts:1698` | 用户 | 长驻 | 只读 HTTP API | SIGINT/SIGTERM 调 `server.close()` | — |
 | operator collector | `fleet-collector-process.ts`、`task-read-process.ts`、`setup-check-child.ts` | operator `spawn`，detached | fleet 与任务读取每请求一个；setup 每 10 min | stdin/stdout JSON | fleet 与任务读取 1 到 30 s，SIGTERM 进程组，500 ms 后 SIGKILL；setup 90 s，只发 SIGKILL | — |
 | OAR review host | `dist/oar-review-host.js`，node | `herdr pane run`（`task-session.ts:543`） | 每评审会话，最多 3 轮 | 会话目录文件；stdout `OAR_HOST_READY` | `close.request` 或信号；`disposed.json` 证明已释放 | 会话目录 `caller.lock` |
-| OAR coding host | `dist/oar-coding-host.js`，node | 只有测试调用 `startCodingTaskAgent` | — | 同上 | — | — |
-| 供应商 CLI | claude、codex | OAR host 经 `coding-launcher` 与 `sandbox-exec` | 每会话 | OAR 进程内 API | `session.abort()` 与 `dispose()` | — |
+| 供应商 CLI | claude、codex | OAR review host 经 `reviewer-launcher` 与 `sandbox-exec` | 每会话 | OAR 进程内 API | `session.abort()` 与 `dispose()` | — |
 | 一次性命令 | git、gh、archctx（node）、codegraph、herdr、oracle | 各调用点 `spawnSync`、`execFileSync` 或 `runProcess` | 每调用 | stdout | 3 s 到 30 min；部分调用没有超时（R-T11） | — |
 | Chrome | `open -na "Google Chrome" --remote-debugging-port=0` | ChatGPT native provider | 浏览器生命周期 | CDP WebSocket，端口来自 `DevToolsActivePort` | 发 `Browser.close`；`keepBrowser` 时保留 | — |
 

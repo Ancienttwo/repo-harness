@@ -111,10 +111,8 @@ jobs:
           test -x /usr/bin/sandbox-exec
           bun install --frozen-lockfile
           test ! -e dist/oar-review-host.js
-          test ! -e dist/oar-coding-host.js
-          bun run build:oar-hosts
+          bun run build:oar-review-host
           test -s dist/oar-review-host.js
-          test -s dist/oar-coding-host.js
           case "$MODE" in
             affected) set -- -t 'darwin: ' ;;
             daily) set -- ;;

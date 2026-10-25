@@ -9,7 +9,7 @@ or authorize a PM runtime, task queue or dispatch API.
 2. Give each coding agent a bounded issue brief. Name the owner, paths,
    dependencies, verification, result location and timebox.
 3. Use the approved host tools for the assigned agent. Herdr owns its panes
-   and task sessions. OAR owns the retained review and coding host boundary.
+   and task sessions. OAR owns the retained review host boundary.
 4. Check the same issue and request before a retry. Collect the actual result.
 5. Report changes, verification, blockers and the authorized outcome.
 
