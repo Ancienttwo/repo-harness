@@ -63,7 +63,8 @@ import {
 } from '../state/coordination-canonical-source';
 import { resolveRepoIdentity } from '../git/repository-identity';
 import { readClaimActorReceipt } from '../engineers/claim-actor-store';
-import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
+import { readLease, type LeaseRead } from '../state/coordination-lease-store';
+import { withTaskLock } from '../locking/task-lock';
 
 export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 

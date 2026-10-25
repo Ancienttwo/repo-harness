@@ -9,7 +9,8 @@ import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateT
 import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
-import { readLease, taskLockRelativePath } from '../state/coordination-lease-store';
+import { readLease } from '../state/coordination-lease-store';
+import { taskLockRelativePath } from '../locking/task-lock';
 import { assertInboxDirectory, inboxLayoutPaths, inboxPathStat, syncInboxDirectory } from './task-inbox-layout';
 
 type Entry = { path: string; kind: 'directory' } | { path: string; kind: 'file'; size: number; sha256: string };

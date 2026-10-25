@@ -27,7 +27,8 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { buildLeaseOwnerRecord, deriveTaskRevision, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
-import { COORDINATION_ROOT_RELATIVE_PATH, coordinationRoot, leaseDirectory, readLease, taskLockRelativePath, withTaskLock } from '../src/effects/state/coordination-lease-store';
+import { COORDINATION_ROOT_RELATIVE_PATH, coordinationRoot, leaseDirectory, readLease } from '../src/effects/state/coordination-lease-store';
+import { taskLockRelativePath, withTaskLock } from '../src/effects/locking/task-lock';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 
@@ -226,6 +227,7 @@ describe('per-task lock', () => {
   test('the lock directory lives on the shared plane and is released after use', () => {
     const repo = createRepo();
     const taskId = taskIdFor('lock path');
+    expect(taskLockRelativePath(taskId)).toBe(`repo-harness/coordination/v1/locks/tasks/${taskId}.lock`);
     const lockPath = join(resolveGitCommonDirectory(repo), taskLockRelativePath(taskId));
     const observed = withTaskLock(repo, taskId, () => {
       expect(existsSync(lockPath)).toBe(true);
@@ -241,13 +243,13 @@ describe('per-task lock', () => {
     const taskId = taskIdFor('terminated lock owner');
     const lockPath = join(resolveGitCommonDirectory(repo), taskLockRelativePath(taskId));
     const readyPath = join(repo, '.task-lock-owner-ready');
-    const leaseStoreModule = new URL('../src/effects/state/coordination-lease-store.ts', import.meta.url).href;
+    const taskLockModule = new URL('../src/effects/locking/task-lock.ts', import.meta.url).href;
     const child = Bun.spawn([
       process.execPath,
       '-e',
       [
         "const { writeFileSync, renameSync } = await import('node:fs');",
-        'const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);',
+        'const { withTaskLock } = await import(process.env.TASK_LOCK_MODULE);',
         'withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {',
         "  writeFileSync(process.env.READY_PATH + '.tmp', 'ready\\n'); renameSync(process.env.READY_PATH + '.tmp', process.env.READY_PATH);",
         '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
@@ -257,7 +259,7 @@ describe('per-task lock', () => {
       cwd: repo,
       env: {
         ...process.env,
-        LEASE_STORE_MODULE: leaseStoreModule,
+        TASK_LOCK_MODULE: taskLockModule,
         REPO_ROOT: repo,
         TASK_ID: taskId,
         READY_PATH: readyPath,
@@ -315,7 +317,7 @@ describe('per-task lock', () => {
             '  console.log(error.name);',
             '}',
           ].join('\n'),
-          join(import.meta.dir, '../src/effects/state/coordination-lease-store.ts'),
+          join(import.meta.dir, '../src/effects/locking/task-lock.ts'),
           repo,
           taskId,
         ],

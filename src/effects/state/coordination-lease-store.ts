@@ -1,9 +1,8 @@
-/** Read historical lease owners and lock manual inbox operations in the Git common directory. */
+/** Read historical lease owners in the Git common directory. */
 import { lstatSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { TASK_DIGEST_PATTERN, parseLeaseOwnerRecord, type LeaseOwnerRecord, type LeaseState } from '../../core/state/coordination-identity';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
-import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 /** Relative to the git common directory. */
 export const COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1';
@@ -54,20 +53,9 @@ export function coordinationRoot(cwd: string, gitTimeoutMs?: number, gitBin = co
   return join(resolveGitCommonDirectory(cwd, gitBin, gitTimeoutMs), COORDINATION_ROOT_RELATIVE_PATH);
 }
 
-export function taskLockRelativePath(taskId: string): string {
-  assertTaskId(taskId);
-  return `${COORDINATION_ROOT_RELATIVE_PATH}/locks/tasks/${taskId}.lock`;
-}
-
 export function leaseDirectory(cwd: string, taskId: string): string {
   assertTaskId(taskId);
   return join(coordinationRoot(cwd), 'leases', taskId);
-}
-
-/** Serialize manual inbox and feedback writes for one historical task. */
-export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
-  const commonDir = resolveGitCommonDirectory(cwd);
-  return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
 }
 
 function classifyUnknown(

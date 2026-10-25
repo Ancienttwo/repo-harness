@@ -8,7 +8,8 @@ import {
 } from '../../core/state/coordination-identity';
 import { readCanonicalSprint } from '../state/coordination-canonical-source';
 import { resolveRepoIdentity } from '../git/repository-identity';
-import { readLease, withTaskLock } from '../state/coordination-lease-store';
+import { readLease } from '../state/coordination-lease-store';
+import { withTaskLock } from '../locking/task-lock';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt, readFeedbackDeliveryReceipts, readFeedbackEvent, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from './feedback-store';
 import {
   PublicationReceiptError,
