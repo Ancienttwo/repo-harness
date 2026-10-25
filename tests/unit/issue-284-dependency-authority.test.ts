@@ -17,7 +17,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
-import { tmpdir, userInfo } from 'os';
+import { tmpdir } from 'os';
 import { dirname, join, sep } from 'path';
 
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
@@ -667,24 +667,32 @@ afterEach(() => {
 });
 
 describe('issue #284 closed dependency authority', () => {
-  test('a harness home override moves the registry but never the gate authority home', () => {
+  test('a launch-time HOME and harness home override move the registry but never the gate authority home', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-912-')));
     roots.push(root);
-    const harnessHome = join(root, 'account', '.repo-harness');
-    const saved = { HOME: process.env.HOME, REPO_HARNESS_HOME: process.env.REPO_HARNESS_HOME };
-    process.env.HOME = join(root, 'account');
-    process.env.REPO_HARNESS_HOME = harnessHome;
-    try {
-      expect(repoHarnessRegisteredReposPath()).toBe(join(harnessHome, 'registered-repos.json'));
-      const gates = acceptanceReceiptPath(root, defaultDependencyAuthorityReaders().resolveAuthorityHome());
-      expect(gates.startsWith(join(realpathSync(userInfo().homedir), '.repo-harness', 'gates') + sep)).toBe(true);
-      expect(gates.startsWith(root + sep)).toBe(false);
-      expect(gates).not.toContain(join('.repo-harness', '.repo-harness'));
-    } finally {
-      for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[key]; else process.env[key] = value;
-      }
-    }
+    const account = join(root, 'account');
+    const harnessHome = join(account, '.repo-harness');
+    mkdirSync(harnessHome, { recursive: true });
+    // Bun derives os.userInfo().homedir from the launch HOME, so only a child
+    // process launched with the fixture HOME exercises the real resolver.
+    const code = [
+      `const { repoHarnessRegisteredReposPath } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/repo-registry.ts'))});`,
+      `const { defaultDependencyAuthorityReaders } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/engineers/dependency-authority.ts'))});`,
+      `const { acceptanceReceiptPath } = await import(${JSON.stringify(join(import.meta.dir, '../../scripts/acceptance-receipt.ts'))});`,
+      'const authorityHome = defaultDependencyAuthorityReaders().resolveAuthorityHome();',
+      `console.log(JSON.stringify({ registry: repoHarnessRegisteredReposPath(), authorityHome, gates: acceptanceReceiptPath(${JSON.stringify(root)}, authorityHome) }));`,
+    ].join('\n');
+    const child = Bun.spawnSync([process.execPath, '-e', code], {
+      env: { ...process.env, HOME: account, USERPROFILE: account, REPO_HARNESS_HOME: harnessHome },
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    const observed = JSON.parse(child.stdout.toString()) as { registry: string; authorityHome: string; gates: string };
+    expect(observed.registry).toBe(join(harnessHome, 'registered-repos.json'));
+    expect(observed.authorityHome.startsWith(root + sep)).toBe(false);
+    expect(observed.gates.startsWith(join(observed.authorityHome, '.repo-harness', 'gates') + sep)).toBe(true);
+    expect(observed.gates.startsWith(root + sep)).toBe(false);
+    expect(observed.gates).not.toContain(join('.repo-harness', '.repo-harness'));
   });
 
   test('every declared dependency state has an adapter and no state falls through', () => {

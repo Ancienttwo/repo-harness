@@ -512,10 +512,17 @@ describe('optional strategy and progressive memory', () => {
     expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
     expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
     expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
-    // An env HOME override must not move the gate authority away from the account home.
-    const savedHome = process.env.HOME; process.env.HOME = home;
-    try { expect(() => new StrategyReader(root).observationIO().readFile(allowed)).toThrow(ObservationViolation); }
-    finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
+    // Bun derives os.userInfo().homedir from the launch HOME, so the default
+    // allowlist is checked in a child launched with the fixture HOME.
+    const probe = [
+      `const { StrategyReader } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/strategy/context.ts'))});`,
+      `const { ObservationViolation } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/state/readonly-observation.ts'))});`,
+      `try { new StrategyReader(${JSON.stringify(root)}).observationIO().readFile(${JSON.stringify(allowed)}); console.log('read'); }`,
+      `catch (error) { console.log(error instanceof ObservationViolation ? 'rejected' : 'error:' + error); }`,
+    ].join('\n');
+    const child = Bun.spawnSync([process.execPath, '-e', probe], { env: { ...process.env, HOME: home, USERPROFILE: home }, stdout: 'pipe', stderr: 'pipe' });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(child.stdout.toString().trim()).toBe('rejected');
   });
   test('explicit pilot document selection leaves the default marker disabled', () => {
     const { root, doc } = fixture(); rmSync(join(root, 'docs/strategy/context.json'));
