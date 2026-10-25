@@ -10,6 +10,7 @@ responsibilities:
   - Serialize expensive runs across linked worktrees with one Git common-dir lock that a dead owner releases only after its process group drains.
   - Provide the exclusive directory lock with ancestor identity checks, a bounded wait and stale-owner reclaim.
   - Read the Git common dir, the worktree topology and a read-only virtual tree.
+  - Scope read-only file and process observation, and write files durably with fsync on the file and its parent directory.
 source:
   include:
     - src/effects/process-runner.ts
@@ -17,6 +18,8 @@ source:
     - src/effects/process-group-launcher.ts
     - src/effects/process-group-termination.ts
     - src/effects/expensive-run-lock.ts
+    - src/effects/readonly-observation.ts
+    - src/effects/atomic-append.ts
     - src/effects/locking/**
     - src/effects/git/**
   entrypoints:

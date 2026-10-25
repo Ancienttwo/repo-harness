@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../src/effects/state/readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../src/effects/readonly-observation';
 import { createHash } from 'crypto';
 import {
   chmodSync,

@@ -2,7 +2,7 @@ import { worktreeUid } from './worktree-trash';
 import { randomUUID } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 
 export interface PrunedWorktreeIntent {
   readonly worktree: string;

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync } from 'fs';
 import { basename, dirname, join } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import type { ExactWorktreeCleanup } from './coordination-worktree-topology';
 
 /** Windows has no POSIX uid proof, even if a runtime exposes a compatibility method. */

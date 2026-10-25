@@ -1,4 +1,4 @@
-import { observationReadFileSync as readFileSync } from './readonly-observation';
+import { observationReadFileSync as readFileSync } from '../readonly-observation';
 import { lstatSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { resolveGitCommonDirectory } from '../git/common-directory';

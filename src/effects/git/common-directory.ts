@@ -1,4 +1,4 @@
-import { observationExecFileSync as execFileSync } from '../state/readonly-observation';
+import { observationExecFileSync as execFileSync } from '../readonly-observation';
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 

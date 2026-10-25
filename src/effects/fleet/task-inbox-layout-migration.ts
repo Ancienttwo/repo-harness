@@ -6,7 +6,7 @@ import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../.
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
 import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateTaskReplyCommit, validateTaskReplyIntent } from '../../core/fleet/task-reply';
-import { createFileExclusiveDurably } from '../evidence/atomic-append';
+import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
 import { readLease, taskLockRelativePath } from '../state/coordination-lease-store';

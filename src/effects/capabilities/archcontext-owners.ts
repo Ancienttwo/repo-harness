@@ -15,7 +15,7 @@ import {
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
 import { ArchctxClientError, readArchitectureNativeContext, runPackageLocalArchctxJson, type ArchctxProviderOptions } from '../architecture/archctx-provider';
-import { currentReadonlyObservation } from '../state/readonly-observation';
+import { currentReadonlyObservation } from '../readonly-observation';
 
 export interface ArchcontextOwnerLookup<C> {
   get(nodeId: string): C | undefined;

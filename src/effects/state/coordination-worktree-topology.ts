@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { listLeaseReads } from './coordination-lease-store';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';

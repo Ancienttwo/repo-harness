@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { lstatSync } from 'node:fs';
-import { assertObservationPath, observationReadFileSync, observationExecFileSync, currentReadonlyObservation, rejectObservation } from '../state/readonly-observation';
+import { assertObservationPath, observationReadFileSync, observationExecFileSync, currentReadonlyObservation, rejectObservation } from '../readonly-observation';
 
 /** Git object identity only. No index, object store, ledger or code is written. */
 function objectHash(type: 'blob' | 'tree', body: Buffer): Buffer {

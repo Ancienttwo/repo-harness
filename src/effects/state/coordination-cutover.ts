@@ -23,7 +23,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { dirname, join } from 'path';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { writeFileDurably } from '../evidence/atomic-append';
+import { writeFileDurably } from '../atomic-append';
 import { COORDINATION_ROOT_RELATIVE_PATH } from './coordination-lease-store';
 
 /** The retired per-worktree marker directory, relative to a worktree root. */

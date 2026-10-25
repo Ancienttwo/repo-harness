@@ -12,7 +12,7 @@ import {
 
 import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/capabilities/archcontext-owners";
 import { ArchctxClientError, readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
-import { withReadonlyObservation } from "../src/effects/state/readonly-observation";
+import { withReadonlyObservation } from "../src/effects/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
