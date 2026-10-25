@@ -11,11 +11,11 @@ import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-messag
 /** Offline transport injection exercises public admission and binding persistence.
  * The test process and its parent supply real process identity reads, not proof
  * of a live provider. No service, pane, or external agent is started. */
-export async function admittedInboxFixture(task = '1'.repeat(64)) {
+export async function admittedInboxFixture(task = '1'.repeat(64), options: Parameters<typeof seedReviewAdmissionFixture>[2] = {}) {
   const directory = tmpWorkspace('admitted-inbox'), root = join(directory, 'repo'), home = join(directory, 'authority');
   mkdirSync(root); mkdirSync(home, { mode: 0o700 }); initGitRepo(root);
   writeFileSync(join(root, '.gitignore'), '.ai/\n'); writeFileSync(join(root, 'source.txt'), 'source\n'); commitAll(root, 'fixture');
-  const approved = seedReviewAdmissionFixture(root, home);
+  const approved = seedReviewAdmissionFixture(root, home, options);
   const claim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: `sha256:${'c'.repeat(64)}` };
   const spec = { task, role: 'deep-reasoner', harness_kind: 'codex' };
   const source = { authority: { source: approved.source, claim }, session: { task, role: spec.role } };

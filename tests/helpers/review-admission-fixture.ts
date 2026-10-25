@@ -13,6 +13,7 @@ import type { ReviewAdmissionSource } from '../../src/effects/review/admission-s
 /** Explicit synthetic approval fixture. This writes real account-owned record bytes;
  * it does not exercise operator approval or a live GitHub endpoint. */
 export function seedReviewAdmissionFixture(root: string, home: string, options: {
+  repositoryId?: string; issueId?: string;
   plan?: ReviewAdmissionInput['verification_plan']; oracles?: ReviewAdmissionInput['oracles'];
   benchmark?: ReviewAdmissionInput['benchmark']; allowedPaths?: string[]; campaignId?: string;
   reviewer?: 'Codex' | 'Claude'; userWaiver?: 'allowed' | 'forbidden'; actor?: string;
@@ -22,9 +23,9 @@ export function seedReviewAdmissionFixture(root: string, home: string, options: 
   const policy = parseExternalSourcesPolicy({ version: 1, mode: 'manual', github: { enabled: true,
     repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [903] },
     limits: { max_pages: 1, max_issues: 1, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 } } });
-  const issue = { id: 'I_903', number: 903, html_url: 'https://github.com/acme/widgets/issues/903', state: 'open',
+  const issue = { id: options.issueId ?? 'I_903', number: 903, html_url: 'https://github.com/acme/widgets/issues/903', state: 'open',
     title: 'Preserve behavior', body: 'Migrate review authority.', updated_at: '2026-10-25T00:00:00Z' };
-  const repo = { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' };
+  const repo = { id: options.repositoryId ?? 'R_provider', node_id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' };
   const runner: ReviewAdmissionSource['runner'] = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903') ? issue : repo) });
   const goal = observeReviewIssueGoal({ policy, repository_id: repo.id, issue_id: issue.id, runner });
   const admission = createReviewAdmission({ repository_id: repo.id, issue_id: issue.id, campaign_id: options.campaignId ?? 'review',
