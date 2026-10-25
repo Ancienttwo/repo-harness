@@ -1,3 +1,4 @@
+import { readReviewAdmissionSource } from '../../effects/review/admission-source';
 import { Command } from 'commander';
 import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
@@ -9,8 +10,8 @@ import { join } from 'path';
 import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
-import { ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
-import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/task-message';
+import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
+import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
 import { readCanonicalSprint } from '../../effects/state/coordination-canonical-source';
 import { resolveRepoIdentity } from '../../effects/git/repository-identity';
@@ -72,37 +73,21 @@ function outputTaskInboxError(error: unknown): void {
 type TaskMessageScope = 'task' | 'claim';
 type TaskMessageAudience = 'owner' | 'orchestrator' | 'user';
 
-interface CanonicalInboxContext {
-  readonly source: { readonly targetRef: string; readonly sprintPath: string };
-  readonly taskId: string;
-  readonly taskRevision: string;
-}
-
-function canonicalInboxContext(repoRoot: string, taskId: string): CanonicalInboxContext {
-  const sprintPath = readActiveSprintPath(repoRoot);
-  if (!sprintPath) throw new Error('no active canonical sprint');
-  const targetRef = readCanonicalTargetRef(repoRoot);
-  const source = { targetRef, sprintPath };
-  const canonical = readCanonicalSprint(repoRoot, source);
-  if (!canonical.ok) throw new Error(canonical.error);
-  const task = lookupCanonicalTask({
-    repoIdentity: resolveRepoIdentity(repoRoot),
-    sprintPath,
-    sprintText: canonical.text,
-  }, taskId);
-  if (!task.ok) throw new Error(task.error);
-  return { source, taskId, taskRevision: task.task.task_revision };
-}
-
-function taskLease(repoRoot: string, taskId: string): NonNullable<ReturnType<typeof readLease>['record']> {
-  const lease = readLease(repoRoot, taskId);
-  if (!lease.record) throw new Error(`task ${taskId} has no current owner lease`);
-  return lease.record;
-}
-
-function resolveOwnerRecipient(repoRoot: string, taskId: string): Extract<TaskMessageRecipient, { readonly kind: 'claim' }> {
-  const lease = taskLease(repoRoot, taskId);
-  return { kind: 'claim', claim_id: lease.claim_id, generation: lease.generation };
+function admittedInboxContext(repoRoot: string, taskId: string, contextFile: string) {
+  const value = JSON.parse(readFileSync(contextFile, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['admission', 'claim', 'session'])) throw new Error('inbox context fields are invalid');
+  const selector = value.admission;
+  if (!selector || typeof selector !== 'object' || Array.isArray(selector)
+    || JSON.stringify(Object.keys(selector).sort()) !== JSON.stringify(['actor_id', 'campaign_id', 'grant_sha256', 'issue_id', 'policy_sha256', 'repository_id'])) throw new Error('inbox admission selector fields are invalid');
+  if (!value.session || typeof value.session !== 'object' || Array.isArray(value.session)
+    || JSON.stringify(Object.keys(value.session).sort()) !== JSON.stringify(['role', 'task'])
+    || typeof value.session.task !== 'string' || typeof value.session.role !== 'string') throw new Error('inbox session fields are invalid');
+  const source: TaskInboxSessionSource = { session: value.session, authority: { claim: value.claim,
+    source: readReviewAdmissionSource(repoRoot, { 'repository-id': selector.repository_id, 'issue-id': selector.issue_id,
+      'campaign-id': selector.campaign_id, 'grant-sha256': selector.grant_sha256, 'policy-sha256': selector.policy_sha256, actor: selector.actor_id }) } };
+  const admission = observeTaskInboxContext({ repo_root: repoRoot, source, task_id: taskId });
+  return { source, taskId, admission };
 }
 
 function readMessageBody(bodyFile: string): string {
@@ -118,17 +103,15 @@ function messageInput(
     readonly messageId?: string;
     readonly inReplyTo?: string;
   },
-  context: CanonicalInboxContext,
-  lease: NonNullable<ReturnType<typeof readLease>['record']> | null,
+  context: ReturnType<typeof admittedInboxContext>,
 ): TaskMessageEventInput {
-  if (options.scope === 'claim' && lease === null) throw new Error('claim-scoped message requires a current owner lease');
   return {
     message_id: options.messageId ?? randomUUID(),
     task_id: context.taskId,
-    task_revision: context.taskRevision,
+    admission_sha256: context.admission.approval.admission_sha256,
+    task_identity: { repository_id: context.admission.identity.repository_id, issue_id: context.admission.identity.issue_id, campaign_id: context.admission.identity.campaign_id },
     scope: options.scope,
-    target_claim_id: options.scope === 'claim' ? lease?.claim_id ?? null : null,
-    target_generation: options.scope === 'claim' ? lease?.generation ?? null : null,
+    target_claim: options.scope === 'claim' ? context.admission.identity.claim : null,
     sender_kind: 'user',
     sender_id: null,
     sender_trust: 'local_operator',
@@ -136,7 +119,7 @@ function messageInput(
     body: options.body,
     created_at: new Date().toISOString(),
     in_reply_to: options.inReplyTo ?? null,
-  } as TaskMessageEventInput;
+  };
 }
 
 function optionalStringOption(value: string | undefined, name: string): string | undefined {
@@ -491,7 +474,8 @@ export function buildFleetCommand(): Command {
     .command('send')
     .description('Create one immutable task message event')
     .requiredOption('--json', 'Output the task message result as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .requiredOption('--scope <scope>', 'Message scope: task or claim')
     .requiredOption('--audience <audience>', 'Message audience: owner, orchestrator, or user')
     .requiredOption('--body-file <path>', 'UTF-8 file containing the untrusted message body')
@@ -499,6 +483,7 @@ export function buildFleetCommand(): Command {
     .option('--in-reply-to <messageId>', 'Prior message UUID')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
       readonly scope: string;
       readonly audience: string;
       readonly bodyFile: string;
@@ -513,8 +498,7 @@ export function buildFleetCommand(): Command {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         const bodyFile = optionalStringOption(options.bodyFile, 'body-file');
         if (!taskId || !bodyFile) throw new Error('--task-id and --body-file must be non-empty strings');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const lease = options.scope === 'claim' ? taskLease(process.cwd(), taskId) : null;
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
         const event = buildTaskMessageEvent(messageInput({
           taskId,
           scope: options.scope,
@@ -522,10 +506,10 @@ export function buildFleetCommand(): Command {
           body: readMessageBody(bodyFile),
           messageId: optionalStringOption(options.messageId, 'message-id'),
           inReplyTo: optionalStringOption(options.inReplyTo, 'in-reply-to'),
-        }, context, lease));
+        }, context));
         const result = sendTaskMessage({
           repo_root: process.cwd(),
-          canonical_source: context.source,
+          source: context.source,
           event,
         });
         process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -562,19 +546,21 @@ export function buildFleetCommand(): Command {
     .command('list')
     .description('Deliver and list messages for the current bound owner')
     .requiredOption('--json', 'Output inbox state as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
     }) => {
       try {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         if (!taskId) throw new Error('--task-id must be a non-empty string');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
+        const recipient: TaskMessageRecipient = { kind: 'claim', claim: context.admission.identity.claim };
         deliverTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           recipient,
           execution_worktree: process.cwd(),
           delivery_channel: 'manual',
@@ -583,7 +569,7 @@ export function buildFleetCommand(): Command {
         const result = listTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           recipient,
           execution_worktree: process.cwd(),
         });
@@ -597,22 +583,24 @@ export function buildFleetCommand(): Command {
     .command('ack')
     .description('Acknowledge one message for the current bound owner')
     .requiredOption('--json', 'Output the acknowledgement result as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .requiredOption('--message-id <messageId>', 'Message UUID to acknowledge')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
       readonly messageId: string;
     }) => {
       try {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         const messageId = optionalStringOption(options.messageId, 'message-id');
         if (!taskId || !messageId) throw new Error('--task-id and --message-id must be non-empty strings');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
+        const recipient: TaskMessageRecipient = { kind: 'claim', claim: context.admission.identity.claim };
         const result = ackTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           message_id: messageId,
           recipient,
           execution_worktree: process.cwd(),

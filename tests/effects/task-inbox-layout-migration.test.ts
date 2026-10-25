@@ -1,3 +1,4 @@
+import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedLeaseDirectory } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -10,7 +11,7 @@ import { buildTaskMessageDeliveryReceipt, buildTaskMessageEvent, canonicalTaskMe
 import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import { migrateTaskInboxLayout, type InboxMigrationBoundary } from '../../src/effects/fleet/task-inbox-layout-migration';
 import { assertTaskInboxLayoutUnchanged, inboxLayoutPaths, inspectTaskInboxLayout } from '../../src/effects/fleet/task-inbox-layout';
-import { readTaskMessageDelivery, sendTaskMessage, TaskInboxError, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
+import { readHistoricalTaskMessageDelivery, sendTaskMessage, TaskInboxError, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, readExclusiveDirectoryLockOwner } from '../../src/effects/locking/exclusive-directory-lock';
 import { taskLockRelativePath } from '../../src/effects/locking/task-lock';
@@ -74,7 +75,7 @@ test('dry-run is read only, history needs no active sprint, and exact bytes surv
   for (const recipient of f.recipients) {
     const old = f.original[`${TASK}/delivery/${ID}/${deriveTaskMessageRecipientKey(recipient)}.json`]!;
     expect(readFileSync(join(f.paths.current, TASK, 'delivery', ID, `${taskInboxRecipientStorageKey(recipient)}.json`))).toEqual(Buffer.from(old, 'base64'));
-    const receipt = readTaskMessageDelivery({ repo_root: f.root, task_id: TASK, message_id: ID, recipient });
+    const receipt = readHistoricalTaskMessageDelivery({ repo_root: f.root, task_id: TASK, message_id: ID, recipient });
     expect(receipt.receipt?.delivery_state).toBe('pending');
   }
   expect(f.resume()).toEqual(applied);
@@ -217,24 +218,28 @@ test('confirmed offline migration preserves historical lease bytes without treat
 });
 
 test('inbox writers share the migration mutex even for a task outside its captured inventory', () => {
-  const f = fixture();
+  const f = admittedInboxFixture('3'.repeat(64)); roots.push(f.directory);
+  const common = resolveGitCommonDirectory(f.root), paths = inboxLayoutPaths(common);
+  const legacy = buildTaskMessageEvent({ message_id: ID, task_id: TASK, task_revision: REVISION,
+    scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'user', sender_id: 'alice',
+    sender_trust: 'local_operator', audience: 'user', body: 'history', created_at: '2026-09-22T00:00:00Z', in_reply_to: null });
+  put(join(paths.legacy, TASK, 'events', `${ID}.json`), `${canonicalTaskMessageEventBytes(legacy)}\n`);
+  const original = tree(paths.legacy);
+  const plan = migrateTaskInboxLayout({ repo_root: f.root });
   const lockPath = 'repo-harness/task-inbox-migration.lock';
-  const lock = acquireExclusiveDirectoryLock(f.common, lockPath);
-  const otherTask = '3'.repeat(64);
+  const lock = acquireExclusiveDirectoryLock(common, lockPath);
   try {
     let failure: unknown;
-    try {
-      sendTaskMessage({ repo_root: f.root, canonical_source: { targetRef: 'main', sprintPath: 'plans/sprints/unused.md' },
-        event: buildTaskMessageEvent({ ...f.event, task_id: otherTask }) });
-    } catch (error) { failure = error; }
+    try { sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event }); } catch (error) { failure = error; }
     expect(failure).toBeInstanceOf(TaskInboxError);
     expect((failure as TaskInboxError).cause).toBeInstanceOf(ExclusiveLockContentionError);
-    expect(((failure as TaskInboxError).cause as ExclusiveLockContentionError).lockPath).toBe(join(f.common, lockPath));
+    expect(((failure as TaskInboxError).cause as ExclusiveLockContentionError).lockPath).toBe(join(common, lockPath));
     lock.assertOwned();
-    expect(tree(f.paths.legacy)).toEqual(f.original);
-    expect(existsSync(join(f.paths.current, otherTask))).toBe(false);
+    expect(tree(paths.legacy)).toEqual(original);
+    expect(existsSync(join(paths.current, f.task))).toBe(false);
   } finally { lock.release(); }
-  expect(f.apply().state).toBe('committed');
+  expect(migrateTaskInboxLayout({ repo_root: f.root, mode: 'apply', confirm_quiescent: true,
+    expected_source_sha256: plan.manifest!.source_sha256 }).state).toBe('committed');
 }, 15_000);
 
 test('invalid canonical bytes and forged path identities are rejected before a journal', () => {
