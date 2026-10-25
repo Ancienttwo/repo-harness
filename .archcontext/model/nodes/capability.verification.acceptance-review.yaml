@@ -41,7 +41,7 @@ source:
               path: src/core/review/generic-review.ts
               symbol: validateReviewOutput
             - id: sink.acceptance-review.record-receipt
-              path: scripts/acceptance-receipt.ts
+              path: src/effects/review/acceptance-receipt.ts
               symbol: recordAcceptance
 extensions:
   contractFiles:
