@@ -6,7 +6,6 @@ import type { StateInputCollector } from '../../effects/loop/state-input-collect
 export const BOARD_SLICE_MARKER = '[repo-harness:board-slice]';
 export const BOARD_SLICE_MAX_BYTES = 2000;
 const MAX_RENDERED_PEERS = 8;
-const POINTER_LINE = 'progress/stall not computed here — repo-harness state board --json';
 export type BoardSliceCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker'> & {
   /** Trusted in-process runtime snapshot, already admitted outside the hook. */
   readonly getAdmittedTaskSessions?: () => OperatorTaskSessions;
@@ -36,7 +35,7 @@ export function renderBoardSlice(slice: ProviderBoardSliceV2): string {
     for (const session of card.sessions) lines.push(`    session=${session.selector.task} role=${session.selector.role} branch=${session.branch} claim=${session.selector.claim_ref}`);
   }
   if (slice.board.cards.length > MAX_RENDERED_PEERS) lines.push(`  +${slice.board.cards.length - MAX_RENDERED_PEERS} more`);
-  const suffix = `\n${POINTER_LINE}`;
+  const suffix = `\nprogress/stall not computed here — repo-harness state board --repository-id ${slice.board.registered_repository_id} --json`;
   const budget = BOARD_SLICE_MAX_BYTES - Buffer.byteLength(suffix);
   while (lines.length > 2 && Buffer.byteLength(lines.join('\n')) > budget) lines.pop();
   return capBytes(lines.join('\n'), budget) + suffix;

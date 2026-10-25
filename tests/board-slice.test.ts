@@ -228,7 +228,7 @@ function armFixture(fixture: Fixture): void {
 function extractSliceBlock(text: string): string {
   const start = text.indexOf(BOARD_SLICE_MARKER);
   expect(start).toBeGreaterThanOrEqual(0);
-  const pointer = 'progress/stall not computed here — repo-harness state board --json';
+  const pointer = 'progress/stall not computed here — repo-harness state board --repository-id repo_1 --json';
   const end = text.indexOf(pointer, start);
   expect(end).toBeGreaterThan(start);
   return text.slice(start, end + pointer.length);
@@ -366,7 +366,7 @@ describe('renderBoardSlice is deterministic and bounded', () => {
     const rendered = renderBoardSlice(providerFixture(count, '保留'.repeat(2000)).slice);
     expect(Buffer.byteLength(rendered)).toBeLessThanOrEqual(BOARD_SLICE_MAX_BYTES);
     expect(rendered.startsWith(BOARD_SLICE_MARKER)).toBe(true);
-    expect(rendered.endsWith('progress/stall not computed here — repo-harness state board --json')).toBe(true);
+    expect(rendered.endsWith('progress/stall not computed here — repo-harness state board --repository-id repo_1 --json')).toBe(true);
   });
   test('local hook collection preserves issue state without discovering sessions', () => {
     const fixture = buildFixture();
