@@ -859,9 +859,12 @@ const admittedDiffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSea
   Object.fromEntries(Object.entries(admittedDiffSelector).filter(([key]) => key !== 'repository_id')));
 
 describe('reader retirement', () => {
-  const diffPath = admittedDiffPath;
+  // Activity shares this slot but requires an inbox-compatible stable task ID.
+  const selector = { ...admittedDiffSelector, task: TASK_ID };
+  const diffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(selector).filter(([key]) => key !== 'repository_id')));
   const diff = {
-    ...admittedDiffSelector, protocol: 2 as const, kind: 'operator_task_diff' as const,
+    ...selector, protocol: 2 as const, kind: 'operator_task_diff' as const,
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
   };
@@ -869,7 +872,7 @@ describe('reader retirement', () => {
     const path = kind === 'diff' ? diffPath : '/api/v1/repositories/repo-a/snapshot';
     for (const ending of ['timeout', 'disconnect'] as const) {
       test(`${kind} ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
-        let calls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
+        let calls = 0, secondaryCalls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
         const hold = (signal: AbortSignal) => {
           calls++; if (calls > 1) return Promise.resolve();
           firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
@@ -877,6 +880,8 @@ describe('reader retirement', () => {
         const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
           read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
           read_task_diff: async input => { await hold(input.signal); return diff; },
+          read_admitted_task_activity: async () => { secondaryCalls++; throw new Error('retired slot must block activity'); },
+          read_task_context: async () => { secondaryCalls++; throw new Error('retired slot must block context'); },
         });
         const abort = new AbortController();
         const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
@@ -892,10 +897,12 @@ describe('reader retirement', () => {
           expect(calls).toBe(1);
           if (kind === 'diff') {
             for (const route of ['activity', 'context']) {
-              const blocked = await fetch(server.url + admittedDiffPath.replace('/diff?', `/${route}?`));
+              const blocked = await fetch(server.url + diffPath.replace('/diff?', `/${route}?`));
+              expect(blocked.status).toBe(503);
               expect(await blocked.json()).toEqual({ code: 'busy' });
             }
           }
+          expect(secondaryCalls).toBe(0);
           retire(); await Bun.sleep(0);
           const fresh = await fetch(server.url + path);
           expect(fresh.status).toBe(200);
