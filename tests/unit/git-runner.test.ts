@@ -106,9 +106,21 @@ describe('git runner', () => {
   test('src starts git only through the runner', () => {
     const patterns = [
       /\b(?:execFileSync|spawnSync|spawn|execFile|observationExecFileSync|observationSpawnSync|runProcess|runBoundedProcess)\(\s*['"]git['"]/g,
-      /\b(?:execFileSync|spawnSync)\(\s*(?:gitBin|gitBinary\s*\(|configuredGitBinary\s*\(|input\.gitBin|opts\.gitBin)\b/g,
+      /\b(?:execFileSync|spawnSync)\(\s*(?:(?:gitBin|input\.gitBin|opts\.gitBin)\b|(?:gitBinary|configuredGitBinary)\s*\()/g,
       /\brunBoundedProcess\(\s*runtime\?\.gitBin/g,
     ];
+    for (const source of [
+      "execFileSync(configuredGitBinary(), ['status'])",
+      "spawnSync(gitBinary(), ['status'])",
+      "execFileSync(gitBin, ['status'])",
+      "spawnSync(input.gitBin, ['status'])",
+      "spawnSync(opts.gitBin, ['status'])",
+    ]) {
+      expect(patterns.some(pattern => {
+        pattern.lastIndex = 0;
+        return pattern.test(source);
+      }), source).toBe(true);
+    }
     const violations: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {

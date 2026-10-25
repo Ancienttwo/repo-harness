@@ -1,9 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
-import { configuredGitBinary } from '../git/common-directory';
+import { gitExecFileSync } from '../git/runner';
 import type { ArchcontextResolveCache, ArchctxResolveResult } from './archcontext-owners';
 
 const MODEL_NODES_DIR = '.archcontext/model/nodes';
@@ -41,7 +40,7 @@ export function archcontextResolveFileCache(repoRoot: string): ArchcontextResolv
   const binding = () => {
     if (bound !== undefined) return bound;
     try {
-      const [gitDir, head] = execFileSync(configuredGitBinary(), ['-C', repoRoot, 'rev-parse', '--absolute-git-dir', 'HEAD'], {
+      const [gitDir, head] = gitExecFileSync(['-C', repoRoot, 'rev-parse', '--absolute-git-dir', 'HEAD'], {
         encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
       }).trim().split('\n');
       bound = gitDir && head ? {
