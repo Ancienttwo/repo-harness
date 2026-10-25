@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
@@ -10,6 +10,7 @@ import { readGlobalArchitectureConfiguration } from '../../effects/architecture/
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
 import { loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 const STATE_DIR = '.ai/harness/state/';
 const MARKER = `${STATE_DIR}agent-notice`;
@@ -201,13 +202,13 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
 }
 
 function currentBranch(repoRoot: string, env: NodeJS.ProcessEnv | undefined): string {
-  return execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+  return gitExecFileSync(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
     encoding: 'utf8', env: env ?? process.env, stdio: ['ignore', 'pipe', 'ignore'], timeout: 3_000,
   }).trim();
 }
 
 function ignored(repoRoot: string, path: string, env: NodeJS.ProcessEnv | undefined): boolean {
-  try { execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', path], { env: env ?? process.env, stdio: 'ignore', timeout: 3_000 }); }
+  try { gitExecFileSync(['-C', repoRoot, 'check-ignore', '-q', '--', path], { env: env ?? process.env, stdio: 'ignore', timeout: 3_000 }); }
   catch (error) {
     // check-ignore exits 1 when no rule ignores the path.
     if ((error as { status?: unknown }).status === 1) return false;

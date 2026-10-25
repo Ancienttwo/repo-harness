@@ -24,21 +24,16 @@
  * tasks/notes/20260722-1810-epc-04-manual-external-attested-import.notes.md.
  */
 import { createHash } from "crypto";
-import { execFileSync } from "child_process";
+
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
-import type {
-  EvidenceEventRecord,
-  GenesisRecord,
-  JsonValue,
-  SubjectIdentity,
-  TrustClass,
-} from "../../core/evidence/types";
+import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity, TrustClass } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord, CorruptEvidenceLogError, UnterminatedEvidenceLogError } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { stripYamlInlineComment } from "../../core/state/artifact-parsers";
+import { gitExecFileSync } from '../git/runner';
 
 const PRODUCER_ID = "acceptance-receipt";
 const EVENT_TYPE = "acceptance_receipt.attested_import";
@@ -116,7 +111,7 @@ function sha256Hex(content: Buffer | string): string {
 
 function gitOutput(repoRoot: string, args: readonly string[]): { readonly ok: boolean; readonly text: string } {
   try {
-    const text = execFileSync("git", ["-C", repoRoot, "--literal-pathspecs", ...args], {
+    const text = gitExecFileSync(["-C", repoRoot, "--literal-pathspecs", ...args], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
     });

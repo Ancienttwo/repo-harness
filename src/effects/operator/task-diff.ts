@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+
 import { realpathSync, statSync } from 'node:fs';
 import { TASK_DIFF_MAX_BYTES, TASK_DIFF_MAX_UNTRACKED, isTaskDiffRequest, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../../core/operator/task-diff';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';
@@ -9,6 +9,7 @@ import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-b
 import { resolveRepoIdentity } from '../git/repository-identity';
 import { readCanonicalSprint } from '../state/coordination-canonical-source';
 import { readLease } from '../state/coordination-lease-store';
+import { gitExecFileSync } from '../git/runner';
 
 export class OperatorTaskDiffError extends Error {
   constructor(readonly code: TaskDiffFailure) { super(code); }
@@ -17,7 +18,7 @@ const refuse = (code: TaskDiffFailure): never => { throw new OperatorTaskDiffErr
 
 function git(cwd: string, args: string[], allowNoMatch = false): string {
   try {
-    const bytes = execFileSync('git', ['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
+    const bytes = gitExecFileSync(['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
       cwd, timeout: 5000, maxBuffer: TASK_DIFF_MAX_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' },
     });

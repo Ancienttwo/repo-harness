@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+
 import { realpathSync } from 'node:fs';
 import type { BoardDocumentV1 } from '../../core/state/types';
 import { projectOperatorTaskContext } from '../../core/operator/task-context';
@@ -12,12 +12,9 @@ import { isRepoHarnessAdoptedPath, type RepoHarnessRegisteredRepo, type RepoHarn
 import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
 import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
-import {
-  OPERATOR_REPOSITORY_PROTOCOL,
-  OPERATOR_REPOSITORY_SNAPSHOT_KIND,
-  type OperatorRepositorySnapshotV1,
-} from '../../core/operator/repository-snapshot';
+import { OPERATOR_REPOSITORY_PROTOCOL, OPERATOR_REPOSITORY_SNAPSHOT_KIND, type OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { gitExecFileSync } from '../git/runner';
 
 /** Resolve only registered repository IDs. Planning and Organization are
  * independent stored observations; one unavailable source cannot become an
@@ -206,7 +203,7 @@ function readPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnes
   // keeping registered read-only repositories visible in the Planning UI.
   const authorityRegistry = {...registry,repos:registry.repos.filter(r => isRepoHarnessAdoptedPath(r.path))};
   const readFileAtCommit = (root: string, commit: string, path: string): string | null => {
-    try { return execFileSync('git',['show',`${commit}:${path}`],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:PLANNING_MAX_BYTES,timeout:1000}); }
+    try { return gitExecFileSync(['show',`${commit}:${path}`],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:PLANNING_MAX_BYTES,timeout:1000}); }
     catch { return null; }
   };
   const packages = selected.graph.work_packages.map(item => ({

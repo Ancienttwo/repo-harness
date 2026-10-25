@@ -8,31 +8,18 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
-import {
-  buildManagedHooks,
-  compareManagedHookProjection,
-  isManagedEntry,
-  type HookHost,
-  type HooksByEvent,
-  type ManagedHookProjectionMismatch,
-  type ManagedHookProjectionReport,
-} from '../installer/managed-entries';
+import { buildManagedHooks, compareManagedHookProjection, isManagedEntry, type HookHost, type HooksByEvent, type ManagedHookProjectionMismatch, type ManagedHookProjectionReport } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
-import {
-  installProfileStatePath,
-  readInstalledProfile,
-  type InstallComponent,
-  type InstallProfile,
-  readLegacyInstalledProfileForMigration,
-} from '../installer/install-profile';
+import { installProfileStatePath, readInstalledProfile, type InstallComponent, type InstallProfile, readLegacyInstalledProfileForMigration } from '../installer/install-profile';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harness-version';
+import { gitExecFileSync } from '../../effects/git/runner';
 import { isOptIn } from '../hook/runtime';
 
 function packageVersion(): string {
@@ -87,7 +74,7 @@ export interface StatusReport {
 
 function resolveRepoRoot(cwd: string): string | null {
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });

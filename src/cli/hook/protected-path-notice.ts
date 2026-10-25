@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+
 import { lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
 import { boundedHookDiagnostic } from './hook-protocol';
 import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 /**
  * The edit guard denies every Edit, Write and apply_patch target under these
@@ -72,14 +73,14 @@ function compare(previous: Manifest, current: Manifest): Change[] {
 }
 
 function currentBranch(repoRoot: string, env: NodeJS.ProcessEnv): string {
-  return execFileSync('git', ['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+  return gitExecFileSync(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], {
     encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'ignore'], timeout: 3_000,
   }).trim();
 }
 
 function stateIgnored(repoRoot: string, env: NodeJS.ProcessEnv): boolean {
   try {
-    execFileSync('git', ['-C', repoRoot, 'check-ignore', '-q', '--', STATE], { env, stdio: 'ignore', timeout: 3_000 });
+    gitExecFileSync(['-C', repoRoot, 'check-ignore', '-q', '--', STATE], { env, stdio: 'ignore', timeout: 3_000 });
     return true;
   } catch { return false; }
 }

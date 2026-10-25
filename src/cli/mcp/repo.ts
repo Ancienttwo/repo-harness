@@ -1,10 +1,11 @@
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
-import { runProcess } from '../../effects/process-runner';
+
+import { runGit } from '../../effects/git/run-git';
 
 export function resolveMcpRepoRoot(repo = '.'): string {
   const candidate = resolve(repo);
-  const result = runProcess('git', ['-C', candidate, 'rev-parse', '--show-toplevel'], {
+  const result = runGit(['-C', candidate, 'rev-parse', '--show-toplevel'], {
     timeoutMs: 5000,
     stdio: 'pipe',
   });
@@ -16,7 +17,7 @@ export function isRepoHarnessAdopted(repoRoot: string): boolean {
 }
 
 export function currentGitBranch(repoRoot: string): string | null {
-  const result = runProcess('git', ['-C', repoRoot, 'branch', '--show-current'], {
+  const result = runGit(['-C', repoRoot, 'branch', '--show-current'], {
     timeoutMs: 5000,
     stdio: 'pipe',
   });

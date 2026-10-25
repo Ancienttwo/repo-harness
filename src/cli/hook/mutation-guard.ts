@@ -9,18 +9,14 @@
  * record. An allowed edit can carry the `[CapabilityOwner]` line.
  */
 
-import { execFileSync } from 'child_process';
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname, join, posix, win32 } from 'path';
-import {
-  canonicalExternalPath,
-  canonicalRepoRelativePath,
-  isForeignDriveAbsolutePath,
-} from '../../effects/state/collect-state-inputs';
+import { canonicalExternalPath, canonicalRepoRelativePath, isForeignDriveAbsolutePath } from '../../effects/state/collect-state-inputs';
 import { parseStatusZ, splitNul } from '../../effects/review/diff-fingerprint';
 import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 import { protectedRepoDir } from './mutation-protected-dirs';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export interface MutationGuardInput {
   readonly repoRoot: string;
@@ -150,7 +146,7 @@ function pathsWithNoUncommittedChange(repoRoot: string, paths: readonly string[]
   if (paths.length === 0) return paths;
   let changed: readonly string[];
   try {
-    changed = parseStatusZ(splitNul(execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths], {
+    changed = parseStatusZ(splitNul(gitExecFileSync(['-C', repoRoot, '--literal-pathspecs', 'status', '--porcelain', '-z', '--untracked-files=all', '--', ...paths], {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5_000,
     }))).all;

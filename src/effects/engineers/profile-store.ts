@@ -1,24 +1,12 @@
-import { execFileSync } from 'child_process';
+
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import type { NativeContextExportV1 } from 'archctx-contracts';
 
-import {
-  capabilityRegistryFromNativeContext,
-  type Capability,
-  type CapabilityRegistry,
-} from '../../core/capabilities/registry';
-import {
-  EngineerProfileBindingError,
-  canonicalEngineerJson,
-  canonicalModuleEngineerProfileBytes,
-  engineerContractRevision,
-  engineerSha256,
-  validateModuleEngineerProfile,
-  type EngineerBindingCurrentV1,
-  type ModuleEngineerProfileV1,
-} from '../../core/engineers/profile-binding';
+import { capabilityRegistryFromNativeContext, type Capability, type CapabilityRegistry } from '../../core/capabilities/registry';
+import { EngineerProfileBindingError, canonicalEngineerJson, canonicalModuleEngineerProfileBytes, engineerContractRevision, engineerSha256, validateModuleEngineerProfile, type EngineerBindingCurrentV1, type ModuleEngineerProfileV1 } from '../../core/engineers/profile-binding';
+import { gitExecFileSync } from '../git/runner';
 
 const PROFILE_ROOT = 'agents/engineers/profiles';
 const SOP_ROOT = 'agents/engineers/sops';
@@ -47,7 +35,7 @@ function invalid(message: string, cause?: unknown): never {
 
 export function resolveEngineerRepoRoot(cwd: string): string {
   try {
-    return realpathSync(execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    return realpathSync(gitExecFileSync(['rev-parse', '--show-toplevel'], {
       cwd,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -59,7 +47,7 @@ export function resolveEngineerRepoRoot(cwd: string): string {
 
 function loadTrackedEngineerPaths(repoRoot: string): ReadonlySet<string> {
   try {
-    const output = execFileSync('git', ['ls-files', '-z', '--', PROFILE_ROOT, SOP_ROOT], {
+    const output = gitExecFileSync(['ls-files', '-z', '--', PROFILE_ROOT, SOP_ROOT], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],

@@ -1,19 +1,12 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
-import {
-  CapabilitySourceError,
-  capabilitySourceMode,
-  findMatch,
-  readRegistry as readCapabilityRegistry,
-  type Capability,
-  type CapabilityRegistry,
-  type ContractFiles,
-} from '../../../scripts/capability-resolver';
+
+import { CapabilitySourceError, capabilitySourceMode, findMatch, readRegistry as readCapabilityRegistry, type Capability, type CapabilityRegistry, type ContractFiles } from '../../../scripts/capability-resolver';
 import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export type { Capability, ContractFiles };
 
@@ -83,7 +76,7 @@ const END = '<!-- END CAPABILITY CONTEXT -->';
 function repoRoot(input = '.'): string {
   const cwd = path.resolve(input);
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();

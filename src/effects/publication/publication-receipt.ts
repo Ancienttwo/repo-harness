@@ -1,5 +1,6 @@
 /** Read historical publication receipts and live provider merge proof. */
 import { spawnSync } from 'child_process';
+import { gitSpawnSync } from '../git/runner';
 import { existsSync, lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { validatePublicationReceipt, type PublicationReceiptV3 } from '../../core/publication/publication-receipt';
@@ -87,7 +88,8 @@ export function observeProviderBranchMergeCommit(input: {
     if (typeof merge !== 'string' || !/^[a-f0-9]{40}$/u.test(merge)) continue;
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
-    const ancestor = spawnSync(input.gitBin, ['merge-base', '--is-ancestor', merge, input.targetOid], {
+    const ancestor = gitSpawnSync(['merge-base', '--is-ancestor', merge, input.targetOid], {
+      gitBin: input.gitBin,
       cwd: input.repoRoot, timeout: remaining, stdio: 'ignore',
     });
     if (!ancestor.error && ancestor.status === 0) return merge;

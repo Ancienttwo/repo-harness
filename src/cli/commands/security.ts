@@ -7,8 +7,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export type SecurityStatus = 'ok' | 'warn' | 'fail';
 export type SecuritySeverity = 'warn' | 'high' | 'fail';
@@ -129,7 +130,7 @@ function homeDir(): string {
 
 function resolveRepoRoot(cwd: string): string {
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });

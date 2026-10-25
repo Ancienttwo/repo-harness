@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -8,6 +8,7 @@ import { sprintBacklogSchema, SPRINT_BACKLOG_SCHEMA_V2 } from '../../core/state/
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { canonicalSprintsDirectory } from '../state/coordination-canonical-source';
+import { gitExecFileSync } from '../git/runner';
 
 export class OperatorTaskHistoryError extends Error {
   constructor(readonly code: TaskHistoryFailure) { super(code); }
@@ -37,7 +38,7 @@ export function readOperatorTaskHistory(
       const room=Math.min(maxBytes,TASK_HISTORY_MAX_BYTES-bytesRead);
       if (room <= 0) return fail('too_large');
       try {
-        const bytes=execFileSync('git',['--no-pager','--no-replace-objects','-c','core.fsmonitor=false',...args],{cwd:root,timeout:Math.max(1,Math.ceil(remaining)),maxBuffer:room,stdio:['ignore','pipe','pipe'],env:{...process.env,GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1'}});
+        const bytes=gitExecFileSync(['--no-pager','--no-replace-objects','-c','core.fsmonitor=false',...args],{cwd:root,timeout:Math.max(1,Math.ceil(remaining)),maxBuffer:room,stdio:['ignore','pipe','pipe'],env:{...process.env,GIT_OPTIONAL_LOCKS:'0',GIT_TERMINAL_PROMPT:'0',GIT_NO_LAZY_FETCH:'1'}});
         bytesRead+=bytes.length;
         if (performance.now()-started > deadlineMs) return fail('timeout');
         return new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);

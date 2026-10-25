@@ -8,20 +8,9 @@ import { basename, delimiter, isAbsolute, join, relative, resolve } from "path";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
-import {
-  VerificationPlanValidationError,
-  fingerprintVerificationCheck,
-  fingerprintVerificationCheckExecution,
-  hashVerificationPlan,
-  parseVerificationPlanFromContractText,
-  type VerificationCheck,
-  type VerificationPlan,
-} from "../../core/evidence/verification-plan";
+import { VerificationPlanValidationError, fingerprintVerificationCheck, fingerprintVerificationCheckExecution, hashVerificationPlan, parseVerificationPlanFromContractText, type VerificationCheck, type VerificationPlan } from "../../core/evidence/verification-plan";
 import { resolveGitCommonDirectory } from "../git/common-directory";
-import {
-  acquireExclusiveDirectoryLock,
-  ExclusiveLockContentionError,
-} from "../locking/exclusive-directory-lock";
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from "../locking/exclusive-directory-lock";
 import { resolveInsideRepo } from "../path-safety";
 import { redactProcessOutput, runProcess } from "../process-runner";
 import { createFileExclusiveDurably, writeFileDurably } from "./atomic-append";
@@ -29,6 +18,7 @@ import { resolveBlobsDir } from "./paths";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "./event-log";
 import { collectDenylistSecretValues } from "./secret-env";
+import { gitExecFileSync, isGitExecutableName } from '../git/runner';
 
 const EVENT_TYPE = "verification_execution.result";
 const PRODUCER = "verification-execution";
@@ -165,7 +155,7 @@ function sha256(content: string | Buffer): string {
 }
 
 function git(repoRoot: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
-  return execFileSync("git", ["-C", repoRoot, ...args], {
+  return gitExecFileSync(["-C", repoRoot, ...args], {
     encoding: "utf8",
     env: env ? { ...process.env, ...env } : process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -250,13 +240,21 @@ function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string 
 
 function versionOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
   try {
-    const version = execFileSync(command, [...args], {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      // File workers share CPU and process startup. Keep discovery bounded under load.
-      timeout: 15_000,
-    }).trim();
+    // File workers share CPU and process startup. Keep discovery bounded under load.
+    const version = (isGitExecutableName(command)
+      ? gitExecFileSync([...args], {
+        gitBin: command,
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15_000,
+      })
+      : execFileSync(command, [...args], {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15_000,
+      })).trim();
     if (!version) throw new Error("empty version output");
     return version;
   } catch (error) {

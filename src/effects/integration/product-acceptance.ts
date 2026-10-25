@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'child_process';
+import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 import {
   closeSync,
   constants,
@@ -187,7 +187,7 @@ function repositoryId(repoRoot: string, gitBin: string): string {
 
 function gitText(repoRoot: string, gitBin: string, args: readonly string[]): string {
   try {
-    return execFileSync(gitBin, [...args], { cwd: repoRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    return gitExecFileSync([...args], { cwd: repoRoot, gitBin, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   } catch (error) {
     throw fail('candidate_stale', `git ${args.join(' ')} failed`, error);
   }
@@ -204,7 +204,7 @@ function treeForCommit(repoRoot: string, gitBin: string, oid: string): string {
 }
 
 function assertAncestor(repoRoot: string, gitBin: string, ancestor: string, descendant: string, label: string): void {
-  const result = spawnSync(gitBin, ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repoRoot, encoding: 'utf-8' });
+  const result = gitSpawnSync(['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repoRoot, gitBin, encoding: 'utf-8' });
   if (result.error || (result.status !== 0 && result.status !== 1)) {
     throw fail('candidate_stale', `cannot prove ${label} ancestry`, result.error ?? result.stderr);
   }

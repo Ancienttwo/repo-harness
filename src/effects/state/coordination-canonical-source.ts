@@ -14,23 +14,14 @@
  * clone's location.
  */
 import { createHash } from 'crypto';
-import { execFileSync } from 'child_process';
+
 import { readdirSync } from 'fs';
 import { resolveRepoIdentity } from '../git/repository-identity';
 import { assertUniqueCanonicalTaskIds } from '../../core/state/coordination-identity';
-import {
-  SPRINT_BACKLOG_SCHEMA_V2,
-  sprintBacklogSchema,
-} from '../../core/state/sprint-backlog-rows';
-import {
-  evidenceContractComplete,
-  markdownHeader,
-  markdownSection,
-  parseAllowedPaths,
-  planSlugFromPath,
-  planStatusFromText,
-} from '../../core/state/artifact-parsers';
+import { SPRINT_BACKLOG_SCHEMA_V2, sprintBacklogSchema } from '../../core/state/sprint-backlog-rows';
+import { evidenceContractComplete, markdownHeader, markdownSection, parseAllowedPaths, planSlugFromPath, planStatusFromText } from '../../core/state/artifact-parsers';
 import { readText, repoPath } from './collect-state-inputs';
+import { gitExecFileSync } from '../git/runner';
 
 const DEFAULT_SPRINTS_DIRECTORY = 'plans/sprints';
 const SPRINT_STATUSES = new Set(['Draft', 'Approved', 'Executing', 'Done', 'Archived']);
@@ -266,7 +257,7 @@ function unsafeSprintPath(sprintPath: string): boolean {
 }
 
 function git(cwd: string, args: readonly string[]): string {
-  return execFileSync('git', [...args], {
+  return gitExecFileSync([...args], {
     cwd,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],

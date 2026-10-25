@@ -9,8 +9,8 @@ import { join } from 'path';
  * need the same list of locations where a compatible Node runtime may live when
  * `PATH` cannot be trusted or carries no compatible runtime. The scan is a pure
  * filesystem enumeration, including Homebrew versioned keg symlinks on POSIX;
- * version filtering stays with each caller because they
- * execute candidates under different process authorities.
+ * `selectCompatibleNode` owns the order and the range check. Each caller
+ * still runs `--version`, because the two process authorities differ.
  */
 function childDirectories(root: string): string[] {
   if (!existsSync(root)) return [];

@@ -1,11 +1,12 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
-import { execFileSync } from 'node:child_process';
+
 import { Command } from 'commander';
 import type { ProjectionHumanActionReasonCode, ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 import { runArchitectureWriter } from '../../effects/architecture/projection-writer';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export interface ProjectionCommandOptions {
   json?: boolean;
@@ -65,7 +66,7 @@ export function buildArchitectureProjectionCommand(): Command {
       try {
         const root = repositoryRoot();
         const base = options.base ? git(root, ['rev-parse', '--verify', `${options.base}^{commit}`]) : null;
-        const paths = base ? new Set(execFileSync('git', ['-C', root, 'diff', '--name-only', '-z', `${base}...HEAD`, '--'], { encoding: 'utf8' }).split('\0').filter(Boolean)) : null;
+        const paths = base ? new Set(gitExecFileSync(['-C', root, 'diff', '--name-only', '-z', `${base}...HEAD`, '--'], { encoding: 'utf8' }).split('\0').filter(Boolean)) : null;
         write({ edits: readArchitectureHandEdits(root).filter(edit => paths === null || paths.has(edit.path)) });
       } catch (error) { fail(error); }
     });
@@ -135,5 +136,5 @@ function fail(error: unknown): void {
 }
 
 function repositoryRoot(): string { return git(process.cwd(), ['rev-parse', '--show-toplevel']); }
-function git(cwd: string, args: string[]): string { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+function git(cwd: string, args: string[]): string { return gitExecFileSync(['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
 function write(value: unknown): void { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
