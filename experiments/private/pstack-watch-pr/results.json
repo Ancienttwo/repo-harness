@@ -404,9 +404,14 @@
       }
     },
     "harness": {
-      "ready": true,
+      "protocol": 2,
+      "kind": "repo-harness-pull-request-readiness",
+      "provider_repository_id": "1001",
+      "repository": "fixture/offline",
+      "pr_number": 1,
       "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "expected_base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ready": true,
       "integration_mode": "unmerged",
       "attention_owner": "none",
       "blockers": []
