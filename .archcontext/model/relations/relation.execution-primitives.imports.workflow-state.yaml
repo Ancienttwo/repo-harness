@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.execution-primitives.imports.workflow-state",
-  "kind": "depends-on",
-  "source": "capability.workflow-engine.execution-primitives",
-  "target": "capability.workflow-engine.workflow-state",
-  "intent": "Read the observation context for Git operations."
-}
