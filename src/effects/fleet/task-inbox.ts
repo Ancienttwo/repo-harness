@@ -54,8 +54,10 @@ import {
   validateTaskReplyCommit,
   inspectTaskReplyChain,
 } from '../../core/fleet/task-reply';
-import type {
-  ClaimActorReceiptV1,
+import {
+  canonicalClaimActorReceiptBytes,
+  validateClaimActorReceipt,
+  type ClaimActorReceiptV1,
 } from '../../core/engineers/principal-claim';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
@@ -951,6 +953,26 @@ export interface TaskActivityCoverage {
   readonly bytes: number;
 }
 
+/** Read the independent historical receipt only. This never creates a store or
+ * establishes current execution authority. Actor records have no newline frame. */
+function readHistoricalActorReceipt(common: string, taskId: string, claimId: string, charge: (bytes: number) => void): ClaimActorReceiptV1 | null {
+  assertTaskId(taskId);
+  assertMessageId(claimId);
+  const directory = join(common, 'repo-harness/engineers/v1/claim-actors', taskId);
+  if (!inspectSafeDirectoryChain(common, directory, false, 'historical actor receipt directory')) return null;
+  const path = join(directory, `${claimId}.json`);
+  let stat;
+  try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'historical actor receipt is unsafe or exceeds its byte bound');
+  charge(stat.size);
+  const raw = readFileSync(path, 'utf8');
+  const receipt = validateClaimActorReceipt(JSON.parse(raw));
+  if (canonicalClaimActorReceiptBytes(receipt) !== raw || receipt.task_id !== taskId || receipt.claim_id !== claimId) {
+    fail('task_message_unreadable', 'historical actor receipt bytes or path identity mismatch');
+  }
+  return receipt;
+}
+
 /** Historical observations never acquire a Lease/Binding lock or perform delivery. */
 export function readHistoricalTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
@@ -1013,7 +1035,7 @@ export function readHistoricalTaskActivity(input: {
       const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
       let actor: ClaimActorReceiptV1 | null = null;
       if (chain.intent && chain.observation.state !== 'inconsistent') {
-        const recorded = chain.intent.claim_actor;
+        const recorded = readHistoricalActorReceipt(common, input.task_id, recipient.claim_id, charge);
         if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
           && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
           && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
