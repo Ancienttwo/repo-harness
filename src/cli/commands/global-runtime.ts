@@ -1,6 +1,6 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -97,6 +97,7 @@ export const MIN_BUN_VERSION = "1.4.0";
 const CODEGRAPH_VERSION = productVersionManifest().runtime.codeGraph.requiredVersion;
 const CODEGRAPH_PACKAGE = `@colbymchenry/codegraph@${CODEGRAPH_VERSION}`;
 const ARCHCTX_PACKAGES = ["archctx", "archctx-contracts"] as const;
+const PACKED_RELEASE_TARBALL = /^repo-harness-\d+\.\d+\.\d+\.tgz$/;
 
 export function bunVersionIsSupported(version: string | undefined): boolean {
   if (!version) return false;
@@ -691,7 +692,21 @@ function installCliFromPackedTarball(
     );
   }
   const add = runProcess(bunExecutable, ["add", "-g", join(packDir, filename)], cwd, env);
+  if (add.status === "ok") removeSupersededPackedTarballs(packDir, filename);
   return withStepName(add, "install repo-harness CLI", `${detailPrefix}repaired=packed-tarball`);
+}
+
+/**
+ * The global install references the tarball it installed, so that one stays.
+ * Only release names that `npm pack` writes are removed; a suffixed name such
+ * as a 0.10.0 archive has no ownership proof and stays for `upgrade`.
+ */
+function removeSupersededPackedTarballs(packDir: string, installed: string): void {
+  for (const name of readdirSync(packDir)) {
+    if (name === installed || !PACKED_RELEASE_TARBALL.test(name)) continue;
+    const path = join(packDir, name);
+    if (lstatSync(path).isFile()) rmSync(path);
+  }
 }
 
 function syncRuntimeSkill(sourceRoot: string, profile: InstallProfile, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {

@@ -21,7 +21,7 @@ source:
     - "src/cli/hook/event-telemetry.ts"
     - "src/cli/hook/session-context-budget.ts"
     - "src/effects/loop/**"
-    - "src/effects/hook-event-log.ts"
+    - "src/effects/segmented-log.ts"
   entrypoints:
     - id: entrypoint.hook-adapters.handler-bindings
       path: "src/cli/hook/handler-registry.ts"

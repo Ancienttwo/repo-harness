@@ -174,10 +174,10 @@ flowchart LR
 | 根 | 共享范围 | 主要写入方 | 锁 | 回收 |
 | --- | --- | --- | --- | --- |
 | 已跟踪仓库文件 | 每个 checkout，经 Git 同步 | `init`（多为仅缺失时写入）、archctx ChangeSet、人与 agent | fs-transaction 目标锁 | Git |
-| `.ai/harness/` 忽略区 | 每个 checkout | hook、evidence ledger、Effective State、MCP、chatgpt-browser | 每个文件或目录一个锁 | hook 日志 8 MiB 轮转；evidence 由 checkpoint 发布与 `scripts/evidence-gc.ts` 回收；`backups/`、`archive/retention`、`mcp/*.jsonl` 没有回收（R-T8） |
+| `.ai/harness/` 忽略区 | 每个 checkout | hook、evidence ledger、Effective State、MCP、chatgpt-browser | 每个文件或目录一个锁 | hook 日志与 `mcp/*.jsonl`、`mcp/audit.log` 由写入方 8 MiB 轮转；evidence 由 checkpoint 发布与 `scripts/evidence-gc.ts` 回收；`backups/fs-transaction` 由 `repo-harness retention` 30 天后移入 `archive/retention`，归档条目 90 天后删除 |
 | `.ai/harness/runs/task-agents`、`task-workspaces` | 只在 primary checkout | task-session、generic-review | 每会话 `caller.lock` | `closed.json` 墓碑阻止重启，目录不回收 |
-| `{common}/repo-harness/` | 同一 clone 的全部 worktree | task inbox、feedback、integration、external sources、state version | 各子目录锁与 `expensive-run.lock` | 没有回收（R-T8） |
-| `~/.repo-harness/` | 每用户 | install 与 update、registry、MCP setup、acceptance | `transactions/global-runtime.lock`、registry 自有锁、`mcp-setup.lock` | `transactions/install-*` 在提交或回滚后删除；`packages/` 与 `upgrade-cleanup.log.jsonl` 没有回收 |
+| `{common}/repo-harness/` | 同一 clone 的全部 worktree | task inbox、feedback、integration、external sources、state version | 各子目录锁与 `expensive-run.lock` | 没有回收；`retention --json` 把 task inbox、feedback、integration 列为 keep（R-T8） |
+| `~/.repo-harness/` | 每用户 | install 与 update、registry、MCP setup、acceptance | `transactions/global-runtime.lock`、registry 自有锁、`mcp-setup.lock` | `transactions/install-*` 在提交或回滚后删除；`packages/` 只留 install 装入的 release tarball；`upgrade-cleanup.log.jsonl` 只留最新 100 条 |
 | 主机配置 | 每用户 | install 与 update 写受管片段 | `global-runtime.lock` 与主机事务副本 | `install-state.json` 所有权清单 |
 | 临时目录 | 每台机器 | worktree helper、MCP coding、process-runner | — | worktree 由 closeout 与 sweep 回收 |
 

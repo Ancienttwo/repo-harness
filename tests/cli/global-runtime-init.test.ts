@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -1274,7 +1274,7 @@ exit 0
     }
   });
 
-  test('repairs Bun dependency loop by reinstalling CLI from a packed tarball', () => {
+  test('repairs Bun dependency loop by reinstalling CLI from a packed tarball and drops superseded release tarballs', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-loop-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
@@ -1288,6 +1288,9 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      const packDir = join(home, '.repo-harness', 'packages');
+      mkdirSync(packDir, { recursive: true });
+      for (const name of ['repo-harness-9.9.8.tgz', 'repo-harness-0.10.0-local.tgz', 'other-1.0.0.tgz']) writeFileSync(join(packDir, name), '');
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(
         join(fakeBin, 'bun'),
@@ -1350,6 +1353,7 @@ exit 0
       expect(bunCommands[2]).toBe('remove -g repo-harness');
       expect(bunCommands[3]).toBe(`add -g ${join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz')}`);
       expect(existsSync(join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz'))).toBe(true);
+      expect(readdirSync(packDir).sort()).toEqual(['other-1.0.0.tgz', 'repo-harness-0.10.0-local.tgz', 'repo-harness-9.9.9.tgz']);
       expect(readFileSync(npmLog, 'utf-8')).toContain('pack --json --pack-destination');
     } finally {
       rmSync(tmp, { recursive: true, force: true });

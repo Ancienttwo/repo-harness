@@ -13,7 +13,7 @@ import {
   stripLegacyHookEntries,
   type LeftoverItem,
 } from '../../effects/upgrade/legacy-inventory';
-import { withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
+import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
   installProfileStatePath,
@@ -23,6 +23,9 @@ import {
 } from '../installer/install-profile';
 import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
+
+/** The audit file is rewritten whole on each cleanup, so it keeps the newest records only. */
+export const UPGRADE_AUDIT_MAX_RECORDS = 100;
 
 export interface UpgradeOptions {
   readonly cwd?: string;
@@ -155,7 +158,7 @@ interface ProjectBackup {
 
 function backupProject(cwd: string, paths: readonly string[], id: string): ProjectBackup | undefined {
   if (paths.length === 0) return undefined;
-  const backupRoot = join(cwd, '.ai', 'harness', 'backups', 'fs-transaction', `upgrade-${id}`);
+  const backupRoot = join(cwd, FS_TRANSACTION_BACKUP_ROOT, `upgrade-${id}`);
   if (!isLegacyPathSafe(cwd, backupRoot, false)) throw new Error(`unsafe project backup path: ${backupRoot}`);
   mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
   const snapshots = paths.map((path, index) => {
@@ -227,12 +230,13 @@ function applyLocked(
   const audit = () => {
     if (!isLegacyPathSafe(options.home, auditPath, false)) throw new Error(`unsafe audit path: ${auditPath}`);
     // The host transaction lock also serializes project-only cleanup audits.
-    const prior = legacyPathSnapshot(auditPath) ? readFileSync(auditPath, 'utf-8') : '';
+    const prior = legacyPathSnapshot(auditPath) ? readFileSync(auditPath, 'utf-8').split('\n').filter(Boolean) : [];
     const record = { transaction_id: transactionId, removed_paths: removedPaths, refreshed_paths: refreshedPaths, kept_paths: keptPaths,
       attempted_paths: [...mutatedPaths], rolled_back_paths: rolledBackPaths,
       backup_path: hostBackup?.backup_root ?? projectBackup?.transaction.backup_root,
       project_backup_path: projectBackup?.manifestPath, ...(error ? { error } : {}) };
-    atomicWriteFileSync(auditPath, `${prior}${JSON.stringify(record)}\n`, { mode: 0o600 });
+    const kept = [...prior, JSON.stringify(record)].slice(-UPGRADE_AUDIT_MAX_RECORDS);
+    atomicWriteFileSync(auditPath, `${kept.join('\n')}\n`, { mode: 0o600 });
   };
   try {
     assertHostLock();
