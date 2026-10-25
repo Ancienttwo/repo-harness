@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
@@ -8,6 +8,7 @@ import { planAdoption } from "../../src/core/adoption/plan";
 import { isRepoHarnessSourceCheckout } from "../../src/core/adoption/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
+import { renderApplyReport } from "../../src/cli/commands/adoption-plan";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const FS_TRANSACTION = join(ROOT, "src/effects/fs-transaction.ts");
@@ -532,7 +533,8 @@ describe("canonical adoption plan", () => {
   test("apply stops at the first failed operation and rolls back the applied ones by manifest", () => {
     const repo = tempRepo();
     try {
-      const original = Buffer.from("original bytes ✓\n");
+      // Invalid UTF-8 bytes prove that backup and restore are byte-exact.
+      const original = Buffer.concat([Buffer.from("original ✓ "), Buffer.from([0xff, 0xfe, 0x80, 0x00]), Buffer.from("\n")]);
       writeFileSync(join(repo, "existing.txt"), original);
       // The fourth write passes preflight, then fails because the third write turns its parent into a file.
       const plan = planWith(repo, [
@@ -554,31 +556,58 @@ describe("canonical adoption plan", () => {
       const manifest = JSON.parse(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8"));
       expect(manifest.operations.map((operation: { status: string }) => operation.status))
         .toEqual(["applied", "applied", "applied", "failed", "planned"]);
+
+      const report = { protocol: 1, command: "init", repoRoot: repo, mode: "minimal", ok: false, plan: {} } as const;
+      expect(renderApplyReport({ ...report, apply })).toContain("[init] rollback: complete - 3 rolled back, 0 failed\n");
+      const incomplete = renderApplyReport({
+        ...report,
+        apply: {
+          ...apply,
+          rollback: {
+            ok: false,
+            results: [{
+              id: "writeFile:existing.txt", kind: "writeFile", path: "existing.txt", status: "failed", action: "restore_backup",
+              error: "current file hash differs from transaction content hash",
+            }],
+          },
+        },
+      });
+      expect(incomplete).toContain("[init] rollback: incomplete - 0 rolled back, 1 failed\n");
+      expect(incomplete).toContain("[init] rollback failed: existing.txt (restore_backup) - current file hash differs from transaction content hash\n");
+      expect(incomplete).toContain("[init] not restored: existing.txt\n");
     } finally {
       cleanup(repo);
     }
   });
+
+  // Starts a process that takes the target lock, reports it, then runs whileHeld under the lock.
+  async function holdTargetLock(target: string, whileHeld: string): Promise<ReturnType<typeof Bun.spawn>> {
+    const holder = Bun.spawn([process.execPath, "-e", `
+      const { writeFileSync, writeSync } = require("fs");
+      const { withTargetLock } = require(${JSON.stringify(FS_TRANSACTION)});
+      const target = ${JSON.stringify(target)};
+      withTargetLock(target, () => {
+        writeSync(1, "locked\\n");
+        ${whileHeld}
+      });
+    `], { stdout: "pipe", stderr: "inherit" });
+    const reader = (holder.stdout as ReadableStream<Uint8Array>).getReader();
+    let output = "";
+    while (!output.includes("locked")) {
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error(`lock holder exited before locking: ${output}`);
+      output += new TextDecoder().decode(chunk.value);
+    }
+    reader.releaseLock();
+    return holder;
+  }
 
   test("apply reclaims a target lock left by a SIGKILLed writer", async () => {
     const repo = tempRepo();
     try {
       const target = join(repo, "locked.txt");
       writeFileSync(target, "before\n");
-      const holder = Bun.spawn([process.execPath, "-e", `
-        const { writeSync } = require("fs");
-        const { withTargetLock } = require(${JSON.stringify(FS_TRANSACTION)});
-        withTargetLock(${JSON.stringify(target)}, () => {
-          writeSync(1, "locked\\n");
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
-        });
-      `], { stdout: "pipe", stderr: "inherit" });
-      const reader = holder.stdout.getReader();
-      let output = "";
-      while (!output.includes("locked")) {
-        const chunk = await reader.read();
-        if (chunk.done) throw new Error(`lock holder exited before locking: ${output}`);
-        output += new TextDecoder().decode(chunk.value);
-      }
+      const holder = await holdTargetLock(target, "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);");
       holder.kill("SIGKILL");
       await holder.exited;
       expect(existsSync(`${target}.repo-harness.lock`)).toBe(true);
@@ -588,6 +617,51 @@ describe("canonical adoption plan", () => {
       expect(apply.ok).toBe(true);
       expect(readFileSync(target, "utf-8")).toBe("after\n");
       expect(existsSync(`${target}.repo-harness.lock`)).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
+  }, 30_000);
+
+  test("apply reclaims a stale empty target lock directory", () => {
+    const repo = tempRepo();
+    try {
+      const target = join(repo, "locked.txt");
+      writeFileSync(target, "before\n");
+      // A writer killed between creating the lock directory and publishing its owner leaves it empty.
+      const lock = `${target}.repo-harness.lock`;
+      mkdirSync(lock);
+      const past = new Date(Date.now() - 60_000);
+      utimesSync(lock, past, past);
+
+      const apply = applyAdoptionPlan(planWith(repo, [writeOperation("locked.txt", "after\n")]));
+      expect(apply.ok).toBe(true);
+      expect(readFileSync(target, "utf-8")).toBe("after\n");
+      expect(existsSync(lock)).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("a writer that waited for the target lock rechecks the planned content before it writes", async () => {
+    const repo = tempRepo();
+    try {
+      const target = join(repo, "contested.txt");
+      writeFileSync(target, "before\n");
+      const plan = planWith(repo, [{
+        ...writeOperation("contested.txt", "planned\n"),
+        expectedContentHash: `sha256:${createHash("sha256").update("before\n").digest("hex")}`,
+      }]);
+      // The holder edits the target while this apply waits for the lock, after preflight has passed.
+      const holder = await holdTargetLock(target, `
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+        writeFileSync(target, "holder edit\\n");
+      `);
+      const apply = applyAdoptionPlan(plan);
+      expect(await holder.exited).toBe(0);
+
+      expect(apply.ok).toBe(false);
+      expect(apply.results[0]?.error).toContain("target content changed after planning");
+      expect(readFileSync(target, "utf-8")).toBe("holder edit\n");
     } finally {
       cleanup(repo);
     }

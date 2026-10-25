@@ -180,11 +180,11 @@ function fsyncDirectory(path: string): void {
   }
 }
 
-function writeFileDurably(path: string, content: string, mode?: number): void {
+function writeFileDurably(path: string, content: string | Buffer, mode?: number): void {
   let fd: number | null = null;
   try {
     fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, mode);
-    const data = Buffer.from(content);
+    const data = typeof content === "string" ? Buffer.from(content) : content;
     let offset = 0;
     while (offset < data.length) {
       offset += writeSync(fd, data, offset, data.length - offset);
@@ -199,7 +199,7 @@ function sanitizeBackupStem(path: string): string {
   return path.replace(/[^a-zA-Z0-9._-]+/g, "__").replace(/^_+|_+$/g, "") || "file";
 }
 
-function contentHash(content: string): string {
+function contentHash(content: string | Buffer): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
@@ -232,56 +232,84 @@ function transactionDirFor(): string {
 
 export function withTargetLock<T>(targetPath: string, fn: () => T): T {
   // The shared primitive needs a canonical root; the lock stays beside its target,
-  // and a lock left by a dead writer is reclaimed instead of blocking the target.
-  return withExclusiveDirectoryLock(realpathSync(dirname(targetPath)), `${basename(targetPath)}${LOCK_SUFFIX}`, fn);
+  // and a lock left by a dead writer, or by one killed before it published its
+  // owner record, is reclaimed instead of blocking the target.
+  return withExclusiveDirectoryLock(
+    realpathSync(dirname(targetPath)),
+    `${basename(targetPath)}${LOCK_SUFFIX}`,
+    fn,
+    { reclaimStaleEmptyDirectory: true },
+  );
 }
+
+/** What a file write decides from the target state it observes. */
+type FileWriteDecision =
+  | { readonly kind: "write"; readonly content: string | Buffer; readonly mode?: number }
+  | { readonly kind: "skip" }
+  | { readonly kind: "refuse"; readonly error: string };
 
 export interface AtomicWriteResult {
   readonly backupPath?: string;
 }
 
-export function atomicWriteFile(
+// The decision runs again under the target lock, so a writer that waited for the
+// lock never overwrites a change another writer made while it waited.
+function writeFileUnderTargetLock(
   repoRoot: string,
   path: string,
-  content: string,
-  opts: { readonly mode?: number; readonly backupRoot?: string } = {},
-): AtomicWriteResult {
+  decide: (targetPath: string) => FileWriteDecision,
+  backupRoot?: string,
+): (AtomicWriteResult & { readonly content: string | Buffer }) | null {
   const target = resolveInsideRepo(repoRoot, path);
   if (!target.ok || !target.path) throw new Error(target.error ?? "invalid path");
   const targetPath = target.path;
   const symlinkError = assertNoSymlinkInPath(repoRoot, path);
   if (symlinkError) throw new Error(symlinkError);
-  if (existsSync(targetPath) && !lstatSync(targetPath).isFile()) {
-    throw new Error(`file target is not a regular file: ${path}`);
-  }
-  const existingMode = existsSync(targetPath) ? lstatSync(targetPath).mode & 0o777 : undefined;
   const parentError = ensureParent(repoRoot, path);
   if (parentError) throw new Error(parentError);
 
   return withTargetLock(targetPath, () => {
+    if (existsSync(targetPath) && !lstatSync(targetPath).isFile()) {
+      throw new Error(`file target is not a regular file: ${path}`);
+    }
+    const decision = decide(targetPath);
+    if (decision.kind === "refuse") throw new Error(decision.error);
+    if (decision.kind === "skip") return null;
+    const existingMode = existsSync(targetPath) ? lstatSync(targetPath).mode & 0o777 : undefined;
+
     let backupPath: string | undefined;
-    if (existsSync(targetPath)) {
-      backupPath = backupPathFor(path, opts.backupRoot);
+    if (existingMode !== undefined) {
+      backupPath = backupPathFor(path, backupRoot);
       const backup = resolveInsideRepo(repoRoot, backupPath);
       if (!backup.ok || !backup.path) throw new Error(backup.error ?? "invalid backup path");
       const resolvedBackupPath = backup.path;
       const backupParentError = ensureParent(repoRoot, backupPath);
       if (backupParentError) throw new Error(backupParentError);
-      writeFileDurably(resolvedBackupPath, readFileSync(targetPath, "utf-8"), existingMode);
+      writeFileDurably(resolvedBackupPath, readFileSync(targetPath), existingMode);
       fsyncDirectory(dirname(resolvedBackupPath));
     }
 
     const tempPath = resolve(dirname(targetPath), `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
     try {
-      writeFileDurably(tempPath, content, opts.mode ?? existingMode);
+      writeFileDurably(tempPath, decision.content, decision.mode ?? existingMode);
       renameSync(tempPath, targetPath);
       fsyncDirectory(dirname(targetPath));
     } finally {
       rmSync(tempPath, { force: true });
     }
 
-    return { backupPath };
+    return { backupPath, content: decision.content };
   });
+}
+
+export function atomicWriteFile(
+  repoRoot: string,
+  path: string,
+  content: string | Buffer,
+  opts: { readonly mode?: number; readonly backupRoot?: string } = {},
+): AtomicWriteResult {
+  const write = writeFileUnderTargetLock(repoRoot, path, () => ({ kind: "write", content, mode: opts.mode }), opts.backupRoot);
+  return { backupPath: write?.backupPath };
 }
 
 export function applyMkdirOperation(repoRoot: string, operation: MkdirOperation, dryRun = false): ApplyOperationResult {
@@ -299,38 +327,53 @@ export function applyMkdirOperation(repoRoot: string, operation: MkdirOperation,
   return { id: operation.id, kind: operation.kind, path: operation.path, status: "applied" };
 }
 
-export function applyWriteFileOperation(
+function applyFileWriteOperation(
   repoRoot: string,
-  operation: WriteFileOperation,
-  dryRun = false,
-  backupRoot?: string,
+  operation: WriteFileOperation | AppendManagedBlockOperation,
+  decide: (targetPath: string) => FileWriteDecision,
+  dryRun: boolean,
+  backupRoot: string | undefined,
 ): ApplyOperationResult {
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid path");
   const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
   if (symlinkError) return failure(operation, symlinkError);
-  const preconditionError = checkExpectedFileState(repoRoot, operation);
-  if (preconditionError) return failure(operation, preconditionError);
-  if (operation.ifMissing === true && existsSync(target.path)) {
-    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
-  }
-  if (existsSync(target.path) && readFileSync(target.path, "utf-8") === operation.content) {
-    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
-  }
+  // The unlocked decision settles dry-run and skips the lock for unchanged targets;
+  // a write decides again under the lock before it touches the target.
+  const decision = decide(target.path);
+  if (decision.kind === "refuse") return failure(operation, decision.error);
+  const skipped: ApplyOperationResult = { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
+  if (decision.kind === "skip") return skipped;
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
   try {
-    const write = atomicWriteFile(repoRoot, operation.path, operation.content, { mode: operation.mode, backupRoot });
+    const write = writeFileUnderTargetLock(repoRoot, operation.path, decide, backupRoot);
+    if (!write) return skipped;
     return {
       id: operation.id,
       kind: operation.kind,
       path: operation.path,
       status: "applied",
       backupPath: write.backupPath,
-      contentHash: contentHash(operation.content),
+      contentHash: contentHash(write.content),
     };
   } catch (error) {
     return failure(operation, errorMessage(error));
   }
+}
+
+export function applyWriteFileOperation(
+  repoRoot: string,
+  operation: WriteFileOperation,
+  dryRun = false,
+  backupRoot?: string,
+): ApplyOperationResult {
+  return applyFileWriteOperation(repoRoot, operation, (targetPath) => {
+    const preconditionError = checkExpectedFileState(repoRoot, operation);
+    if (preconditionError) return { kind: "refuse", error: preconditionError };
+    if (operation.ifMissing === true && existsSync(targetPath)) return { kind: "skip" };
+    if (existsSync(targetPath) && readFileSync(targetPath).equals(Buffer.from(operation.content))) return { kind: "skip" };
+    return { kind: "write", content: operation.content, mode: operation.mode };
+  }, dryRun, backupRoot);
 }
 
 export function applyAppendManagedBlockOperation(
@@ -339,33 +382,15 @@ export function applyAppendManagedBlockOperation(
   dryRun = false,
   backupRoot?: string,
 ): ApplyOperationResult {
-  const target = resolveInsideRepo(repoRoot, operation.path);
-  if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid path");
-  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
-  if (symlinkError) return failure(operation, symlinkError);
-  const preconditionError = checkExpectedFileState(repoRoot, operation);
-  if (preconditionError) return failure(operation, preconditionError);
-  const existing = existsSync(target.path) ? readFileSync(target.path, "utf-8") : "";
-  const update = upsertManagedBlock(existing, operation);
-  if (!update.ok) return failure(operation, update.error ?? "failed to update managed block");
-  if (!update.changed) {
-    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
-  }
-  if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
-  try {
-    const content = update.content ?? "";
-    const write = atomicWriteFile(repoRoot, operation.path, content, { backupRoot });
-    return {
-      id: operation.id,
-      kind: operation.kind,
-      path: operation.path,
-      status: "applied",
-      backupPath: write.backupPath,
-      contentHash: contentHash(content),
-    };
-  } catch (error) {
-    return failure(operation, errorMessage(error));
-  }
+  return applyFileWriteOperation(repoRoot, operation, (targetPath) => {
+    const preconditionError = checkExpectedFileState(repoRoot, operation);
+    if (preconditionError) return { kind: "refuse", error: preconditionError };
+    const existing = existsSync(targetPath) ? readFileSync(targetPath, "utf-8") : "";
+    const update = upsertManagedBlock(existing, operation);
+    if (!update.ok) return { kind: "refuse", error: update.error ?? "failed to update managed block" };
+    if (!update.changed) return { kind: "skip" };
+    return { kind: "write", content: update.content ?? "" };
+  }, dryRun, backupRoot);
 }
 
 function moveIntoTransactionBackup(repoRoot: string, path: string, transactionDir: string): string {
@@ -747,16 +772,15 @@ function rollbackFileOperation(repoRoot: string, operation: FsTransactionManifes
       // Fail closed: never overwrite a target whose current content diverges from
       // what this transaction applied (e.g. the user edited the file after apply).
       // Mirrors the delete_created_file guard so both destructive paths are symmetric.
-      if (existsSync(target.path)) {
-        if (!operation.contentHash) {
-          return rollbackFailed(operation, "restore_backup", "missing content hash for replaced file rollback");
+      const original = readFileSync(backup.path);
+      writeFileUnderTargetLock(repoRoot, operation.path, (targetPath) => {
+        if (!existsSync(targetPath)) return { kind: "write", content: original };
+        if (!operation.contentHash) return { kind: "refuse", error: "missing content hash for replaced file rollback" };
+        if (contentHash(readFileSync(targetPath, "utf-8")) !== operation.contentHash) {
+          return { kind: "refuse", error: "current file hash differs from transaction content hash" };
         }
-        const currentHash = contentHash(readFileSync(target.path, "utf-8"));
-        if (currentHash !== operation.contentHash) {
-          return rollbackFailed(operation, "restore_backup", "current file hash differs from transaction content hash");
-        }
-      }
-      atomicWriteFile(repoRoot, operation.path, readFileSync(backup.path, "utf-8"));
+        return { kind: "write", content: original };
+      });
       return { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "restore_backup" };
     } catch (error) {
       return rollbackFailed(operation, "restore_backup", errorMessage(error));
@@ -767,15 +791,20 @@ function rollbackFileOperation(repoRoot: string, operation: FsTransactionManifes
   if (!existsSync(target.path)) {
     return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "delete_created_file" };
   }
+  const targetPath = target.path;
+  const createdHash = operation.contentHash;
   try {
     // Read + hash inside the try so an unreadable target (e.g. replaced by a
     // directory) returns a structured failed result instead of throwing to the CLI.
-    const currentHash = contentHash(readFileSync(target.path, "utf-8"));
-    if (currentHash !== operation.contentHash) {
+    const deleted = withTargetLock(targetPath, () => {
+      if (contentHash(readFileSync(targetPath, "utf-8")) !== createdHash) return false;
+      rmSync(targetPath);
+      fsyncDirectory(dirname(targetPath));
+      return true;
+    });
+    if (!deleted) {
       return rollbackFailed(operation, "delete_created_file", "current file hash differs from transaction content hash");
     }
-    rmSync(target.path);
-    fsyncDirectory(dirname(target.path));
     return { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "delete_created_file" };
   } catch (error) {
     return rollbackFailed(operation, "delete_created_file", errorMessage(error));

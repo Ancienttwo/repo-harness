@@ -102,11 +102,11 @@ sequenceDiagram
 2. **规划层无副作用。** `src/core/adoption/**` 不 import `src/effects/**`。`planAdoption`（`src/core/adoption/plan.ts:22`）只读文件系统。`--dry-run` 的输出和 apply 执行的是同一个 operation 模型。
 3. **前置条件在规划期固化。** 每个 operation 带 `expectedContentHash` 或 `expectedAbsent`（`src/core/adoption/operations.ts:27`、`:29`）。规划与执行之间若有并发编辑，执行失败，不覆盖。
 4. **回滚策略在规划期固化。** `rollbackMetadataForOperation`（`src/core/adoption/rollback.ts:11`）为每个 operation 生成回滚说明。`--dry-run` 输出因此也是一份回滚说明书。
-5. **executor 只有一个调用点。** `applyAdoptionPlan` 在 `src/` 中只被 `src/cli/commands/adoption-plan.ts:150` 调用。
+5. **executor 只有一个调用点。** `applyAdoptionPlan` 在 `src/` 中只被 `src/cli/commands/adoption-plan.ts:163` 调用。
 6. **失败关闭。** 非法路径、哈希不符、归属不明、不支持的 kind 都让流程停止或告警。流程不靠扩大删除范围继续。
 7. **保护用户归属。** `.gitignore` 只改受管区块（`src/core/adoption/managed-block.ts:54`）。hook 配置只删 repo-harness 自有的命令对象（`managed-hook-config.ts:49-53`）。known-generated 清理只删字节匹配声明指纹的文件。
-8. **manifest 与文件效果同属一个事务。** manifest 写入失败，事务整体失败（`src/effects/fs-transaction.ts:561`）。回滚只碰本事务拥有的目标，apply 之后的用户编辑不会被覆盖。
-9. **self-host apply 保持关闭。** `runAdoptionApply` 对 `mode === "self-host"` 返回 `self_host_review_required`（`adoption-plan.ts:138-146`）。`standard-plan.ts:841-842` 的不可执行 `runCheck` 是第二道防线。
+8. **manifest 与文件效果同属一个事务。** apply 在第一个失败的 operation 处停止，后续 operation 不执行。manifest 落盘后，executor 按 manifest 自动回滚已完成的 operation（`src/effects/fs-transaction.ts:697`）。manifest 写入失败也使事务失败并回滚（`:579`）。回滚只碰本事务拥有的目标，apply 之后的用户编辑不会被覆盖。`init` 文本报告给出回滚结果和未恢复的文件。
+9. **self-host apply 保持关闭。** `runAdoptionApply` 对 `mode === "self-host"` 返回 `self_host_review_required`（`adoption-plan.ts:151-160`）。`standard-plan.ts:841-842` 的不可执行 `runCheck` 是第二道防线。
 10. **目标仓库必须是明确的 Git 工作树。** `validateRepoAdoptionTarget` 拒绝 HOME，也拒绝不在 Git 工作树内的 cwd（`src/cli/repo-adoption/target.ts`）。`init` 和 `adoption-plan` 共用这一个校验。
 
 ### 3.2 关键权衡
@@ -114,8 +114,8 @@ sequenceDiagram
 | 决策 | 权衡 |
 | --- | --- |
 | 规划与执行分离，所有条件判断前移到规划期 | 消除"预演说改 A，实际改了 B"。代价是 `standard-plan.ts` 涨到 850 行，十几个 `add*Operations` 步骤共享一个按顺序填充的数组。 |
-| 每个目标一个 `O_EXCL` 文件锁（`withTargetLock`，`fs-transaction.ts:226`），没有全事务锁 | 两个并发 `init` 不会覆盖同一个文件。代价是它们可以交错出"一半来自事务 A、一半来自事务 B"的仓库状态。 |
-| 每次写入都把原字节完整备份到 `.ai/harness/backups/fs-transaction/`（`fs-transaction.ts:32`） | 回滚总能恢复原内容。代价是这个目录没有保留期或 GC，单调增长。 |
+| 每个目标一个 `exclusive-directory-lock` 目录锁（`withTargetLock`，`fs-transaction.ts:233`），没有全事务锁 | 两个并发 `init` 不会覆盖同一个文件。前置条件和内容判断在锁内复核，等锁的写入方不会覆盖另一方在等待期间的修改。持锁进程死亡后，下一次写入回收这把锁。代价是两个事务可以交错出"一半来自事务 A、一半来自事务 B"的仓库状态，自动回滚只撤销本事务的 operation。 |
+| 每次写入都把原字节完整备份到 `.ai/harness/backups/fs-transaction/`（`fs-transaction.ts:34`） | 回滚按字节恢复原内容，非 UTF-8 文件也不变。代价是这个目录没有保留期或 GC，单调增长。 |
 | 全量 preflight 后串行执行 | 执行前一次性发现问题。代价是 operation 增多后时间窗变长，"target content changed after planning"更常见。可用性先下降，正确性不变。 |
 
 ### 3.3 10x 规模下先垮的点
@@ -154,6 +154,12 @@ sequenceDiagram
 
 - include 增加 `src/cli/repo-adoption/**` 和 `src/cli/commands/migrate.ts`。
 - P3 改为"必须保持的不变量 / 关键权衡"结构，并按当前源码更新行号（`standard-plan.ts` 850 行，`withTargetLock` 在 `fs-transaction.ts:226`）。
+
+### 2026-10-25 事务原子化与目标锁迁移（#902）
+
+- `applyAdoptionPlan` 在第一个失败处停止，并按 manifest 自动回滚已完成的 operation。原因：旧实现在失败后继续执行，只能手动回滚。
+- `withTargetLock` 从 `O_EXCL` 文件锁改为 `exclusive-directory-lock`，并回收死亡持有者留下的锁。原因：写入方崩溃后，旧锁让目标永久报 "target is locked"。旧版本留下的文件锁不是目录，新锁拒绝它，需要手动删除。
+- 文件写入的前置条件移入目标锁内；备份和恢复改为按字节处理。
 
 ---
 
