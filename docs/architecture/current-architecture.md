@@ -237,6 +237,35 @@ selectors. The existing review-receipt selector remains unproven; this document
 change does not repair or waive that model proof. Issue #948 stays open for
 final review of this acceptance evidence.
 
+### 2026-10-25 follow-up: receipt sink repair
+
+The 107/108 result above records this PR at
+`7dd32a648a3c89ffbd31cc1fd7471b453098fddd`, against source baseline
+`cb900a7fe5ebd04830fdfa62e1b18e25ec969148`. It remains the result of that run.
+[#956](https://github.com/Ancienttwo/repo-harness/issues/956) was then fixed by
+[#957](https://github.com/Ancienttwo/repo-harness/pull/957), merged as
+`b4c8b53b43c376a4da1e17a10c1fe40fc98e7d72`. The approved ChangeSet changed only
+the receipt sink path from the script facade to
+`src/effects/review/acceptance-receipt.ts`.
+
+The [recorded candidate verification](https://github.com/Ancienttwo/repo-harness/pull/957#issuecomment-6400545828)
+at `24633552040b45739e7dccec79017ac7ed1ed435` used archctx 0.9.3 and ready
+CodeGraph 1.6.2: `flows check` reported `data.ok: true`, 108/108 proven and zero
+unproven selectors. The receipt selector had a direct call at
+`src/effects/review/generic-review.ts:379`. Model validation reported
+`valid: true`, no errors and the same manifest policy warning. The merged tree
+`c802c8d3fff2d965423be5d619f4bf1eb3491960` matches that reviewed candidate tree.
+This is evidence from #957, not a rerun or a new whole-source review by #950.
+The source baseline at the top of this page stays unchanged.
+
+Separate findings remain: 10 anchor findings across 1,077 citations (three
+line-out-of-range and seven missing-path; zero unchecked); projection
+`human-action-required` / `unresolved-major-change` across 17 capabilities;
+and partial practices coverage because practices were not enabled or evaluated.
+They are not waived by model validity, flow proof or green CI. Generated
+publication remains with the rolling writer. The #903 review-key migration and
+#917 retained-reader decisions remain separate from this documentation repair.
+
 Current source takes precedence over historical Remarks. Reuse the existing
 issues for library moves and retained-reader decisions. Count differences in
 successive generated graphs are not a separate defect. Documentation checks and
