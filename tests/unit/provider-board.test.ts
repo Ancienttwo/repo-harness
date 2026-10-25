@@ -3,9 +3,9 @@ import { expect, test } from 'bun:test';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
 import { buildExternalSourceProjection } from '../../src/core/external-sources/projection';
 import { projectProviderBoard } from '../../src/core/state/provider-board';
-import type { OperatorTaskSession } from '../../src/core/operator/task-sessions';
+import type { AdmittedTaskSession } from '../../src/core/sessions/task-sessions';
 const digest = `sha256:${'a'.repeat(64)}`;
-function session(task: string, issue = '200'): OperatorTaskSession {
+function session(task: string, issue = '200'): AdmittedTaskSession {
   return { profile_selection: { state: 'unassigned' }, admission_sha256: digest, branch: 'refs/heads/task', runtime: 'terminal', harness_kind: 'codex', selector: {
     repository_id: 'repo_1', provider_repository_id: '100', issue_id: issue, campaign_id: 'campaign', task, role: 'worker',
     claim_ref: `claim:${task}`, claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: `sha256:${task.repeat(64)}`,
@@ -39,7 +39,7 @@ test('unavailable discovery preserves issue rows and unknown provider associatio
   expect(unobserved.cards[0]!.sessions).toEqual([]);
 });
 
-function fleetCard(execution: OperatorTaskSession | null, issueState: 'open' | 'closed' | null = 'open'): FleetBoardCardInputV2 {
+function fleetCard(execution: AdmittedTaskSession | null, issueState: 'open' | 'closed' | null = 'open'): FleetBoardCardInputV2 {
   return { provider_repository_id: '100', provider_issue_id: '200', issue_state: issueState, issue_revision: digest,
     execution_status: 'observed', execution, task_id: execution?.selector.task ?? null, task_label: 'Provider title', task_index: 7,
     merge_readiness: null, execution_readiness: null, readiness_blockers: null,
@@ -69,7 +69,7 @@ test('unknown provider state or execution observations remain visible and unclas
 // Exercise the real bounded collector loop. The scripted readers supply observations,
 // not precomputed board revisions or a replacement snapshot-consistency algorithm.
 import { resolveProviderBoard, type ProviderBoardReaders } from '../../src/effects/state/collect-provider-board-inputs';
-import { OperatorTaskDiffError } from '../../src/effects/operator/task-diff';
+import { SessionObservationError } from '../../src/effects/sessions/admitted-source';
 function scriptedBoardReads(snapshots: readonly ReturnType<typeof fixture>[], failure?: 'stale' | 'too_large' | 'unavailable') {
   let reads = 0;
   let current = snapshots[0]!;
@@ -84,7 +84,7 @@ function scriptedBoardReads(snapshots: readonly ReturnType<typeof fixture>[], fa
     receipts: root => { expect(root).toBe('/fixture/repository'); return [current.issues.latest_complete_refresh!]; },
     sessions: input => {
       expect(input.repository_id).toBe('repo_1');
-      if (failure) throw new OperatorTaskDiffError(failure);
+      if (failure) throw new SessionObservationError(failure);
       return current.sessions;
     },
   };

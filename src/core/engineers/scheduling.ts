@@ -1,4 +1,4 @@
-import type { OperatorTaskSession, OperatorTaskSessions } from '../operator/task-sessions';
+import type { AdmittedTaskSession, AdmittedTaskSessions } from '../sessions/task-sessions';
 import type { ExternalSourceProjectionV1 } from '../external-sources/projection';
 import type { ProviderIssueObservationV1 } from '../external-sources/issue-observation';
 import { validateRequiredPullRequest, type RequiredPullRequestV2 } from '../integration/product-acceptance';
@@ -754,7 +754,7 @@ export type AdmittedEngineerSelection =
   | { readonly state: 'unassigned' }
   | { readonly state: 'selected' | 'profile_missing' | 'profile_revision_changed'; readonly engineer_id: string; readonly engineer_contract_revision: string };
 export interface AdmittedEngineerSession {
-  readonly session: OperatorTaskSession;
+  readonly session: AdmittedTaskSession;
   readonly selection: AdmittedEngineerSelection;
 }
 export interface ProviderEngineerTask {
@@ -775,7 +775,7 @@ export interface ProviderEngineerSchedulingSnapshot {
 export function projectProviderEngineerScheduling(input: {
   readonly repository_id: string;
   readonly issues: ExternalSourceProjectionV1;
-  readonly sessions: OperatorTaskSessions;
+  readonly sessions: AdmittedTaskSessions;
   readonly profiles: readonly EngineerSchedulingProfile[];
 }): ProviderEngineerSchedulingSnapshot {
   if (input.issues.registered_repository_id !== input.repository_id || input.sessions.repository_id !== input.repository_id) {

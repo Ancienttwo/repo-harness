@@ -8,7 +8,7 @@ import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/prof
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { gitExecFileSync } from '../git/runner';
 import { readCanonicalTargetRef } from '../state/canonical-target';
-import { readOperatorTaskSessions } from '../operator/task-sessions';
+import { readAdmittedTaskSessions } from '../sessions/task-sessions';
 import { listExternalSourceProjection } from '../external-sources/refresh';
 import { listEngineerProfiles, resolveCapabilityForEngineer } from '../profiles/profile-store';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
@@ -66,7 +66,7 @@ export function readProviderWorkGraph(repo: RepoHarnessRegisteredRepo, source: P
 }
 /** Read the shared admission discovery and provider cache; never consult Sprint or leases. */
 export interface ProviderSchedulingReaders {
-  readonly readSessions: typeof readOperatorTaskSessions;
+  readonly readSessions: typeof readAdmittedTaskSessions;
   readonly readIssues: typeof listExternalSourceProjection;
   readonly listProfiles: typeof listEngineerProfiles;
 }
@@ -74,7 +74,7 @@ export function readProviderEngineerScheduling(repo: RepoHarnessRegisteredRepo, 
   return projectProviderEngineerScheduling({
     repository_id: repo.id,
     issues: (readers.readIssues ?? listExternalSourceProjection)(repo.path, repo.id),
-    sessions: (readers.readSessions ?? readOperatorTaskSessions)({ repository_id: repo.id, env }),
+    sessions: (readers.readSessions ?? readAdmittedTaskSessions)({ repository_id: repo.id, env }),
     profiles: (readers.listProfiles ?? listEngineerProfiles)(repo.path).map(profile => ({ engineer_id: profile.profile.engineer_id,
       capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision })),
   });

@@ -1391,7 +1391,7 @@ describe('task detail original evidence', () => {
 
   test('cancels both sources on task revision switch and ignores late replies from transports ignoring abort', async () => {
     const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-    const contexts: { request: import('../../src/core/operator/task-diff').OperatorTaskDiffRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/admitted-task-context').AdmittedTaskContext) => void }[] = [];
+    const contexts: { request: import('../../src/core/sessions/session-selector').AdmittedSessionSelector; signal: AbortSignal; resolve: (value: import('../../src/core/operator/admitted-task-context').AdmittedTaskContext) => void }[] = [];
     const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-activity').OperatorTaskActivity) => void }[] = [];
     const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = (request, signal) => new Promise(resolve => contexts.push({ request, signal, resolve }));
     const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = (request, signal) => new Promise(resolve => activities.push({ request, signal, resolve }));
@@ -1448,7 +1448,7 @@ describe('task detail original evidence', () => {
 
 test('OperatorApp selects, refreshes and cancels exact task evidence without a message write', async () => {
   const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-  const contexts: { request: import('../../src/core/operator/task-diff').OperatorTaskDiffRequest; signal: AbortSignal }[] = [];
+  const contexts: { request: import('../../src/core/sessions/session-selector').AdmittedSessionSelector; signal: AbortSignal }[] = [];
   const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal }[] = [];
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" fetchSnapshot={async () => stableSnapshot}
     readTaskContext={async (request, signal) => { contexts.push({ request, signal }); return taskContextFixture(request); }}

@@ -9,9 +9,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { delimiter } from 'node:path';
-import { decodeOperatorTaskSessions } from '../../src/core/operator/task-sessions';
+import { decodeAdmittedTaskSessions } from '../../src/core/sessions/task-sessions';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
-import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
+import { decodeOperatorTaskDiff } from '../../src/core/operator/task-diff';
+import { SESSION_OBSERVATION_MAX_BYTES } from '../../src/core/sessions/session-selector';
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { taskRepository } from '../../src/effects/git/task-repository';
@@ -146,7 +147,7 @@ test('external diff/textconv are disabled and oversized patches are refused', ()
   writeFileSync(join(f.worktree, '.gitattributes'), 'file.txt diff=custom\n');
   writeFileSync(join(f.worktree, 'file.txt'), 'changed\n');
   expect(f.read().patch).toContain('+changed');
-  writeFileSync(join(f.worktree, 'file.txt'), 'x'.repeat(TASK_DIFF_MAX_BYTES + 100));
+  writeFileSync(join(f.worktree, 'file.txt'), 'x'.repeat(SESSION_OBSERVATION_MAX_BYTES + 100));
   expect(() => f.read()).toThrow('too_large');
 });
 
@@ -159,7 +160,7 @@ test('production worker discovers explicit synthetic approval then reads fenced 
     writeFileSync(join(f.worktree, 'file.txt'), 'via worker\n');
     const discovered=await fetch(server.url+`/api/v1/fleet/task-sessions/${f.selector.repository_id}`);
     expect(discovered.status).toBe(200);
-    const sessions=decodeOperatorTaskSessions(await discovered.json(),{repository_id:f.selector.repository_id});
+    const sessions=decodeAdmittedTaskSessions(await discovered.json(),{repository_id:f.selector.repository_id});
     expect(sessions.sessions.map(session=>session.selector)).toEqual([f.selector]);
     const response = await fetch(server.url + f.path);
     expect(response.status).toBe(200);
@@ -180,7 +181,7 @@ test('binary changes remain a Git summary and detached execution trees are refus
 test('decoder refuses malformed and oversized payloads instead of displaying partial output', () => {
   const f = fixture(); const value = f.read();
   for (const change of [
-    { patch: 'x'.repeat(TASK_DIFF_MAX_BYTES + 1) },
+    { patch: 'x'.repeat(SESSION_OBSERVATION_MAX_BYTES + 1) },
     { untracked_paths: ['/Users/someone/private'] },
     { untracked_paths: ['../foreign'] },
     { base_sha: 'main' }, { actor_id: '' }, { protocol: 1 },
@@ -348,11 +349,11 @@ test('a bound owner root replaced by a symlink is unavailable', () => {
 });
 
 test('discovery returns current protected selection, requires explicit sessions, and distinguishes failure from empty', async () => {
-  const { readOperatorTaskSessions } = await import('../../src/effects/operator/task-sessions');
+  const { readAdmittedTaskSessions } = await import('../../src/effects/sessions/task-sessions');
   const { readCurrentReviewAdmissionSource } = await import('../../src/effects/admission/admission-source');
   const f = fixture(true);
   const currentSource: typeof readCurrentReviewAdmissionSource = input => readCurrentReviewAdmissionSource(input, { authorityHome: f.home, runner: f.approved.source.runner });
-  const discover = () => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env }, { currentSource });
+  const discover = () => readAdmittedTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env }, { currentSource });
   const first = discover();
   expect(first.sessions).toHaveLength(1);
   expect(first.sessions[0]!.selector).toEqual(f.selector);
@@ -371,10 +372,10 @@ test('discovery returns current protected selection, requires explicit sessions,
 });
 
 test('discovery refuses directory overflow instead of presenting a partial list', async () => {
-  const { readOperatorTaskSessions } = await import('../../src/effects/operator/task-sessions');
+  const { readAdmittedTaskSessions } = await import('../../src/effects/sessions/task-sessions');
   const f = fixture();
   for (let index = 0; index < 201; index++) mkdirSync(join(f.dir, '..', index.toString(16).padStart(64, '0')));
-  expect(() => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env })).toThrow('too_large');
+  expect(() => readAdmittedTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env })).toThrow('too_large');
 });
 
 

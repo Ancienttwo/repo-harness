@@ -5,7 +5,7 @@ import { initGitRepo, commitAll, run, tmpWorkspace } from '../helpers/repo-fixtu
 import { bindEngineerRuntimeSession } from '../helpers/engineer-runtime-fixture';
 import { collectEngineeringBoard, type EngineeringOverlayDependencies } from '../../src/effects/engineers/engineering-overlay';
 import { readProviderEngineerScheduling, readProviderWorkGraph } from '../../src/effects/engineers/scheduling';
-import { readOperatorTaskSessions } from '../../src/effects/operator/task-sessions';
+import { readAdmittedTaskSessions } from '../../src/effects/sessions/task-sessions';
 import { decodeOperatorOrganizationSnapshot } from '../../src/core/operator/organization-snapshot';
 import { buildProviderEngineerOffers } from '../../src/core/engineers/scheduling';
 import { recordAgentRuntimeCapability, recordEngineerOfferSnapshot, AGENT_RUNTIME_EFFECT_RELATIVE_ROOT } from '../../src/effects/engineers/agent-runtime-effect-store';
@@ -51,7 +51,7 @@ async function fixture() {
   // Inject only the private fixture approval/provider runner. The shared reader still
   // discovers and validates the actual public-lifecycle binding and current admission.
   const readScheduling: EngineeringOverlayDependencies['readScheduling'] = (repo, observedEnv) => readProviderEngineerScheduling(repo, observedEnv, {
-    readSessions: input => readOperatorTaskSessions(input, { currentSource: () => session.source.authority.source }),
+    readSessions: input => readAdmittedTaskSessions(input, { currentSource: () => session.source.authority.source }),
   });
   return { root, env, id, session, readScheduling };
 }

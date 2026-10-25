@@ -1,16 +1,17 @@
 import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
 import { readOperatorAdmittedTaskActivity } from './admitted-task-activity';
-import { isTaskSessionsRequest } from '../../core/operator/task-sessions';
-import { readOperatorTaskSessions } from './task-sessions';
+import { isTaskSessionsRequest } from '../../core/sessions/task-sessions';
+import { readAdmittedTaskSessions } from '../sessions/task-sessions';
 import { Worker } from 'node:worker_threads';
 import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
 import { isTaskActivityRequest } from '../../core/operator/task-activity';
-import { isTaskDiffRequest } from '../../core/operator/task-diff';
+import { isAdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { isTaskHistoryRequest } from '../../core/operator/task-history';
 import { OperatorTaskActivityError, readOperatorTaskActivity } from './task-activity';
 import { readOperatorTaskContext } from './task-context';
-import { OperatorTaskDiffError, readOperatorTaskDiff } from './task-diff';
+import { SessionObservationError } from '../sessions/admitted-source';
+import { readOperatorTaskDiff } from './task-diff';
 import { OperatorTaskHistoryError, readOperatorTaskHistory } from './task-history';
 
 // Stay inert until the supervisor has assigned this process to its ownership boundary.
@@ -46,21 +47,21 @@ function run(): void {
         worker.once('message', finish);
         worker.once('error', () => finish({ ok: false, code: 'unavailable' }));
         worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });
-      } else if (message.kind === 'context' && isTaskDiffRequest(message.request)) {
+      } else if (message.kind === 'context' && isAdmittedSessionSelector(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
       } else if (message.kind === 'admitted_activity' && isAdmittedTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorAdmittedTaskActivity({...message.request,env})});
       } else if (message.kind === 'activity' && isTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskActivity({...message.request,env})});
       } else if (message.kind === 'sessions' && isTaskSessionsRequest(message.request)) {
-        finish({ok:true,snapshot:readOperatorTaskSessions({...message.request,env})});
-      } else if (message.kind === 'diff' && isTaskDiffRequest(message.request)) {
+        finish({ok:true,snapshot:readAdmittedTaskSessions({...message.request,env})});
+      } else if (message.kind === 'diff' && isAdmittedSessionSelector(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
       } else if (message.kind === 'history' && isTaskHistoryRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
       } else throw new Error('invalid reader');
     } catch (error) {
-      finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof OperatorTaskDiffError
+      finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof SessionObservationError
         || error instanceof OperatorTaskHistoryError ? error.code : 'unavailable'});
     }
   });

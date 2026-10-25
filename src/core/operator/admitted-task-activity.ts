@@ -1,10 +1,12 @@
-import type { TaskMessageEventV2, TaskMessageDeliveryReceiptV2, TaskMessageClaim } from '../fleet/admitted-task-message';
+import type { TaskMessageClaim } from '../messages/task-message-claim';
+import type { TaskMessageEventV2, TaskMessageDeliveryReceiptV2 } from '../fleet/admitted-task-message';
 import type { TaskReplySession, TaskReplyChainObservation } from '../fleet/admitted-task-reply';
-import { isTaskDiffRequest, parseTaskDiffRequest, TASK_DIFF_SELECTOR_KEYS, type OperatorTaskDiffRequest } from './task-diff';
+import { isAdmittedSessionSelector, SESSION_SELECTOR_KEYS, type AdmittedSessionSelector } from '../sessions/session-selector';
+import { parseTaskDiffRequest } from './task-diff';
 import { isTaskActivityRequest, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN, type OperatorTaskActivity } from './task-activity';
 
 export interface AdmittedTaskActivityRequest {
-  readonly selector: OperatorTaskDiffRequest;
+  readonly selector: AdmittedSessionSelector;
   readonly limit: number;
   readonly after: string | null;
   readonly message_id: string | null;
@@ -34,19 +36,19 @@ const one = (v: unknown, choices: readonly unknown[]): boolean => choices.includ
 const claim = (v: unknown): boolean => exact(v, ['reference', 'revision']) && text(v.reference) && !/[\x00-\x1f\x7f]/u.test(v.reference as string) && sha(v.revision);
 const sameClaim = (a: TaskMessageClaim, b: TaskMessageClaim): boolean => a.reference === b.reference && a.revision === b.revision;
 export function isAdmittedTaskActivityRequest(value: unknown): value is AdmittedTaskActivityRequest {
-  return exact(value, ['selector', 'limit', 'after', 'message_id']) && isTaskDiffRequest(value.selector)
+  return exact(value, ['selector', 'limit', 'after', 'message_id']) && isAdmittedSessionSelector(value.selector)
     && isTaskActivityRequest({ repository_id: value.selector.repository_id, task_id: value.selector.task, limit: value.limit, after: value.after, message_id: value.message_id });
 }
 export function parseAdmittedTaskActivityRequest(repositoryId: string, params: URLSearchParams): AdmittedTaskActivityRequest {
   const selector = new URLSearchParams(), page = new URLSearchParams();
-  for (const [key, value] of params) ((TASK_DIFF_SELECTOR_KEYS as readonly string[]).includes(key) ? selector : page).append(key, value);
+  for (const [key, value] of params) ((SESSION_SELECTOR_KEYS as readonly string[]).includes(key) ? selector : page).append(key, value);
   const selected = parseTaskDiffRequest(repositoryId, selector);
   const pagination = parseTaskActivityRequest(repositoryId, selected.task, page);
   const result = { selector: selected, limit: pagination.limit, after: pagination.after, message_id: pagination.message_id };
   if (!isAdmittedTaskActivityRequest(result)) throw new Error('Invalid admitted activity request');
   return result;
 }
-function eventValid(v: unknown, selector: OperatorTaskDiffRequest): v is TaskMessageEventV2 {
+function eventValid(v: unknown, selector: AdmittedSessionSelector): v is TaskMessageEventV2 {
   if (!exact(v, ['protocol','kind','message_id','task_id','task_identity','admission_sha256','scope','target_claim','sender_kind','sender_id','sender_trust','audience','body','body_sha256','created_at','in_reply_to','event_digest'])) return false;
   const identity = v.task_identity;
   return v.protocol === 2 && v.kind === 'repo-harness-task-message-event' && uuid(v.message_id) && v.task_id === selector.task
@@ -83,7 +85,7 @@ export function decodeAdmittedTaskActivity(value: unknown, request: AdmittedTask
   if (!isAdmittedTaskActivityRequest(request) || !exact(value, ['selector','limit','after','message_id','protocol','kind','admission_sha256','observed_at','consistency','entries','coverage','next_cursor'])) return invalid();
   const r = value as unknown as AdmittedTaskActivity;
   if (!isAdmittedTaskActivityRequest({selector:r.selector,limit:r.limit,after:r.after,message_id:r.message_id})
-    || TASK_DIFF_SELECTOR_KEYS.some(k => r.selector[k] !== request.selector[k]) || r.limit !== request.limit || r.after !== request.after || r.message_id !== request.message_id
+    || SESSION_SELECTOR_KEYS.some(k => r.selector[k] !== request.selector[k]) || r.limit !== request.limit || r.after !== request.after || r.message_id !== request.message_id
     || r.protocol !== 2 || r.kind !== 'operator_admitted_task_activity' || !sha(r.admission_sha256) || !timestamp(r.observed_at) || r.consistency !== 'observed'
     || !Array.isArray(r.entries) || r.entries.length > r.limit || !nullable(r.next_cursor, uuid)) return invalid();
   const c = r.coverage;

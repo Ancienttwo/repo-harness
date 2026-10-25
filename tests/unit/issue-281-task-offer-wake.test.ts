@@ -1,5 +1,5 @@
 import { readProviderEngineerScheduling } from '../../src/effects/engineers/scheduling';
-import { readOperatorTaskSessions } from '../../src/effects/operator/task-sessions';
+import { readAdmittedTaskSessions } from '../../src/effects/sessions/task-sessions';
 import { bindEngineerRuntimeSession } from '../helpers/engineer-runtime-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
@@ -640,7 +640,7 @@ describe('issue #281 wake state is observational in the Engineering board', () =
     const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
     const pending = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env,
       dependencies: { readScheduling: (repo, env) => readProviderEngineerScheduling(repo, env, {
-        readSessions: input => readOperatorTaskSessions(input, { currentSource: () => fx.source.authority.source }),
+        readSessions: input => readAdmittedTaskSessions(input, { currentSource: () => fx.source.authority.source }),
       }) } });
     expect(pending.overlay.runtime_effects.engineers.find(entry => entry.engineer_id === engineerId)!.effects.wake).toEqual({ pending: 1, delivered: 0, failed: 0, reconciliation_required: 0 });
 
@@ -656,7 +656,7 @@ describe('issue #281 wake state is observational in the Engineering board', () =
     });
     const delivered = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env,
       dependencies: { readScheduling: (repo, env) => readProviderEngineerScheduling(repo, env, {
-        readSessions: input => readOperatorTaskSessions(input, { currentSource: () => fx.source.authority.source }),
+        readSessions: input => readAdmittedTaskSessions(input, { currentSource: () => fx.source.authority.source }),
       }) } });
     expect(delivered.overlay.runtime_effects.engineers.find(entry => entry.engineer_id === engineerId)!.effects.wake).toEqual({ pending: 0, delivered: 1, failed: 0, reconciliation_required: 0 });
   });
@@ -958,7 +958,7 @@ describe('issue #281 the Board never counts a superseded wake as pending', () =>
     expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
     const board = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env,
       dependencies: { readScheduling: (repo, env) => readProviderEngineerScheduling(repo, env, {
-        readSessions: input => readOperatorTaskSessions(input, { currentSource: () => fx.source.authority.source }),
+        readSessions: input => readAdmittedTaskSessions(input, { currentSource: () => fx.source.authority.source }),
       }) } });
     expect(board.overlay.runtime_effects.engineers.find(entry => entry.engineer_id === engineerId)!.effects.wake).toEqual({ pending: 1, delivered: 0, failed: 0, reconciliation_required: 0 });
   });

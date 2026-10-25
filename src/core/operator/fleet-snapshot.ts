@@ -1,5 +1,5 @@
-import { TASK_DIFF_SELECTOR_KEYS } from './task-diff';
-import type { OperatorTaskSession } from './task-sessions';
+import { SESSION_SELECTOR_KEYS } from '../sessions/session-selector';
+import type { AdmittedTaskSession } from '../sessions/task-sessions';
 import { isOperatorServiceEpoch } from './observation-identity';
 import {
   FLEET_BOARD_PROTOCOL,
@@ -53,9 +53,9 @@ export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV2, 'pro
   readonly source_snapshot_sha256: string;
 }
 
-function projectExecution(execution: OperatorTaskSession | null): OperatorTaskSession | null {
+function projectExecution(execution: AdmittedTaskSession | null): AdmittedTaskSession | null {
   if (execution === null) return null;
-  const selector = Object.fromEntries(TASK_DIFF_SELECTOR_KEYS.map(key => [key, execution.selector[key]])) as unknown as OperatorTaskSession['selector'];
+  const selector = Object.fromEntries(SESSION_SELECTOR_KEYS.map(key => [key, execution.selector[key]])) as unknown as AdmittedTaskSession['selector'];
   return Object.freeze({ selector: Object.freeze(selector), admission_sha256: execution.admission_sha256,
     profile_selection: Object.freeze(execution.profile_selection.state === 'unassigned' ? { state: 'unassigned' as const }
       : { state: 'selected' as const, engineer_id: execution.profile_selection.engineer_id, engineer_contract_revision: execution.profile_selection.engineer_contract_revision }),

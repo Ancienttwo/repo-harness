@@ -2,20 +2,20 @@ import { decodeAdmittedTaskActivity, isAdmittedTaskActivityRequest, type Admitte
 import { TASK_ACTIVITY_DEADLINE_MS, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN } from '../../core/operator/task-activity';
 import { readAdmittedTaskActivity } from '../fleet/task-inbox';
 import { OperatorTaskActivityError } from './task-activity';
-import { observeOperatorTaskDiffSource, OperatorTaskDiffError } from './task-diff';
+import { observeAdmittedSessionSource, SessionObservationError } from '../sessions/admitted-source';
 
 /** Current session authorization surrounds a bounded observation of stored facts. */
 export function readOperatorAdmittedTaskActivity(input: AdmittedTaskActivityRequest & { readonly env?: NodeJS.ProcessEnv },
-  effects: Parameters<typeof observeOperatorTaskDiffSource>[1] = {}): AdmittedTaskActivity {
+  effects: Parameters<typeof observeAdmittedSessionSource>[1] = {}): AdmittedTaskActivity {
   const { env, ...request } = input;
   try {
     if (!isAdmittedTaskActivityRequest(request)) throw new OperatorTaskActivityError('unavailable');
-    const observe = () => observeOperatorTaskDiffSource({ ...request.selector, env }, effects);
+    const observe = () => observeAdmittedSessionSource({ ...request.selector, env }, effects);
     const before = observe();
     const facts = readAdmittedTaskActivity({ repo_root: before.sourceRoot, task_id: request.selector.task,
       limit: request.limit, after: request.after, message_id: request.message_id,
       budget: { max_scan: TASK_ACTIVITY_MAX_SCAN, max_bytes: TASK_ACTIVITY_MAX_BYTES, deadline_ms: TASK_ACTIVITY_DEADLINE_MS } });
-    if (JSON.stringify(before) !== JSON.stringify(observe())) throw new OperatorTaskDiffError('stale');
+    if (JSON.stringify(before) !== JSON.stringify(observe())) throw new SessionObservationError('stale');
     if (!facts.history_exists) throw new OperatorTaskActivityError('history_unavailable');
     const entries: AdmittedActivityEntry[] = [];
     let outputBytes = 16384, exhausted = false;
@@ -30,7 +30,7 @@ export function readOperatorAdmittedTaskActivity(input: AdmittedTaskActivityRequ
       next_cursor: exhausted ? null : facts.next_cursor };
     return decodeAdmittedTaskActivity(result, request);
   } catch (error) {
-    if (error instanceof OperatorTaskActivityError || error instanceof OperatorTaskDiffError) throw error;
+    if (error instanceof OperatorTaskActivityError || error instanceof SessionObservationError) throw error;
     throw new OperatorTaskActivityError('unavailable');
   }
 }

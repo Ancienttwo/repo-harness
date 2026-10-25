@@ -1,4 +1,4 @@
-import type { OperatorTaskSessions } from '../../core/operator/task-sessions';
+import type { AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import type { ProviderBoardV2 } from '../../core/state/provider-board';
 import { collectSliceInputs } from '../../effects/state/collect-slice-inputs';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
@@ -8,7 +8,7 @@ export const BOARD_SLICE_MAX_BYTES = 2000;
 const MAX_RENDERED_PEERS = 8;
 export type BoardSliceCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker'> & {
   /** Trusted in-process runtime snapshot, already admitted outside the hook. */
-  readonly getAdmittedTaskSessions?: () => OperatorTaskSessions;
+  readonly getAdmittedTaskSessions?: () => AdmittedTaskSessions;
   readonly getSelfSessionBinding?: () => string | null;
 };
 export interface ProviderBoardSliceV2 {

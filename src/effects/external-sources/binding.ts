@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { isTaskDiffRequest, type OperatorTaskDiffRequest } from '../../core/operator/task-diff';
+import { isAdmittedSessionSelector, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { buildExternalSourceProjection } from '../../core/external-sources/projection';
 import { renderExternalSourceUntrustedContext } from '../../core/external-sources/binding';
 import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
@@ -14,7 +14,7 @@ import { listExternalSourceBindingReceipts, listHistoricalExternalSourceBindingR
 export interface BindExternalSourceInput {
   readonly registered_repository_id: string;
   readonly source_revision: string;
-  readonly session: OperatorTaskDiffRequest;
+  readonly session: AdmittedSessionSelector;
   readonly bound_at?: string;
   readonly env?: NodeJS.ProcessEnv;
 }
@@ -31,8 +31,8 @@ function dependencies(overrides: Partial<ExternalSourceBindingDependencies> = {}
     refreshReceipts: listExternalSourceRefreshReceipts, receipts: listExternalSourceBindingReceipts,
     admissionSource: readReviewAdmissionSource, write: writeExternalSourceBindingReceipt, ...overrides };
 }
-function observeSession(root: string, session: OperatorTaskDiffRequest, deps: ExternalSourceBindingDependencies) {
-  if (!isTaskDiffRequest(session)) throw new Error('explicit admitted session selector is invalid');
+function observeSession(root: string, session: AdmittedSessionSelector, deps: ExternalSourceBindingDependencies) {
+  if (!isAdmittedSessionSelector(session)) throw new Error('explicit admitted session selector is invalid');
   const { binding } = readTaskAgent(root, session.task, session.role);
   const digest = `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`;
   if (digest !== session.session_binding_sha256 || !binding.task_admission) throw new Error('session binding changed');

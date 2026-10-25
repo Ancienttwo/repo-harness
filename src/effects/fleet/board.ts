@@ -21,8 +21,8 @@ import {
 } from '../repo-registry';
 import { resolveProviderBoard } from '../state/collect-provider-board-inputs';
 import type { ProviderBoardCardV2 } from '../../core/state/provider-board';
-import type { OperatorTaskSession } from '../../core/operator/task-sessions';
-import { observeOperatorTaskDiffSource } from '../operator/task-diff';
+import type { AdmittedTaskSession } from '../../core/sessions/task-sessions';
+import { observeAdmittedSessionSource } from '../sessions/admitted-source';
 import { readReviewAdmissionSource } from '../admission/admission-source';
 import {
   assertLocalPullRequestRepository,
@@ -212,7 +212,7 @@ function assertCollectionActive(signal: AbortSignal, deadlineExceeded: () => boo
   if (deadlineExceeded() || signal.aborted) throw collectionAbortError(deadlineExceeded);
 }
 
-function baseCard(card: ProviderBoardCardV2, execution: OperatorTaskSession | null, consistency: 'stable' | 'changed_during_read'): FleetBoardCardInputV2 {
+function baseCard(card: ProviderBoardCardV2, execution: AdmittedTaskSession | null, consistency: 'stable' | 'changed_during_read'): FleetBoardCardInputV2 {
   return { provider_repository_id: card.provider_repository_id, provider_issue_id: card.provider_issue_id,
     issue_state: card.issue_status === 'observed' ? card.issue!.state : null, issue_revision: card.issue?.source_revision ?? null,
     execution_status: card.execution_status, execution, task_id: execution?.selector.task ?? null,
@@ -220,7 +220,7 @@ function baseCard(card: ProviderBoardCardV2, execution: OperatorTaskSession | nu
     merge_readiness: null, execution_readiness: null, readiness_blockers: null,
     feedback: emptyFeedback(), inbox: emptyInbox(), snapshot_consistency: consistency, error: null };
 }
-async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: OperatorTaskSession | null,
+async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: AdmittedTaskSession | null,
   options: FleetRepositoryCollectionOptions, consistency: 'stable' | 'changed_during_read',
   runtimeEffects: readonly AgentRuntimeEffectStatus[], runtimeRevision: string): Promise<FleetBoardCardInputV2> {
   await yieldToEventLoop();
@@ -250,7 +250,7 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
     inbox = { observation_status: 'observed', unread_count: messages.unread_count, addressed_to_current_claim: messages.addressed_to_current_claim, ...runtime };
     if (messages.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
     if (selections.length === 1) {
-      const observed = observeOperatorTaskDiffSource({ ...execution.selector, env: options.env });
+      const observed = observeAdmittedSessionSource({ ...execution.selector, env: options.env });
       if (observed.approval.admission_sha256 !== execution.admission_sha256) throw new FeedbackError('publication_claim_mismatch', 'session admission changed');
       const source = readReviewAdmissionSource(observed.sourceRoot, { 'repository-id': execution.selector.provider_repository_id,
         'issue-id': execution.selector.issue_id, 'campaign-id': execution.selector.campaign_id, 'grant-sha256': execution.selector.grant_sha256,
@@ -288,7 +288,7 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: Repo
       }
     }
     const runtimeEffects = observeAgentRuntimeEffects(repo.path), runtimeRevision = runtimeEffectsRevision(runtimeEffects);
-    const rows = board.cards.flatMap<{ card: ProviderBoardCardV2; execution: OperatorTaskSession | null }>(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
+    const rows = board.cards.flatMap<{ card: ProviderBoardCardV2; execution: AdmittedTaskSession | null }>(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
     const cards = await collectBounded(rows, options.max_concurrency, async ({ card, execution }) => {
       try { return await cardInput(repo, card, execution, { ...options, signal: controller.signal }, board.snapshot_consistency, runtimeEffects, runtimeRevision); }
       catch (error) {

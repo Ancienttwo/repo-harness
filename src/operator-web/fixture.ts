@@ -374,7 +374,7 @@ export function taskActivityFixture(request: import('../core/operator/task-activ
 }
 
 /** Browser fixture for the current admitted context transport, not approval evidence. */
-export function admittedTaskContextFixture(selector: import('../core/operator/task-diff').OperatorTaskDiffRequest): import('../core/operator/admitted-task-context').AdmittedTaskContext {
+export function admittedTaskContextFixture(selector: import('../core/sessions/session-selector').AdmittedSessionSelector): import('../core/operator/admitted-task-context').AdmittedTaskContext {
   const hash=`sha256:${'a'.repeat(64)}`;
   const task=Object.values(fixtureTasks).find(task=>task.task_id===selector.task);
   return {protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:`${task?.task_label ?? 'Provider task'}: The exact candidate passes independent verification.`},

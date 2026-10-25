@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { isTaskDiffRequest } from '../../core/operator/task-diff';
+import { isAdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { Command } from 'commander';
 
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../../effects/repo-registry';
@@ -78,7 +78,7 @@ function list(options: Options): void {
 function bind(options: BindOptions): void {
   try {
     const session: unknown = JSON.parse(readFileSync(options.session, 'utf8'));
-    if (!isTaskDiffRequest(session)) throw new Error('invalid admitted session selector');
+    if (!isAdmittedSessionSelector(session)) throw new Error('invalid admitted session selector');
     const receipt = bindExternalSource({
       registered_repository_id: options.repo,
       source_revision: options.sourceRevision,

@@ -2,17 +2,17 @@ import { existsSync, lstatSync, opendirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { decodeOperatorTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type OperatorTaskSession, type OperatorTaskSessions, type OperatorTaskSessionsRequest } from '../../core/operator/task-sessions';
+import { decodeAdmittedTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type AdmittedTaskSession, type AdmittedTaskSessions, type AdmittedTaskSessionsRequest } from '../../core/sessions/task-sessions';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readSessionArtifact, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session';
 import { taskRepository } from '../git/task-repository';
 import { readCurrentReviewAdmissionSource } from '../admission/admission-source';
-import { observeOperatorTaskDiffSource, OperatorTaskDiffError } from './task-diff';
-const fail = (code: 'unavailable' | 'too_large' | 'stale'): never => { throw new OperatorTaskDiffError(code); };
+import { observeAdmittedSessionSource, SessionObservationError } from './admitted-source';
+const fail = (code: 'unavailable' | 'too_large' | 'stale'): never => { throw new SessionObservationError(code); };
 
 /** Derived discovery only. A displayed selector must be revalidated on use. */
-export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { readonly env?: NodeJS.ProcessEnv },
-  effects: { readonly currentSource?: typeof readCurrentReviewAdmissionSource } = {}): OperatorTaskSessions {
+export function readAdmittedTaskSessions(input: AdmittedTaskSessionsRequest & { readonly env?: NodeJS.ProcessEnv },
+  effects: { readonly currentSource?: typeof readCurrentReviewAdmissionSource } = {}): AdmittedTaskSessions {
   const { env, ...request } = input;
   if (!isTaskSessionsRequest(request)) return fail('unavailable');
   try {
@@ -24,7 +24,7 @@ export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { 
       let base = primary;
       for (const component of ['.ai', 'harness', 'runs', 'task-agents']) {
         base = join(base, component);
-        if (!existsSync(base)) return { root, revision: registry.authorizationRevision, sessions: [] as OperatorTaskSession[] };
+        if (!existsSync(base)) return { root, revision: registry.authorizationRevision, sessions: [] as AdmittedTaskSession[] };
         const stat = lstatSync(base);
         if (!stat.isDirectory() || stat.isSymbolicLink()) return fail('unavailable');
       }
@@ -36,7 +36,7 @@ export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { 
           names.push(entry.name);
         }
       } finally { directory.closeSync(); }
-      const sessions: OperatorTaskSession[] = [];
+      const sessions: AdmittedTaskSession[] = [];
       let totalBytes = 0;
       for (const name of names.sort()) {
         const dir = join(base, name), path = join(dir, 'binding.json');
@@ -58,7 +58,7 @@ export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { 
           claim_ref: identity.claim.reference, claim_revision: identity.claim.revision,
           grant_sha256: source.expectedGrantSha256, policy_sha256: source.expectedPolicySha256, actor_id: source.expectedActor,
           session_binding_sha256: `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}` };
-        const observed = observeOperatorTaskDiffSource({ ...selector, env }, { admissionSource: () => source });
+        const observed = observeAdmittedSessionSource({ ...selector, env }, { admissionSource: () => source });
         sessions.push({ selector, profile_selection: identity.engineer_profile ? { state: 'selected', ...identity.engineer_profile } : { state: 'unassigned' }, admission_sha256: observed.approval.admission_sha256, branch: observed.branch, runtime: binding.runtime, harness_kind: binding.harness_kind });
       }
       return { root, revision: registry.authorizationRevision, sessions };
@@ -68,6 +68,6 @@ export function readOperatorTaskSessions(input: OperatorTaskSessionsRequest & { 
     const result = { protocol: 1, kind: 'operator_task_sessions', repository_id: request.repository_id,
       observed_at: new Date().toISOString(), sessions: after.sessions };
     if (Buffer.byteLength(JSON.stringify(result)) > TASK_SESSIONS_MAX_BYTES) return fail('too_large');
-    return decodeOperatorTaskSessions(result, request);
-  } catch (error) { if (error instanceof OperatorTaskDiffError) throw error; return fail('unavailable'); }
+    return decodeAdmittedTaskSessions(result, request);
+  } catch (error) { if (error instanceof SessionObservationError) throw error; return fail('unavailable'); }
 }

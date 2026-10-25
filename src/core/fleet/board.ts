@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import type { MergeReadinessBlockerCode, PullRequestReadinessV2 } from '../publication/merge-readiness';
-import type { OperatorTaskSession } from '../operator/task-sessions';
+import type { AdmittedTaskSession } from '../sessions/task-sessions';
 import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
 export type FleetExecutionReadiness =
@@ -113,7 +113,7 @@ export interface FleetBoardCardV2 {
   readonly issue_state: 'open' | 'closed' | null;
   readonly issue_revision: string | null;
   readonly execution_status: 'observed' | 'unavailable';
-  readonly execution: OperatorTaskSession | null;
+  readonly execution: AdmittedTaskSession | null;
   readonly task_id: string | null;
   readonly task_label: string | null;
   readonly task_index: number | null;
@@ -177,7 +177,7 @@ export interface FleetBoardCardInputV2 {
   readonly issue_state: 'open' | 'closed' | null;
   readonly issue_revision: string | null;
   readonly execution_status: 'observed' | 'unavailable';
-  readonly execution: OperatorTaskSession | null;
+  readonly execution: AdmittedTaskSession | null;
   readonly task_id: string | null;
   readonly task_label: string | null;
   readonly task_index: number | null;

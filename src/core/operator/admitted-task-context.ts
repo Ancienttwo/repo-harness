@@ -1,29 +1,29 @@
-import { isTaskDiffRequest, TASK_DIFF_SELECTOR_KEYS, type OperatorTaskDiffRequest } from './task-diff';
-import type { OperatorTaskSession } from './task-sessions';
+import { isAdmittedSessionSelector, SESSION_SELECTOR_KEYS, type AdmittedSessionSelector } from '../sessions/session-selector';
+import type { AdmittedTaskSession } from '../sessions/task-sessions';
 export const ADMITTED_CONTEXT_MAX_BYTES = 256 * 1024;
 export interface AdmittedTaskContext {
   readonly protocol: 2;
   readonly kind: 'operator_admitted_task_context';
-  readonly selector: OperatorTaskDiffRequest;
+  readonly selector: AdmittedSessionSelector;
   readonly goal: { readonly revision: string; readonly content: string };
   /** Canonical approved bytes, displayed as evidence and never executed by the browser. */
   readonly verification: { readonly plan_sha256: string; readonly plan_json: string };
   readonly scope: { readonly allowed_paths: readonly string[]; readonly benchmark: 'required' | 'not_required'; readonly oracles_json: string };
   readonly approval: { readonly admission_sha256: string; readonly grant_sha256: string; readonly revision: number; readonly goal_revision: string; readonly scope_sha256: string };
-  readonly profile_selection: OperatorTaskSession['profile_selection'];
+  readonly profile_selection: AdmittedTaskSession['profile_selection'];
   readonly execution: { readonly branch: string; readonly runtime: 'terminal' | 'herdr'; readonly harness_kind: string };
   readonly observed_at: string;
 }
 const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && Object.keys(v).every(key=>keys.includes(key));
 const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && !v.includes('\0');
 const hash = (v: unknown): v is string => typeof v === 'string' && /^sha256:[0-9a-f]{64}$/u.test(v);
-export function decodeAdmittedTaskContext(value: unknown, request: OperatorTaskDiffRequest): AdmittedTaskContext {
+export function decodeAdmittedTaskContext(value: unknown, request: AdmittedSessionSelector): AdmittedTaskContext {
   const invalid = (): never => {throw new Error('Invalid admitted task context');};
-  if (!isTaskDiffRequest(request) || new TextEncoder().encode(JSON.stringify(value)).length > ADMITTED_CONTEXT_MAX_BYTES
+  if (!isAdmittedSessionSelector(request) || new TextEncoder().encode(JSON.stringify(value)).length > ADMITTED_CONTEXT_MAX_BYTES
     || !exact(value,['protocol','kind','selector','goal','verification','scope','approval','profile_selection','execution','observed_at'])) return invalid();
-  if(value.protocol!==2||value.kind!=='operator_admitted_task_context'||!isTaskDiffRequest(value.selector))return invalid();
+  if(value.protocol!==2||value.kind!=='operator_admitted_task_context'||!isAdmittedSessionSelector(value.selector))return invalid();
   const selector=value.selector;
-  if(TASK_DIFF_SELECTOR_KEYS.some(key=>selector[key]!==request[key]))return invalid();
+  if(SESSION_SELECTOR_KEYS.some(key=>selector[key]!==request[key]))return invalid();
   const goal=value.goal,verification=value.verification,scope=value.scope,approval=value.approval,profile=value.profile_selection,execution=value.execution;
   if(!exact(goal,['revision','content'])||!hash(goal.revision)||!text(goal.content)
     ||!exact(verification,['plan_sha256','plan_json'])||!hash(verification.plan_sha256)||!text(verification.plan_json)

@@ -1,26 +1,27 @@
 import { AdmittedTaskContext } from './AdmittedTaskContext';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { useEffect, useRef, useState } from 'react';
-import { decodeOperatorTaskDiff, TASK_DIFF_FAILURES, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../core/operator/task-diff';
+import { decodeOperatorTaskDiff, type OperatorTaskDiff } from '../core/operator/task-diff';
+import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector, type SessionObservationFailure } from '../core/sessions/session-selector';
 import type { OperatorTranslate } from './i18n';
-import { decodeOperatorTaskSessions, type OperatorTaskSessions, type OperatorTaskSessionsRequest } from '../core/operator/task-sessions';
+import { decodeAdmittedTaskSessions, type AdmittedTaskSessions, type AdmittedTaskSessionsRequest } from '../core/sessions/task-sessions';
 
-export type FetchTaskDiff = (request: OperatorTaskDiffRequest, signal: AbortSignal) => Promise<OperatorTaskDiff>;
+export type FetchTaskDiff = (request: AdmittedSessionSelector, signal: AbortSignal) => Promise<OperatorTaskDiff>;
 const fetchTaskDiff: FetchTaskDiff = async (request, signal) => {
   const query = new URLSearchParams(Object.fromEntries(Object.entries(request).filter(([key]) => key !== 'repository_id')));
   const response = await fetch(`/api/v1/fleet/task-sessions/${request.repository_id}/diff?${query}`, { signal, cache: 'no-store' });
   const value: unknown = await response.json();
   if (!response.ok) {
     const code = (value as { code?: unknown } | null)?.code;
-    throw new Error(TASK_DIFF_FAILURES.includes(code as TaskDiffFailure) ? code as string : 'unavailable');
+    throw new Error(SESSION_OBSERVATION_FAILURES.includes(code as SessionObservationFailure) ? code as string : 'unavailable');
   }
   return decodeOperatorTaskDiff(value, request);
 };
 
-type View = { kind: 'idle' | 'loading' } | { kind: 'ready'; snapshot: OperatorTaskDiff } | { kind: 'error'; code: TaskDiffFailure };
+type View = { kind: 'idle' | 'loading' } | { kind: 'ready'; snapshot: OperatorTaskDiff } | { kind: 'error'; code: SessionObservationFailure };
 
 /** Remounted on the entire task/claim fence, never just the card identity. */
-export function TaskDiff({ selector, t, read = fetchTaskDiff }: { readonly selector: OperatorTaskDiffRequest; readonly t: OperatorTranslate; readonly read?: FetchTaskDiff }) {
+export function TaskDiff({ selector, t, read = fetchTaskDiff }: { readonly selector: AdmittedSessionSelector; readonly t: OperatorTranslate; readonly read?: FetchTaskDiff }) {
   const [view, setView] = useState<View>({ kind: 'idle' });
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); }, []);
@@ -34,7 +35,7 @@ export function TaskDiff({ selector, t, read = fetchTaskDiff }: { readonly selec
       const snapshot = decodeOperatorTaskDiff(await read(request, controller.signal), request);
       if (!controller.signal.aborted) setView({ kind: 'ready', snapshot });
     } catch (error) {
-      if (!controller.signal.aborted) setView({ kind: 'error', code: TASK_DIFF_FAILURES.includes((error as Error).message as TaskDiffFailure) ? (error as Error).message as TaskDiffFailure : 'unavailable' });
+      if (!controller.signal.aborted) setView({ kind: 'error', code: SESSION_OBSERVATION_FAILURES.includes((error as Error).message as SessionObservationFailure) ? (error as Error).message as SessionObservationFailure : 'unavailable' });
     }
   };
   return <section className="detail-block task-diff" aria-label={t('diff.title')}>
@@ -57,18 +58,18 @@ export function TaskDiff({ selector, t, read = fetchTaskDiff }: { readonly selec
 }
 
 
-export type FetchTaskSessions = (request: OperatorTaskSessionsRequest, signal: AbortSignal) => Promise<OperatorTaskSessions>;
+export type FetchTaskSessions = (request: AdmittedTaskSessionsRequest, signal: AbortSignal) => Promise<AdmittedTaskSessions>;
 const fetchTaskSessions: FetchTaskSessions = async (request, signal) => {
   const response = await fetch(`/api/v1/fleet/task-sessions/${request.repository_id}`, { signal, cache: 'no-store' });
   const value: unknown = await response.json();
   if (!response.ok) throw new Error('unavailable');
-  return decodeOperatorTaskSessions(value, request);
+  return decodeAdmittedTaskSessions(value, request);
 };
 /** Repository scope has no implicit relationship to a legacy sprint card. */
 export function TaskSessions({ repositoryId, t, read = fetchTaskSessions, readDiff }: {
   readonly repositoryId: string; readonly t: OperatorTranslate; readonly read?: FetchTaskSessions; readonly readDiff?: FetchTaskDiff;
 }) {
-  const [view, setView] = useState<{ kind: 'idle' | 'loading' | 'error' } | { kind: 'ready'; snapshot: OperatorTaskSessions }>({ kind: 'idle' });
+  const [view, setView] = useState<{ kind: 'idle' | 'loading' | 'error' } | { kind: 'ready'; snapshot: AdmittedTaskSessions }>({ kind: 'idle' });
   const [selected, setSelected] = useState('');
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => active.current?.abort(), []);
@@ -77,7 +78,7 @@ export function TaskSessions({ repositoryId, t, read = fetchTaskSessions, readDi
     const controller = new AbortController(); active.current = controller;
     setSelected(''); setView({ kind: 'loading' });
     try {
-      const snapshot = decodeOperatorTaskSessions(await read({ repository_id: repositoryId }, controller.signal), { repository_id: repositoryId });
+      const snapshot = decodeAdmittedTaskSessions(await read({ repository_id: repositoryId }, controller.signal), { repository_id: repositoryId });
       if (!controller.signal.aborted) setView({ kind: 'ready', snapshot });
     } catch { if (!controller.signal.aborted) setView({ kind: 'error' }); }
   };

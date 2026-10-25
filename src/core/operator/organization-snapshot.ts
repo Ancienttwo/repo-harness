@@ -1,6 +1,6 @@
 import type { EngineeringOverlaySnapshotV2, OrganizationAttentionSnapshotV2 } from '../engineers/engineering-overlay';
 import type { ProviderEngineerSchedulingSnapshot } from '../engineers/scheduling';
-import { decodeOperatorTaskSessions } from './task-sessions';
+import { decodeAdmittedTaskSessions } from '../sessions/task-sessions';
 
 export interface OperatorOrganizationSnapshot {
   readonly overlay: EngineeringOverlaySnapshotV2;
@@ -56,7 +56,7 @@ export function decodeAdmittedScheduling(value: unknown, repositoryId: string): 
     }
     for (const rawSession of array(task.sessions)) {
       const row = object(rawSession, ['session', 'selection']);
-      const decoded = decodeOperatorTaskSessions({ protocol: 1, kind: 'operator_task_sessions', repository_id: repositoryId,
+      const decoded = decodeAdmittedTaskSessions({ protocol: 1, kind: 'operator_task_sessions', repository_id: repositoryId,
         observed_at: '2000-01-01T00:00:00.000Z', sessions: [row.session] }, { repository_id: repositoryId }).sessions[0]!;
       if (decoded.selector.provider_repository_id !== repo || decoded.selector.issue_id !== issueId
         || sessions.has(decoded.selector.session_binding_sha256)) invalid();

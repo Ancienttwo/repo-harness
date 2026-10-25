@@ -1,5 +1,5 @@
 import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
-import { decodeOperatorTaskSessions, isTaskSessionsRequest, type OperatorTaskSessionsRequest, type OperatorTaskSessions } from '../../core/operator/task-sessions';
+import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -17,7 +17,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
-import { decodeOperatorTaskDiff, parseTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -139,11 +140,11 @@ export interface OperatorServerOptions {
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
   readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
-  readonly read_task_context?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
+  readonly read_task_context?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
   readonly read_admitted_task_activity?: (input: AdmittedTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskActivity>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
-  readonly read_task_sessions?: (input: OperatorTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskSessions>;
-  readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
+  readonly read_task_sessions?: (input: AdmittedTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskSessions>;
+  readonly read_task_diff?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   /** Dev Activity cache reader. GET serves only this cache; it never collects. */
   readonly read_dev_activity?: () => DevActivitySnapshotV2;
@@ -1549,10 +1550,10 @@ export async function startOperatorServer(
 
     const contextRoute = OPERATOR_TASK_CONTEXT_ROUTE.exec(pathname);
     if(contextRoute!==null){
-      let input:OperatorTaskDiffRequest;
+      let input:AdmittedSessionSelector;
       try{input=parseTaskDiffRequest(contextRoute[1]!,url.searchParams);}
       catch{sendRefusal(request,response,400,errorBody('invalid_request','Context requires an explicit admitted session selector.'),headOnly);return;}
-      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskContext,TASK_DIFF_FAILURES,'context',options.read_task_context);
+      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskContext,SESSION_OBSERVATION_FAILURES,'context',options.read_task_context);
       return;
     }
     const historyRoute=OPERATOR_TASK_HISTORY_ROUTE.exec(pathname);
@@ -1568,7 +1569,7 @@ export async function startOperatorServer(
       let input: AdmittedTaskActivityRequest;
       try { input = parseAdmittedTaskActivityRequest(admittedActivityRoute[1]!, url.searchParams); }
       catch { sendRefusal(request,response,400,errorBody('invalid_request','Activity requires an explicit admitted session selector.'),headOnly); return; }
-      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskActivity,[...TASK_ACTIVITY_FAILURES,...TASK_DIFF_FAILURES],
+      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskActivity,[...TASK_ACTIVITY_FAILURES,...SESSION_OBSERVATION_FAILURES],
         'admitted_activity',options.read_admitted_task_activity);
       return;
     }
@@ -1589,7 +1590,7 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Session discovery accepts only a registered repository.'), headOnly);
         return;
       }
-      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskSessions, TASK_DIFF_FAILURES,
+      handleBoundedTaskRead(response, headOnly, input, decodeAdmittedTaskSessions, SESSION_OBSERVATION_FAILURES,
         'sessions', options.read_task_sessions);
       return;
     }
@@ -1600,13 +1601,13 @@ export async function startOperatorServer(
         sendJson(response, 503, { code: 'unavailable' }, headOnly);
         return;
       }
-      let input: OperatorTaskDiffRequest;
+      let input: AdmittedSessionSelector;
       try { input = parseTaskDiffRequest(diffRoute[1]!, url.searchParams); }
       catch {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires an explicit admitted session selector.'), headOnly);
         return;
       }
-      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, TASK_DIFF_FAILURES,
+      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, SESSION_OBSERVATION_FAILURES,
         'diff', options.read_task_diff,
         failure => failure === 'stale' ? 409 : 503);
       return;

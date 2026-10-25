@@ -1,7 +1,7 @@
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../src/core/external-sources/issue-observation';
 import { writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../src/effects/external-sources/store';
 import { collectSliceInputs } from '../src/effects/state/collect-slice-inputs';
-import type { OperatorTaskSessions } from '../src/core/operator/task-sessions';
+import type { AdmittedTaskSessions } from '../src/core/sessions/task-sessions';
 import type { ProviderBoardSliceV2, BoardSliceCollector } from '../src/cli/hook/board-slice-context';
 import { serializeHistoricalLease } from './helpers/sprint-fixture';
 import { readFileSync } from 'fs';
@@ -232,9 +232,9 @@ function extractSliceBlock(text: string): string {
   return text.slice(start, end + pointer.length);
 }
 
-function providerFixture(count: number, title = 'peer row'): { slice: ProviderBoardSliceV2; sessions: OperatorTaskSessions } {
+function providerFixture(count: number, title = 'peer row'): { slice: ProviderBoardSliceV2; sessions: AdmittedTaskSessions } {
   const digest = `sha256:${'a'.repeat(64)}`;
-  const sessions: OperatorTaskSessions = { protocol: 1, kind: 'operator_task_sessions', repository_id: 'repo_1', observed_at: '2026-08-31T00:00:00.000Z',
+  const sessions: AdmittedTaskSessions = { protocol: 1, kind: 'operator_task_sessions', repository_id: 'repo_1', observed_at: '2026-08-31T00:00:00.000Z',
     sessions: [{ admission_sha256: digest, profile_selection: { state: 'unassigned' }, branch: BRANCH, runtime: 'terminal', harness_kind: 'codex', selector: {
       repository_id: 'repo_1', provider_repository_id: '100', issue_id: '200', campaign_id: 'campaign', task: OWN_TASK_CELL, role: 'worker',
       claim_ref: CLAIM_ID, claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: digest,

@@ -1,4 +1,4 @@
-import { decodeOperatorTaskSessions } from '../core/operator/task-sessions';
+import { decodeAdmittedTaskSessions } from '../core/sessions/task-sessions';
 import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
@@ -460,7 +460,7 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const executionStatus = requireOneOf(card.execution_status, ['observed', 'unavailable'] as const);
   let execution: OperatorFleetCardV1['execution'] = null;
   if (card.execution !== null) {
-    try { execution = decodeOperatorTaskSessions({ protocol: 1, kind: 'operator_task_sessions', repository_id: repositoryId,
+    try { execution = decodeAdmittedTaskSessions({ protocol: 1, kind: 'operator_task_sessions', repository_id: repositoryId,
       observed_at: '1970-01-01T00:00:00.000Z', sessions: [card.execution] }, { repository_id: repositoryId }).sessions[0]!; }
     catch { throw new OperatorPayloadError(); }
     if (execution.selector.provider_repository_id !== providerRepositoryId || execution.selector.issue_id !== providerIssueId || executionStatus !== 'observed') throw new OperatorPayloadError();

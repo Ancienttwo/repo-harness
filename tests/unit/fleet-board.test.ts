@@ -1,4 +1,4 @@
-import type { OperatorTaskSession } from '../../src/core/operator/task-sessions';
+import type { AdmittedTaskSession } from '../../src/core/sessions/task-sessions';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -10,7 +10,7 @@ import {
 const taskId = 'a'.repeat(64);
 const taskRevision = 'b'.repeat(64);
 
-function session(): OperatorTaskSession {
+function session(): AdmittedTaskSession {
   const digest = `sha256:${'a'.repeat(64)}`;
   return { admission_sha256: digest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex', selector: {
     repository_id: 'repo-a', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker', claim_ref: 'claim',

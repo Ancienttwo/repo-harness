@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { decodeAdmittedTaskActivity, type AdmittedTaskActivity as Snapshot, type AdmittedTaskActivityRequest } from '../core/operator/admitted-task-activity';
-import { TASK_DIFF_FAILURES, type OperatorTaskDiffRequest } from '../core/operator/task-diff';
+import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector } from '../core/sessions/session-selector';
 import { TASK_ACTIVITY_FAILURES } from '../core/operator/task-activity';
 import type { OperatorTranslate } from './i18n';
 export type ReadAdmittedActivity = (request: AdmittedTaskActivityRequest, signal: AbortSignal) => Promise<Snapshot>;
@@ -12,12 +12,12 @@ const readActivity: ReadAdmittedActivity = async (request, signal) => {
   const value: unknown = await response.json();
   if (!response.ok) {
     const code = (value as { code?: unknown } | null)?.code;
-    throw new Error([...TASK_ACTIVITY_FAILURES, ...TASK_DIFF_FAILURES].includes(code as never) ? String(code) : 'unavailable');
+    throw new Error([...TASK_ACTIVITY_FAILURES, ...SESSION_OBSERVATION_FAILURES].includes(code as never) ? String(code) : 'unavailable');
   }
   return decodeAdmittedTaskActivity(value, request);
 };
 /** Explicit selected-session read; stale results never become a new selection. */
-export function AdmittedTaskActivity({ selector, t, read = readActivity }: { selector: OperatorTaskDiffRequest; t: OperatorTranslate; read?: ReadAdmittedActivity }) {
+export function AdmittedTaskActivity({ selector, t, read = readActivity }: { selector: AdmittedSessionSelector; t: OperatorTranslate; read?: ReadAdmittedActivity }) {
   const [view, setView] = useState<{ loading: boolean; error: string | null; value: Snapshot | null }>({ loading:false,error:null,value:null });
   const active = useRef<AbortController | null>(null);
   const identity = JSON.stringify(selector);

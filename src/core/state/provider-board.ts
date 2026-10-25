@@ -2,20 +2,20 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../evidence/canonical-json';
 import type { ExternalSourceProjectionV1 } from '../external-sources/projection';
 import type { ProviderIssueObservationV1 } from '../external-sources/issue-observation';
-import type { OperatorTaskSession, OperatorTaskSessions } from '../operator/task-sessions';
+import type { AdmittedTaskSession, AdmittedTaskSessions } from '../sessions/task-sessions';
 
 /** Provider issue state and admitted execution evidence remain separate authorities. */
 export interface ProviderBoardInputsV2 {
   readonly registered_repository_id: string;
   readonly issues: ExternalSourceProjectionV1;
-  readonly sessions: OperatorTaskSessions | null;
+  readonly sessions: AdmittedTaskSessions | null;
   readonly session_error: 'unavailable' | 'stale' | 'too_large' | null;
 }
 export interface ProviderBoardCardV2 {
   readonly provider_repository_id: string;
   readonly provider_issue_id: string;
   readonly issue: ProviderIssueObservationV1 | null;
-  readonly sessions: readonly OperatorTaskSession[];
+  readonly sessions: readonly AdmittedTaskSession[];
   readonly issue_status: 'observed' | 'unavailable';
   readonly execution_status: 'observed' | 'unavailable';
   readonly execution_error: ProviderBoardInputsV2['session_error'];

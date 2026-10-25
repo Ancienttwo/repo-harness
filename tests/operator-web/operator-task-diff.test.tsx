@@ -6,13 +6,14 @@ import { TaskDiff, TaskSessions, type FetchTaskDiff } from '../../src/operator-w
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { allCards } from '../../src/operator-web/types';
 import { translate } from '../../src/operator-web/i18n';
-import type { OperatorTaskDiff, OperatorTaskDiffRequest } from '../../src/core/operator/task-diff';
+import type { OperatorTaskDiff } from '../../src/core/operator/task-diff';
+import type { AdmittedSessionSelector } from '../../src/core/sessions/session-selector';
 
 let root: Root;
 let window: Window;
 const card = allCards(stableSnapshot).find(c => c.execution !== null && c.placement.kind === 'column' && c.placement.column === 'working')!;
 const t = (key: Parameters<typeof translate>[1]) => translate('en', key);
-const selector: OperatorTaskDiffRequest = { repository_id: card.repository_id, provider_repository_id: '123', issue_id: '456',
+const selector: AdmittedSessionSelector = { repository_id: card.repository_id, provider_repository_id: '123', issue_id: '456',
   campaign_id: 'review', task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2',
   claim_revision: 'sha256:' + 'a'.repeat(64), grant_sha256: 'sha256:' + 'b'.repeat(64),
   policy_sha256: 'sha256:' + 'c'.repeat(64), actor_id: 'owner', session_binding_sha256: 'sha256:' + 'd'.repeat(64) };

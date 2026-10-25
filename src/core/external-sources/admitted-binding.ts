@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isTaskDiffRequest, type OperatorTaskDiffRequest } from '../operator/task-diff';
+import { isAdmittedSessionSelector, type AdmittedSessionSelector } from '../sessions/session-selector';
 import { canonicalExternalSourceBytes } from './issue-observation';
 import { ExternalSourceBindingError } from './binding';
 
@@ -15,7 +15,7 @@ export interface ExternalSourceBindingReceiptV2 {
   readonly provider_issue_id: string;
   readonly source_revision: string;
   readonly observation_sha256: string;
-  readonly session: OperatorTaskDiffRequest;
+  readonly session: AdmittedSessionSelector;
   readonly admission_sha256: string;
   readonly bound_at: string;
   readonly binding_sha256: string;
@@ -33,7 +33,7 @@ function exactKeys(value: unknown, keys: readonly string[]): void {
 }
 function basis(input: Input) {
   exactKeys(input, INPUT_KEYS);
-  if (!isTaskDiffRequest(input.session)) invalid();
+  if (!isAdmittedSessionSelector(input.session)) invalid();
   // Copy only scalar selector fields. Never serialize the caller's object or its toJSON.
   const selected = input.session;
   const session = Object.freeze({ repository_id: selected.repository_id, provider_repository_id: selected.provider_repository_id,
@@ -45,7 +45,7 @@ function basis(input: Input) {
     provider: input.provider, provider_repository_id: input.provider_repository_id, provider_issue_id: input.provider_issue_id,
     source_revision: input.source_revision, observation_sha256: input.observation_sha256,
     session, admission_sha256: input.admission_sha256, bound_at: input.bound_at };
-  if (!isTaskDiffRequest(session) || record.provider !== 'github'
+  if (!isAdmittedSessionSelector(session) || record.provider !== 'github'
     || record.registered_repository_id !== session.repository_id
     || record.provider_repository_id !== session.provider_repository_id || record.provider_issue_id !== session.issue_id
     || !Number.isSafeInteger(record.authorization_revision) || record.authorization_revision < 0
