@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
@@ -70,7 +70,7 @@ test('task admission binds upstream claim and actual linked runtime identity whi
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
-test('collection requires current approval and exact claim/runtime binding but allows same-context reapproval', async () => {
+test('collection requires current approval and exact claim/runtime binding and confines same-context reapproval to a new request', async () => {
   const f = fixture();
   try {
     const saved = storedRuntime(f);
@@ -79,9 +79,23 @@ test('collection requires current approval and exact claim/runtime binding but a
       { ...f.authority, claim: { ...claim, revision: `sha256:${'b'.repeat(64)}` } })).rejects.toThrow('admission_changed');
     const next = seedReviewAdmissionFixture(f.root, f.home);
     await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, f.authority)).rejects.toThrow('revoked_or_replaced');
-    expect(await collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, { source: next.source, claim })).toEqual(saved.result);
+    const authority = { source: next.source, claim };
+    await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, authority)).rejects.toThrow('request_context_changed');
+    // A subsequent synthetic transport request uses the new approval, retaining
+    // the original runtime binding and monotonically increasing round number.
+    const admission = observeTaskSessionAdmission(f.execution, spec, 'herdr', authority);
+    expect(admission.identity).toEqual(saved.binding.task_admission!.identity);
+    expect(admission.approval.admission_sha256).toBe(saved.request.task_admission!.approval.admission_sha256);
+    expect(admission.approval.grant_sha256).not.toBe(saved.request.task_admission!.approval.grant_sha256);
+    const request = { ...saved.request, round: 2, request_id: 'fixture-request-2', task_admission: admission,
+      context_ref: saved.request.context_ref.replace('context-1.txt', 'context-2.txt'),
+      result_ref: saved.request.result_ref.replace('result-1.json', 'result-2.json') };
+    writeSessionArtifact(join(saved.dir, 'request-2.json'), request);
+    const result = { ...saved.result, request_id: request.request_id };
+    writeSessionArtifact(request.result_ref, result);
+    expect(await collectTaskResult(f.execution, spec.task, spec.role, 2, undefined, authority)).toEqual(result);
     writeSessionArtifact(join(saved.dir, 'binding.json'), { ...saved.binding, pane_id: 'replacement-pane' }, false);
-    await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, { source: next.source, claim })).rejects.toThrow('request_admission_mismatch');
+    await expect(collectTaskResult(f.execution, spec.task, spec.role, 2, undefined, { source: next.source, claim })).rejects.toThrow('request_admission_mismatch');
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
@@ -98,5 +112,22 @@ test('task launch rejects an invalid claim before runtime effects and collection
     expect(run('git', ['checkout', 'reviewer'], f.execution).status).toBe(0);
     const next = seedReviewAdmissionFixture(f.root, f.home, { allowedPaths: ['docs/'] });
     await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, undefined, { source: next.source, claim })).rejects.toThrow('request_context_changed');
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+
+test('collection rechecks the complete request approval at the final publication boundary', async () => {
+  const f = fixture();
+  try {
+    const saved = storedRuntime(f);
+    let checks = 0;
+    await expect(collectTaskResult(f.execution, spec.task, spec.role, 1, () => {
+      if (++checks === 3) {
+        const next = seedReviewAdmissionFixture(f.root, f.home);
+        Object.assign(f.authority.source, next.source);
+      }
+    }, f.authority)).rejects.toThrow('request_context_changed');
+    expect(checks).toBe(3);
+    expect(existsSync(join(saved.dir, 'collected-1.json'))).toBe(false);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });

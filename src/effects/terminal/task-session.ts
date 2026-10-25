@@ -34,7 +34,7 @@ export interface TaskSessionAdmission {
 export function validateTaskClaimReference(claim: TaskClaimReference): TaskClaimReference {
   if (!claim || typeof claim.reference !== 'string' || !claim.reference.trim() || /[\x00-\x1f\x7f]/.test(claim.reference)
     || typeof claim.revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(claim.revision)
-    || Object.keys(claim).sort().join(',') !== 'reference,revision') throw new Error('task_agent_claim_invalid');
+    || Object.keys(claim).length !== 2 || !Object.keys(claim).every(key => key === 'reference' || key === 'revision')) throw new Error('task_agent_claim_invalid');
   return { reference: claim.reference, revision: claim.revision };
 }
 
@@ -730,7 +730,7 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
     guard?.();
     const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
     const current = recheckTaskAdmission(repoRoot, binding, taskAuthority);
-    if (current && request.task_admission?.approval.admission_sha256 !== current.approval.admission_sha256) throw new Error('task_agent_request_context_changed');
+    if (current && !sameSessionData(request.task_admission?.approval ?? null, current.approval)) throw new Error('task_agent_request_context_changed');
     const result = readTaskRequestResult(repoRoot, dir, request);
     if (!result) return null;
     const path = join(dir, `collected-${round}.json`);
@@ -740,7 +740,8 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
       return previous;
     }
     guard?.();
-    recheckTaskAdmission(repoRoot, binding, taskAuthority);
+    const final = recheckTaskAdmission(repoRoot, binding, taskAuthority);
+    if (final && !sameSessionData(request.task_admission?.approval ?? null, final.approval)) throw new Error('task_agent_request_context_changed');
     writeSessionArtifact(path, result);
     return result;
   });
@@ -753,7 +754,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
   const recheck = () => {
     guard?.();
     const observed = recheckTaskAdmission(repoRoot, binding, taskAuthority);
-    if (current && observed?.approval.admission_sha256 !== current.approval.admission_sha256) throw new Error('task_agent_request_context_changed');
+    if (current && !sameSessionData(observed?.approval ?? null, current.approval)) throw new Error('task_agent_request_context_changed');
   };
   return locked(root, dir, async () => {
     recheck();
