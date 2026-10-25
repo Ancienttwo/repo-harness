@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
-import { userInfo } from 'node:os';
+import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import { createReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
@@ -32,7 +32,7 @@ function safeStat(path: string, directory: boolean): void {
 }
 function location(input: StoreInput, identity: CampaignIdentity, create: boolean) {
   const repository = resolveRepositoryIdentity(input.repoRoot);
-  const home = realpathSync(input.authorityHome ?? userInfo().homedir);
+  const home = realpathSync(input.authorityHome ?? osAccountHome());
   const state = join(home, '.repo-harness');
   safeStat(home, true);
   if (inside(repository.worktreeId, state) || inside(repository.repositoryId, state) || inside(taskRepository(input.repoRoot).primary_root, state)) fail('authority_inside_candidate');

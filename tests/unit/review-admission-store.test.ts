@@ -82,3 +82,21 @@ test('operator approval uses revision CAS and reapproval never resurrects an old
   expect(readReviewAdmission(f.args(next.grant_sha256)).revision).toBe(3);
   expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
 });
+
+test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default admission', () => {
+  const f = fixture(), grant = f.seed();
+  const { authorityHome: _explicitHome, ...args } = f.args(grant);
+  const code = [
+    `const { readReviewAdmission } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/review/admission-store.ts'))});`,
+    `const args = ${JSON.stringify(args)};`,
+    `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)} });`,
+    `if (explicit.context.authorization.grant_sha256 !== args.expectedGrantSha256) throw new Error('fixture is invalid');`,
+    `try { readReviewAdmission(args); console.log('accepted-forged-grant'); }`,
+    `catch (error) { if (error.message !== 'review_admission_missing') throw error; console.log('rejected-forged-grant'); }`,
+  ].join('\n');
+  const child = Bun.spawnSync([process.execPath, '-e', code], {
+    env: { ...process.env, HOME: f.home, REPO_HARNESS_HOME: join(f.home, '.repo-harness') }, stdout: 'pipe', stderr: 'pipe',
+  });
+  expect(child.exitCode, child.stderr.toString()).toBe(0);
+  expect(child.stdout.toString().trim()).toBe('rejected-forged-grant');
+});
