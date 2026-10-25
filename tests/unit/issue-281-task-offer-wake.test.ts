@@ -806,9 +806,19 @@ describe('issue #281 crash boundaries replay without stranding a wake', () => {
     })).toThrow('crash');
     const ledgerAfterCrash = readOfferWakeLedger(fx.repoRoot, fx.endpoint)!;
     expect(ledgerAfterCrash.pending).toBeNull();
+    const persisted = listAgentRuntimeEffects(fx.repoRoot, engineerId);
+    expect(persisted).toHaveLength(1);
+    const original = persisted[0]!.intent;
+    const currentEndpoint = observeAgentRuntimeEndpoint(fx.repoRoot, fx.source);
+    // The validated disk intent and the live observer construct the same fence
+    // in different property orders. Replay must compare values, not insertion order.
+    expect(original.endpoint_fence).toEqual(currentEndpoint);
+    expect(Object.keys(original.endpoint_fence)).not.toEqual(Object.keys(currentEndpoint));
 
     const replay = record(fx, document, '2026-09-03T10:04:30.000Z');
     expect(replay.outcome).toBe('wake_prepared');
+    expect(replay.status!.intent).toEqual(original);
+    expect(listAgentRuntimeEffects(fx.repoRoot, engineerId)).toHaveLength(1);
     expect(replay.ledger.pending!.effect_id).toBe(replay.status!.intent.effect_id);
     expect(record(fx, document, '2026-09-03T10:05:00.000Z').outcome).toBe('unchanged');
   });

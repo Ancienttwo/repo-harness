@@ -611,7 +611,7 @@ function prepareOfferWakeEffect(input: {
     if (existsSync(paths.intent)) {
       const existing = wakeIntent(parseIntent(readRaw(paths.intent, 'effect intent')));
       if (existing.idempotency_key !== key || existing.capability_sha256 !== input.capability_sha256
-        || JSON.stringify(existing.endpoint_fence) !== JSON.stringify(input.endpoint)
+        || canonicalEngineerJson(existing.endpoint_fence) !== canonicalEngineerJson(input.endpoint)
         || existing.wake_ref.repository_id !== input.repository_id
         || existing.wake_ref.authorization_revision !== input.authorization_revision
         || existing.wake_ref.snapshot_revision !== input.snapshot_revision

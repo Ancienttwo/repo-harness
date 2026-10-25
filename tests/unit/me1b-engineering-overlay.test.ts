@@ -20,7 +20,7 @@ const now = '2026-10-25T15:02:00.000Z';
 const temporary = (prefix: string) => { const path = tmpWorkspace(prefix); roots.push(path); return path; };
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
-async function fixture() {
+async function fixture(expandedRoster = false) {
   const root = temporary('provider-engineering-overlay'), home = temporary('provider-engineering-registry');
   const authorityHome = temporary('provider-engineering-authority');
   initGitRepo(root);
@@ -30,6 +30,22 @@ async function fixture() {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
+  if (expandedRoster) {
+    // The product roster is intentionally small. Seed eight additional tracked
+    // profiles against real capabilities so this case still measures ten profiles.
+    const template = JSON.parse(readFileSync(join(root, 'agents/engineers/profiles/verification-evals-checks.json'), 'utf8'));
+    for (const capability of [
+      'organization.publication', 'organization.task-fleet',
+      'public-surface.action-commands', 'public-surface.adoption',
+      'runtime-harness.agent-runtime-effects', 'runtime-harness.engineer-bindings',
+      'runtime-harness.engineer-scheduling', 'runtime-harness.engineering-overlay',
+    ]) {
+      const id = `capability.${capability}`;
+      writeFileSync(join(root, `agents/engineers/profiles/fixture-${capability}.json`), JSON.stringify({
+        ...template, engineer_id: `engineer:${id}`, capability_id: id,
+      }));
+    }
+  }
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
     worktree_strategy: { review_base: 'main', merge_back: { target: 'main' } },
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
@@ -138,7 +154,7 @@ describe('admitted engineering overlay', () => {
     expect(OPERATOR_ROUTES.filter(route => /engineer|overlay|organization/iu.test(`${route.id} ${route.pattern}`))).toEqual([]);
   });
   test('profile roster projection stays within the local observation budget', async () => {
-    const fx = await fixture();
+    const fx = await fixture(true);
     const started = performance.now(), observed = board(fx);
     expect(observed.overlay.scheduling!.profiles.length).toBeGreaterThanOrEqual(10);
     expect(performance.now() - started).toBeLessThan(3000);
