@@ -1,5 +1,7 @@
 # Strategy repository pilot and Host wake contract
 
+Status: Wake adapter retired. Issue #910 deleted the unconsumed wake export adapter. The repository pilot is unchanged.
+
 Base: 84c225c1ebfe9ce34f4e6268662714241ca0b33b.
 Branch: feat/strategy-wake-pilot. Owner: Aimpact.
 Authorization: parent next-phase delegation after Required/CI passed on PR 599.
