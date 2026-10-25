@@ -5,29 +5,33 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionRequestV1 } from 'archctx-contracts';
+import { cleanRoomEnvironment, CleanRoomDaemon, finishCleanRoom } from './lib/axr5-clean-room-runtime';
 import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
 import { archctxCapabilities, readArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
 const VERSION = ARCHCTX_REQUIRED_VERSION;
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
-const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
+const requestedRevision = flag('--revision');
 const outputPath = resolve(repoRoot, flag('--out') ?? 'docs/verification/axr5-archctx-clean-room-readback.json');
 const stagedOutputPath = `${outputPath}.tmp-${process.pid}`;
 const keep = process.argv.includes('--keep-temp');
 mkdirSync(dirname(outputPath), { recursive: true });
 const workspace = mkdtempSync(join(tmpdir(), 'repo-harness-axr5-clean-room-'));
-let installedBinary: string | null = null;
-let daemonRoot: string | null = null;
+const offlineEnv = cleanRoomEnvironment(workspace, process.env);
+const daemon = new CleanRoomDaemon();
+let failure: { error: unknown } | undefined;
+let readbackBody: string | undefined;
 
 try {
+  const revision = requestedRevision ?? git(archContextRoot, ['rev-parse', 'HEAD']);
   const checkout = join(workspace, 'arch-context');
   const artifacts = join(workspace, 'artifacts');
   const consumer = join(workspace, 'consumer');
   const fixtureRepo = join(workspace, 'fixture-repo');
   mkdirSync(checkout, { recursive: true });
   mkdirSync(artifacts, { recursive: true });
-  extractRevision(checkout);
+  extractRevision(checkout, revision);
   prepareReleaseVersion(checkout);
   linkBuildDependencies(checkout);
   const contracts = packContracts(checkout, artifacts);
@@ -58,15 +62,9 @@ try {
       [koffiPlatform.name]: `file:${koffiPlatform.path}`,
     },
   }, null, 2)}\n`);
-  const hostHome = join(workspace, 'host-home');
+  const hostHome = offlineEnv.HOME!;
   mkdirSync(join(hostHome, '.repo-harness'), { recursive: true });
   writeFileSync(join(hostHome, '.repo-harness/config.json'), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'manual' } }));
-  const offlineEnv = {
-    ...process.env,
-    HOME: hostHome,
-    NPM_CONFIG_REGISTRY: 'http://127.0.0.1:9',
-    BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9',
-  };
   run('npm', ['install', '--offline', '--ignore-scripts', '--omit=dev', '--omit=optional'], consumer, offlineEnv);
   const installedNodeSchemaPath = join(consumer, 'node_modules', 'archctx-contracts', 'schemas', 'repo', 'architecture-node.schema.json');
   const installedNodeSchemaBody = readFileSync(installedNodeSchemaPath);
@@ -114,17 +112,18 @@ extensions:
     consumerRoot: consumer,
     env: { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` },
   });
-  installedBinary = handshake.resolved.binaryPath;
+  const installedBinary = handshake.resolved.binaryPath;
   if (handshake.capabilities.package.version !== VERSION) throw new Error('package-local feature handshake version mismatch');
   const packageLocalBinary = handshake.resolved.binaryPath === realpathSync(join(consumer, 'node_modules', 'archctx', 'bin', 'archctx.mjs'));
   const conflictingPathIgnored = packageLocalBinary && handshake.capabilities.package.version === VERSION && !realpathSync(handshake.resolved.binaryPath).startsWith(`${conflictDir}/`);
   if (!packageLocalBinary || !conflictingPathIgnored) throw new Error('package-local provider authority was not proven');
+  const runtimeEnv = { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` };
+  daemon.arm(installedBinary, fixtureRepo, runtimeEnv);
   const expected = readArchitectureProjectionSnapshot(fixtureRepo, {
     consumerRoot: consumer,
-    env: { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` },
+    env: runtimeEnv,
   });
-  daemonRoot = fixtureRepo;
-  run(installedBinary, ['daemon', 'upgrade'], fixtureRepo, { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` });
+  run(installedBinary, ['daemon', 'upgrade'], fixtureRepo, runtimeEnv);
   const request: ProjectionRequestV1 = {
     schemaVersion: PROJECTION_REQUEST_SCHEMA_VERSION,
     requestId: 'repo-harness.axr5-clean-room',
@@ -136,7 +135,7 @@ extensions:
   };
   const projection = runArchitectureProjection(request, fixtureRepo, {
     consumerRoot: consumer,
-    env: { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` },
+    env: runtimeEnv,
   });
 
   const readback = {
@@ -166,16 +165,24 @@ extensions:
       },
     },
   };
-  writeFileSync(stagedOutputPath, `${JSON.stringify(readback, null, 2)}\n`);
-  renameSync(stagedOutputPath, outputPath);
-  process.stdout.write(`${JSON.stringify(readback, null, 2)}\n`);
+  readbackBody = `${JSON.stringify(readback, null, 2)}\n`;
+} catch (error) {
+  failure = { error };
+  throw error;
 } finally {
-  rmSync(stagedOutputPath, { force: true });
-  if (installedBinary && daemonRoot) spawnSync(installedBinary, ['daemon', 'stop'], { cwd: daemonRoot, encoding: 'utf8', stdio: 'ignore' });
-  if (!keep) rmSync(workspace, { recursive: true, force: true });
+  finishCleanRoom({ daemon, failure, cleanup: () => {
+    rmSync(stagedOutputPath, { force: true });
+    if (!keep) rmSync(workspace, { recursive: true, force: true });
+  } });
+}
+// A receipt is published only after daemon shutdown is confirmed.
+if (readbackBody !== undefined) {
+  writeFileSync(stagedOutputPath, readbackBody);
+  renameSync(stagedOutputPath, outputPath);
+  process.stdout.write(readbackBody);
 }
 
-function extractRevision(target: string): void {
+function extractRevision(target: string, revision: string): void {
   const archive = spawnSync('git', ['archive', '--format=tar', revision], { cwd: archContextRoot, encoding: null, maxBuffer: 100 * 1024 * 1024 });
   if (archive.status !== 0 || !archive.stdout) throw new Error(`git archive failed: ${String(archive.stderr)}`);
   const extract = spawnSync('tar', ['-xf', '-', '-C', target], { input: archive.stdout, encoding: null, maxBuffer: 100 * 1024 * 1024 });
@@ -279,7 +286,7 @@ function installedPlatformPackage(scope: string, baseName: string): { name: stri
   throw new Error(`installed platform package is missing: ${scope}/${expectedPrefix}*`);
 }
 
-function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): { stdout: string; stderr: string } {
+function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = offlineEnv): { stdout: string; stderr: string } {
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${(result.stderr || result.stdout).trim().slice(0, 2000)}`);
   return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
