@@ -108,7 +108,7 @@ export interface SetupSkill {
 }
 
 /** `HookEvent` vocabulary, in route registry order. */
-export const SETUP_HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop'] as const;
+export const SETUP_HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop'] as const;
 export type SetupHookEventName = typeof SETUP_HOOK_EVENTS[number];
 
 export interface SetupHookRoute {

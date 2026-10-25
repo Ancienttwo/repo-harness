@@ -18,10 +18,13 @@ import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
-import { inspectWorkflowMarker, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
+import {
+  inspectWorkflowMarker,
+  WORKFLOW_CONTRACT_MARKER_PATH,
+  WORKFLOW_MARKER_GATE_EVENTS,
+} from '../../core/adoption/minimum-harness-version';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
-const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
 
 export interface RunHookOptions {
@@ -66,8 +69,12 @@ export function resolveHookRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string
   }
 }
 
+/**
+ * The repository opt-in decision. The managed host command repeats this test
+ * in sh so that a repository without the marker never starts the hook bin.
+ */
 export function isOptIn(repoRoot: string): boolean {
-  return fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
+  return fs.existsSync(path.join(repoRoot, WORKFLOW_CONTRACT_MARKER_PATH));
 }
 
 const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
