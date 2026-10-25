@@ -1,8 +1,10 @@
+import { startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
+import { canonicalize } from '../src/core/evidence/canonical-json';
 import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goal';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
-import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
+import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
@@ -569,10 +571,24 @@ function reviewFixture() {
   const calls: string[] = [];
   let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
-  const binding = { pane_id: 'fixture-reviewer-pane' } as unknown as HerdrTaskBinding;
   const effects: ReviewEffects = {
     owner: () => 'codex', installation: async (_kind, executable) => ({ kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
-    start: async (_repo, spec) => { calls.push(`start:${spec.harness_kind}:${spec.role}`); return binding; },
+    start: async (repo, spec, _command, _ready, _guard, authority) => {
+      calls.push(`start:${spec.harness_kind}:${spec.role}`);
+      if (!authority) throw new Error('fixture_task_authority_missing');
+      return startOfflineTaskAgent(repo, spec, authority);
+    },
+    // Domain fixture: native host attribution is injected, with no host-ready file
+    // or live native-session claim. Native binding has its own strict lifecycle tests.
+    bindNative: ({ binding }) => {
+      expect(binding.task_admission).toBeDefined();
+      expect(binding.harness_kind === 'claude' || binding.harness_kind === 'codex').toBe(true);
+      return { protocol: 1, kind: 'repo-harness-native-task-session',
+        host: binding.harness_kind as 'claude' | 'codex', native_session_id: 'fixture-native-session',
+        task: binding.task, role: binding.role,
+        session_binding_sha256: `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`,
+        provider: { pid: binding.provider.pid, identity: binding.provider.identity } };
+    },
     send: async (repo, task, role, ref) => {
       sent++; calls.push('send');
       const packet = readFileSync(join(repo, ref), 'utf8');
