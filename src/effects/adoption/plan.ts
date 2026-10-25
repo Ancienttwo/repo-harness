@@ -1,8 +1,8 @@
 import { resolve } from "path";
-import type { AdoptionMode } from "./modes";
-import type { AdoptionPlan } from "./operations";
-import { summarizeOperations } from "./summary";
-import { withRollbackMetadata } from "./rollback";
+import type { AdoptionMode } from "../../core/adoption/modes";
+import type { AdoptionPlan } from "../../core/adoption/operations";
+import { summarizeOperations } from "../../core/adoption/summary";
+import { withRollbackMetadata } from "../../core/adoption/rollback";
 import { planStandardAdoption } from "./standard-plan";
 import { isRepoHarnessSourceCheckout } from "./source-checkout";
 

@@ -1,6 +1,3 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-
 /**
  * A repository can declare the oldest repo-harness release that reads its
  * model in the opt-in marker. An older hook then reports an upgrade
@@ -11,14 +8,6 @@ export const WORKFLOW_CONTRACT_MARKER_PATH = ".ai/harness/workflow-contract.json
 export const MINIMUM_HARNESS_VERSION_FIELD = "minimum_harness_version";
 
 const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
-const PACKAGE_JSON_URL = new URL("../../../package.json", import.meta.url);
-
-/**
- * Build-time version literal of the single-file hook bundle, where the
- * package.json path relative to this module no longer holds. Undeclared in
- * unbundled runs, which read package.json.
- */
-declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
 
 export type WorkflowMarkerGateCode = "harness-upgrade-required" | "workflow-marker-invalid";
 
@@ -46,28 +35,18 @@ export function minimumHarnessVersionOf(marker: unknown): string | null {
   return value;
 }
 
-export function runningHarnessVersion(): string {
-  if (typeof REPO_HARNESS_BUNDLED_CLI_VERSION === "string" && REPO_HARNESS_BUNDLED_CLI_VERSION.length > 0) {
-    return REPO_HARNESS_BUNDLED_CLI_VERSION;
-  }
-  const manifest = JSON.parse(readFileSync(PACKAGE_JSON_URL, "utf-8")) as { version?: unknown };
-  if (typeof manifest.version !== "string" || manifest.version.length === 0) {
-    throw new Error("the repo-harness package.json has no version");
-  }
-  return manifest.version;
-}
-
 /**
- * Checks the opt-in marker of an opted-in repository. Returns null when the
- * running harness can serve the repository; otherwise the gate names why not.
+ * Checks the opt-in marker text that `readMarker` returns. Returns null when
+ * the running harness can serve the repository; otherwise the gate names why
+ * not. A read failure is an invalid marker, like a parse failure.
  */
-export function inspectWorkflowMarker(
-  repoRoot: string,
-  runningVersion: () => string = runningHarnessVersion,
+export function workflowMarkerGate(
+  readMarker: () => string,
+  runningVersion: () => string,
 ): WorkflowMarkerGate | null {
   let minimum: string | null;
   try {
-    minimum = minimumHarnessVersionOf(JSON.parse(readFileSync(join(repoRoot, WORKFLOW_CONTRACT_MARKER_PATH), "utf-8")));
+    minimum = minimumHarnessVersionOf(JSON.parse(readMarker()));
   } catch (error) {
     const detail = error instanceof SyntaxError ? `${WORKFLOW_CONTRACT_MARKER_PATH} is not valid JSON` : (error as Error).message;
     return { code: "workflow-marker-invalid", message: `${detail}. Repair the marker; the hook does not run until it is valid.` };

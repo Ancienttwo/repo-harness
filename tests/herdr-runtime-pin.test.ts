@@ -1,4 +1,4 @@
-import { defaultPolicy } from "../src/core/adoption/standard-plan";
+import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { describe, expect, test, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";

@@ -130,7 +130,7 @@ describe('state architecture boundary checker', () => {
     }
   });
 
-  test('checks every src/core subdirectory and skips only the named impure files', async () => {
+  test('checks every src/core subdirectory and exempts no file', async () => {
     const { result } = await checkWith((root) => {
       write(
         root,
@@ -140,6 +140,7 @@ describe('state architecture boundary checker', () => {
       write(root, 'src/core/adoption/plan.ts', "import { join } from 'path';\n");
     });
     expect(result.violations.map((item) => `${item.code} ${item.file}`)).toEqual([
+      'CORE_FORBIDDEN_IMPORT src/core/adoption/plan.ts',
       'CORE_FORBIDDEN_IMPORT src/core/upgrade/inventory.ts',
       'CORE_REVERSE_IMPORT src/core/upgrade/inventory.ts',
     ]);

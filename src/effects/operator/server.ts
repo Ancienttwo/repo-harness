@@ -20,7 +20,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
-import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
@@ -1202,7 +1202,7 @@ export async function startOperatorServer(
       if (observation.controller.signal.aborted) throw new OperatorFleetTimeoutError();
       return collect === undefined ? readDefaultFleetSnapshot(input) : Promise.resolve(collect(input));
     }).then((raw) => {
-      const value = projectOperatorFleetSnapshot(raw, serviceEpoch);
+      const value = projectOperatorFleetSnapshot(raw, serviceEpoch, basename);
       if (value.sequence !== observation.sequence) throw new Error('Fleet generation mismatch');
       settleFleetObservation(observation, { ok: true, value });
     }).catch((error: unknown) => {

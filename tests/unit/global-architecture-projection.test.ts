@@ -37,7 +37,7 @@ test('one global configuration controls two repos without repository projection 
 import { existsSync, readFileSync } from 'node:fs';
 import { ensureGlobalArchitectureProjection } from '../../src/cli/commands/architecture-configuration';
 import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration } from '../../src/effects/architecture/projection-config';
-import { planStandardAdoption } from '../../src/core/adoption/standard-plan';
+import { planStandardAdoption } from '../../src/effects/adoption/standard-plan';
 
 function globalFixture() {
   const home = mkdtempSync(join(tmpdir(), 'global-architecture-config-'));

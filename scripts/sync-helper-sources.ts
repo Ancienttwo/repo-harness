@@ -10,7 +10,7 @@ import {
   sameProjectionBytes,
   writeProjectionFileAtomic,
   type ProjectionFileRecord,
-} from "../src/core/source-projection";
+} from "../src/effects/source-projection";
 
 type Mode = "check" | "write";
 

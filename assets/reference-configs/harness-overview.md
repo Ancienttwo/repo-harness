@@ -247,12 +247,12 @@ rather than inferring those values from turns, tool names, or timestamps.
 Maintainer-facing detail on how the initializer and runtime defaults are wired.
 
 - Plan menu is tiered: **Core Plans (A-F)** first, **Custom Presets (G-K)** only when needed.
-- Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `src/core/adoption/standard-plan.ts`, `assets/workflow-contract.v1.json`.
+- Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `src/effects/adoption/standard-plan.ts`, `assets/workflow-contract.v1.json`.
 - Generated repos support an optional contract-level flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`. Ordinary tasks use the PR description and need no plan, contract or review file.
 - Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
 - The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then reports an upgrade instruction (`repo-harness update`) on SessionStart, UserPromptSubmit, Stop and SubagentStop. It exits 1, which does not block, and does not resolve state for these events. PreToolUse and PostToolUse skip this check, so every edit guard still runs. `repo-harness doctor` and `repo-harness update --check` report the same instruction. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
 - The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
-- `repo-harness init` writes the marker, `.ai/harness/policy.json` and the root `CLAUDE.md` and `AGENTS.md`. `src/core/adoption/standard-plan.ts` is the only writer of the root context files. Shell scaffold scripts do not write the marker or the root context files.
+- `repo-harness init` writes the marker, `.ai/harness/policy.json` and the root `CLAUDE.md` and `AGENTS.md`. `src/effects/adoption/standard-plan.ts` is the only writer of the root context files. Shell scaffold scripts do not write the marker or the root context files.
 - Host events use the user-level managed adapter projection, the 11-tuple
   `route-registry.ts`, and exactly one typed in-process handler per tuple.
   Operator helpers run from the installed package through
@@ -282,7 +282,7 @@ Maintainer-facing map of which package file owns which contract:
 | `assets/workflow-contract.v1.json` | Workflow contract manifest |
 | `docs/reference-configs/*.md` | Source-repo projection of the runtime reference docs |
 | `scripts/inspect-project-state.ts` | State inspector |
-| `src/core/adoption/standard-plan.ts` | Canonical adoption planner |
+| `src/effects/adoption/standard-plan.ts` | Canonical adoption planner |
 | `scripts/check-agent-tooling.sh` | External tooling detector |
 | `scripts/init-project.sh`, `scripts/create-project-dirs.sh` | Scaffolding steps |
 

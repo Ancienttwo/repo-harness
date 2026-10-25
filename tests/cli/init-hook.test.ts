@@ -11,7 +11,7 @@ import {
 } from '../../src/cli/commands/init-hook';
 import { runDoctor, type DoctorReport } from '../../src/cli/commands/doctor';
 import type { StatusReport } from '../../src/cli/commands/status';
-import { planAdoption } from '../../src/core/adoption/plan';
+import { planAdoption } from '../../src/effects/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';

@@ -23,7 +23,7 @@ import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatc
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
-import { inspectWorkflowMarker } from '../../core/adoption/minimum-harness-version';
+import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
 import { readArchcontextCapabilityAuthority } from '../../effects/capabilities/archcontext-owners';
 import { capabilitySourceMode, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { readText } from '../../effects/state/collect-state-inputs';

@@ -13,7 +13,7 @@ import {
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
-const STANDARD_PLAN = join(ROOT, "src/core/adoption/standard-plan.ts");
+const STANDARD_PLAN = join(ROOT, "src/effects/adoption/standard-plan.ts");
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
