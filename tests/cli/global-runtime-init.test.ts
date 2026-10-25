@@ -15,7 +15,7 @@ import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
-import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/runtime/candidate-reconciliation';
+import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/commands/candidate-reconciliation';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.

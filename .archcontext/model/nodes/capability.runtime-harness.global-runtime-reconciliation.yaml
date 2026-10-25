@@ -18,6 +18,7 @@ source:
     - "bun.lock"
     - "src/cli/index.ts"
     - "src/cli/commands/global-runtime.ts"
+    - "src/cli/commands/candidate-reconciliation.ts"
     - "scripts/check-managed-runtime.ts"
     - "scripts/sync-codex-installed-copies.sh"
     - "src/effects/architecture/**"

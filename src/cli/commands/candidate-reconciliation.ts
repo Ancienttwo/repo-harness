@@ -19,7 +19,7 @@ import {
 import { homedir } from 'os';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
-import type { InstallTargetSpec } from '../commands/install';
+import type { InstallTargetSpec } from './install';
 import type { InstallProfile } from '../installer/install-profile';
 import { REPORT_LANGUAGE_FLAG_VALUES, type ReportLanguageFlag } from '../installer/global-context';
 import {

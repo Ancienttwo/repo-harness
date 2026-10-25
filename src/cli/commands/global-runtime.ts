@@ -44,7 +44,7 @@ import {
   encodeCandidateRequest,
   parseCandidateReceipt,
   type CandidateReconciliationRequest,
-} from '../runtime/candidate-reconciliation';
+} from './candidate-reconciliation';
 
 export interface CandidateHandoffContext {
   /** Created by the parent transaction; never accepted from the public CLI. */

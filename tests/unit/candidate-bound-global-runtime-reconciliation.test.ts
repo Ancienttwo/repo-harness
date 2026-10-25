@@ -19,7 +19,7 @@ import {
   type CandidatePackageIdentity,
   type CandidateReconciliationRequest,
   type CandidateReconciliationReceipt,
-} from '../../src/cli/runtime/candidate-reconciliation';
+} from '../../src/cli/commands/candidate-reconciliation';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 
 const ROOT = join(import.meta.dir, '..', '..');
