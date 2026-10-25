@@ -303,10 +303,12 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
   const reportPath = seedNativeVerification(cwd, CONTRACT);
   const fixture = fixtureAuthorities.get(cwd)!;
   const waiverSummary = 'Fixture owner accepts the current change.';
-  const waiverRequest = '.ai/harness/fixtures/upstream-waiver.json';
+  // Keep control input outside the candidate: adding a file after verification
+  // must not change the final-content subject that the receipt validates.
+  const waiverRequest = join(fixture.source.authorityHome!, 'fixture-upstream-waiver.json');
   const admission = fixture.admission;
   // A separate upstream decision fixture, not a local authentication claim.
-  writeFixture(cwd, waiverRequest, JSON.stringify({
+  writeFileSync(waiverRequest, JSON.stringify({
     protocol: 1, kind: 'repo-harness-upstream-waiver-authorization', action: 'human-approved-user-waiver',
     authorization_ref: 'fixture-separate-human-decision', bot_id: 'fixture-control-bot',
     repository_root: realpathSync(cwd), repository_id: admission.repository_id,
