@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { planAdoption } from "../src/core/adoption/plan";
+import { planAdoption } from "../src/effects/adoption/plan";
 import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 
 describe("adoption hook projection", () => {

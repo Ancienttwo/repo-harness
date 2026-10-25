@@ -1,7 +1,7 @@
 /** Read live provider merge proof for a branch before its worktree is pruned. */
 import { spawnSync } from 'child_process';
 import { gitSpawnSync } from '../git/runner';
-import { resolveProtectedGitRuntime } from '../../../scripts/acceptance-receipt';
+import { resolveProtectedGitRuntime } from '../review/acceptance-receipt';
 
 export function observeProviderBranchMergeCommit(input: {
   readonly repoRoot: string;

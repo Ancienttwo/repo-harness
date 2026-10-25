@@ -1,16 +1,16 @@
-import { DEFAULT_WORKTREE_TEMPLATE } from "../worktree-location.mjs";
+import { DEFAULT_WORKTREE_TEMPLATE } from "../../core/worktree-location.mjs";
 import { createHash } from "crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
-import type { AdoptionMode } from "./modes";
-import type { AdoptionOperation, AdoptionWarning, WriteFileOperation } from "./operations";
-import { makeOperationId } from "./operations";
+import type { AdoptionMode } from "../../core/adoption/modes";
+import type { AdoptionOperation, AdoptionWarning, WriteFileOperation } from "../../core/adoption/operations";
+import { makeOperationId } from "../../core/adoption/operations";
 import { adoptionTemplateFile } from "./manifest-templates";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
-import { managedBlockNeedsUpdate } from "./managed-block";
-import { renderWorkflowContractMarker } from "./workflow-contract-asset";
-import { minimumHarnessVersionOf } from "./minimum-harness-version";
-import { planLegacyLeftovers, stripLegacyHookEntries } from "../../effects/upgrade/legacy-inventory";
+import { managedBlockNeedsUpdate } from "../../core/adoption/managed-block";
+import { renderWorkflowContractMarker } from "../../core/adoption/workflow-contract-asset";
+import { minimumHarnessVersionOf } from "../../core/adoption/minimum-harness-version";
+import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");

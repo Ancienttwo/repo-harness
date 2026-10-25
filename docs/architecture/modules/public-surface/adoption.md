@@ -99,7 +99,7 @@ sequenceDiagram
 ### 3.1 必须保持的不变量
 
 1. **单一事实源。** `assets/workflow-contract.v1.json` 和 `standard-plan.ts` 的默认值定义 canonical 字节。plan、manifest、registry 和 Markdown 视图都是投影。
-2. **规划层无副作用。** `src/core/adoption/**` 不 import `src/effects/**`。`planAdoption`（`src/core/adoption/plan.ts:22`）只读文件系统。`--dry-run` 的输出和 apply 执行的是同一个 operation 模型。
+2. **规划层无副作用。** `src/core/adoption/**` 只放纯计算（operation 模型、回滚、摘要），不 import `fs`、`path` 或 `src/effects/**`。读文件系统的规划器在 `src/effects/adoption/**`。`planAdoption`（`src/effects/adoption/plan.ts:22`）只读文件系统，不写。`--dry-run` 的输出和 apply 执行的是同一个 operation 模型。
 3. **前置条件在规划期固化。** 每个 operation 带 `expectedContentHash` 或 `expectedAbsent`（`src/core/adoption/operations.ts:27`、`:29`）。规划与执行之间若有并发编辑，执行失败，不覆盖。
 4. **回滚策略在规划期固化。** `rollbackMetadataForOperation`（`src/core/adoption/rollback.ts:11`）为每个 operation 生成回滚说明。`--dry-run` 输出因此也是一份回滚说明书。
 5. **executor 只有一个调用点。** `applyAdoptionPlan` 在 `src/` 中只被 `src/cli/commands/adoption-plan.ts:163` 调用。

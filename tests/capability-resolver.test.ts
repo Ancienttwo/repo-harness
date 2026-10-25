@@ -108,6 +108,8 @@ describe("capability resolver", () => {
       );
       expect(projected).not.toContain('from "../src/core/capabilities/registry"');
 
+      expect(projected).not.toMatch(/from ["']\.\.?\//);
+      expect(projected).toContain('export function gitSpawnSync');
       expect(projected).toContain('export interface Capability');
       expect(projected).toContain('export interface CapabilityRegistry');
       const projectionCheck = spawnSync("bun", ["scripts/sync-helper-sources.ts", "--check"], {

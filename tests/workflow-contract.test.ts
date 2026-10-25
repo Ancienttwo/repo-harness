@@ -11,7 +11,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { inspectRepo } from "../scripts/inspect-project-state";
-import { planAdoption } from "../src/core/adoption/plan";
+import { planAdoption } from "../src/effects/adoption/plan";
 import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 import { loadWorkflowContract } from "../scripts/workflow-contract";
 import { renderWorkflowContractMarker } from "../src/core/adoption/workflow-contract-asset";

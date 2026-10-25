@@ -4,13 +4,13 @@ import { currentReadonlyObservation, rejectObservation, observationReadFileSync 
  * fail-closed; reads apply the pure corrupt-tail policy from
  * `src/core/evidence/fold.ts` and quarantine any discarded tail.
  */
-import { existsSync, realpathSync, truncateSync } from "fs";
-import { join } from "path";
+import { closeSync, constants, existsSync, fsyncSync, ftruncateSync, openSync, realpathSync } from "fs";
+import { dirname, join } from "path";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord } from "../../core/evidence/types";
 import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../../core/evidence/fold";
 import { withExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { buildEvidenceEvent, type EvidenceEventConstructionInput } from "./event-writer";
-import { appendLineDurably, writeFileDurably } from "../atomic-append";
+import { appendLineDurably, createFileExclusiveDurably, syncDirectoryDurably } from "../atomic-append";
 import { EVENTS_DIR_RELATIVE, resolveEventsDir, resolveLogPath } from "./paths";
 
 export type EvidenceEventInput = EvidenceEventConstructionInput;
@@ -194,6 +194,20 @@ function readAppendableLog(logPath: string, operation: string): LogSnapshot {
   return snapshot;
 }
 
+/** Persist the removed bytes before truncation. The caller must hold the log lock
+ * and supply the snapshot and byte offset read under that lock. */
+export function quarantineEvidenceTail(logPath: string, quarantinedPath: string, bytes: Buffer, validEnd: number): void {
+  createFileExclusiveDurably(quarantinedPath, bytes.subarray(validEnd));
+  syncDirectoryDurably(dirname(quarantinedPath));
+  const fd = openSync(logPath, constants.O_WRONLY);
+  try {
+    ftruncateSync(fd, validEnd);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Re-read under the log lock, so the quarantine holds every byte that the truncation removes. */
 function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { readonly quarantinedPath: string | null } {
   return withLogLock(repoRoot, () => {
@@ -202,8 +216,7 @@ function repairCorruptTail(repoRoot: string, logPath: string): LogSnapshot & { r
     if (corruptTail.corruptStartIndex === null) return { ...snapshot, quarantinedPath: null };
     const quarantinedPath = join(resolveEventsDir(repoRoot), `events.corrupt-${Date.now()}`);
     const validEnd = corruptTail.validLineCount === 0 ? 0 : raw.ends[corruptTail.validLineCount - 1]!;
-    writeFileDurably(quarantinedPath, raw.bytes.subarray(validEnd));
-    truncateSync(logPath, validEnd);
+    quarantineEvidenceTail(logPath, quarantinedPath, raw.bytes, validEnd);
     return { ...snapshot, quarantinedPath };
   });
 }

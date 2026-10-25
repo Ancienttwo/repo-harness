@@ -22,8 +22,8 @@ import {
 import type { InstallTargetSpec } from './install';
 import { planLegacyLeftovers } from '../../effects/upgrade/legacy-inventory';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { planAdoption } from '../../core/adoption/plan';
-import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
+import { planAdoption } from '../../effects/adoption/plan';
+import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
 import {
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,

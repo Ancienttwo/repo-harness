@@ -1,5 +1,5 @@
 import { basename, resolve } from "path";
-import { loadWorkflowContractAsset } from "./workflow-contract-asset";
+import { loadWorkflowContractAsset } from "../../core/adoption/workflow-contract-asset";
 
 export type AdoptionTemplateKey = "spec" | "currentStatus" | "deferredGoalLedger" | "lessonsLog";
 

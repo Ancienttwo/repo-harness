@@ -130,7 +130,7 @@ describe('state architecture boundary checker', () => {
     }
   });
 
-  test('checks every src/core subdirectory and skips only the named impure files', async () => {
+  test('checks every src/core subdirectory and exempts no file', async () => {
     const { result } = await checkWith((root) => {
       write(
         root,
@@ -140,6 +140,7 @@ describe('state architecture boundary checker', () => {
       write(root, 'src/core/adoption/plan.ts', "import { join } from 'path';\n");
     });
     expect(result.violations.map((item) => `${item.code} ${item.file}`)).toEqual([
+      'CORE_FORBIDDEN_IMPORT src/core/adoption/plan.ts',
       'CORE_FORBIDDEN_IMPORT src/core/upgrade/inventory.ts',
       'CORE_REVERSE_IMPORT src/core/upgrade/inventory.ts',
     ]);
@@ -165,6 +166,25 @@ describe('state architecture boundary checker', () => {
     expect(codes(result)).toContain('CORE_FORBIDDEN_IMPORT');
     expect(messages(result, 'CORE_REVERSE_IMPORT')).toHaveLength(2);
     expect(codes(result)).toContain('CORE_DYNAMIC_IMPORT_UNRESOLVED');
+  });
+
+  test('rejects src imports of the scripts layer', async () => {
+    const { result } = await checkWith((root) => {
+      write(
+        root,
+        'src/effects/state/imports-script.ts',
+        [
+          "import '../../../scripts/capability-resolver';",
+          "export async function load(): Promise<void> {",
+          "  await import('../../../scripts/capability-resolver');",
+          '}',
+          "export type ScriptType = import('../../../scripts/capability-resolver').CapabilitySourceError;",
+          '',
+        ].join('\n'),
+      );
+    });
+    expect(result.ok).toBe(false);
+    expect(messages(result, 'SRC_SCRIPT_IMPORT')).toHaveLength(3);
   });
 
   test('forbids effect modules from importing CLI adapters', async () => {

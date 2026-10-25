@@ -37,20 +37,6 @@ import {
 
 const CORE_ROOTS = ['src/core'] as const;
 
-// Known impure core files whose I/O moves to src/effects in #924.
-// Remove each entry when its file is fixed; do not add new ones.
-const CORE_PURITY_EXCLUSIONS: ReadonlySet<string> = new Set([
-  'src/core/adoption/gitignore-plan.ts', // #924: fs, path
-  'src/core/adoption/manifest-templates.ts', // #924: path
-  'src/core/adoption/minimum-harness-version.ts', // #924: fs, path
-  'src/core/adoption/plan.ts', // #924: path
-  'src/core/adoption/source-checkout.ts', // #924: fs, path
-  'src/core/adoption/standard-plan.ts', // #924: fs, path, effects/upgrade/legacy-inventory
-  'src/core/adoption/workflow-contract-asset.ts', // #924: fs, path
-  'src/core/operator/fleet-snapshot.ts', // #924: path
-  'src/core/source-projection.ts', // #924: fs, path
-]);
-
 const INTRA_LAYER_ROOTS = ['src/cli', 'src/core', 'src/effects'] as const;
 
 // Keyed by "<dir> <-> <dir>" in sorted order; each value states why the cycle remains.
@@ -418,6 +404,51 @@ function checkCoreDependencies(
           'CORE_PROCESS_EXECUTION',
           `pure core cannot execute shell templates: ${name}`,
         ));
+      }
+    }
+  });
+}
+
+function resolvesToScriptsLayer(repoRoot: string, source: SourceFile, specifier: string): boolean {
+  let target = normalizePath(specifier);
+  if (specifier.startsWith('.')) {
+    target = relPath(repoRoot, resolve(dirname(source.fileName), specifier));
+  }
+  return target === 'scripts' || target.startsWith('scripts/');
+}
+
+function checkSrcScriptImports(
+  repoRoot: string,
+  source: SourceFile,
+  violations: StateBoundaryViolation[],
+): void {
+  const report = (node: Node, specifier: string): void => {
+    if (!resolvesToScriptsLayer(repoRoot, source, specifier)) return;
+    violations.push(nodeViolation(
+      repoRoot,
+      source,
+      node,
+      'SRC_SCRIPT_IMPORT',
+      `src cannot import scripts/: ${specifier}`,
+    ));
+  };
+
+  visit(source, (node) => {
+    const specifier = importSpecifier(node);
+    if (specifier !== null) report(node, specifier);
+    if (isCallExpression(node)) {
+      const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
+      const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
+      if (dynamicImport || requireCall) {
+        const argument = node.arguments[0];
+        if (argument && isStringLiteralLikeNode(argument)) report(node, argument.text);
+      }
+    }
+    if (node.kind === SyntaxKind.ImportType) {
+      const argument = (node as { argument?: Node }).argument;
+      if (argument?.kind === SyntaxKind.LiteralType) {
+        const literal = (argument as { literal?: Node }).literal;
+        if (literal && isStringLiteralLikeNode(literal)) report(node, literal.text);
       }
     }
   });
@@ -889,14 +920,22 @@ export async function checkStateBoundaries(
 
     const coreSet = new Set(coreFiles.map((file) => relPath(repoRoot, file)));
     for (const file of coreSet) {
-      if (CORE_PURITY_EXCLUSIONS.has(file)) continue;
       const source = parsed.sources.get(file);
-      if (source) checkCoreDependencies(repoRoot, source, violations);
+      if (!source) continue;
+      checkSrcScriptImports(repoRoot, source, violations);
+      checkCoreDependencies(repoRoot, source, violations);
     }
     const effectsSet = new Set(effectsFiles.map((file) => relPath(repoRoot, file)));
     for (const file of effectsSet) {
       const source = parsed.sources.get(file);
-      if (source) checkEffectDependencies(repoRoot, source, violations);
+      if (!source) continue;
+      checkSrcScriptImports(repoRoot, source, violations);
+      checkEffectDependencies(repoRoot, source, violations);
+    }
+    const cliSet = new Set(cliFiles.map((file) => relPath(repoRoot, file)));
+    for (const file of cliSet) {
+      const source = parsed.sources.get(file);
+      if (source) checkSrcScriptImports(repoRoot, source, violations);
     }
     checkIntraLayerCycles(repoRoot, parsed.sources, intraLayerCycleAllowances, violations);
     checkCanonicalDeclarations(repoRoot, parsed.sources, violations);

@@ -7,7 +7,7 @@ import { join } from "path";
 import {
   GITIGNORE_MANAGED_BLOCK_CONTENT,
   gitignoreManagedBlockOperation,
-} from "../../src/core/adoption/gitignore-plan";
+} from "../../src/effects/adoption/gitignore-plan";
 
 describe("gitignore managed block .repo-harness rule", () => {
   test("relocated package readers share the asset and missing asset cannot write a fallback", () => {
@@ -15,8 +15,8 @@ describe("gitignore managed block .repo-harness rule", () => {
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-package-"));
     try {
       for (const directory of ["scripts/lib", "src/core/adoption", "assets/templates"]) mkdirSync(join(cwd, directory), { recursive: true });
-      for (const path of ["scripts/lib/project-init-lib.sh", "src/core/adoption/gitignore-plan.ts", "src/core/adoption/operations.ts", "assets/templates/runtime.gitignore"]) cpSync(join(root, path), join(cwd, path));
-      const emitted = spawnSync(process.execPath, ["-e", 'import { GITIGNORE_MANAGED_BLOCK_CONTENT } from "./src/core/adoption/gitignore-plan.ts"; process.stdout.write(GITIGNORE_MANAGED_BLOCK_CONTENT)'], { cwd, encoding: "utf8" });
+      for (const path of ["scripts/lib/project-init-lib.sh", "src/effects/adoption/gitignore-plan.ts", "src/core/adoption/operations.ts", "assets/templates/runtime.gitignore"]) cpSync(join(root, path), join(cwd, path));
+      const emitted = spawnSync(process.execPath, ["-e", 'import { GITIGNORE_MANAGED_BLOCK_CONTENT } from "./src/effects/adoption/gitignore-plan.ts"; process.stdout.write(GITIGNORE_MANAGED_BLOCK_CONTENT)'], { cwd, encoding: "utf8" });
       expect(emitted.status).toBe(0);
       expect(emitted.stdout).toBe(GITIGNORE_MANAGED_BLOCK_CONTENT);
       rmSync(join(cwd, "assets/templates/runtime.gitignore"));
@@ -25,7 +25,7 @@ describe("gitignore managed block .repo-harness rule", () => {
       expect(shell.status).not.toBe(0);
       expect(shell.stderr).toContain("runtime.gitignore");
       expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe("private-notes/\n");
-      const missing = spawnSync(process.execPath, ["-e", 'import "./src/core/adoption/gitignore-plan.ts"'], { cwd, encoding: "utf8" });
+      const missing = spawnSync(process.execPath, ["-e", 'import "./src/effects/adoption/gitignore-plan.ts"'], { cwd, encoding: "utf8" });
       expect(missing.status).not.toBe(0);
       expect(missing.stderr).toContain("runtime.gitignore");
     } finally {
