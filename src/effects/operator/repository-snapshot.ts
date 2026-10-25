@@ -9,7 +9,6 @@ import { collectRepoTaskOffers } from '../fleet/acquire';
 import { resolveBoard } from '../state/resolve-board';
 import { isRepoHarnessAdoptedPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
-import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
 import {
   OPERATOR_REPOSITORY_PROTOCOL,
@@ -118,8 +117,8 @@ export function readOperatorRepositorySnapshot(
   };
   const organization = observe(() => {
     const board = collectEngineeringBoard({ repo_root: repoRoot, env: input.env });
-    const overlay = validateEngineeringOverlaySnapshot(board.overlay);
-    const attention = validateOrganizationAttentionSnapshot(board.organization_attention);
+    const overlay = board.overlay;
+    const attention = board.organization_attention;
     if (overlay.repository_id !== input.repository_id) throw new OperatorRepositoryError('repository_mismatch', 'organization repository differs from request');
     return projectOperatorOrganizationSnapshot(overlay, attention);
   });

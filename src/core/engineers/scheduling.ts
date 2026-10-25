@@ -292,6 +292,7 @@ export interface EngineerOffersV1 {
 }
 
 export type EngineerSchedulingErrorCode =
+  | 'provider_scheduling_invalid'
   | 'work_graph_invalid'
   | 'work_graph_unclassified'
   | 'work_graph_reference_mismatch'
@@ -777,11 +778,11 @@ export function projectProviderEngineerScheduling(input: {
   readonly profiles: readonly EngineerSchedulingProfile[];
 }): ProviderEngineerSchedulingSnapshot {
   if (input.issues.registered_repository_id !== input.repository_id || input.sessions.repository_id !== input.repository_id) {
-    throw new EngineerSchedulingError('work_graph_invalid', 'provider scheduling repository mismatch');
+    throw new EngineerSchedulingError('provider_scheduling_invalid', 'provider scheduling repository mismatch');
   }
   const profiles = [...input.profiles].sort((a, b) => a.engineer_id.localeCompare(b.engineer_id));
   if (new Set(profiles.map(profile => profile.engineer_id)).size !== profiles.length) {
-    throw new EngineerSchedulingError('work_graph_invalid', 'duplicate engineer profile');
+    throw new EngineerSchedulingError('provider_scheduling_invalid', 'duplicate engineer profile');
   }
   const key = (repository: string, issue: string) => JSON.stringify([repository, issue]);
   const tasks = new Map<string, { provider_repository_id: string; issue_id: string; issue: ProviderIssueObservationV1 | null; sessions: AdmittedEngineerSession[] }>();
@@ -793,7 +794,7 @@ export function projectProviderEngineerScheduling(input: {
   }
   for (const session of input.sessions.sessions) {
     const selector = session.selector;
-    if (selector.repository_id !== input.repository_id) throw new EngineerSchedulingError('work_graph_invalid', 'session repository mismatch');
+    if (selector.repository_id !== input.repository_id) throw new EngineerSchedulingError('provider_scheduling_invalid', 'session repository mismatch');
     const identity = key(selector.provider_repository_id, selector.issue_id);
     if (!tasks.has(identity)) tasks.set(identity, { provider_repository_id: selector.provider_repository_id, issue_id: selector.issue_id, issue: null, sessions: [] });
     const task = tasks.get(identity)!;

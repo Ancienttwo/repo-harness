@@ -415,3 +415,58 @@ export function validateOrganizationAttentionSnapshot(value: unknown): Organizat
 export function canonicalOrganizationAttentionSnapshotBytes(value: OrganizationAttentionSnapshotV1): string {
   return canonicalEngineerJson(validateOrganizationAttentionSnapshot(value));
 }
+
+/** Current overlay identities come from admitted execution sessions, not leases. */
+export interface EngineeringOverlaySnapshotV2 {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-engineering-overlay-snapshot';
+  readonly repository_id: string;
+  readonly registry_revision: string;
+  readonly observed_at: string;
+  readonly scheduling: import('./scheduling').ProviderEngineerSchedulingSnapshot | null;
+  readonly runtime_effects: { readonly support: 'available' | 'unreadable'; readonly engineers: readonly { readonly engineer_id: string; readonly effects: OverlayRuntimeEffectProjectionV1 }[] };
+  readonly components: readonly {
+    readonly component: 'scheduling';
+    readonly support: 'available' | 'unreadable';
+    readonly observation_before: string | null;
+    readonly observation_after: string | null;
+  }[];
+  readonly snapshot_consistency: OverlayConsistency;
+  readonly snapshot_sha256: string;
+}
+export interface OrganizationAttentionSnapshotV2 {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-organization-attention-snapshot';
+  readonly repository_id: string;
+  readonly overlay_snapshot_sha256: string;
+  readonly observed_at: string;
+  readonly snapshot_consistency: OverlayConsistency;
+  readonly attention: readonly {
+    readonly session_binding_sha256: string;
+    readonly engineer_id: string | null;
+    readonly reason: 'profile_unassigned' | 'profile_missing' | 'engineer_contract_revision_changed';
+    readonly owner: 'maintainer';
+  }[];
+  readonly snapshot_sha256: string;
+}
+export function buildAdmittedEngineeringOverlay(input: Omit<EngineeringOverlaySnapshotV2, 'protocol' | 'kind' | 'snapshot_sha256'>): EngineeringOverlaySnapshotV2 {
+  if (input.scheduling && input.scheduling.repository_id !== input.repository_id) invalid('scheduling repository mismatch');
+  const basis = { protocol: 2 as const, kind: ENGINEERING_OVERLAY_KIND, ...input };
+  return Object.freeze({ ...basis, snapshot_sha256: engineerSha256(canonicalEngineerJson(basis)) });
+}
+export function projectAdmittedOrganizationAttention(overlay: EngineeringOverlaySnapshotV2): OrganizationAttentionSnapshotV2 {
+  const attention: OrganizationAttentionSnapshotV2['attention'][number][] = [];
+  for (const task of overlay.scheduling?.tasks ?? []) {
+    for (const execution of task.sessions) {
+      if (execution.selection.state === 'selected') continue;
+      attention.push({ session_binding_sha256: execution.session.selector.session_binding_sha256,
+        engineer_id: execution.selection.state === 'unassigned' ? null : execution.selection.engineer_id,
+        reason: execution.selection.state === 'unassigned' ? 'profile_unassigned' : execution.selection.state === 'profile_missing' ? 'profile_missing' : 'engineer_contract_revision_changed',
+        owner: 'maintainer' });
+    }
+  }
+  const basis = { protocol: 2 as const, kind: ORGANIZATION_ATTENTION_KIND, repository_id: overlay.repository_id,
+    overlay_snapshot_sha256: overlay.snapshot_sha256, observed_at: overlay.observed_at,
+    snapshot_consistency: overlay.snapshot_consistency, attention };
+  return Object.freeze({ ...basis, snapshot_sha256: engineerSha256(canonicalEngineerJson(basis)) });
+}
