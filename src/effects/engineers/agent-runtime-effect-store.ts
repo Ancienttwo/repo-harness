@@ -1,3 +1,4 @@
+import { sameTaskMessageClaim, type TaskMessageClaim } from '../../core/messages/task-message-claim';
 import type { FleetBoardDeliveryEvidenceV1 } from '../../core/fleet/board';
 import { createHash, randomUUID } from 'crypto';
 import {
@@ -56,7 +57,7 @@ import {
   type RuntimeMessageRefV2,
 } from '../../core/engineers/agent-runtime-effect';
 import { validateProviderEngineerOffers, type ProviderEngineerOffersV2 } from '../../core/engineers/scheduling';
-import { canonicalTaskMessageDeliveryReceiptBytes, sameTaskMessageClaim, type TaskMessageClaim } from '../../core/fleet/admitted-task-message';
+import { canonicalTaskMessageDeliveryReceiptBytes } from '../../core/fleet/admitted-task-message';
 import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
 import { readTaskAgent } from '../terminal/task-session';
 import { herdrEndpointIdentity } from './agent-runtime-adapters/herdr-cli-agent';

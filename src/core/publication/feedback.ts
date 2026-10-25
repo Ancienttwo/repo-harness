@@ -1,4 +1,4 @@
-import { validateTaskMessageClaim, type TaskMessageClaim } from '../fleet/admitted-task-message';
+import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
 import {
   publicationSha256,

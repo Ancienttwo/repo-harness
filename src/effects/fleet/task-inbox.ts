@@ -1,3 +1,5 @@
+import { TaskMessageError } from '../../core/messages/task-message-error';
+import { sameTaskMessageClaim, type TaskMessageClaim } from '../../core/messages/task-message-claim';
 import { TASK_INBOX_V2_RELATIVE_PATH, admittedTaskInboxRecipientStorageKey as taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import {
   inspectTaskInboxLayout,
@@ -29,7 +31,6 @@ import {
   TASK_MESSAGE_BODY_MAX_BYTES,
   TASK_MESSAGE_HOOK_MAX_BYTES,
   TASK_MESSAGE_HOOK_MAX_MESSAGES,
-  TaskMessageError,
   buildTaskMessageEvent,
   buildTaskMessageDeliveryReceipt,
   canonicalTaskMessageDeliveryReceiptBytes,
@@ -39,9 +40,7 @@ import {
   transitionTaskMessageDeliveryReceipt,
   validateTaskMessageDeliveryReceipt,
   validateTaskMessageEvent,
-  sameTaskMessageClaim,
   recipientFromTaskMessageReceipt,
-  type TaskMessageClaim,
   type TaskMessageDeliveryChannel,
   type TaskMessageDeliveryReceiptV2,
   type TaskMessageEventV2,

@@ -1,3 +1,4 @@
+import { type TaskMessageClaim } from '../../core/messages/task-message-claim';
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
 
@@ -13,7 +14,7 @@ import { observeTaskInboxContext, type TaskInboxSessionSource } from '../fleet/t
 import { readTaskAgent } from '../terminal/task-session';
 import { observeActiveReviewAdmission } from '../review/issue-goal';
 import { readActiveReviewAdmission } from '../review/admission-store';
-import type { TaskMessageClaim } from '../../core/fleet/admitted-task-message';
+
 
 export type FeedbackErrorCode =
   | 'feedback_provider_failed'

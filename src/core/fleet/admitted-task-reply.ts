@@ -1,5 +1,7 @@
-import { canonicalEngineerJson, engineerSha256 } from '../engineers/profile-binding';
-import { assertMessageExactKeys, assertMessageTimestamp, assertMessageUuid } from '../messages/mechanics';
+import { validateTaskMessageClaim, sameTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
+import { canonicalize } from '../evidence/canonical-json';
+import type { JsonValue } from '../evidence/types';
+import { messageSha256, assertMessageExactKeys, assertMessageTimestamp, assertMessageUuid } from '../messages/mechanics';
 import {
   buildTaskMessageEvent,
   canonicalTaskMessageDeliveryReceiptBytes,
@@ -7,9 +9,6 @@ import {
   validateTaskMessageEvent,
   type TaskMessageDeliveryReceiptV2,
   type TaskMessageEventV2,
-  validateTaskMessageClaim,
-  sameTaskMessageClaim,
-  type TaskMessageClaim,
 } from './admitted-task-message';
 
 /** Total canonical UTF-8 record bytes, including the persisted trailing LF. */
@@ -57,7 +56,7 @@ function invalid(message: string): never {
 }
 
 function assertReplyRecordSize(value: object): void {
-  const bytes = Buffer.byteLength(canonicalEngineerJson(value), 'utf8') + 1;
+  const bytes = Buffer.byteLength(canonicalize(value as JsonValue), 'utf8') + 1;
   if (bytes > TASK_REPLY_RECORD_MAX_BYTES) {
     invalid(`encoded reply record exceeds ${TASK_REPLY_RECORD_MAX_BYTES} bytes including the trailing LF; reduce the reply body or source metadata`);
   }
@@ -96,11 +95,11 @@ function digest(value: unknown, label: string): string {
 }
 
 function sha(value: object): string {
-  return engineerSha256(canonicalEngineerJson(value));
+  return messageSha256(canonicalize(value as JsonValue));
 }
 
 function acknowledgementDigest(ack: TaskMessageDeliveryReceiptV2): string {
-  return engineerSha256(canonicalTaskMessageDeliveryReceiptBytes(ack));
+  return messageSha256(canonicalTaskMessageDeliveryReceiptBytes(ack));
 }
 
 /** Immutable recorded provenance, never a replacement for a fresh session admission. */
@@ -189,7 +188,7 @@ export function validateTaskReplyIntent(value: unknown): TaskReplyIntentV2 {
 }
 
 export function canonicalTaskReplyIntentBytes(value: TaskReplyIntentV2): string {
-  return canonicalEngineerJson(validateTaskReplyIntent(value));
+  return canonicalize(validateTaskReplyIntent(value) as unknown as JsonValue);
 }
 
 export function buildTaskReplyCommit(input: {
@@ -226,7 +225,7 @@ export function validateTaskReplyCommit(value: unknown): TaskReplyCommitV2 {
 }
 
 export function canonicalTaskReplyCommitBytes(value: TaskReplyCommitV2): string {
-  return canonicalEngineerJson(validateTaskReplyCommit(value));
+  return canonicalize(validateTaskReplyCommit(value) as unknown as JsonValue);
 }
 
 export type TaskReplyChainObservation =

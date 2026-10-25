@@ -1,3 +1,5 @@
+import { TaskMessageError } from '../messages/task-message-error';
+import { validateTaskMessageClaim, sameTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 /** Active admitted inbox wire. Legacy v1 is decoded only by explicit history readers. */
 import { canonicalize } from '../evidence/canonical-json';
 const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
@@ -89,18 +91,6 @@ export interface TaskMessageEventInput {
   readonly in_reply_to: string | null;
 }
 
-export type TaskMessageErrorCode =
-  | 'task_message_invalid'
-  | 'message_id_conflict'
-  | 'task_message_transition_invalid';
-
-export class TaskMessageError extends Error {
-  constructor(readonly code: TaskMessageErrorCode, message: string, readonly cause?: unknown) {
-    super(message);
-    this.name = 'TaskMessageError';
-  }
-}
-
 function invalid(message: string): never {
   throw new TaskMessageError('task_message_invalid', message);
 }
@@ -131,16 +121,8 @@ function assertTimestamp(value: string, field: string): void {
   assertMessageTimestamp(value, field, invalid);
 }
 
-export interface TaskMessageClaim { readonly reference: string; readonly revision: string }
+
 export interface TaskMessageIdentity { readonly repository_id: string; readonly issue_id: string; readonly campaign_id: string }
-export function validateTaskMessageClaim(value: unknown): TaskMessageClaim {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('claim reference is required');
-  const record = value as Record<string, unknown>;
-  assertExactKeys(record, ['reference', 'revision'], 'claim reference');
-  const reference = requiredString(record.reference, 'claim reference'), revision = requiredString(record.revision, 'claim revision');
-  if (!reference.trim() || /[\x00-\x1f\x7f]/.test(reference) || !SHA256_PATTERN.test(revision)) invalid('claim reference is invalid');
-  return Object.freeze({ reference, revision });
-}
 export function validateTaskMessageIdentity(value: unknown): TaskMessageIdentity {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('provider task identity is required');
   const record = value as Record<string, unknown>;
@@ -148,9 +130,6 @@ export function validateTaskMessageIdentity(value: unknown): TaskMessageIdentity
   const result = { repository_id: requiredString(record.repository_id, 'repository_id'), issue_id: requiredString(record.issue_id, 'issue_id'), campaign_id: requiredString(record.campaign_id, 'campaign_id') };
   if (Object.values(result).some(value => !value.trim() || /[\x00-\x1f\x7f]/.test(value))) invalid('provider task identity is invalid');
   return Object.freeze(result);
-}
-export function sameTaskMessageClaim(left: TaskMessageClaim | null, right: TaskMessageClaim | null): boolean {
-  return left === null || right === null ? left === right : left.reference === right.reference && left.revision === right.revision;
 }
 function assertAdmission(value: string, field: string): void { if (!SHA256_PATTERN.test(value)) invalid(`${field} is invalid`); }
 

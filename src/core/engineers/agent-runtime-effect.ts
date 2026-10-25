@@ -1,4 +1,4 @@
-import { validateTaskMessageClaim, type TaskMessageClaim } from '../fleet/admitted-task-message';
+import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import {
   assertMessageBoundedUtf8,
   assertMessageExactKeys,
