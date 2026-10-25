@@ -37,6 +37,7 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
+import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 
@@ -395,8 +396,10 @@ function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCata
 
 const FACADE_NAME_PREFIX = 'repo-harness-';
 
+const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude'];
+
 function hostSkillRoots(home: string): readonly string[] {
-  return [join(home, '.codex', 'skills'), join(home, '.claude', 'skills')];
+  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host));
 }
 
 /**
@@ -665,11 +668,11 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     configurationReceiptPath(home),
     join(home, '.agents', '.skill-lock.json'),
   ];
-  for (const host of ['.codex', '.claude']) {
-    for (const skill of [...skills, ...externalSkills]) paths.push(join(home, host, 'skills', skill));
+  for (const root of hostSkillRoots(home)) {
+    for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
   }
   for (const skill of externalSkills) {
-    paths.push(join(home, '.agents', 'skills', skill));
+    paths.push(join(stagedSkillRoot(home), skill));
   }
   for (const rule of wazaRules.files) {
     paths.push(
@@ -690,14 +693,12 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
 }
 
 /**
- * The skill roots that scripts/sync-codex-installed-copies.sh writes. An
- * explicit CODEX_SKILLS_ROOT without CLAUDE_SKILLS_ROOT disables the Claude
- * root. The skill sync tests compare this rule with the roots the shell reports.
+ * The skill roots that scripts/sync-codex-installed-copies.sh writes. The
+ * shell reads the same syncSkillRoots result from skill-surface-select.ts.
  */
 export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  const home = env.HOME ?? homedir();
-  if (env.CODEX_SKILLS_ROOT) return [env.CODEX_SKILLS_ROOT, ...(env.CLAUDE_SKILLS_ROOT ? [env.CLAUDE_SKILLS_ROOT] : [])];
-  return [join(home, '.codex', 'skills'), env.CLAUDE_SKILLS_ROOT || join(home, '.claude', 'skills')];
+  const roots = syncSkillRoots(env, env.HOME ?? homedir());
+  return roots.claude === null ? [roots.codex] : [roots.codex, roots.claude];
 }
 
 /**
@@ -1111,7 +1112,7 @@ function existing(paths: readonly string[]): string[] {
 }
 
 function canonicalRoots(home: string): string[] {
-  return [join(home, '.codex', 'skills', 'repo-harness'), join(home, '.claude', 'skills', 'repo-harness')];
+  return hostSkillRoots(home).map((root) => join(root, 'repo-harness'));
 }
 
 function canonicalEvidence(home: string, relativePaths: readonly string[]): string[] {
@@ -1127,14 +1128,14 @@ function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
 }
 
 function skillEvidence(home: string, names: readonly string[]): string[] {
-  return existing(['.codex', '.claude'].flatMap((host) => (
-    names.map((name) => join(home, host, 'skills', name, 'SKILL.md'))
+  return existing(hostSkillRoots(home).flatMap((root) => (
+    names.map((name) => join(root, name, 'SKILL.md'))
   )));
 }
 
 function completeHostSkillSetEvidence(home: string, names: readonly string[]): string[] {
-  for (const host of ['.codex', '.claude']) {
-    const paths = names.map((name) => join(home, host, 'skills', name, 'SKILL.md'));
+  for (const root of hostSkillRoots(home)) {
+    const paths = names.map((name) => join(root, name, 'SKILL.md'));
     if (paths.every(existsSync)) return paths;
   }
   return [];

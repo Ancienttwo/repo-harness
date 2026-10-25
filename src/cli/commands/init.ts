@@ -32,6 +32,7 @@ import {
   probeExpectations as catalogProbeExpectations,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
+import { hostSkillRoot } from "../../effects/host-skill-roots";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
 import { ensureCodegraph } from "../tools/codegraph";
@@ -168,7 +169,7 @@ function requiredHerdrSkillReadiness(target: InstallTargetSpec, env?: NodeJS.Pro
   const step = "required Herdr skill";
   const home = homeDir(env);
   const missing = hostIds(target).filter((host) =>
-    !home || !existsSync(join(home, host === "claude" ? ".claude" : ".codex", "skills", "herdr", "SKILL.md")));
+    !home || !existsSync(join(hostSkillRoot(home, host), "herdr", "SKILL.md")));
   if (missing.length === 0) return { step, status: "ok", detail: "present" };
   return {
     step,
@@ -236,7 +237,7 @@ function syncBundledItemsAtHome(
       steps.push({ step, status: "skipped", detail: `bundled source not found at ${source}` });
       continue;
     }
-    const root = join(home, host === "claude" ? ".claude" : ".codex", "skills");
+    const root = hostSkillRoot(home, host);
     const dest = join(root, skill);
     const destSkill = join(dest, "SKILL.md");
     mkdirSync(root, { recursive: true });

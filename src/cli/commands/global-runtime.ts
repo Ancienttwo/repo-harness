@@ -32,6 +32,7 @@ import {
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
+import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
 import {
   discoverWindowsProtectedHelperContract,
@@ -926,8 +927,8 @@ function installExternalSkillGroup(
 ): GlobalRuntimeStep {
   const stepName = externalSkillStepName(provider);
   const home = homeDir(env);
-  const skillsRoot = join(home, '.agents', 'skills');
-  const canonicalSkillsRoot = join(realpathSync(home), '.agents', 'skills');
+  const skillsRoot = stagedSkillRoot(home);
+  const canonicalSkillsRoot = stagedSkillRoot(realpathSync(home));
   const committedIntegritySkills = new Set<string>();
   const replacementBackupRoot = mkdtempSync(join(tmpdir(), "repo-harness-skill-replace-"));
   const replacedIntegritySkills = new Set<string>();
@@ -1021,7 +1022,7 @@ function installExternalSkillGroup(
 
       for (const skill of integrityMissing) {
         const expected = integrityBySkill[skill]!;
-        const isolatedSkill = join(isolatedHome, ".agents", "skills", skill);
+        const isolatedSkill = join(stagedSkillRoot(isolatedHome), skill);
         let actual: string;
         try {
           actual = skillTreeSha256(isolatedSkill);
@@ -1063,7 +1064,7 @@ function installExternalSkillGroup(
           replacedIntegritySkills.add(skill);
         }
         const committed = commitVerifiedSkillTree(
-          join(isolatedHome, ".agents", "skills", skill),
+          join(stagedSkillRoot(isolatedHome), skill),
           join(skillsRoot, skill),
           integrityBySkill[skill]!,
           { expectedCanonicalParent: canonicalSkillsRoot },
@@ -1121,7 +1122,7 @@ function installExternalSkillGroup(
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const agents = hostAgents(target);
   const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
-  const skillsRoot = join(homeDir(env), '.agents', 'skills');
+  const skillsRoot = stagedSkillRoot(homeDir(env));
   const selected = refresh ? wazaSkills : wazaSkills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
   const preflight = preflightStagedSkillProjection(wazaSkills, target, env, 'configure Waza skills');
   if (preflight) return preflight;
@@ -1149,6 +1150,12 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
   return projectStagedSkills(wazaSkills, target, env, 'configure Waza skills');
 }
 
+/** Each selected host skill root, with the canonical path it must resolve to. */
+function stagedProjectionRoots(home: string, target: InstallTargetSpec): Array<{ path: string; expected: string }> {
+  const canonicalHome = realpathSync(home);
+  return hostIds(target).map((host) => ({ path: hostSkillRoot(home, host), expected: hostSkillRoot(canonicalHome, host) }));
+}
+
 function preflightStagedSkillProjection(
   skills: readonly string[],
   target: InstallTargetSpec,
@@ -1156,20 +1163,13 @@ function preflightStagedSkillProjection(
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const canonicalHome = realpathSync(home);
-  const roots = hostIds(target).map((host) => {
-    const hostRoot = host === 'codex' ? '.codex' : '.claude';
-    return {
-      path: join(home, hostRoot, 'skills'),
-      expected: join(canonicalHome, hostRoot, 'skills'),
-    };
-  });
+  const roots = stagedProjectionRoots(home, target);
   for (const root of roots) {
     const invalid = invalidProjectionRoot(root.path, root.expected);
     if (invalid) return { step, status: 'failed', detail: invalid };
   }
   for (const skill of skills) {
-    const source = join(home, '.agents', 'skills', skill);
+    const source = join(stagedSkillRoot(home), skill);
     for (const root of roots) {
       const destination = join(root.path, skill);
       if (!pathEntryExists(destination)) continue;
@@ -1187,14 +1187,7 @@ function projectStagedSkills(
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const canonicalHome = realpathSync(home);
-  const roots = hostIds(target).map((host) => {
-    const hostRoot = host === 'codex' ? '.codex' : '.claude';
-    return {
-      path: join(home, hostRoot, 'skills'),
-      expected: join(canonicalHome, hostRoot, 'skills'),
-    };
-  });
+  const roots = stagedProjectionRoots(home, target);
   const projected: string[] = [];
   const created: string[] = [];
   const fail = (detail: string): GlobalRuntimeStep => {
@@ -1202,7 +1195,7 @@ function projectStagedSkills(
     return { step, status: 'failed', detail };
   };
   for (const skill of skills) {
-    const source = join(home, '.agents', 'skills', skill);
+    const source = join(stagedSkillRoot(home), skill);
     if (!existsSync(join(source, 'SKILL.md'))) {
       return fail(`staging skill missing after install: ${source}`);
     }
@@ -1271,7 +1264,7 @@ function invalidProjectionRoot(root: string, expected: string): string | null {
 
 function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const mermaidSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("BfdCampos/dotfiles") ?? [];
-  const installed = join(homeDir(env), '.agents', 'skills', 'mermaid', 'SKILL.md');
+  const installed = join(stagedSkillRoot(homeDir(env)), 'mermaid', 'SKILL.md');
   const preflight = preflightStagedSkillProjection(mermaidSkills, target, env, 'configure Mermaid skill');
   if (preflight) return preflight;
   if (refresh || !existsSync(installed)) {
