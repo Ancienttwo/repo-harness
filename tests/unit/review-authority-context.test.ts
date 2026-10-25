@@ -97,7 +97,7 @@ const plan: VerificationPlan = { protocol: 1, checks: [{
 }] };
 function admissionInput() {
   const { authorization, subject: _subject, verification: _verification, ...scope } = input();
-  return { ...scope, actor_id: authorization.actor_id, verification_plan: structuredClone(plan) };
+  return { ...scope, actor_id: authorization.actor_id, oracles: [], verification_plan: structuredClone(plan) };
 }
 
 test('admission binds the actual verification plan and a fixed goal while allowing later subject rounds', () => {
@@ -126,5 +126,19 @@ test('admission preserves directory scopes but rejects empty or traversing path 
   expect(createReviewAdmission({ ...admissionInput(), allowed_paths: ['src/'] }).allowed_paths).toEqual(['src/']);
   for (const path of ['/', 'src//', 'src/../', 'src/./', 'src//review']) {
     expect(() => createReviewAdmission({ ...admissionInput(), allowed_paths: [path] })).toThrow('unsafe allowed path');
+  }
+});
+
+test('approved oracle declarations use assessment validation and bind the admission digest', () => {
+  const original = admissionInput();
+  const without = createReviewAdmission(original);
+  const oracles = [{ id: 'behavior', kind: 'deterministic_test' as const, paths: ['src/**'] }];
+  const withOracle = createReviewAdmission({ ...original, oracles });
+  expect(withOracle.admission_sha256).not.toBe(without.admission_sha256);
+  oracles[0]!.paths.push('unapproved/**');
+  expect(withOracle.oracles[0]!.paths).toEqual(['src/**']);
+  expect(Object.isFrozen(withOracle.oracles[0]!.paths)).toBe(true);
+  for (const bad of [[{ id: 'x', kind: 'unknown', paths: ['*'] }], [oracles[0], oracles[0]], [{ id: 'x', kind: 'manual_acceptance', paths: ['../outside'] }]]) {
+    expect(() => createReviewAdmission({ ...original, oracles: bad as never })).toThrow('oracle declarations');
   }
 });

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
+import { normalizeDeclaredReviewOracles, type DeclaredReviewOracle } from './change-assessment';
 import { validateVerificationPlan, hashVerificationPlan, type VerificationPlan } from '../evidence/verification-plan';
 
 /** An explicit input snapshot, not an authorization grant. Effects must verify
@@ -131,6 +132,7 @@ export function assertReviewAuthorityContext(value: unknown, current: ReviewAuth
 export interface ReviewAdmissionInput extends ReviewScope {
   actor_id: string;
   verification_plan: VerificationPlan;
+  oracles: readonly DeclaredReviewOracle[];
 }
 export type ReviewAdmission = Frozen<ReviewAdmissionInput & {
   protocol: 1;
@@ -140,10 +142,13 @@ export type ReviewAdmission = Frozen<ReviewAdmissionInput & {
 }>;
 
 export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmission {
-  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'verification_plan'], 'admission fields');
+  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'verification_plan', 'oracles'], 'admission fields');
   validateScope(input); text(input.actor_id, 'actor');
   const plan = validateVerificationPlan(input.verification_plan);
   if (!plan.checks.length) fail('empty verification plan');
+  if (!Array.isArray(input.oracles)) fail('oracle declarations');
+  const oracles = normalizeDeclaredReviewOracles(input.oracles);
+  if (oracles === null) fail('oracle declarations');
   // The plan validator owns syntax. Reparse its canonical JSON to detach nested
   // arrays without invoking input-defined serialization methods.
   const detachedPlan: VerificationPlan = JSON.parse(canonicalize(plan as unknown as JsonValue));
@@ -153,7 +158,7 @@ export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmiss
     goal: { revision: input.goal.revision, content: input.goal.content },
     policy: { reviewer: input.policy.reviewer, user_waiver: input.policy.user_waiver, policy_sha256: input.policy.policy_sha256 },
     allowed_paths: [...input.allowed_paths].sort(), benchmark: input.benchmark,
-    actor_id: input.actor_id, verification_plan: detachedPlan, campaign_sha256: reviewCampaignKey(input),
+    actor_id: input.actor_id, verification_plan: detachedPlan, oracles, campaign_sha256: reviewCampaignKey(input),
   };
   return freeze({ ...basis, admission_sha256: digest(basis) });
 }
