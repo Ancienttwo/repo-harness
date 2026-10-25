@@ -7,7 +7,7 @@ import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../he
 import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance } from '../helpers/repo-fixture';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
   copyFileSync,
@@ -57,6 +57,7 @@ import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
   acceptanceReceiptPath,
+  userWaiverGrantPath,
   acceptanceVerificationObservationPath,
   acceptanceVerificationObservationSubjectKey,
   authorityFingerprint,
@@ -850,10 +851,24 @@ describe('issue #284 closed dependency authority', () => {
     expect(rejected.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:reject');
 
     const grant = waiverGrant(subject);
+    const grantPath = userWaiverGrantPath(subject.root, subject.home, true);
+    writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
     recordAcceptanceObservation(subject, waivedReceipt(subject, grant));
     const waived = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(waived.status).toBe('satisfied');
     expect(waived.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:user_waiver');
+    const clock = spyOn(Date, 'now').mockReturnValue(grant.authorization.expires_at + 1);
+    try {
+      const expired = resolveDependencyAuthority(input(subject, 'module_accepted'));
+      expect(expired.status).toBe('authority_unavailable');
+      expect(expired.authority_revision).toBeNull();
+    } finally { clock.mockRestore(); }
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+    rmSync(grantPath);
+    const revoked = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(revoked.status).toBe('authority_unavailable');
+    expect(revoked.authority_revision).toBeNull();
+
 
     recordAcceptanceObservation(subject);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');

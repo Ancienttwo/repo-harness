@@ -1,7 +1,7 @@
 import { validateIntegrationDependencyReference, validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
 import { observeActiveReviewAdmission } from '../review/issue-goal';
 import { readExternalSourcesPolicy } from '../external-sources/policy';
-import { currentReadonlyObservation, rejectObservation } from '../readonly-observation';
+import { currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.
  *
@@ -21,7 +21,7 @@ import { currentReadonlyObservation, rejectObservation } from '../readonly-obser
  *
  * There is deliberately no "unknown means ready" path.
  */
-import { realpathSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 
 import {
   canonicalEngineerJson,
@@ -50,6 +50,7 @@ import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-iden
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
+  acceptanceReceiptPath, userWaiverGrantPath, readAcceptanceReceiptFile, readUserWaiverGrantFile, validateAcceptanceReceiptAgainstPolicy,
   readAcceptanceVerificationObservation,
   type AcceptanceDisposition,
   type AcceptanceValidatorRuleId,
@@ -315,14 +316,14 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   // legitimate, so only the passing-disposition whitelist below keeps a
   // recorded rejection out of scheduling.
   disposition_not_reject: 'resolver',
-  waiver_grant_present: 'record_time',
-  waiver_policy_allowed: 'record_time',
-  waiver_grant_repository: 'record_time',
-  waiver_grant_admission: 'record_time',
-  waiver_grant_goal: 'record_time',
-  waiver_grant_owner: 'record_time',
-  waiver_grant_fingerprint: 'record_time',
-  waiver_binding_symmetry: 'record_time',
+  waiver_grant_present: 'resolver',
+  waiver_policy_allowed: 'resolver',
+  waiver_grant_repository: 'resolver',
+  waiver_grant_admission: 'resolver',
+  waiver_grant_goal: 'resolver',
+  waiver_grant_owner: 'resolver',
+  waiver_grant_fingerprint: 'resolver',
+  waiver_binding_symmetry: 'resolver',
   disposition_policy: 'record_time',
   // A thrown rule propagates as a fail() from assertRecordedReceiptPolicy, so
   // no receipt and no observation are written.
@@ -333,11 +334,11 @@ const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object
 
 /**
  * The module acceptance verdict is the acceptance authority's own record-time
- * observation, read the same way `publicationIntegrated` reads the publication
- * authority's integration observation and `productAccepted` reads the ME-4C
- * projection. The acceptance authority proves the review subject and execution
+ * observation. Provider integrations use live provider proof; products read
+ * the exact selected ME-4C projection. The acceptance authority proves the review subject and execution
  * evidence at record time. This reader additionally authenticates the pinned
  * approval against the current issue goal before using that observation.
+ * Waivers additionally require the current local grant and its live expiry.
  */
 function moduleAccepted(
   input: DependencyAuthorityInput,
@@ -353,9 +354,10 @@ function moduleAccepted(
   let active: ReturnType<typeof observeActiveReviewAdmission>;
   let observation: AcceptanceVerificationObservationV1 | null;
   let targetRef: string;
+  let authorityHome: string;
   try {
     selector = validateModuleAcceptanceReference(JSON.parse(subject));
-    const authorityHome = reader.resolveAuthorityHome();
+    authorityHome = reader.resolveAuthorityHome();
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
     // Repository path and policy location come only from the adopted registry.
     // The committed selector cannot supply a filesystem or provider endpoint.
@@ -372,6 +374,23 @@ function moduleAccepted(
     return UNAVAILABLE;
   }
   if (observation === null || observation.archive_projection_sha256 !== null) return UNAVAILABLE;
+  if (observation.disposition === 'user_waiver') {
+    try {
+      const receiptPath = acceptanceReceiptPath(read.repo.path, authorityHome);
+      const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
+      // These are local protected authority files, never a new provider read.
+      for (const path of [receiptPath, grantPath]) {
+        const stat = lstatSync(path);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+      }
+      const receipt = readAcceptanceReceiptFile(receiptPath);
+      if (engineerSha256(observationReadFileSync(receiptPath)) !== observation.acceptance_receipt_sha256) return UNAVAILABLE;
+      const grant = readUserWaiverGrantFile(grantPath);
+      if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
+        admission: active.admission, grantSha256: active.grant_sha256, waiverGrant: grant }).ok) return UNAVAILABLE;
+    } catch { return UNAVAILABLE; }
+  }
+
   const refs = [
     evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
     evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),

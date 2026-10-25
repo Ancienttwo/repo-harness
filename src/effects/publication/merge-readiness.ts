@@ -135,14 +135,22 @@ function string(value: unknown, label: string): string {
   return value;
 }
 
-function gh(input: PublicationReadinessInput, args: readonly string[], accepted = [0]): unknown {
+function githubArguments(input: PublicationReadinessInput, args: readonly string[]): readonly string[] {
+  if (args[0] === 'api') return [...args, '--hostname', 'github.com'];
   if (input.repository) {
-    if (args[0] === 'repo' && args[1] === 'view') args = [...args.slice(0, 2), input.repository, ...args.slice(2)];
-    else if (args[0] === 'pr') args = [...args, '--repo', input.repository];
+    const repository = `github.com/${input.repository}`;
+    if (args[0] === 'repo' && args[1] === 'view') return [...args.slice(0, 2), repository, ...args.slice(2)];
+    if (args[0] === 'pr') return [...args, '--repo', repository];
   }
+  return args;
+}
+
+function gh(input: PublicationReadinessInput, args: readonly string[], accepted = [0]): unknown {
+  args = githubArguments(input, args);
   const injected = input.gh_runner?.(args);
   const result = injected ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root,
+    env: { ...process.env, GH_HOST: 'github.com' },
     encoding: 'utf-8',
     timeout: PROVIDER_SYNCHRONOUS_TIMEOUT_MS,
     killSignal: 'SIGKILL',
@@ -177,6 +185,7 @@ async function ghAbortable(
   args: readonly string[],
   accepted = [0],
 ): Promise<unknown> {
+  args = githubArguments(input, args);
   if (input.signal?.aborted) {
     throw new MergeReadinessError('provider_unavailable', `provider observation aborted: gh ${args.join(' ')}`);
   }
@@ -185,6 +194,7 @@ async function ghAbortable(
     : await new Promise<{ status: number | null; stdout: string; stderr: string; error?: Error }>((resolve) => {
       const child = spawn(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
         cwd: input.repo_root,
+        env: { ...process.env, GH_HOST: 'github.com' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stdout = '';

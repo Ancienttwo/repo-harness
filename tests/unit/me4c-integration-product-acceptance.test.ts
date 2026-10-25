@@ -189,6 +189,30 @@ afterEach(() => {
 
 describe('ME-4C integration product acceptance', () => {
 
+  test('pins every integration provider command to github.com under hostile GH_HOST', () => {
+    const value = fixture();
+    const previous = process.env.GH_HOST;
+    process.env.GH_HOST = 'foreign.example';
+    const observed: string[][] = [];
+    try {
+      const envelope = createIntegrationEnvelope({ ...value.environment, gh_runner: args => {
+        observed.push([...args]);
+        if (args[0] === 'api') expect(args.slice(-2)).toEqual(['--hostname', 'github.com']);
+        else if (args[0] === 'pr') expect(args.slice(-2)).toEqual(['--repo', 'github.com/example/product']);
+        else if (args[0] === 'repo') expect(args[2]).toBe('github.com/example/product');
+        return value.environment.gh_runner!(args);
+      } }, { contract_sha256: value.contract.contract_sha256, base_sha: value.base,
+        final_head_sha: value.finalHead, final_tree_sha: value.finalTree });
+      expect(envelope).toEqual(value.envelope);
+      for (const endpoint of ['/issues/', '/pulls/', '/git/commits/', '/actions/runs/']) {
+        expect(observed.some(args => args[0] === 'api' && args[1]!.includes(endpoint))).toBe(true);
+      }
+      expect(observed.some(args => args[0] === 'api' && args[1] === 'graphql')).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.GH_HOST; else process.env.GH_HOST = previous;
+    }
+  });
+
   test('refuses a changed provider merge tree and retains stored evidence and historical bytes', () => {
     const value = fixture();
     value.provider.get(1)!.tree = 'f'.repeat(40);
