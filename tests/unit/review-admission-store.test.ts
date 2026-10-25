@@ -3,19 +3,21 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
+import { observeReviewIssueGoal, observeActiveReviewAdmission, observeAdmittedReviewContext } from '../../src/effects/review/issue-goal';
+import { parseExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { approveReviewAdmission, readReviewAdmission, revokeReviewAdmission } from '../../src/effects/review/admission-store';
+import { approveReviewAdmission, readActiveReviewAdmission, readReviewAdmission, revokeReviewAdmission } from '../../src/effects/review/admission-store';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const hash = (s: string) => `sha256:${createHash('sha256').update(s).digest('hex')}`;
-function fixture() {
+function fixture(goal = { revision: 'goal-1', content: 'Preserve feedback and acceptance.' }) {
   const root = tmpWorkspace('review-admitted-repo'), home = tmpWorkspace('review-admitted-home'); roots.push(root, home); initGitRepo(root);
   const input: ReviewAdmissionInput = { repository_id: 'R_provider', issue_id: 'I_903', campaign_id: 'review', actor_id: 'U_owner',
-    goal: { revision: 'goal-1', content: 'Preserve feedback and acceptance.' },
+    goal,
     policy: { reviewer: 'Codex', user_waiver: 'forbidden', policy_sha256: hash('policy') }, allowed_paths: ['src/**'], benchmark: 'not_required',
     verification_plan: { protocol: 1, checks: [{ id: 'behavior', kind: 'command', command: 'test -f feature.txt', cwd: '.', phase: 'verification',
       cost: 'normal', evidence_policy: 'current_exact', necessity: 'Check the feature.', inputs: { env: [] } }] } };
@@ -83,6 +85,27 @@ test('operator approval uses revision CAS and reapproval never resurrects an old
   expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
 });
 
+test('protected read reobserves the provider goal instead of trusting a caller snapshot', () => {
+  const policy = parseExternalSourcesPolicy({ version: 1, mode: 'manual', github: {
+    enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [903] },
+    limits: { max_pages: 1, max_issues: 1, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 },
+  } });
+  const issue = { id: 'I_903', number: 903, html_url: 'https://github.com/acme/widgets/issues/903', state: 'open',
+    title: 'Preserve behavior', body: 'Migrate review authority.', updated_at: '2026-10-25T00:00:00Z' };
+  const repo = { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' };
+  const runner = (changed = false) => {
+    const replies = [repo, issue, repo, changed ? { ...issue, body: 'Different goal' } : issue];
+    return () => ({ stdout: JSON.stringify(replies.shift()) });
+  };
+  const goal = observeReviewIssueGoal({ policy, repository_id: 'R_provider', issue_id: 'I_903', runner: runner() });
+  const f = fixture(goal), grant = f.seed();
+  const { expectedGoal: _ignored, ...args } = f.args(grant);
+  const { round: _notExecuted, ...beforeExecution } = args;
+  expect(observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: runner() }).admission.verification_plan).toEqual(f.input.verification_plan);
+  expect(observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner() }).context.goal).toEqual(goal);
+  expect(() => observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner(true) })).toThrow('review_goal_changed_during_read');
+});
+
 test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default admission', () => {
   const f = fixture(), grant = f.seed();
   const { authorityHome: _explicitHome, ...args } = f.args(grant);
@@ -113,4 +136,15 @@ test('protected read returns a detached frozen admission and nested execution pl
   expect(value.admission.goal).toEqual(value.context.goal);
   expect(hashVerificationPlan(value.admission.verification_plan)).toBe(value.context.verification.plan_sha256);
   expect(readReviewAdmission(f.args(grant)).admission).toEqual(value.admission);
+});
+
+test('protected read exposes the approved plan before execution without fabricated evidence', () => {
+  const f = fixture(), grant = f.seed();
+  const { round: _notExecuted, ...args } = f.args(grant);
+  const value = readActiveReviewAdmission(args);
+  expect(value.admission.verification_plan).toEqual(f.input.verification_plan);
+  expect(value.grant_sha256).toBe(grant);
+  expect(Object.isFrozen(value.admission.verification_plan.checks)).toBe(true);
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
+  expect(() => readActiveReviewAdmission(args)).toThrow('revoked_or_replaced');
 });

@@ -119,9 +119,8 @@ export function revokeReviewAdmission(input: StoreInput & CampaignIdentity & { e
  * Prior approvals stay on disk as history. Only the current activation can bind
  * a round. Re-read this before recording acceptance and when verifying it.
  */
-export function readReviewAdmission(input: StoreInput & CampaignIdentity & {
+export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity & {
   expectedGrantSha256: string; expectedPolicySha256: string; expectedGoal: ReviewAdmissionInput['goal']; expectedActor: string;
-  round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>;
 }) {
   const loc = location(input, input, false), before = active(loc.active);
   if (!HASH.test(input.expectedGrantSha256) || before.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
@@ -137,7 +136,16 @@ export function readReviewAdmission(input: StoreInput & CampaignIdentity & {
     || admitted.actor_id !== input.expectedActor || admitted.goal.revision !== input.expectedGoal.revision
     || admitted.goal.content !== input.expectedGoal.content) fail('goal_or_actor_changed');
   if (admitted.policy.policy_sha256 !== input.expectedPolicySha256) fail('policy_changed');
-  const context = bindReviewAdmission(admitted, input.round, input.expectedGrantSha256);
   if (!bytes(before).equals(bytes(active(loc.active)))) fail('changed_during_read');
-  return { admission: admitted, context, revision: before.revision };
+  return { admission: admitted, grant_sha256: input.expectedGrantSha256, revision: before.revision };
+}
+
+/** Verification first consumes the approved plan above. Only after execution
+ * can a round bind its actual subject and evidence to that same active grant. */
+export function readReviewAdmission(input: Parameters<typeof readActiveReviewAdmission>[0] & {
+  round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>;
+}) {
+  const active = readActiveReviewAdmission(input);
+  const context = bindReviewAdmission(active.admission, input.round, active.grant_sha256);
+  return { admission: active.admission, context, revision: active.revision };
 }
