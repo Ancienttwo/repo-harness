@@ -871,3 +871,18 @@ test('benchmark applicability refuses inline overwrite and anchored scalar forms
     'evidence_requirements:\n  benchmark: &value required',
   ]) expect(() => acceptanceBenchmarkRequirement(fence + 'yaml\n' + declaration + '\n' + fence + '\n')).toThrow();
 });
+
+
+test('external acceptance and current inspection survive HEAD-only provenance changes', async () => {
+  const { root, home } = makeFixture();
+  const receipt = await externalPass(root, home);
+  const oldHead = git(root, 'rev-parse', 'HEAD');
+  git(root, 'commit', '--allow-empty', '-m', 'provenance only');
+  expect(git(root, 'rev-parse', 'HEAD')).not.toBe(oldHead);
+  expect(await verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).toEqual(receipt);
+  const context = await acceptanceContext({ root, authority: authorityFor(root), verification: receipt.verification_file });
+  const report = evaluateAdmittedVerification({ repoRoot: root, authority: authorityFor(root) });
+  const evidence = inspectAcceptanceEvidence({ root, authority: authorityFor(root), report, subject: context.subject, current: true });
+  expect(evidence.fingerprint).toBe(receipt.verification_evidence_sha256);
+  expect(inspectAcceptanceCurrentBinding({ root, authority: authorityFor(root), authorityHome: home, subject: context.subject, evidence })).toEqual(receipt);
+});

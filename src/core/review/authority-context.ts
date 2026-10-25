@@ -114,7 +114,10 @@ export function createReviewAuthorityContext(input: ReviewAuthorityInput): Revie
     },
   };
   const basis = { protocol: 1 as const, kind: 'repo-harness-review-authority-context' as const, ...snapshot, campaign_sha256: campaign };
-  return freeze({ ...basis, context_sha256: digest(basis) });
+  // HEAD records commit provenance. Final content, the target and all approved
+  // inputs own acceptance identity, including content not yet committed.
+  const { head_rev: _headProvenance, ...semanticSubject } = basis.subject;
+  return freeze({ ...basis, context_sha256: digest({ ...basis, subject: semanticSubject }) });
 }
 
 /** Compare with freshly observed AND authorized inputs, not a self-reported

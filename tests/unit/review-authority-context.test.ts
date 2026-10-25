@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpWorkspace, initGitRepo, commitAll } from '../helpers/repo-fixture';
 import { expect, test } from 'bun:test';
 import { createReviewAuthorityContext, assertReviewAuthorityContext, reviewCampaignKey, createReviewAdmission, bindReviewAdmission, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
 
@@ -158,4 +162,24 @@ test('admitted path scope preserves glob and directory semantics without implici
   for (const path of ['../src/a.ts', 'src/../secret', '/src/a.ts', 'src\\a.ts']) {
     expect(reviewAdmissionAllowsPath(['*'], path)).toBe(false);
   }
+});
+
+
+test('semantic context survives an actual unchanged-tree HEAD commit while retaining provenance', () => {
+  const root = tmpWorkspace('review-context-head');
+  try {
+    initGitRepo(root); writeFileSync(join(root, 'content.txt'), 'same content\n'); commitAll(root, 'initial');
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    const before = input(); before.subject.head_rev = git('rev-parse', 'HEAD');
+    const tree = git('rev-parse', 'HEAD^{tree}');
+    git('commit', '--allow-empty', '-m', 'provenance only');
+    const after = structuredClone(before); after.subject.head_rev = git('rev-parse', 'HEAD');
+    expect(git('rev-parse', 'HEAD^{tree}')).toBe(tree);
+    expect(after.subject.head_rev).not.toBe(before.subject.head_rev);
+    const oldContext = createReviewAuthorityContext(before), newContext = createReviewAuthorityContext(after);
+    expect(newContext.subject.head_rev).toBe(after.subject.head_rev);
+    expect(newContext.context_sha256).toBe(oldContext.context_sha256);
+    after.authorization.grant_sha256 = digest('9');
+    expect(createReviewAuthorityContext(after).context_sha256).not.toBe(oldContext.context_sha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

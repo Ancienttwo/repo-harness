@@ -300,7 +300,7 @@ export function inspectAcceptanceEvidence(args: {
     if (!validated.authoritative) fail('required benchmark report is not authoritative');
   }
   const results = report.results.map(result => ({ ...result, execution: result.execution === 'reused' ? 'executed' : result.execution }));
-  const target = { campaign_sha256: report.target.campaign_sha256, admission_sha256: report.target.admission_sha256, grant_sha256: report.target.grant_sha256, head_commit: report.target.head_commit, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
+  const target = { campaign_sha256: report.target.campaign_sha256, admission_sha256: report.target.admission_sha256, grant_sha256: report.target.grant_sha256, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
   return { fingerprint: sha256(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
 }
 

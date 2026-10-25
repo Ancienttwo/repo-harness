@@ -1,3 +1,4 @@
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -7,7 +8,7 @@ import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
 import { composeReviewPacket, type ReviewPacketInput } from '../src/core/review/review-packet';
 import { closeReview, reviewLocation, reviewSessionOptions, reviewStatus, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
-import { acceptanceReceiptPath } from '../scripts/acceptance-receipt';
+import { acceptanceContext, acceptanceReviewContextDigest, acceptanceReceiptPath } from '../scripts/acceptance-receipt';
 import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
@@ -628,4 +629,33 @@ try{for(let round=1;round<=2;round++){
   expect(existsSync(join(owner, 'disposed.json'))).toBe(false);
   expect(readFileSync(policyFile, 'utf8')).toBe(reviewIsolationPolicy(paths));
   expect(prepareReviewLauncher(owner, policyFile, fixture)).toBe(launcher);
+});
+
+
+test('same content with a new approved context consumes the next campaign round', async () => {
+  const f = packetRoundFixture();
+  const context = await acceptanceContext({ root: f.root, authority: f.authority, verification: f.verification });
+  // The prior round reviewed identical code under a different approved context.
+  // Retain its findings and charge the next attempt to the same session budget.
+  writeSessionArtifact(join(f.dir, 'request-1.json'), {
+    subject_sha256: context.subject.review_subject_sha256, context_sha256: acceptanceReviewContextDigest(context),
+  });
+  writeSessionArtifact(join(f.dir, 'accepted-1.json'), { output: { findings: [] } });
+  const previousAdmission = f.admissionFixture.admission;
+  const renewed = seedReviewAdmissionFixture(f.root, f.home, {
+    reviewer: previousAdmission.policy.reviewer, userWaiver: 'forbidden', actor: previousAdmission.actor_id,
+    allowedPaths: [...previousAdmission.allowed_paths], oracles: [...previousAdmission.oracles],
+    plan: JSON.parse(JSON.stringify(previousAdmission.verification_plan)),
+  });
+  Object.assign(f.authority, renewed.source);
+  f.refresh();
+  const current = await acceptanceContext({ root: f.root, authority: f.authority, verification: f.verification });
+  expect(current.subject.review_subject_sha256).toBe(context.subject.review_subject_sha256);
+  expect(current.authorityContext.campaign_sha256).toBe(context.authorityContext.campaign_sha256);
+  expect(acceptanceReviewContextDigest(current)).not.toBe(acceptanceReviewContextDigest(context));
+  const launchError = process.platform === 'darwin' ? 'fixture_second_round' : 'OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM';
+  const effects = { ...f.effects, start: async () => { throw new Error('fixture_second_round'); } };
+  await expect(runReviewRound(f.options, effects)).rejects.toThrow(launchError);
+  expect(readFileSync(f.packetPath(2), 'utf8')).toContain(acceptanceReviewContextDigest(current));
+  expect(existsSync(join(f.dir, 'request-1.json'))).toBe(true);
 });

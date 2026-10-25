@@ -260,9 +260,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
     }
-    const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, identity.subject_sha256, previous => previous.subject_sha256);
-    const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
     const contextDigest = acceptanceReviewContextDigest(context);
+    const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, contextDigest, previous => previous.context_sha256);
+    const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
     const packet = composeReviewPacket({ context_sha256: contextDigest, subject_sha256: identity.subject_sha256,
       actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE, prior_findings: previous,
       admission: JSON.stringify(context.admission), goal: context.goal.content, verification: context.verification.content,
