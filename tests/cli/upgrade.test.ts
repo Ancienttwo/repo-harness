@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { runUpgrade } from '../../src/cli/commands/upgrade';
+import { runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
@@ -175,6 +175,21 @@ describe('upgrade with real release bytes', () => {
       }]);
       expect(settings.hooks.SessionStart).toBeUndefined();
     }
+  }));
+
+  test('the cleanup audit log keeps only the newest records', () => sandbox((opts) => {
+    const auditPath = join(opts.home, '.repo-harness/upgrade-cleanup.log.jsonl');
+    const prior = Array.from({ length: UPGRADE_AUDIT_MAX_RECORDS }, (_, index) => JSON.stringify({ transaction_id: `prior-${index}` }));
+    writeFileSync(auditPath, `${prior.join('\n')}\n`, { mode: 0o600 });
+
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true });
+
+    expect(result.exitCode).toBe(0);
+    const records = readFileSync(auditPath, 'utf8').trimEnd().split('\n').map((line) => JSON.parse(line));
+    expect(records).toHaveLength(UPGRADE_AUDIT_MAX_RECORDS);
+    expect(records[0].transaction_id).toBe('prior-1');
+    expect(records.at(-2).transaction_id).toBe(`prior-${UPGRADE_AUDIT_MAX_RECORDS - 1}`);
+    expect(records.at(-1).removed_paths).toEqual(result.removedPaths);
   }));
 
   test.each(['default', 'custom', 'custom-trailing-slash', 'custom-relative'])('global cleanup removes real installer shim commands from %s REPO_HARNESS_HOME', (kind) => sandbox((opts) => {

@@ -7,7 +7,7 @@ import { join } from 'path';
 import { buildExternalSourceCommand } from '../../src/cli/commands/external-source';
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../../src/effects/git/repository-identity';
 import { writeProviderIssueObservation } from '../../src/effects/external-sources/store';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
 

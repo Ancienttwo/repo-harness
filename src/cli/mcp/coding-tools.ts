@@ -1,17 +1,16 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import {
-  appendFileSync,
   chmodSync,
   existsSync,
   lstatSync,
-  mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'fs';
-import { dirname, join, relative } from 'path';
+import { join, relative } from 'path';
+import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { createCodeGraphCliAdapter, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import {
@@ -130,10 +129,8 @@ function indexEventPath(root: string): string {
 }
 
 function appendIndexEvent(root: string, event: Record<string, unknown>): string {
-  const path = indexEventPath(root);
-  mkdirSync(dirname(path), { recursive: true });
   const eventId = typeof event.event_id === 'string' ? event.event_id : `idx_${randomUUID()}`;
-  appendFileSync(path, `${JSON.stringify({ timestamp: new Date().toISOString(), event_id: eventId, ...event })}\n`, 'utf-8');
+  appendSegmentedLog(indexEventPath(root), `${JSON.stringify({ timestamp: new Date().toISOString(), event_id: eventId, ...event })}\n`, root);
   return eventId;
 }
 

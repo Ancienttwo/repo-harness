@@ -1,3 +1,4 @@
+import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../state/readonly-observation';
 import { createHash } from 'crypto';
 import {
@@ -327,8 +328,7 @@ function stateRoot(authorityHome: string): string {
 }
 
 export function acceptanceReceiptPath(root: string, authorityHome: string, createParent = false): string {
-  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
-  const parent = join(stateRoot(authorityHome), 'gates', repoId);
+  const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)));
   if (createParent) {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     chmodSync(parent, 0o700);
@@ -340,8 +340,7 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
 
 
 export function userWaiverGrantPath(root: string, authorityHome: string, createParent = false): string {
-  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
-  const parent = join(stateRoot(authorityHome), 'gates', repoId);
+  const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)));
   if (createParent) {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     chmodSync(parent, 0o700);
@@ -357,8 +356,7 @@ export function acceptanceVerificationObservationPath(
   contractSha256: string,
   createParent = false,
 ): string {
-  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
-  const parent = join(stateRoot(authorityHome), 'gates', repoId, 'acceptance-observations');
+  const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)), 'acceptance-observations');
   if (createParent) {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     chmodSync(parent, 0o700);

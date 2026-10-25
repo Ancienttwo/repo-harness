@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { createHookEventTelemetry, HOOK_EVENT_TELEMETRY_PATH } from '../../src/cli/hook/event-telemetry';
 import { readHookMetrics } from '../../scripts/run-harness-profile-benchmark';
-import { appendHookEventLog, HOOK_LOG_ARCHIVE_BYTES, readHookEventLog } from '../../src/effects/hook-event-log';
+import { appendSegmentedLog, SEGMENTED_LOG_ARCHIVE_BYTES, readSegmentedLog } from '../../src/effects/segmented-log';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -25,8 +25,8 @@ describe('bounded hook event history', () => {
   test('streamed history preserves UTF-8 across chunk boundaries and a final line', () => {
     const root = fixture(); const path = join(root, HOOK_EVENT_TELEMETRY_PATH);
     const line = `${'a'.repeat(65535)}中文`;
-    appendHookEventLog(path, `${line}\r\nlast`, root);
-    expect([...readHookEventLog(path, root)!]).toEqual([line, 'last']);
+    appendSegmentedLog(path, `${line}\r\nlast`, root);
+    expect([...readSegmentedLog(path, root)!]).toEqual([line, 'last']);
   });
   test('prunes only oldest owned segments by count and keeps foreign files', () => {
     const root = fixture(); seedFull(root);
@@ -49,7 +49,7 @@ describe('bounded hook event history', () => {
     mkdirSync(directory);
     const old = join(directory, `1700000000000-${randomUUID()}.jsonl`);
     const fd = openSync(old, 'w');
-    ftruncateSync(fd, HOOK_LOG_ARCHIVE_BYTES);
+    ftruncateSync(fd, SEGMENTED_LOG_ARCHIVE_BYTES);
     closeSync(fd);
     emit(root);
     expect(existsSync(old)).toBe(false);
@@ -60,7 +60,7 @@ describe('bounded hook event history', () => {
   test('an opened historical snapshot survives later pruning', () => {
     const root = fixture(); const first = seedFull(root); const second = emit(root);
     const path = join(root, HOOK_EVENT_TELEMETRY_PATH);
-    const snapshot = readHookEventLog(path, root)!;
+    const snapshot = readSegmentedLog(path, root)!;
     const directory = `${path}.archive`;
     for (const name of readdirSync(directory)) rmSync(join(directory, name));
     expect([...snapshot].map(line => JSON.parse(line).event_id)).toEqual([first.event_id, second.event_id]);
@@ -72,7 +72,7 @@ describe('bounded hook event history', () => {
     symlinkSync(outside, `${path}.archive`);
     expect(() => emit(root)).not.toThrow();
     expect(readdirSync(outside)).toHaveLength(0);
-    expect(() => readHookMetrics(root)).toThrow('unsafe hook telemetry archive');
+    expect(() => readHookMetrics(root)).toThrow('unsafe segmented log archive');
     rmSync(`${path}.archive`); rmSync(path);
     writeFileSync(join(outside, 'private'), 'keep'); symlinkSync(join(outside, 'private'), path);
     emit(root);
@@ -87,22 +87,22 @@ describe('bounded hook event history', () => {
     const external = join(outside, 'runs/hook-events.jsonl');
     writeFileSync(external, 'private');
     const path = join(root, HOOK_EVENT_TELEMETRY_PATH);
-    expect(() => appendHookEventLog(path, 'new\n', root)).toThrow('escapes repository');
-    expect(() => readHookEventLog(path, root)).toThrow('escapes repository');
+    expect(() => appendSegmentedLog(path, 'new\n', root)).toThrow('escapes repository');
+    expect(() => readSegmentedLog(path, root)).toThrow('escapes repository');
     expect(readFileSync(external, 'utf8')).toBe('private');
     expect(readdirSync(join(outside, 'runs'))).toEqual(['hook-events.jsonl']);
   });
 
   test('in-repository log symlinks cannot append, rotate, or prune their targets', () => {
-    for (const size of [4, 9 * 1024 * 1024, HOOK_LOG_ARCHIVE_BYTES + 1]) {
+    for (const size of [4, 9 * 1024 * 1024, SEGMENTED_LOG_ARCHIVE_BYTES + 1]) {
       const root = fixture(); const path = join(root, HOOK_EVENT_TELEMETRY_PATH);
       emit(root); rmSync(path);
       const target = join(root, 'user-data');
       const fd = openSync(target, 'w'); ftruncateSync(fd, size); closeSync(fd);
       const before = statSync(target);
       symlinkSync(target, path);
-      expect(() => appendHookEventLog(path, 'new\n', root)).toThrow();
-      expect(() => readHookEventLog(path, root)).toThrow();
+      expect(() => appendSegmentedLog(path, 'new\n', root)).toThrow();
+      expect(() => readSegmentedLog(path, root)).toThrow();
       expect(() => emit(root)).not.toThrow();
       expect(lstatSync(path).isSymbolicLink()).toBe(true);
       const after = statSync(target);
@@ -114,7 +114,7 @@ describe('bounded hook event history', () => {
 
   test('oversized records are rejected without creating an unbounded active file', () => {
     const root = fixture();
-    expect(() => appendHookEventLog(join(root, HOOK_EVENT_TELEMETRY_PATH), 'x'.repeat(8 * 1024 * 1024 + 1), root)).toThrow('segment budget');
+    expect(() => appendSegmentedLog(join(root, HOOK_EVENT_TELEMETRY_PATH), 'x'.repeat(8 * 1024 * 1024 + 1), root)).toThrow('segment budget');
     expect(existsSync(join(root, HOOK_EVENT_TELEMETRY_PATH))).toBe(false);
   });
 

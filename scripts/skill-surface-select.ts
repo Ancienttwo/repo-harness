@@ -28,6 +28,7 @@ import {
   type SkillSurfaceProfile,
 } from "../src/core/skill-surface/catalog";
 import { PROFILE_COMPONENTS } from "../src/core/skill-surface/profile-components";
+import { syncSkillRoots } from "../src/effects/host-skill-roots";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(SCRIPT_DIR, "..", "assets", "skill-commands", "manifest.json");
@@ -110,6 +111,11 @@ async function main(argv: readonly string[]): Promise<void> {
     if (!isProfile(profileFlag)) {
       fail(`profile-projection requires --profile <${SKILL_SURFACE_PROFILES.join("|")}>`);
     }
+    if (!process.env.CODEX_SKILLS_ROOT && !process.env.HOME) fail("HOME is required when CODEX_SKILLS_ROOT is not set.");
+    const roots = syncSkillRoots(process.env, process.env.HOME ?? "");
+    console.log(`codex-root\t${roots.codex}`);
+    console.log(`claude-root\t${roots.claude ?? ""}`);
+    console.log(`root-override\t${roots.overridden ? 1 : 0}`);
     for (const name of facadesForProfile(catalog, profileFlag)) console.log(`facade\t${name}`);
     const providers = hostSkillPlacements(catalog);
     for (const name of providers.claude) console.log(`provider\tclaude ${name}`);

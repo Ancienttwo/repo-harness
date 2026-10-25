@@ -25,7 +25,7 @@ import {
   taskInboxDeliveryPath,
   taskInboxTaskDirectory,
 } from '../../src/effects/fleet/task-inbox';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../../src/effects/git/repository-identity';
 import { taskLockRelativePath } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { fixtureTaskId } from '../helpers/sprint-fixture';
