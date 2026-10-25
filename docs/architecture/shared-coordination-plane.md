@@ -15,8 +15,7 @@ No Sprint CLI, completion writer, lease cleanup writer or publication lifecycle 
 | Board | `src/effects/state/collect-board-inputs.ts`, `src/effects/state/resolve-board.ts`, `src/core/state/project-board.ts` | Read canonical rows, leases, topology and progress. |
 | Hook slice | `src/effects/state/collect-slice-inputs.ts`, `src/core/state/project-board-slice.ts` | Report the historical owner and peer rows. |
 | Historical claim token | `src/effects/state/coordination-claim-token.ts` | Locate the hook slice's own row. |
-| Historical liveness | `src/effects/state/coordination-lease-liveness-store.ts` | Read prior renewal and reclaim observations. |
-| Worktree safety | `src/effects/state/coordination-worktree-topology.ts` | Start, inspect and remove exact worktrees under topology and ownership guards. |
+| Worktree safety | `src/effects/state/coordination-worktree-topology.ts` | Start, inspect and remove exact worktrees under topology and marker guards. Leases are not read (#917). |
 
 These files remain in `capability.workflow-engine.workflow-state` and its
 `component.workflow-state.coordination-plane` component. The component name is
@@ -36,7 +35,7 @@ A board observation cannot authorize a task claim or transfer ownership.
 
 `contract-worktree start`, `cleanup`, `sweep` and `status` remain available.
 Cleanup requires exact merge proof and the current worktree identity. Dirty,
-locked, owned, leased or unknown worktrees remain protected. Provider merge
+locked, marked or unknown worktrees remain protected. Provider merge
 proof supplements the local merge test. Architecture daemons and recorded
 runtime close before checkout deletion.
 
@@ -54,7 +53,7 @@ returns the journal path for manual handling.
 - Unknown or malformed owner bytes remain unknown. Readers do not repair or delete them.
 - Evidence failure cannot transfer the historical owner or change its generation.
 - The board is a read model. Torn reads stay visible to the caller.
-- Historical lease and liveness files have no automatic migration or cleanup writer.
+- Historical lease files have no automatic migration or cleanup writer. No reader of liveness files remains (#917).
 - Worktree removal preserves its existing locks, identity checks and deletion fences.
 
 ## Verification surfaces
