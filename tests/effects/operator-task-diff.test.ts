@@ -1,11 +1,15 @@
 import { readOperatorAdmittedTaskActivity } from '../../src/effects/operator/admitted-task-activity';
 import { buildTaskMessageEvent, canonicalTaskMessageEventBytes } from '../../src/core/fleet/admitted-task-message';
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
+import * as childProcess from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { delimiter } from 'node:path';
+import { decodeOperatorTaskSessions } from '../../src/core/operator/task-sessions';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
@@ -16,6 +20,8 @@ import { readReviewAdmissionSource } from '../../src/effects/review/admission-so
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 
 const cleanup: string[] = [];
+const restoreWorkerFixtures: (() => void)[] = [];
+afterEach(() => { for (const restore of restoreWorkerFixtures.splice(0)) restore(); });
 let originalGitGlobal: string | undefined;
 let originalGitSystem: string | undefined;
 beforeEach(() => {
@@ -72,6 +78,31 @@ function fixture(linkedOwner = false, task = 'review-diff') {
   return { root, sourceRoot, worktree, home, base, input, selector, binding, dir, effects, read, path, approved };
 }
 
+/** The production supervisor and readers run unchanged. Only the external OS
+ * account-home lookup and GitHub process endpoint have offline test substitutes. */
+function workerFixture(f: ReturnType<typeof fixture>) {
+  const bootstrap=join(f.home,'operator-worker-bootstrap.ts'),bin=join(f.home,'bin');mkdirSync(bin);
+  const accountModule=fileURLToPath(new URL('../../src/effects/runtime/os-account-home.ts',import.meta.url));
+  writeFileSync(bootstrap,`import {mock} from 'bun:test';\nmock.module(${JSON.stringify(accountModule)},()=>({osAccountHome:()=>${JSON.stringify(f.home)}}));\n`);
+  const endpoint='repos/acme/widgets';
+  const repo=f.approved.source.runner!(['api',endpoint],{timeout_ms:1000,max_buffer:8192}).stdout;
+  const issue=f.approved.source.runner!(['api',endpoint+'/issues/903'],{timeout_ms:1000,max_buffer:8192}).stdout;
+  const executable=join(bin,'gh');
+  writeFileSync(executable,`#!${process.execPath}\nconst args=process.argv.slice(2);if(args.includes(${JSON.stringify(endpoint+'/issues/903')}))process.stdout.write(${JSON.stringify(issue)});else if(args.includes(${JSON.stringify(endpoint)}))process.stdout.write(${JSON.stringify(repo)});else process.exit(1);\n`);chmodSync(executable,0o700);
+  const original=childProcess.spawn;
+  let launches=0;
+  const workerPath=fileURLToPath(new URL('../../src/effects/operator/task-read-process.ts',import.meta.url));
+  const forwarding=((command:string,args?:readonly string[]|childProcess.SpawnOptions,options?:childProcess.SpawnOptions)=>{
+    if(command===process.execPath&&Array.isArray(args)&&args.length===1&&args[0]===workerPath){
+      launches++;return original(command,['--preload',bootstrap,...args],options);
+    }
+    return Array.isArray(args) ? original(command,args,options) : original(command,args as childProcess.SpawnOptions|undefined);
+  }) as typeof childProcess.spawn;
+  const spy=spyOn(childProcess,'spawn').mockImplementation(forwarding);
+  restoreWorkerFixtures.push(()=>spy.mockRestore());
+  return {env:{...f.input.env,PATH:bin+delimiter+process.env.PATH},launches:()=>launches,restore:()=>spy.mockRestore()};
+}
+
 test('read-only registry: explicit target/head, committed and dirty tracked changes, separate untracked paths', () => {
   const f = fixture();
   writeFileSync(join(f.worktree, 'committed.txt'), 'commit\n'); git(f.worktree, 'add', '.'); git(f.worktree, 'commit', '-m', 'work');
@@ -118,17 +149,23 @@ test('external diff/textconv are disabled and oversized patches are refused', ()
   expect(() => f.read()).toThrow('too_large');
 });
 
-test('HTTP reader with explicit synthetic approval returns the same fenced read without machine paths', async () => {
+test('production worker discovers explicit synthetic approval then reads fenced diff without machine paths', async () => {
   const f = fixture();
   const { startOperatorServer } = await import('../../src/effects/operator/server');
-  const server = await startOperatorServer({ port: 0, static_root: f.root, env: f.input.env, read_task_diff: async request => { const { signal: _, ...selector } = request; return readOperatorTaskDiff({ ...selector, env: f.input.env }, f.effects); } });
+  const worker=workerFixture(f);
+  const server = await startOperatorServer({ port: 0, static_root: f.root, env: worker.env });
   try {
     writeFileSync(join(f.worktree, 'file.txt'), 'via worker\n');
+    const discovered=await fetch(server.url+`/api/v1/fleet/task-sessions/${f.selector.repository_id}`);
+    expect(discovered.status).toBe(200);
+    const sessions=decodeOperatorTaskSessions(await discovered.json(),{repository_id:f.selector.repository_id});
+    expect(sessions.sessions.map(session=>session.selector)).toEqual([f.selector]);
     const response = await fetch(server.url + f.path);
     expect(response.status).toBe(200);
     const value = decodeOperatorTaskDiff(await response.json(), f.selector);
     expect(value.patch).toContain('+via worker'); expect(JSON.stringify(value)).not.toContain(f.root);
-  } finally { await server.close(); }
+  } finally { try { await server.close(); } finally { worker.restore(); } }
+  expect(worker.launches()).toBeGreaterThan(0);
 });
 
 test('binary changes remain a Git summary and detached execution trees are refused', () => {
@@ -190,12 +227,14 @@ test('skip-worktree tracked entries cannot produce an empty observation and stay
   expect(git(f.worktree, 'diff', f.base, '--')).toBe('');
   expect(() => f.read()).toThrow('index_unsupported');
   const { startOperatorServer } = await import('../../src/effects/operator/server');
-  const server = await startOperatorServer({ port: 0, static_root: f.root, env: f.input.env, read_task_diff: async request => { const { signal: _, ...selector } = request; return readOperatorTaskDiff({ ...selector, env: f.input.env }, f.effects); } });
+  const worker=workerFixture(f);
+  const server = await startOperatorServer({ port: 0, static_root: f.root, env: worker.env });
   try {
     const response = await fetch(server.url + f.path);
     expect(response.status).not.toBe(200);
     expect(JSON.stringify(await response.json())).toContain('index_unsupported');
-  } finally { await server.close(); }
+  } finally { try { await server.close(); } finally { worker.restore(); } }
+  expect(worker.launches()).toBeGreaterThan(0);
   expect(git(f.worktree, 'ls-files', '-v', 'file.txt')).toBe('S file.txt');
   expect(readFileSync(join(f.worktree, 'file.txt'), 'utf8')).toBe('hidden edit\n');
 });
@@ -225,13 +264,15 @@ test('HTTP reader refuses missing policy target objects without fetching', async
   git(f.root, 'config', 'remote.origin.uploadpack', 'echo ran > fetch-ran; false');
   rmSync(object);
   const { startOperatorServer } = await import('../../src/effects/operator/server');
-  const server = await startOperatorServer({ port: 0, static_root: f.root, env: f.input.env, read_task_diff: async request => { const { signal: _, ...selector } = request; return readOperatorTaskDiff({ ...selector, env: f.input.env }, f.effects); } });
+  const worker=workerFixture(f);
+  const server = await startOperatorServer({ port: 0, static_root: f.root, env: worker.env });
   try {
     const response = await fetch(server.url + f.path);
     expect(response.status).not.toBe(200);
     expect(existsSync(join(f.root, 'fetch-ran'))).toBe(false);
     expect(existsSync(object)).toBe(false);
-  } finally { await server.close(); }
+  } finally { try { await server.close(); } finally { worker.restore(); } }
+  expect(worker.launches()).toBeGreaterThan(0);
 });
 
 test('current approval is reobserved, while same-campaign reapproval and empty commits preserve session selection', () => {
@@ -360,7 +401,8 @@ test('active activity observes protected session approval around modern history 
 test('active activity HTTP requires exact admitted selection and has no historical route fallback', async () => {
   const f=fixture(false,'a'.repeat(64));
   const {startOperatorServer}=await import('../../src/effects/operator/server');
-  const server=await startOperatorServer({port:0,static_root:f.root,env:f.input.env,read_admitted_task_activity:async ({signal:_,...request})=>readOperatorAdmittedTaskActivity({...request,env:f.input.env},f.effects)});
+  const worker=workerFixture(f);
+  const server=await startOperatorServer({port:0,static_root:f.root,env:worker.env});
   try {
     const query=new URLSearchParams(Object.entries(f.selector).filter(([key])=>key!=='repository_id'));
     const path=`/api/v1/fleet/task-sessions/${f.selector.repository_id}/activity`;
@@ -370,5 +412,6 @@ test('active activity HTTP requires exact admitted selection and has no historic
     query.append('grant_sha256',f.selector.grant_sha256);
     expect((await fetch(server.url+path+'?'+query)).status).toBe(400);
     expect((await fetch(`${server.url}/api/v1/fleet/tasks/${f.selector.repository_id}/${f.selector.task}/activity`)).status).toBe(404);
-  } finally {await server.close();}
+  } finally {try {await server.close();} finally {worker.restore();}}
+  expect(worker.launches()).toBeGreaterThan(0);
 });
