@@ -651,14 +651,33 @@ describe("canonical adoption plan", () => {
         ...writeOperation("contested.txt", "planned\n"),
         expectedContentHash: `sha256:${createHash("sha256").update("before\n").digest("hex")}`,
       }]);
-      // The holder edits the target while this apply waits for the lock, after preflight has passed.
+      // Handshake: this process calls Atomics.wait first in the lock's wait loop, which it
+      // reaches only after preflight and the unlocked checks passed. The holder edits the
+      // target only after that call publishes the signal file, then releases the lock.
+      const signal = join(repo, "applier-waits-for-lock");
       const holder = await holdTargetLock(target, `
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+        const { existsSync } = require("fs");
+        const deadline = Date.now() + 20000;
+        while (!existsSync(${JSON.stringify(signal)})) {
+          if (Date.now() > deadline) process.exit(3);
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        }
         writeFileSync(target, "holder edit\\n");
       `);
-      const apply = applyAdoptionPlan(plan);
+      const wait = Atomics.wait;
+      Atomics.wait = function (...args: unknown[]) {
+        if (!existsSync(signal)) writeFileSync(signal, "");
+        return Reflect.apply(wait, Atomics, args);
+      } as typeof Atomics.wait;
+      let apply: ReturnType<typeof applyAdoptionPlan>;
+      try {
+        apply = applyAdoptionPlan(plan);
+      } finally {
+        Atomics.wait = wait;
+      }
       expect(await holder.exited).toBe(0);
 
+      expect(existsSync(signal)).toBe(true);
       expect(apply.ok).toBe(false);
       expect(apply.results[0]?.error).toContain("target content changed after planning");
       expect(readFileSync(target, "utf-8")).toBe("holder edit\n");
