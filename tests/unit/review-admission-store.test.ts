@@ -1,3 +1,5 @@
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { defaultDependencyAuthorityReaders } from '../../src/effects/engineers/dependency-authority';
 import { approveDelegatedReviewAdmission } from '../../src/effects/review/control-admission';
 import { signedHumanAdmissionFixture, signedBotAdmissionFixture } from '../helpers/control-approval-fixture';
 import { afterEach, expect, test } from 'bun:test';
@@ -38,7 +40,7 @@ function fixture(goal = { revision: 'goal-1', content: 'Preserve feedback and ac
     writeFileSync(join(directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: digest }), { mode: 0o600 });
     return digest;
   }
-  const args = (grant: string) => ({ repoRoot: root, authorityHome: home, repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
+  const args = (grant: string) => ({ repoRoot: root, authorityHome: home, controlTrustHome: home, repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
     expectedGrantSha256: grant, expectedPolicySha256: input.policy.policy_sha256, expectedGoal: input.goal, expectedActor: input.actor_id, round });
   return { root, home, input, admission, directory, round, seed, args };
 }
@@ -75,7 +77,7 @@ test('protected read refuses a candidate-local authority home and linked grant f
 
 test('operator approval uses revision CAS and reapproval never resurrects an old grant identity', () => {
   const f = fixture();
-  const approve = (revision: number) => approveReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+  const approve = (revision: number) => approveReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
     admission: f.input, expectedAdmissionSha256: f.admission.admission_sha256, expectedRevision: revision,
     controlEnvelope: signedHumanAdmissionFixture(f.home, f.root, f.admission, revision) });
   const first = approve(0);
@@ -118,11 +120,11 @@ test('protected read reobserves the provider goal instead of trusting a caller s
 
 test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default admission', () => {
   const f = fixture(), grant = f.seed();
-  const { authorityHome: _explicitHome, ...args } = f.args(grant);
+  const { authorityHome: _explicitHome, controlTrustHome: _fixtureTrust, ...args } = f.args(grant);
   const code = [
     `const { readReviewAdmission } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/review/admission-store.ts'))});`,
     `const args = ${JSON.stringify(args)};`,
-    `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)} });`,
+    `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)}, controlTrustHome: ${JSON.stringify(f.home)} });`,
     `if (explicit.context.authorization.grant_sha256 !== args.expectedGrantSha256) throw new Error('fixture is invalid');`,
     `try { readReviewAdmission(args); console.log('accepted-forged-grant'); }`,
     `catch (error) { if (error.message !== 'review_admission_missing') throw error; console.log('rejected-forged-grant'); }`,
@@ -163,12 +165,12 @@ test('protected read exposes the approved plan before execution without fabricat
 test('control admission writes a signed Bot grant and later reads recheck parent revocation', () => {
   const f = fixture();
   const envelope = signedBotAdmissionFixture(f.home, f.root, f.admission, 0);
-  const result = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+  const result = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
     admission: f.input, envelope, expectedRevision: 0 });
   expect(result.approved_by).toBe('fixture-bot');
   expect(result.execution_actor).toBe(f.input.actor_id);
   expect(readReviewAdmission(f.args(result.grant_sha256)).admission).toEqual(f.admission);
-  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
     admission: f.input, envelope, expectedRevision: 0 })).toThrow('revision_changed');
   const trustPath = join(f.home, '.repo-harness/control-trust.json');
   const trust = JSON.parse(readFileSync(trustPath, 'utf8'));
@@ -184,4 +186,13 @@ test('protected read rejects unsigned records even when the record digest matche
   writeFileSync(join(f.directory, `${forged.slice(7)}.json`), content, { mode: 0o600 });
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: forged }));
   expect(() => readReviewAdmission(f.args(forged))).toThrow('grant_binding');
+});
+
+test('dependency production reader cannot choose trust from explicit storage HOME', () => {
+  const root = tmpWorkspace('dependency-control-root'), home = tmpWorkspace('dependency-control-home');
+  roots.push(root, home); initGitRepo(root);
+  const seeded = seedReviewAdmissionFixture(root, home);
+  expect(observeActiveReviewAdmission(seeded.source).grant_sha256).toBe(seeded.grant);
+  const source = { ...seeded.source, controlTrustHome: undefined };
+  expect(() => defaultDependencyAuthorityReaders().observeReviewAdmission(source)).toThrow();
 });

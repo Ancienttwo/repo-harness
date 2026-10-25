@@ -43,7 +43,7 @@ export function seedReviewAdmissionFixture(root: string, home: string, options: 
   const grant = hash(content);
   writeFileSync(join(directory, `${grant.slice(7)}.json`), content, { mode: 0o600 });
   writeFileSync(active, JSON.stringify({ protocol: 1, revision, grant_sha256: grant }), { mode: 0o600 });
-  const source: ReviewAdmissionSource = { repoRoot: root, authorityHome: home, repository_id: repo.id, issue_id: issue.id,
+  const source: ReviewAdmissionSource = { repoRoot: root, authorityHome: home, controlTrustHome: home, repository_id: repo.id, issue_id: issue.id,
     campaign_id: admission.campaign_id, expectedGrantSha256: grant, expectedPolicySha256: admission.policy.policy_sha256,
     expectedActor: admission.actor_id, issuePolicy: policy, runner };
   return { source, admission, directory, grant, issue, policy };

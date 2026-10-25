@@ -25,7 +25,7 @@ export function signedBotAdmissionFixture(home: string, root: string, admission:
   const delegation = { protocol: 1, kind: 'repo-harness-control-delegation', id: 'fixture-delegation', user_id: 'fixture-user',
     bot_id: 'fixture-bot', bot_public_key: bot.publicKey.export({ format: 'pem', type: 'spki' }).toString(),
     repository_id: admission.repository_id, issue_ids: [admission.issue_id], allowed_paths: [...admission.allowed_paths],
-    policy_sha256: admission.policy.policy_sha256, benchmark: admission.benchmark,
+    policy: { ...admission.policy }, benchmark: admission.benchmark,
     not_before: Date.now() - 1000, expires_at: Date.now() + 3_600_000 };
   const delegation_sha256 = `sha256:${createHash('sha256').update(canonicalize(delegation as JsonValue)).digest('hex')}`;
   const decision = { protocol: 1, kind: 'repo-harness-control-approval', delegation_sha256,

@@ -22,7 +22,7 @@ function fixture() {
   const delegation: ControlDelegation = {
     protocol: 1, kind: 'repo-harness-control-delegation', id: 'delegation-1', user_id: 'user', bot_id: 'bot',
     bot_public_key: bot.publicKey.export({ type: 'spki', format: 'pem' }).toString(), repository_id: input.repository_id,
-    issue_ids: [input.issue_id], allowed_paths: [...input.allowed_paths], policy_sha256: input.policy.policy_sha256,
+    issue_ids: [input.issue_id], allowed_paths: [...input.allowed_paths], policy: { ...input.policy, user_waiver: 'forbidden' },
     benchmark: input.benchmark, not_before: now - 100, expires_at: now + 1000,
   };
   const decision: ControlApprovalDecision = {
@@ -67,7 +67,7 @@ test('signed delegations still enforce identity, scope, policy, time and revocat
     f => { f.delegation.issue_ids = ['I_other']; },
     f => { f.delegation.allowed_paths = ['other/**']; },
     f => { f.delegation.allowed_paths = ['../src/**']; },
-    f => { f.delegation.policy_sha256 = `sha256:${'b'.repeat(64)}`; },
+    f => { f.delegation.policy.policy_sha256 = `sha256:${'b'.repeat(64)}`; },
     f => { f.delegation.benchmark = 'not_required'; },
     f => { f.input.policy.user_waiver = 'allowed'; },
     f => { f.delegation.not_before = now + 1; },
@@ -165,4 +165,11 @@ test('direct user approval is signed separately and is never a Bot waiver delega
   expect(() => verifyReviewApproval(envelope, f.trust, now, admission, repositoryRoot, 1)).toThrow('subject');
   expect(() => verifyReviewApproval(envelope, f.trust, now + 500, admission, repositoryRoot, 0)).toThrow('expired');
   expect(() => f.verify()).toThrow('waiver');
+});
+
+
+test('Bot cannot change reviewer while retaining the user-signed policy digest', () => {
+  const f = fixture();
+  f.input.policy.reviewer = 'Claude';
+  expect(() => f.verify()).toThrow('policy');
 });

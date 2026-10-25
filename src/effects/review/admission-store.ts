@@ -13,7 +13,7 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 
-interface StoreInput { repoRoot: string; authorityHome?: string }
+interface StoreInput { repoRoot: string; authorityHome?: string; /** Trusted in-process fixture only; never inferred from state HOME. */ controlTrustHome?: string }
 interface CampaignIdentity { repository_id: string; issue_id: string; campaign_id: string }
 interface ActiveGrant { protocol: 1; revision: number; grant_sha256: string | null }
 interface ApprovalRecord {
@@ -95,7 +95,7 @@ export function approveReviewAdmission(input: StoreInput & {
   if (admission.admission_sha256 !== input.expectedAdmissionSha256) fail('approval_mismatch');
   if (input.controlEnvelope === undefined) fail('control_approval_required');
   const envelope = JSON.parse(JSON.stringify(input.controlEnvelope));
-  verifyReviewApproval(envelope, readReviewControlTrust(input.authorityHome),
+  verifyReviewApproval(envelope, readReviewControlTrust(input.controlTrustHome),
     Date.now(), admission, realpathSync(input.repoRoot), input.expectedRevision);
   const loc = location(input, admission, true);
   return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
@@ -144,7 +144,7 @@ export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity &
     const proof = value.control_approval;
     if (!proof || JSON.stringify(Object.keys(proof).sort()) !== JSON.stringify(['envelope', 'expected_revision'])
       || proof.expected_revision + 1 !== before.revision) fail('control_approval_binding');
-    verifyReviewApproval(proof.envelope, readReviewControlTrust(input.authorityHome), Date.now(), admitted,
+    verifyReviewApproval(proof.envelope, readReviewControlTrust(input.controlTrustHome), Date.now(), admitted,
       loc.root, proof.expected_revision);
   }
   if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id

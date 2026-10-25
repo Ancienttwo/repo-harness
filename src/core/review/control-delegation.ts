@@ -13,7 +13,7 @@ export interface ControlDelegation {
   repository_id: string;
   issue_ids: string[];
   allowed_paths: string[];
-  policy_sha256: string;
+  policy: { reviewer: 'Claude' | 'Codex'; user_waiver: 'forbidden'; policy_sha256: string };
   benchmark: 'required' | 'not_required';
   /** Epoch milliseconds. Expiry is exclusive. */
   not_before: number;
@@ -118,18 +118,21 @@ export function verifyControlApproval(
   const root = record(snapshot(envelope), ['delegation', 'decision']);
   const delegation = record(signed(root.delegation, trust.userPublicKey), [
     'protocol', 'kind', 'id', 'user_id', 'bot_id', 'bot_public_key', 'repository_id',
-    'issue_ids', 'allowed_paths', 'policy_sha256', 'benchmark', 'not_before', 'expires_at',
+    'issue_ids', 'allowed_paths', 'policy', 'benchmark', 'not_before', 'expires_at',
   ]);
   if (delegation.protocol !== 1 || delegation.kind !== 'repo-harness-control-delegation') fail('delegation_kind');
   for (const key of ['id', 'user_id', 'bot_id', 'bot_public_key', 'repository_id']) text(delegation[key]);
-  strings(delegation.issue_ids); strings(delegation.allowed_paths); hash(delegation.policy_sha256);
+  strings(delegation.issue_ids); strings(delegation.allowed_paths);
+  const policy = record(delegation.policy, ['reviewer', 'user_waiver', 'policy_sha256']);
+  hash(policy.policy_sha256);
+  if ((policy.reviewer !== 'Codex' && policy.reviewer !== 'Claude') || policy.user_waiver !== 'forbidden') fail('policy');
   integer(delegation.not_before); integer(delegation.expires_at);
   if (delegation.not_before > now || delegation.expires_at <= now || delegation.expires_at <= delegation.not_before) fail('delegation_expired');
   if (trust.revokedDelegationIds.includes(delegation.id as string)) fail('revoked');
   if (delegation.user_id === delegation.bot_id || delegation.bot_id === current.actor_id || delegation.user_id === current.actor_id) fail('self_approval');
   if (delegation.repository_id !== current.repository_id || !delegation.issue_ids.includes(current.issue_id)) fail('repository_or_issue');
-  if (delegation.policy_sha256 !== current.policy.policy_sha256 || delegation.benchmark !== current.benchmark) fail('policy');
   if (current.policy.user_waiver !== 'forbidden') fail('waiver');
+  if (canonicalize(policy) !== canonicalize(current.policy as unknown as JsonValue) || delegation.benchmark !== current.benchmark) fail('policy');
   for (const path of delegation.allowed_paths) {
     if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.includes('\\')
       || (path.endsWith('/') ? path.slice(0, -1) : path).split('/').some(part => part === '' || part === '.' || part === '..')) fail('path');
