@@ -788,11 +788,23 @@ describe('operator web interactions', () => {
     feedback.future_secret = 'feedback-secret';
     inbox.future_secret = 'inbox-secret';
 
+    // Readiness V2 is closed: reject rather than silently discard extra authority fields.
+    expect(() => decodeOperatorFleetSnapshot(withExtras)).toThrow('Fleet snapshot response is invalid');
+    delete readiness.future_secret;
+    expect(() => decodeOperatorFleetSnapshot(withExtras)).toThrow('Fleet snapshot response is invalid');
+    delete blockers[0].future_secret;
     const decoded = decodeOperatorFleetSnapshot(withExtras);
     expect(JSON.stringify(decoded)).not.toContain('future_secret');
     expect(decoded).not.toBe(withExtras);
     expect(decoded.repositories[0]).not.toBe(repositories[0]);
     expect(decoded.repositories[0]?.cards[2]).not.toBe(cards[2]);
+
+    for (const patch of [{ protocol: 1 }, { publication_id: 'retired' }, { provider_repository_id: 'R_node' },
+      { provider_repository_id: '01' }, { repository: 'foreign.example/owner/repo' }, { pr_number: 0 }, { pr_number: 1.5 }]) {
+      const malformed = structuredClone(stableSnapshot);
+      Object.assign(malformed.repositories[0]!.cards[2]!.merge_readiness!, patch);
+      expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow('Fleet snapshot response is invalid');
+    }
 
     const degradedWithExtra = structuredClone(degradedSnapshot) as unknown as Record<string, unknown>;
     const degradedRepositories = degradedWithExtra.repositories as Array<Record<string, unknown>>;
@@ -1590,7 +1602,7 @@ test('refresh removes stale acceptance readiness without creating Done or a merg
   const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
   const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;
   const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'verification_evidence_stale' as const,attention_owner:'agent' as const},{code:'acceptance_missing' as const,attention_owner:'user' as const}]};
-  const placement=classifyFleetBoardPlacement({...current,error:null,task_state:'pending',lease_state:'reviewing',current_publication:{publication_id:readiness.publication_id,head_sha:readiness.expected_head_sha},merge_readiness:readiness});
+  const placement=classifyFleetBoardPlacement({...current,error:null,task_state:'pending',lease_state:'reviewing',current_publication:null,merge_readiness:readiness});
   const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
   const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
 

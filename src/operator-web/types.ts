@@ -379,8 +379,14 @@ function decodeError(value: unknown): OperatorFleetRepositoryV1['error'] {
 function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readiness'] {
   if (value === null) return null;
   const readiness = requireRecord(value);
-  if (readiness.protocol !== 1 || readiness.kind !== 'repo-harness-merge-readiness') throw new OperatorPayloadError();
-  const publicationId = requireString(readiness.publication_id);
+  requireExactKeys(readiness, ['protocol', 'kind', 'provider_repository_id', 'repository', 'pr_number', 'ready',
+    'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers']);
+  if (readiness.protocol !== 2 || readiness.kind !== 'repo-harness-pull-request-readiness') throw new OperatorPayloadError();
+  const repositoryId = requireString(readiness.provider_repository_id);
+  const repository = requireString(readiness.repository);
+  if (!/^[1-9][0-9]*$/.test(repositoryId) || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+    || !isSafePositiveInteger(readiness.pr_number)) throw new OperatorPayloadError();
+  const prNumber = readiness.pr_number;
   const ready = requireBoolean(readiness.ready);
   const expectedHeadSha = requireGitOid(readiness.expected_head_sha);
   const expectedBaseSha = requireGitOid(readiness.expected_base_sha);
@@ -389,15 +395,16 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
   const blockers: Array<NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number]> = [];
   for (const blockerValue of requireArray(readiness.blockers)) {
     const blocker = requireRecord(blockerValue);
+    requireExactKeys(blocker, ['code', 'attention_owner']);
     if (!isOneOf(blocker.code, MERGE_BLOCKERS) || !isOneOf(blocker.attention_owner, MERGE_ATTENTION_OWNERS)) {
       throw new OperatorPayloadError();
     }
     blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }));
   }
   return Object.freeze({
-    protocol: 1,
-    kind: 'repo-harness-merge-readiness',
-    publication_id: publicationId,
+    protocol: 2,
+    kind: 'repo-harness-pull-request-readiness',
+    provider_repository_id: repositoryId, repository, pr_number: prNumber,
     ready,
     expected_head_sha: expectedHeadSha,
     expected_base_sha: expectedBaseSha,

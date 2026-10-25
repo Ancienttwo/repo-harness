@@ -55,7 +55,9 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
   const mergeReadiness = card.merge_readiness === null ? null : Object.freeze({
     protocol: card.merge_readiness.protocol,
     kind: card.merge_readiness.kind,
-    publication_id: card.merge_readiness.publication_id,
+    provider_repository_id: card.merge_readiness.provider_repository_id,
+    repository: card.merge_readiness.repository,
+    pr_number: card.merge_readiness.pr_number,
     ready: card.merge_readiness.ready,
     expected_head_sha: card.merge_readiness.expected_head_sha,
     expected_base_sha: card.merge_readiness.expected_base_sha,
