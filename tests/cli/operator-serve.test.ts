@@ -140,7 +140,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(second.status).toBe(200);
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 7, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(payload).toMatchObject({ protocol: 8, kind: 'operator_fleet_snapshot', sequence: 1 });
       expect(await second.json()).toMatchObject({ sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
 
@@ -548,8 +548,12 @@ describe('operator serve command and HTTP boundary', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
-    const markerPath = join(repoRoot, '.ai/harness/sprint/active-sprint');
-    mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+    // Block a real Git read used by provider observation, not the retired Sprint marker.
+    const markerPath = join(repoRoot, 'git-read-gate'), bin = join(repoRoot, 'bin');
+    mkdirSync(bin);
+    const realGit = Bun.which('git')!, originalPath = process.env.PATH;
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\ncat < '${markerPath}' > /dev/null\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}:${originalPath}`;
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
     const server = await startOperatorServer({
@@ -588,6 +592,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(Date.now() - closeStartedAt).toBeLessThan(2_500);
       await active;
     } finally {
+      process.env.PATH = originalPath;
       writer.kill('SIGTERM');
       if (!closed) await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
@@ -596,42 +601,35 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('default Fleet reads never lazy-fetch a missing promisor Sprint blob', async () => {
+  test('default Repository reads never lazy-fetch a missing promisor provider graph blob', async () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-promisor-')));
     const remote = join(parent, 'remote.git');
-    const source = join(parent, 'source');
+    const source = moduleRepository();
     const clone = join(parent, 'clone');
-    const sprint = 'plans/sprints/promisor.sprint.md';
+    const graph = '.ai/harness/work-graph.v2.json';
     const git = (cwd: string, ...args: string[]) => {
       const result = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8' });
       expect(result.status, result.stderr).toBe(0);
       return result.stdout.trim();
     };
-    const sprintText = (state: string) => `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${state} | contract | read only | (pending) |\n`;
-    // Pin the remote HEAD. Without a host `init.defaultBranch` a bare init
-    // keeps `refs/heads/master`; the clone then finds no checkout and the
-    // Fleet read would report an empty-but-ok board instead of the missing
-    // promisor blob this test exists for.
+    // Keep an immutable provider graph on the policy-selected branch.
     git(parent, 'init', '-q', '--bare', '-b', 'main', remote);
     git(remote, 'config', 'uploadpack.allowFilter', 'true');
-    git(parent, 'init', '-q', '-b', 'main', source);
-    mkdirSync(join(source, 'plans/sprints'), { recursive: true });
-    mkdirSync(join(source, '.ai/harness/sprint'), { recursive: true });
-    writeFileSync(join(source, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
-    writeFileSync(join(source, sprint), sprintText('base'));
+    git(source, 'branch', '-M', 'main');
+    fixtureWrite(source, 'agents/engineers/profiles/.gitkeep', '');
+    fixtureWrite(source, graph, JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: repoHarnessRepoIdFor(clone), work_packages: [] }));
     git(source, 'add', '.');
     git(source, 'commit', '-qm', 'base');
     git(source, 'push', '-q', `file://${remote}`, 'main');
     git(parent, 'clone', '-q', '--filter=blob:none', `file://${remote}`, clone);
     git(clone, 'switch', '-qc', 'work');
-    // The board path starts at this worktree marker. Its absence would end the
-    // read before the promisor blob is touched, so pin the fixture to it.
-    expect(existsSync(join(clone, '.ai/harness/sprint/active-sprint'))).toBe(true);
-    writeFileSync(join(source, sprint), sprintText('moved'));
+    expect(existsSync(join(clone, graph))).toBe(true);
+    // Whitespace produces a distinct missing blob while preserving valid graph semantics.
+    writeFileSync(join(source, graph), readFileSync(join(source, graph), 'utf8') + '\n');
     git(source, 'commit', '-qam', 'moved');
     git(source, 'push', '-q', `file://${remote}`, 'main');
     git(clone, 'fetch', '-q', 'origin', 'main:main');
-    const blob = git(clone, 'rev-parse', `main:${sprint}`);
+    const blob = git(clone, 'rev-parse', `main:${graph}`);
     const blobPresent = () => spawnSync('git', ['cat-file', '-e', blob], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).status === 0;
     expect(blobPresent()).toBe(false);
     const fetchMarker = join(parent, 'fetch-ran');
@@ -645,11 +643,12 @@ describe('operator serve command and HTTP boundary', () => {
       env: { ...registry.env, GIT_NO_LAZY_FETCH: '0' },
     });
     try {
-      for (const route of ['/api/v1/fleet/snapshot']) {
+      for (const route of [`/api/v1/repositories/${registry.ids[0]}/snapshot`]) {
         const response = await fetch(`${server.url}${route}`);
         expect(response.status).toBe(200);
-        const body = JSON.stringify(await response.json());
-        expect(body).toContain('"status":"unreadable"');
+        const payload = await response.json();
+        expect(payload.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'needs_provider_graph' } } });
+        const body = JSON.stringify(payload);
         expect(body).not.toContain('moved');
         expect(existsSync(fetchMarker)).toBe(false);
         expect(blobPresent()).toBe(false);
@@ -658,6 +657,7 @@ describe('operator serve command and HTTP boundary', () => {
     } finally {
       await server.close();
       rmSync(parent, { recursive: true, force: true });
+      rmSync(source, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
@@ -891,8 +891,8 @@ describe('reader retirement', () => {
           expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'repository_snapshot_busy' } });
           expect(calls).toBe(1);
           if (kind === 'diff') {
-            for (const route of ['activity', 'context?task_revision=' + TASK_REVISION]) {
-              const blocked = await fetch(`${server.url}/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`);
+            for (const route of ['activity', 'context']) {
+              const blocked = await fetch(server.url + admittedDiffPath.replace('/diff?', `/${route}?`));
               expect(await blocked.json()).toEqual({ code: 'busy' });
             }
           }
@@ -1127,7 +1127,7 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
       });
       try {
         const fleet = await (await fetch(server.url + '/api/v1/fleet/snapshot')).json() as {service_epoch: string; protocol: number};
-        expect(fleet.protocol).toBe(7); epochs.push(fleet.service_epoch);
+        expect(fleet.protocol).toBe(8); epochs.push(fleet.service_epoch);
       } finally { await server.close(); }
     }
     expect(epochs[0]).not.toBe(epochs[1]);
@@ -1136,8 +1136,9 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
 
 describe('repository source collection', () => {
   test('a corrupt Planning source does not hide Organization data, write files or leak paths', () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
-    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
+    const repoRoot = realpathSync(moduleRepository());
+    fixtureWrite(repoRoot, 'agents/engineers/profiles/.gitkeep', '');
+    fixtureCommit(repoRoot);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
     const policy = join(repoRoot, '.ai/harness/policy.json');
     mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
@@ -1146,19 +1147,22 @@ describe('repository source collection', () => {
       return entry.isDirectory() ? tree(path) : [`${path}:${readFileSync(path).toString('base64')}`];
     }).sort();
     try {
-      writeFileSync(policy, JSON.stringify({}));
+      writeFileSync(policy, JSON.stringify({ worktree_strategy: { merge_back: { target: 'HEAD' } } }));
+      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: registry.ids[0], work_packages: [] }));
+      fixtureCommit(repoRoot);
       const before = tree(repoRoot);
       const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(observed.protocol).toBe(1);
       expect(observed.organization.status).toBe('observed');
-      expect(observed.planning.status).toBe('observed');
+      expect(observed.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'observed', snapshot: { packages: [] } } } });
       expect(JSON.stringify(observed)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(before);
-      mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), '../invalid.sprint.md\n');
+      // The graph source is independent of Organization's provider/session observation.
+      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', '{invalid graph');
+      fixtureCommit(repoRoot);
       const corruptBefore = tree(repoRoot);
       const corrupt = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(corrupt.planning).toMatchObject({ status: 'unavailable', code: 'source_unavailable' });
+      expect(corrupt.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'source_unavailable' } } });
       expect(corrupt.organization.status).toBe('observed');
       expect(JSON.stringify(corrupt)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(corruptBefore);
@@ -1215,7 +1219,7 @@ test('history context inherits pre-reader guards and holds shared capacity until
     expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
     expect((await fetch(server.url+path+'&path=/private')).status).toBe(400);expect(calls).toBe(0);
     const pending=fetch(server.url+path);await entered;
-    expect(await(await fetch(server.url+path.replace('?view=history',''))).json()).toEqual({code:'busy'});
+    expect(await(await fetch(server.url+path+'&task_revision='+TASK_REVISION)).json()).toEqual({code:'busy'});
     expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBe(true);
     expect(await(await fetch(server.url+path)).json()).toEqual({code:'busy'});expect(calls).toBe(1);
     retire();await new Promise(resolve=>setTimeout(resolve,0));

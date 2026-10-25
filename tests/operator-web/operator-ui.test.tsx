@@ -51,7 +51,7 @@ describe('operator web control board', () => {
       'External',
       'Done',
     )).toBe(true);
-    expect(markup).toContain('protocol 7');
+    expect(markup).toContain('protocol 8');
     expect(markup).toContain('read-only');
   });
 
@@ -168,7 +168,7 @@ describe('operator web control board', () => {
     );
 
     expect(markup).toContain('protocol — · sequence —');
-    expect(markup).not.toContain('protocol 7');
+    expect(markup).not.toContain('protocol 8');
   });
 
   test('keeps empty, changed-during-read, and repo-degraded semantics explicit', () => {
