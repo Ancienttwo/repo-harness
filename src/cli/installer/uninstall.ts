@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
@@ -190,7 +191,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   }
 
   // Only remove lock entries for staging skills actually removed in this operation.
-  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === join(home, '.agents/skills')).map((surface) => surface.path.split('/').at(-1)!);
+  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === stagedSkillRoot(home)).map((surface) => surface.path.split('/').at(-1)!);
   const lockPath = join(home, '.agents/.skill-lock.json');
   if (staging.length && existsSync(lockPath)) {
     try {
