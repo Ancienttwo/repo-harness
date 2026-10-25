@@ -248,7 +248,7 @@ describe("verification execution lifecycle", () => {
       expect(readFileSync(counterPath, "utf8").trim().split("\n")).toHaveLength(1);
 
       for (const [checkId, overrides] of [
-        [id, {}],
+        [legacyId, {}],
         [`${id}-different`, {}],
         [`sha256:${"0".repeat(64)}`, {}],
         [id, { execution_id: "vx-mismatch" }],
