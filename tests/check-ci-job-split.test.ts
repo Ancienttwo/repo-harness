@@ -37,13 +37,14 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
 const record = `:100644 100644 ${sha} ${sha} M\0src/feature.ts\0`;
 
 describe('single affected verification and daily fallback', () => {
-  // Independently recorded raw diff for PR951 at df3775eb. No repo history or
+  // Independently recorded raw diff for PR951 at f47e937c. No repo history or
   // network is needed to exercise the admission boundary.
   const upgradeDiff = [
     ['100644', '100644', 'f8b767a51e24934870214582551da004dd5dcc81', '16d2b0050da97a42799593f5019c56b521bb7ad8', 'M', 'bun.lock'],
     ['000000', '100644', '0'.repeat(40), 'e1b7f0bff6223a0ac596e9d452da2af42b241b68', 'A', 'docs/verification/archctx-0.9.3-capabilities.json'],
     ['000000', '100644', '0'.repeat(40), '029c80f7c4f8720598c6ff0525effad9dcce79fa', 'A', 'docs/verification/archctx-0.9.3-installed-bytes.json'],
-    ['000000', '100644', '0'.repeat(40), '7b2c2bf87302218b15a2b8de2eb2ddd4b52e5e05', 'A', 'docs/verification/archctx-0.9.3-upgrade.md'],
+    ['000000', '100644', '0'.repeat(40), '8ef66695b4a61550b2a70e7827ba2180a9b733e5', 'A', 'docs/verification/archctx-0.9.3-upgrade.md'],
+    ['100644', '100644', 'c8af35f4d7cfc2fe9c80702aefaf8895a4f64021', '612d382dcffed1412b00b566388898e73ec56b21', 'M', 'docs/verification/axr5-archctx-clean-room-readback.json'],
     ['100644', '100644', 'd4ba864fb748205fbc55a531822c5deee308da18', '60ff292329fdcba945501cb727e60e73e48c7b4e', 'M', 'package.json'],
     ['100644', '100644', '90f076567abf4e242a8997898401adfdade044a5', '3521418aebfddd8b22103e26f249193d8d2237a3', 'M', 'tests/architecture-projection-e2e.test.ts'],
   ].map(([oldMode, newMode, oldBlob, newBlob, status, path]) =>
@@ -63,7 +64,8 @@ describe('single affected verification and daily fallback', () => {
       upgradeDiff.replace('d4ba864fb748205fbc55a531822c5deee308da18', sha),
       upgradeDiff.replace('100644', '100755'),
       upgradeDiff.replace('3521418aebfddd8b22103e26f249193d8d2237a3', sha),
-      upgradeDiff.replace('7b2c2bf87302218b15a2b8de2eb2ddd4b52e5e05', sha),
+      upgradeDiff.replace('8ef66695b4a61550b2a70e7827ba2180a9b733e5', sha),
+      upgradeDiff.replace('612d382dcffed1412b00b566388898e73ec56b21', sha),
       upgradeDiff.split('\0').slice(0, -3).join('\0') + '\0',
     ]) expect(isArchctx093Upgrade({ ...input, diffRaw })).toBe(false);
   });
