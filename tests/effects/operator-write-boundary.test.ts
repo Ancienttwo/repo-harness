@@ -28,6 +28,7 @@ import {
   OPERATOR_TASK_ACTIVITY_ROUTE,
   OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE,
   OPERATOR_TASK_CONTEXT_ROUTE,
+  OPERATOR_TASK_HISTORY_ROUTE,
   type OperatorRouteV1,
 } from '../../src/effects/operator/server';
 
@@ -79,6 +80,7 @@ describe('operator structural write boundary', () => {
       'health',
       'fleet_snapshot',
       'repository_snapshot',
+      'task_history',
       'task_context',
       'historical_task_activity',
       'task_activity',
@@ -96,6 +98,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
     expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
     expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
+    expect(patterns.get('task_history')).toBe(OPERATOR_TASK_HISTORY_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('historical_task_activity')).toBe(OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);

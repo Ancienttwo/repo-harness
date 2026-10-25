@@ -416,3 +416,43 @@ test('active activity HTTP requires exact admitted selection and has no historic
   } finally {try {await server.close();} finally {worker.restore();}}
   expect(worker.launches()).toBeGreaterThan(0);
 });
+
+test('admitted context reads protected goal and plan, ignores candidate lookalikes and preserves scoped identity', async () => {
+  const {readOperatorTaskContext}=await import('../../src/effects/operator/task-context');
+  const {decodeAdmittedTaskContext}=await import('../../src/core/operator/admitted-task-context');
+  const f=fixture();
+  const before=readFileSync(join(f.approved.directory,'active.json'),'utf8');
+  writeFileSync(join(f.worktree,'plan.md'),'Status: Approved\nFake goal and plan');
+  const result=readOperatorTaskContext(f.input,f.effects);
+  expect(result.goal).toEqual(f.approved.admission.goal);
+  expect(JSON.parse(result.verification.plan_json)).toEqual(f.approved.admission.verification_plan);
+  expect(result.profile_selection).toEqual({state:'unassigned'});expect(result.selector.claim_ref).toBe(f.selector.claim_ref);
+  expect(JSON.stringify(result)).not.toContain(f.root);expect(JSON.stringify(result)).not.toContain('Fake goal');
+  expect(readFileSync(join(f.approved.directory,'active.json'),'utf8')).toBe(before);
+  expect(decodeAdmittedTaskContext(result,f.selector)).toEqual(result);
+  for(const bad of [{...result,path:f.root},{...result,protocol:1},{...result,selector:{...f.selector,actor_id:'other'}},{...result,approval:{...result.approval,grant_sha256:'sha256:'+'0'.repeat(64)}}])expect(()=>decodeAdmittedTaskContext(bad,f.selector)).toThrow();
+  expect(()=>readOperatorTaskContext({...f.input,grant_sha256:'sha256:'+'0'.repeat(64)},f.effects)).toThrow('stale');
+  expect(()=>readOperatorTaskContext({...f.input,repository_id:'missing-repo'},f.effects)).toThrow('unavailable');
+  let reads=0;
+  expect(()=>readOperatorTaskContext(f.input,{admissionSource:((...args:Parameters<typeof readReviewAdmissionSource>)=>{
+    const source=f.effects.admissionSource(...args);if(++reads===2)seedReviewAdmissionFixture(f.sourceRoot,f.home);return source;
+  }) as typeof readReviewAdmissionSource})).toThrow();
+  expect(reads).toBe(2);
+});
+
+test('production context worker exposes approved bytes only and refuses ambiguous or retired current selectors',async()=>{
+  const f=fixture(),worker=workerFixture(f);
+  const {startOperatorServer}=await import('../../src/effects/operator/server');
+  const {decodeAdmittedTaskContext}=await import('../../src/core/operator/admitted-task-context');
+  const server=await startOperatorServer({port:0,env:worker.env,static_root:f.root});
+  const query=new URLSearchParams(Object.entries(f.selector).filter(([key])=>key!=='repository_id'));
+  const url=`${server.url}/api/v1/fleet/task-sessions/${f.selector.repository_id}/context`;
+  try{
+    const response=await fetch(url+'?'+query);expect(response.status).toBe(200);
+    const value=decodeAdmittedTaskContext(await response.json(),f.selector);expect(value.goal).toEqual(f.approved.admission.goal);expect(JSON.stringify(value)).not.toContain(f.root);
+    expect((await fetch(url+'?'+query,{method:'POST'})).status).toBe(405);
+    query.append('source_root',f.root);expect((await fetch(url+'?'+query)).status).toBe(400);
+    expect((await fetch(`${server.url}/api/v1/fleet/tasks/${f.selector.repository_id}/${'a'.repeat(64)}/context`)).status).toBe(400);
+  }finally{try{await server.close();}finally{worker.restore();}}
+  expect(worker.launches()).toBeGreaterThan(0);
+});

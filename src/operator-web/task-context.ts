@@ -1,11 +1,9 @@
-import { decodeOperatorTaskContext, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../core/operator/task-context';
-export async function fetchTaskContext(request: OperatorTaskContextRequest, signal: AbortSignal): Promise<OperatorTaskContext> {
-  const query = request.expected_task_revision === null ? '' : `?${new URLSearchParams({task_revision:request.expected_task_revision})}`;
-  const response = await fetch(`/api/v1/fleet/tasks/${encodeURIComponent(request.repository_id)}/${encodeURIComponent(request.task_id)}/context${query}`, {signal,cache:'no-store'});
-  const value:unknown = await response.json();
-  if (!response.ok) {
-    const code=(value as {code?:unknown}|null)?.code;
-    throw new Error(TASK_CONTEXT_FAILURES.includes(code as never) ? String(code) : 'unavailable');
-  }
-  return decodeOperatorTaskContext(value,request);
+import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../core/operator/admitted-task-context';
+import { TASK_DIFF_FAILURES, type OperatorTaskDiffRequest } from '../core/operator/task-diff';
+export async function fetchTaskContext(request: OperatorTaskDiffRequest, signal: AbortSignal): Promise<AdmittedTaskContext> {
+  const query=new URLSearchParams(Object.entries(request).filter(([key])=>key!=='repository_id'));
+  const response=await fetch(`/api/v1/fleet/task-sessions/${request.repository_id}/context?${query}`,{signal,cache:'no-store'});
+  const value:unknown=await response.json();
+  if(!response.ok){const code=(value as {code?:unknown}|null)?.code;throw new Error(TASK_DIFF_FAILURES.includes(code as never)?String(code):'unavailable');}
+  return decodeAdmittedTaskContext(value,request);
 }

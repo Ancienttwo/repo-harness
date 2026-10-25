@@ -9,7 +9,7 @@ import { Window } from 'happy-dom';
 
 import { OperatorApp } from '../../src/operator-web/App';
 import { fetchOperatorRepositorySnapshot } from '../../src/operator-web/fleet-api';
-import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, planningObservationFixture, taskContextFixture, taskActivityFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, planningObservationFixture, admittedTaskContextFixture as taskContextFixture, taskActivityFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorRepositorySnapshot,

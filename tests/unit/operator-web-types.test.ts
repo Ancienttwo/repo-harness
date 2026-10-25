@@ -406,22 +406,19 @@ describe('historical activity browser transport', () => {
   });
 });
 
-test('current context transport preserves expected revision, abort and uncached read semantics',async()=>{
+test('current context transport preserves selected approval, abort and uncached read semantics',async()=>{
   const {fetchTaskContext}=await import('../../src/operator-web/task-context');
-  const request={repository_id:'repo-a',task_id:taskId,expected_task_revision:taskRevision};
-  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
-    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:taskId,task_revision:taskRevision,
-    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},task:{title:'Task',mode:'contract',acceptance:'read only',state:'pending'},
-    execution:{lease_state:'available',claim:null},offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:snapshotDigest,plan:null},
-    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:snapshotDigest,authorization_revision:1,consistency:'observed'},
-  };
+  const {admittedTaskContextFixture}=await import('../../src/operator-web/fixture');
+  const request={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:taskId,role:'worker',claim_ref:'claim:1',claim_revision:snapshotDigest,grant_sha256:snapshotDigest,policy_sha256:snapshotDigest,actor_id:'owner',session_binding_sha256:snapshotDigest};
+  const context=admittedTaskContextFixture(request);
   const original=globalThis.fetch,controller=new AbortController();let url='';let observed:RequestInit|undefined;
   try {
     globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(context);}) as typeof fetch;
     expect(await fetchTaskContext(request,controller.signal)).toEqual(context);
-    expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/context?task_revision=${taskRevision}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
-    globalThis.fetch=(async()=>Response.json({...context,task_revision:'f'.repeat(64)})) as unknown as typeof fetch;
-    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid task context response');
+    const query=new URLSearchParams(Object.entries(request).filter(([key])=>key!=='repository_id'));
+    expect(url).toBe(`/api/v1/fleet/task-sessions/repo-a/context?${query}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+    globalThis.fetch=(async()=>Response.json({...context,selector:{...request,grant_sha256:'sha256:'+'f'.repeat(64)}})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid admitted task context');
     globalThis.fetch=(async()=>Response.json({code:'stale'},{status:409})) as unknown as typeof fetch;
     await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
   } finally {globalThis.fetch=original;}

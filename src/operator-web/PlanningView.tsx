@@ -17,7 +17,8 @@ export function PlanningView({ state, repositoryId, cards, onSelect, t }: {
       {!graph && <p role="status">{t('planning.graphUnavailable')} · <code>{snapshot.graph.status === 'unavailable' ? snapshot.graph.code : ''}</code></p>}
       {snapshot.scheduling.tasks.length === 0 && <p>{t('planning.empty')}</p>}
       <ul className="planning-tasks">{snapshot.scheduling.tasks.map(task => {
-        const matches = cards.filter(c => c.repository_id === repositoryId && c.provider_repository_id === task.provider_repository_id && c.provider_issue_id === task.issue_id);
+        const matches = cards.filter(c => c.repository_id === repositoryId && c.provider_repository_id === task.provider_repository_id && c.provider_issue_id === task.issue_id && c.issue_revision === (task.issue?.source_revision ?? null)
+          && (c.execution === null ? task.sessions.length === 0 : task.sessions.some(row => JSON.stringify(row.session.selector) === JSON.stringify(c.execution!.selector))));
         return <li key={`${task.provider_repository_id}:${task.issue_id}`} data-planning-task={`${task.provider_repository_id}:${task.issue_id}`}>
           <h3>{task.issue?.title ?? `${task.provider_repository_id} / ${task.issue_id}`}</h3>
           <p className="planning-requirement">{task.issue?.body}</p>
@@ -28,7 +29,7 @@ export function PlanningView({ state, repositoryId, cards, onSelect, t }: {
           </li>)}</ul>
           <details><summary>{t('planning.taskEvidence')}</summary><pre>{JSON.stringify(task,null,2)}</pre></details>
           {matches.map(card => <button className="operator-button" key={taskKey(card)} type="button" onClick={() => onSelect(card)}>{t('planning.openTask')} · {card.execution ? `${card.execution.selector.campaign_id} / ${card.execution.selector.role} / ${card.execution.runtime}` : t('sessions.noIssueSession')}</button>)}
-          {matches.length === 0 && <p>{t('planning.taskMismatch')}</p>}
+          {matches.length === 0 && <><button className="operator-button" type="button" disabled>{t('planning.openTask')}</button><p>{t('planning.taskMismatch')}</p></>}
         </li>;
       })}</ul>
       {graph && <div className="planning-packages">{graph.packages.map(workPackage => <section className="planning-package" key={`${workPackage.repository_id}:${workPackage.work_package_id}`}>

@@ -1,3 +1,4 @@
+import { AdmittedTaskContext } from './AdmittedTaskContext';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge, Banner, Button, Empty, Loader, cn } from '@cloudflare/kumo';
 import {
@@ -733,7 +734,7 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
       <div className="detail-pane__body flex flex-col gap-5 pt-4">
         {fleetStaleError && <FleetStaleNotice error={fleetStaleError} t={t} />}
         <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
-        <div key={JSON.stringify(card.execution?.selector)}>{card.execution ? <><TaskDiff selector={card.execution.selector} t={t} /><AdmittedTaskActivity selector={card.execution.selector} t={t} /></> : <p role="status">{t(card.execution_status === 'unavailable' ? 'sessions.unavailable' : 'sessions.noIssueSession')}</p>}</div>
+        <div key={JSON.stringify(card.execution?.selector)}>{card.execution ? <><AdmittedTaskContext selector={card.execution.selector} generation={evidenceGeneration} read={readTaskContext} t={t} /><TaskDiff selector={card.execution.selector} t={t} /><AdmittedTaskActivity selector={card.execution.selector} t={t} /></> : <p role="status">{t(card.execution_status === 'unavailable' ? 'sessions.unavailable' : 'sessions.noIssueSession')}</p>}</div>
       </div>
     </DrawerFrame>
   );

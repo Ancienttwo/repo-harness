@@ -1,3 +1,4 @@
+import { AdmittedTaskContext } from './AdmittedTaskContext';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { useEffect, useRef, useState } from 'react';
 import { decodeOperatorTaskDiff, TASK_DIFF_FAILURES, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../core/operator/task-diff';
@@ -96,6 +97,6 @@ export function TaskSessions({ repositoryId, t, read = fetchTaskSessions, readDi
         </select>
       </label>
     </>)}
-    {session && <div key={JSON.stringify(session.selector)}><TaskDiff selector={session.selector} t={t} read={readDiff} /><AdmittedTaskActivity selector={session.selector} t={t} /></div>}
+    {session && <div key={JSON.stringify(session.selector)}><AdmittedTaskContext selector={session.selector} t={t} /><TaskDiff selector={session.selector} t={t} read={readDiff} /><AdmittedTaskActivity selector={session.selector} t={t} /></div>}
   </section>;
 }

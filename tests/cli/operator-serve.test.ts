@@ -1011,7 +1011,7 @@ test('task diff disconnect and shutdown cancel active reads', async () => {
 });
 
 describe('historical task activity route', () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/activity`;
+  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/history/activity`;
   const activity = {
     repository_id:'repo-a', task_id:TASK_ID, limit:50, after:null, message_id:null,
     protocol:1 as const, kind:'operator_task_activity' as const, observed_at:'2026-09-22T00:00:00.000Z', consistency:'observed' as const,
@@ -1068,24 +1068,25 @@ describe('historical task activity route', () => {
 });
 
 describe('current Task context route',()=>{
-  const path=`/api/v1/fleet/tasks/repo-a/${TASK_ID}/context`;
-  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
-    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:TASK_ID,task_revision:'b'.repeat(64),
-    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},
-    task:{title:'Current task',mode:'contract',acceptance:'read only',state:'pending'},
-    execution:{lease_state:'available',claim:null},
-    offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:`sha256:${'d'.repeat(64)}`,plan:null},
-    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:`sha256:${'e'.repeat(64)}`,authorization_revision:1,consistency:'observed'},
+  const hash='sha256:'+'a'.repeat(64);
+  const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:TASK_ID,role:'worker',claim_ref:'claim:1',claim_revision:hash,grant_sha256:hash,policy_sha256:hash,actor_id:'owner',session_binding_sha256:hash};
+  const query=new URLSearchParams(Object.entries(selector).filter(([key])=>key!=='repository_id'));
+  const path=`/api/v1/fleet/task-sessions/repo-a/context?${query}`;
+  const context:import('../../src/core/operator/admitted-task-context').AdmittedTaskContext={
+    protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:'Current goal'},verification:{plan_sha256:hash,plan_json:'{}'},
+    scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},approval:{admission_sha256:hash,grant_sha256:hash,revision:1,goal_revision:hash,scope_sha256:hash},
+    profile_selection:{state:'unassigned'},execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
   };
   test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
     let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});
     try {
       expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
       expect((await fetch(server.url+path,{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
-      expect((await fetch(server.url+path+'?source_ref=private')).status).toBe(400);
+      expect((await fetch(server.url+path+'&source_ref=private')).status).toBe(400);
       expect(calls).toBe(0);
-      expect((await fetch(server.url+path+'?task_revision='+context.task_revision)).status).toBe(200);
-      expect(await(await fetch(server.url+path+'?task_revision='+'a'.repeat(64))).json()).toEqual({code:'unavailable'});
+      expect((await fetch(server.url+path)).status).toBe(200);
+      const changedQuery=new URLSearchParams(query);changedQuery.set('grant_sha256','sha256:'+'b'.repeat(64));
+      expect(await(await fetch(server.url+'/api/v1/fleet/task-sessions/repo-a/context?'+changedQuery)).json()).toEqual({code:'unavailable'});
     } finally {await server.close();}
   });
   test('context timeout holds shared activity capacity until the original reader settles',async()=>{
@@ -1093,7 +1094,7 @@ describe('current Task context route',()=>{
     let signal:AbortSignal|undefined,activityCalls=0;
     const server=await startOperatorServer({port:0,timeout_ms:1000,max_concurrency:1,
       read_task_context:input=>{signal=input.signal;entered();return new Promise(resolve=>{settle=()=>resolve(context);});},
-      read_task_activity:async()=>{activityCalls++;throw new Error('unused');},
+      read_admitted_task_activity:async()=>{activityCalls++;throw new Error('unused');},
     });
     try {
       const pending=fetch(server.url+path);await started;

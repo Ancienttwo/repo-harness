@@ -1,3 +1,4 @@
+import { AdmittedTaskContext } from './AdmittedTaskContext';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { useState } from 'react';
 import type { RepositoryViewState } from './RepositoryWorkspace';
@@ -19,9 +20,9 @@ export function OrganizationSummary({ state, repositoryId, t }: { readonly state
     {!snapshot || !overlay ? <p role="status">{t(state.kind === 'loading' || state.kind === 'idle' || (state.kind === 'ready' && state.snapshot.repository_id !== repositoryId) ? 'org.loading' : 'org.sourceUnavailable')}</p> : <>
       <p>{t('org.observedAt')}: <time>{overlay.observed_at}</time> · {overlay.snapshot_consistency}</p>
       <h3>{t('org.attention')}</h3>
-      {snapshot.organization_attention.attention.length === 0 ? <p>{t(scheduling ? 'org.noAttention' : 'org.sourceUnavailable')}</p> : <ul>{snapshot.organization_attention.attention.map(item => <li key={`${item.session_binding_sha256}:${item.reason}`}>
+      {snapshot.organization_attention.attention.length === 0 ? <p>{t(scheduling ? 'org.noAttention' : 'org.sourceUnavailable')}</p> : <ul>{snapshot.organization_attention.attention.map(item => <li key={`${item.engineer_id}:${item.session_binding_sha256}:${item.reason}`}>
         <strong>{item.engineer_id ?? t('org.unassigned')}</strong> · {item.reason} · {t('org.owner')}: {item.owner}
-        <details><summary>{t('org.source')}</summary><code>{item.session_binding_sha256}</code></details>
+        <details><summary>{t('org.source')}</summary><code>{item.session_binding_sha256 ?? item.engineer_id}</code></details>
       </li>)}</ul>}
       <h3>{t('org.engineers')}</h3>
       {!scheduling ? <p role="status">{t('org.sourceUnavailable')}</p> : <>
@@ -52,7 +53,7 @@ export function OrganizationSummary({ state, repositoryId, t }: { readonly state
             <p>{t('org.profileSelection')}: {selected.execution.selection.state}</p>
             <p>{t('org.claim')}: <code>{selected.execution.session.selector.claim_ref}</code> · <code>{selected.execution.session.selector.claim_revision}</code></p>
             <p>{t('org.provider')}: {selected.execution.session.runtime} · {selected.execution.session.harness_kind} · {selected.execution.session.branch}</p>
-            <div key={JSON.stringify(selected.execution.session.selector)}><TaskDiff selector={selected.execution.session.selector} t={t} /><AdmittedTaskActivity selector={selected.execution.session.selector} t={t} /></div>
+            <div key={JSON.stringify(selected.execution.session.selector)}><AdmittedTaskContext selector={selected.execution.session.selector} t={t} /><TaskDiff selector={selected.execution.session.selector} t={t} /><AdmittedTaskActivity selector={selected.execution.session.selector} t={t} /></div>
             <details><summary>{t('org.source')}</summary><pre>{JSON.stringify(selected, null, 2)}</pre></details>
           </div>}
         </>}

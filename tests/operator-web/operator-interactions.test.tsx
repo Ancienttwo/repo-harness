@@ -1,3 +1,5 @@
+import { AdmittedTaskContext } from '../../src/operator-web/AdmittedTaskContext';
+import { HistoricalTaskActivity } from '../../src/operator-web/TaskEvidence';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -62,7 +64,7 @@ describe('three observation views',()=>{
     expect(document.querySelector('.planning-view')?.textContent).toContain('dependency coverage is unknown');
     expect(document.querySelector('.planning-view')?.textContent).not.toContain('declares no dependencies');
     const task=repository.cards.find(card=>card.task_id===fixtureTasks.working.task_id)!;
-    await act(async()=>document.querySelector<HTMLButtonElement>(`[data-planning-task="${task.task_id}"] > button`)!.click());
+    await act(async()=>document.querySelector<HTMLButtonElement>(`[data-planning-task="${task.provider_repository_id}:${task.provider_issue_id}"] > button`)!.click());
     expect(document.querySelector('#detail-pane-title')?.textContent).toBe(task.task_label!);
     const counts=[reads,contextReads,activityReads];
     await act(async()=>tab('delivery').click());await act(async()=>tab('organization').click());await act(async()=>tab('planning').click());
@@ -73,7 +75,7 @@ describe('three observation views',()=>{
 
   test('Planning source with the same Task id but a different revision cannot open details',async()=>{
     const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
-    const stale={...planning,tasks:planning.tasks.map(task=>({...task,task_revision:'f'.repeat(64)}))};
+    const stale={...planning,scheduling:{...planning.scheduling,tasks:planning.scheduling.tasks.map(task=>({...task,issue:task.issue?{...task.issue,source_revision:'sha256:'+'f'.repeat(64)}:null}))}};
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialRepositorySnapshot={{kind:'ready',snapshot:{...repositorySnapshot,repository_id:repository.repository_id,planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
     await act(async()=>document.querySelector<HTMLButtonElement>('#view-tab-planning')!.click());
     const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>('.planning-tasks > li > button'));
@@ -229,8 +231,8 @@ function RefreshProbe({read,identity='source'}:{read:(signal:AbortSignal)=>Promi
 }
 
 describe('bounded observation lifecycle',()=>{
-  test('automatic and visible refresh preserve repository and activity queries without a composer', async () => {
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+  test('automatic and visible refresh preserve current context and explicit historical inbox queries', async () => {
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
     const counts = { fleet: 0, context: 0 };
     const repositories: string[] = [];
@@ -239,15 +241,15 @@ describe('bounded observation lifecycle',()=>{
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
     const setVisibility = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new Event('visibilitychange'))); };
     try {
-      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+      await mount(<><OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
         fetchRepositorySnapshot={async id => {
           repositories.push(id);
           return { ...repositorySnapshot, repository_id: id };
         }}
         readTaskContext={async request => { counts.context++; return taskContextFixture(request); }}
-        readTaskActivity={async request => { activities.push(request); return taskActivityFixture(request); }}
-        />);
+        />
+        <HistoricalTaskActivity repositoryId="repo-harness" taskId={fixtureTasks.blocked.task_id} generation={0} t={key=>translate('en',key)} readActivity={async request=>{activities.push(request);return taskActivityFixture(request);}} /></>);
       await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
       await act(async () => buttonWithText('Read reply message').click());
       const query = activities.at(-1)!;
@@ -954,7 +956,7 @@ describe('operator web interactions', () => {
   });
 
   test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     // Scoped board reads are irrelevant here; stub the transport so the pane
     // under test is the only live surface.
     const originalFetch = globalThis.fetch;
@@ -1304,12 +1306,12 @@ describe('notification evidence detail', () => {
   });
   test.each([
     ['no claim', null, { candidate_count: 0, latest: null }, null, 'No current Claim.'],
-    ['empty', working.claim_id, { candidate_count: 0, latest: null }, null, 'No notification records'],
-    ['multiple', working.claim_id, { candidate_count: 2, latest: null }, null, '2 notification records'],
-    ['unavailable', working.claim_id, null, { code: 'repo_runtime_effect_unreadable' as const, message: 'unavailable' }, 'Delivery evidence is unavailable'],
+    ['empty', working.execution, { candidate_count: 0, latest: null }, null, 'No notification records'],
+    ['multiple', working.execution, { candidate_count: 2, latest: null }, null, '2 notification records'],
+    ['unavailable', working.execution, null, { code: 'repo_runtime_effect_unreadable' as const, message: 'unavailable' }, 'Delivery evidence is unavailable'],
   ] as const)('distinguishes %s', async (_name, claimId, evidence, error, expected) => {
     const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [{ ...working,
-      claim_id: claimId, generation: claimId === null ? null : working.generation, error,
+      execution:claimId,task_id:claimId?.selector.task ?? null,error,
       inbox: { ...working.inbox, delivery_evidence: evidence },
     }] }] };
     await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" />);
@@ -1322,8 +1324,8 @@ describe('preparation and available work', () => {
   test('keeps healthy preparation and inline work out of claimed execution', async () => {
     const groups = groupWorklist(preparationSnapshot);
     expect(groups.find(group => group.id === 'claimed')!.count).toBe(0);
-    expect(groups.find(group => group.id === 'preparation')!.cards.map(card => card.task_id)).toEqual([fixtureTasks.console.task_id, fixtureTasks.changed.task_id]);
-    expect(groups.find(group => group.id === 'available')!.cards.map(card => card.task_id)).toEqual([fixtureTasks.available.task_id]);
+    expect(groups.find(group => group.id === 'preparation')!.cards.map(card => card.task_label)).toEqual([fixtureTasks.console.task_label, fixtureTasks.changed.task_label]);
+    expect(groups.find(group => group.id === 'available')!.cards.map(card => card.task_label)).toEqual([fixtureTasks.available.task_label]);
     await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" />);
     expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stable');
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
@@ -1337,13 +1339,22 @@ describe('preparation and available work', () => {
   });
 });
 
+/** Compose independent current-context and explicit historical-inbox surfaces for
+ * transport lifecycle tests. This fixture is not a production authority bridge. */
+function TaskEvidence(props:{repositoryId:string;taskId:string;revision:string;generation:number;t:import('../../src/operator-web/i18n').OperatorTranslate;
+  readContext:import('../../src/operator-web/AdmittedTaskContext').TaskContextReader;readActivity:import('../../src/operator-web/TaskEvidence').TaskActivityReader}) {
+  const card=stableSnapshot.repositories.flatMap(repo=>repo.cards).find(card=>card.task_id===props.taskId)!;
+  const selector={...card.execution!.selector,repository_id:props.repositoryId,grant_sha256:'sha256:'+props.revision};
+  return <div className="task-evidence"><AdmittedTaskContext key={props.revision} selector={selector} generation={props.generation} read={props.readContext} t={props.t}/>
+    <HistoricalTaskActivity key={props.revision} repositoryId={props.repositoryId} taskId={props.taskId} generation={props.generation} readActivity={props.readActivity} t={props.t}/></div>;
+}
+
 describe('task detail original evidence', () => {
   const task = fixtureTasks.working;
   const evidenceProps = () => ({ repositoryId: 'repo-harness', taskId: task.task_id, revision: task.task_revision, generation: 0, t: ((key: never, args: never) => translate('en', key, args)) as import('../../src/operator-web/i18n').OperatorTranslate });
 
   test('shows original context, recipient ACK and recorded actor without interpreting adoption; exact reply and parent lookup', async () => {
-    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
     await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={async request => { requests.push(request); return taskActivityFixture(request); }} />);
     expect(document.body.textContent).toContain(task.task_label);
@@ -1363,9 +1374,8 @@ describe('task detail original evidence', () => {
   });
 
   test('rejects wrong context scope independently and renders empty untrusted bodies as text', async () => {
-    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => ({ ...taskContextFixture(request), repository_id: 'wrong' })} readActivity={async request => {
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    await mount(<TaskEvidence {...evidenceProps()} readContext={async request => ({ ...taskContextFixture(request), selector:{...request,repository_id:'wrong'} })} readActivity={async request => {
       const value = taskActivityFixture(request);
       return { ...value, entries: value.entries.map((entry, index) => ({ ...entry, event: { ...entry.event, body: index === 0 ? '<img src=x onerror=alert(1)>' : '' } })) };
     }} />);
@@ -1377,9 +1387,8 @@ describe('task detail original evidence', () => {
   });
 
   test('cancels both sources on task revision switch and ignores late replies from transports ignoring abort', async () => {
-    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-    const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-context').OperatorTaskContext) => void }[] = [];
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const contexts: { request: import('../../src/core/operator/task-diff').OperatorTaskDiffRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/admitted-task-context').AdmittedTaskContext) => void }[] = [];
     const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal; resolve: (value: import('../../src/core/operator/task-activity').OperatorTaskActivity) => void }[] = [];
     const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = (request, signal) => new Promise(resolve => contexts.push({ request, signal, resolve }));
     const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = (request, signal) => new Promise(resolve => activities.push({ request, signal, resolve }));
@@ -1387,7 +1396,7 @@ describe('task detail original evidence', () => {
     await act(async () => root?.render(<TaskEvidence {...evidenceProps()} revision={'c'.repeat(64)} readContext={readContext} readActivity={readActivity} />));
     expect(contexts[0].signal.aborted).toBe(true);
     expect(activities[0].signal.aborted).toBe(true);
-    expect(contexts[1].request.expected_task_revision).toBe('c'.repeat(64));
+    expect(contexts[1].request.grant_sha256).toBe('sha256:'+'c'.repeat(64));
     await act(async () => { contexts[0].resolve(taskContextFixture(contexts[0].request)); activities[0].resolve(taskActivityFixture(activities[0].request)); });
     expect(document.body.textContent).not.toContain(task.task_label);
     expect(document.querySelectorAll('.task-evidence__message')).toHaveLength(0);
@@ -1399,8 +1408,7 @@ describe('task detail original evidence', () => {
   });
 
   test('refresh failure retains only labelled historical evidence and hides raw diagnostics', async () => {
-    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     let fail = false;
     const readContext: import('../../src/operator-web/TaskEvidence').TaskContextReader = async request => { if (fail) throw new Error('/private/secret'); return taskContextFixture(request); };
     const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => { if (fail) throw new Error('timeout'); return taskActivityFixture(request); };
@@ -1414,8 +1422,7 @@ describe('task detail original evidence', () => {
   });
 
   test('replaces a full bounded page and preserves partial coverage instead of accumulating history', async () => {
-    const { TaskEvidence } = await import('../../src/operator-web/TaskEvidence');
-    const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+    const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
     const readActivity: import('../../src/operator-web/TaskEvidence').TaskActivityReader = async request => {
       requests.push(request);
@@ -1437,8 +1444,8 @@ describe('task detail original evidence', () => {
 });
 
 test('OperatorApp selects, refreshes and cancels exact task evidence without a message write', async () => {
-  const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
-  const contexts: { request: import('../../src/core/operator/task-context').OperatorTaskContextRequest; signal: AbortSignal }[] = [];
+  const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+  const contexts: { request: import('../../src/core/operator/task-diff').OperatorTaskDiffRequest; signal: AbortSignal }[] = [];
   const activities: { request: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest; signal: AbortSignal }[] = [];
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" fetchSnapshot={async () => stableSnapshot}
     readTaskContext={async (request, signal) => { contexts.push({ request, signal }); return taskContextFixture(request); }}
@@ -1446,16 +1453,16 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
   expect(contexts).toHaveLength(0);
   expect(activities).toHaveLength(0);
   await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
-  expect(document.querySelector('.task-evidence')?.textContent).toContain('Steer 与回复历史');
-  expect(contexts[0].request).toEqual({ repository_id: 'repo-harness', task_id: fixtureTasks.blocked.task_id, expected_task_revision: fixtureTasks.blocked.task_revision });
+  expect(document.querySelector('.detail-pane')?.textContent).toContain('所选会话收件箱历史');
+  expect(contexts[0].request).toEqual(stableSnapshot.repositories.flatMap(repo=>repo.cards).find(card=>card.task_id===fixtureTasks.blocked.task_id)!.execution!.selector);
   await act(async () => buttonWithText('刷新').click());
   expect(contexts).toHaveLength(2);
-  expect(activities).toHaveLength(2);
+  expect(activities).toHaveLength(0);
   expect(contexts[0].signal.aborted).toBe(true);
   await selectRepository('repo-console');
   expect(contexts[1].signal.aborted).toBe(true);
-  expect(activities[1].signal.aborted).toBe(true);
-  expect(document.querySelector('.task-evidence')).toBeNull();
+  expect(activities).toHaveLength(0);
+  expect(document.querySelector('.task-evidence__context')).toBeNull();
   expect(document.querySelector('[data-write-action], textarea')).toBeNull();
 });
 
@@ -1472,7 +1479,7 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 });
 
 test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
-  const { taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
+  const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
   const clock = observationClock(), originalFetch = globalThis.fetch;
   const repositoryReads: Array<{signal: AbortSignal; finish: (value: typeof repositorySnapshot) => void}> = [];
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
@@ -1539,7 +1546,7 @@ async function historyValue(repositoryId:string,taskId:string) {
 test('an old exact Task URL shows committed history without constructing current actions',async()=>{
   const id='f'.repeat(64),repo=stableSnapshot.repositories[0]!.repository_id;
   const history = await historyValue(repo, id);
-  window.history.replaceState(null,'',`?repository=${repo}&task=${id}`);
+  window.history.replaceState(null,'',`?repository=${repo}&task=${id}&view=history`);
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={async()=>history} />);
   expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
@@ -1552,13 +1559,13 @@ test('an old exact Task URL shows committed history without constructing current
 
 test('current Task links open current detail and selecting cards writes only navigation identifiers',async()=>{
   const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
-  window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}`);
+  window.history.replaceState(null,'',`?repository=${card.repository_id}&provider_repository_id=${card.provider_repository_id}&issue_id=${card.provider_issue_id}&session_binding_sha256=${card.execution!.selector.session_binding_sha256}`);
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
   expect(paneText()).toContain(fixtureTasks.blocked.task_label);expect(document.querySelector('.task-history')).toBeNull();
   await act(async()=>document.querySelector<HTMLButtonElement>('.detail-pane__actions button[aria-label]')!.click());
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
-  expect(new URLSearchParams(window.location.search).get('task')).toBe(card.task_id);
-  expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual(['repository','task']);
+  expect(new URLSearchParams(window.location.search).get('issue_id')).toBe(card.provider_issue_id);
+  expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual(['issue_id','provider_repository_id','repository','session_binding_sha256']);
 });
 
 test('history navigation rejects late responses and preserves a removed repository scope',async()=>{
@@ -1593,14 +1600,15 @@ test('a disappearing selected Task keeps its original identity while history is 
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
   const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
   await act(async()=>buttonWithText('Refresh').click());
-  expect(calls.at(-1)).toEqual({repository_id:card.repository_id,task_id:card.task_id,expected_task_revision:card.task_revision});
-  expect(document.querySelector('.task-history')?.textContent).toContain('history_unavailable');
+  expect(calls).toEqual([]);
+  expect(document.querySelector('.task-history')).toBeNull();
+  expect(document.body.textContent).toContain('no longer in the current observation');
   expect(document.querySelector('.composer')).toBeNull();
-  expect(new URLSearchParams(window.location.search).get('task')).toBe(card.task_id);
+  expect(new URLSearchParams(window.location.search).get('issue_id')).toBe(card.provider_issue_id);
 });
 
 test('an explicit historical revision remains a historical read even when the Task is currently visible',async()=>{
-  const card=stableSnapshot.repositories[0]!.cards[0]!,value=await historyValue(card.repository_id,card.task_id);let calls=0;
+  const card=stableSnapshot.repositories[0]!.cards.find(card=>card.task_id!==null)!,value=await historyValue(card.repository_id,card.task_id!);let calls=0;
   window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}&view=history&task_revision=${value.task_revision}`);
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
     readTaskHistory={async request=>{calls++;expect(request.expected_task_revision).toBe(value.task_revision);return value;}} />);
@@ -1611,7 +1619,7 @@ test('refresh removes stale acceptance readiness without creating Done or a merg
   const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
   const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;
   const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'verification_evidence_stale' as const,attention_owner:'agent' as const},{code:'acceptance_missing' as const,attention_owner:'user' as const}]};
-  const placement=classifyFleetBoardPlacement({...current,error:null,task_state:'pending',lease_state:'reviewing',current_publication:null,merge_readiness:readiness});
+  const placement=classifyFleetBoardPlacement({...current,error:null,merge_readiness:readiness});
   const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
   const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
 

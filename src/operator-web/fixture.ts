@@ -355,18 +355,6 @@ export function planningObservationFixture(repositoryId: string, cards: readonly
     observation:{observed_at:at,authorization_revision:1},graph:{status:'unavailable',code:'needs_provider_graph'}};
 }
 /** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
-export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {
-  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
-  return {
-    protocol: 1, kind: 'operator_task_context', repository_id: request.repository_id, task_id: request.task_id,
-    task_revision: request.expected_task_revision ?? task.task_revision,
-    canonical: { target_ref: 'origin/main', commit: 'a'.repeat(40), sprint_path: 'plans/sprints/fixture.sprint.md' },
-    task: { title: task.task_label, mode: 'contract', acceptance: 'The exact candidate passes independent verification.', state: 'pending' },
-    execution: { lease_state: 'bound', claim: { claim_id: task.claim_id, generation: 1, state: 'bound', branch: 'codex/fixture', target_ref: 'origin/main' } },
-    offer: { execution_readiness: 'planning_required', blockers: [{ code: 'plan_missing', attention_owner: 'agent' }], offer_revision: `sha256:${'a'.repeat(64)}`, plan: null },
-    observation: { observed_at: '2026-09-22T07:00:00+08:00', board_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 1, consistency: 'observed' },
-  };
-}
 export function taskActivityFixture(request: import('../core/operator/task-activity').OperatorTaskActivityRequest): import('../core/operator/task-activity').OperatorTaskActivity {
   const parentId = '11111111-1111-4111-8111-111111111111';
   const replyId = '22222222-2222-4222-8222-222222222222';
@@ -383,4 +371,14 @@ export function taskActivityFixture(request: import('../core/operator/task-activ
   const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'recorded_claim_actor' };
   const entries = [parent, response].filter(value => request.message_id !== null ? value.event.message_id === request.message_id : request.after === null || value.event.message_id > request.after);
   return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
+}
+
+/** Browser fixture for the current admitted context transport, not approval evidence. */
+export function admittedTaskContextFixture(selector: import('../core/operator/task-diff').OperatorTaskDiffRequest): import('../core/operator/admitted-task-context').AdmittedTaskContext {
+  const hash=`sha256:${'a'.repeat(64)}`;
+  const task=Object.values(fixtureTasks).find(task=>task.task_id===selector.task);
+  return {protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:`${task?.task_label ?? 'Provider task'}: The exact candidate passes independent verification.`},
+    verification:{plan_sha256:hash,plan_json:'{"protocol":1,"checks":[]}'},scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},
+    approval:{admission_sha256:hash,grant_sha256:selector.grant_sha256,revision:1,goal_revision:hash,scope_sha256:hash},profile_selection:{state:'unassigned'},
+    execution:{branch:'codex/fixture',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z'};
 }

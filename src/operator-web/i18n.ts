@@ -97,6 +97,7 @@ const en = {
   "delivery.empty": "No tasks in this stage.",
 
   "evidence.context": "Task context",
+  "evidence.admittedContext": "Current approved goal, verification plan, scope and selected session provenance.",
   "evidence.original": "Original record",
   "evidence.loading": "Reading evidence…",
   "evidence.load": "Load history",
@@ -995,6 +996,7 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   "delivery.empty": "此阶段没有任务。",
 
   "evidence.context": "任务上下文",
+  "evidence.admittedContext": "当前批准的目标、验证计划、范围和所选会话来源。",
   "evidence.original": "原始记录",
   "evidence.loading": "正在读取证据…",
   "evidence.load": "读取历史",
