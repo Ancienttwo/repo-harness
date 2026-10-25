@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.engineering-overlay.internal-observation"
+kind: "calls"
+source: "capability.runtime-harness.engineering-overlay"
+target: "capability.runtime-harness.engineering-overlay"
+intent: "Within the existing engineering overlay collector, collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence; these are internal calls, not recursive invocation or a dependency on another capability"
