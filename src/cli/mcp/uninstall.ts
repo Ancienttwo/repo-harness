@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { readRepoHarnessRegistryStrictSnapshot, restoreRepoHarnessRegistryEntries } from '../../effects/repo-registry';
 import { assertConfigurationPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, saveConfigurationReceipt, writePrivateConfiguration } from '../installer/configuration-ownership';
-import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 import { mcpLocalConfigPath, mcpOAuthDoctorClientPath, mcpOAuthPath, mcpOAuthTokenStorePath, mcpStorageDir, mcpTokenPath } from './auth';
 import { resolveMcpRepoRoot } from './repo';
 import { assertMcpStoragePath, readMcpRegistryReceipt, saveMcpRegistryReceipt, withMcpSetupLock } from './setup-ownership';
@@ -42,9 +42,9 @@ export function runMcpUninstall(opts: McpUninstallOptions): McpUninstallResult {
   const run = () => {
     const mutations: (() => void)[] = [];
     if (codex) {
-      const env = { HOME: repo }, path = join(repo, '.codex/config.toml');
-      assertConfigurationPath(path, env);
-      const receipt = readConfigurationReceipt(env);
+      const path = join(repo, '.codex/config.toml');
+      assertConfigurationPath(path, repo);
+      const receipt = readConfigurationReceipt(repo);
       let raw = existsSync(path) ? readFileSync(path, 'utf8') : '';
       const original = raw;
       let receiptChanged = false;
@@ -71,12 +71,12 @@ export function runMcpUninstall(opts: McpUninstallOptions): McpUninstallResult {
         unresolved(path, 'MCP registration has no active restoration receipt; preserved');
       }
       if (raw !== original) mutations.push(() => {
-        assertConfigurationPath(path, env);
+        assertConfigurationPath(path, repo);
         if ((existsSync(path) ? readFileSync(path, 'utf8') : '') !== original) throw new Error(`project configuration changed during cleanup: ${path}`);
-        if (raw.trim()) writePrivateConfiguration(path, raw, env);
+        if (raw.trim()) writePrivateConfiguration(path, raw, repo);
         else unlinkSync(path);
       });
-      if (receiptChanged) mutations.push(() => saveConfigurationReceipt(receipt, env));
+      if (receiptChanged) mutations.push(() => saveConfigurationReceipt(receipt, repo));
     }
     if (chatgpt) {
       const files = [mcpLocalConfigPath(), mcpTokenPath(), mcpOAuthPath(), mcpOAuthDoctorClientPath(), mcpOAuthTokenStorePath()];
@@ -110,8 +110,8 @@ export function runMcpUninstall(opts: McpUninstallOptions): McpUninstallResult {
   };
   try {
     if (opts.dryRun) run();
-    else if (chatgpt) withMcpSetupLock(() => codex ? withRuntimeHostTransactionLock({ HOME: repo }, run) : run());
-    else withRuntimeHostTransactionLock({ HOME: repo }, run);
+    else if (chatgpt) withMcpSetupLock(() => codex ? withRuntimeTransactionLock(projectRuntimeScope(repo), run) : run());
+    else withRuntimeTransactionLock(projectRuntimeScope(repo), run);
   } catch (error) {
     unresolved(chatgpt ? mcpStorageDir() : repo, error instanceof Error ? error.message : String(error));
   }

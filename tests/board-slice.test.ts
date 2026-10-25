@@ -41,7 +41,7 @@ import {
   coordinationRoot,
   LEASE_OWNER_FILE_NAME,
 } from '../src/effects/state/coordination-lease-store';
-import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../src/effects/git/repository-identity';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 // ---------------------------------------------------------------------------

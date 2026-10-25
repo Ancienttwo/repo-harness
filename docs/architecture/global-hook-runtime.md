@@ -130,7 +130,7 @@ hook state writes reject symlink paths and replace files atomically.
 
 `src/cli/hook/event-telemetry.ts` is the sole writer for
 `.ai/harness/runs/hook-events.jsonl`. Storage maintenance lives in
-`src/effects/hook-event-log.ts`: before the next append, an active file at or
+`src/effects/segmented-log.ts`: before the next append, an active file at or
 above 8 MiB is atomically renamed into `hook-events.jsonl.archive/`. The archive
 retains at most 32 owned segments and 256 MiB, deleting oldest segments first.
 The active threshold may be exceeded by the last record or concurrent appends;

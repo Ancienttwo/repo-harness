@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -9,7 +10,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import type { EffectiveState, EffectiveStateRiskInput } from '../src/core/state/types';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import {
@@ -17,8 +18,9 @@ import {
   projectEffectiveStateSessionSection,
   projectUnavailableStateSessionSection,
 } from '../src/cli/hook/session-context';
-import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
-import { ExclusiveLockContentionError } from '../src/effects/locking/exclusive-directory-lock';
+import { resolveEffectiveState, StateResolutionUnstableError } from '../src/effects/state/resolve-effective-state';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
+import { PLAN, createEffectiveStateFixture } from './state/effective-state-fixture';
 
 
 type StateResolver = (
@@ -26,14 +28,6 @@ type StateResolver = (
   nowMs: number,
   risk?: EffectiveStateRiskInput,
 ) => EffectiveState;
-
-function lockContention(): ExclusiveLockContentionError {
-  return new ExclusiveLockContentionError(
-    'timed out waiting for exclusive lock /private/fixture/state.lock',
-    '/private/fixture/state.lock',
-    'timeout',
-  );
-}
 
 function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
   return {
@@ -160,6 +154,7 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
   readonly envelope: Record<string, unknown>;
   readonly result: Record<string, unknown>;
   readonly attempts: number;
+  readonly writes: number;
 } {
   const root = mkdtempSync(join(tmpdir(), 'session-state-authority-failure-'));
   try {
@@ -174,10 +169,15 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
     const worker = `
       import { mock } from 'bun:test';
       let attempts = 0;
+      let writes = 0;
       const resolverModule = await import(process.env.RESOLVER_MODULE);
       mock.module(process.env.RESOLVER_MODULE, () => ({
         ...resolverModule,
         resolveEffectiveState() {
+          writes += 1;
+          throw new Error('SessionStart ran the write path');
+        },
+        resolveEffectiveStateReadOnly() {
           attempts += 1;
           if (process.env.FAILURE_KIND === 'transient') {
             throw new resolverModule.StateResolutionUnstableError();
@@ -198,7 +198,7 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
           REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: undefined,
         },
       });
-      process.stdout.write('@@RESULT@@' + JSON.stringify({ result, attempts }) + '\\n');
+      process.stdout.write('@@RESULT@@' + JSON.stringify({ result, attempts, writes }) + '\\n');
     `;
     const child = spawnSync(process.execPath, ['-e', worker], {
       cwd: root,
@@ -218,10 +218,106 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
       envelope: JSON.parse(envelopeText.trim()),
       result: resultPayload.result,
       attempts: resultPayload.attempts,
+      writes: resultPayload.writes,
     };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+interface CountedHookRun {
+  readonly result: Record<string, unknown>;
+  readonly hostStdout: string;
+  /** Full resolution passes during the hook: each pass calls the pure projector once. */
+  readonly passes: number;
+  /** Passes of one `resolveEffectiveState` call made after the hook, when requested. */
+  readonly writePathPasses: number | null;
+  readonly stateDirectoryCreated: boolean;
+  readonly versionOwnerDirectoryCreated: boolean;
+}
+
+/**
+ * Run one real hook event against a real fixture and count resolution passes.
+ * With `mutatePlanEachPass`, every pass appends to the plan, so the stability
+ * loop never sees two equal authority snapshots.
+ */
+function runCountedHook(root: string, options: {
+  readonly event: 'SessionStart' | 'SubagentStart';
+  readonly mutatePlanEachPass?: boolean;
+  readonly compareWritePath?: boolean;
+}): CountedHookRun {
+  const worker = `
+    import { mock } from 'bun:test';
+    import { appendFileSync, existsSync } from 'fs';
+    import { join } from 'path';
+    const projector = await import(process.env.PROJECTOR_MODULE);
+    const project = projector.projectEffectiveState;
+    let passes = 0;
+    mock.module(process.env.PROJECTOR_MODULE, () => ({
+      ...projector,
+      projectEffectiveState(input) {
+        passes += 1;
+        if (process.env.MUTATE_PLAN) appendFileSync(process.env.MUTATE_PLAN, ' ');
+        return project(input);
+      },
+    }));
+    const { runHook } = await import(process.env.RUNTIME_MODULE);
+    const root = process.env.FIXTURE_ROOT;
+    const session = process.env.HOOK_EVENT === 'SessionStart';
+    const result = runHook({
+      event: process.env.HOOK_EVENT,
+      routeId: session ? 'default' : 'context',
+      cwd: root,
+      input: JSON.stringify({ session_id: 'counted-session' }),
+      env: {
+        ...process.env,
+        HOOK_REPO_ROOT: root,
+        HOOK_HOST: session ? 'claude' : 'codex',
+        REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: undefined,
+      },
+    });
+    const hookPasses = passes;
+    const stateDirectoryCreated = existsSync(join(root, '.ai/harness/state'));
+    const versionOwnerDirectoryCreated = existsSync(process.env.VERSION_OWNER_DIRECTORY);
+    let writePathPasses = null;
+    if (process.env.COMPARE_WRITE_PATH) {
+      const resolver = await import(process.env.RESOLVER_MODULE);
+      passes = 0;
+      resolver.resolveEffectiveState(root, Date.now());
+      writePathPasses = passes;
+    }
+    process.stdout.write('@@RESULT@@' + JSON.stringify({
+      result, passes: hookPasses, writePathPasses, stateDirectoryCreated, versionOwnerDirectoryCreated,
+    }) + '\\n');
+  `;
+  const child = spawnSync(process.execPath, ['-e', worker], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      FIXTURE_ROOT: root,
+      HOOK_EVENT: options.event,
+      MUTATE_PLAN: options.mutatePlanEachPass ? join(root, PLAN) : '',
+      COMPARE_WRITE_PATH: options.compareWritePath ? '1' : '',
+      VERSION_OWNER_DIRECTORY: dirname(stateVersionOwnerPath(root)),
+      PROJECTOR_MODULE: resolve(import.meta.dir, '../src/core/state/project-effective-state.ts'),
+      RESOLVER_MODULE: resolve(import.meta.dir, '../src/effects/state/resolve-effective-state.ts'),
+      RUNTIME_MODULE: resolve(import.meta.dir, '../src/cli/hook/runtime.ts'),
+    },
+  });
+  if (child.status !== 0) throw new Error(child.stderr || child.stdout);
+  const [hostStdout, resultText] = child.stdout.split('@@RESULT@@');
+  return { ...JSON.parse(resultText!.trim()), hostStdout: hostStdout! };
+}
+
+function sessionContextOf(run: CountedHookRun): string {
+  return JSON.parse(run.hostStdout.trim()).hookSpecificOutput.additionalContext as string;
+}
+
+function optedInFixture(): ReturnType<typeof createEffectiveStateFixture> {
+  const fixture = createEffectiveStateFixture();
+  writeFileSync(join(fixture.cwd, '.ai/harness/workflow-contract.json'), '{}\n');
+  return fixture;
 }
 
 function runMockedPreEdit(kind: 'transient' | 'non-transient'): {
@@ -243,15 +339,17 @@ function runMockedPreEdit(kind: 'transient' | 'non-transient'): {
       import { mock } from 'bun:test';
       let attempts = 0;
       const resolverModule = await import(process.env.RESOLVER_MODULE);
+      const fail = () => {
+        attempts += 1;
+        if (process.env.FAILURE_KIND === 'transient') {
+          throw new resolverModule.StateResolutionUnstableError();
+        }
+        throw new Error('injected non-transient pre-edit failure');
+      };
       mock.module(process.env.RESOLVER_MODULE, () => ({
         ...resolverModule,
-        resolveEffectiveState() {
-          attempts += 1;
-          if (process.env.FAILURE_KIND === 'transient') {
-            throw new resolverModule.StateResolutionUnstableError();
-          }
-          throw new Error('injected non-transient pre-edit failure');
-        },
+        resolveEffectiveState: fail,
+        resolveEffectiveStateReadOnly: fail,
       }));
       const { runHook } = await import(process.env.RUNTIME_MODULE + '?isolated-preedit=' + process.env.FAILURE_KIND);
       const result = runHook({
@@ -339,7 +437,7 @@ describe('SessionStart Effective State authority', () => {
     const calls: Array<{ root: string; nowMs: number; risk: unknown }> = [];
     const resolveAttempt = ((root: string, nowMs: number, risk: unknown) => {
       calls.push({ root, nowMs, risk });
-      if (calls.length === 1) throw lockContention();
+      if (calls.length === 1) throw new StateResolutionUnstableError();
       return fixtureState();
     }) as StateResolver;
     const outcome = resolveHookEffectiveState('/repo-b', 123456, resolveAttempt);
@@ -355,7 +453,7 @@ describe('SessionStart Effective State authority', () => {
     let attempts = 0;
     const outcome = resolveHookEffectiveState('/private/repo-b', 123, (() => {
       attempts += 1;
-      throw lockContention();
+      throw new StateResolutionUnstableError();
     }) as StateResolver);
     expect(attempts).toBe(3);
     if (outcome.ok) throw new Error('expected unavailable');
@@ -366,8 +464,7 @@ describe('SessionStart Effective State authority', () => {
     expect(section.content).toStartWith('[HarnessStateUnavailable] ');
     expect(section.content).not.toContain('[HarnessState] ');
     expect(section.content).not.toContain('/private/repo-b');
-    expect(section.content).not.toContain('/private/fixture');
-    expect(section.content).not.toContain('timed out');
+    expect(section.content).not.toContain('workflow authority changed');
   });
 
   test('does not retry a non-transient resolver failure', () => {
@@ -389,6 +486,7 @@ describe('SessionStart Effective State authority', () => {
       const captured = runMockedFailure(kind);
       expect(captured.result).toMatchObject({ exitCode: 0, reason: 'context-unavailable', handler: 'session-context' });
       expect(captured.attempts).toBe(attempts);
+      expect(captured.writes).toBe(0);
       const context = ((captured.envelope.hookSpecificOutput as Record<string, unknown>).additionalContext as string);
       expect(context).toStartWith('[HarnessStateUnavailable] ');
       const [unavailableLine, ...rest] = context.split('\n');
@@ -400,6 +498,75 @@ describe('SessionStart Effective State authority', () => {
       expect(context).not.toContain('/private/secret');
     }
   }, 20000);
+
+  test('SessionStart resolves read-only: two passes where state resolve takes three, and no state write', () => {
+    const fixture = optedInFixture();
+    try {
+      const run = runCountedHook(fixture.cwd, { event: 'SessionStart', compareWritePath: true });
+      expect(run.result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'session-context' });
+      expect(run.passes).toBe(2);
+      expect(run.writePathPasses).toBe(3);
+      expect(run.stateDirectoryCreated).toBe(false);
+      expect(run.versionOwnerDirectoryCreated).toBe(false);
+      const stateLine = sessionContextOf(run).split('\n')[0]!;
+      expect(stateLine).toStartWith('[HarnessState] ');
+      // Nothing was published before the hook, so it reports version 0.
+      expect(JSON.parse(stateLine.slice('[HarnessState] '.length)).state_version).toBe(0);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
+
+  test('SubagentStart resolves read-only in two passes and writes no state', () => {
+    const fixture = optedInFixture();
+    try {
+      const run = runCountedHook(fixture.cwd, { event: 'SubagentStart' });
+      expect(run.result).toMatchObject({ exitCode: 0, handler: 'subagent-context' });
+      expect(run.passes).toBe(2);
+      expect(run.stateDirectoryCreated).toBe(false);
+      expect(run.versionOwnerDirectoryCreated).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
+
+  test('SessionStart retries stability exhaustion three times, four passes each, without a state write', () => {
+    const fixture = optedInFixture();
+    try {
+      const run = runCountedHook(fixture.cwd, { event: 'SessionStart', mutatePlanEachPass: true });
+      expect(run.result).toMatchObject({ exitCode: 0, reason: 'context-unavailable', handler: 'session-context' });
+      expect(run.passes).toBe(12);
+      expect(run.stateDirectoryCreated).toBe(false);
+      expect(run.versionOwnerDirectoryCreated).toBe(false);
+      const [unavailableLine] = sessionContextOf(run).split('\n');
+      expect(unavailableLine).toStartWith('[HarnessStateUnavailable] ');
+      expect(JSON.parse(unavailableLine!.slice('[HarnessStateUnavailable] '.length)).reason_code)
+        .toBe('state_resolution_unstable');
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
+
+  test('a corrupt version owner fails SessionStart closed after one attempt and stays unchanged', () => {
+    const fixture = optedInFixture();
+    try {
+      const ownerPath = stateVersionOwnerPath(fixture.cwd);
+      const corrupt = '{"version":0,"revision":"invalid"}\n';
+      mkdirSync(dirname(ownerPath), { recursive: true });
+      writeFileSync(ownerPath, corrupt);
+      const run = runCountedHook(fixture.cwd, { event: 'SessionStart' });
+      expect(run.result).toMatchObject({ exitCode: 0, reason: 'context-unavailable', handler: 'session-context' });
+      expect(run.passes).toBe(2);
+      expect(run.stateDirectoryCreated).toBe(false);
+      expect(readFileSync(ownerPath, 'utf8')).toBe(corrupt);
+      expect(existsSync(`${ownerPath}.lock`)).toBe(false);
+      const [unavailableLine] = sessionContextOf(run).split('\n');
+      expect(JSON.parse(unavailableLine!.slice('[HarnessStateUnavailable] '.length)).reason_code)
+        .toBe('state_resolution_failed');
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
 
   test('PreEdit never calls the Effective State resolver, even when it would fail', () => {
     for (const kind of ['non-transient', 'transient'] as const) {

@@ -77,7 +77,7 @@ describe('setup snapshot projection', () => {
     ]);
     expect(snapshot.hooks.flatMap(event => event.routes.map(route => `${event.event}.${route.route_id}`)))
       .toEqual(ROUTES.map(route => `${route.event}.${route.routeId}`));
-    expect(snapshot.hooks.find(event => event.event === 'SubagentStop')).toBeUndefined();
+    expect(snapshot.hooks.map(event => event.event)).not.toContain('SubagentStop');
     expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual(['claude', 'codex']);
     expect(snapshot.fleet).toEqual([
       { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed' } },

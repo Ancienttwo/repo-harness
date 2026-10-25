@@ -1,12 +1,12 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync, rmdirSync, unlinkSync } from 'fs';
-import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
-import { assertConfigurationPath, configurationPaths, configurationReceiptPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
+import { assertConfigurationPath, configurationPaths, configurationReceiptPath, hostConfigurationRoot, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
 export interface UninstallOptions { target: 'codex' | 'claude' | 'both'; dryRun?: boolean; recoverInterrupted?: boolean; env?: NodeJS.ProcessEnv }
 export interface UninstallItem { path: string; action: 'remove' | 'restore' | 'preserve' | 'unresolved'; reason: string }
@@ -36,7 +36,7 @@ function object(raw: string): Record<string, any> {
 /** Plan completely before writing; dry-run neither takes a filesystem lock nor creates receipts. */
 export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   const env = opts.env ?? process.env;
-  const home = env.HOME ?? homedir();
+  const home = hostConfigurationRoot(env);
   const items: UninstallItem[] = [];
   const writes = new Map<string, string | null>();
   const originals = new Map<string, string | null>();
@@ -51,17 +51,17 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   let state: ReturnType<typeof readInstalledProfile> = null;
   let receipt: ReturnType<typeof readConfigurationReceipt>;
   try {
-    assertConfigurationPath(installProfileStatePath(env), env);
+    assertConfigurationPath(installProfileStatePath(env), home);
     state = readInstalledProfile(env);
-    receipt = readConfigurationReceipt(env);
+    receipt = readConfigurationReceipt(home);
     if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
-  } catch (error) { unresolved(configurationReceiptPath(env), String((error as Error).message)); return result(); }
+  } catch (error) { unresolved(configurationReceiptPath(home), String((error as Error).message)); return result(); }
   let recovered = false;
   if (receipt.pending) {
     try {
       if (receipt.pending.before.some((entry) => !selected(entry.path, opts.target, home))) throw new Error('recovery must include all pending host fragments; use --target both');
       for (const entry of receipt.pending.before) {
-        assertConfigurationPath(entry.path, env);
+        assertConfigurationPath(entry.path, home);
         const next = replaceConfigurationFragment(entry.path, read(entry.path), entry.selector, entry.value);
         change(entry.path, next.trim() && next.trim() !== '{}' ? next : null, `explicit interrupted-setup recovery: ${entry.selector}`, 'restore');
         const previous = receipt.changes.find((change) => change.path === entry.path && change.selector === entry.selector);
@@ -70,13 +70,13 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       }
       delete receipt.pending;
       recovered = true;
-    } catch (error) { unresolved(configurationReceiptPath(env), String((error as Error).message)); return result(); }
+    } catch (error) { unresolved(configurationReceiptPath(home), String((error as Error).message)); return result(); }
   }
   const remaining = [...receipt.changes];
   for (const entry of receipt.changes) {
     if (!entry.active || !selected(entry.path, opts.target, home)) continue;
     try {
-      assertConfigurationPath(entry.path, env);
+      assertConfigurationPath(entry.path, home);
       const current = readConfigurationFragment(entry.path, read(entry.path), entry.selector);
       if (current === entry.before) { remaining.splice(remaining.indexOf(entry), 1); continue; }
       if (current !== entry.installed) { unresolved(entry.path, `user changed ${entry.selector}; preserved`); continue; }
@@ -90,7 +90,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     if (opts.target !== 'both' && opts.target !== host) continue;
     const path = join(home, host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json');
     try {
-      assertConfigurationPath(path, env);
+      assertConfigurationPath(path, home);
       if (read(path)) {
         const data = object(read(path));
         const cleaned = stripRepoHarnessManagedHooks(data.hooks).hooks;
@@ -102,7 +102,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     } catch (error) { unresolved(path, String((error as Error).message)); }
     const contextPath = globalContextPath(home, host);
     try {
-      assertConfigurationPath(contextPath, env);
+      assertConfigurationPath(contextPath, home);
       if (!existsSync(contextPath)) continue;
       const removal = removeManagedBlock(read(contextPath));
       if (removal.status === 'none') continue;
@@ -117,7 +117,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       if (!items.some((item) => item.path === surface.path && item.action === 'unresolved')) removedSurfaces.add(surface);
       continue;
     }
-    if (configurationPaths(env).includes(surface.path)) {
+    if (configurationPaths(home).includes(surface.path)) {
       // A restoration receipt owns these fragments; never also delete the projection.
       if (receipt.changes.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) {
         if (!remaining.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) removedSurfaces.add(surface);
@@ -131,11 +131,11 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     }
     try {
       // A receipt may own the final symlink, but never a symlinked parent directory.
-      assertConfigurationPath(dirname(surface.path), env);
+      assertConfigurationPath(dirname(surface.path), home);
       if (!fileExists(surface.path)) { removedSurfaces.add(surface); continue; }
       if (!managedInstallSurfaceIsCurrent(surface)) { unresolved(surface.path, 'owned surface changed since installation; preserved'); continue; }
       if (surface.managed_marker === 'codegraph-config-projection') {
-        assertConfigurationPath(surface.path, env);
+        assertConfigurationPath(surface.path, home);
         let next = read(surface.path);
         for (const selector of surface.path.endsWith('.toml') ? ['mcp_servers.codegraph'] : ['mcpServers.codegraph', 'allowedTools.codegraph']) {
           next = replaceConfigurationFragment(surface.path, next, selector, null);
@@ -149,10 +149,10 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     } catch (error) { unresolved(surface.path, String((error as Error).message)); }
   }
 
-  for (const path of configurationPaths(env)) {
+  for (const path of configurationPaths(home)) {
     if (!selected(path, opts.target, home)) continue;
     try {
-      assertConfigurationPath(path, env);
+      assertConfigurationPath(path, home);
       if (!existsSync(path)) continue;
       const raw = read(path);
       const selectors = path.endsWith('.toml') ? ['default_mode_request_user_input', 'mcp_servers.codegraph'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
@@ -173,7 +173,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   if (opts.target === 'both') {
     const path = join(home, '.repo-harness/config.json');
     try {
-      assertConfigurationPath(path, env);
+      assertConfigurationPath(path, home);
       if (existsSync(path)) {
         const data = object(read(path));
         if ('brainRoot' in data || 'protectedHelperRuntime' in data || 'architecture' in data || 'refactor_recommendations' in data) {
@@ -184,17 +184,17 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
     } catch (error) { unresolved(path, String((error as Error).message)); }
     for (const name of ['agent-fleet-user-managed.json']) {
       const path = join(home, '.repo-harness', name);
-      try { assertConfigurationPath(path, env); if (existsSync(path)) change(path, null, 'product configuration'); }
+      try { assertConfigurationPath(path, home); if (existsSync(path)) change(path, null, 'product configuration'); }
       catch (error) { unresolved(path, String((error as Error).message)); }
     }
   }
 
   // Only remove lock entries for staging skills actually removed in this operation.
-  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === join(home, '.agents/skills')).map((surface) => surface.path.split('/').at(-1)!);
+  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === stagedSkillRoot(home)).map((surface) => surface.path.split('/').at(-1)!);
   const lockPath = join(home, '.agents/.skill-lock.json');
   if (staging.length && existsSync(lockPath)) {
     try {
-      assertConfigurationPath(lockPath, env);
+      assertConfigurationPath(lockPath, home);
       const data = object(read(lockPath));
       if (!data.skills || typeof data.skills !== 'object' || Array.isArray(data.skills)) throw new Error('invalid skills lock; preserved');
       for (const name of staging) delete data.skills[name];
@@ -211,23 +211,23 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   const restored = receipt.changes.filter((entry) => entry.active && !remaining.includes(entry));
   if (restored.length || recovered) {
     const next = { ...receipt, changes: receipt.changes.map((entry) => restored.includes(entry) ? { ...entry, active: false } : entry) };
-    change(configurationReceiptPath(env), `${JSON.stringify(next, null, 2)}\n`, 'deactivate restored ownership; retain static installation history', 'restore');
+    change(configurationReceiptPath(home), `${JSON.stringify(next, null, 2)}\n`, 'deactivate restored ownership; retain static installation history', 'restore');
   }
   items.push({ path: join(home, '.repo-harness'), action: 'preserve', reason: 'archives, runtime history and independent MCP setup/workspaces retained; third-party packages/plugins retained' });
 
   if (!opts.dryRun) {
     try {
       for (const [path, expected] of originals) {
-        assertConfigurationPath(dirname(path), env);
+        assertConfigurationPath(dirname(path), home);
         if (fingerprint(path) !== expected) throw new Error(`configuration changed after preview: ${path}`);
       }
       for (const surface of surfaceRemovals) {
         rmSync(surface.path, { recursive: true, force: true });
       }
       for (const [path, content] of writes) {
-        assertConfigurationPath(path, env);
+        assertConfigurationPath(path, home);
         if (content === null) { if (existsSync(path)) unlinkSync(path); }
-        else writePrivateConfiguration(path, content, env);
+        else writePrivateConfiguration(path, content, home);
       }
       for (const path of [...originals.keys()]) {
         const parent = dirname(path);

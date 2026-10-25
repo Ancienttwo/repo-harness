@@ -1,4 +1,4 @@
-import { assertConfigurationPath, readConfigurationFragment, replaceConfigurationFragment, writeOwnedConfiguration } from '../configuration-ownership';
+import { assertConfigurationPath, hostConfigurationRoot, readConfigurationFragment, replaceConfigurationFragment, writeOwnedConfiguration } from '../configuration-ownership';
 /**
  * Codex CLI hook-runtime target.
  *
@@ -57,7 +57,7 @@ function globalTomlConfigPath(): string {
 
 function ensureRequestUserInputToml(): WriteResult['files'][number] {
   const filePath = globalTomlConfigPath();
-  assertConfigurationPath(filePath);
+  assertConfigurationPath(filePath, hostConfigurationRoot());
   const created = !fs.existsSync(filePath);
   const current = created ? '' : fs.readFileSync(filePath, 'utf-8');
   const selector = 'default_mode_request_user_input';
@@ -66,7 +66,7 @@ function ensureRequestUserInputToml(): WriteResult['files'][number] {
     return { path: filePath, action: 'unchanged' };
   }
   const next = replaceConfigurationFragment(filePath, current, selector, `${selector} = true\n`);
-  writeOwnedConfiguration(filePath, next);
+  writeOwnedConfiguration(filePath, next, hostConfigurationRoot());
   return { path: filePath, action: created ? 'created' : 'updated' };
 }
 
@@ -108,7 +108,7 @@ class CodexTarget implements AgentTarget {
       );
     }
     const filePath = globalConfigPath();
-    assertConfigurationPath(filePath);
+    assertConfigurationPath(filePath, hostConfigurationRoot());
     const data = readJsonOrEmpty<HooksFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
     const managed = buildManagedHooks('codex', opts.profile);
@@ -134,7 +134,7 @@ class CodexTarget implements AgentTarget {
   uninstall(loc: Location): WriteResult {
     if (loc !== 'global') return { files: [] };
     const filePath = globalConfigPath();
-    assertConfigurationPath(filePath);
+    assertConfigurationPath(filePath, hostConfigurationRoot());
     if (!fs.existsSync(filePath)) {
       return { files: [{ path: filePath, action: 'not-found' }] };
     }

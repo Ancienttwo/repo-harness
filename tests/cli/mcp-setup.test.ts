@@ -13,6 +13,7 @@ import {
   runMcpSetupChatgpt,
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../../src/cli/installer/runtime-host-lock';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { startMcpStdio } from '../../src/cli/mcp/transports/stdio';
 import { callMcpTool } from '../../src/cli/mcp/tools';
@@ -908,6 +909,24 @@ describe('mcp setup', () => {
       expect(again.changed).toHaveLength(0);
     });
   });
+
+  test('issue 922 project setup holds a project-named lock in the repository, never a global one', () => {
+    withTmpRepo((repoRoot) => {
+      const transactions = join(realpathSync(repoRoot), '.repo-harness', 'transactions');
+      const scope = projectRuntimeScope(repoRoot);
+      expect(scope.kind).toBe('project');
+      withRuntimeTransactionLock(scope, (lock) => {
+        expect(lock.lockPath).toBe(join(transactions, 'project-runtime.lock'));
+        // Setup waits on this exact lock, so it is the lock project setup takes.
+        expect(() => runMcpSetupCodex({ repo: repoRoot, scope: 'project' })).toThrow(`timed out waiting for exclusive lock ${lock.lockPath}`);
+        expect(existsSync(join(repoRoot, '.codex/config.toml'))).toBe(false);
+      });
+      const result = runMcpSetupCodex({ repo: repoRoot, scope: 'project' });
+      expect(result.changed.some((path) => path.endsWith('.codex/config.toml'))).toBe(true);
+      expect(existsSync(join(transactions, 'global-runtime.lock'))).toBe(false);
+      expect(existsSync(join(transactions, 'project-runtime.lock'))).toBe(false);
+    });
+  }, 30_000);
 
   test('installs bridge skill template with overwrite protection', () => {
     withTmpRepo((repoRoot) => {

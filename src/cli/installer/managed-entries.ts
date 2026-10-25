@@ -86,16 +86,7 @@ export function isManagedEntry(entry: HookEntry): boolean {
 }
 
 function routeInProfile(route: Route, profile: InstallProfile): boolean {
-  if (profile === 'full') return true;
-  const key = `${route.event}.${route.routeId}`;
-  const minimal = new Set([
-    'SessionStart.default',
-    'UserPromptSubmit.inbox',
-    'PreToolUse.edit',
-    'PreToolUse.bash',
-    'Stop.default',
-  ]);
-  return minimal.has(key);
+  return profile === 'full' || route.minimalProfile === true;
 }
 
 export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'full'): HooksByEvent {
@@ -157,11 +148,10 @@ export function canonicalManagedHookProjection(value: unknown): HooksByEvent {
   return projection;
 }
 
+/** Any event name parses, so drift reports still name the route of a stale entry for a retired event. */
 function routeFromManagedCommand(command: unknown): { event: string; routeId: string } | null {
   if (typeof command !== 'string') return null;
-  const match = command.match(
-    /repo-harness-hook\s+(SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop)\s+--route\s+([A-Za-z0-9_-]+)/,
-  );
+  const match = command.match(/repo-harness-hook\s+([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)/);
   return match ? { event: match[1], routeId: match[2] } : null;
 }
 

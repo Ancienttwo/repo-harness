@@ -102,7 +102,9 @@ manual removal. Review local changes first.
 No hook answers `/delegate` or `/parallel`. `.ai/harness/delegation/` holds
 only the native-role evidence.
 
-`SessionStart` resolves Effective State once. The `[HarnessState]` section, or
+`SessionStart` resolves Effective State once, read-only. It writes no state,
+and its `state_version` is the last version that `repo-harness state resolve`
+published. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
 The `architecture-debt` section follows at priority 2 and is mandatory when
 present. Its 800-byte limit keeps it bounded. `pending-plan-capture` remains
@@ -391,7 +393,7 @@ history:
 | `${runId}.json` carrying the resolved projection paths | none now; Stop and the shell `prepare-handoff` writer wrote it | `evidence-gc` deletes this shape for one release |
 | `${runId}-${contractSlug}.json` (`schema: repo-harness-run-trace.v1`) | `verify-sprint.sh` | none; a checks projection reads it back at acceptance finalization |
 | `verification-${executionId}.json` / `.log` | `verification-execution.ts` | none; immutable, bound by sha256 in the evidence ledger |
-| `hook-events.jsonl` | hook telemetry | `hook-event-log.ts`, on rotation: 8 MB segments, 256 MB or 32 archived segments |
+| `hook-events.jsonl` | hook telemetry | `segmented-log.ts`, on rotation: 8 MB segments, 256 MB or 32 archived segments |
 | ad-hoc `*.json` reports | operator scripts | none; each report owns its own file |
 
 Evidence checkpoints under `.ai/harness/evidence/checkpoints/` are owned by

@@ -31,7 +31,6 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
   write('src/host.ts', 'export {};');
   write('package.json', JSON.stringify({ scripts: {
     'build:oar-review-host': 'bun build src/host.ts --target=node --format=esm --packages=external',
-    'build:oar-coding-host': 'bun build src/host.ts --target=node --format=esm --packages=external',
   } }));
 }
 
@@ -633,10 +632,8 @@ describe('single affected verification and daily fallback', () => {
       'test -x /usr/bin/sandbox-exec',
       'bun install --frozen-lockfile',
       'test ! -e dist/oar-review-host.js',
-      'test ! -e dist/oar-coding-host.js',
-      'bun run build:oar-hosts',
+      'bun run build:oar-review-host',
       'test -s dist/oar-review-host.js',
-      'test -s dist/oar-coding-host.js',
       'case "$MODE" in',
       "  affected) set -- -t 'darwin: ' ;;",
       '  daily) set -- ;;',

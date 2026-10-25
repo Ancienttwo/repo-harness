@@ -1,7 +1,7 @@
 import type { EffectiveStateV1 } from '../../core/state/types';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import { resolveEffectiveStateReadOnly } from '../../effects/state/resolve-effective-state';
 import { currentGitBranch, isRepoHarnessAdopted } from './repo';
 import { redactMcpText } from './redaction';
 import type { McpProfileName } from './types';
@@ -82,14 +82,14 @@ function readCurrentPreview(repoRoot: string): string | null {
 export function buildStateToolDefinitions(): StateToolDefinition[] {
   return [{
     name: STATE_SUMMARY_TOOL_NAME,
-    description: 'Return a compact projection of the canonical Effective State.',
+    description: 'Return a compact projection of the canonical Effective State. It writes nothing; state_version is the last published version, so compare state_revision to detect a change.',
     inputSchema: {
       type: 'object',
       properties: { repo_path: { type: 'string' } },
       additionalProperties: false,
     },
     annotations: {
-      readOnlyHint: false,
+      readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
@@ -128,7 +128,7 @@ export function callStateTool(
   deps: StateToolDependencies = {},
 ): StateSummaryResult {
   if (!isStateTool(name)) throw new Error(`unknown state tool: ${name}`);
-  const resolve = deps.resolve ?? resolveEffectiveState;
+  const resolve = deps.resolve ?? resolveEffectiveStateReadOnly;
   const effective = resolve(ctx.repoRoot, ctx.nowMs ?? Date.now(), {
     targetPaths: [],
     operationKind: 'inspect',
