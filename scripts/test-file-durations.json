@@ -11,7 +11,6 @@
     "tests/board-slice.test.ts": 15432.38,
     "tests/board-snapshot-consistency.test.ts": 2.12,
     "tests/bootstrap-files.test.ts": 8.29,
-    "tests/bounded-supervisor-audit.test.ts": 5581.92,
     "tests/capabilities/registry.test.ts": 0.88,
     "tests/capability-archcontext-export.test.ts": 101.5,
     "tests/capability-archcontext-source.test.ts": 9280.72,
