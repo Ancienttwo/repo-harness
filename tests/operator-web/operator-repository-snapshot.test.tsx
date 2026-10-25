@@ -228,7 +228,8 @@ describe('repository snapshot failure recovery', () => {
 test('Planning preserves authored provider graph dependencies and explicit session choices', async () => {
   const {PlanningView}=await import('../../src/operator-web/PlanningView');
   const {readFileSync}=await import('node:fs');
-  const repository=stableSnapshot.repositories[0]!;
+  const original=stableSnapshot.repositories[0]!;
+  const repository={...original,repository_id:repositorySnapshot.repository_id,cards:original.cards.map(card=>({...card,repository_id:repositorySnapshot.repository_id,execution:card.execution?{...card.execution,selector:{...card.execution.selector,repository_id:repositorySnapshot.repository_id}}:null}))};
   const planning=planningObservationFixture(repository.repository_id,repository.cards);
   const task=planning.scheduling.tasks.find(row=>row.sessions.length>0)!;
   const definition=JSON.parse(readFileSync(new URL('../fixtures/provider-work-graph-v2/graph.json',import.meta.url),'utf8')).work_packages[0];

@@ -102,8 +102,14 @@ export function observeOperatorTaskDiffSource(input: OperatorTaskDiffRequest & {
         'repository-id': input.provider_repository_id, 'issue-id': input.issue_id, 'campaign-id': input.campaign_id,
         'grant-sha256': input.grant_sha256, 'policy-sha256': input.policy_sha256, actor: input.actor_id,
       });
-      const current = observeTaskSessionAdmission(worktree, binding, binding.runtime,
-        { source, claim: { reference: input.claim_ref, revision: input.claim_revision }, engineer_profile: binding.task_admission.identity.engineer_profile });
+      let current: ReturnType<typeof observeTaskSessionAdmission>;
+      try {
+        current = observeTaskSessionAdmission(worktree, binding, binding.runtime,
+          { source, claim: { reference: input.claim_ref, revision: input.claim_revision }, engineer_profile: binding.task_admission.identity.engineer_profile });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'review_admission_revoked_or_replaced') return refuse('stale');
+        throw error;
+      }
       if (canonicalize(JSON.parse(JSON.stringify(current.identity))) !== canonicalize(JSON.parse(JSON.stringify(binding.task_admission.identity)))
         || current.identity.repository_id !== input.provider_repository_id || current.identity.issue_id !== input.issue_id
         || current.identity.campaign_id !== input.campaign_id || current.identity.execution_actor !== input.actor_id

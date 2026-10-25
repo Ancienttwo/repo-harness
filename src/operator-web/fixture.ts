@@ -347,7 +347,7 @@ export function planningObservationFixture(repositoryId: string, cards: readonly
     if (!row) { row={provider_repository_id:card.provider_repository_id,issue_id:card.provider_issue_id,issue,sessions:[]};tasks.push(row); }
     if (card.execution) {
       const selection = card.execution.profile_selection.state === 'unassigned' ? {state:'unassigned' as const} : {state:'profile_missing' as const,engineer_id:card.execution.profile_selection.engineer_id,engineer_contract_revision:card.execution.profile_selection.engineer_contract_revision};
-      tasks[tasks.indexOf(row)]={...row,sessions:[...row.sessions,{session:card.execution,selection}]};
+      tasks[tasks.indexOf(row)]={...row,sessions:[...row.sessions,{session:{...card.execution,selector:{...card.execution.selector,repository_id:repositoryId}},selection}]};
     }
   }
   return {protocol:2,kind:'operator_planning_snapshot',repository_id:repositoryId,
