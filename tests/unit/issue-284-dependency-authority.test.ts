@@ -3,7 +3,6 @@ import { observeSelectedPullRequest, type IntegrationAcceptanceEnvironment } fro
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { observeActiveReviewAdmission } from '../../src/effects/review/issue-goal';
 import { createReviewAdmission } from '../../src/core/review/authority-context';
-import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance } from '../helpers/repo-fixture';
@@ -25,16 +24,18 @@ import { dirname, join, sep } from 'path';
 
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import {
-  WORK_PACKAGE_DEPENDENCY_STATES,
-  projectWorkGraph,
-  validateWorkGraph,
-  type ProjectedWorkGraphV1,
-  type ProjectedWorkPackageV1,
-  type WorkPackageDependencyState,
-  type WorkPackageDependencyV1,
+  projectProviderWorkGraph,
+  validateProviderWorkGraph,
+  type ProjectedProviderWorkGraph,
+  type ProjectedProviderWorkPackage,
+  type ProviderDependencyState,
+  type ProviderWorkPackageDependency,
 } from '../../src/core/engineers/scheduling';
+import { buildExternalSourceProjection } from '../../src/core/external-sources/projection';
+import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
+import { fetchGithubIssues, type GithubCommandRunner } from '../../src/effects/external-sources/github';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/external-sources/policy';
 import { publicationSha256 } from '../../src/core/publication/publication-receipt';
-import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,
   defaultDependencyAuthorityReaders,
@@ -75,7 +76,11 @@ import { withEmptyVerificationPlan } from '../helpers/verification-plan-fixture'
 const REPO_ID = 'repo_0123456789abcdef';
 const OTHER_REPO_ID = 'repo_fedcba9876543210';
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
-const SPRINT = 'plans/sprints/demo.sprint.md';
+const GRAPH_PATH = 'plans/provider-work-graph.v2.json';
+const PROVIDER_REPO_ID = '1001';
+const ISSUE_A = '2001';
+const ISSUE_B = '2002';
+const WORK_PACKAGE_DEPENDENCY_STATES = ['provider_closed', 'module_accepted', 'product_accepted', 'publication_integrated'] as const satisfies readonly ProviderDependencyState[];
 const CONTRACT_REF = 'tasks/contracts/wp-a.contract.md';
 const SELECTOR_REF = 'plans/review/wp-a.admission.json';
 const approvals = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
@@ -88,7 +93,7 @@ function selector(root: string) {
 function selectorBytes(root: string) { return JSON.stringify(selector(root)) + '\n'; }
 function reference(root: string) { return moduleAuthorityFor(SELECTOR_REF, selectorBytes(root)); }
 function admissionReaders(root: string, home: string): Partial<DependencyAuthorityReaders> {
-  return { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => home, readIssuePolicy: () => approval(root).policy,
+  return { observeProviderIssues: () => providerIssues(root), readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => home, readIssuePolicy: () => approval(root).policy,
     observeReviewAdmission: input => observeActiveReviewAdmission({ ...input, runner: approval(root).source.runner }) };
 }
 const PRD_REF = 'plans/prds/product.md';
@@ -120,20 +125,6 @@ const PRD_TEXT = '# Product\n\n> **Status**: Approved\n';
 const POLICY_BYTES = '{"policy":1}\n';
 const ROLLBACK_A = '{"rollback":"a"}\n';
 const ROLLBACK_B = '{"rollback":"b"}\n';
-const SPRINT_TEXT = `# Sprint: demo
-
-${FIXTURE_SCHEMA_HEADER}
-
-## Backlog
-
-${fixtureBacklogTable([
-  { index: 1, status: '[x]', task: 'task A', acceptance: 'accepted A' },
-  { index: 2, task: 'task B', acceptance: 'accepted B' },
-]).join('\n')}
-
-## Execution Log
-`;
-
 const roots: string[] = [];
 
 function git(root: string, ...args: string[]): string {
@@ -146,19 +137,19 @@ function writeRepoFile(root: string, relative: string, content: string): void {
   writeFileSync(target, content);
 }
 
-function moduleAuthority(revision = engineerSha256(CONTRACT_TEXT)): WorkPackageDependencyV1['acceptance_authority'] {
+function moduleAuthority(revision = engineerSha256(CONTRACT_TEXT)): ProviderWorkPackageDependency['acceptance_authority'] {
   return { authority_kind: 'module_acceptance', subject_ref: CONTRACT_REF, subject_revision: revision };
 }
 
-function moduleAuthorityFor(ref: string, text: string): WorkPackageDependencyV1['acceptance_authority'] {
+function moduleAuthorityFor(ref: string, text: string): ProviderWorkPackageDependency['acceptance_authority'] {
   return { authority_kind: 'module_acceptance', subject_ref: ref, subject_revision: engineerSha256(text) };
 }
 
-function productAuthority(revision = engineerSha256(PRD_TEXT)): WorkPackageDependencyV1['acceptance_authority'] {
+function productAuthority(revision = engineerSha256(PRD_TEXT)): ProviderWorkPackageDependency['acceptance_authority'] {
   return { authority_kind: 'product_acceptance', subject_ref: PRD_REF, subject_revision: revision };
 }
 
-function dependency(state: WorkPackageDependencyState, repositoryId = REPO_ID): WorkPackageDependencyV1 {
+function dependency(state: ProviderDependencyState, repositoryId = REPO_ID): ProviderWorkPackageDependency {
   return {
     repository_id: repositoryId,
     work_package_id: 'wp-a',
@@ -169,15 +160,15 @@ function dependency(state: WorkPackageDependencyState, repositoryId = REPO_ID): 
   };
 }
 
-function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', repositoryId = REPO_ID): unknown {
-  const definition = (id: string, taskRef: string, dependsOn: unknown[]) => ({
+function workGraphJson(state: ProviderDependencyState = 'provider_closed', repositoryId = REPO_ID): unknown {
+  const definition = (id: string, issueId: string, dependsOn: unknown[]) => ({
     work_package_id: id,
-    task_id: fixtureTaskId(taskRef),
+    task: { provider_repository_id: PROVIDER_REPO_ID, issue_id: issueId },
     primary_capability: CAPABILITY,
     depends_on: dependsOn,
     priority: id === 'wp-b' ? 90 : 10,
     concurrency: { scope: 'repo', key: id },
-    execution_surface: 'contract',
+    execution_surface: 'admitted_session',
     integration_group: null,
     required_acceptance: [{
       gate: 'module',
@@ -194,14 +185,12 @@ function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', rep
     },
   });
   return {
-    protocol: 1,
-    kind: 'repo-harness-work-graph',
+    protocol: 2,
+    kind: 'repo-harness-provider-work-graph',
     repository_id: repositoryId,
-    sprint_path: SPRINT,
-    lane: 'engineering-v2',
     work_packages: [
-      definition('wp-a', 'task A', []),
-      definition('wp-b', 'task B', [dependency(state, repositoryId)]),
+      definition('wp-a', ISSUE_A, []),
+      definition('wp-b', ISSUE_B, [dependency(state, repositoryId)]),
     ],
   };
 }
@@ -210,8 +199,8 @@ interface Fixture {
   readonly root: string;
   readonly home: string;
   readonly commit: string;
-  readonly graph: ProjectedWorkGraphV1;
-  readonly target: ProjectedWorkPackageV1;
+  readonly graph: ProjectedProviderWorkGraph;
+  readonly target: ProjectedProviderWorkPackage;
   readonly registry: RepoHarnessRegistrySnapshot;
   readonly repo: RepoHarnessRegisteredRepo;
   readonly reads: readonly DependencyAuthorityRepositoryRead[];
@@ -229,30 +218,52 @@ function repository(id: string, path: string, accessMode: RepoHarnessRegisteredR
   };
 }
 
-function projectFixtureGraph(root: string, sprintText = SPRINT_TEXT, repositoryId = REPO_ID): ProjectedWorkGraphV1 {
-  const tasks = projectCanonicalTasks({
-    repoIdentity: realpathSync(resolveGitCommonDirectory(root)),
-    sprintPath: SPRINT,
-    sprintText,
-  }).map((task, index) => ({
-    task_id: task.task_id,
-    task_revision: task.task_revision,
-    task_ref: task.row.task,
-    status: task.row.status,
-    row_order: index + 1,
-  }));
-  return projectWorkGraph(validateWorkGraph(workGraphJson('canonical_done', repositoryId)), tasks);
+// Mutable provider wire responses model external changes. Every authority read
+// crosses the real GitHub decoder twice, without contacting a service.
+const providerState = new Map<string, { state: 'open' | 'closed'; title: string }>();
+function providerIssues(root: string) {
+  const state = providerState.get(root) ?? { state: 'closed' as const, title: 'task A' };
+  const policy = requireManualGithubPolicy(parseExternalSourcesPolicy({ version: 1, mode: 'manual', github: {
+    enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [903, 904] },
+    limits: { max_pages: 2, max_issues: 2, max_body_bytes: 4096, max_total_bytes: 16384, deadline_ms: 5000 },
+  } }));
+  const runner: GithubCommandRunner = args => {
+    const path = args.find(arg => arg.startsWith('repos/'));
+    if (path === 'repos/acme/widgets') return { stdout: JSON.stringify({ id: Number(PROVIDER_REPO_ID), full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) };
+    if (path !== 'repos/acme/widgets/issues/903' && path !== 'repos/acme/widgets/issues/904') throw new Error(`unexpected GitHub fixture request: ${args.join(' ')}`);
+    const first = path.endsWith('/903');
+    return { stdout: JSON.stringify({ id: Number(first ? ISSUE_A : ISSUE_B), number: first ? 903 : 904,
+      html_url: `https://github.com/acme/widgets/issues/${first ? 903 : 904}`, state: first ? state.state : 'open',
+      title: first ? state.title : 'task B', body: 'fixture issue', created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-02T00:00:00Z' }) };
+  };
+  return fetchGithubIssues(policy, runner);
+}
+function providerProjection(root: string, repositoryId: string) {
+  const snapshot = providerIssues(root);
+  return buildExternalSourceProjection({ registered_repository_id: repositoryId, receipts: [],
+    observations: snapshot.issues.map(issue => buildProviderIssueObservation({
+      registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
+      provider_repository_id: snapshot.repository.provider_repository_id, provider_issue_id: issue.provider_issue_id,
+      display_ref: `acme/widgets#${issue.number}`, url: issue.url, observed_at: '2026-09-02T00:00:00Z',
+      provider_created_at: issue.created_at, provider_updated_at: issue.updated_at, state: issue.state,
+      title: issue.title, body: issue.body, labels: issue.labels, assignees: issue.assignees, comments_policy: 'omitted',
+      policy_revision: engineerSha256('offline provider fixture policy'), eligible: issue.state === 'open',
+      eligibility_reasons: issue.state === 'open' ? [] : ['closed'],
+    })) });
+}
+function projectFixtureGraph(root: string, repositoryId = REPO_ID, commit = git(root, 'rev-parse', 'HEAD')): ProjectedProviderWorkGraph {
+  return projectProviderWorkGraph(validateProviderWorkGraph(JSON.parse(gitShow(root, commit, GRAPH_PATH)!)),
+    providerProjection(root, repositoryId), { commit, graph_path: GRAPH_PATH });
 }
 
-function fixture(): Fixture {
+function fixture(repositoryId = REPO_ID): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-284-')));
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'dependency-approval-')));
   roots.push(root, home);
   git(root, 'init', '-b', 'main');
   git(root, 'config', 'user.name', 'Issue 284');
   git(root, 'config', 'user.email', 'issue284@test.invalid');
-  writeRepoFile(root, SPRINT, SPRINT_TEXT);
-  writeRepoFile(root, 'plans/sprints/demo.work-graph.v1.json', `${JSON.stringify(workGraphJson(), null, 2)}\n`);
+  writeRepoFile(root, GRAPH_PATH, `${JSON.stringify(workGraphJson('provider_closed', repositoryId), null, 2)}\n`);
   writeRepoFile(root, 'plans/policies/module.json', POLICY_BYTES);
   writeRepoFile(root, 'plans/rollback/wp-a.json', ROLLBACK_A);
   writeRepoFile(root, 'plans/rollback/wp-b.json', ROLLBACK_B);
@@ -261,13 +272,13 @@ function fixture(): Fixture {
   writeRepoFile(root, GOAL_REF, GOAL_TEXT);
   writeRepoFile(root, PRD_REF, PRD_TEXT);
   writeRepoFile(root, 'docs/spec.md', '# Source spec\n');
-  approvals.set(root, seedReviewAdmissionFixture(root, home, { reviewer: 'Codex', userWaiver: 'allowed', actor: OWNER }));
+  approvals.set(root, seedReviewAdmissionFixture(root, home, { repositoryId: PROVIDER_REPO_ID, issueId: ISSUE_A, reviewer: 'Codex', userWaiver: 'allowed', actor: OWNER }));
   writeRepoFile(root, SELECTOR_REF, selectorBytes(root));
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'fixture');
   const commit = git(root, 'rev-parse', 'HEAD');
-  const graph = projectFixtureGraph(root);
-  const repo = repository(REPO_ID, root);
+  const graph = projectFixtureGraph(root, repositoryId);
+  const repo = repository(repositoryId, root);
   const registry: RepoHarnessRegistrySnapshot = {
     registryPath: join(root, 'registry.json'),
     authorizationRevision: 3,
@@ -294,10 +305,10 @@ function fixture(): Fixture {
  */
 function retargeted(
   subject: Fixture,
-  patch: Partial<ProjectedWorkPackageV1>,
+  patch: Partial<ProjectedProviderWorkPackage>,
 ): Pick<DependencyAuthorityInput, 'target' | 'reads'> {
-  const target = Object.freeze({ ...subject.target, ...patch }) as ProjectedWorkPackageV1;
-  const graph: ProjectedWorkGraphV1 = Object.freeze({
+  const target = Object.freeze({ ...subject.target, ...patch });
+  const graph: ProjectedProviderWorkGraph = Object.freeze({
     ...subject.graph,
     work_packages: Object.freeze(subject.graph.work_packages.map((item) => (
       item.work_package_id === target.work_package_id ? target : item
@@ -363,7 +374,7 @@ function providerFixture(subject: Fixture, head: string, base: string) {
 
 function integrationInput(subject: Fixture, state: 'publication_integrated' | 'product_accepted',
   provider: ReturnType<typeof providerFixture>, product: { projection_sha256: string; approved_prd_ref: string; approved_prd_sha256: string; review_authority: ReturnType<typeof selector> } | null = null): DependencyAuthorityInput {
-  const selector = { protocol: 2, task_id: subject.target.task_id, task_revision: subject.target.task_revision,
+  const selector = { protocol: 3, provider_repository_id: subject.target.task.provider_repository_id, issue_id: subject.target.task.issue_id,
     final_head_sha: provider.provider.get(1)!.merge, final_tree_sha: provider.tree, required_pull_requests: [provider.selection], product };
   const path = 'plans/integration/wp-a.json';
   const bytes = `${JSON.stringify(selector)}\n`;
@@ -372,13 +383,13 @@ function integrationInput(subject: Fixture, state: 'publication_integrated' | 'p
   const commit = git(subject.root, 'rev-parse', 'HEAD');
   return input(subject, state, { dependency: { ...dependency(state), acceptance_authority: {
     authority_kind: state === 'publication_integrated' ? 'provider_integration' : 'product_acceptance', subject_ref: path, subject_revision: engineerSha256(bytes) } },
-    reads: subject.reads.map(read => ({ ...read, commit })),
+    reads: subject.reads.map(read => ({ ...read, commit, graph: projectFixtureGraph(read.repo.path, read.repo.id, commit) })),
     readers: { ...admissionReaders(subject.root, subject.home), observeIntegration: (_env, ...args) => observeSelectedPullRequest(provider.environment, ...args) } });
 }
 
 function input(
   subject: Fixture,
-  state: WorkPackageDependencyState,
+  state: ProviderDependencyState,
   overrides: Partial<DependencyAuthorityInput> = {},
 ): DependencyAuthorityInput {
   return {
@@ -570,10 +581,17 @@ function recordFixture(options: { readonly extraCandidateFile?: string } = {}): 
   writeRepoFile(root, RECORD_GOAL_REF, '# Plan: demo\n\n> **Status**: Executing\n');
   writeRepoFile(root, RECORD_CONTRACT_REF, recordContractText());
   writeRepoFile(root, 'tasks/reviews/demo.review.md', '# Review\n\n> **Recommendation**: pass\n');
-  approvals.set(root, seedReviewAdmissionFixture(root, home, { reviewer: 'Claude', userWaiver: 'allowed', actor: 'kito', oracles: [],
+  approvals.set(root, seedReviewAdmissionFixture(root, home, { repositoryId: PROVIDER_REPO_ID, issueId: ISSUE_A, reviewer: 'Claude', userWaiver: 'allowed', actor: 'kito', oracles: [],
     plan: { protocol: 1, checks: [{ id: 'feature-content', kind: 'command', command: 'grep -qx candidate feature.txt', cwd: '.', phase: 'verification',
       cost: 'normal', evidence_policy: 'current_exact', necessity: 'Check candidate.', inputs: { env: [] } }] } }));
   writeRepoFile(root, SELECTOR_REF, selectorBytes(root));
+  const recordGraph = validateProviderWorkGraph(workGraphJson('module_accepted', RECORD_REPO_ID));
+  writeRepoFile(root, GRAPH_PATH, JSON.stringify({ ...recordGraph, work_packages: [{ ...recordGraph.work_packages[0]!,
+    work_package_id: 'wp-demo', concurrency: { scope: 'repo', key: 'wp-demo' },
+    rollback_boundary: { ...recordGraph.work_packages[0]!.rollback_boundary, boundary_id: `${RECORD_REPO_ID}:wp-demo`, boundary_ref: 'plans/rollback/wp-demo.json' },
+  }] }) + '\n');
+  writeRepoFile(root, 'plans/policies/module.json', POLICY_BYTES);
+  writeRepoFile(root, 'plans/rollback/wp-demo.json', ROLLBACK_A);
   git(root, 'add', '-A');
   git(root, 'commit', '-m', 'candidate');
   recordChecks(root);
@@ -610,43 +628,7 @@ function recordObservationPath(fixtureValue: RecordFixture): string {
 /** Points the resolver at the record fixture repository and its committed contract. */
 function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityInput {
   const selectorContent = gitShow(fixtureValue.root, fixtureValue.commit, SELECTOR_REF)!;
-  const definition = {
-    work_package_id: 'wp-demo',
-    task_id: '7'.repeat(64),
-    primary_capability: CAPABILITY,
-    depends_on: [],
-    priority: 10,
-    concurrency: { scope: 'repo', key: 'wp-demo' },
-    execution_surface: 'contract',
-    integration_group: null,
-    required_acceptance: [{
-      gate: 'module',
-      policy_id: 'module-default',
-      policy_ref: 'plans/policies/module.json',
-      policy_revision: engineerSha256(POLICY_BYTES),
-    }],
-    retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
-    rollback_boundary: {
-      kind: 'work_package',
-      boundary_id: `${RECORD_REPO_ID}:wp-demo`,
-      boundary_ref: 'plans/rollback/wp-demo.json',
-      boundary_revision: engineerSha256(ROLLBACK_A),
-    },
-  };
-  const graph = projectWorkGraph(validateWorkGraph({
-    protocol: 1,
-    kind: 'repo-harness-work-graph',
-    repository_id: RECORD_REPO_ID,
-    sprint_path: SPRINT,
-    lane: 'engineering-v2',
-    work_packages: [definition],
-  }), [{
-    task_id: '7'.repeat(64),
-    task_revision: '8'.repeat(64),
-    task_ref: 'task demo',
-    status: '[x]',
-    row_order: 1,
-  }]);
+  const graph = projectFixtureGraph(fixtureValue.root, RECORD_REPO_ID, fixtureValue.commit);
   const repo = repository(RECORD_REPO_ID, fixtureValue.root);
   return {
     dependency: {
@@ -670,6 +652,7 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   approvals.clear();
+  providerState.clear();
 });
 
 describe('issue #284 closed dependency authority', () => {
@@ -705,7 +688,7 @@ describe('issue #284 closed dependency authority', () => {
 
   test('every declared dependency state has an adapter and no state falls through', () => {
     expect([...WORK_PACKAGE_DEPENDENCY_STATES].sort()).toEqual([
-      'canonical_done', 'module_accepted', 'product_accepted', 'publication_integrated',
+      'module_accepted', 'product_accepted', 'provider_closed', 'publication_integrated',
     ]);
     const subject = fixture();
     for (const state of WORK_PACKAGE_DEPENDENCY_STATES) {
@@ -715,35 +698,45 @@ describe('issue #284 closed dependency authority', () => {
         ? resolved.authority_revision === null
         : /^sha256:[0-9a-f]{64}$/u.test(String(resolved.authority_revision))).toBe(true);
     }
-    expect(() => resolveDependencyAuthority(input(subject, 'canonical_done', {
-      dependency: { ...dependency('canonical_done'), required_state: 'ledger_closed' as WorkPackageDependencyState },
+    expect(() => resolveDependencyAuthority(input(subject, 'provider_closed', {
+      dependency: { ...dependency('provider_closed'), required_state: 'ledger_closed' as ProviderDependencyState },
     }))).toThrow('unsupported dependency state has no authority adapter');
   });
 
-  test('canonical_done resolves positive, negative, unavailable and stale evidence', () => {
+  test('provider_closed resolves positive, negative, unavailable and stale evidence', () => {
     const subject = fixture();
-    const ready = resolveDependencyAuthority(input(subject, 'canonical_done'));
+    const ready = resolveDependencyAuthority(input(subject, 'provider_closed'));
     expect(ready.status).toBe('satisfied');
     expect(ready.evidence_refs.map((entry) => entry.ref))
-      .toEqual([`canonical-task:${REPO_ID}:${subject.target.task_id}`]);
+      .toEqual([`github-issue:${PROVIDER_REPO_ID}:${ISSUE_A}`]);
 
-    const open = resolveDependencyAuthority(input(subject, 'canonical_done', {
-      ...retargeted(subject, { task_status: '[ ]' }),
-    }));
+    providerState.set(subject.root, { state: 'open', title: 'task A' });
+    const open = resolveDependencyAuthority(input(subject, 'provider_closed'));
     expect(open.status).toBe('unsatisfied');
     expect(open.authority_revision).not.toBe(ready.authority_revision);
 
-    const revoked = resolveDependencyAuthority(input(subject, 'canonical_done', {
+    const revoked = resolveDependencyAuthority(input(subject, 'provider_closed', {
       registry: { ...subject.registry, repos: [repository(REPO_ID, subject.root, 'read_only')] },
     }));
     expect(revoked.status).toBe('authority_unavailable');
     expect(revoked.authority_revision).toBeNull();
 
-    const moved = resolveDependencyAuthority(input(subject, 'canonical_done', {
-      ...retargeted(subject, { task_revision: 'f'.repeat(64) }),
-    }));
+    providerState.set(subject.root, { state: 'closed', title: 'revised task A' });
+    const moved = resolveDependencyAuthority(input(subject, 'provider_closed'));
     expect(moved.status).toBe('satisfied');
     expect(moved.authority_revision).not.toBe(ready.authority_revision);
+
+    let observations = 0;
+    const unstable = resolveDependencyAuthority(input(subject, 'provider_closed', {
+      readers: { ...admissionReaders(subject.root, subject.home), observeProviderIssues: () => {
+        observations += 1;
+        providerState.set(subject.root, { state: observations === 1 ? 'closed' : 'open', title: 'task A' });
+        return providerIssues(subject.root);
+      } },
+    }));
+    expect(observations).toBe(2);
+    expect(unstable.status).toBe('authority_unavailable');
+    expect(unstable.authority_revision).toBeNull();
   });
 
   test('the real record paths refuse a receipt the shared validator would refuse', async () => {
@@ -1021,7 +1014,7 @@ describe('issue #284 closed dependency authority', () => {
     const integrated = resolveDependencyAuthority(exact);
     expect(integrated.status).toBe('satisfied');
     expect(integrated.evidence_refs.map(entry => entry.ref)).toContain(`provider-integration:${head}`);
-    const movedTarget = retargeted(subject, { task_revision: 'a'.repeat(64) });
+    const movedTarget = retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } });
     const moved = resolveDependencyAuthority({ ...exact, ...movedTarget, reads: movedTarget.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
     expect(moved.status).toBe('authority_unavailable');
     provider.provider.get(1)!.tree = 'f'.repeat(40);
@@ -1122,7 +1115,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
 
 
-    const moved = retargeted(subject, { task_revision: 'b'.repeat(64) });
+    const moved = retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } });
     const movedTarget = resolveDependencyAuthority({ ...withReceipt, ...moved, reads: moved.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
     expect(movedTarget.status).toBe('authority_unavailable');
 
@@ -1145,7 +1138,7 @@ describe('issue #284 closed dependency authority', () => {
 
   test('cross-repository dependencies bind repository identity and never read a same-named local path', () => {
     const local = fixture();
-    const remote = fixture();
+    const remote = fixture(OTHER_REPO_ID);
     // Same repository-relative contract path, deliberately different bytes.
     writeRepoFile(local.root, CONTRACT_REF, '# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nLocal decoy.\n');
     git(local.root, 'add', CONTRACT_REF);
@@ -1160,7 +1153,7 @@ describe('issue #284 closed dependency authority', () => {
     const remoteRepo = repository(OTHER_REPO_ID, remote.root);
     // The remote repository owns its own Work Graph identity; the resolver
     // requires the target to be that graph's exact member.
-    const remoteGraph = projectFixtureGraph(remote.root, SPRINT_TEXT, OTHER_REPO_ID);
+    const remoteGraph = projectFixtureGraph(remote.root, OTHER_REPO_ID);
     const remoteTarget = remoteGraph.work_packages.find((item) => item.work_package_id === 'wp-a')!;
     const registry: RepoHarnessRegistrySnapshot = {
       registryPath: join(local.root, 'registry.json'),
@@ -1235,11 +1228,11 @@ describe('issue #284 closed dependency authority', () => {
       { label: 'mismatched work_package_id', patch: { target: otherWorkPackage } },
       {
         label: 'cross-repository target',
-        patch: { target: { ...subject.target, repository_id: OTHER_REPO_ID } as ProjectedWorkPackageV1 },
+        patch: { target: { ...subject.target, repository_id: OTHER_REPO_ID } },
       },
       {
         label: 'stale work_package_revision',
-        patch: { target: { ...subject.target, work_package_revision: `sha256:${'9'.repeat(64)}` } as ProjectedWorkPackageV1 },
+        patch: { target: { ...subject.target, work_package_revision: `sha256:${'9'.repeat(64)}` } },
       },
     ];
     for (const state of WORK_PACKAGE_DEPENDENCY_STATES) {
@@ -1254,27 +1247,27 @@ describe('issue #284 closed dependency authority', () => {
       }
     }
     // Positive control: the exact pair still reaches the real adapters.
-    expect(resolveDependencyAuthority(input(subject, 'canonical_done')).status).toBe('satisfied');
+    expect(resolveDependencyAuthority(input(subject, 'provider_closed')).status).toBe('satisfied');
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
   });
 
   test('a completed unrelated target cannot satisfy another edge', () => {
     const subject = fixture();
     const openWorkPackage = subject.graph.work_packages.find((item) => item.work_package_id === 'wp-b')!;
-    const edgeToOpen: WorkPackageDependencyV1 = {
+    const edgeToOpen: ProviderWorkPackageDependency = {
       repository_id: REPO_ID,
       work_package_id: 'wp-b',
-      required_state: 'canonical_done',
+      required_state: 'provider_closed',
       acceptance_authority: null,
     };
-    expect(subject.target.task_status).toBe('[x]');
-    expect(openWorkPackage.task_status).toBe('[ ]');
-    expect(resolveDependencyAuthority(input(subject, 'canonical_done', {
+    expect(subject.target.issue?.state).toBe('closed');
+    expect(openWorkPackage.issue?.state).toBe('open');
+    expect(resolveDependencyAuthority(input(subject, 'provider_closed', {
       dependency: edgeToOpen,
       target: openWorkPackage,
     })).status).toBe('unsatisfied');
 
-    const smuggled = resolveDependencyAuthority(input(subject, 'canonical_done', {
+    const smuggled = resolveDependencyAuthority(input(subject, 'provider_closed', {
       dependency: edgeToOpen,
       target: subject.target,
     }));
@@ -1388,12 +1381,10 @@ describe('issue #284 closed dependency authority', () => {
       canonical_commit: subject.commit,
       target: {
         repository_id: subject.target.repository_id,
-        sprint_path: subject.target.sprint_path,
         work_package_id: subject.target.work_package_id,
         work_package_revision: subject.target.work_package_revision,
-        task_id: subject.target.task_id,
-        task_revision: subject.target.task_revision,
-        task_status: subject.target.task_status,
+        task: subject.target.task,
+        issue: subject.target.issue,
       },
       status: 'satisfied',
       evidence_refs: first.evidence_refs,
