@@ -20,16 +20,17 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `{{PLAN_FILE}}`
+- Optional plan: `{{PLAN_FILE}}`
 - Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 - Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
+- Scope authority: the active approved admission and its `allowed_paths`; this plan and contract only propose scope.
+- Concurrency rule: use the current admitted task/session and immutable claim. Preserve the owning Git worktree and do not infer execution ownership from planning files.
+- Planning export: `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` prints this plan for a delegation brief or PR description; it does not activate work or create approval artifacts.
+- Execution isolation: `repo-harness run contract-worktree start --plan {{PLAN_FILE}}` can create an isolated Git worktree. Worktree creation does not replace task/session admission.
 
 ## Approach
 ### Strategy
@@ -55,7 +56,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
-- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. Do not infer active execution from the latest non-archived plan.
+- Planning selection is metadata only. Do not infer active execution from an active-plan marker or the latest non-archived plan.
 
 ## Handoff
 

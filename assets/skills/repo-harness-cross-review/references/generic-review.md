@@ -6,10 +6,22 @@ address file `{endpoint:{session,configPath?,home?},parent_pane}`. Trust the exa
 checkout through the normal operator workflow before starting; never respond to
 trust/update/approval prompts automatically.
 
+Before review, configure the repository's manual `external_sources` policy and
+provide working provider access. The default policy is off; initialization does
+not enable it. The trusted upstream Bot must authenticate the human, authorize
+the scope, and supply the bound request. Its integration calls
+`repo-harness review admit --repo <execution-checkout> --request <authorized-request.json>`.
+The request contains `{admission, approval, expectedRevision}`. Do not create an
+approval from these examples: actor IDs and authorization references are binding
+data, not authentication. Select the resulting active grant and policy digests
+below, and supply the current immutable issue claim. A contract or plan file
+cannot grant permission. A user waiver requires a separate upstream-authorized
+decision; waiver eligibility in an admission does not grant one.
+
 ```bash
-repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked> --herdr-endpoint <address.json>
-repo-harness review status --contract tasks/contracts/<task>.contract.md
-repo-harness review close --contract tasks/contracts/<task>.contract.md
+repo-harness review round --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked> --herdr-endpoint <address.json> --verification <native-report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
+repo-harness review status --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
+repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
 Default selection uses an existing typed task binding for the parent pane and chooses
@@ -28,7 +40,7 @@ consumes OAR Session model observation and calls the existing generic-review
 Receipt writer/verifier. Receipt validity is launcher-independent.
 
 Close requires the current passing Receipt to equal the final accepted round.
-On failure use `repo-harness review cancel --contract <path>` for identity-proven
+On failure use `repo-harness review cancel` with the same six admission selectors for identity-proven
 cleanup without acceptance. Preserve unknown delivery and cleanup evidence.
 The server and attached parent/workspace remain with their existing owner.
 Drain pre-cutover sessions with the prior version; archive old evidence read-only.
@@ -60,7 +72,7 @@ Use this mode when an operator works in the Claude desktop app without Herdr.
 The Claude app session is the owner, so the default reviewer is Codex.
 
 ```bash
-repo-harness review round --launch app-terminal --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked> --verification <report>
+repo-harness review round --launch app-terminal --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked> --verification <report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
 ```
 
 1. The first call prepares the packet, the Seatbelt profile and the host spec.

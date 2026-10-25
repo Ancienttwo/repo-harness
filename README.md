@@ -339,10 +339,24 @@ revision to a task that already has an approved plan and contract.
 
 ### Persistent acceptance review
 
+Before review, configure the repository's manual `external_sources` policy and
+provide working provider access. The default policy is off; initialization does
+not enable it. The trusted upstream Bot must authenticate the human, authorize
+the scope, and supply the bound request. Its integration calls
+`repo-harness review admit --repo <execution-checkout> --request <authorized-request.json>`.
+The request contains `{admission, approval, expectedRevision}`. Do not create an
+approval from these examples: actor IDs and authorization references are binding
+data, not authentication. Select the resulting active grant and policy digests
+below, and supply the current immutable issue claim. A contract or plan file
+cannot grant permission. A user waiver requires a separate upstream-authorized
+decision; waiver eligibility in an admission does not grant one.
+
+See [the control Bot boundary](docs/control-bot-boundary.md) for the integration contract.
+
 ```bash
-repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked-checkout> --herdr-endpoint <address.json>
-repo-harness review status --contract tasks/contracts/<task>.contract.md
-repo-harness review close --contract tasks/contracts/<task>.contract.md
+repo-harness review round --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked-checkout> --herdr-endpoint <address.json> --verification <native-report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
+repo-harness review status --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
+repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
 In the Claude desktop app without Herdr, add `--launch app-terminal` and omit `--herdr-endpoint`. The first call prints the fixed host command. Claude runs it once in an app Terminal tab, then repeats the round. OAR, Seatbelt and the Receipt stay the same.

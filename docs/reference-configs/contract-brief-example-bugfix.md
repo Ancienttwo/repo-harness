@@ -51,8 +51,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Notes file: `tasks/notes/example-fix-empty-label.notes.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
-- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` records real declared checks in the selected report; `repo-harness run change-assessment prepare --contract <contract>` then writes the assessment before semantic review; one typed `AcceptanceReceipt` records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
+- Scope gate: edit only paths allowed by the active approved admission; ask the trusted upstream Bot for a new scoped admission before widening scope. This example only proposes paths.
+- Completion gate: Execute the active admitted verification plan and prepare change assessment with its repository, issue, campaign, grant, policy and actor selectors. Record and verify a typed AcceptanceReceipt under that admission. A user waiver requires a separate upstream-authorized decision and grant; policy eligibility alone is insufficient. `repo-harness run verify-sprint --test <affected-test-file>` runs explicit local checks; `--base <ref>` consumes provider merge checks. Neither form is an acceptance-receipt verifier. Use `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/<run-id>.report.json` and `repo-harness run change-assessment prepare --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>`. Obtain these selectors from the trusted upstream admission, not this example.
 
 ## Allowed Paths
 

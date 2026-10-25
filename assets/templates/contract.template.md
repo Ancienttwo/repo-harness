@@ -52,7 +52,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Notes file: `{{NOTES_FILE}}`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths in the active approved admission. This contract records planning metadata; editing it does not widen permission. Obtain a new scoped admission from the trusted control Bot before widening scope.
-- Completion gate: execute the active admitted verification plan and prepare change assessment with its repository, issue, campaign, grant, policy and actor selectors. Record one typed AcceptanceReceipt under the approved admission policy, then run `verify-sprint`. The sections below propose inputs for upstream approval; they are not execution authority. Review Markdown is projection only.
+- Completion gate: Execute the active admitted verification plan and prepare change assessment with its repository, issue, campaign, grant, policy and actor selectors. Record and verify a typed AcceptanceReceipt under that admission. A user waiver requires a separate upstream-authorized decision and grant; policy eligibility alone is insufficient. `repo-harness run verify-sprint --test <affected-test-file>` runs explicit local checks; `--base <ref>` consumes provider merge checks. Neither form is an acceptance-receipt verifier. The sections below propose inputs for upstream approval; they are not execution authority. Review Markdown is projection only.
 
 ## Change Assessment
 
@@ -62,8 +62,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Acceptance Policy
 
+This is a proposal, not an admission payload. The upstream Bot supplies the complete approved policy and its digest.
+
 ```json
-{"protocol":2,"reviewer":"Codex","source":"generic-review","user_waiver":"allowed"}
+{"reviewer":"Codex","user_waiver":"forbidden"}
 ```
 
 ## Allowed Paths
@@ -86,8 +88,8 @@ allowed_paths:
 
 ```yaml
 evidence_requirements:
-  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
-  benchmark: not_applicable
+  # Set benchmark to required when the approved admission consumes the harness profile benchmark matrix.
+  benchmark: not_required
 ```
 
 ## Delegation Contract
