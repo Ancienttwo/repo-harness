@@ -124,7 +124,7 @@ export function buildIntegrationCommand(): Command {
       }
     });
 
-  addFormat(integration.command('envelope').description('Freeze explicit merged PRs into one exact existing Git candidate')
+  addFormat(integration.command('envelope').description('Freeze explicit PR integration evidence for one exact existing Git candidate')
     .requiredOption('--contract <sha256>', 'IntegrationContract digest')
     .requiredOption('--base <sha>', 'Exact candidate base commit')
     .requiredOption('--head <sha>', 'Exact current candidate head commit')
