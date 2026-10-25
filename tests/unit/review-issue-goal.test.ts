@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
-import { observeReviewIssueGoal } from '../../src/effects/review/issue-goal';
-import { parseExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
-import type { GithubCommandRunner } from '../../src/effects/external-sources/github';
+import { observeReviewIssueGoal } from '../../src/effects/admission/issue-goal';
+import { parseExternalSourcesPolicy } from '../../src/effects/github/policy';
+import type { GithubCommandRunner } from '../../src/effects/github/issues';
 
 const policy = parseExternalSourcesPolicy({ version: 1, mode: 'manual', github: {
   enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [7] },
@@ -41,7 +41,7 @@ test('goal rejects a replacement repository or issue, PR substitution and missin
 
 test('launch-time GH_HOST cannot redirect canonical goal command arguments', () => {
   const code = `
-    const { observeReviewIssueGoal } = await import(${JSON.stringify(new URL('../../src/effects/review/issue-goal.ts', import.meta.url).href)});
+    const { observeReviewIssueGoal } = await import(${JSON.stringify(new URL('../../src/effects/admission/issue-goal.ts', import.meta.url).href)});
     const calls = [];
     const goal = observeReviewIssueGoal({ policy: ${JSON.stringify(policy)}, repository_id: '101', issue_id: '201', runner: (args) => {
       calls.push(args);

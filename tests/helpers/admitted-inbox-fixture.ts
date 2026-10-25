@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll } from './repo-fixture';
 import { startTaskAgent, taskSessionDirectory, type TaskClaimReference } from '../../src/effects/terminal/task-session';
-import { taskRepository } from '../../src/effects/terminal/task-worktree';
+import { taskRepository } from '../../src/effects/git/task-repository';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 
 /** Offline transport injection exercises public admission and binding persistence.

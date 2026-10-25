@@ -1,6 +1,6 @@
 import { readCurrentReviewAdmissionSelection } from './admission-store';
 import { observeActiveReviewAdmission } from './issue-goal';
-import { readExternalSourcesPolicy } from '../external-sources/policy';
+import { readExternalSourcesPolicy } from '../github/policy';
 
 export type ReviewAdmissionSource = Parameters<typeof observeActiveReviewAdmission>[0];
 

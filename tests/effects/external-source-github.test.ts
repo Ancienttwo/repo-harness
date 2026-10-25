@@ -1,12 +1,12 @@
-import { readExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
+import { readExternalSourcesPolicy } from '../../src/effects/github/policy';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { fetchGithubIssues, GithubAdapterError, type GithubCommandRunner } from '../../src/effects/external-sources/github';
-import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/external-sources/policy';
+import { fetchGithubIssues, GithubAdapterError, type GithubCommandRunner } from '../../src/effects/github/issues';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 import { ExternalSourceRefreshError, refreshExternalSource } from '../../src/effects/external-sources/refresh';
 
 const policy = requireManualGithubPolicy(parseExternalSourcesPolicy({

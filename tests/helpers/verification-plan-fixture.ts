@@ -1,6 +1,6 @@
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
 import { parseVerificationPlanFromContractText } from '../../src/core/evidence/verification-plan';
-import type { ReviewAdmissionSource } from '../../src/effects/review/admission-source';
+import type { ReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";

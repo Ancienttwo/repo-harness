@@ -4,14 +4,14 @@ import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, open
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { isAbsolute, join, relative } from 'path';
-import { loadEngineerProfile } from '../engineers/profile-store';
-import { observeActiveReviewAdmission } from '../review/issue-goal';
-import type { ReviewAdmissionSource } from '../review/admission-source';
+import { loadEngineerProfile } from '../profiles/profile-store';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
 import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
-import { taskRepository, type TaskRepository } from './task-worktree';
+import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { terminateProcessGroup } from '../process-group-termination';

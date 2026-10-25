@@ -1,5 +1,5 @@
 import { TaskMessageError } from '../../core/messages/task-message-error';
-import { readReviewAdmissionSource } from '../../effects/review/admission-source';
+import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
 import { Command } from 'commander';
 import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';

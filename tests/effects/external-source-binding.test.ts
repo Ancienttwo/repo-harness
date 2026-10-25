@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { buildExternalSourceRefreshReceipt, buildProviderIssueObservation, type ExternalSourceRefreshReceiptV1 } from '../../src/core/external-sources/issue-observation';
 import { rmSync } from 'node:fs';
 import { externalSourceBindingFixture } from '../helpers/external-source-binding-fixture';
-import { revokeReviewAdmission } from '../../src/effects/review/admission-store';
+import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { bindExternalSource, listExternalSourceBindings, type ExternalSourceBindingDependencies } from '../../src/effects/external-sources/binding';
 
 

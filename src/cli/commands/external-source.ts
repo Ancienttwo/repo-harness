@@ -3,7 +3,7 @@ import { isTaskDiffRequest } from '../../core/operator/task-diff';
 import { Command } from 'commander';
 
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../../effects/repo-registry';
-import { ExternalSourcePolicyError, readExternalSourcesPolicy } from '../../effects/external-sources/policy';
+import { ExternalSourcePolicyError, readExternalSourcesPolicy } from '../../effects/github/policy';
 import { ExternalSourceRefreshError, listExternalSourceProjection, refreshExternalSource } from '../../effects/external-sources/refresh';
 import { ExternalSourceStoreError } from '../../effects/external-sources/store';
 import { bindExternalSource, externalSourceContext, listExternalSourceBindings, listHistoricalExternalSourceBindings } from '../../effects/external-sources/binding';

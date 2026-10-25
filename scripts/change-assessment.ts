@@ -12,8 +12,8 @@ const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
 
 type ChangeAssessmentModule = typeof import('../src/core/review/change-assessment');
 type ChangeAssessmentEffects = typeof import('../src/effects/review/change-assessment');
-type AdmissionSourceModule = typeof import('../src/effects/review/admission-source');
-type ReviewAdmissionSource = import('../src/effects/review/admission-source').ReviewAdmissionSource;
+type AdmissionSourceModule = typeof import('../src/effects/admission/admission-source');
+type ReviewAdmissionSource = import('../src/effects/admission/admission-source').ReviewAdmissionSource;
 type DiffFingerprintModule = typeof import('../src/effects/review/diff-fingerprint');
 
 function usage(): string {
@@ -217,7 +217,7 @@ async function validate(root: string, values: Record<string, string>, authority:
 export async function runChangeAssessmentCli(argv: readonly string[], options: { repoRoot?: string; admissionSource?: (root: string, values: Record<string, string>) => ReviewAdmissionSource } = {}): Promise<number> {
   const { command, values } = parseArgs(argv);
   const root = options.repoRoot ?? repositoryRoot();
-  const source = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/review/admission-source.ts')).href) as AdmissionSourceModule;
+  const source = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/admission/admission-source.ts')).href) as AdmissionSourceModule;
   const authority = (options.admissionSource ?? source.readReviewAdmissionSource)(root, values);
   switch (command) {
     case 'prepare': return prepare(root, values, authority);

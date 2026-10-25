@@ -10,7 +10,7 @@ import { gitExecFileSync } from '../git/runner';
 import { readCanonicalTargetRef } from '../state/canonical-target';
 import { readOperatorTaskSessions } from '../operator/task-sessions';
 import { listExternalSourceProjection } from '../external-sources/refresh';
-import { listEngineerProfiles, resolveCapabilityForEngineer } from './profile-store';
+import { listEngineerProfiles, resolveCapabilityForEngineer } from '../profiles/profile-store';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 
 export const PROVIDER_WORK_GRAPH_PATH = '.ai/harness/work-graph.v2.json';

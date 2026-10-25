@@ -26,7 +26,7 @@ import {
   type EngineerTransitionRequest,
   type ModuleEngineerProfileV1,
 } from '../../src/core/engineers/profile-binding';
-import { listEngineerProfiles } from '../../src/effects/engineers/profile-store';
+import { listEngineerProfiles } from '../../src/effects/profiles/profile-store';
 
 const profile: ModuleEngineerProfileV1 = {
   protocol: ENGINEER_PROFILE_PROTOCOL,

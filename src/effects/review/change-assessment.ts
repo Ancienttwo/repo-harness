@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { join } from 'path';
-import { observeActiveReviewAdmission } from './issue-goal';
-import type { ReviewAdmissionSource } from './admission-source';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 
 import {
   assessChange,

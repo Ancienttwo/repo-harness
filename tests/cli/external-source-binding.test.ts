@@ -5,7 +5,7 @@ import { buildExternalSourceCommand } from '../../src/cli/commands/external-sour
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
 import { writeProviderIssueObservation, listExternalSourceBindingReceipts } from '../../src/effects/external-sources/store';
 import * as registry from '../../src/effects/repo-registry';
-import * as admissionSource from '../../src/effects/review/admission-source';
+import * as admissionSource from '../../src/effects/admission/admission-source';
 import { externalSourceBindingFixture } from '../helpers/external-source-binding-fixture';
 
 describe('external-source binding CLI contract', () => {

@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { observeTaskSessionAdmission, collectTaskResult, startTaskAgent, taskSessionDirectory,
   ensureSessionDirectory, writeSessionArtifact, type HerdrTaskBinding, type TaskRequest } from '../../src/effects/terminal/task-session';
-import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { taskRepository } from '../../src/effects/terminal/task-worktree';
+import { loadEngineerProfile } from '../../src/effects/profiles/profile-store';
+import { taskRepository } from '../../src/effects/git/task-repository';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 

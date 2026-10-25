@@ -14,9 +14,9 @@ import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { decodeOperatorTaskDiff, TASK_DIFF_MAX_BYTES } from '../../src/core/operator/task-diff';
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { taskRepository } from '../../src/effects/terminal/task-worktree';
+import { taskRepository } from '../../src/effects/git/task-repository';
 import { observeTaskSessionAdmission, ensureSessionDirectory, taskSessionDirectory, writeSessionArtifact, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
-import { readReviewAdmissionSource } from '../../src/effects/review/admission-source';
+import { readReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 
 const cleanup: string[] = [];
@@ -349,7 +349,7 @@ test('a bound owner root replaced by a symlink is unavailable', () => {
 
 test('discovery returns current protected selection, requires explicit sessions, and distinguishes failure from empty', async () => {
   const { readOperatorTaskSessions } = await import('../../src/effects/operator/task-sessions');
-  const { readCurrentReviewAdmissionSource } = await import('../../src/effects/review/admission-source');
+  const { readCurrentReviewAdmissionSource } = await import('../../src/effects/admission/admission-source');
   const f = fixture(true);
   const currentSource: typeof readCurrentReviewAdmissionSource = input => readCurrentReviewAdmissionSource(input, { authorityHome: f.home, runner: f.approved.source.runner });
   const discover = () => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env }, { currentSource });

@@ -9,8 +9,8 @@ import { createHash } from 'node:crypto';
 const [, , installed, repoArg, homeArg, fixtureDir] = process.argv;
 const repo = realpathSync(repoArg!), home = realpathSync(homeArg!);
 const load = (path: string) => import(pathToFileURL(join(installed!, path)).href);
-const { parseExternalSourcesPolicy } = await load('src/effects/external-sources/policy.ts');
-const { observeReviewIssueGoal } = await load('src/effects/review/issue-goal.ts');
+const { parseExternalSourcesPolicy } = await load('src/effects/github/policy.ts');
+const { observeReviewIssueGoal } = await load('src/effects/admission/issue-goal.ts');
 const { createReviewAdmission } = await load('src/core/review/authority-context.ts');
 const digest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const external_sources = { version: 1, mode: 'manual', github: { enabled: true,

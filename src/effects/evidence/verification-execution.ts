@@ -16,7 +16,7 @@ import {
   type VerificationPlan,
 } from "../../core/evidence/verification-plan";
 import { readEvalCatalogPlan, type EvalCatalogSource } from "./eval-catalog";
-import { observeActiveReviewAdmission } from "../review/issue-goal";
+import { observeActiveReviewAdmission } from "../admission/issue-goal";
 import { resolveGitCommonDirectory } from "../git/common-directory";
 import {
   acquireExclusiveDirectoryLock,

@@ -11,7 +11,7 @@ import {
   taskWorkspaceKey,
   worktreeTrashPrefix,
 } from '../../src/effects/git/repository-identity';
-import { taskRepository } from '../../src/effects/terminal/task-worktree';
+import { taskRepository } from '../../src/effects/git/task-repository';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });

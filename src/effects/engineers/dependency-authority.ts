@@ -1,7 +1,7 @@
 import { validateProviderIntegrationDependencyReference, validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
-import { observeActiveReviewAdmission } from '../review/issue-goal';
-import { readExternalSourcesPolicy, requireManualGithubPolicy } from '../external-sources/policy';
-import { fetchGithubIssues } from '../external-sources/github';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { readExternalSourcesPolicy, requireManualGithubPolicy } from '../github/policy';
+import { fetchGithubIssues } from '../github/issues';
 import { currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.

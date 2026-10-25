@@ -5,8 +5,8 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import { decodeOperatorTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type OperatorTaskSession, type OperatorTaskSessions, type OperatorTaskSessionsRequest } from '../../core/operator/task-sessions';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readSessionArtifact, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session';
-import { taskRepository } from '../terminal/task-worktree';
-import { readCurrentReviewAdmissionSource } from '../review/admission-source';
+import { taskRepository } from '../git/task-repository';
+import { readCurrentReviewAdmissionSource } from '../admission/admission-source';
 import { observeOperatorTaskDiffSource, OperatorTaskDiffError } from './task-diff';
 const fail = (code: 'unavailable' | 'too_large' | 'stale'): never => { throw new OperatorTaskDiffError(code); };
 

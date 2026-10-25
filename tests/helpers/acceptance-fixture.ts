@@ -2,7 +2,7 @@
 
 /** Explicit synthetic fixture opinion; never converts a real provider claim into PASS. */
 export async function fixtureReviewResult(args: {
-  root: string; authority: import('../../src/effects/review/admission-source').ReviewAdmissionSource; verification: string; reviewer: string;
+  root: string; authority: import('../../src/effects/admission/admission-source').ReviewAdmissionSource; verification: string; reviewer: string;
   disposition: string; summary: string; findings: import('../../scripts/acceptance-receipt').AcceptanceFinding[];
 }): Promise<import('../../scripts/acceptance-receipt').AcceptanceReviewResult> {
   const { acceptanceContext, acceptanceReviewContextDigest } = await import('../../scripts/acceptance-receipt');

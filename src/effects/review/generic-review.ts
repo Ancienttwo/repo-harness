@@ -2,7 +2,7 @@ import { preparePrePromptInbox } from './pre-prompt-inbox';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { osAccountHome } from '../runtime/os-account-home';
 import { reviewCampaignKey } from '../../core/review/authority-context';
-import type { ReviewAdmissionSource } from './admission-source';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { join, relative, resolve } from 'path';
@@ -14,7 +14,7 @@ import { composeReviewPacket } from '../../core/review/review-packet';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
-import { taskRepository } from '../terminal/task-worktree';
+import { taskRepository } from '../git/task-repository';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';

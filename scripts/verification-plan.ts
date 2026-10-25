@@ -2,7 +2,7 @@
 import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
-import { readReviewAdmissionSource } from "../src/effects/review/admission-source";
+import { readReviewAdmissionSource } from "../src/effects/admission/admission-source";
 
 type VerificationExecutionModule = typeof import("../src/effects/evidence/verification-execution");
 

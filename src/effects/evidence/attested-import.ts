@@ -11,8 +11,8 @@ import type {
 } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord, CorruptEvidenceLogError, UnterminatedEvidenceLogError } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
-import { observeActiveReviewAdmission } from '../review/issue-goal';
-import type { ReviewAdmissionSource } from '../review/admission-source';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 import type { AcceptanceReceipt } from '../../core/review/acceptance-receipt';
 import { hashVerificationPlan } from '../../core/evidence/verification-plan';
 import { gitExecFileSync } from '../git/runner';

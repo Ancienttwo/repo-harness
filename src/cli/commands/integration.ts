@@ -1,4 +1,4 @@
-import { readReviewAdmissionSource } from '../../effects/review/admission-source';
+import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
 import { Command } from 'commander';
 import { lstatSync, readFileSync, realpathSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';

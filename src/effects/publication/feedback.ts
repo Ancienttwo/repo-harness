@@ -12,9 +12,8 @@ import { MergeReadinessError, observeProviderReadinessIdentity, validatePullRequ
 import type { PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { observeTaskInboxContext, type TaskInboxSessionSource } from '../fleet/task-inbox';
 import { readTaskAgent } from '../terminal/task-session';
-import { observeActiveReviewAdmission } from '../review/issue-goal';
-import { readActiveReviewAdmission } from '../review/admission-store';
-
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { readActiveReviewAdmission } from '../admission/admission-store';
 
 export type FeedbackErrorCode =
   | 'feedback_provider_failed'

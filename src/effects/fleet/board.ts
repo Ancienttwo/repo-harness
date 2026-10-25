@@ -23,7 +23,7 @@ import { resolveProviderBoard } from '../state/collect-provider-board-inputs';
 import type { ProviderBoardCardV2 } from '../../core/state/provider-board';
 import type { OperatorTaskSession } from '../../core/operator/task-sessions';
 import { observeOperatorTaskDiffSource } from '../operator/task-diff';
-import { readReviewAdmissionSource } from '../review/admission-source';
+import { readReviewAdmissionSource } from '../admission/admission-source';
 import {
   assertLocalPullRequestRepository,
   collectPullRequestMergeReadinessAbortable,

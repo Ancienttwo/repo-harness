@@ -6,7 +6,7 @@ import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
-import { taskRepository } from '../terminal/task-worktree';
+import { taskRepository } from '../git/task-repository';
 import { gatesDirectoryName, resolveRepositoryIdentity } from '../git/repository-identity';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';

@@ -59,8 +59,8 @@ import type {
 } from '../../core/engineers/principal-claim';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
-import { observeActiveReviewAdmission } from '../review/issue-goal';
-import { readActiveReviewAdmission } from '../review/admission-store';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { readActiveReviewAdmission } from '../admission/admission-store';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import * as admittedReply from '../../core/fleet/admitted-task-reply';

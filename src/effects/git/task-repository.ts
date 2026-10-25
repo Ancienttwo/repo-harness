@@ -1,9 +1,9 @@
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
-import { configuredGitBinary } from '../git/common-directory';
-import { resolveRepoIdentity, resolveWorktreeId } from '../git/repository-identity';
-import { gitExecFileSync } from '../git/runner';
-import { readWorktreeTopology } from '../git/worktree-topology';
+import { configuredGitBinary } from './common-directory';
+import { resolveRepoIdentity, resolveWorktreeId } from './repository-identity';
+import { gitExecFileSync } from './runner';
+import { readWorktreeTopology } from './worktree-topology';
 
 export interface TaskRepository {
   repository_id: string;

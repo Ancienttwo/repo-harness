@@ -1,7 +1,7 @@
 import { osAccountHome } from '../runtime/os-account-home';
-import { observeActiveReviewAdmission } from './issue-goal';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { bindReviewAdmission, reviewAdmissionAllowsPath } from '../../core/review/authority-context';
-import { readReviewAdmissionSource, type ReviewAdmissionSource } from './admission-source';
+import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admission/admission-source';
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';

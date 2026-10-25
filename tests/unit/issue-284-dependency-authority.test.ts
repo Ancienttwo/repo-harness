@@ -1,7 +1,7 @@
 import type { RequiredPullRequestV2 } from '../../src/core/integration/product-acceptance';
 import { observeSelectedPullRequest, type IntegrationAcceptanceEnvironment } from '../../src/effects/integration/product-acceptance';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { observeActiveReviewAdmission } from '../../src/effects/review/issue-goal';
+import { observeActiveReviewAdmission } from '../../src/effects/admission/issue-goal';
 import { createReviewAdmission } from '../../src/core/review/authority-context';
 import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
@@ -33,8 +33,8 @@ import {
 } from '../../src/core/engineers/scheduling';
 import { buildExternalSourceProjection } from '../../src/core/external-sources/projection';
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
-import { fetchGithubIssues, type GithubCommandRunner } from '../../src/effects/external-sources/github';
-import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/external-sources/policy';
+import { fetchGithubIssues, type GithubCommandRunner } from '../../src/effects/github/issues';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 import { publicationSha256 } from '../../src/core/publication/publication-receipt';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,

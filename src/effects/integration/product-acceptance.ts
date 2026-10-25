@@ -1,6 +1,6 @@
 import { captureGitVirtualTreeSnapshot } from '../evidence/verification-execution';
 import { osAccountHome } from '../runtime/os-account-home';
-import type { ReviewAdmissionSource } from '../review/admission-source';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 import {
   closeSync,

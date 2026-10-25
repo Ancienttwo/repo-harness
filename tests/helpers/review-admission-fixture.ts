@@ -6,9 +6,9 @@ import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { createReviewAdmission, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { parseExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
-import { observeReviewIssueGoal } from '../../src/effects/review/issue-goal';
-import type { ReviewAdmissionSource } from '../../src/effects/review/admission-source';
+import { parseExternalSourcesPolicy } from '../../src/effects/github/policy';
+import { observeReviewIssueGoal } from '../../src/effects/admission/issue-goal';
+import type { ReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 
 /** Explicit synthetic approval fixture. This writes real account-owned record bytes;
  * it does not exercise operator approval or a live GitHub endpoint. */

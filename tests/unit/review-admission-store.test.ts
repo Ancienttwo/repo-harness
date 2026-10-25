@@ -1,17 +1,17 @@
-import { approveDelegatedReviewAdmission } from '../../src/effects/review/control-admission';
+import { approveDelegatedReviewAdmission } from '../../src/effects/admission/control-admission';
 import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
-import { observeReviewIssueGoal, observeActiveReviewAdmission, observeAdmittedReviewContext } from '../../src/effects/review/issue-goal';
-import { parseExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
+import { observeReviewIssueGoal, observeActiveReviewAdmission, observeAdmittedReviewContext } from '../../src/effects/admission/issue-goal';
+import { parseExternalSourcesPolicy } from '../../src/effects/github/policy';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { approveReviewAdmission, readActiveReviewAdmission, readReviewAdmission, revokeReviewAdmission } from '../../src/effects/review/admission-store';
+import { approveReviewAdmission, readActiveReviewAdmission, readReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -120,7 +120,7 @@ test('launch-time HOME and REPO_HARNESS_HOME cannot redirect default admission s
   const f = fixture(), grant = f.seed();
   const { authorityHome: _explicitHome, ...args } = f.args(grant);
   const code = [
-    `const { readReviewAdmission } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/review/admission-store.ts'))});`,
+    `const { readReviewAdmission } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/admission/admission-store.ts'))});`,
     `const args = ${JSON.stringify(args)};`,
     `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)} });`,
     `if (explicit.context.authorization.grant_sha256 !== args.expectedGrantSha256) throw new Error('fixture is invalid');`,

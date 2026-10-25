@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { readTaskAgent, observeTaskSessionAdmission } from '../terminal/task-session';
-import { readReviewAdmissionSource } from '../review/admission-source';
+import { readReviewAdmissionSource } from '../admission/admission-source';
 import { resolvePolicyReviewBase } from '../review/diff-fingerprint';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { TASK_DIFF_MAX_BYTES, TASK_DIFF_MAX_UNTRACKED, isTaskDiffRequest, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../../core/operator/task-diff';

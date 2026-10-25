@@ -2,8 +2,8 @@ import { readActiveReviewAdmission } from './admission-store';
 import { bindReviewAdmission, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { fetchGithubIssues, type GithubCommandRunner } from '../external-sources/github';
-import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../external-sources/policy';
+import { fetchGithubIssues, type GithubCommandRunner } from '../github/issues';
+import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../github/policy';
 
 /** Read one explicitly selected issue through the existing bounded provider
  * adapter. This observes a goal; it does not grant review or waiver permission.

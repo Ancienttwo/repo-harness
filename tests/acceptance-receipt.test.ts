@@ -1,4 +1,4 @@
-import { observeActiveReviewAdmission } from '../src/effects/review/issue-goal';
+import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goal';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';

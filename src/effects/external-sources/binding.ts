@@ -5,7 +5,7 @@ import { buildExternalSourceProjection } from '../../core/external-sources/proje
 import { renderExternalSourceUntrustedContext } from '../../core/external-sources/binding';
 import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readReviewAdmissionSource } from '../review/admission-source';
+import { readReviewAdmissionSource } from '../admission/admission-source';
 import { observeTaskInboxContext } from '../fleet/task-inbox';
 import { readTaskAgent } from '../terminal/task-session';
 import { listExternalSourceBindingReceipts, listHistoricalExternalSourceBindingReceipts,

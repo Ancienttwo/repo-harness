@@ -3,8 +3,8 @@ import { hashVerificationPlan } from '../../core/evidence/verification-plan';
 import type { JsonValue } from '../../core/evidence/types';
 import { ADMITTED_CONTEXT_MAX_BYTES, decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
 import { isTaskDiffRequest, type OperatorTaskDiffRequest } from '../../core/operator/task-diff';
-import { readReviewAdmissionSource } from '../review/admission-source';
-import { observeActiveReviewAdmission } from '../review/issue-goal';
+import { readReviewAdmissionSource } from '../admission/admission-source';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { observeOperatorTaskDiffSource, OperatorTaskDiffError } from './task-diff';
 
 /** Current protected goal and plan, surrounded by exact session/approval reads. */

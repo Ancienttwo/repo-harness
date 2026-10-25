@@ -1,5 +1,5 @@
-import { approveDelegatedReviewAdmission } from '../../effects/review/control-admission';
-import { readReviewAdmissionSource } from '../../effects/review/admission-source';
+import { approveDelegatedReviewAdmission } from '../../effects/admission/control-admission';
+import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';

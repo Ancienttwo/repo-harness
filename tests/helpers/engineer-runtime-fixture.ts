@@ -1,13 +1,13 @@
 import { spyOn } from 'bun:test';
 import * as herdr from '../../src/effects/terminal/herdr';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
-import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
+import { loadEngineerProfile } from '../../src/effects/profiles/profile-store';
 import { startTaskAgent, taskSessionDirectory, type TaskClaimReference } from '../../src/effects/terminal/task-session';
-import { taskRepository } from '../../src/effects/terminal/task-worktree';
+import { taskRepository } from '../../src/effects/git/task-repository';
 import { observeAgentRuntimeEndpoint } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
-import { readActiveReviewAdmission, revokeReviewAdmission } from '../../src/effects/review/admission-store';
+import { readActiveReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 
 export interface EngineerRuntimeFixtureOptions {
   authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
