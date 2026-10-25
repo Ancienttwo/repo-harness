@@ -9,8 +9,8 @@ import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
  * `resolveEffectiveStateReadOnly` is the no-write resolution path: it runs the
  * same stability loop as `resolveEffectiveState` but allocates no version and
  * publishes no cache, so this command mutates nothing. The risk input matches
- * the existing whole-repo inspection convention (`buildStateSnapshot`, the Stop
- * hook's `resolveStopEffectiveState`): no target paths, `operation: 'inspect'`.
+ * the existing whole-repo inspection convention (`buildStateSnapshot`, the MCP
+ * state tools): no target paths, `operation: 'inspect'`.
  *
  * The attempt ledger is read the same way -- read-only, absent-tolerant, and
  * outside every state input bundle -- so it feeds the circuit breaker without

@@ -14,7 +14,6 @@ export const integrationFiles = new Set([
 // Port-literal tests already use port 0, browser URLs, or temporary config files.
 export const serialFiles = new Set([
   'tests/herdr-task-lifecycle.test.ts',
-  'tests/bounded-supervisor-audit.test.ts',
   'tests/cli/install.test.ts',
   'tests/cli/doctor.test.ts',
   'tests/cli/status.test.ts',

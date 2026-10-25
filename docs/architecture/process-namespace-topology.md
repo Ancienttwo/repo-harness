@@ -22,7 +22,6 @@ flowchart LR
   classDef sup fill:#155e75,stroke:#a5f3fc,color:#ffffff
   classDef long fill:#14532d,stroke:#bbf7d0,color:#ffffff
   classDef pane fill:#78350f,stroke:#fde68a,color:#ffffff
-  classDef dead fill:#7f1d1d,stroke:#fecaca,color:#ffffff,stroke-dasharray:4 3
 
   subgraph EXT["外部进程，repo-harness 不拥有"]
     Host["Claude Code / Codex"]:::ext
@@ -52,7 +51,6 @@ flowchart LR
   subgraph PANE["Herdr：外部 server 与 pane 内的 node 24 到 25 进程"]
     Herdr["Herdr server<br/>herdr.sock"]:::ext
     Rev["oar-review-host.js"]:::pane
-    Cod["oar-coding-host.js<br/>没有生产调用方（R-T1）"]:::dead
     Ven["claude / codex<br/>sandbox-exec"]:::pane
   end
 
@@ -71,7 +69,6 @@ flowchart LR
   Op -->|"spawn，stdin/stdout JSON"| Col
   CLI -->|"herdr pane split/run，10 s"| Herdr
   Herdr -->|"pane run node bundle spec"| Rev
-  Herdr -.->|"只在测试中"| Cod
   Rev -->|"OAR runtime"| Ven
   CLI -.->|"会话目录文件握手"| Rev
   Hook -->|"git 3 到 5 s"| Tools
@@ -90,8 +87,7 @@ flowchart LR
 | operator 服务 | `repo-harness operator serve` → `src/effects/operator/server.ts:1698` | 用户 | 长驻 | 只读 HTTP API | SIGINT/SIGTERM 调 `server.close()` | — |
 | operator collector | `fleet-collector-process.ts`、`task-read-process.ts`、`setup-check-child.ts` | operator `spawn`，detached | fleet 与任务读取每请求一个；setup 每 10 min | stdin/stdout JSON | fleet 与任务读取 1 到 30 s，SIGTERM 进程组，500 ms 后 SIGKILL；setup 90 s，只发 SIGKILL | — |
 | OAR review host | `dist/oar-review-host.js`，node | `herdr pane run`（`task-session.ts:543`） | 每评审会话，最多 3 轮 | 会话目录文件；stdout `OAR_HOST_READY` | `close.request` 或信号；`disposed.json` 证明已释放 | 会话目录 `caller.lock` |
-| OAR coding host | `dist/oar-coding-host.js`，node | 只有测试调用 `startCodingTaskAgent` | — | 同上 | — | — |
-| 供应商 CLI | claude、codex | OAR host 经 `coding-launcher` 与 `sandbox-exec` | 每会话 | OAR 进程内 API | `session.abort()` 与 `dispose()` | — |
+| 供应商 CLI | claude、codex | OAR review host 经 `reviewer-launcher` 与 `sandbox-exec` | 每会话 | OAR 进程内 API | `session.abort()` 与 `dispose()` | — |
 | 一次性命令 | git、gh、archctx（node）、codegraph、herdr、oracle | 各调用点 `spawnSync`、`execFileSync` 或 `runProcess` | 每调用 | stdout | 3 s 到 30 min；部分调用没有超时（R-T11） | — |
 | Chrome | `open -na "Google Chrome" --remote-debugging-port=0` | ChatGPT native provider | 浏览器生命周期 | CDP WebSocket，端口来自 `DevToolsActivePort` | 发 `Browser.close`；`keepBrowser` 时保留 | — |
 
@@ -166,7 +162,7 @@ flowchart LR
   end
 
   Ignored -->|"git-common-dir 路径作 repository_id"| CLive
-  Tracked -->|"realpath 根：registry 取 16 hex，gates 取完整 sha256（R-T9）"| UH
+  Tracked -->|"worktree id 投影：gates 取完整 sha256；registry 按注册根取 16 hex"| UH
   UH -->|"install-state.json 记录所有权"| HC
   T -.->|"linked worktree"| CLive
 ```
@@ -174,22 +170,32 @@ flowchart LR
 | 根 | 共享范围 | 主要写入方 | 锁 | 回收 |
 | --- | --- | --- | --- | --- |
 | 已跟踪仓库文件 | 每个 checkout，经 Git 同步 | `init`（多为仅缺失时写入）、archctx ChangeSet、人与 agent | fs-transaction 目标锁 | Git |
-| `.ai/harness/` 忽略区 | 每个 checkout | hook、evidence ledger、Effective State、MCP、chatgpt-browser | 每个文件或目录一个锁 | hook 日志 8 MiB 轮转；evidence 由 checkpoint 发布与 `scripts/evidence-gc.ts` 回收；`backups/`、`archive/retention`、`mcp/*.jsonl` 没有回收（R-T8） |
+| `.ai/harness/` 忽略区 | 每个 checkout | hook、evidence ledger、Effective State、MCP、chatgpt-browser | 每个文件或目录一个锁 | hook 日志与 `mcp/*.jsonl`、`mcp/audit.log` 由写入方 8 MiB 轮转；evidence 由 checkpoint 发布与 `scripts/evidence-gc.ts` 回收；`backups/fs-transaction` 由 `repo-harness retention` 30 天后移入 `archive/retention`，归档条目 90 天后删除 |
 | `.ai/harness/runs/task-agents`、`task-workspaces` | 只在 primary checkout | task-session、generic-review | 每会话 `caller.lock` | `closed.json` 墓碑阻止重启，目录不回收 |
-| `{common}/repo-harness/` | 同一 clone 的全部 worktree | task inbox、feedback、integration、external sources、state version | 各子目录锁与 `expensive-run.lock` | 没有回收（R-T8） |
-| `~/.repo-harness/` | 每用户 | install 与 update、registry、MCP setup、acceptance | `transactions/global-runtime.lock`、registry 自有锁、`mcp-setup.lock` | `transactions/install-*` 在提交或回滚后删除；`packages/` 与 `upgrade-cleanup.log.jsonl` 没有回收 |
+| `{common}/repo-harness/` | 同一 clone 的全部 worktree | task inbox、feedback、integration、external sources、state version | 各子目录锁与 `expensive-run.lock` | 没有回收；`retention --json` 把 task inbox、feedback、integration 列为 keep（R-T8） |
+| `~/.repo-harness/` | 每用户 | install 与 update、registry、MCP setup、acceptance | `transactions/global-runtime.lock`、registry 自有锁、`mcp-setup.lock` | `transactions/install-*` 在提交或回滚后删除；`packages/` 只留 install 装入的 release tarball；`upgrade-cleanup.log.jsonl` 只留最新 100 条 |
 | 主机配置 | 每用户 | install 与 update 写受管片段 | `global-runtime.lock` 与主机事务副本 | `install-state.json` 所有权清单 |
 | 临时目录 | 每台机器 | worktree helper、MCP coding、process-runner | — | worktree 由 closeout 与 sweep 回收 |
 
 身份命名空间：
 
-| 标识 | 推导 | 证据 |
-| --- | --- | --- |
-| registry repo id | `repo_` 加 sha256(realpath 根) 的前 16 位 hex | `src/effects/repo-registry.ts:106-108` |
-| gates id | sha256(realpath worktree 根)，64 位 hex | `scripts/acceptance-receipt.ts:576` |
-| coordination `repository_id` | `{common}` 路径 | `src/effects/state/coordination-canonical-source.ts:46-48`；`src/effects/terminal/task-worktree.ts:15-17` |
-| task-agent 会话键 | sha256(JSON[repository_id, task, role]) | `src/effects/terminal/task-session.ts:393-395` |
-| worktree trash 前缀 | sha256(`{common}`) 的前 32 位 | `worktree-trash.ts:37` |
+仓库身份由两个 id 定义，二者都由 Git 决定（`src/effects/git/repository-identity.ts`）：
+
+- repo id：`git rev-parse --git-common-dir` 的 realpath，即 `{common}`。同一 clone 的全部 linked worktree 共享它。解析函数是 `resolveRepoIdentity`。
+- worktree id：`git rev-parse --show-toplevel` 的 realpath。每个 checkout 各有一个。解析函数是 `resolveWorktreeId`。
+
+其余标识是这两个 id 的确定投影。每种标识只有一个派生函数。投影保持原有字节，所以已存的记录不移动。
+
+| 标识 | 来源 id | 推导 | 派生函数 |
+| --- | --- | --- | --- |
+| coordination `repository_id` | repo id | 原样 | `resolveRepoIdentity` |
+| worktree trash 前缀 | repo id | sha256 的前 32 位 hex | `worktreeTrashPrefix` |
+| task-agent 会话键 | repo id | sha256(JSON[repo id, task, role]) | `taskSessionKey` |
+| task-workspace 键 | repo id 与 worktree id | sha256(JSON[repo id, worktree id]) | `taskWorkspaceKey` |
+| gates id | worktree id | sha256，64 位 hex | `gatesDirectoryName` |
+| registry repo id | 注册根的 realpath | `repo_` 加 sha256 的前 16 位 hex | `repoHarnessRepoIdFor`（`src/effects/repo-registry.ts`） |
+
+gates 按 worktree 划分是有意的设计：acceptance receipt 绑定一个 checkout 的源快照。如果按 clone 划分，一个 linked worktree 的 receipt 会覆盖另一个 worktree 的 receipt。registry repo id 按注册路径计算，不按 `{common}` 计算；同一 clone 的两个 worktree 可以分别注册。改成按 repo id 计算需要迁移 `registered-repos.json`，这一项留给后续（R-T9 余项）。
 | Herdr agent 名 | `task-` 加 20 位 hex | `src/effects/terminal/task-session.ts:486` |
 | hook 身份 | 只取 payload 的 `session_id`、`run_id`、`turn_id`，不生成新 id | `src/cli/hook/hook-input.ts:63-72` |
 | hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/commands/candidate-reconciliation.ts:329-331` |
@@ -248,7 +254,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | bin `repo-harness`、`repo-harness-hook` | npm 包 | `bun add -g` | `install.sh`、`install.ps1`、`installCli` | 回读 `--version` |
 | hook 条目，`~/.claude/settings.json`、`~/.codex/hooks.json` | `routesForHost`：claude 6 条，codex 5 条 | 合并受管条目：带 `MANAGED_TAG` 的 sh 命令，超时 30 s | `install`、`update`、`init` | `ManagedHookProjectionReport`；candidate receipt 中的 adapter 摘要 |
-| skills，`~/.claude/skills`、`~/.codex/skills` | 包根与 `assets/skill-commands/manifest.json`，profile 为 minimal 或 full | 默认 symlink 到包根，可选 rsync 副本 | `scripts/sync-codex-installed-copies.sh` | `installedProfileStatus` 漂移报告；清理悬空的受管链接 |
+| skills，`~/.claude/skills`、`~/.codex/skills` | 包根与 `assets/skill-commands/manifest.json`，profile 为 minimal 或 full | 默认 symlink 到包根，可选 rsync 副本 | `scripts/sync-codex-installed-copies.sh`；bundled、staged、Herdr、Strategy、ChatGPT skill 各有一个 TypeScript 写入函数。所有写入方从 `src/effects/host-skill-roots.ts` 取根 | `installedProfileStatus` 漂移报告；清理悬空的受管链接 |
 | agent fleet，`~/.claude/agents`、`~/.codex/agents` | `agents/fleet/*.md`，7 个 | Claude 复制 `.md`；Codex 生成 `.toml` | `scripts/install-agent-fleet.sh`，仅 full profile | 用户改过的目标需要 `--force` 或 `--accept-user-managed` |
 | 全局规则，`~/.claude/CLAUDE.md`、`~/.codex/AGENTS.md` | 包内规则文本 | 受管块 | `applyGlobalContextRefresh` | 受管块标记 |
 | MCP 与 codegraph，`~/.codex/config.toml`、`~/.claude.json` | `CODEX_MCP_BLOCK` 与 codegraph 片段 | 片段级编辑 | `install`、`mcp setup`、`tools` | `~/.repo-harness/configuration-restore.json` 记录前像 |
@@ -272,6 +278,6 @@ flowchart LR
 | R-T7 [#917](https://github.com/Ancienttwo/repo-harness/issues/917) | 中 | 退役功能的存储仍在。`{common}/repo-harness/coordination/v1`（lease）、`publications/v1`、`engineers/v1` 与 `.ai/harness/sprint/claims` 只有读者。`init` 仍写 `coordination/v1/protocol.json`，并运行 cutover 静止检查。 | `src/effects/state/coordination-lease-store.ts:1`；`src/effects/state/coordination-claim-token.ts:1`；`src/effects/publication/publication-receipt.ts:1`；`src/effects/engineers/binding-store.ts`、`claim-actor-store.ts` 没有写调用；`src/effects/state/coordination-cutover.ts:234,281-282` | 一次性迁移：确认没有在途历史状态，然后删除读者、cutover 门和标记写入。代码侧见 R-L3。 |
 | R-T8 [#918](https://github.com/Ancienttwo/repo-harness/issues/918) | 低 | 以下命名空间没有回收：`.ai/harness/backups/fs-transaction` 与 `.ai/harness/archive/retention`（注释说由 operator 清理）、`.ai/harness/mcp/*.jsonl`、`~/.repo-harness/packages/`、`~/.repo-harness/upgrade-cleanup.log.jsonl`、`{common}/repo-harness/` 下的 `task-inbox`、`feedback/v1`、`integration/v1`，以及 task-agent 会话目录。 | `src/effects/artifact-retention.ts:9,20-22`；`src/effects/fs-transaction.ts:31`；`src/cli/mcp/general-repo-access.ts:193-197`；`src/cli/commands/global-runtime.ts:655`；`src/cli/commands/upgrade.ts:225` | 把这些根和保留期加入 `repo-harness retention`，或由写入方按大小轮转。 |
 | R-T9 [#919](https://github.com/Ancienttwo/repo-harness/issues/919) | 低 | 仓库身份有 5 种形式：registry id、gates id、`repository_id`、会话键、trash 前缀。gates id 是 worktree 根路径的摘要，同一 clone 的每个 linked worktree 各有一个 gates 目录。 | 见 §3 身份命名空间表 | 定一个基于 `{common}` 的 repo id 和一个 worktree id，其余标识从这两个派生。 |
-| R-T10 [#920](https://github.com/Ancienttwo/repo-harness/issues/920) | 低 | 同一挂载点有多个写入实现。主机 skills 由 `sync-codex-installed-copies.sh`、`init.ts` 的 `syncBundledItemsAtHome`、`projectStagedSkills` 和 `herdr-skill.ts` 写入。skill 根在 shell 与 TypeScript 里各算一遍。agent fleet 脚本用 `os.homedir()`，安装事务用 `env.HOME`。默认 policy 在 `standard-plan.ts` 与 `project-init-lib.sh` 各写一份。 | `scripts/sync-codex-installed-copies.sh:11-22`；`src/cli/installer/install-profile.ts:587-593,768-773`；`src/cli/commands/init.ts:345-436`；`src/cli/commands/global-runtime.ts:1168`；`scripts/lib/project-init-lib.sh:1598` | 一个 TypeScript skill 投影器；shell 脚本改成薄调用或删除；home 解析见 R-T2。 |
+| R-T10 [#920](https://github.com/Ancienttwo/repo-harness/issues/920) | 低 | 同一挂载点有多个写入实现。主机 skills 由 `sync-codex-installed-copies.sh`、`init.ts` 的 `syncBundledItemsAtHome`、`projectStagedSkills` 和 `herdr-skill.ts` 写入。skill 根在 shell 与 TypeScript 里各算一遍。agent fleet 脚本用 `os.homedir()`，安装事务用 `env.HOME`。默认 policy 在 `standard-plan.ts` 与 `project-init-lib.sh` 各写一份。 | `scripts/sync-codex-installed-copies.sh:11-22`；`src/cli/installer/install-profile.ts:587-593,768-773`；`src/cli/commands/init.ts:345-436`；`src/cli/commands/global-runtime.ts:1168`；`scripts/lib/project-init-lib.sh:1598` | 一个 TypeScript skill 投影器；shell 脚本改成薄调用或删除；home 解析见 R-T2。已完成：skill 根规则只在 `src/effects/host-skill-roots.ts`，shell 从 `profile-projection` 读根；agent fleet 脚本改用 `HOME`。余项：写入函数仍有 6 个；shell policy 比 `defaultPolicy` 多 52 个键、少 4 个键，需要逐键确认读者后再合并。 |
 | R-T11 [#921](https://github.com/Ancienttwo/repo-harness/issues/921) | 低 | 子进程调用没有统一入口。超时从 3 s 到 30 min 不等，`src/cli/commands/*` 中多处 `execFileSync('git', …)` 没有超时。`git rev-parse --show-toplevel` 有 7 份。`model-reader.ts` 与 `upgrade.ts` 绕过 `REPO_HARNESS_GIT_BIN`。可信 node 探测写了两份。supervisor 与 launcher 各有 `.ts` 文件和 hook bundle flag 两种入口。 | `src/cli/commands/status.ts:90`、`capability-context.ts:86`、`retention.ts:20`、`brain.ts:131`、`security.ts:132`、`upgrade.ts:384`；`src/cli/hook/runtime.ts:45`；`src/effects/architecture/model-reader.ts:22`；`src/effects/runtime/helper-runner.ts:34-49`；`src/effects/architecture/archctx-provider.ts:116-135`；`src/cli/hook-entry.ts:41-48` | 一个 git runner，带默认超时和配置的 binary；一个 node 解析器。 |
 | R-T12 [#922](https://github.com/Ancienttwo/repo-harness/issues/922) | 低 | `HOME` 被当作作用域参数。MCP 的 Codex 项目级 setup 用 `{ HOME: repoRoot }` 调用主机事务锁和配置所有权，在仓库里生成 `.repo-harness/transactions/global-runtime.lock`。锁名是 global，作用域是单个仓库。 | `src/cli/mcp/setup.ts:912,932`；`src/cli/mcp/uninstall.ts:113-114`；`src/cli/installer/runtime-host-lock.ts:11-17` | 锁和所有权函数接收显式的 scope 根，锁文件按 scope 命名。 |

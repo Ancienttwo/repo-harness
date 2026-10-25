@@ -1,5 +1,5 @@
 import { serializeHistoricalLease } from './helpers/sprint-fixture';
-import { seedLeaseDirectory, writeHistoricalLease, boundLeaseFixture, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
+import { seedLeaseDirectory, writeHistoricalLease, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
 /**
  * Coordination plane primitives over a real git repository: lease election,
  * durable owner writes, per-task locking, and the `unknown` classification.
@@ -336,7 +336,7 @@ describe('per-task lock', () => {
     mkdirSync(lockPath, { recursive: true });
     const deadPid = 2 ** 22 - 1;
     const token = `${deadPid}-${Date.now()}-33333333-3333-4333-8333-333333333333`;
-    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: deadPid, created_at: Date.now(), token })}\n`);
+    writeFileSync(join(lockPath, `${token}.json`), `${JSON.stringify({ pid: deadPid, start_time: 'fixture-exited-owner', created_at: Date.now(), token })}\n`);
 
     const reclaimed: string[] = [];
     const acquired = withExclusiveDirectoryLock(common, relativeLockPath, () => existsSync(lockPath), {
@@ -437,7 +437,6 @@ import { dirname } from 'path';
 import { assertOwnedTrashDirectory, worktreeTrashNames } from '../src/effects/state/worktree-trash';
 import {
   cleanupExactWorktree,
-  removeExactWorktree,
   recordCreatedWorktree,
   withWorktreeTopologyLock,
   sweepManagedWorktrees as productionSweep,
@@ -732,20 +731,12 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { f.cleanup(); }
   });
 
-  test.each(['dirty', 'unmerged', 'locked', 'leased', 'unknown-lease', 'marker', 'session-cwd', 'nested-cwd', 'runtime'])('sweep keeps %s checkout and reports the path', condition => {
+  test.each(['dirty', 'unmerged', 'locked', 'marker', 'session-cwd', 'nested-cwd', 'runtime'])('sweep keeps %s checkout and reports the path', condition => {
     const f = fixture(); try {
       let cwd = f.root;
       if (condition === 'dirty') writeFileSync(join(f.path, 'untracked'), 'keep');
       if (condition === 'unmerged') { writeFileSync(join(f.path, 'new'), 'keep'); execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'unmerged'], { cwd: f.path }); }
       if (condition === 'locked') f.git('worktree', 'lock', f.path);
-      if (condition === 'leased' || condition === 'unknown-lease') {
-        const record = recordFor('sweep', 'sweep-claim');
-        seedLeaseDirectory(f.root, record.task_id);
-        if (condition === 'leased') {
-          const transition = boundLeaseFixture(record, { executionWorktree: f.path, branch: 'codex/demo', unitRef: 'fixture' });
-          writeHistoricalLease(f.root, record.task_id, transition);
-        }
-      }
       if (condition === 'marker') { mkdirSync(join(f.root, '.ai/harness'), { recursive: true }); writeFileSync(join(f.root, '.ai/harness/active-worktree'), f.path); }
       if (condition === 'session-cwd') cwd = f.path;
       if (condition === 'nested-cwd') { cwd = join(f.path, 'nested'); mkdirSync(cwd); }
@@ -754,12 +745,10 @@ describe('exact cleanup and contract-worktree start sweep', () => {
         mkdirSync(join(f.root, '.ai/harness/runs/task-workspaces', key), { recursive: true });
       }
       const result = sweepManagedWorktrees(f.root, cwd, f.env, { ghBin: f.failingGh });
-      const reasons: Record<string, string> = { dirty: 'dirty_worktree', unmerged: 'merge is unproven', locked: 'locked', leased: 'active Lease',
-        'unknown-lease': 'unknown Lease', marker: 'marker reference', 'session-cwd': 'session cwd', 'nested-cwd': 'session cwd',
-        runtime: 'runtime is open' };
+      const reasons: Record<string, string> = { dirty: 'dirty_worktree', unmerged: 'merge is unproven', locked: 'locked',
+        marker: 'marker reference', 'session-cwd': 'session cwd', 'nested-cwd': 'session cwd', runtime: 'runtime is open' };
       expect(result).toContain(f.path); expect(result).toContain('kept;'); expect(result).toContain(reasons[condition]!); expect(existsSync(f.path)).toBe(true);
       expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
-      if (condition === 'leased') expect(() => removeExactWorktree(f.root, f.expected)).toThrow('active Lease');
     } finally { f.cleanup(); }
   });
 

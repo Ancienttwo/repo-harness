@@ -1,4 +1,3 @@
-import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
@@ -12,12 +11,14 @@ import {
 import { EngineerProfileBindingError, engineerSha256 } from '../../core/engineers/profile-binding';
 
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
+import { readCanonicalSprint } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
 
 import { resolveCapabilityForEngineer } from './profile-store';
+import { gitExecFileSync } from '../git/runner';
 
 export interface ProjectedGraphRead {
   readonly repo: RepoHarnessRegisteredRepo;
@@ -73,7 +74,7 @@ function dependencies(overrides: Partial<EngineerSchedulingDependencies> = {}): 
 
 function gitFileAtCommit(repoRoot: string, commit: string, path: string): string | null {
   try {
-    return execFileSync('git', ['show', `${commit}:${path}`], {
+    return gitExecFileSync(['show', `${commit}:${path}`], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -232,7 +232,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 以下是回边与边界缺口。它们是重构证据，不是声明的关系。
 
-- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`，`:316` 内联导入 `lease-liveness.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
+- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
 - **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
 - **历史 coordination-plane → engineer-scheduling 回边。** [archived sprint-schema-migration.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/src/effects/state/sprint-schema-migration.ts) 曾导入 engineers scheduling。#820 已删除该迁移文件。

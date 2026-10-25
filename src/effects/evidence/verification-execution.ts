@@ -29,6 +29,7 @@ import { resolveBlobsDir } from "./paths";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "./event-log";
 import { collectDenylistSecretValues } from "./secret-env";
+import { gitExecFileSync, isGitExecutableName } from '../git/runner';
 
 const EVENT_TYPE = "verification_execution.result";
 const PRODUCER = "verification-execution";
@@ -165,7 +166,7 @@ function sha256(content: string | Buffer): string {
 }
 
 function git(repoRoot: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
-  return execFileSync("git", ["-C", repoRoot, ...args], {
+  return gitExecFileSync(["-C", repoRoot, ...args], {
     encoding: "utf8",
     env: env ? { ...process.env, ...env } : process.env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -250,13 +251,21 @@ function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string 
 
 function versionOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
   try {
-    const version = execFileSync(command, [...args], {
-      encoding: "utf8",
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      // File workers share CPU and process startup. Keep discovery bounded under load.
-      timeout: 15_000,
-    }).trim();
+    // File workers share CPU and process startup. Keep discovery bounded under load.
+    const version = (isGitExecutableName(command)
+      ? gitExecFileSync([...args], {
+        gitBin: command,
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15_000,
+      })
+      : execFileSync(command, [...args], {
+        encoding: "utf8",
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 15_000,
+      })).trim();
     if (!version) throw new Error("empty version output");
     return version;
   } catch (error) {
@@ -291,6 +300,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
     ["expensive-run-lock", join(packageRoot, "src/effects/expensive-run-lock.ts")],
     ["process-group-launcher", join(packageRoot, "src/effects/process-group-launcher.ts")],
     ["process-group-termination", join(packageRoot, "src/effects/process-group-termination.ts")],
+    ["git-runner", join(packageRoot, "src/effects/git/runner.ts")],
     ["git-common-directory", join(packageRoot, "src/effects/git/common-directory.ts")],
     ["exclusive-directory-lock", join(packageRoot, "src/effects/locking/exclusive-directory-lock.ts")],
   ] as const;
@@ -1034,7 +1044,7 @@ function executeCheck(
       cwd: invocation.cwd,
       env: verificationChildEnv(context.env),
       inheritEnv: false,
-      timeoutMs: Math.max(1, deadlineMs - Date.now()),
+      deadlineMs,
       maxOutputBytes: VERIFICATION_DIAGNOSTIC_MAX_BYTES,
       processGroup: true,
       ...(check.cost === "expensive"

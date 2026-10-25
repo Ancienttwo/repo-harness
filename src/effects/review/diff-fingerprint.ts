@@ -1,7 +1,8 @@
-import { assertObservationPath, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync, observationSpawnSync as spawnSync } from '../readonly-observation';
+import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { createHash } from 'crypto';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
+import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 
 // Raised from 4 MiB: a diff that overflows this cap can no longer be observed,
 // so instead of collapsing distinct contents to one fixed hash we mark the
@@ -120,7 +121,7 @@ export function uniqueSorted(values: readonly string[]): string[] {
 // dropping its content from the fingerprint.
 function gitRun(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HASH_MAX_BUFFER): GitTextResult {
   try {
-    const text = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', ...args], {
+    const text = gitExecFileSync(['-C', repoRoot, '--literal-pathspecs', ...args], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer,
@@ -136,7 +137,7 @@ function gitRun(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HAS
 // line/space splitting.
 function gitRunBuffer(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HASH_MAX_BUFFER): GitBufferResult {
   try {
-    const out = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', ...args], {
+    const out = gitExecFileSync(['-C', repoRoot, '--literal-pathspecs', ...args], {
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer,
     });
@@ -602,7 +603,7 @@ export function reviewSubjectAddedLines(repoRoot: string, subject: ReviewSubject
       }
     }
   };
-  const wholeDiff = spawnSync('git', [
+  const wholeDiff = gitSpawnSync([
     '-C', repoRoot, '-c', 'core.quotepath=false', '--literal-pathspecs', 'diff', '--no-ext-diff', '--find-renames', '--no-color', '--unified=0', subject.target_rev, '--',
   ], { encoding: 'utf-8', maxBuffer: PATCH_HASH_MAX_BUFFER });
   if (wholeDiff.error || wholeDiff.status !== 0) throw new Error('review subject rename-aware hunk observation failed');
@@ -619,7 +620,7 @@ export function reviewSubjectAddedLines(repoRoot: string, subject: ReviewSubject
     .filter((path) => subjectPaths.has(path));
   if (statusCtx.degraded) throw new Error('review subject untracked-path encoding is unavailable');
   for (const path of untracked) {
-    const result = spawnSync('git', [
+    const result = gitSpawnSync([
       '-C', repoRoot, '-c', 'core.quotepath=false', '--literal-pathspecs', 'diff', '--no-index', '--no-ext-diff', '--no-color', '--unified=0', '/dev/null', path,
     ], { encoding: 'utf-8', maxBuffer: PATCH_HASH_MAX_BUFFER });
     if (result.error || (result.status !== 0 && result.status !== 1)) {

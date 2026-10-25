@@ -1,3 +1,8 @@
+/**
+ * Append-only JSONL logs inside a repository, rotated by the writer: an active
+ * file at or above the segment size moves into `<file>.archive/` before the
+ * next append, and the oldest archived segments leave past the archive budget.
+ */
 import { randomUUID } from 'crypto';
 import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, dirname, join, relative, resolve } from 'path';
@@ -5,15 +10,15 @@ import { StringDecoder } from 'string_decoder';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from './locking/exclusive-directory-lock';
 import { canonicalRepoRelativePath, repoPath } from './state/collect-state-inputs';
 
-export const HOOK_LOG_SEGMENT_BYTES = 8 * 1024 * 1024;
-export const HOOK_LOG_ARCHIVE_BYTES = 256 * 1024 * 1024;
-export const HOOK_LOG_ARCHIVE_SEGMENTS = 32;
+export const SEGMENTED_LOG_SEGMENT_BYTES = 8 * 1024 * 1024;
+export const SEGMENTED_LOG_ARCHIVE_BYTES = 256 * 1024 * 1024;
+export const SEGMENTED_LOG_ARCHIVE_SEGMENTS = 32;
 const SEGMENT_NAME = /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
 
 function regularFile(path: string) {
   try {
     const stat = lstatSync(path);
-    if (!stat.isFile()) throw new Error(`hook telemetry requires a regular file: ${path}`);
+    if (!stat.isFile()) throw new Error(`segmented log requires a regular file: ${path}`);
     return stat;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
@@ -24,11 +29,11 @@ function regularFile(path: string) {
 function archives(path: string) {
   const directory = `${path}.archive`;
   if (!existsSync(directory)) return [];
-  if (!lstatSync(directory).isDirectory()) throw new Error(`unsafe hook telemetry archive: ${directory}`);
+  if (!lstatSync(directory).isDirectory()) throw new Error(`unsafe segmented log archive: ${directory}`);
   return readdirSync(directory).filter(name => SEGMENT_NAME.test(name)).sort().map(name => {
     const file = join(directory, name);
     const stat = regularFile(file);
-    if (!stat) throw new Error(`hook telemetry archive disappeared: ${file}`);
+    if (!stat) throw new Error(`segmented log archive disappeared: ${file}`);
     return { path: file, size: stat.size };
   });
 }
@@ -40,7 +45,7 @@ function confinedPath(root: string, path: string): string {
   regularFile(original);
   const parent = dirname(original);
   const rel = parent === root ? null : canonicalRepoRelativePath(root, parent);
-  if (parent !== root && !rel) throw new Error(`hook telemetry path escapes repository: ${path}`);
+  if (parent !== root && !rel) throw new Error(`segmented log path escapes repository: ${path}`);
   return join(parent === root ? root : repoPath(root, rel!), basename(original));
 }
 
@@ -57,7 +62,7 @@ function locked<T>(root: string, path: string, operation: (assertOwned: () => vo
 
 function rotate(root: string, path: string): void {
   locked(root, path, assertOwned => {
-    if ((regularFile(path)?.size ?? 0) < HOOK_LOG_SEGMENT_BYTES) return;
+    if ((regularFile(path)?.size ?? 0) < SEGMENTED_LOG_SEGMENT_BYTES) return;
     const directory = `${path}.archive`;
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const identity = lstatSync(directory);
@@ -65,7 +70,7 @@ function rotate(root: string, path: string): void {
       assertOwned();
       const current = lstatSync(directory);
       if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
-        throw new Error(`unsafe hook telemetry archive: ${directory}`);
+        throw new Error(`unsafe segmented log archive: ${directory}`);
       }
     };
     // Rename never truncates an inode: concurrent O_APPEND writers that already
@@ -74,7 +79,7 @@ function rotate(root: string, path: string): void {
     renameSync(path, join(directory, `${Date.now()}-${randomUUID()}.jsonl`));
     const files = archives(path);
     let bytes = files.reduce((sum, file) => sum + file.size, 0);
-    while (files.length > HOOK_LOG_ARCHIVE_SEGMENTS || bytes > HOOK_LOG_ARCHIVE_BYTES) {
+    while (files.length > SEGMENTED_LOG_ARCHIVE_SEGMENTS || bytes > SEGMENTED_LOG_ARCHIVE_BYTES) {
       const oldest = files.shift()!;
       assertArchiveOwned();
       unlinkSync(oldest.path);
@@ -83,13 +88,13 @@ function rotate(root: string, path: string): void {
   }, 1);
 }
 
-/** The caller owns telemetry's fail-open policy; storage never invents a record. */
-export function appendHookEventLog(file: string, line: string, repoRoot: string): void {
-  if (Buffer.byteLength(line) > HOOK_LOG_SEGMENT_BYTES) throw new Error('hook telemetry record exceeds segment budget');
+/** The caller owns the fail-open policy; storage never invents a record. */
+export function appendSegmentedLog(file: string, line: string, repoRoot: string): void {
+  if (Buffer.byteLength(line) > SEGMENTED_LOG_SEGMENT_BYTES) throw new Error('segmented log record exceeds segment budget');
   const root = realpathSync(repoRoot);
   const path = confinedPath(root, file);
   mkdirSync(dirname(path), { recursive: true });
-  if ((regularFile(path)?.size ?? 0) >= HOOK_LOG_SEGMENT_BYTES) {
+  if ((regularFile(path)?.size ?? 0) >= SEGMENTED_LOG_SEGMENT_BYTES) {
     try { rotate(root, path); } catch (error) {
       // A competing rotator/reader owns maintenance; this append still has a
       // safe destination because retention only renames the active inode.
@@ -101,7 +106,7 @@ export function appendHookEventLog(file: string, line: string, repoRoot: string)
 }
 
 /** Open a retained-history snapshot under the rotation lock, then read unlocked. */
-export function readHookEventLog(file: string, repoRoot: string): Iterable<string> | null {
+export function readSegmentedLog(file: string, repoRoot: string): Iterable<string> | null {
   const root = realpathSync(repoRoot);
   const path = confinedPath(root, file);
   if (!existsSync(path) && !existsSync(`${path}.archive`)) return null;
@@ -117,7 +122,7 @@ export function readHookEventLog(file: string, repoRoot: string): Iterable<strin
         if (identity) {
           const current = lstatSync(directory);
           if (!current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino) {
-            throw new Error(`unsafe hook telemetry archive: ${directory}`);
+            throw new Error(`unsafe segmented log archive: ${directory}`);
           }
         }
         fds.push(openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW));

@@ -1,4 +1,4 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from '../readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from '../readonly-observation';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -17,7 +17,8 @@ import {
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
-import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup } from '../architecture/archcontext-owners';
+import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../architecture/archcontext-owners';
+import { archcontextResolveFileCache } from '../architecture/archcontext-resolve-cache';
 import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import type {
   CapabilityOwnership,
@@ -53,6 +54,7 @@ import {
   sha256,
   sourceHash,
 } from './collect-state-inputs';
+import { gitExecFileSync } from '../git/runner';
 
 const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
@@ -378,6 +380,7 @@ function resolveArchcontextPaths(
   paths: readonly string[],
   readSource: (path: string) => string | null,
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityPathResolution<CapabilityIdentity> {
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
@@ -386,7 +389,7 @@ function resolveArchcontextPaths(
   // Only ordinary state passes share the default transport's memo.
   if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options);
+    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options, cache);
     // An unavailable answer is not memoized: a later pass outside observation computes it.
     if (!options && resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
     return resolution;
@@ -410,6 +413,7 @@ function capabilityIdsForPathGroups(
   readSource = (path: string) => readText(cwd, path),
   select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityResolution[] {
   const mode = capabilitySourceMode(policy);
   const inputs = groups.map((paths) => {
@@ -448,7 +452,7 @@ function capabilityIdsForPathGroups(
     ? resolveCapabilityPaths(registry.registry, union, { repoRoot: cwd })
     : union.length === 0
       ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
-      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource, options);
+      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource, options, cache);
   return subjects.map(({ paths, diagnostics: pathErrors, outOfRepoPathCount }): CapabilityResolution => {
     const diagnostics = [...pathErrors, ...resolution.diagnostics.filter((entry) => {
       // Empty subjects did not need archctx before this union query either.
@@ -474,14 +478,15 @@ function capabilityIdsForPaths(
   readSource?: (path: string) => string | null,
   select?: (paths: readonly string[]) => readonly string[],
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityResolution {
-  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options)[0]!;
+  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options, cache)[0]!;
 }
 
 const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
 
 function git(repoRoot: string, args: readonly string[]): string {
-  return execFileSync('git', ['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
+  return gitExecFileSync(['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
     maxBuffer: 64 * 1024 * 1024,
@@ -572,7 +577,8 @@ export interface CapabilityPathOwner {
  * state lock and writes nothing. A path is absent from the map when it is not
  * an implementation surface or has no owner; the map is empty when the
  * repository declares no registry. One call resolves the whole batch, so an
- * archcontext repository starts one `archctx resolve`. `select` narrows the
+ * archcontext repository starts at most one `archctx resolve`, and none when
+ * the per-HEAD resolve cache already answers every path. `select` narrows the
  * batch after the authority loads and before ownership resolves, so a caller
  * pays for its own filter only when a registry exists. It throws when
  * ownership is unavailable.
@@ -585,7 +591,7 @@ export function capabilityOwnersForPaths(
   const owners = new Map<string, CapabilityPathOwner>();
   const surfaces = paths.filter(isImplementationSurfacePath);
   if (surfaces.length === 0) return owners;
-  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select);
+  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select, undefined, archcontextResolveFileCache(cwd));
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }

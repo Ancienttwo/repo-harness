@@ -17,6 +17,7 @@ source:
     - "src/cli/runtime/**"
     - "src/effects/runtime/protected-helper-platform.ts"
     - "src/effects/skill-tree-integrity.ts"
+    - "src/effects/host-skill-roots.ts"
     - "src/cli/commands/upgrade.ts"
     - "src/effects/upgrade/**"
     - "scripts/check-managed-runtime.ts"

@@ -654,7 +654,7 @@ describe('closeout runner guardrails', () => {
     const createdAt = Date.now() - 60_000;
     const token = `999999-${createdAt}-00000000-0000-4000-8000-000000000000`;
     const ownerPath = join(lockPath, `${token}.json`);
-    writeFileSync(ownerPath, `${JSON.stringify({ pid: 999999, created_at: createdAt, token })}\n`);
+    writeFileSync(ownerPath, `${JSON.stringify({ pid: 999999, start_time: 'fixture-exited-owner', created_at: createdAt, token })}\n`);
 
     expect(() => acquireExpensiveRunLock(root)).toThrow('timed out waiting for exclusive lock');
     expect(existsSync(ownerPath)).toBe(true);

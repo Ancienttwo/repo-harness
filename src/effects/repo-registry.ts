@@ -1,7 +1,15 @@
-import { createHash, randomUUID } from "crypto";
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, isAbsolute, join, resolve } from "path";
+import { basename, dirname, isAbsolute, join, resolve } from "path";
+import {
+  acquireExclusiveDirectoryLock,
+  exclusiveDirectoryLockOwnerLiveness,
+  ExclusiveLockContentionError,
+  readExclusiveDirectoryLockOwner,
+  type ExclusiveDirectoryLockHandle,
+  type ExclusiveDirectoryLockOwner,
+} from "./locking/exclusive-directory-lock";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
@@ -23,13 +31,6 @@ interface RepoHarnessRegistryFile {
 
 const REGISTRY_LOCK_RETRY_MS = 10;
 const REGISTRY_LOCK_TIMEOUT_MS = 10_000;
-const REGISTRY_LOCK_SLEEP = new Int32Array(new SharedArrayBuffer(4));
-
-interface RegistryLockOwner {
-  readonly pid: number;
-  readonly token: string;
-  readonly acquiredAt: string;
-}
 
 export interface RepoHarnessAccessUpdateResult extends RepoHarnessRegisterResult {
   readonly accessMode: RepoHarnessAccessMode;
@@ -214,107 +215,57 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
 }
 
-function describeRegistryLock(path: string): string {
-  try {
-    const owner = JSON.parse(readFileSync(path, 'utf-8')) as Partial<RegistryLockOwner>;
-    if (!Number.isInteger(owner.pid) || typeof owner.token !== 'string' || typeof owner.acquiredAt !== 'string') {
-      return 'owner metadata is invalid';
-    }
-    try {
-      process.kill(owner.pid!, 0);
-      return `owner pid ${owner.pid} is still running`;
-    } catch (error) {
-      if (isNodeError(error) && error.code === 'ESRCH') {
-        return `owner pid ${owner.pid} is not running; verify and remove this stale lock manually`;
-      }
-      return `owner pid ${owner.pid} could not be verified`;
-    }
-  } catch {
-    return 'owner metadata is unreadable; verify and remove this stale lock manually';
-  }
+interface RegistryLockLocation {
+  readonly root: string;
+  readonly relativePath: string;
 }
 
-function reclaimDeadRegistryMutationLock(lockPath: string): boolean {
-  let descriptor: number | null = null;
+function registryLockLocation(registryPath: string): RegistryLockLocation {
+  mkdirSync(dirname(registryPath), { recursive: true, mode: 0o700 });
+  return { root: realpathSync(dirname(registryPath)), relativePath: `${basename(registryPath)}.lock` };
+}
+
+function describeRegistryLock(location: RegistryLockLocation): string {
+  let owner: ExclusiveDirectoryLockOwner | null;
   try {
-    const published = lstatSync(lockPath);
-    if (!published.isFile()) return false;
-    descriptor = openSync(lockPath, 'r');
-    const opened = fstatSync(descriptor);
-    if (opened.dev !== published.dev || opened.ino !== published.ino) return false;
-    const owner = JSON.parse(readFileSync(descriptor, 'utf-8')) as Partial<RegistryLockOwner>;
-    if (!Number.isSafeInteger(owner.pid)
-      || (owner.pid ?? 0) < 1
-      || typeof owner.token !== 'string'
-      || typeof owner.acquiredAt !== 'string') return false;
-    try {
-      process.kill(owner.pid!, 0);
-      return false;
-    } catch (error) {
-      if (!isNodeError(error) || error.code !== 'ESRCH') return false;
-    }
-    const current = lstatSync(lockPath);
-    if (!current.isFile() || current.dev !== published.dev || current.ino !== published.ino) return false;
-    const currentOwner = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<RegistryLockOwner>;
-    if (currentOwner.pid !== owner.pid || currentOwner.token !== owner.token) return false;
-    unlinkSync(lockPath);
-    return true;
+    owner = readExclusiveDirectoryLockOwner(location.root, location.relativePath);
   } catch {
-    return false;
-  } finally {
-    if (descriptor !== null) {
-      try { closeSync(descriptor); } catch { /* descriptor may already be closed */ }
-    }
+    owner = null;
   }
+  if (owner === null) return 'owner metadata is unreadable; verify and remove this stale lock manually';
+  const liveness = exclusiveDirectoryLockOwnerLiveness(owner);
+  if (liveness === 'live') return `owner pid ${owner.pid} is still running`;
+  if (liveness === 'dead') return `owner pid ${owner.pid} is not running; verify and remove this stale lock manually`;
+  return `owner pid ${owner.pid} could not be verified`;
 }
 
 class RegistryMutationLockTimeoutError extends Error {}
 
 function acquireRegistryMutationLock(registryPath: string, waitMs = REGISTRY_LOCK_TIMEOUT_MS): () => void {
-  mkdirSync(dirname(registryPath), { recursive: true, mode: 0o700 });
-  const lockPath = `${registryPath}.lock`;
-  const owner: RegistryLockOwner = {
-    pid: process.pid,
-    token: randomUUID(),
-    acquiredAt: new Date().toISOString(),
-  };
-  const deadline = Date.now() + waitMs;
-
-  while (true) {
-    try {
-      const descriptor = openSync(lockPath, 'wx', 0o600);
-      try {
-        writeFileSync(descriptor, `${JSON.stringify(owner)}\n`, { encoding: 'utf-8' });
-        closeSync(descriptor);
-      } catch (error) {
-        try {
-          closeSync(descriptor);
-        } catch {
-          // Best effort: the descriptor may already have been closed by a failed close.
-        }
-        try {
-          unlinkSync(lockPath);
-        } catch {
-          // Preserve the acquisition error; a later attempt will fail closed on any leftover lock.
-        }
-        throw error;
-      }
-      return () => {
-        const current = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<RegistryLockOwner>;
-        if (current.token !== owner.token) {
-          throw new Error(`registry mutation lock ownership changed before release: ${lockPath}`);
-        }
-        unlinkSync(lockPath);
-      };
-    } catch (error) {
-      if (!isNodeError(error) || error.code !== 'EEXIST') throw error;
-      if (reclaimDeadRegistryMutationLock(lockPath)) continue;
-      if (Date.now() >= deadline) {
-        throw new RegistryMutationLockTimeoutError(`timed out waiting for registry mutation lock ${lockPath}: ${describeRegistryLock(lockPath)}`);
-      }
-      Atomics.wait(REGISTRY_LOCK_SLEEP, 0, 0, REGISTRY_LOCK_RETRY_MS);
-    }
+  const location = registryLockLocation(registryPath);
+  let lock: ExclusiveDirectoryLockHandle;
+  try {
+    lock = acquireExclusiveDirectoryLock(location.root, location.relativePath, {
+      waitTimeoutMs: waitMs,
+      reclaimStaleEmptyDirectory: true,
+    });
+  } catch (error) {
+    if (!(error instanceof ExclusiveLockContentionError)) throw error;
+    throw new RegistryMutationLockTimeoutError(
+      `timed out waiting for registry mutation lock ${error.lockPath}: ${describeRegistryLock(location)}`,
+    );
   }
+  return () => {
+    try {
+      lock.assertOwned();
+    } catch (error) {
+      if (!(error instanceof ExclusiveLockContentionError)) throw error;
+      throw new Error(`registry mutation lock ownership changed before release: ${lock.lockPath}`);
+    } finally {
+      // Release removes only this handle's own token, so it is safe after lost ownership.
+      lock.release();
+    }
+  };
 }
 
 function withRegistryMutationLock<T>(registryPath: string, mutation: () => T): T {
@@ -497,7 +448,7 @@ export async function withRepoHarnessRegistryAuthorizationLockAsync<T>(
   const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
   let release: () => void;
   for (;;) {
-    try { release = acquireRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), 0); break; }
+    try { release = acquireRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), 1); break; }
     catch (error) {
       if (!(error instanceof RegistryMutationLockTimeoutError) || Date.now() >= deadline) throw error;
       await new Promise(resolve => setTimeout(resolve, REGISTRY_LOCK_RETRY_MS));

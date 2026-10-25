@@ -14,6 +14,7 @@ import { join } from 'path';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
+import { currentProcessStartTime } from '../src/effects/locking/process-start-time';
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
 
@@ -340,6 +341,7 @@ describe('workflow circuit breakers', () => {
     const staleOwner = join(lockPath, `${staleToken}.json`);
     writeFileSync(staleOwner, `${JSON.stringify({
       pid: 2_147_483_647,
+      start_time: 'fixture-exited-owner',
       created_at: Date.now() - 60_000,
       token: staleToken,
     })}\n`);
@@ -353,6 +355,7 @@ describe('workflow circuit breakers', () => {
     const liveOwner = join(lockPath, `${liveToken}.json`);
     writeFileSync(liveOwner, `${JSON.stringify({
       pid: process.pid,
+      start_time: currentProcessStartTime(),
       created_at: Date.now() - 60_000,
       token: liveToken,
     })}\n`);

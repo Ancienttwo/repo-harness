@@ -6,7 +6,8 @@ import {
   lookupCanonicalTask,
   type LeaseOwnerRecord,
 } from '../../core/state/coordination-identity';
-import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
+import { readCanonicalSprint } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 import { readLease, withTaskLock } from '../state/coordination-lease-store';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt, readFeedbackDeliveryReceipts, readFeedbackEvent, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from './feedback-store';
 import {

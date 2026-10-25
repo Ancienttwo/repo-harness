@@ -1,7 +1,8 @@
-import { execFileSync } from 'child_process';
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
-import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
+import { configuredGitBinary } from '../git/common-directory';
+import { resolveRepoIdentity, resolveWorktreeId } from '../git/repository-identity';
+import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 
 export interface TaskRepository {
@@ -11,12 +12,12 @@ export interface TaskRepository {
 }
 /** Git, not a directory-name convention or the invoking cwd, owns identity. */
 export function taskRepository(cwd: string, gitBin = configuredGitBinary()): TaskRepository {
-  const execution_root = realpathSync(execFileSync(gitBin, ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' }).trim());
-  const repository_id = resolveGitCommonDirectory(execution_root, gitBin);
+  const execution_root = resolveWorktreeId(cwd, gitBin);
+  const repository_id = resolveRepoIdentity(execution_root, gitBin);
   const roots = readWorktreeTopology(execution_root, gitBin).worktrees.flatMap(entry => {
     try {
       const path = realpathSync(entry.path);
-      const raw = execFileSync(gitBin, ['rev-parse', '--git-dir'], { cwd: path, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      const raw = gitExecFileSync(['rev-parse', '--git-dir'], { cwd: path, gitBin, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
       return realpathSync(resolve(path, raw)) === repository_id ? [path] : [];
     } catch { return []; } // Prunable/unavailable Git entries cannot become authority.
   });

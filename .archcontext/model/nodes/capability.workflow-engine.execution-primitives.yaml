@@ -7,6 +7,7 @@ summary: Runs bounded child processes and provides the canonical directory lock 
 responsibilities:
   - Run a child process with a timeout, an output cap and secret redaction, and supervise a process group when the caller asks.
   - Terminate a process group with one sequence for every caller: SIGTERM, a grace period, SIGKILL and an absence check, or `taskkill /T` on Windows.
+  - Register each detached process group of a long-running service and reap the groups of a dead owner when a service starts.
   - Serialize expensive runs across linked worktrees with one Git common-dir lock that a dead owner releases only after its process group drains.
   - Provide the exclusive directory lock with ancestor identity checks, a bounded wait and stale-owner reclaim.
   - Read the Git common dir, the worktree topology and a read-only virtual tree.
@@ -17,6 +18,7 @@ source:
     - src/effects/process-supervisor.ts
     - src/effects/process-group-launcher.ts
     - src/effects/process-group-termination.ts
+    - src/effects/process-group-registry.ts
     - src/effects/expensive-run-lock.ts
     - src/effects/readonly-observation.ts
     - src/effects/atomic-append.ts

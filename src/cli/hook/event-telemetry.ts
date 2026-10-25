@@ -3,7 +3,7 @@ import { performance } from 'perf_hooks';
 import { join } from 'path';
 import type { HookIdentity } from './hook-input';
 import type { HookEvent, RouteHost, RouteId } from './route-registry';
-import { appendHookEventLog } from '../../effects/hook-event-log';
+import { appendSegmentedLog } from '../../effects/segmented-log';
 
 export const HOOK_EVENT_TELEMETRY_PROTOCOL = 'loop-engine-hook-event/v2' as const;
 export const HOOK_EVENT_TELEMETRY_PATH = '.ai/harness/runs/hook-events.jsonl';
@@ -87,7 +87,7 @@ export function createHookEventTelemetry(options: CreateHookEventTelemetryInput)
         fingerprint: `sha256:${createHash('sha256').update(JSON.stringify(semanticFingerprint)).digest('hex')}`,
       };
       try {
-        appendHookEventLog(join(options.repoRoot, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n`, options.repoRoot);
+        appendSegmentedLog(join(options.repoRoot, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n`, options.repoRoot);
       } catch {
         // Runtime telemetry is non-authoritative and must never alter hook safety.
       }

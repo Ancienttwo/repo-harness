@@ -2,10 +2,11 @@
  * Local retention for closed harness artifacts (#697).
  *
  * Closed plans stay committed for the retention window and then leave Git.
- * Closed task records also leave Git after the window. Check logs and run records accumulate on
- * disk. This module moves all of them into a gitignored local archive root once
- * they are older than the window. It never deletes anything: the operator
- * cleans the archive root.
+ * Closed task records also leave Git after the window. Check logs, run records
+ * and finished fs-transaction backups accumulate on disk. This module moves all
+ * of them into a gitignored local archive root once they are older than the
+ * window. An archived entry is deleted once its newest file is older than the
+ * archive window; nothing outside the archive root is ever deleted.
  *
  * "Closed" is not inferred from file content. `archive-workflow.sh` is the only
  * writer that closes a plan and its task records, and it writes them as new
@@ -33,19 +34,27 @@
  * the move never hides work that Git does not hold. In every other class an
  * entry with any tracked file is skipped, because those classes are local-only
  * and a move would be an unexpected deletion.
+ *
+ * An fs-transaction backup is a rollback source only while its transaction can
+ * still be rolled back by manifest. After the window the operator restores an
+ * archived backup by hand.
  */
-import { execFileSync, spawnSync } from 'child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, type Stats } from 'fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, type Stats } from 'fs';
 import { dirname, join } from 'path';
+import { FS_TRANSACTION_BACKUP_ROOT } from './fs-transaction';
 import { ensureRepoRelativePath, resolveInsideRepo } from './path-safety';
+import { gitExecFileSync, gitSpawnSync } from './git/runner';
 
 export const DEFAULT_RETENTION_DAYS = 30;
+/** Default time an archived entry stays in the archive root before it is deleted. */
+const ARCHIVE_GRACE_DAYS = 60;
+export const DEFAULT_ARCHIVE_DAYS = DEFAULT_RETENTION_DAYS + ARCHIVE_GRACE_DAYS;
 export const DEFAULT_ARCHIVE_ROOT = '.ai/harness/archive/retention';
 const POLICY_FILE = '.ai/harness/policy.json';
-const CONFIG_KEYS = new Set(['days', 'archive_root', 'keep']);
+const CONFIG_KEYS = new Set(['days', 'archive_days', 'archive_root', 'keep']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type RetentionClassId = 'closed-plans' | 'closed-task-records' | 'check-logs' | 'run-records';
+export type RetentionClassId = 'closed-plans' | 'closed-task-records' | 'check-logs' | 'run-records' | 'transaction-backups';
 
 interface RetentionClass {
   readonly id: RetentionClassId;
@@ -66,16 +75,20 @@ function isClosedRecord(name: string, entry: Stats): boolean {
   return name !== '.gitkeep' && (entry.isFile() || entry.isDirectory());
 }
 
-const CLASSES: readonly RetentionClass[] = [
+export const RETENTION_CLASSES: readonly RetentionClass[] = [
   { id: 'closed-plans', dir: 'plans/archive', accepts: isClosedRecord, leavesGit: true },
   { id: 'closed-task-records', dir: 'tasks/archive', accepts: isClosedRecord, leavesGit: true },
   { id: 'check-logs', dir: '.ai/harness/checks', accepts: (name, entry) => entry.isFile() && name.endsWith('.log') },
   // The writers hard-code this directory, so `harness.runs_dir` does not apply.
   { id: 'run-records', dir: '.ai/harness/runs', accepts: isRunRecord },
+  // A transaction directory, or a `.bak` written by a single atomic write.
+  { id: 'transaction-backups', dir: FS_TRANSACTION_BACKUP_ROOT, accepts: (_name, entry) => entry.isFile() || entry.isDirectory() },
 ];
 
 export interface RetentionConfig {
   readonly days: number;
+  /** Days since the newest write after which an archived entry is deleted; greater than `days`. */
+  readonly archiveDays: number;
   /** Repo-relative; must be gitignored. */
   readonly archiveRoot: string;
   /** Repo-relative paths; an entry at, under or containing one is never moved. */
@@ -104,6 +117,18 @@ export interface RetentionReport {
   readonly skipped: readonly (RetentionEntry & { readonly reason: RetentionSkipReason })[];
   /** Entries a move failed for; the entry stays in place. */
   readonly failed: readonly (RetentionEntry & { readonly error: string })[];
+  /** Archived entries deleted, or that a dry run would delete. */
+  readonly purged: readonly RetentionPurgeEntry[];
+  /** Archived entries a delete failed for. */
+  readonly purgeFailed: readonly (RetentionPurgeEntry & { readonly error: string })[];
+}
+
+export interface RetentionPurgeEntry {
+  readonly class: RetentionClassId;
+  /** Repo-relative path under the archive root. */
+  readonly path: string;
+  /** Whole days since the newest file in the entry was written. */
+  readonly ageDays: number;
 }
 
 /** One canonical spelling per path, so string overlap equals filesystem overlap. */
@@ -132,7 +157,9 @@ export function readRetentionConfig(repoRoot: string): RetentionConfig {
     const policy = JSON.parse(readFileSync(policyPath, 'utf8')) as { information_lifecycle?: { retention?: unknown } };
     section = policy?.information_lifecycle?.retention;
   }
-  if (section === undefined) return { days: DEFAULT_RETENTION_DAYS, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] };
+  if (section === undefined) {
+    return { days: DEFAULT_RETENTION_DAYS, archiveDays: DEFAULT_ARCHIVE_DAYS, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] };
+  }
   if (!section || typeof section !== 'object' || Array.isArray(section)) {
     throw new Error(`${POLICY_FILE}: information_lifecycle.retention must be an object`);
   }
@@ -145,8 +172,12 @@ export function readRetentionConfig(repoRoot: string): RetentionConfig {
   if (typeof days !== 'number' || !Number.isInteger(days) || days < 1) {
     throw new Error(`${POLICY_FILE}: information_lifecycle.retention.days must be a positive integer`);
   }
+  const archiveDays = record.archive_days === undefined ? days + ARCHIVE_GRACE_DAYS : record.archive_days;
+  if (typeof archiveDays !== 'number' || !Number.isInteger(archiveDays) || archiveDays <= days) {
+    throw new Error(`${POLICY_FILE}: information_lifecycle.retention.archive_days must be an integer greater than days`);
+  }
   const archiveRoot = record.archive_root === undefined ? DEFAULT_ARCHIVE_ROOT : repoRelative(record.archive_root, 'archive_root');
-  for (const retentionClass of CLASSES) {
+  for (const retentionClass of RETENTION_CLASSES) {
     if (overlaps(archiveRoot, retentionClass.dir)) {
       throw new Error(`${POLICY_FILE}: information_lifecycle.retention.archive_root overlaps scanned directory ${retentionClass.dir}`);
     }
@@ -154,18 +185,18 @@ export function readRetentionConfig(repoRoot: string): RetentionConfig {
   const keepValue = record.keep === undefined ? [] : record.keep;
   if (!Array.isArray(keepValue)) throw new Error(`${POLICY_FILE}: information_lifecycle.retention.keep must be an array`);
   const keep = keepValue.map((value, index) => repoRelative(value, `keep[${index}]`));
-  return { days, archiveRoot, keep };
+  return { days, archiveDays, archiveRoot, keep };
 }
 
 function git(repoRoot: string, args: readonly string[]): string {
-  return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return gitExecFileSync(['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
 /** Paths among `paths` that Git ignores. */
 function ignoredPaths(repoRoot: string, paths: readonly string[]): Set<string> {
   if (paths.length === 0) return new Set();
   // check-ignore exits 1 when it ignores none of the paths.
-  const result = spawnSync('git', ['-C', repoRoot, 'check-ignore', '-z', '--stdin'], { input: paths.join('\0'), encoding: 'utf8' });
+  const result = gitSpawnSync(['-C', repoRoot, 'check-ignore', '-z', '--stdin'], { input: paths.join('\0'), encoding: 'utf8' });
   if (result.status !== 0 && result.status !== 1) throw new Error(`git check-ignore failed: ${result.stderr.trim()}`);
   return new Set(result.stdout.split('\0').filter(Boolean));
 }
@@ -203,7 +234,7 @@ function occupied(path: string): boolean {
 function commitTimes(repoRoot: string, dir: string): Map<string, number> {
   const times = new Map<string, number>();
   // A repository without commits has no commit times; git log would fail.
-  if (spawnSync('git', ['-C', repoRoot, 'rev-parse', '--verify', '--quiet', 'HEAD']).status !== 0) return times;
+  if (gitSpawnSync(['-C', repoRoot, 'rev-parse', '--verify', '--quiet', 'HEAD']).status !== 0) return times;
   let current = 0;
   const log = git(repoRoot, ['-c', 'core.quotePath=false', 'log', '--format=@%ct', '--name-only', '--', dir]);
   for (const line of log.split('\n')) {
@@ -243,8 +274,38 @@ export interface RetentionInput {
 }
 
 /**
+ * Archived entries past the archive window. An entry is a direct child of a
+ * class directory mirrored under the archive root, the unit a move created.
+ * Selection reads the archive before any move, so a dry run and an apply agree.
+ */
+function selectPurges(repoRoot: string, config: RetentionConfig, now: number): RetentionPurgeEntry[] {
+  const purges: RetentionPurgeEntry[] = [];
+  for (const retentionClass of RETENTION_CLASSES) {
+    const archived = `${config.archiveRoot}/${retentionClass.dir}`;
+    assertNoSymlink(repoRoot, archived);
+    const dir = resolveInsideRepo(repoRoot, archived).path!;
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir).sort()) {
+      const absolute = join(dir, name);
+      const path = `${archived}/${name}`;
+      if (config.keep.some((kept) => overlaps(`${retentionClass.dir}/${name}`, kept))) continue;
+      const ageDays = Math.floor((now - newestTimeMs(absolute, path, lstatSync(absolute), new Map())) / DAY_MS);
+      if (ageDays >= config.archiveDays) purges.push({ class: retentionClass.id, path, ageDays });
+    }
+  }
+  const ignored = ignoredPaths(repoRoot, purges.map((entry) => entry.path));
+  const visible = purges.filter((entry) => !ignored.has(entry.path));
+  if (visible.length > 0) {
+    throw new Error(`archived entries are not gitignored: ${visible.map((entry) => entry.path).join(', ')}`);
+  }
+  return purges;
+}
+
+/**
  * Selects closed artifacts older than the window and, with `apply`, moves each
- * to the same relative path under the archive root. A dry run reads only.
+ * to the same relative path under the archive root. It also selects archived
+ * entries past the archive window and, with `apply`, deletes them. A dry run
+ * reads only.
  */
 export function runArtifactRetention(input: RetentionInput): RetentionReport {
   const { repoRoot, apply } = input;
@@ -255,7 +316,8 @@ export function runArtifactRetention(input: RetentionInput): RetentionReport {
   if (!ignoredPaths(repoRoot, [`${config.archiveRoot}/`]).has(`${config.archiveRoot}/`)) {
     throw new Error(`archive root ${config.archiveRoot} is not gitignored; add it to .gitignore before running retention`);
   }
-  const dirs = CLASSES.map((c) => c.dir);
+  const purges = selectPurges(repoRoot, config, now);
+  const dirs = RETENTION_CLASSES.map((c) => c.dir);
   for (const dir of dirs) assertNoSymlink(repoRoot, dir);
   const tracked = new Set(git(repoRoot, ['ls-files', '-z', '--', ...dirs]).split('\0').filter(Boolean));
   // Staged, modified and deleted tracked paths; untracked files do not count.
@@ -264,7 +326,7 @@ export function runArtifactRetention(input: RetentionInput): RetentionReport {
 
   const selected: RetentionEntry[] = [];
   const skipped: (RetentionEntry & { reason: RetentionSkipReason })[] = [];
-  for (const retentionClass of CLASSES) {
+  for (const retentionClass of RETENTION_CLASSES) {
     const dir = resolveInsideRepo(repoRoot, retentionClass.dir).path!;
     if (!existsSync(dir)) continue;
     const committed = retentionClass.leavesGit ? commitTimes(repoRoot, retentionClass.dir) : new Map<string, number>();
@@ -310,5 +372,21 @@ export function runArtifactRetention(input: RetentionInput): RetentionReport {
     }
     archived.push(entry);
   }
-  return { mode: apply ? 'apply' : 'dry-run', config, archived, skipped, failed };
+
+  const purged: RetentionPurgeEntry[] = [];
+  const purgeFailed: (RetentionPurgeEntry & { error: string })[] = [];
+  for (const entry of purges) {
+    if (apply) {
+      try {
+        assertNoSymlink(repoRoot, dirname(entry.path));
+        // rmSync removes a symlink itself and never follows one inside a directory.
+        rmSync(resolveInsideRepo(repoRoot, entry.path).path!, { recursive: true });
+      } catch (error) {
+        purgeFailed.push({ ...entry, error: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
+    }
+    purged.push(entry);
+  }
+  return { mode: apply ? 'apply' : 'dry-run', config, archived, skipped, failed, purged, purgeFailed };
 }

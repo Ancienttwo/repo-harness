@@ -1,6 +1,7 @@
 import { lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync, unlinkSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
+import { hostSkillRoot } from '../../effects/host-skill-roots';
 import { CHATGPT_CANONICAL_SKILL_NAME, validateCanonicalChatgptSkillRoot } from './source';
 
 export type ChatgptSkillHost = 'codex' | 'claude';
@@ -58,8 +59,7 @@ function assertOwnedProjection(destination: string, sourceReal: string): void {
 function preflight(target: ChatgptSkillTarget, home: string, source: string): Projection[] {
   const sourceReal = realpathSync(source);
   return hosts(target).map((host) => {
-    const root = join(home, host === 'codex' ? '.codex' : '.claude', 'skills');
-    const destination = join(root, CHATGPT_CANONICAL_SKILL_NAME);
+    const destination = join(hostSkillRoot(home, host), CHATGPT_CANONICAL_SKILL_NAME);
     const stat = lstatIfPresent(destination);
     if (!stat) return { host, destination, state: 'missing' };
     assertOwnedProjection(destination, sourceReal);

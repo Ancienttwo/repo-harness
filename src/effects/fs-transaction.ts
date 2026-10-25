@@ -28,10 +28,10 @@ import type {
 } from "../core/adoption/operations";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
-import { runProcess } from "./process-runner";
 import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
+import { runGit } from './git/run-git';
 
-const BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
+export const FS_TRANSACTION_BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";
 let atomicWriteSequence = 0;
 let transactionSequence = 0;
@@ -220,14 +220,14 @@ function checkExpectedFileState(repoRoot: string, operation: AdoptionOperation):
   return null;
 }
 
-function backupPathFor(path: string, backupRoot = BACKUP_ROOT): string {
+function backupPathFor(path: string, backupRoot = FS_TRANSACTION_BACKUP_ROOT): string {
   atomicWriteSequence += 1;
   return `${backupRoot}/${sanitizeBackupStem(path)}.${Date.now()}-${process.pid}-${atomicWriteSequence}.bak`;
 }
 
 function transactionDirFor(): string {
   transactionSequence += 1;
-  return `${BACKUP_ROOT}/${Date.now()}-${process.pid}-${transactionSequence}`;
+  return `${FS_TRANSACTION_BACKUP_ROOT}/${Date.now()}-${process.pid}-${transactionSequence}`;
 }
 
 export function withTargetLock<T>(targetPath: string, fn: () => T): T {
@@ -485,7 +485,7 @@ const GIT_OBJECT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 // Reads the single stage-0 regular-file index entry for path. Rollback restores
 // this exact entry, because the staged blob can differ from the working-tree bytes.
 function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
-  const listed = runProcess("git", ["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
+  const listed = runGit(["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
   if (!listed.ok) return { kind: "git_failed", error: listed.stderr || listed.error || "git ls-files failed" };
   const records = listed.stdout.split("\0").filter(Boolean);
   if (records.length === 0) return { kind: "absent" };
@@ -496,7 +496,7 @@ function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
   }
   // An intent-to-add entry lists the empty blob but stages no content. Porcelain v2
   // reports it with index mode 000000; restoring the blob would stage an empty file.
-  const status = runProcess("git", ["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
+  const status = runGit(["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
   if (!status.ok) return { kind: "git_failed", error: status.stderr || status.error || "git status failed" };
   if (status.stdout.split("\0").some((record) => record.startsWith("1 ") && record.split(" ")[4] === "000000")) {
     return { kind: "unsupported", error: `git index entry is intent-to-add: ${path}` };
@@ -518,7 +518,7 @@ export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrack
   }
   if (indexed.kind === "unsupported") return failure(operation, indexed.error);
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
-  const result = runProcess("git", ["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
+  const result = runGit(["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
   return result.ok
     ? { id: operation.id, kind: operation.kind, path: operation.path, status: "applied", gitIndexEntry: indexed.entry }
     : failure(operation, result.stderr || result.error || "git rm --cached failed");
@@ -745,8 +745,8 @@ function resolveTransactionManifest(repoRoot: string, transaction: string): { ok
   if (rel === "" || rel.startsWith("..") || rel.includes("\0")) {
     return { ok: false, error: `transaction manifest escapes repo root: ${transaction}` };
   }
-  if (!rel.startsWith(`${BACKUP_ROOT}/`) || !rel.endsWith("/manifest.json")) {
-    return { ok: false, error: `transaction manifest must be under ${BACKUP_ROOT}/<transaction>/manifest.json` };
+  if (!rel.startsWith(`${FS_TRANSACTION_BACKUP_ROOT}/`) || !rel.endsWith("/manifest.json")) {
+    return { ok: false, error: `transaction manifest must be under ${FS_TRANSACTION_BACKUP_ROOT}/<transaction>/manifest.json` };
   }
   return { ok: true, path: target, rel };
 }
@@ -935,9 +935,9 @@ function rollbackGitUntrackOperation(repoRoot: string, operation: FsTransactionM
       : rollbackFailed(operation, "restore_git_index", "git index entry changed after apply; refusing to replace it");
   }
   // update-index accepts an absent object, so prove the recorded blob still exists.
-  const object = runProcess("git", ["-C", repoRoot, "cat-file", "-e", `${recorded.objectId}^{blob}`]);
+  const object = runGit(["-C", repoRoot, "cat-file", "-e", `${recorded.objectId}^{blob}`]);
   if (!object.ok) return rollbackFailed(operation, "restore_git_index", `recorded git object is missing: ${recorded.objectId}`);
-  const restore = runProcess("git", [
+  const restore = runGit([
     "-C", repoRoot, "update-index", "--add", "--cacheinfo", `${recorded.mode},${recorded.objectId},${operation.path}`,
   ]);
   return restore.ok

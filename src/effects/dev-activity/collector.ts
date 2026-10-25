@@ -7,9 +7,11 @@
 // typed facts, so no subprocess free text reaches the snapshot.
 
 import { spawn } from 'node:child_process';
+import { spawnGit } from '../git/runner';
 import { lstatSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, sep } from 'node:path';
 
+import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
 import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
@@ -81,16 +83,19 @@ export type DevActivityProcessRunner = (
 
 /**
  * Spawn with no shell, no stdin and no stderr capture. On POSIX the child leads
- * its own process group; a deadline, abort or oversized stdout terminates that
- * group (Windows: the `taskkill /T` tree) before settling.
+ * its own registered process group; a deadline, abort or oversized stdout
+ * terminates that group (Windows: the `taskkill /T` tree) before settling.
  */
 export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(command, [...argv], {
-      cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], detached: process.platform !== 'win32', windowsHide: true,
-    });
+    const spawnOptions = {
+      cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'], detached: process.platform !== 'win32', windowsHide: true,
+    };
+    child = spawnRegisteredProcessGroup('dev-activity-collector', () => (
+      command === 'git' ? spawnGit(argv, spawnOptions) : spawn(command, [...argv], spawnOptions)
+    ));
   } catch {
     settle({ ok: false, code: 'failed' });
     return;

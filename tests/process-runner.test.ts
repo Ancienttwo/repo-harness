@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { spawn } from "child_process";
+import { existsSync, mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { capProcessOutput, runProcess } from "../src/effects/process-runner";
 import {
   processGroupExists,
@@ -55,6 +58,76 @@ describe("process runner", () => {
     expect(result.timedOut).toBe(true);
     expect(result.error).toContain("process timed out after 20ms");
     expect(result.stderr).toContain("process timed out after 20ms");
+  });
+
+  test("supervised runs stop at an absolute deadline", () => {
+    const result = runProcess(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {
+      processGroup: true,
+      deadlineMs: Date.now() + 200,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+  });
+
+  test("an expired deadline refuses to start the supervised command", () => {
+    const root = mkdtempSync(join(tmpdir(), "process-runner-expired-"));
+    try {
+      const marker = join(root, "started");
+      const result = runProcess(process.execPath, ["-e", `require("fs").writeFileSync(${JSON.stringify(marker)}, "yes")`], {
+        processGroup: true,
+        deadlineMs: Date.now() - 1,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an expired unsupervised deadline refuses execution before executable lookup", () => {
+    const root = mkdtempSync(join(tmpdir(), "process-runner-expired-unsupervised-"));
+    try {
+      const result = runProcess(join(root, "must-not-be-looked-up"), [], {
+        deadlineMs: Date.now() - 1,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      expect(result.stdout).toBe("");
+      expect(result.error).not.toContain("ENOENT");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a supervised deadline stays active after the group leader exits", async () => {
+    if (process.platform === "win32") return;
+    const root = mkdtempSync(join(tmpdir(), "process-runner-leader-exit-"));
+    try {
+      const started = join(root, "started");
+      const sentinel = join(root, "descendant-survived");
+      // The deadline leaves room for supervisor startup, so the leader really
+      // exits first and only the TERM-ignoring descendant holds the group.
+      const result = runProcess("bash", ["-c", `touch "${started}"; (trap '' TERM; sleep 3; touch "${sentinel}") & exit 0`], {
+        processGroup: true,
+        deadlineMs: Date.now() + 1_500,
+      });
+
+      expect(existsSync(started)).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      await Bun.sleep(3_000);
+      expect(existsSync(sentinel)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("rejects a relative timeout combined with an absolute deadline", () => {
+    expect(() => runProcess(process.execPath, ["-e", ""], { timeoutMs: 100, deadlineMs: Date.now() + 100 }))
+      .toThrow("timeoutMs or deadlineMs, not both");
   });
 
   test("treats only a zero taskkill exit status as confirmed termination", () => {

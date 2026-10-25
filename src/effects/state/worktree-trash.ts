@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync } from 'fs';
 import { basename, dirname, join } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import type { ExactWorktreeCleanup } from './coordination-worktree-topology';
+import { worktreeTrashPrefix } from '../git/repository-identity';
 
 /** Windows has no POSIX uid proof, even if a runtime exposes a compatibility method. */
 export function worktreeUid(platform: NodeJS.Platform = process.platform, probe: () => number | undefined = () => process.getuid?.()): number | undefined {
@@ -33,11 +34,8 @@ const RECEIPT = 'receipt.json';
 const TEMP = 'receipt.tmp';
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
-function trashPrefix(common: string): string {
-  return `.repo-harness-wt-trash-${createHash('sha256').update(common).digest('hex').slice(0, 32)}-`;
-}
 function trashNamePattern(common: string): RegExp {
-  return new RegExp(`^${trashPrefix(common).replace(/\./g, '\\.')}(${UUID})$`);
+  return new RegExp(`^${worktreeTrashPrefix(common).replace(/\./g, '\\.')}(${UUID})$`);
 }
 export function worktreeTrashNames(common: string, managedRoot: string): string[] {
   const pattern = trashNamePattern(common);
@@ -66,7 +64,7 @@ export function prepareWorktreeTrash(common: string, managedRoot: string, expect
   const original = assertOwnedTrashDirectory(expected.worktree);
   const registration = assertOwnedTrashDirectory(gitDirectory);
   if (dirname(gitDirectory) !== join(common, 'worktrees')) throw new Error('worktree registration is outside the documented Git layout');
-  const directory = join(managedRoot, trashPrefix(common) + randomUUID());
+  const directory = join(managedRoot, worktreeTrashPrefix(common) + randomUUID());
   mkdirSync(directory, { mode: 0o700 });
   const container = assertOwnedTrashDirectory(directory);
   if (container.dev !== original.dev) throw new Error('trash is on another filesystem');

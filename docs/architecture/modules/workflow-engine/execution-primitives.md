@@ -141,8 +141,8 @@ sequenceDiagram
 | --- | --- |
 | 进程组监督放在独立的 supervisor 与 launcher 进程里（PR #83，CRG-01） | 父进程被杀时仍能 TERM 后 KILL 整个进程组。代价是每次受监督调用多两个进程，并通过回执文件交换结果 |
 | expensive-run 锁放在 Git common dir（PR #83） | 一个 clone 的所有 linked worktree 共用一把锁，昂贵的发布与基准测试不会重叠。代价是同一 clone 的并行 worktree 必须排队 |
-| 目录锁用 mkdir 加 owner 文件，而不是 OS 文件锁 | 在 Bun 与 Node 上可移植，不需要原生依赖。代价是 PID 复用可能让陈旧 token 看起来仍活着，只能靠有界等待和人工清理（`effective-state-authority.md` Consequences） |
-| 只回收“死 PID + 精确 token”的 owner；空目录默认不回收（`exclusive-directory-lock.ts:305-404`） | 活进程永远不会被抢锁，崩溃的 owner 可以被回收。空目录无法区分崩溃的创建者与暂停的创建者，所以只有调用方显式开启时，超过 30 s 的空目录才会被移除（`:18`、`:323-343`）。代价是默认等待只有 5 s（`:19`），争用方要自己重试 |
+| 目录锁用 mkdir 加 owner 文件，而不是 OS 文件锁 | 在 Bun 与 Node 上可移植，不需要原生依赖。owner 记录保存 PID 与 OS 进程表中的启动时间（`src/effects/locking/process-start-time.ts`），PID 被复用时启动时间不同，锁判为过期（#915）。代价是每个进程第一次加锁时读一次进程表：Linux 读 `/proc`，macOS 运行一次 `/bin/ps`，Windows 运行一次 PowerShell |
+| 只回收“死 owner + 精确 token”的 owner；空目录默认不回收（`exclusive-directory-lock.ts`） | 死 owner 指 PID 不存在，或该 PID 的启动时间与记录不同。没有启动时间的 owner 记录（旧版本留下的锁）从不自动回收，要人工清理。活进程永远不会被抢锁，崩溃的 owner 可以被回收。空目录无法区分崩溃的创建者与暂停的创建者，所以只有调用方显式开启时，超过 30 s 的空目录才会被移除（`:18`、`:323-343`）。代价是默认等待只有 5 s（`:19`），争用方要自己重试 |
 | Git 读取经过 `readonly-observation` 的可选 IO 能力（PR #604） | strategy 等只读观察可以在一个作用域内拒绝写入并验证路径。该能力在 `src/effects/readonly-observation.ts`，属于本 capability，所以 Git 读取不导入 workflow-state（#907） |
 
 ### 3.3 组件

@@ -19,6 +19,8 @@ export interface RunProcessOptions {
   readonly inheritEnv?: boolean;
   readonly stdio?: "pipe" | "inherit" | "ignore";
   readonly timeoutMs?: number;
+  /** Absolute epoch-ms deadline, exclusive with `timeoutMs`. The process-group supervisor enforces it as given. */
+  readonly deadlineMs?: number;
   readonly maxOutputBytes?: number;
   readonly redactions?: readonly ProcessOutputRedaction[];
   readonly processGroup?: boolean;
@@ -124,7 +126,9 @@ function runSupervisedProcess(
       ...PROCESS_SUPERVISOR_PREFIX_ARGS,
       "--metadata", receiptPath,
       "--parent-pid", String(process.pid),
-      "--timeout-ms", String(timeoutMs),
+      ...(opts.deadlineMs === undefined
+        ? ["--timeout-ms", String(timeoutMs)]
+        : ["--deadline-ms", String(opts.deadlineMs)]),
       "--capture-bytes", String(maxOutputBytes + 1),
       "--stdio", stdio,
     ];
@@ -202,10 +206,29 @@ function runSupervisedProcess(
 }
 
 export function runProcess(command: string, args: readonly string[], opts: RunProcessOptions = {}): ProcessRunResult {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS;
+  if (opts.deadlineMs !== undefined) {
+    if (opts.timeoutMs !== undefined) throw new Error("runProcess accepts timeoutMs or deadlineMs, not both");
+    if (!Number.isSafeInteger(opts.deadlineMs) || opts.deadlineMs < 1) {
+      throw new Error("runProcess deadlineMs must be a positive epoch-ms integer");
+    }
+  }
+  // A deadline's remaining budget sizes the unsupervised timeout, the
+  // supervisor hard-timeout backstop and the timeout message.
+  const remainingMs = opts.deadlineMs === undefined ? undefined : opts.deadlineMs - Date.now();
+  const timeoutMs = remainingMs === undefined
+    ? opts.timeoutMs ?? DEFAULT_PROCESS_TIMEOUT_MS
+    : Math.max(1, remainingMs);
   const maxOutputBytes = opts.maxOutputBytes ?? DEFAULT_PROCESS_MAX_OUTPUT_BYTES;
   const redactions = opts.redactions ?? DEFAULT_REDACTIONS;
   const redactedCommand = [command, ...args].map((part) => redactProcessOutput(part, redactions));
+  if (remainingMs !== undefined && remainingMs <= 0) {
+    const message = `process deadline expired before start: ${redactedCommand.join(" ")}`;
+    return {
+      ok: false, status: 1, signal: null, timedOut: true,
+      command: redactedCommand, stdout: "",
+      stderr: capProcessOutput(message, maxOutputBytes), error: message,
+    };
+  }
   const supervised = opts.processGroup
     ? runSupervisedProcess(command, args, opts, timeoutMs, maxOutputBytes)
     : null;

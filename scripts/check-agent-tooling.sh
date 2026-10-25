@@ -97,7 +97,7 @@ if (!["claude", "codex", "both"].includes(hostMode)) {
   process.exit(1);
 }
 
-const HOME = os.homedir();
+const HOME = process.env.HOME ?? os.homedir();
 const REPO_ROOT = process.cwd();
 const SELECTED_HOSTS = hostMode === "both" ? ["claude", "codex"] : [hostMode];
 const WAZA_SOURCE_REPO = "tw93/Waza";
@@ -1710,9 +1710,21 @@ function detectCodeGraph() {
   const selectedMcpConfigured = SELECTED_HOSTS.every((host) => mcpHosts[host]?.status === "configured");
   const statusResult = cliPresent ? codeGraphProbe(resolution.bin_path, ["status", "."], 1500, probes) : null;
   const statusOutput = `${statusResult?.stdout || ""}\n${statusResult?.stderr || ""}`;
-  const projectIndexStatus = cliPresent ? parseCodeGraphProjectStatus(statusOutput) : "unavailable";
-  const indexInitialized = fs.existsSync(path.join(REPO_ROOT, ".codegraph"))
-    || ["up-to-date", "stale", "unknown"].includes(projectIndexStatus);
+  const indexPath = path.join(REPO_ROOT, ".codegraph");
+  const isDirectory = (candidate) => {
+    try { return fs.statSync(candidate).isDirectory(); } catch { return false; }
+  };
+  const indexInitialized = isDirectory(indexPath);
+  let parentIndex = null;
+  if (!indexInitialized) {
+    for (let parent = path.dirname(REPO_ROOT); ; parent = path.dirname(parent)) {
+      const candidate = path.join(parent, ".codegraph");
+      if (isDirectory(candidate)) { parentIndex = candidate; break; }
+      if (parent === path.dirname(parent)) break;
+    }
+  }
+  const projectIndexStatus = !cliPresent ? "unavailable"
+    : !indexInitialized ? "not-initialized" : parseCodeGraphProjectStatus(statusOutput);
   const updateResult = cliPresent && checkUpdates
     ? run("npm", ["view", CODEGRAPH_PACKAGE, "version", "--json"], { timeoutMs: 3000 })
     : null;
@@ -1778,7 +1790,8 @@ function detectCodeGraph() {
     project_index: {
       status: projectIndexStatus,
       initialized: indexInitialized,
-      path: path.join(REPO_ROOT, ".codegraph"),
+      path: indexPath,
+      detail: parentIndex ? `No checkout-local index; parent index at ${parentIndex} is not this checkout's index.` : null,
       command: "codegraph status .",
     },
     install_command: packageDeclared ? CODEGRAPH_LOCAL_INSTALL_COMMAND : CODEGRAPH_GLOBAL_INSTALL_COMMAND,

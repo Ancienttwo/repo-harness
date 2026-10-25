@@ -4,6 +4,7 @@ import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state'
 import { osAccountHome } from '../runtime/os-account-home';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { gitSpawnSync } from '../git/runner';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
@@ -62,10 +63,14 @@ export class StrategyReader {
   }
   private capture(file: string, args: string[], env: NodeJS.ProcessEnv): Buffer {
     this.reserve(1);
-    const result = spawnSync(file, args, {
-      maxBuffer: Math.min(this.fileLimit, this.totalLimit - this.bytes), timeout: Math.max(1, Math.min(5000, Math.ceil(this.deadline - this.clock()))),
-      env, stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const timeout = Math.max(1, Math.min(5000, Math.ceil(this.deadline - this.clock())));
+    const maxBuffer = Math.min(this.fileLimit, this.totalLimit - this.bytes);
+    const gitFile = file === 'git' || file === '/usr/bin/git' || file === '/bin/git' || file === '/usr/local/bin/git';
+    const stdio: ['ignore', 'pipe', 'pipe'] = ['ignore', 'pipe', 'pipe'];
+    // direct: this method is the observation executor. The git runner must not call it again.
+    const result = gitFile
+      ? gitSpawnSync(args, { gitBin: file, direct: true, maxBuffer, timeout, env, stdio })
+      : spawnSync(file, args, { maxBuffer, timeout, env, stdio });
     const stdout = result.stdout ?? Buffer.alloc(0); const stderr = result.stderr ?? Buffer.alloc(0);
     this.charge(stdout.length + stderr.length);
     if (result.error || result.status !== 0) {

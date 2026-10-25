@@ -56,7 +56,13 @@ export function readArchcontextCapabilityAuthority(
 // Notice callers can supply a shorter deadline through ArchctxProviderOptions.
 const RESOLVE_TIMEOUT_MS = 10_000;
 
-type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
+export type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
+
+/** Answers keyed by the exact query line; the owner of the cache binds them to one model. */
+export interface ArchcontextResolveCache {
+  lookup(queries: readonly string[]): ReadonlyMap<string, ArchctxResolveResult>;
+  store(answers: ReadonlyMap<string, ArchctxResolveResult>): void;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -123,16 +129,19 @@ export function archcontextResolveQueries(repoRoot: string, inputPaths: readonly
  * A process, version or runtime failure throws; callers fail closed. An archctx
  * error envelope is an `invalid` result with `ARCHCONTEXT_MODEL_REJECTED`. Inside a read-only
  * observation archctx never starts: the result is `unavailable` instead.
+ * With a cache, archctx receives only the queries the cache cannot answer.
  */
 export function resolveArchcontextCapabilityPaths<C extends { readonly id: string } = Capability>(
   repoRoot: string,
   owners: ArchcontextOwnerLookup<C>,
   inputPaths: readonly string[],
   options: ArchctxProviderOptions = {},
+  cache?: ArchcontextResolveCache,
 ): CapabilityPathResolution<C> {
   const { diagnostics, paths, queries } = prepareQueries(repoRoot, inputPaths);
-  let results: ArchctxResolveResult[] = [];
-  if (queries.length > 0 && currentReadonlyObservation()) {
+  const answers = new Map(cache?.lookup(queries) ?? []);
+  const misses = queries.filter((query) => !answers.has(query));
+  if (misses.length > 0 && currentReadonlyObservation()) {
     return {
       status: 'unavailable',
       capabilityIds: [],
@@ -145,23 +154,25 @@ export function resolveArchcontextCapabilityPaths<C extends { readonly id: strin
       }],
     };
   }
-  if (queries.length > 0) {
+  if (misses.length > 0) {
     const dir = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-resolve-'));
     try {
       const listPath = join(dir, 'paths.txt');
-      writeFileSync(listPath, `${queries.join('\n')}\n`, { mode: 0o600 });
+      writeFileSync(listPath, `${misses.join('\n')}\n`, { mode: 0o600 });
       // Exit 2 means at least one ambiguous path; the envelope still carries every result.
       const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ['resolve', '--paths-from', listPath, '--json'], options, RESOLVE_TIMEOUT_MS, true);
       const rejected = rejectedModel(value);
       if (rejected) {
         return { status: 'invalid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [...diagnostics, rejected] };
       }
-      results = readOwners(value, queries);
+      const resolved = new Map(readOwners(value, misses).map((result, index) => [misses[index]!, result]));
+      cache?.store(resolved);
+      for (const [query, result] of resolved) answers.set(query, result);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   }
-  const resolution = capabilityPathResolutionFromArchcontextOwners(owners, results.map((result, index) => ({ ...result, path: paths[index] })));
+  const resolution = capabilityPathResolutionFromArchcontextOwners(owners, queries.map((query, index) => ({ ...answers.get(query)!, path: paths[index]! })));
   if (diagnostics.length === 0) return resolution;
   return { ...resolution, status: 'invalid', diagnostics: [...diagnostics, ...resolution.diagnostics] };
 }

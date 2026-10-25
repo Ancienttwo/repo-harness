@@ -306,25 +306,25 @@ describe('host envelopes on the real hook entry (#678)', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
 
-  test('archcontext hooks use resolve once and never export native context', () => {
+  /** Archcontext-mode fixture whose Node runtime shim logs every archctx argv. */
+  function archcontextFixture(): { root: string; shim: string; resetCalls: () => void; calls: () => string[][] } {
     const root = owedFixture();
-    try {
-      writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
-      mkdirSync(join(root, '.archcontext/model/nodes'), { recursive: true });
-      // archctx 0.8.1 resolve needs a complete native model.
-      writeFileSync(join(root, '.archcontext/manifest.yaml'), 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
-      writeFileSync(join(root, '.archcontext/model/nodes/capability.core.owned.yaml'), JSON.stringify({
-        schemaVersion: 'archcontext.node/v2', id: 'capability.core.owned', kind: 'capability',
-        name: 'Owned', status: 'active', summary: 'Own the test source.', responsibilities: ['Own the source.'],
-        source: { include: ['src/owned/**'] },
-        extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] },
-      }));
-      execFileSync('git', ['add', '.ai/harness/policy.json', '.archcontext'], { cwd: root });
-      execFileSync('git', ['commit', '-q', '-m', 'archcontext authority'], { cwd: root });
-      const node = resolveCompatibleNodeRuntime(process.env);
-      const shim = join(root, 'home/node-probe');
-      const log = join(root, 'home/node-argv.jsonl');
-      writeFileSync(shim, `#!${node}
+    writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
+    mkdirSync(join(root, '.archcontext/model/nodes'), { recursive: true });
+    // archctx 0.8.1 resolve needs a complete native model.
+    writeFileSync(join(root, '.archcontext/manifest.yaml'), 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
+    writeFileSync(join(root, '.archcontext/model/nodes/capability.core.owned.yaml'), JSON.stringify({
+      schemaVersion: 'archcontext.node/v2', id: 'capability.core.owned', kind: 'capability',
+      name: 'Owned', status: 'active', summary: 'Own the test source.', responsibilities: ['Own the source.'],
+      source: { include: ['src/owned/**'] },
+      extensions: { contractFiles: { agents: 'AGENTS.md', claude: 'CLAUDE.md' }, lspProfile: 'typescript-lsp', verification: [] },
+    }));
+    execFileSync('git', ['add', '.ai/harness/policy.json', '.archcontext'], { cwd: root });
+    execFileSync('git', ['commit', '-q', '-m', 'archcontext authority'], { cwd: root });
+    const node = resolveCompatibleNodeRuntime(process.env);
+    const shim = join(root, 'home/node-probe');
+    const log = join(root, 'home/node-argv.jsonl');
+    writeFileSync(shim, `#!${node}
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
@@ -332,6 +332,14 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 const child = spawnSync(${JSON.stringify(node)}, args, { stdio: 'inherit' });
 process.exit(child.status ?? 1);
 `, { mode: 0o755 });
+    return { root, shim, resetCalls: () => writeFileSync(log, ''), calls: () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]) };
+  }
+
+  test('archcontext hooks use resolve once and never export native context', () => {
+    const { root, shim, resetCalls, calls: archctxCalls } = archcontextFixture();
+    try {
+      // `checkout -B main` keeps the same HEAD, so every later edit reads the first edit's cached answer.
+      let editResolved = false;
       for (const checkout of ['feature', 'main', 'dirty-main']) {
         if (checkout === 'main') execFileSync('git', ['checkout', '-q', '-B', 'main'], { cwd: root });
         if (checkout === 'dirty-main') writeFileSync(join(root, 'src/owned/new.ts'), 'export const added = 1;\n');
@@ -342,16 +350,17 @@ process.exit(child.status ?? 1);
             ['Stop', 'default', { stop_hook_active: false }],
             ['UserPromptSubmit', 'inbox', { prompt: 'continue' }],
           ] as const) {
-            writeFileSync(log, '');
+            resetCalls();
             const result = host(root, hostName, event, route, input, { REPO_HARNESS_NODE_BIN: shim });
             expect(result.status, result.stderr).toBe(0);
-            const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]);
+            const calls = archctxCalls();
             const exports = calls.filter((argv) => argv.includes('export')).length;
             const resolves = calls.filter((argv) => argv.includes('resolve')).length;
             expect(exports, `${hostName} ${event}`).toBe(0);
             expect(resolves, `${hostName} ${event}`).toBeLessThanOrEqual(1);
             if (event === 'PreToolUse') {
-              expect(resolves).toBe(1);
+              expect(resolves, `${checkout} ${hostName} edit`).toBe(editResolved ? 0 : 1);
+              editResolved = true;
               expect(context(result.stdout, event)).toBe('[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).');
             }
             if (event === 'SessionStart' || (event === 'Stop' && hostName === 'claude') || (event === 'UserPromptSubmit' && hostName === 'codex')) expect(resolves).toBe(1);
@@ -368,6 +377,41 @@ process.exit(child.status ?? 1);
           }
         }
       }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('an allowed edit resolves its owner once per HEAD and model digest', () => {
+    const { root, shim, resetCalls, calls } = archcontextFixture();
+    const nodePath = join(root, '.archcontext/model/nodes/capability.core.owned.yaml');
+    const owned = readFileSync(nodePath, 'utf8');
+    const OWNER_LINE = '[CapabilityOwner] src/owned/a.ts belongs to core-owned (docs/architecture/modules/core/owned.md).';
+    const edit = () => {
+      resetCalls();
+      const result = host(root, 'claude', 'PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: 'src/owned/a.ts' } }, { REPO_HARNESS_NODE_BIN: shim });
+      expect(result.status, result.stderr).toBe(0);
+      return { stdout: result.stdout, resolves: calls().filter((argv) => argv.includes('resolve')).length };
+    };
+    try {
+      const first = edit();
+      expect(first.resolves).toBe(1);
+      expect(context(first.stdout, 'PreToolUse')).toBe(OWNER_LINE);
+      const second = edit();
+      expect(second.resolves).toBe(0);
+      expect(context(second.stdout, 'PreToolUse')).toBe(OWNER_LINE);
+
+      writeFileSync(nodePath, owned.replace('src/owned/**', 'src/other/**'));
+      const moved = edit();
+      expect(moved.resolves).toBe(1);
+      expect(moved.stdout).toBe('');
+
+      writeFileSync(nodePath, owned);
+      writeFileSync(join(root, 'README.md'), '# moved head\n');
+      execFileSync('git', ['commit', '-q', '-am', 'move HEAD'], { cwd: root });
+      const newHead = edit();
+      expect(newHead.resolves).toBe(1);
+      expect(context(newHead.stdout, 'PreToolUse')).toBe(OWNER_LINE);
+      expect(edit().resolves).toBe(0);
+      expect(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })).toBe('');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 

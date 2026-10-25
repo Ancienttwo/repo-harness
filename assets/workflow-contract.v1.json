@@ -133,7 +133,6 @@
       "verify-contract.sh",
       "verification-plan.ts",
       "migrate-verification-plan.ts",
-      "run-bounded-verifier-command.ts",
       "validate-harness-profile-benchmark.ts",
       "summarize-failures.sh",
       "verify-sprint.sh",
@@ -186,7 +185,6 @@
       "verify-contract": "Execute or reuse a task contract verification plan and check its artifact criteria",
       "verification-plan": "Validate, evaluate, or explicitly execute the canonical Verification Plan",
       "migrate-verification-plan": "Migrate legacy executable criteria once using an explicit typed mapping",
-      "run-bounded-verifier-command": "Run a verifier command under an epoch-ms deadline, capturing log and timed exit result",
       "validate-harness-profile-benchmark": "Validate a harness profile benchmark report and emit its byte-bound evidence hash",
       "summarize-failures": "Summarize recorded workflow failure log entries",
       "verify-sprint": "Verify the active sprint contract's exit criteria and allowed paths",
@@ -2744,7 +2742,6 @@
     "docs/",
     "dist/hook-entry.js",
     "dist/oar-review-host.js",
-    "dist/oar-coding-host.js",
     "dist/operator-ui/"
   ]
 }

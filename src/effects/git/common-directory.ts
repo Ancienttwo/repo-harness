@@ -1,14 +1,12 @@
-import { observationExecFileSync as execFileSync } from '../readonly-observation';
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
-
-export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
-  return env.REPO_HARNESS_GIT_BIN ?? 'git';
-}
+import { configuredGitBinary, gitExecFileSync } from './runner';
+export { configuredGitBinary } from './runner';
 
 export function resolveGitCommonDirectory(cwd: string, gitBin = configuredGitBinary(), timeoutMs?: number): string {
-  const raw = execFileSync(gitBin, ['rev-parse', '--git-common-dir'], {
+  const raw = gitExecFileSync(['rev-parse', '--git-common-dir'], {
     cwd,
+    gitBin,
     timeout: timeoutMs,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],

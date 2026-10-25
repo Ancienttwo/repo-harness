@@ -41,10 +41,8 @@ import {
   readCanonicalTargetRef,
 } from './collect-board-inputs';
 import { safeRealpath } from './collect-state-inputs';
-import {
-  readCanonicalSprint,
-  resolveRepoIdentity,
-} from './coordination-canonical-source';
+import { readCanonicalSprint } from './coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 import { readLease } from './coordination-lease-store';
 
 export interface SliceCollectionOptions {
