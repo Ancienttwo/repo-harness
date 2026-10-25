@@ -10,7 +10,7 @@
 import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
-import { MergeReadinessError, collectPullRequestMergeReadiness } from '../../effects/publication/merge-readiness';
+import { MergeReadinessError, assertLocalPullRequestRepository, collectPullRequestMergeReadiness } from '../../effects/publication/merge-readiness';
 import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
@@ -205,8 +205,11 @@ function publicationEnvironment(): {
 
 function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
   const target = targetFromArgs(ctx, args);
+  const repository = requiredString(args, 'repository');
+  try { assertLocalPullRequestRepository(target.repoRoot, repository); }
+  catch (error) { throw new FleetMcpError('REPO_NOT_ALLOWED', error instanceof Error ? error.message : String(error)); }
   const result = collectPullRequestMergeReadiness({ ...publicationEnvironment(), repo_root: target.repoRoot,
-    repository: requiredString(args, 'repository'), provider_repository_id: requiredString(args, 'provider_repository_id'),
+    repository, provider_repository_id: requiredString(args, 'provider_repository_id'),
     pr_number: positiveInteger(args, 'pr_number'), expected_head_sha: requiredString(args, 'expected_head_sha'),
     expected_base_sha: requiredString(args, 'expected_base_sha') });
   audit(ctx, 'publication_readiness', 'ok', args);
