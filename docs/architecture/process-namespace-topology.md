@@ -1,6 +1,12 @@
 # 进程与命名空间拓扑 + 挂载层
 
-> **快照**：`origin/main` `d7e92f43d`（2026-10-25）。文中行号都按这个提交。
+> **历史归档**：初始审查基线为 `d7e92f43d`；本页保留截至 `2cee26d888af9dd34ed52982e13df0c16db00681` 的后续修订，不是单一提交的快照。
+> 当前规范见 [功能架构、时序与拓扑](current-architecture.md)。
+> #901/#902/#904 的只读状态、失败停止回滚、init 分离，以及 #947 的恢复修复已经合入当前基线。
+> 保留历史内容用于追踪审查；历史读者的退出决定继续引用 #917，不据此删除或恢复。
+
+> **来源**：初稿见 #900；后续段落和引用可能采用较新源码。各项来源见[截至归档基线的文件历史](https://github.com/Ancienttwo/repo-harness/commits/2cee26d888af9dd34ed52982e13df0c16db00681/docs/architecture/process-namespace-topology.md)，不能把全页行号统一套用到 `d7e92f43d`。
+> 后续修订包括 #932、#941、#943、#946、#945；repository/worktree 双 ID 规则来自 #943。
 > **事实优先级**：源码 > `.archcontext/model/` > 本文。本文是手写视图，archctx 不投影它。
 > **配套**：[总分层架构与时序](layered-architecture.md) · [Global Hook Runtime](global-hook-runtime.md) · [Architecture Index](index.md)
 > **用途**：精简重构的定位图。`R-Tx` 指向本文 [Remarks](#remarks)，`R-Lx` 指向[分层文档的 Remarks](layered-architecture.md#remarks)。

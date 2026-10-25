@@ -5,10 +5,8 @@
 
 ## Current Snapshot
 
-- The architecture model lives in `.archcontext/model/`. It declares 28
-  capabilities in 6 domains, 56 components, 286 relations and 36 flows.
-- Every capability page under [modules](modules/) shows `Proof: proven` for its
-  P1 map and its P2 flow.
+- The architecture model lives in `.archcontext/model/`. The generated inventory
+  below records model counts and proof status at its own projection revision.
 - The full generated graph is in [diagrams/architecture.mmd](diagrams/architecture.mmd),
   [diagrams/architecture.likec4](diagrams/architecture.likec4) and
   [diagrams/architecture.structurizr.json](diagrams/architecture.structurizr.json).
@@ -18,8 +16,8 @@
   [Shared Coordination Plane](shared-coordination-plane.md),
   [Global Hook Runtime](global-hook-runtime.md) and
   [Transactional Adoption Planner](transactional-adoption-planner.md).
-- Hand-written overview views, in Chinese, each with a Remarks list for
-  simplification work: [layered architecture and sequences](layered-architecture.md)
+- Current hand-written view: [functional architecture and runtime sequences](current-architecture.md).
+- Archived review views, started at `d7e92f43d` and retaining later revisions through `2cee26d8`: [layered architecture and sequences](layered-architecture.md)
   and [process, namespace and mount topology](process-namespace-topology.md).
 
 ## System Boundary
@@ -45,14 +43,14 @@ Authoritative surfaces:
 
 - Public router: `SKILL.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`.
 - Public command facades: `assets/skill-commands/*/SKILL.md` plus `assets/skill-commands/manifest.json`.
-- Engine: `scripts/inspect-project-state.ts`, `src/core/adoption/`, `src/effects/fs-transaction.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`, and the [Transactional Adoption Planner](transactional-adoption-planner.md).
+- Engine: `scripts/inspect-project-state.ts`, `src/effects/adoption/`, `src/effects/fs-transaction.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`, and the [Transactional Adoption Planner](transactional-adoption-planner.md).
 - Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, and the capability authority selected by `.ai/harness/policy.json#context.capability_source` (this repo: `.archcontext/model/nodes/*.yaml`).
 - Runtime harness: the `repo-harness-hook` binary (`package.json` `bin`), the typed route registry `src/cli/hook/route-registry.ts`, user-level host adapters, and ignored `.ai/harness/*` runtime state. No shell operator library exists.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config and registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
 - Effective State: `src/core/state/` projects plan, worktree, capability ownership,
-  risk and recovery pointers. `src/effects/state/` reads sources and publishes
-  the state cache. `src/core/workflow/profile.ts` owns the risk profile.
+  risk and recovery pointers. `src/effects/state/` reads sources. Only `state resolve` publishes
+  the shared `state_version`; hooks and MCP use the read-only resolver. `src/core/workflow/profile.ts` owns the risk profile.
   State carries no contract, review, acceptance, checks, readiness or sprint
   projection. The CLI, SessionStart and MCP read the same projection.
   `tests/state/adapter-parity.test.ts` checks these readers.
@@ -75,19 +73,28 @@ Out of scope:
 - Vendoring external skill bodies such as `mermaid`.
 - Merging pull requests. The provider and the user perform the merge.
 
-## Domain Map
+## Functional Domains
+
+The [eight functional domains](current-architecture.md#functional-domains) group
+responsibilities across implementation layers. They do not rename model nodes or
+move directories. `cli`, `core`, `effects` and `scripts` are implementation layers.
+
+## Model Domain Inventory
 
 | Domain | Capabilities | Purpose | Page |
 | --- | --- | --- | --- |
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
-| runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and runs the Module Engineer organization. | [Runtime Harness](domains/runtime-harness.md) |
+| runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and retains historical Engineer readers. | [Runtime Harness](domains/runtime-harness.md) |
 | organization | 2 | Reads historical tasks and publication records. Keeps manual Task Inbox and provider feedback operations. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
 
 ## Main Runtime Paths
 
+The diagram is a dependency inventory, not a task scheduling sequence. Grey
+nodes include retained historical readers. Current task decisions belong to
+GitHub and the Human/Bot; see [current sequences](current-architecture.md#runtime-sequences).
 The diagram shows the five main entry paths. Each solid edge between two
 repo-harness nodes is a relation in the model. The table below gives the
 relation id. Dashed edges go to external actors that the model does not
@@ -114,12 +121,13 @@ flowchart LR
   Console["operator web console"]:::cap
   OpServer["operator HTTP reader"]:::cap
   Closure["archctx closure<br/>global-runtime-reconciliation"]:::cap
-  Fleet["task-fleet"]:::cap
-  Pub["publication"]:::cap
+  Fleet["task-fleet<br/>inbox and historical readers"]:::ext
+  Pub["publication<br/>historical readers and provider feedback"]:::ext
   TAH["task-agent-host"]:::cap
   Review["acceptance-review"]:::cap
   WS["workflow-state"]:::store
   EL["evidence-ledger"]:::store
+  EP["execution-primitives"]:::cap
 
   Bot -.-> CLI
   CLI --> Fleet
@@ -151,17 +159,17 @@ flowchart LR
   Closure -.-> Archctx
   Closure --> Review
   Review --> TAH
-  WS --> EL
+  WS --> EP
 ```
 
 | Edge | Evidence |
 | --- | --- |
 | Bot -> CLI root | External. `README.md` "Two Layers": the Bot drives programs through the repo-harness CLI and Herdr. |
 | CLI root -> task-fleet, task-agent-host, workflow-state, publication | `relation.global-runtime-reconciliation.cli-root.task-fleet`, `.task-agent-host`, `.workflow-state`, `.publication` (`buildProgram` registers the fleet, herdr, state and publication commands). |
-| task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read canonical Sprint tasks and leases to build offers and the board. |
+| task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read retained historical Sprint and lease records for observation; these do not dispatch current tasks. |
 | task-fleet -> publication | `relation.task-fleet.publication`: read publication receipts, readiness and provider feedback. |
 | task-agent-host -> Herdr | External. The capability hosts persistent task agents in Herdr panes (capability summary). |
-| publication -> GitHub provider | External. Publication binds a claim generation to a pull request and never merges it (`modules/organization/publication.md` §3.1). |
+| publication -> GitHub provider | External. Current task/PR authority stays in GitHub. Publication retains receipt readers and provider feedback operations; it does not restore lease publication writers. |
 | Host -> hook-adapters | External. User-level host hooks call the `repo-harness-hook` binary (`package.json` `bin`, [Global Hook Runtime](global-hook-runtime.md)). |
 | hook-adapters -> workflow-state, evidence-ledger, task-fleet | `relation.hook-adapters.primary.workflow-state`, `relation.hook-adapters.session-lifecycle.evidence-ledger`, `relation.hook-adapters.session-lifecycle.task-fleet`. |
 | MCP client -> mcp-sidecar | External. `README.md` "MCP Connector". |
@@ -173,7 +181,7 @@ flowchart LR
 | archctx closure -> archctx | External. `src/effects/architecture/archctx-provider.ts` runs the package-local archctx binary. |
 | archctx closure -> acceptance-review | `relation.global-runtime-reconciliation.archctx-closure.acceptance-review`: build the module review prompt from the committed model. |
 | acceptance-review -> task-agent-host | `relation.acceptance-review.primary.task-agent-host`: run the persistent review session on a Herdr task agent. |
-| workflow-state -> evidence-ledger | `relation.workflow-state.coordination-plane.evidence-ledger`: write lease and topology records durably. |
+| workflow-state -> execution-primitives | `relation.workflow-state.coordination-plane.execution-primitives`: topology safety uses locks, Git and durable primitives. #945 moved the primitive and removed the former evidence-ledger relation; this does not restore lease writers. |
 
 ## Authority and State Map
 
@@ -183,13 +191,14 @@ Each datum has one authority. Every other representation is a projection.
 | --- | --- | --- | --- |
 | Workflow contract | `assets/workflow-contract.v1.json`; the repo opt-in marker `.ai/harness/workflow-contract.json` | contract-assets | Templates, helper copies and reference configs are byte projections. |
 | Architecture model | `.archcontext/model/{nodes,relations,flows}/`, written through archctx ChangeSets | contract-assets (files); global-runtime-reconciliation runs the projection | Generated regions in `docs/architecture/**`. `repo-harness module` and the operator read the committed HEAD snapshot (`src/effects/architecture/model-reader.ts`). |
-| Capability ownership | Capability nodes only (`src/core/capabilities/registry.ts`) | contract-assets | `scripts/capability-resolver.ts` longest-prefix match. |
-| Plans, contracts and reviews | Repository Markdown under `plans/` and `tasks/` | workflow-state reads them | Effective State is the single deterministic projection. Its JSON cache and `tasks/current.md` are read models ([Effective State Authority](effective-state-authority.md)). |
-| Task identity | The ID cell of the canonical Sprint row | workflow-state | Task revision, fleet offers and boards. |
+| Capability ownership | Policy-selected source: archcontext model or registry | contract-assets | Archcontext mode uses package-local `archctx resolve`; registry mode uses local longest-prefix matching. Components and parent chains participate in archcontext ownership. |
+| Planning context | Repository Markdown under `plans/` and `tasks/` | workflow-state reads retained plan context | Effective State projects local facts. It has no persisted JSON cache. `tasks/current.md` is an orientation snapshot, not task authority. |
+| Current task identity, claim, status and dependency | GitHub issue and PR | Human/Bot decisions | Local boards and retained Sprint readers do not dispatch tasks. |
+| State content and published version | `state_revision` identifies resolved content; `state resolve` alone allocates shared `state_version` | workflow-state | Read-only hooks and MCP can return a version allocated for a different revision. |
 | Task execution (lease), historical | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims`. Readers only since #834. `init` writes no cutover marker since #917. | workflow-state | State board and fleet board read them. Worktree safety does not. |
 | Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
 | Publication, historical | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`. Readers only since #834. | publication | Merge readiness is derived at read time and never stored. |
-| Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json` | acceptance-review | Effective State and integration acceptance read it. |
+| Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json` | acceptance-review | Acceptance review validates exact subject and verification evidence; Effective State has no acceptance projection. |
 | Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
 | Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` have readers only | engineer-bindings | Engineer offers and the engineering overlay. |
 | Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
@@ -198,7 +207,8 @@ Each datum has one authority. Every other representation is a projection.
 | Merge | The provider and the user | none | repo-harness never merges. |
 
 Storage roots, sharing scope, locks and retention of these stores are in
-[process, namespace and mount topology](process-namespace-topology.md#3-命名空间拓扑).
+[current topology](current-architecture.md#storage-and-process-topology). The
+[old topology](process-namespace-topology.md#3-命名空间拓扑) is a historical snapshot.
 
 ## Capability Index
 
@@ -236,7 +246,7 @@ Storage roots, sharing scope, locks and retention of these stores are in
 Reading rules:
 
 - One capability has exactly one module page at `modules/<domain>/<capability>.md`.
-- Fact priority: current source > model > documents. When a page conflicts with `src/`, `scripts/` or `assets/`, the source wins. Update the model and the projection in the same pull request.
+- Fact priority: current source > model > documents. When a page conflicts with `src/`, `scripts/` or `assets/`, the source wins. Update model intent through a ChangeSet and human prose in the feature PR. The rolling writer publishes generated projections.
 - The prefix authority is the capability source that `.ai/harness/policy.json#context.capability_source` selects. In this repository it is `.archcontext/model/nodes/*.yaml`.
 
 ## Umbrella Hierarchy
@@ -253,8 +263,8 @@ Project
 ```
 
 - Architecture owns stable truth: boundaries, snapshots, and embedded Mermaid source.
-- The capability authority selected by `.ai/harness/policy.json#context.capability_source` owns declared capability prefixes and longest-prefix matching; this repo resolves from `.archcontext/model/nodes/*.yaml`.
-- Component nodes split a capability by responsibility. The repo-harness registry reads capability nodes only.
+- The capability authority selected by `.ai/harness/policy.json#context.capability_source` selects the ownership resolver: package-local `archctx resolve` for archcontext, local longest-prefix matching for registry.
+- Component nodes split a capability by responsibility. Archcontext resolves component footprints and parent chains; its response identifies the owning capability.
 - Local `AGENTS.md` / `CLAUDE.md` contract blocks own agent-facing context projection.
 - `tasks/workstreams/<domain>/<capability>/` owns durable multi-session progress.
 - `tasks/todos.md` owns deferred medium/long-term goals with tradeoff and revisit trigger; current execution slices stay in the active plan's `## Task Breakdown`.
@@ -262,8 +272,8 @@ Project
 ## Architecture Update Flow
 
 - Hooks do not record architecture drift. The pull request is the update unit.
-- `scripts/capability-resolver.ts` resolves changed paths to capabilities with longest-prefix matching.
-- When a change alters responsibilities, entrypoints, relations or flows, write the model change through an archctx ChangeSet and run `repo-harness architecture-projection apply --json` in the same branch.
+- `scripts/capability-resolver.ts` routes to the policy-selected resolver. A provider failure is not permission to fall back to registry matching.
+- When a change alters responsibilities, entrypoints, relations or flows, write the model change through an archctx ChangeSet and commit only the model and human prose. The rolling writer owns generated regions, diagram exports and the projection manifest. Do not run projection apply in a feature branch.
 - Read architecture documents on demand. Update real boundaries explicitly.
 - `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant architecture module or snapshot Markdown.
