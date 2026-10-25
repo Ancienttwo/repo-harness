@@ -5,12 +5,11 @@ import { basename, join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock, PLAN } from './effective-state-fixture';
 import { ROOT } from './effective-state-fixture';
-import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
+import { stateVersionOwnerPath, type StateVersionWriteEffects } from '../../src/effects/state/git-state-version-store';
 import {
   resolveEffectiveState,
   StateResolutionUnstableError,
 } from '../../src/effects/state/resolve-effective-state';
-import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
@@ -372,7 +371,7 @@ describe('Effective State lock and source-stability characterization', () => {
     }
   }, 10_000);
 
-  test('a linked-worktree cache publication failure does not consume the shared next version', () => {
+  test('a linked-worktree owner publication failure does not consume the shared next version', () => {
     const fixture = createEffectiveStateFixture();
     const linked = `${fixture.cwd}-linked-publication-failure`;
     let linkedCreated = false;
@@ -385,15 +384,15 @@ describe('Effective State lock and source-stability characterization', () => {
       if (add.status !== 0) throw new Error(add.stderr);
       linkedCreated = true;
       writeFixture(linked, '.ai/harness/active-worktree', `${linked}\n`);
-      const cache: StateCacheWriteEffects = {
+      const version: StateVersionWriteEffects = {
         writeTemp(path, content) { writeFileSync(path, content, { mode: 0o600 }); },
-        publish() { throw new Error('injected linked cache publish failure'); },
+        publish() { throw new Error('injected linked owner publish failure'); },
         removeTemp(path) { rmSync(path, { force: true }); },
       };
       expect(() => resolveEffectiveState(linked, Date.now(), {
         targetPaths: ['src/feature.ts'],
         operationKind: 'feature',
-      }, { cache })).toThrow('injected linked cache publish failure');
+      }, { version })).toThrow('injected linked owner publish failure');
       expect(JSON.parse(readFileSync(versionOwner(fixture.cwd), 'utf-8')).version)
         .toBe(first.state_version);
       expect(resolveFixtureState(linked).state_version).toBe(first.state_version + 1);
@@ -416,26 +415,12 @@ describe('Effective State lock and source-stability characterization', () => {
     let linkedCreated = false;
     const versionStoreModule = join(ROOT, 'src/effects/state/git-state-version-store.ts');
     const workerScript = `
-      import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
-      import { join } from 'path';
+      import { existsSync } from 'fs';
       const store = await import(process.env.VERSION_STORE_MODULE);
       while (!existsSync(process.env.START_PATH)) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
       }
-      const publicationPath = join(
-        process.env.TEST_REPO,
-        '.ai/harness/state',
-        \`version-publication-\${process.env.WORKER_ID}.json\`,
-      );
-      mkdirSync(join(publicationPath, '..'), { recursive: true });
-      const version = store.commitStateVersionAfter(
-        process.env.TEST_REPO,
-        process.env.REVISION,
-        (candidate) => {
-          writeFileSync(publicationPath, String(candidate));
-          return { rollback() { try { unlinkSync(publicationPath); } catch {} } };
-        },
-      );
+      const version = store.commitStateVersionAfter(process.env.TEST_REPO, process.env.REVISION);
       process.stdout.write(String(version));
     `;
     try {
@@ -485,7 +470,7 @@ describe('Effective State lock and source-stability characterization', () => {
     }
   }, 20_000);
 
-  test('continuous capability-registry mutation overlaps resolution and fails without a partial cache', async () => {
+  test('continuous capability-registry mutation overlaps resolution and fails without a published version', async () => {
     const fixture = createEffectiveStateFixture();
     try {
       const registryPath = join(fixture.cwd, '.ai/context/capabilities.json');
@@ -543,11 +528,9 @@ describe('Effective State lock and source-stability characterization', () => {
       }
       await mutatorDone;
 
-      const cachePath = join(fixture.cwd, '.ai/harness/state/effective.json');
       const afterCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
       expect(afterCount).toBeGreaterThan(beforeCount);
       expect(failure).toBeInstanceOf(StateResolutionUnstableError);
-      expect(existsSync(cachePath)).toBe(false);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
       fixture.cleanup();
@@ -576,7 +559,7 @@ describe('Effective State lock and source-stability characterization', () => {
   // legitimately finds a stable snapshot and succeeds instead of exhausting.
   // It instead reuses the continuous-mutation barrier technique from
   // "continuous capability-registry mutation overlaps resolution and fails
-  // without a partial cache" above: a background mutator holds the outer
+  // without a published version" above: a background mutator holds the outer
   // state lock until it is already rewriting the plan file in a tight loop,
   // then releases it, so both resolveStableEffectiveState's stability loop
   // and every subsequent confirm check keep observing freshly-changed
@@ -606,19 +589,19 @@ describe('Effective State lock and source-stability characterization', () => {
       ], { stdio: 'ignore' });
       mutator.unref();
 
-      let cacheWriteTempCount = 0;
-      let cachePublishCount = 0;
-      const cache: StateCacheWriteEffects = {
-        writeTemp(path, content) { cacheWriteTempCount += 1; writeFileSync(path, content, { mode: 0o600 }); },
-        publish(tempPath, cachePath) { cachePublishCount += 1; renameSync(tempPath, cachePath); },
+      let ownerWriteTempCount = 0;
+      let ownerPublishCount = 0;
+      const version: StateVersionWriteEffects = {
+        writeTemp(path, content) { ownerWriteTempCount += 1; writeFileSync(path, content, { mode: 0o600 }); },
+        publish(tempPath, targetPath) { ownerPublishCount += 1; renameSync(tempPath, targetPath); },
         removeTemp(path) { rmSync(path, { force: true }); },
       };
 
-      const result = resolveEffectiveState(fixture.cwd, Date.now(), risk, { cache });
+      const result = resolveEffectiveState(fixture.cwd, Date.now(), risk, { version });
 
       expect(result.state_version).toBe(first.state_version + 1);
-      expect(cacheWriteTempCount).toBe(1);
-      expect(cachePublishCount).toBe(1);
+      expect(ownerWriteTempCount).toBe(1);
+      expect(ownerPublishCount).toBe(1);
       expect(result.source_hashes[PLAN]).toBe(sourceHash(fixture.cwd, PLAN));
       expect(JSON.parse(readFileSync(ownerPath, 'utf-8')).revision).toBe(result.state_revision);
     } finally {
@@ -674,16 +657,16 @@ describe('Effective State lock and source-stability characterization', () => {
       expect(barrier.status).toBe(0);
       const beforeCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
 
-      let cacheWriteTempCount = 0;
-      const cache: StateCacheWriteEffects = {
-        writeTemp(path, content) { cacheWriteTempCount += 1; writeFileSync(path, content, { mode: 0o600 }); },
-        publish(tempPath, cachePath) { renameSync(tempPath, cachePath); },
+      let ownerWriteTempCount = 0;
+      const version: StateVersionWriteEffects = {
+        writeTemp(path, content) { ownerWriteTempCount += 1; writeFileSync(path, content, { mode: 0o600 }); },
+        publish(tempPath, targetPath) { renameSync(tempPath, targetPath); },
         removeTemp(path) { rmSync(path, { force: true }); },
       };
 
       let failure: Error | null = null;
       try {
-        resolveEffectiveState(fixture.cwd, Date.now(), risk, { cache });
+        resolveEffectiveState(fixture.cwd, Date.now(), risk, { version });
       } catch (error) {
         failure = error as Error;
       } finally {
@@ -694,9 +677,8 @@ describe('Effective State lock and source-stability characterization', () => {
       const afterCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
       expect(afterCount).toBeGreaterThan(beforeCount);
       expect(failure).toBeInstanceOf(StateResolutionUnstableError);
-      expect(cacheWriteTempCount).toBe(0);
+      expect(ownerWriteTempCount).toBe(0);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
-      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
     } finally {
       fixture.cleanup();
     }

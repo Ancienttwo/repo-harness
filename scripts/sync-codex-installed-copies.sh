@@ -6,30 +6,7 @@ if [[ -z "$SOURCE_ROOT" ]]; then
   SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 
-CODEX_SKILLS_ROOT_WAS_SET=0
-if [[ -z "${CODEX_SKILLS_ROOT:-}" ]]; then
-  if [[ -z "${HOME:-}" ]]; then
-    echo "[sync-installed] HOME is required when CODEX_SKILLS_ROOT is not set." >&2
-    exit 1
-  fi
-  CODEX_SKILLS_ROOT="$HOME/.codex/skills"
-else
-  CODEX_SKILLS_ROOT_WAS_SET=1
-fi
-
-if [[ -z "${CLAUDE_SKILLS_ROOT:-}" ]]; then
-  if [[ "$CODEX_SKILLS_ROOT_WAS_SET" -eq 0 ]]; then
-    CLAUDE_SKILLS_ROOT="$HOME/.claude/skills"
-  else
-    CLAUDE_SKILLS_ROOT=""
-  fi
-fi
-
 SOURCE_ROOT="${SOURCE_ROOT%/}"
-CODEX_SKILLS_ROOT="${CODEX_SKILLS_ROOT%/}"
-if [[ -n "$CLAUDE_SKILLS_ROOT" ]]; then
-  CLAUDE_SKILLS_ROOT="${CLAUDE_SKILLS_ROOT%/}"
-fi
 LINK_INSTALLED_COPIES="${AGENTIC_DEV_LINK_INSTALLED_COPIES:-}"
 INSTALL_PROFILE="${REPO_HARNESS_INSTALL_PROFILE:-full}"
 case "$INSTALL_PROFILE" in
@@ -39,10 +16,6 @@ case "$INSTALL_PROFILE" in
     exit 2
     ;;
 esac
-if [[ -z "$LINK_INSTALLED_COPIES" && "$CODEX_SKILLS_ROOT_WAS_SET" -eq 0 ]]; then
-  LINK_INSTALLED_COPIES=1
-fi
-
 if [[ ! -d "$SOURCE_ROOT" ]]; then
   echo "[sync-installed] Source root not found: $SOURCE_ROOT" >&2
   exit 1
@@ -53,7 +26,7 @@ fi
 # this newly installed script, perform the candidate's exact closure readback
 # before projecting any host files. This makes the first update invocation fail
 # closed instead of reporting success from stale in-memory update logic.
-BUN_GLOBAL_ROOT="${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules/repo-harness"
+BUN_GLOBAL_ROOT="${BUN_INSTALL:-${HOME:-}/.bun}/install/global/node_modules/repo-harness"
 if [[ -d "$BUN_GLOBAL_ROOT" ]] \
   && [[ "$(cd "$SOURCE_ROOT" && pwd -P)" == "$(cd "$BUN_GLOBAL_ROOT" && pwd -P)" ]]; then
   bun "$SOURCE_ROOT/scripts/check-managed-runtime.ts"
@@ -62,23 +35,36 @@ fi
 # Resolved once, eagerly, here in the main shell process (never inside a function
 # invoked as a pipeline's non-last stage -- bash forks a subshell for those, which
 # would silently swallow a failure here as "selects nothing" instead of aborting).
-# One adapter call returns both facade selection and separately-managed provider
-# placements so adding the ownership boundary does not add another Bun startup to
-# every sync.
+# One adapter call returns the skill roots, facade selection and separately-managed
+# provider placements so these boundaries do not add another Bun startup to every
+# sync. src/effects/host-skill-roots.ts owns the root rule.
 if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" profile-projection --profile "$INSTALL_PROFILE")"; then
   echo "[sync-installed] skill-surface-select profile-projection failed for profile: $INSTALL_PROFILE" >&2
   exit 1
 fi
+CODEX_SKILLS_ROOT=""
+CLAUDE_SKILLS_ROOT=""
+SKILL_ROOT_OVERRIDE=""
 SELECTED_FACADES=""
 PROVIDER_PLACEMENTS=""
 INTEGRATION_NAMES=""
 while IFS=$'\t' read -r projection_kind projection_value; do
   case "$projection_kind" in
+    codex-root) CODEX_SKILLS_ROOT="$projection_value" ;;
+    claude-root) CLAUDE_SKILLS_ROOT="$projection_value" ;;
+    root-override) SKILL_ROOT_OVERRIDE="$projection_value" ;;
     facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
     provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
     integration) INTEGRATION_NAMES+="${INTEGRATION_NAMES:+$'\n'}$projection_value" ;;
   esac
 done <<< "$PROFILE_PROJECTION"
+if [[ -z "$CODEX_SKILLS_ROOT" || -z "$SKILL_ROOT_OVERRIDE" ]]; then
+  echo "[sync-installed] skill-surface-select profile-projection returned no skill roots" >&2
+  exit 1
+fi
+if [[ -z "$LINK_INSTALLED_COPIES" && "$SKILL_ROOT_OVERRIDE" == "0" ]]; then
+  LINK_INSTALLED_COPIES=1
+fi
 
 # Manifest-derived name -> source path for every facade-kind package,
 # regardless of profile. A facade's source directory is no longer guaranteed

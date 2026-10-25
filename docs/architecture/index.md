@@ -186,7 +186,7 @@ Each datum has one authority. Every other representation is a projection.
 | Capability ownership | Capability nodes only (`src/core/capabilities/registry.ts`) | contract-assets | `scripts/capability-resolver.ts` longest-prefix match. |
 | Plans, contracts and reviews | Repository Markdown under `plans/` and `tasks/` | workflow-state reads them | Effective State is the single deterministic projection. Its JSON cache and `tasks/current.md` are read models ([Effective State Authority](effective-state-authority.md)). |
 | Task identity | The ID cell of the canonical Sprint row | workflow-state | Task revision, fleet offers and boards. |
-| Task execution (lease), historical | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims`. Readers only since #834. `init` still writes the cutover marker `coordination/v1/protocol.json`. | workflow-state | State board, fleet board and worktree safety read them. |
+| Task execution (lease), historical | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims`. Readers only since #834. `init` writes no cutover marker since #917. | workflow-state | State board and fleet board read them. Worktree safety does not. |
 | Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
 | Publication, historical | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`. Readers only since #834. | publication | Merge readiness is derived at read time and never stored. |
 | Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json` | acceptance-review | Effective State and integration acceptance read it. |

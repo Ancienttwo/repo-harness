@@ -6,7 +6,7 @@
   "status": "active",
   "summary": "Resolves deterministic Effective State and owns historical coordination reads, worktree safety and the continuation ledger.",
   "responsibilities": [
-    "Project repository workflow artifacts into one deterministic Effective State. The JSON cache and tasks/current.md stay replaceable read models.",
+    "Project repository workflow artifacts into one deterministic Effective State. The tasks/current.md snapshot stays a replaceable read model.",
     "Read historical Sprint task identity and lease records for the lock-free board. Preserve exact worktree cleanup and shared task-lock safety.",
     "Own the continuation envelope and the append-only attempt ledger with its no-progress breaker.",
     "Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks.",

@@ -15,7 +15,7 @@ source:
     - "src/effects/managed-tree.ts"
     - "src/cli/hook-entry.ts"
     - "src/effects/loop/**"
-    - "src/effects/hook-event-log.ts"
+    - "src/effects/segmented-log.ts"
     - "src/effects/run-summary-retention.ts"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"

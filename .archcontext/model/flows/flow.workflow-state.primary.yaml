@@ -38,12 +38,12 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: Sources stay stable and both writes succeed
+    label: Sources stay stable and the version commit succeeds
     steps:
       - id: commit-version
         from: resolver
         to: primitives
-        label: Publish the cache and then commit the shared version owner under the Git common dir
+        label: Confirm the sources and commit the shared version owner under the Git common dir
         evidence:
           entrypointId: entrypoint.workflow-state.version-owner
           sourceSymbol: commitStateVersionAfter
@@ -58,7 +58,7 @@ outcomes:
       - id: rollback
         from: capability
         to: resolver
-        label: Restore the prior cache bytes and retry the whole round once on a source mismatch
+        label: Retry the whole round once on a source mismatch
         evidence:
           entrypointId: entrypoint.workflow-state.primary
           sourceSymbol: resolveAndCommitEffectiveState

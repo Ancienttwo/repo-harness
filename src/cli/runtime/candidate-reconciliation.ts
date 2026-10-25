@@ -30,10 +30,14 @@ import {
 } from '../installer/managed-entries';
 import { ROUTES } from '../hook/route-registry';
 import { readExclusiveDirectoryLockOwner } from '../../effects/locking/exclusive-directory-lock';
+import {
+  runtimeTransactionLockRelativePath,
+  runtimeTransactionRoot,
+  type RuntimeTransactionScope,
+} from '../installer/runtime-host-lock';
 
 export const CANDIDATE_RECONCILIATION_PROTOCOL = 1;
 export const CANDIDATE_RECONCILIATION_CAPABILITY_PROTOCOL = 1;
-export const GLOBAL_RUNTIME_LOCK_RELATIVE_PATH = '.repo-harness/transactions/global-runtime.lock';
 const CANDIDATE_CAPABILITY_NAME = '.candidate-runtime-reconciliation-capability.v1.json';
 
 interface FileIdentity {
@@ -233,13 +237,16 @@ export function publishCandidateReconciliationCapability(
  */
 export function consumeCandidateReconciliationCapability(
   request: CandidateReconciliationRequest,
-  home: string,
+  scope: RuntimeTransactionScope,
 ): CandidateReconciliationCapability {
   if (request.transaction_id !== sha256(request.transaction_backup_root)) {
     throw new Error('candidate reconciliation transaction identifier is not bound to its backup root');
   }
-  const canonicalHome = canonicalDirectory(home, 'candidate reconciliation home');
-  const transactionRoot = canonicalDirectory(join(canonicalHome, '.repo-harness', 'transactions'), 'candidate reconciliation transaction root');
+  if (scope.kind !== 'global') throw new Error('candidate reconciliation requires the global runtime scope');
+  const canonicalHome = canonicalDirectory(realpathSync(scope.root), 'candidate reconciliation home');
+  const canonicalScope: RuntimeTransactionScope = { kind: scope.kind, root: canonicalHome };
+  const lockRelativePath = runtimeTransactionLockRelativePath(canonicalScope);
+  const transactionRoot = canonicalDirectory(runtimeTransactionRoot(canonicalScope), 'candidate reconciliation transaction root');
   const backupRoot = canonicalDirectory(request.transaction_backup_root, 'candidate reconciliation transaction backup');
   if (!pathWithin(backupRoot, transactionRoot) || backupRoot === transactionRoot) {
     throw new Error(`candidate reconciliation transaction backup is outside the active transaction root: ${backupRoot}`);
@@ -258,11 +265,11 @@ export function consumeCandidateReconciliationCapability(
   if (capability.parent_pid !== process.ppid || !processIsAlive(capability.parent_pid)) {
     throw new Error('candidate reconciliation parent process is not the live transaction owner');
   }
-  const expectedLockPath = join(canonicalHome, GLOBAL_RUNTIME_LOCK_RELATIVE_PATH);
+  const expectedLockPath = join(canonicalHome, lockRelativePath);
   if (capability.lock_path !== expectedLockPath) {
     throw new Error('candidate reconciliation capability lock path mismatch');
   }
-  const lockOwner = readExclusiveDirectoryLockOwner(canonicalHome, GLOBAL_RUNTIME_LOCK_RELATIVE_PATH);
+  const lockOwner = readExclusiveDirectoryLockOwner(canonicalHome, lockRelativePath);
   if (
     lockOwner === null
     || lockOwner.lockPath !== capability.lock_path

@@ -11,9 +11,9 @@ export interface McpRegistryRestore {
 }
 export const mcpRegistryReceiptPath = () => join(repoHarnessHome(), 'mcp-setup-restore.json');
 export function assertMcpStoragePath(path: string): void {
-  assertConfigurationPath(resolve(path), { HOME: repoHarnessHome() });
+  assertConfigurationPath(resolve(path), repoHarnessHome());
   // Also reject a redirected storage root; the root itself is a configuration surface.
-  assertConfigurationPath(repoHarnessHome(), { HOME: resolve(repoHarnessHome(), '..') });
+  assertConfigurationPath(repoHarnessHome(), resolve(repoHarnessHome(), '..'));
 }
 export function withMcpSetupLock<T>(run: () => T): T {
   const root = repoHarnessHome();
@@ -40,7 +40,7 @@ export function readMcpRegistryReceipt(): McpRegistryRestore[] {
 }
 export function saveMcpRegistryReceipt(changes: McpRegistryRestore[]): void {
   assertMcpStoragePath(mcpRegistryReceiptPath());
-  writePrivateConfiguration(mcpRegistryReceiptPath(), `${JSON.stringify({ protocol: 1, changes }, null, 2)}\n`, { HOME: repoHarnessHome() });
+  writePrivateConfiguration(mcpRegistryReceiptPath(), `${JSON.stringify({ protocol: 1, changes }, null, 2)}\n`, repoHarnessHome());
 }
 /** Called under setup lock and registry lock, before publishing the new registry. No credential bytes. */
 export function recordMcpRegistryChanges(before: readonly RepoHarnessRegisteredRepo[], after: readonly RepoHarnessRegisteredRepo[]): void {

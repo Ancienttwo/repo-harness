@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative } from 'path';
 import {
   CONTRACT,
   PLAN,
@@ -23,10 +23,6 @@ import {
   writeFixture,
   writeFixtureStateLock,
 } from './effective-state-fixture';
-import {
-  EFFECTIVE_STATE_CACHE,
-  type StateCacheWriteEffects,
-} from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import {
@@ -176,14 +172,14 @@ describe('Effective State lock effects', () => {
 });
 
 describe('Effective State authority read faults', () => {
-  test('an authoritative path read error fails closed before cache publication', () => {
+  test('an authoritative path read error fails closed before version publication', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const planPath = join(fixture.cwd, PLAN);
       rmSync(planPath);
       mkdirSync(planPath);
       expect(() => resolveFixtureState(fixture.cwd)).toThrow('EISDIR');
-      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
       fixture.cleanup();
     }
@@ -191,7 +187,7 @@ describe('Effective State authority read faults', () => {
 
 });
 
-describe('Effective State version/cache publication transaction', () => {
+describe('Effective State version publication transaction', () => {
   const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
 
   function mutateAuthority(cwd: string): void {
@@ -203,43 +199,28 @@ describe('Effective State version/cache publication transaction', () => {
     return readdirSync(directory).filter((name) => name.includes('.tmp-'));
   }
 
-  test('a cold cache-path failure does not create the version owner and retry starts at version 1', () => {
-    const fixture = createEffectiveStateFixture();
-    try {
-      const cachePath = join(fixture.cwd, EFFECTIVE_STATE_CACHE);
-      const ownerPath = stateVersionOwnerPath(fixture.cwd);
-      mkdirSync(cachePath, { recursive: true });
-      expect(() => resolveEffectiveState(fixture.cwd, Date.now(), risk)).toThrow();
-      expect(existsSync(ownerPath)).toBe(false);
-      rmSync(cachePath, { recursive: true });
-      expect(resolveEffectiveState(fixture.cwd, Date.now(), risk).state_version).toBe(1);
-    } finally {
-      fixture.cleanup();
-    }
-  }, 30_000);
+  function countingVersionEffects(): { readonly effects: StateVersionWriteEffects; calls(): number } {
+    let calls = 0;
+    return {
+      effects: {
+        writeTemp() { calls += 1; },
+        publish() { calls += 1; },
+        removeTemp() { calls += 1; },
+      },
+      calls: () => calls,
+    };
+  }
 
-  for (const fault of ['cache-temp', 'cache-publish', 'owner-temp', 'owner-publish'] as const) {
-    test(`${fault} failure preserves exact owner/cache bytes and retry consumes only version 2`, () => {
+  for (const fault of ['owner-temp', 'owner-publish'] as const) {
+    test(`${fault} failure preserves exact owner bytes and retry consumes only version 2`, () => {
       const fixture = createEffectiveStateFixture();
       try {
         const first = resolveEffectiveState(fixture.cwd, Date.now(), risk);
-        const cachePath = join(fixture.cwd, EFFECTIVE_STATE_CACHE);
         const ownerPath = stateVersionOwnerPath(fixture.cwd);
-        const priorCache = readFileSync(cachePath);
         const priorOwner = readFileSync(ownerPath);
         mutateAuthority(fixture.cwd);
 
-        const cacheEffects: StateCacheWriteEffects | undefined = fault.startsWith('cache-') ? {
-          writeTemp(path, content) {
-            if (fault === 'cache-temp') throw new Error('injected cache temp failure');
-            writeFileSync(path, content, { mode: 0o600 });
-          },
-          publish() {
-            throw new Error('injected cache publish failure');
-          },
-          removeTemp(path) { rmSync(path, { force: true }); },
-        } : undefined;
-        const versionEffects: StateVersionWriteEffects | undefined = fault.startsWith('owner-') ? {
+        const version: StateVersionWriteEffects = {
           writeTemp(path, content) {
             if (fault === 'owner-temp') throw new Error('injected owner temp failure');
             writeFileSync(path, content, { mode: 0o600 });
@@ -248,15 +229,11 @@ describe('Effective State version/cache publication transaction', () => {
             throw new Error('injected owner publish failure');
           },
           removeTemp(path) { rmSync(path, { force: true }); },
-        } : undefined;
+        };
 
-        expect(() => resolveEffectiveState(fixture.cwd, Date.now(), risk, {
-          cache: cacheEffects,
-          version: versionEffects,
-        })).toThrow(`injected ${fault.replace('-', ' ')} failure`);
-        expect(readFileSync(cachePath).equals(priorCache)).toBe(true);
+        expect(() => resolveEffectiveState(fixture.cwd, Date.now(), risk, { version }))
+          .toThrow(`injected ${fault.replace('-', ' ')} failure`);
         expect(readFileSync(ownerPath).equals(priorOwner)).toBe(true);
-        expect(tempNames(join(fixture.cwd, '.ai/harness/state'))).toEqual([]);
         expect(tempNames(join(ownerPath, '..'))).toEqual([]);
         expect(resolveEffectiveState(fixture.cwd, Date.now(), risk).state_version)
           .toBe(first.state_version + 1);
@@ -266,31 +243,23 @@ describe('Effective State version/cache publication transaction', () => {
     }, 30_000);
   }
 
-  test('a confirmSnapshot mismatch leaves owner/cache bytes identical, writes no temp files, and the next successful call consumes exactly +1', () => {
+  test('a confirmSnapshot mismatch leaves owner bytes identical, writes no temp files, and the next successful call consumes exactly +1', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const first = resolveEffectiveState(fixture.cwd, Date.now(), risk);
-      const cachePath = join(fixture.cwd, EFFECTIVE_STATE_CACHE);
       const ownerPath = stateVersionOwnerPath(fixture.cwd);
-      const priorCache = readFileSync(cachePath);
       const priorOwner = readFileSync(ownerPath);
       mutateAuthority(fixture.cwd);
 
-      let publishCacheCalls = 0;
+      const version = countingVersionEffects();
       expect(() => commitStateVersionAfter(
         fixture.cwd,
         'revision-mismatch-probe',
-        () => {
-          publishCacheCalls += 1;
-          return { rollback() {} };
-        },
-        undefined,
+        version.effects,
         () => false,
       )).toThrow('effective-state confirm snapshot mismatch before version allocation');
-      expect(publishCacheCalls).toBe(0);
-      expect(readFileSync(cachePath).equals(priorCache)).toBe(true);
+      expect(version.calls()).toBe(0);
       expect(readFileSync(ownerPath).equals(priorOwner)).toBe(true);
-      expect(tempNames(join(fixture.cwd, '.ai/harness/state'))).toEqual([]);
       expect(tempNames(join(ownerPath, '..'))).toEqual([]);
       expect(resolveEffectiveState(fixture.cwd, Date.now(), risk).state_version)
         .toBe(first.state_version + 1);
@@ -299,21 +268,14 @@ describe('Effective State version/cache publication transaction', () => {
     }
   }, 30_000);
 
-  test('same-revision cache reconstruction never invokes version-owner write effects', () => {
+  test('an unchanged revision never invokes version-owner write effects', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const first = resolveEffectiveState(fixture.cwd, Date.now(), risk);
-      rmSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE));
-      let ownerEffectCalls = 0;
-      const version: StateVersionWriteEffects = {
-        writeTemp() { ownerEffectCalls += 1; },
-        publish() { ownerEffectCalls += 1; },
-        removeTemp() { ownerEffectCalls += 1; },
-      };
-      const rebuilt = resolveEffectiveState(fixture.cwd, Date.now(), risk, { version });
-      expect(rebuilt.state_version).toBe(first.state_version);
-      expect(ownerEffectCalls).toBe(0);
-      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(true);
+      const version = countingVersionEffects();
+      const again = resolveEffectiveState(fixture.cwd, Date.now(), risk, { version: version.effects });
+      expect(again.state_version).toBe(first.state_version);
+      expect(version.calls()).toBe(0);
     } finally {
       fixture.cleanup();
     }
@@ -327,7 +289,7 @@ describe('Effective State authority metadata failures', () => {
   }
 
   for (const authority of ['plan-directory', 'policy', 'capability-registry'] as const) {
-    test(`${authority} EACCES fails closed before cache/version publication`, () => {
+    test(`${authority} EACCES fails closed before version publication`, () => {
       if (!supportsPermissionProof()) return;
       const fixture = createEffectiveStateFixture();
       let restrictedPath = '';
@@ -343,7 +305,6 @@ describe('Effective State authority metadata failures', () => {
         }
         chmodSync(restrictedPath, 0);
         expect(() => resolveFixtureState(fixture.cwd)).toThrow();
-        expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
         expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
       } finally {
         if (restrictedPath) chmodSync(restrictedPath, authority === 'plan-directory' ? 0o700 : 0o600);
@@ -359,7 +320,6 @@ describe('Effective State authority metadata failures', () => {
       symlinkSync('worktree-owner-loop', loop);
       writeFixture(fixture.cwd, '.ai/harness/active-worktree', `${loop}\n`);
       expect(() => resolveFixtureState(fixture.cwd)).toThrow();
-      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
       fixture.cleanup();
@@ -388,6 +348,26 @@ describe('Effective State version read effects', () => {
     } finally {
       rmSync(gitPath, { force: true });
       if (existsSync(backupPath)) renameSync(backupPath, gitPath);
+      fixture.cleanup();
+    }
+  }, 30_000);
+
+  test('read-only version lookup takes no version lock and creates nothing in the Git common dir', () => {
+    const fixture = createEffectiveStateFixture();
+    try {
+      const ownerPath = stateVersionOwnerPath(fixture.cwd);
+      const commonDir = realpathSync(join(fixture.cwd, '.git'));
+      expect(currentStateVersion(fixture.cwd)).toBe(0);
+      expect(existsSync(join(ownerPath, '..'))).toBe(false);
+
+      const first = resolveFixtureState(fixture.cwd);
+      const held = acquireExclusiveDirectoryLock(commonDir, relative(commonDir, `${ownerPath}.lock`));
+      try {
+        expect(currentStateVersion(fixture.cwd)).toBe(first.state_version);
+      } finally {
+        held.release();
+      }
+    } finally {
       fixture.cleanup();
     }
   }, 30_000);

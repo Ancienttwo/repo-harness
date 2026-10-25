@@ -1,4 +1,4 @@
-import { currentReadonlyObservation, observationReadFileSync as readFileSync } from './readonly-observation';
+import { observationReadFileSync as readFileSync } from './readonly-observation';
 import { lstatSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -16,10 +16,6 @@ export interface StateVersionWriteEffects {
   readonly writeTemp: (path: string, content: string) => void;
   readonly publish: (tempPath: string, ownerPath: string) => void;
   readonly removeTemp: (tempPath: string) => void;
-}
-
-export interface StateVersionPublication {
-  rollback(): void;
 }
 
 /**
@@ -99,6 +95,11 @@ function writeVersionRecord(
   }
 }
 
+/**
+ * The last allocated version, read without the version lock: the writer
+ * replaces the record by rename, so a read sees one whole record. The version
+ * can belong to another revision of any linked worktree.
+ */
 export function currentStateVersion(cwd: string): number {
   let commonDir: string;
   try {
@@ -107,29 +108,23 @@ export function currentStateVersion(cwd: string): number {
     if (!hasGitDiscoveryMetadata(cwd)) return 0;
     throw error;
   }
-  if (currentReadonlyObservation()) return readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH))?.version ?? 0;
-  return withExclusiveDirectoryLock(commonDir, VERSION_LOCK_RELATIVE_PATH, () => {
-    const current = readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH));
-    return current?.version ?? 0;
-  });
+  return readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH))?.version ?? 0;
 }
 
 /**
- * Serialize one linked-worktree version decision and run the caller's cache
- * publication before the Git-common-dir owner is committed. The version owner
- * is the authoritative commit point; if cache publication fails, it is never
- * advanced. The cache remains a replaceable read model and is never read here.
+ * Serialize one linked-worktree version decision under the Git-common-dir
+ * lock. A changed revision consumes the next version; an unchanged revision
+ * keeps its version and writes nothing. A failed owner write consumes no
+ * version.
  *
  * `confirmSnapshot`, when provided, is evaluated first inside the version
  * lock, before the candidate version is computed or consumed. A `false`
- * result throws `StateVersionConfirmMismatchError` without reading/writing
- * the owner file or invoking `publishCache` -- the same no-observable-version
- * guarantee the four existing fault paths already hold.
+ * result throws `StateVersionConfirmMismatchError` without reading or writing
+ * the owner file.
  */
 export function commitStateVersionAfter(
   cwd: string,
   revision: string,
-  publishCache: (version: number) => StateVersionPublication,
   effects: StateVersionWriteEffects = DEFAULT_VERSION_WRITE_EFFECTS,
   confirmSnapshot?: () => boolean,
 ): number {
@@ -140,28 +135,9 @@ export function commitStateVersionAfter(
       throw new StateVersionConfirmMismatchError();
     }
     const previous = readVersionRecord(target);
-    const version = previous?.revision === revision
-      ? previous.version
-      : (previous?.version ?? 0) + 1;
-    let cachePublication: StateVersionPublication | null = null;
-    try {
-      cachePublication = publishCache(version);
-      if (previous?.revision !== revision) {
-        writeVersionRecord(target, { version, revision }, effects);
-      }
-      return version;
-    } catch (error) {
-      if (cachePublication !== null) {
-        try {
-          cachePublication.rollback();
-        } catch (rollbackError) {
-          throw new AggregateError(
-            [error, rollbackError],
-            'effective-state publication and cache rollback both failed',
-          );
-        }
-      }
-      throw error;
-    }
+    if (previous?.revision === revision) return previous.version;
+    const version = (previous?.version ?? 0) + 1;
+    writeVersionRecord(target, { version, revision }, effects);
+    return version;
   });
 }

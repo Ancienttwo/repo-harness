@@ -11,18 +11,20 @@ import {
 } from '../../effects/loop/state-input-collector';
 import { createHookEventTelemetry } from './event-telemetry';
 import {
-  resolveEffectiveState,
+  resolveEffectiveStateReadOnly,
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
-import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
 import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
-import { inspectWorkflowMarker, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
+import {
+  inspectWorkflowMarker,
+  WORKFLOW_CONTRACT_MARKER_PATH,
+  WORKFLOW_MARKER_GATE_EVENTS,
+} from '../../core/adoption/minimum-harness-version';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
-const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
 
 export interface RunHookOptions {
@@ -67,35 +69,40 @@ export function resolveHookRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string
   }
 }
 
+/**
+ * The repository opt-in decision. The managed host command repeats this test
+ * in sh so that a repository without the marker never starts the hook bin.
+ */
 export function isOptIn(repoRoot: string): boolean {
-  return fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
+  return fs.existsSync(path.join(repoRoot, WORKFLOW_CONTRACT_MARKER_PATH));
 }
 
 const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
 
 /**
- * The transient throw signatures of resolveEffectiveState: the stability
- * contract's re-read exhaustion and exclusive state-lock contention. Both are
- * concurrent-write contention, so a bounded retry can clear them. Each throw
- * site owns its error type; this classifier never inspects message text.
+ * The transient throw signature of the read-only resolution: the stability
+ * contract's re-read exhaustion under concurrent authority writes. A bounded
+ * retry can clear it. The read-only resolution takes no lock, so lock
+ * contention cannot reach this classifier. It checks the error type, never
+ * message text.
  */
 function isTransientResolutionInstability(error: unknown): boolean {
-  return error instanceof StateResolutionUnstableError
-    || error instanceof ExclusiveLockContentionError;
+  return error instanceof StateResolutionUnstableError;
 }
 
 type EffectiveStateResolver = (repoRoot: string, nowMs: number) => EffectiveState;
 
 /**
- * The single Effective State policy for every hook event: the same
- * resolution as `repo-harness state resolve --json`, one timestamp, at most
- * three attempts for transient contention, and a hashed failure that each
- * handler renders in its own advisory.
+ * The single Effective State policy for every hook event: the read-only
+ * resolution, one timestamp, at most three attempts for transient instability,
+ * and a hashed failure that each handler renders in its own advisory. A hook
+ * writes no state. It reports the last published `state_version`; only
+ * `repo-harness state resolve` publishes one.
  */
 export function resolveHookEffectiveState(
   repoRoot: string,
   nowMs: number,
-  resolve: EffectiveStateResolver = resolveEffectiveState,
+  resolve: EffectiveStateResolver = resolveEffectiveStateReadOnly,
 ): EffectiveStateResolution {
   let failure: unknown = null;
   for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {

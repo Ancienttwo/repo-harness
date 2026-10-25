@@ -4,7 +4,7 @@ import {
   readGlobalArchitectureConfiguration,
 } from '../../effects/architecture/projection-config';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
-import { writePrivateConfiguration } from '../installer/configuration-ownership';
+import { hostConfigurationRoot, writePrivateConfiguration } from '../installer/configuration-ownership';
 import type { GlobalRuntimeStep } from './global-runtime';
 
 export function ensureGlobalArchitectureProjection(env: NodeJS.ProcessEnv = process.env): GlobalRuntimeStep {
@@ -12,7 +12,7 @@ export function ensureGlobalArchitectureProjection(env: NodeJS.ProcessEnv = proc
     const migrated = migrateRetiredArchitectureSection(env);
     const current = readGlobalArchitectureConfiguration(env);
     if (!current.initialized) {
-      writePrivateConfiguration(current.path, `${JSON.stringify({ ...current.config, architecture: DEFAULT_GLOBAL_ARCHITECTURE }, null, 2)}\n`, env);
+      writePrivateConfiguration(current.path, `${JSON.stringify({ ...current.config, architecture: DEFAULT_GLOBAL_ARCHITECTURE }, null, 2)}\n`, hostConfigurationRoot(env));
     }
     const detail = !current.initialized ? `configured ${current.path}: archctx / manual`
       : migrated ? `migrated retired automatic projection settings in ${current.path}`
@@ -29,6 +29,6 @@ function migrateRetiredArchitectureSection(env: NodeJS.ProcessEnv): boolean {
   if (section === null || typeof section !== 'object' || Array.isArray(section)) return false;
   const migrated = migrateRetiredGlobalArchitectureSettings(section as Record<string, unknown>);
   if (!migrated) return false;
-  writePrivateConfiguration(path, `${JSON.stringify({ ...config, architecture: migrated }, null, 2)}\n`, env);
+  writePrivateConfiguration(path, `${JSON.stringify({ ...config, architecture: migrated }, null, 2)}\n`, hostConfigurationRoot(env));
   return true;
 }

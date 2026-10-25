@@ -16,9 +16,6 @@
       "agents/fleet/**",
       ".codex/agents/**",
       "scripts/install-agent-fleet.sh",
-      "src/effects/terminal/coding-isolation.ts",
-      "src/effects/terminal/coding-session.ts",
-      "src/effects/terminal/oar-coding-host.ts",
       "src/core/decision/**",
       "src/effects/terminal/herdr-decision.ts"
     ]
