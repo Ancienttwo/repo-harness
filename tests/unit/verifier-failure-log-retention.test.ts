@@ -4,11 +4,15 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { validateVerificationPlan } from '../../src/core/evidence/verification-plan';
+
 const ROOT = join(import.meta.dir, '..', '..');
 const MARKER = 'VERIFIER_RETENTION_MARKER_XYZ';
 
 function runVerifier(script: string, command: string, inspect: (root: string, report: any) => void) {
   const root = mkdtempSync(join(tmpdir(), 'verifier-retention-'));
+  const home = mkdtempSync(join(tmpdir(), 'verifier-retention-authority-'));
   try {
     const git = (args: string[]) => {
       const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -29,12 +33,24 @@ function runVerifier(script: string, command: string, inspect: (root: string, re
     ].join('\n'));
     git(['add', '.']);
     git(['commit', '-qm', 'fixture']);
-    const result = spawnSync(process.execPath, [join(ROOT, script), 'execute', '--repo', root, '--contract', 'retention.contract.md',
-      '--report-file', '.ai/harness/checks/report.json'], { cwd: root, encoding: 'utf8' });
+    const approval = seedReviewAdmissionFixture(root, home, { plan: validateVerificationPlan(plan) });
+    const args = ['execute', '--repo', root,
+    '--repository-id', approval.source.repository_id, '--issue-id', approval.source.issue_id,
+    '--campaign-id', approval.source.campaign_id, '--grant-sha256', approval.source.expectedGrantSha256,
+    '--policy-sha256', approval.source.expectedPolicySha256, '--actor', approval.source.expectedActor,
+    '--report-file', '.ai/harness/checks/report.json'];
+    const result = spawnSync(process.execPath, ["-e", `
+    const { main } = await import(${JSON.stringify(join(ROOT, script))});
+    const source = ${JSON.stringify(approval.source)};
+    source.runner = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903')
+      ? ${JSON.stringify(approval.issue)} : { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) });
+    process.exit(await main(${JSON.stringify(args)}, () => source));
+  `], { cwd: root, encoding: 'utf8' });
     expect(result.status).toBe(command.includes('exit 3') ? 1 : 0);
     inspect(root, JSON.parse(readFileSync(join(root, '.ai/harness/checks/report.json'), 'utf8')));
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 }
 

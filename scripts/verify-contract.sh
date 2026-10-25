@@ -1,16 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The task-domain consumer admits explicit input data before acquiring
-# a writer. This read-only protocol does not grant ordinary PR-stage permission.
+# Metadata-only preflight validates task data and plan shape. It does not
+# admit a verification execution, acquire a writer, or grant PR permission.
 if [[ $# -eq 3 && "$1" == "--contract" && "$3" == "--preflight" ]]; then
   [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]] && cd "$REPO_HARNESS_TARGET_REPO_ROOT"
   BUN_BIN="${REPO_HARNESS_BUN_BIN:-$(command -v bun || true)}"
   [[ -n "$BUN_BIN" && -x "$BUN_BIN" && ! -L "$BUN_BIN" ]] || { echo 'contract preflight: trusted Bun runtime unavailable' >&2; exit 2; }
-  contract_path="$("$BUN_BIN" -e '
+  "$BUN_BIN" -e '
 const fs=require("fs"),p=require("path"),{pathToFileURL}=require("url");
 const root=fs.realpathSync(process.cwd());
 const {markdownHeader,parseAllowedPaths}=await import(pathToFileURL(p.join(process.argv[1],"..","src","core","state","artifact-parsers.ts")).href);
+const {parseVerificationPlanFromContractText}=await import(pathToFileURL(p.join(process.argv[1],"..","src","core","evidence","verification-plan.ts")).href);
 const checkedPath=(file)=>{
   const absolute=p.resolve(root,file);
   if(fs.lstatSync(absolute).isSymbolicLink()||!fs.statSync(absolute).isFile())throw Error("input must be a regular file");
@@ -30,9 +31,8 @@ for(const path of paths){
   if(profile==="eval-only"&&/^src(\/|$)/.test(normalized))throw Error("eval-only cannot grant source writes");
 }
 const review=markdownHeader(text,"Review File");if(!review)throw Error("Review File input is missing");checkedPath(review.replace(/^`|`$/g,""));
-process.stdout.write(contract);
-' "$SCRIPT_DIR" "$2")"
-  "$BUN_BIN" "$SCRIPT_DIR/verification-plan.ts" validate --repo "$(pwd -P)" --contract "$contract_path"
+parseVerificationPlanFromContractText(text);
+' "$SCRIPT_DIR" "$2"
   echo '[ContractPreflight] task input metadata validated; no tests, Status writes, or acceptance receipt produced.'
   exit 0
 fi

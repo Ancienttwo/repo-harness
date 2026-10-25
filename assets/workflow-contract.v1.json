@@ -182,7 +182,7 @@
       "classify-historical-plans": "Classify historical root plans against the sealed terminal evidence contract",
       "refresh-current-status": "Refresh tasks/current.md from repo-local workflow artifacts",
       "prepare-handoff": "Write the current-state handoff snapshot and trigger a resume refresh",
-      "verify-contract": "Execute or reuse a task contract verification plan and check its artifact criteria",
+      "verify-contract": "Validate task metadata with --contract --preflight, or run explicit selected local checks",
       "verification-plan": "Validate, evaluate, or explicitly execute the canonical Verification Plan",
       "migrate-verification-plan": "Migrate legacy executable criteria once using an explicit typed mapping",
       "validate-harness-profile-benchmark": "Validate a harness profile benchmark report and emit its byte-bound evidence hash",

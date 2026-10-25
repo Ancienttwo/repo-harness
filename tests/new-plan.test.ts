@@ -89,7 +89,7 @@ describe("new-plan helper integration", () => {
         const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
         expect(plan).not.toContain("run verify-contract --contract");
         const artifactStem = plans[0].replace(/^plan-/, "").replace(/\.md$/, "");
-        expect(plan).toContain(`repo-harness run verification-plan execute --repo . --contract tasks/contracts/${artifactStem}.contract.md --report-file .ai/harness/runs/${artifactStem}.report.json`);
+        expect(plan).toContain(`repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/${artifactStem}.report.json`);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }
