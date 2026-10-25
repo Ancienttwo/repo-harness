@@ -68,7 +68,7 @@ function seedIssues(root: string, repositoryId: string, titles: readonly string[
   const issues = titles.map((title, index) => buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${index + 1}`, url: `https://github.com/example/fleet/issues/${index + 1}`,
     observed_at: '2026-08-31T00:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
-    comments_policy: 'omitted', policy_revision: digest, eligible: eligibilityReasons.length === 0, eligibility_reasons: eligibilityReasons }));
+    comments_policy: 'omitted', policy_revision: digest, eligible: eligibilityReasons.length === 0, eligibility_reasons: [...eligibilityReasons].sort() }));
   issues.forEach(issue => writeProviderIssueObservation(root, issue));
   writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
@@ -226,6 +226,7 @@ describe('fleet board collector', () => {
       } };
     const without = await collectFleetBoard({}, dependencies);
     expect(without.repositories[0]!.cards[0]!.placement.kind).toBe('unclassified');
+    expect(without.snapshot_consistency).toBe('degraded');
     expect(reads).toBe(0);
     const result = await collectFleetBoard({ admission_associations: [association] }, dependencies);
     expect(result.repositories[0]!.cards[0]).toMatchObject({
@@ -312,10 +313,16 @@ describe('fleet board collector', () => {
         }],
       })}\n`);
       seedIssues(repoRoot, repositoryId, ['inspect one registered repository'], eligibilityReasons);
+      // The current approved mode is explicit and independent of the retired row.
+      const approved = seedReviewAdmissionFixture(repoRoot, home, { repositoryId: '1001', issueId: '2001', executionMode: 'contract' });
+      const association = { repository_id: repositoryId, provider_repository_id: '1001', provider_issue_id: '2001',
+        admission: { campaign_id: approved.admission.campaign_id, grant_sha256: approved.grant,
+          policy_sha256: approved.admission.policy.policy_sha256, actor_id: approved.admission.actor_id } };
       const registryBefore = readFileSync(join(home, 'registered-repos.json'), 'utf8');
       const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
       // Real Git and readiness reads share process startup with the file pool.
-      const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 15_000 });
+      const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 15_000, admission_associations: [association] },
+        { ...productionFleetBoardDependencies, read_admission_source: () => approved.source });
       expect(result.repositories[0]).toMatchObject({ repository_id: repositoryId, status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(1);
       // The label is the digest's own preimage: the same sprint row cell the
@@ -327,10 +334,10 @@ describe('fleet board collector', () => {
       expect(result.snapshot_consistency).toBe('stable');
       expect(result.counts.known_tasks).toBe(1);
       expect(result.repositories[0]?.cards[0]).toMatchObject({ issue_state: 'open',
-        placement: accessMode === 'read_only' || eligibilityReasons.length > 0 ? { kind: 'preparation' } : { kind: 'unclassified', reason: 'readiness_unavailable' },
+        placement: accessMode === 'read_only' || eligibilityReasons.length > 0 ? { kind: 'preparation' } : { kind: 'column', column: 'available' },
         task_id: null, execution: null,
         readiness_blockers: accessMode === 'read_only' ? [{ code: 'repo_read_only', attention_owner: 'user' }]
-          : eligibilityReasons.length ? [{ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: [...eligibilityReasons].sort() }] : null,
+          : eligibilityReasons.length ? [{ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: [...eligibilityReasons].sort() }] : [],
       });
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
@@ -379,7 +386,7 @@ describe('fleet board collector', () => {
         access_mode: entry.accessMode,
         status: 'ok',
         snapshot_consistency: 'stable',
-        cards: [{ ...card(0), snapshot_consistency: 'changed_during_read' }],
+        cards: [{ ...card(0), execution_readiness: 'execution_ready', readiness_blockers: [], snapshot_consistency: 'changed_during_read' }],
         error: null,
       }),
     };
