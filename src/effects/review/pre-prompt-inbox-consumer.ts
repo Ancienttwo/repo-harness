@@ -1,3 +1,4 @@
+import type { OarObservationSnapshot } from '../terminal/task-runtime-observation';
 /** Node-safe read-only companion validation; no owner preparation or profile loading. */
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
 import { readActiveReviewAdmission } from '../admission/admission-store';
 import { readTaskAgent } from '../terminal/task-session-reader';
-import { readSessionArtifact } from '../terminal/task-session-io';
+import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { TaskRequest } from '../terminal/task-session';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
 export const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)));
@@ -49,4 +50,42 @@ export function consumePrePromptInbox(input: { request: TaskRequest; requestDire
   if (digest(value) !== ref.sha256 || value.native.host !== input.host || value.native.native_session_id !== input.native_session_id) throw new Error('pre_prompt_inbox_native_mismatch');
   assertCurrent(value, input.request, input.now ?? Date.now());
   return renderTaskMessageUntrustedContext(value.events);
+}
+
+export interface PrePromptInboxAccepted {
+  protocol: 1;
+  kind: 'repo-harness-pre-prompt-accepted';
+  request_id: string;
+  companion_sha256: string;
+  host: 'claude' | 'codex';
+  native_session_id: string;
+  provider: {pid: number; identity: string};
+  consumed_at: number;
+  accepted_at: number;
+  observation_seq: number;
+}
+/** Called only by the owned host's OAR input-scoped accepted-control observer.
+ * The native reviewer cannot write this protected journal. An earlier ACK is not proof. */
+export function recordPrePromptInboxAccepted(input: {
+  request: TaskRequest; requestDirectory: string; native_session_id: string; host: 'claude' | 'codex';
+  consumed_at: number; observation: OarObservationSnapshot;
+}): void {
+  const ref = input.request.pre_prompt_inbox, observation = input.observation;
+  if (!ref || ref.status === 'unsupported' || observation.control !== 'accepted') return;
+  if (observation.request_id !== input.request.request_id || observation.input_id !== input.request.request_id
+    || observation.round !== input.request.round || observation.session_id !== input.native_session_id) throw new Error('pre_prompt_inbox_acceptance_mismatch');
+  consumePrePromptInbox({ ...input, now: input.consumed_at });
+  const value = readSessionArtifact<Companion>(ref.path);
+  if (canonical(observation.host) !== canonical(value.native.provider)) throw new Error('pre_prompt_inbox_host_mismatch');
+  const path = join(input.requestDirectory, `inbox-accepted-${input.request.round}.json`);
+  if (existsSync(path)) {
+    const prior = readSessionArtifact<PrePromptInboxAccepted>(path);
+    if (prior.request_id !== input.request.request_id || prior.companion_sha256 !== ref.sha256
+      || prior.native_session_id !== input.native_session_id || prior.host !== input.host
+      || prior.consumed_at !== input.consumed_at || canonical(prior.provider) !== canonical(observation.host)) throw new Error('pre_prompt_inbox_acceptance_changed');
+    return;
+  }
+  writeSessionArtifact(path, { protocol: 1, kind: 'repo-harness-pre-prompt-accepted', request_id: input.request.request_id,
+    companion_sha256: ref.sha256, host: input.host, native_session_id: input.native_session_id,
+    provider: observation.host, consumed_at: input.consumed_at, accepted_at: Date.now(), observation_seq: observation.seq } satisfies PrePromptInboxAccepted);
 }

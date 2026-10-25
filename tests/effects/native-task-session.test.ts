@@ -44,11 +44,12 @@ test('foreign process, scripted identity, changed binding and closed session can
 });
 
 import { randomUUID } from 'node:crypto';
-import { preparePrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
-import { consumePrePromptInbox } from '../../src/effects/review/pre-prompt-inbox-consumer';
+import { preparePrePromptInbox, commitPrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
+import { consumePrePromptInbox, recordPrePromptInboxAccepted } from '../../src/effects/review/pre-prompt-inbox-consumer';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage, readTaskMessageDelivery } from '../../src/effects/fleet/task-inbox';
 import type { TaskRequest } from '../../src/effects/terminal/task-session';
+import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../../src/effects/terminal/task-runtime-observation';
 function requestFor(f: Awaited<ReturnType<typeof fixture>>, bindingDigest: string): TaskRequest {
   return { protocol: 2, task: f.bound.binding.task, role: f.bound.binding.role, round: 1, request_id: randomUUID(),
     task_admission: f.bound.admission, session_binding_sha256: bindingDigest,
@@ -65,31 +66,51 @@ async function inboxFixture() {
   sendTaskMessage({ repo_root: f.root, source: f.bound.source, event });
   return { ...f, native, event, request: requestFor(f, native.session_binding_sha256) };
 }
-test('native launch before first request does not deliver; preparation retries recover exact receipt and read-only consume', async () => {
+test('reservation and unknown send stay pending; exact accepted host proof commits once without replay', async () => {
   const f = await inboxFixture();
   const receiptInput = { repo_root: f.root, source: f.bound.source, task_id: f.request.task,
     recipient: { kind: 'claim' as const, claim: f.bound.source.authority.claim }, message_id: f.event.message_id };
-  // SessionStart may occur before ready; native association itself never reads/delivers the inbox.
   expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
   f.request.pre_prompt_inbox = preparePrePromptInbox({ source: f.bound.source, request: f.request });
   const first = f.request.pre_prompt_inbox;
   expect(preparePrePromptInbox({ source: f.bound.source, request: f.request })).toEqual(first);
-  const receipt = readTaskMessageDelivery(receiptInput).receipt!;
-  expect(receipt.delivery_channel).toBe('controlled_request');expect(receipt.delivery_ref).toContain(f.request.request_id);
+  expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
+  expect(commitPrePromptInbox({ source: f.bound.source, request: f.request })).toEqual({status:'pending'});
   if (first.status !== 'bound') throw Error('expected companion');
   const bytes = readFileSync(first.path, 'utf8');
-  // A crash after receipts but before the final companion recovers only this request's deliveries.
-  rmSync(first.path);
+  rmSync(first.path); // Crash during preparation can recover the same immutable reservation.
   expect(preparePrePromptInbox({ source: f.bound.source, request: f.request })).toEqual(first);
   expect(readFileSync(first.path, 'utf8')).toBe(bytes);
-  const text = consumePrePromptInbox({ request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex' });
+  const consumed_at = Date.now();
+  const consume = { request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex' as const };
+  const text = consumePrePromptInbox(consume);
   expect(text).toContain(f.event.body);expect(text).toContain('untrusted');
-  expect(readFileSync(first.path, 'utf8')).toBe(bytes);expect(readTaskMessageDelivery(receiptInput).receipt).toEqual(receipt);
-  expect(() => consumePrePromptInbox({ request: { ...f.request, request_id: randomUUID() }, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex' })).toThrow();
-  expect(() => consumePrePromptInbox({ request: f.request, requestDirectory: f.bound.dir, native_session_id: 'foreign-native', host: 'codex' })).toThrow();
-  expect(() => consumePrePromptInbox({ request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex', now: Date.now() + 60_001 })).toThrow();
+  expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
+  // Publication and transport ACK are not prompt acceptance.
+  writeFileSync(join(f.bound.dir,'request-1.json'),JSON.stringify(f.request));
+  writeFileSync(join(f.bound.dir,'started-1.json'),JSON.stringify({request_id:f.request.request_id,provider:f.bound.binding.provider}));
+  const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:f.request.request_id, round:1,
+    host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:f.native.native_session_id,input_id:f.request.request_id,
+    seq:1,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:null,rejection:null };
+  recordPrePromptInboxAccepted({...consume,consumed_at,observation});
+  expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'pending'});
+  observation.control='accepted';observation.seq=2;
+  writeFileSync(join(f.bound.dir,oarObservationFile(1)),JSON.stringify(observation));
+  recordPrePromptInboxAccepted({...consume,consumed_at,observation});
+  // Crash after host receipt but before owner ledger commit leaves messages pending.
+  expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
+  expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'committed'});
+  const receipt=readTaskMessageDelivery(receiptInput).receipt!;
+  expect(receipt.delivery_channel).toBe('controlled_request');expect(receipt.delivery_ref).toContain(f.request.request_id);
+  expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'committed'});
+  expect(readTaskMessageDelivery(receiptInput).receipt).toEqual(receipt);
+  expect(() => consumePrePromptInbox({...consume,request:{...f.request,request_id:randomUUID()}})).toThrow();
+  expect(() => consumePrePromptInbox({...consume,native_session_id:'foreign-native'})).toThrow();
+  expect(() => consumePrePromptInbox({...consume,now:Date.now()+60_001})).toThrow();
+  expect(() => commitPrePromptInbox({source:f.bound.source,request:{...f.request,request_id:randomUUID()}})).toThrow();
   f.bound.revoke();
-  expect(() => consumePrePromptInbox({ request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex' })).toThrow();
+  expect(() => consumePrePromptInbox(consume)).toThrow();
+  expect(() => commitPrePromptInbox({source:f.bound.source,request:f.request})).toThrow();
 });
 test('historical review label explicitly refuses automatic inbox without renaming its session', async () => {
   const f = await fixture(), native = bindNativeTaskSession(f.input);

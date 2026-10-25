@@ -1,4 +1,4 @@
-import { consumePrePromptInbox } from './pre-prompt-inbox-consumer';
+import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
 import { claudeRuntime, codexRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -92,12 +92,17 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
   const started = readSessionArtifact<{ request_id: string; provider: ProcessProof }>(join(spec.requestDirectory, `started-${request.round}.json`));
   if (started.request_id !== request.request_id || started.provider?.pid !== process.pid || !started.provider.identity) throw new Error('OAR_HOST_REQUEST_IDENTITY_MISMATCH');
-  const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind });
+  const consumed_at = Date.now();
+  const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
   writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
   // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
   // writes result_ref; the host never interprets/publishes root-turn text.
   const run = await host.prompt(`TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
-    snapshot => writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false), spec.timeoutMs);
+    snapshot => {
+      writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
+      recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
+        host: spec.kind, consumed_at, observation: snapshot });
+    }, spec.timeoutMs);
   if (run.kind !== 'rejected' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   const observation = { request_id: request.request_id, kind: run.kind,
     outcome: run.kind === 'rejected' ? null : run.outcome.kind, actual_model: host.model(spec.kind) };

@@ -1,3 +1,5 @@
+import { readOarObservation, oarObservationFile } from '../terminal/task-runtime-observation';
+import type { PrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
@@ -8,7 +10,7 @@ import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-sess
 import type { TaskRequest, TaskPrePromptInbox } from '../terminal/task-session';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
 import { canonical, digest, MAX_AGE_MS, requestSubject, assertCurrent, type Companion } from './pre-prompt-inbox-consumer';
-/** Controller-only preparation. Provider observation and ledger writes never run in a hook or reviewer. */
+/** Controller-only reservation. No delivery receipt is written before actual prompt acceptance. */
 export function preparePrePromptInbox(input: { source: TaskInboxSessionSource; request: TaskRequest; now?: number }): TaskPrePromptInbox {
   const { source, request } = input, now = input.now ?? Date.now();
   if (!/^[0-9a-f]{64}$/.test(request.task)) return { status: 'unsupported', reason: 'historical_task_label' };
@@ -40,17 +42,51 @@ export function preparePrePromptInbox(input: { source: TaskInboxSessionSource; r
   }
   const intent = readSessionArtifact<Companion>(intentPath);
   assertCurrent(intent, request, now);
-  const ref = `controlled-request:${request.request_id}:${request.session_binding_sha256}`;
-  const events: TaskMessageEventV2[] = [];
-  for (const event of intent.events) {
-    deliverTaskInbox({ ...inbox, delivery_channel: 'controlled_request', delivery_ref: ref, message_id: event.message_id, delivered_at: new Date(now).toISOString() });
-    const exact = readTaskMessageDelivery({ ...inbox, message_id: event.message_id });
-    if (exact.receipt?.delivery_channel === 'controlled_request' && exact.receipt.delivery_ref === ref
-      && ['delivered', 'acknowledged'].includes(exact.receipt.delivery_state)) events.push(exact.event);
-  }
-  const companion = { ...intent, events };
+  const companion = intent;
   assertCurrent(companion, request, Date.now());
   if (!existsSync(finalPath)) writeSessionArtifact(finalPath, companion);
   if (canonical(readSessionArtifact(finalPath)) !== canonical(companion)) throw new Error('pre_prompt_inbox_companion_changed');
   return { status: 'bound', path: finalPath, sha256: digest(companion) };
+}
+
+/** Commit the existing inbox ledger only after exact positive host acceptance proof.
+ * Missing/unknown send is pending. Recovery repeats this function, never the prompt. */
+export function commitPrePromptInbox(input: { source: TaskInboxSessionSource; request: TaskRequest }) {
+  const { source, request } = input, ref = request.pre_prompt_inbox;
+  if (!ref || ref.status === 'unsupported') return { status: 'unsupported' as const };
+  const repo_root = source.authority.source.repoRoot;
+  const { dir, binding } = readTaskAgent(repo_root, request.task, request.role);
+  if (ref.path !== join(dir, `inbox-${request.round}.json`)) throw new Error('pre_prompt_inbox_path_mismatch');
+  const receiptPath = join(dir, `inbox-accepted-${request.round}.json`);
+  if (!existsSync(receiptPath)) return { status: 'pending' as const };
+  const receipt = readSessionArtifact<PrePromptInboxAccepted>(receiptPath);
+  const companion = readSessionArtifact<Companion>(ref.path);
+  const published = readSessionArtifact<TaskRequest>(join(dir, `request-${request.round}.json`));
+  const started = readSessionArtifact<{request_id: string; provider: unknown}>(join(dir, `started-${request.round}.json`));
+  const observation = readOarObservation(join(dir, oarObservationFile(request.round)), request, binding.provider);
+  if (canonical(published) !== canonical(request) || started.request_id !== request.request_id
+    || canonical(started.provider) !== canonical(binding.provider)
+    || receipt.protocol !== 1 || receipt.kind !== 'repo-harness-pre-prompt-accepted'
+    || receipt.request_id !== request.request_id || receipt.companion_sha256 !== ref.sha256 || digest(companion) !== ref.sha256
+    || receipt.native_session_id !== companion.native.native_session_id || receipt.host !== companion.native.host
+    || canonical(receipt.provider) !== canonical({pid: binding.provider.pid, identity: binding.provider.identity})
+    || !Number.isSafeInteger(receipt.consumed_at) || !Number.isSafeInteger(receipt.accepted_at)
+    || receipt.accepted_at < receipt.consumed_at || receipt.accepted_at > Date.now()
+    || !Number.isSafeInteger(receipt.observation_seq) || !observation || observation.control !== 'accepted'
+    || observation.session_id !== receipt.native_session_id || observation.input_id !== request.request_id
+    || observation.seq < receipt.observation_seq) throw new Error('pre_prompt_inbox_acceptance_mismatch');
+  // Expiry bounds the actual read, not later owner recovery. Current local approval
+  // and immutable binding still fence recovery, and deliver reobserves provider authority.
+  assertCurrent(companion, request, receipt.consumed_at);
+  const inbox = { repo_root, task_id: request.task, source, recipient: { kind: 'claim' as const, claim: source.authority.claim } };
+  const delivery_ref = `controlled-request:${request.request_id}:${request.session_binding_sha256}`;
+  for (const event of companion.events) {
+    if (canonical(readTaskMessageDelivery({ ...inbox, message_id: event.message_id }).event) !== canonical(event)) throw new Error('pre_prompt_inbox_event_changed');
+    deliverTaskInbox({ ...inbox, delivery_channel: 'controlled_request', delivery_ref,
+      message_id: event.message_id, delivered_at: new Date(receipt.accepted_at).toISOString() });
+    const current = readTaskMessageDelivery({ ...inbox, message_id: event.message_id });
+    if (current.receipt?.delivery_channel !== 'controlled_request' || current.receipt.delivery_ref !== delivery_ref
+      || !['delivered', 'acknowledged'].includes(current.receipt.delivery_state)) throw new Error('pre_prompt_inbox_receipt_conflict');
+  }
+  return { status: 'committed' as const };
 }

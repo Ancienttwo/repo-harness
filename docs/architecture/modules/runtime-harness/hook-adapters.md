@@ -495,13 +495,20 @@ actual host process. A native SessionStart can precede that ready record: hooks
 must not wait for readiness and cannot deliver task messages at that point.
 
 Before a controlled request is published, the owner observes current provider
-admission, selects bounded inbox events, and uses the existing delivery ledger's
-`controlled_request` channel with an exact request reference. An immutable
+admission and reserves bounded inbox events without marking them delivered. An immutable
 companion binds the request, native session, session-binding digest, protected
 approval, and a 60-second expiry. Retry retains the same intent and expiry; it
 never acquires a new approval or reuses another request's receipt. The OAR host
 checks the digest, native identity, current local grant and session closure
 before rendering the messages with the existing untrusted-message wrapper.
+Only OAR's input-scoped accepted control observation permits the owned host to
+write an exact consumption receipt. Transport ACK, reservation and rendering
+alone do not mark delivery. The owner verifies that receipt against the published
+request, started provider proof and OAR observation, then commits the existing
+inbox ledger's `controlled_request` delivery with the exact request reference.
+Unknown sends remain frozen and pending; recovery reconciles the same receipt
+without replaying the prompt or allocating another round. A host crash before
+positive proof cannot fabricate delivery, even if the actual send is uncertain.
 The reviewer consumes context only; no inbox lock/receipt writes or additional
 sandbox permissions are granted to it.
 

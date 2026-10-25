@@ -1,4 +1,4 @@
-import { preparePrePromptInbox } from './pre-prompt-inbox';
+import { preparePrePromptInbox, commitPrePromptInbox } from './pre-prompt-inbox';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { osAccountHome } from '../runtime/os-account-home';
 import { reviewCampaignKey } from '../../core/review/authority-context';
@@ -271,6 +271,13 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
     }
+    // Reconcile only existing positive receipts; never resend an uncertain request.
+    const previousTaskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
+    for (let priorRound = 1; priorRound <= REVIEW_MAX_ROUNDS; priorRound++) {
+      if (!existsSync(join(previousTaskDir, `inbox-accepted-${priorRound}.json`))) continue;
+      const prior = readSessionArtifact<TaskRequest>(join(previousTaskDir, `request-${priorRound}.json`));
+      commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request: prior });
+    }
     const contextDigest = acceptanceReviewContextDigest(context);
     const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, contextDigest, previous => previous.context_sha256);
     const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
@@ -356,7 +363,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const deadline = Date.now() + timeout;
     let collected;
     let bindingCheckedAt = 0;
+    let inboxSettled = false;
     for (;;) {
+      if (!inboxSettled) inboxSettled = commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }).status !== 'pending';
       // A cancel request wins over a pending Result; the final decision is the
       // re-check below, after the loop, before any acceptance is recorded.
       if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
