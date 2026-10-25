@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { ObservationViolation, type ReadonlyObservationIO } from '../state/readonly-observation';
+import { ObservationViolation, type ReadonlyObservationIO } from '../readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { osAccountHome } from '../runtime/os-account-home';
 import { createHash } from 'node:crypto';

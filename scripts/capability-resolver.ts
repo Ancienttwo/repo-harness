@@ -17,7 +17,7 @@ import {
   runCapabilityResolverCli,
   type ArchContextNodeV2,
   type MatchAuthority,
-} from "../src/effects/capabilities/capability-resolver";
+} from "../src/effects/architecture/capability-resolver";
 
 export {
   CapabilitySourceError,

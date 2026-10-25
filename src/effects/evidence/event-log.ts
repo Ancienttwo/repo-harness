@@ -1,4 +1,4 @@
-import { currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../state/readonly-observation';
+import { currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
 /**
  * Append-only event log IO (D1/D2/D5). Genesis-before-append is enforced
  * fail-closed; reads apply the pure corrupt-tail policy from
@@ -10,7 +10,7 @@ import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord } from "../.
 import { findCorruptTail, foldAcceptedEvents, parseLogLine } from "../../core/evidence/fold";
 import { withExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { buildEvidenceEvent, type EvidenceEventConstructionInput } from "./event-writer";
-import { appendLineDurably, createFileExclusiveDurably, syncDirectoryDurably } from "./atomic-append";
+import { appendLineDurably, createFileExclusiveDurably, syncDirectoryDurably } from "../atomic-append";
 import { EVENTS_DIR_RELATIVE, resolveEventsDir, resolveLogPath } from "./paths";
 
 export type EvidenceEventInput = EvidenceEventConstructionInput;

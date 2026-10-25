@@ -68,7 +68,7 @@ import {
   routeRegistryDigest,
   sha256,
   type CandidateReconciliationReceipt,
-} from './runtime/candidate-reconciliation';
+} from './commands/candidate-reconciliation';
 import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-helper-platform';
 import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import {

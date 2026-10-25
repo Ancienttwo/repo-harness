@@ -198,7 +198,7 @@ flowchart LR
 gates 按 worktree 划分是有意的设计：acceptance receipt 绑定一个 checkout 的源快照。如果按 clone 划分，一个 linked worktree 的 receipt 会覆盖另一个 worktree 的 receipt。registry repo id 按注册路径计算，不按 `{common}` 计算；同一 clone 的两个 worktree 可以分别注册。改成按 repo id 计算需要迁移 `registered-repos.json`，这一项留给后续（R-T9 余项）。
 | Herdr agent 名 | `task-` 加 20 位 hex | `src/effects/terminal/task-session.ts:486` |
 | hook 身份 | 只取 payload 的 `session_id`、`run_id`、`turn_id`，不生成新 id | `src/cli/hook/hook-input.ts:63-72` |
-| hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/runtime/candidate-reconciliation.ts:329-331` |
+| hook 路由 | `(event, routeId, matcher)` 共 7 条；registry 摘要为 sha256(ROUTES) | `src/cli/hook/route-registry.ts:69-119`；`src/cli/commands/candidate-reconciliation.ts:329-331` |
 
 ## 4. 挂载层
 

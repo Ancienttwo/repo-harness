@@ -22,8 +22,8 @@ const CAPABILITY_HELPER = "capability-resolver.ts";
 const CAPABILITY_CORE = join(REPO_ROOT, "src", "core", "capabilities", "registry.ts");
 const CAPABILITY_RESOLVER = join(REPO_ROOT, "src", "core", "capabilities", "resolver.ts");
 const GIT_RUNNER = join(REPO_ROOT, "src/effects/git/runner.ts");
-const READONLY_OBSERVATION = join(REPO_ROOT, "src/effects/state/readonly-observation.ts");
-const CAPABILITY_EFFECTS = join(REPO_ROOT, "src", "effects", "capabilities", "capability-resolver.ts");
+const READONLY_OBSERVATION = join(REPO_ROOT, "src/effects/readonly-observation.ts");
+const CAPABILITY_EFFECTS = join(REPO_ROOT, "src", "effects", "architecture", "capability-resolver.ts");
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-helper-sources.ts [--check|--write]\n");
@@ -81,12 +81,12 @@ function buildCapabilityProjection(): ProjectionFileRecord {
     throw new Error("canonical capability helper must re-export canonical registry contract types");
   }
   if (!existsSync(CAPABILITY_RESOLVER) || !existsSync(CAPABILITY_EFFECTS)) {
-    throw new Error("canonical capability resolver library is missing under src/core/capabilities or src/effects/capabilities");
+    throw new Error("canonical capability resolver library is missing under src/core/capabilities or src/effects/architecture");
   }
   const core = readFileSync(CAPABILITY_CORE, "utf-8");
   const resolver = stripInlinedImports(readFileSync(CAPABILITY_RESOLVER, "utf-8"), ["./registry"]);
   const observation = readFileSync(READONLY_OBSERVATION, "utf-8");
-  const gitRunner = stripInlinedImports(readFileSync(GIT_RUNNER, "utf-8"), ["../state/readonly-observation"]);
+  const gitRunner = stripInlinedImports(readFileSync(GIT_RUNNER, "utf-8"), ["../readonly-observation"]);
   const effects = stripInlinedImports(readFileSync(CAPABILITY_EFFECTS, "utf-8"), [
     "../../core/capabilities/registry",
     "../../core/capabilities/resolver",

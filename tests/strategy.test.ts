@@ -1,4 +1,4 @@
-import { observationReadFileSync, withReadonlyObservation, ObservationViolation } from '../src/effects/state/readonly-observation';
+import { observationReadFileSync, withReadonlyObservation, ObservationViolation } from '../src/effects/readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
 import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verification-execution';
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
@@ -522,7 +522,7 @@ describe('optional strategy and progressive memory', () => {
     write(home, allowed.slice(home.length + 1), 'Synthetic authority');
     const probe = [
       `const { StrategyReader } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/strategy/context.ts'))});`,
-      `const { ObservationViolation } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/state/readonly-observation.ts'))});`,
+      `const { ObservationViolation } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/readonly-observation.ts'))});`,
       `try { new StrategyReader(${JSON.stringify(root)}).observationIO().readFile(${JSON.stringify(allowed)}); console.log('read'); }`,
       `catch (error) { console.log(error instanceof ObservationViolation ? 'rejected' : 'error:' + error); }`,
     ].join('\n');

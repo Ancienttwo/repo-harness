@@ -5,13 +5,13 @@ import { execFileSync } from 'child_process';
 import { gitExecFileSync } from '../git/runner';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
-import { observeProviderBranchMergeCommit } from '../publication/publication-receipt';
+import { observeProviderBranchMergeCommit } from './coordination-provider-merge';
 import { resolveTrustedGhExecutable } from '../runtime/protected-helper-platform';
 import { worktreeUid, assertOwnedTrashDirectory, discardWorktreeTrashApproval, deleteUnpublishedTrash, deleteWorktreeTrash, prepareWorktreeTrash, readWorktreeTrash, renameWorktreeToTrash, trashPayload, worktreeTrashNames, WorktreeTrashBudgetReached, type WorktreeRemovalOptions, type WorktreeTrashReceipt } from './worktree-trash';
 

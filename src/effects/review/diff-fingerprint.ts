@@ -1,4 +1,4 @@
-import { assertObservationPath, observationReadFileSync as readFileSync } from '../state/readonly-observation';
+import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { createHash } from 'crypto';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';

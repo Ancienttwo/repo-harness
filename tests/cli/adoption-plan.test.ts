@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 import { planAdoption } from "../../src/effects/adoption/plan";
-import { isRepoHarnessSourceCheckout } from "../../src/effects/adoption/source-checkout";
+import { isRepoHarnessSourceCheckout } from "../../src/effects/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
 import { renderApplyReport } from "../../src/cli/commands/adoption-plan";

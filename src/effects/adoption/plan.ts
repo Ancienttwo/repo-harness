@@ -4,7 +4,7 @@ import type { AdoptionPlan } from "../../core/adoption/operations";
 import { summarizeOperations } from "../../core/adoption/summary";
 import { withRollbackMetadata } from "../../core/adoption/rollback";
 import { planStandardAdoption } from "./standard-plan";
-import { isRepoHarnessSourceCheckout } from "./source-checkout";
+import { isRepoHarnessSourceCheckout } from "../source-checkout";
 
 export interface PlanAdoptionOptions {
   readonly repoRoot: string;

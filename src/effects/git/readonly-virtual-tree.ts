@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { lstatSync } from 'node:fs';
-import { assertObservationPath, observationReadFileSync, currentReadonlyObservation, rejectObservation } from '../state/readonly-observation';
+import { assertObservationPath, observationReadFileSync, currentReadonlyObservation, rejectObservation } from '../readonly-observation';
 import { gitExecFileSync } from './runner';
 
 /** Git object identity only. No index, object store, ledger or code is written. */

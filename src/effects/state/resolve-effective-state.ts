@@ -1,4 +1,4 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from '../readonly-observation';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -17,8 +17,8 @@ import {
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
-import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../capabilities/archcontext-owners';
-import { archcontextResolveFileCache } from '../capabilities/archcontext-resolve-cache';
+import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../architecture/archcontext-owners';
+import { archcontextResolveFileCache } from '../architecture/archcontext-resolve-cache';
 import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import type {
   CapabilityOwnership,

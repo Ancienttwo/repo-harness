@@ -13,5 +13,7 @@ source:
   include:
     - src/effects/process-*.ts
     - src/effects/expensive-run-lock.ts
+    - src/effects/readonly-observation.ts
+    - src/effects/atomic-append.ts
     - src/effects/locking/**
     - src/effects/git/**

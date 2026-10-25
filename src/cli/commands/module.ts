@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { ArchitectureModelReader } from '../../effects/architecture/model-reader';
-import { ModuleReadError } from '../../core/review/module-review-prompt';
+import { ModuleReadError } from '../../core/architecture/module-view';
 import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../core/architecture/projection';
 
 function output(json: boolean, read: () => { value: unknown; text: string }): void {

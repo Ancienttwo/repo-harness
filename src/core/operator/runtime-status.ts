@@ -30,6 +30,11 @@ export interface RuntimeObservation {
   identity: RuntimeIdentity; revision: number; state: RuntimeState; reason: BlockReason;
   changed_at: string | null; source: 'herdr-agent' | 'program-v1';
 }
+export interface ProgramStatusV1 {
+  protocol: 'repo-harness.program-status.v1'; identity: RuntimeIdentity; revision: number;
+  state: 'idle' | 'working' | 'blocked' | 'settled' | 'error' | 'aborted' | 'clear';
+  reason: 'permission' | 'question' | 'auth' | 'unknown'; changed_at: string | null;
+}
 export interface RuntimeBadge extends RuntimeObservation {
   badge: RuntimeState; freshness: 'fresh' | 'stale' | 'disconnected';
 }
