@@ -1,15 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { isTaskDiffRequest } from '../../core/operator/task-diff';
 import { Command } from 'commander';
 
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../../effects/repo-registry';
 import { ExternalSourcePolicyError, readExternalSourcesPolicy } from '../../effects/external-sources/policy';
 import { ExternalSourceRefreshError, listExternalSourceProjection, refreshExternalSource } from '../../effects/external-sources/refresh';
 import { ExternalSourceStoreError } from '../../effects/external-sources/store';
-import { bindExternalSource, externalSourceContext, listExternalSourceBindings } from '../../effects/external-sources/binding';
+import { bindExternalSource, externalSourceContext, listExternalSourceBindings, listHistoricalExternalSourceBindings } from '../../effects/external-sources/binding';
 import { ExternalSourceBindingError } from '../../core/external-sources/binding';
 
 type Format = 'json' | 'text';
 interface Options { readonly repo: string; readonly format: Format; }
-interface BindOptions extends Options { readonly sourceRevision: string; readonly sprint: string; readonly taskId: string; readonly targetRef: string; }
+interface BindOptions extends Options { readonly sourceRevision: string; readonly session: string; }
 interface ContextOptions extends Options { readonly sourceRevision: string; }
 
 function registeredRepository(id: string): { readonly id: string; readonly path: string } {
@@ -75,14 +77,14 @@ function list(options: Options): void {
 
 function bind(options: BindOptions): void {
   try {
+    const session: unknown = JSON.parse(readFileSync(options.session, 'utf8'));
+    if (!isTaskDiffRequest(session)) throw new Error('invalid admitted session selector');
     const receipt = bindExternalSource({
       registered_repository_id: options.repo,
       source_revision: options.sourceRevision,
-      sprint_path: options.sprint,
-      task_id: options.taskId,
-      target_ref: options.targetRef,
+      session,
     });
-    outputDocument(receipt, options.format, 'ExternalSourceBindingReceiptV1');
+    outputDocument(receipt, options.format, 'ExternalSourceBindingReceiptV2');
   } catch (error) {
     outputError(error);
   }
@@ -90,7 +92,7 @@ function bind(options: BindOptions): void {
 
 function bindings(options: Options): void {
   try {
-    outputDocument(listExternalSourceBindings(options.repo), options.format, 'ExternalSourceBindingProjectionV1');
+    outputDocument(listExternalSourceBindings(options.repo), options.format, 'ExternalSourceBindingProjectionV2');
   } catch (error) {
     outputError(error);
   }
@@ -108,7 +110,7 @@ function context(options: ContextOptions): void {
 }
 
 export function buildExternalSourceCommand(): Command {
-  const command = new Command('external-source').description('Observe provider Issues and bind immutable source revisions to exact canonical tasks without minting execution authority');
+  const command = new Command('external-source').description('Observe provider Issues and bind immutable source revisions to explicit admitted sessions without minting execution authority');
   command.command('refresh')
     .description('Run one explicitly enabled, bounded GitHub observation refresh')
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
@@ -120,19 +122,25 @@ export function buildExternalSourceCommand(): Command {
     .option('--format <format>', 'json or text', 'text')
     .action(list);
   command.command('bind')
-    .description('Bind one immutable eligible source revision to one exact pending canonical task and approved plan/contract proof')
+    .description('Bind one immutable eligible source revision to one existing admitted session')
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
     .requiredOption('--source-revision <digest>', 'Exact immutable provider source revision')
-    .requiredOption('--sprint <path>', 'Canonical repo-relative sprint path')
-    .requiredOption('--task-id <digest>', 'Exact canonical task id')
-    .requiredOption('--target-ref <ref>', 'Canonical target ref')
+    .requiredOption('--session <file>', 'JSON admitted session selector returned by task session discovery')
     .option('--format <format>', 'json or text', 'text')
     .action(bind);
   command.command('bindings')
-    .description('Project persisted source-to-canonical-task binding edges and current drift attention')
+    .description('Project persisted source-to-admitted-session binding edges and current drift attention')
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
     .option('--format <format>', 'json or text', 'text')
     .action(bindings);
+  command.command('historical-bindings')
+    .description('Read retired V1 binding receipts as history, without current authority')
+    .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
+    .option('--format <format>', 'json or text', 'text')
+    .action((options: Options) => {
+      try { outputDocument(listHistoricalExternalSourceBindings(options.repo), options.format, 'HistoricalExternalSourceBindingsV1'); }
+      catch (error) { outputError(error); }
+    });
   command.command('context')
     .description('Render one immutable observation inside the sole explicit untrusted-source boundary')
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')

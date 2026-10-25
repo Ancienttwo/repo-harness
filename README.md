@@ -329,13 +329,16 @@ accepted suggestion goes through the normal plan and pull request workflow.
 
 ```bash
 repo-harness external-source refresh   # one bounded, explicitly enabled GitHub observation
-repo-harness external-source bind      # one immutable revision to one pending canonical task
+repo-harness external-source bind --repo <id> --source-revision <digest> --session <selector.json>
+repo-harness external-source historical-bindings --repo <id>  # retired V1 records only
 repo-harness external-source bindings  # binding edges and current drift attention
 ```
 
 Intake is inert by design. An observed Issue mints no execution authority and
 does not become a runnable task on its own; binding attaches an immutable source
-revision to a task that already has an approved plan and contract.
+revision to an existing admitted session selected by its provider issue, immutable
+claim, approved grant and session binding digest. The selector comes from task
+session discovery. Binding never creates a claim or approval.
 
 ### Persistent acceptance review
 

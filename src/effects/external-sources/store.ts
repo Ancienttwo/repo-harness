@@ -1,3 +1,4 @@
+import { canonicalAdmittedSourceBindingReceiptBytes, validateAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeSync } from 'fs';
 import { dirname, join, relative, resolve, sep } from 'path';
 
@@ -146,9 +147,7 @@ function receiptPath(paths: StorePaths, receipt: ExternalSourceRefreshReceiptV1)
   return join(paths.receipts, `${digestHex(receipt.receipt_sha256, 'receipt')}.json`);
 }
 
-function bindingPath(paths: StorePaths, receipt: ExternalSourceBindingReceiptV1): string {
-  return join(paths.bindings, `${digestHex(receipt.binding_id, 'binding id')}.json`);
-}
+
 
 function lock<T>(paths: StorePaths, action: () => T): T {
   ensureStore(paths);
@@ -192,18 +191,31 @@ export function writeExternalSourceRefreshReceipt(repoRoot: string, receipt: Ext
   });
 }
 
-/** Persist one immutable source-revision-to-task-revision edge. */
-export function writeExternalSourceBindingReceipt(repoRoot: string, receipt: ExternalSourceBindingReceiptV1): ExternalSourceBindingReceiptV1 {
-  validateExternalSourceBindingReceipt(receipt);
+/** Persist a correlation with a current admitted session. V1 records are read-only history. */
+export function writeExternalSourceBindingReceipt(repoRoot: string, receipt: ExternalSourceBindingReceiptV2): ExternalSourceBindingReceiptV2 {
+  validateAdmittedSourceBindingReceipt(receipt);
   const paths = pathsFor(repoRoot);
-  const bytes = canonicalExternalSourceBindingReceiptBytes(receipt);
+  const bytes = canonicalAdmittedSourceBindingReceiptBytes(receipt);
   return lock(paths, () => {
-    const target = bindingPath(paths, receipt);
+    const directory = join(paths.root, 'admitted-bindings');
+    ensureDirectory(paths.common, directory, true);
+    const target = join(directory, `${digestHex(receipt.binding_id, 'binding id')}.json`);
     if (writeExclusive(target, bytes, 'external source binding receipt')) return receipt;
-    const existing = readRaw(target, 'external source binding receipt');
-    if (existing === bytes) return receipt;
+    if (readRaw(target, 'external source binding receipt') === bytes) return receipt;
     fail('external_source_store_conflict', 'external source binding receipt conflicts with immutable existing bytes');
   });
+}
+
+export function listExternalSourceBindingReceipts(repoRoot: string): readonly ExternalSourceBindingReceiptV2[] {
+  const paths = pathsFor(repoRoot), directory = join(paths.root, 'admitted-bindings');
+  if (!ensureDirectory(paths.common, directory, false)) return [];
+  return jsonFiles(directory).map(name => {
+    const raw = readRaw(join(directory, name), 'admitted source binding');
+    const receipt = validateAdmittedSourceBindingReceipt(JSON.parse(raw));
+    if (canonicalAdmittedSourceBindingReceiptBytes(receipt) !== raw
+      || name !== `${digestHex(receipt.binding_id, 'binding id')}.json`) fail('external_source_store_invalid', 'admitted binding bytes or path are invalid');
+    return receipt;
+  }).sort((a, b) => a.bound_at.localeCompare(b.bound_at) || a.binding_id.localeCompare(b.binding_id));
 }
 
 function childDirectories(path: string): string[] {
@@ -269,7 +281,7 @@ export function listExternalSourceRefreshReceipts(repoRoot: string): readonly Ex
   return Object.freeze(records.sort((left, right) => left.completed_at.localeCompare(right.completed_at) || left.receipt_sha256.localeCompare(right.receipt_sha256)));
 }
 
-export function listExternalSourceBindingReceipts(repoRoot: string): readonly ExternalSourceBindingReceiptV1[] {
+export function listHistoricalExternalSourceBindingReceipts(repoRoot: string): readonly ExternalSourceBindingReceiptV1[] {
   const paths = pathsFor(repoRoot);
   if (!ensureDirectory(paths.common, paths.bindings, false)) return Object.freeze([]);
   const records: ExternalSourceBindingReceiptV1[] = [];
