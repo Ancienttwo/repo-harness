@@ -1,7 +1,8 @@
 # Document handoff: offline contract
 
-Status: Stage A only. No CLI, MCP, hook, Bot, or task-agent dispatch uses this
-payload yet. The pure API is in `src/core/messages/document-handoff.ts`.
+Status: design record. Issue #910 deleted the Stage A pure API
+(`src/core/messages/document-handoff.ts`) because no CLI, MCP, hook, Bot, or
+task-agent dispatch used it. A later pilot must implement this contract again.
 See the [implementation plan](../../plans/plan-20261006-0910-document-handoff-pstack-reuse.md).
 
 ## Human → Bot → Coding Agent

@@ -21,7 +21,6 @@ source:
     - src/cli/commands/catch-up.ts
     - src/cli/commands/module.ts
     - src/core/architecture/module-view.ts
-    - src/core/docs/**
     - src/core/setup/**
     - src/effects/setup/**
     - src/cli/commands/setup-snapshot.ts
