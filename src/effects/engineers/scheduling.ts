@@ -7,7 +7,7 @@ import { EngineerSchedulingError, projectProviderEngineerScheduling, projectProv
 import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { gitExecFileSync } from '../git/runner';
-import { readCanonicalTargetRef } from '../git/canonical-target';
+import { readCanonicalTargetRef } from '../state/canonical-target';
 import { readOperatorTaskSessions } from '../operator/task-sessions';
 import { listExternalSourceProjection } from '../external-sources/refresh';
 import { listEngineerProfiles, resolveCapabilityForEngineer } from './profile-store';

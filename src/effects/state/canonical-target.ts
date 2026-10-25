@@ -1,4 +1,4 @@
-import { readText } from '../state/collect-state-inputs';
+import { readText } from './collect-state-inputs';
 
 const POLICY_PATH = '.ai/harness/policy.json';
 const DEFAULT_CANONICAL_TARGET_REF = 'main';

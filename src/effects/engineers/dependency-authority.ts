@@ -46,7 +46,7 @@ import { readAcceptanceMatrix, readProductAcceptanceProjection, readIntegrationC
   observeSelectedPullRequest, defaultReadAcceptanceReceiptBytes } from '../integration/product-acceptance';
 import { gitExecFileSync } from '../git/runner';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { readCanonicalTargetRef } from '../git/canonical-target';
+import { readCanonicalTargetRef } from '../state/canonical-target';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
