@@ -71,7 +71,7 @@ function seedIssues(root: string, repositoryId: string, titles: readonly string[
   writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
     outcome: 'complete', pages_fetched: 1, issues_seen: issues.length, observations_written: issues.length, limits: { max_pages: 2, max_issues: 1000, max_body_bytes: 1000, max_total_bytes: 1000000, deadline_ms: 1000 },
-    source_revisions: issues.map(issue => issue.source_revision), failure: null }));
+    source_revisions: issues.map(issue => issue.source_revision).sort(), failure: null }));
 }
 function registerFixture(root: string): RepoHarnessRegisteredRepo {
   const entry: RepoHarnessRegisteredRepo = { id: repoHarnessRepoIdFor(realpathSync(root)), path: realpathSync(root), accessMode: 'read_only', source: 'manual',

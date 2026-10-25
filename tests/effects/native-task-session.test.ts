@@ -10,7 +10,7 @@ async function fixture() {
   const root = tmpWorkspace('native-task-session'); roots.push(root); initGitRepo(root);
   run('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
-  const home = join(root, 'authority-home'); mkdirSync(home);
+  const home = tmpWorkspace('native-task-session-authority'); roots.push(home);
   const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654' });
   const ready = join(root, 'controlled-ready.json');
   const publish = (session_id: string, pid = bound.binding.provider.pid, fixture = false) => writeFileSync(ready, JSON.stringify({ pid, session_id, fixture }));
