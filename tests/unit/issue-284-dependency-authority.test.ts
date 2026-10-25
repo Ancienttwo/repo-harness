@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, join, sep } from 'path';
 
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import {
@@ -42,12 +42,14 @@ import {
 import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,
+  defaultDependencyAuthorityReaders,
   resolveDependencyAuthority,
   type DependencyAuthorityInput,
   type DependencyAuthorityReaders,
   type DependencyAuthorityRepositoryRead,
 } from '../../src/effects/engineers/dependency-authority';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { osAccountHome } from '../../src/effects/runtime/os-account-home';
 import {
   createAcceptanceMatrix,
   createIntegrationContract,
@@ -56,7 +58,7 @@ import {
   listProductAcceptanceProjections,
 } from '../../src/effects/integration/product-acceptance';
 import { readPublicationIntegrationObservations } from '../../src/effects/publication/publication-lifecycle';
-import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
+import { repoHarnessRegisteredReposPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
@@ -308,9 +310,8 @@ function input(
     target: subject.target,
     reads: subject.reads,
     registry: subject.registry,
-    env: { HOME: subject.root },
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-    readers: { readCanonicalTargetRef: () => 'main' },
+    readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => subject.root },
     ...overrides,
   };
 }
@@ -657,7 +658,6 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
     target: graph.work_packages[0]!,
     reads: [{ repo, commit: fixtureValue.commit, graph }],
     registry: { registryPath: join(fixtureValue.root, 'registry.json'), authorizationRevision: 3, repos: [repo] },
-    env: { HOME: fixtureValue.home },
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
     readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => fixtureValue.home },
   };
@@ -668,6 +668,36 @@ afterEach(() => {
 });
 
 describe('issue #284 closed dependency authority', () => {
+  // The account-database lookup is POSIX-only; Windows falls back to userInfo().
+  test.skipIf(process.platform === 'win32')('a launch-time HOME and harness home override move the registry but never the gate authority home', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-912-')));
+    roots.push(root);
+    const account = join(root, 'account');
+    const harnessHome = join(account, '.repo-harness');
+    mkdirSync(harnessHome, { recursive: true });
+    // Bun derives os.userInfo().homedir from the launch HOME, so only a child
+    // process launched with the fixture HOME exercises the real resolver.
+    const code = [
+      `const { repoHarnessRegisteredReposPath } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/repo-registry.ts'))});`,
+      `const { defaultDependencyAuthorityReaders } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/engineers/dependency-authority.ts'))});`,
+      `const { acceptanceReceiptPath } = await import(${JSON.stringify(join(import.meta.dir, '../../scripts/acceptance-receipt.ts'))});`,
+      'const authorityHome = defaultDependencyAuthorityReaders().resolveAuthorityHome();',
+      `console.log(JSON.stringify({ registry: repoHarnessRegisteredReposPath(), authorityHome, gates: acceptanceReceiptPath(${JSON.stringify(root)}, authorityHome) }));`,
+    ].join('\n');
+    const child = Bun.spawnSync([process.execPath, '-e', code], {
+      env: { ...process.env, HOME: account, REPO_HARNESS_HOME: harnessHome },
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    const observed = JSON.parse(child.stdout.toString()) as { registry: string; authorityHome: string; gates: string };
+    expect(observed.registry).toBe(join(harnessHome, 'registered-repos.json'));
+    expect(observed.authorityHome).toBe(realpathSync(osAccountHome()));
+    expect(observed.authorityHome.startsWith(root + sep)).toBe(false);
+    expect(observed.gates.startsWith(join(observed.authorityHome, '.repo-harness', 'gates') + sep)).toBe(true);
+    expect(observed.gates.startsWith(root + sep)).toBe(false);
+    expect(observed.gates).not.toContain(join('.repo-harness', '.repo-harness'));
+  });
+
   test('every declared dependency state has an adapter and no state falls through', () => {
     expect([...WORK_PACKAGE_DEPENDENCY_STATES].sort()).toEqual([
       'canonical_done', 'module_accepted', 'product_accepted', 'publication_integrated',
@@ -1103,9 +1133,8 @@ describe('issue #284 closed dependency authority', () => {
       target: remoteTarget,
       reads,
       registry,
-      env: { HOME: remote.root },
       readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-      readers: { readCanonicalTargetRef: () => 'main' },
+      readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => remote.root },
     };
     const resolved = resolveDependencyAuthority(crossInput);
     expect(resolved.status).toBe('satisfied');

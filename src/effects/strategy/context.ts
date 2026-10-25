@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { ObservationViolation, type ReadonlyObservationIO } from '../state/readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
+import { osAccountHome } from '../runtime/os-account-home';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
@@ -48,6 +49,10 @@ export class StrategySourceDriftError extends Error {}
 export class StrategyBudgetError extends ObservationViolation {}
 
 export interface StrategyReadLimits { profile?: 'repository_pilot'; fileBytes?: number; totalBytes?: number; durationMs?: number }
+function trustedAuthorityHome(override: string | undefined): string | null {
+  try { return realpathSync(override ?? osAccountHome()); } catch { return null; }
+}
+
 export class StrategyReader {
   private bytes = 0;
   private unselectedMemoryBodies = new Set<string>();
@@ -122,7 +127,7 @@ export class StrategyReader {
   read(path: string): string {
     return new TextDecoder('utf-8', { fatal: true }).decode(this.readBytes(scopedPath(this.root, path)));
   }
-  observationIO(): ReadonlyObservationIO {
+  observationIO(authorityHome?: string): ReadonlyObservationIO {
     const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
     const packaged = new Set(['package.json', 'src/effects/evidence/verification-execution.ts', 'src/core/evidence/verification-plan.ts',
       'src/core/evidence/redaction.ts', 'src/effects/evidence/secret-env.ts', 'src/effects/process-runner.ts',
@@ -131,18 +136,20 @@ export class StrategyReader {
     const rawCommon = this.git(['rev-parse', '--git-common-dir']).trim();
     const common = realpathSync(resolve(this.root, rawCommon));
     const version = join(common, 'repo-harness/effective-state-version.json');
-    const home = process.env.HOME ? realpathSync(process.env.HOME) : null;
-    const authority = home ? join(home, '.repo-harness/gates', strategyHash(this.root)) : null;
+    // Gate receipts root at the OS account home, the anchor merge-gate uses. If it
+    // cannot be resolved, only gate paths are rejected; repository reads still work.
+    const home = trustedAuthorityHome(authorityHome);
+    const authority = home === null ? null : join(home, '.repo-harness/gates', strategyHash(this.root));
     const validatePath = (path: string): void => {
       const absolute = resolve(path);
       try {
         if (absolute === version) { scopedPath(common, relative(common, absolute), true); return; }
         if (packaged.has(absolute)) { scopedPath(packageRoot, relative(packageRoot, absolute), true); return; }
-        if (authority && absolute.startsWith(`${authority}${sep}`)) {
+        if (home !== null && authority !== null && absolute.startsWith(`${authority}${sep}`)) {
           const leaf = relative(authority, absolute).split(sep).join('/');
           if (!/^(acceptance\.latest|acceptance\.review-result|user-waiver-grant\.latest)\.json$/.test(leaf)
             && !/^acceptance-observations\/[a-f0-9]{64}\.json$/.test(leaf)) throw new Error('Unrecognized project authority file');
-          scopedPath(home!, relative(home!, absolute), true); return;
+          scopedPath(home, relative(home, absolute), true); return;
         }
         const rel = relative(this.root, absolute).split(sep).join('/');
         scopedPath(this.root, rel, true);

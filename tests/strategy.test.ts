@@ -502,18 +502,33 @@ describe('optional strategy and progressive memory', () => {
     expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
   });
   test('observation permits only current-project authority and fixed package inputs', () => {
-    const { root } = fixture(); const savedHome = process.env.HOME; const home = temp(); process.env.HOME = home;
-    try {
-      const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
-      write(home, allowed.slice(home.length + 1), 'Synthetic authority');
-      const foreign = join(home, '.repo-harness/gates', strategyHash('another-project'), 'acceptance.latest.json');
-      write(home, foreign.slice(home.length + 1), 'Foreign authority');
-      const io = new StrategyReader(root).observationIO();
-      expect(io.readFile(allowed).toString()).toBe('Synthetic authority');
-      expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
-      expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
-      expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
-    } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
+    const { root } = fixture(); const home = temp();
+    const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
+    write(home, allowed.slice(home.length + 1), 'Synthetic authority');
+    const foreign = join(home, '.repo-harness/gates', strategyHash('another-project'), 'acceptance.latest.json');
+    write(home, foreign.slice(home.length + 1), 'Foreign authority');
+    const io = new StrategyReader(root).observationIO(home);
+    expect(io.readFile(allowed).toString()).toBe('Synthetic authority');
+    expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
+    expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
+    expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
+  });
+  // Bun derives os.userInfo().homedir from the launch HOME, so the default
+  // allowlist is checked in a child launched with the fixture HOME. The
+  // account-database lookup is POSIX-only; Windows falls back to userInfo().
+  test.skipIf(process.platform === 'win32')('default observation ignores a launch-time HOME for gate authority', () => {
+    const { root } = fixture(); const home = temp();
+    const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
+    write(home, allowed.slice(home.length + 1), 'Synthetic authority');
+    const probe = [
+      `const { StrategyReader } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/strategy/context.ts'))});`,
+      `const { ObservationViolation } = await import(${JSON.stringify(join(import.meta.dir, '../src/effects/state/readonly-observation.ts'))});`,
+      `try { new StrategyReader(${JSON.stringify(root)}).observationIO().readFile(${JSON.stringify(allowed)}); console.log('read'); }`,
+      `catch (error) { console.log(error instanceof ObservationViolation ? 'rejected' : 'error:' + error); }`,
+    ].join('\n');
+    const child = Bun.spawnSync([process.execPath, '-e', probe], { env: { ...process.env, HOME: home }, stdout: 'pipe', stderr: 'pipe' });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(child.stdout.toString().trim()).toBe('rejected');
   });
   test('explicit pilot document selection leaves the default marker disabled', () => {
     const { root, doc } = fixture(); rmSync(join(root, 'docs/strategy/context.json'));
