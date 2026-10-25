@@ -6,6 +6,13 @@ that it has authorized. repo-harness does not authenticate arbitrary JSON,
 `authorization_ref`, `bot_id`, action names, execution actors or GitHub logins.
 
 `review admit --request <file>` consumes `{admission, approval, expectedRevision}`.
+`admission.execution_mode` is required and accepts only `contract` or `inline`.
+The trusted upstream Bot selects this workflow mode explicitly. It does not
+change the admitted session transport or waive verification. The mode is part
+of the exact admission digest. A mode change requires new approval and a new
+active grant; the campaign identity and budget scope stay the same. Missing mode
+is rejected, including in previously serialized admission requests.
+
 `approval` uses the closed `ControlApproval` schema in
 `src/core/review/control-delegation.ts`. It binds the upstream reference, Bot,
 repository, issue, campaign, execution actor, parent issue/path scope, complete

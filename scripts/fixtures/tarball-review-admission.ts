@@ -26,7 +26,7 @@ const runner = (args: readonly string[]) => {
   return { stdout: JSON.stringify(responses[endpoint as keyof typeof responses]) };
 };
 const goal = observeReviewIssueGoal({ policy: parseExternalSourcesPolicy(external_sources), repository_id: '1001', issue_id: '2001', runner });
-const admission = { repository_id: '1001', issue_id: '2001', campaign_id: 'tarball-smoke', actor_id: 'synthetic-execution-actor', goal,
+const admission = { execution_mode: 'contract', repository_id: '1001', issue_id: '2001', campaign_id: 'tarball-smoke', actor_id: 'synthetic-execution-actor', goal,
   policy: { reviewer: 'Codex', user_waiver: 'forbidden', policy_sha256: digest('synthetic-tarball-smoke-policy') },
   allowed_paths: ['*'], benchmark: 'not_required', oracles: [{ id: 'single-count', kind: 'deterministic_test', paths: ['*'] }],
   verification_plan: { protocol: 1, checks: [{ id: 'single-count', kind: 'command',
