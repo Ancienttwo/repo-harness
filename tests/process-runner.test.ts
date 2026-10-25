@@ -87,6 +87,29 @@ describe("process runner", () => {
     }
   });
 
+  test("a supervised deadline stays active after the group leader exits", async () => {
+    if (process.platform === "win32") return;
+    const root = mkdtempSync(join(tmpdir(), "process-runner-leader-exit-"));
+    try {
+      const started = join(root, "started");
+      const sentinel = join(root, "descendant-survived");
+      // The deadline leaves room for supervisor startup, so the leader really
+      // exits first and only the TERM-ignoring descendant holds the group.
+      const result = runProcess("bash", ["-c", `touch "${started}"; (trap '' TERM; sleep 3; touch "${sentinel}") & exit 0`], {
+        processGroup: true,
+        deadlineMs: Date.now() + 1_500,
+      });
+
+      expect(existsSync(started)).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      await Bun.sleep(3_000);
+      expect(existsSync(sentinel)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("rejects a relative timeout combined with an absolute deadline", () => {
     expect(() => runProcess(process.execPath, ["-e", ""], { timeoutMs: 100, deadlineMs: Date.now() + 100 }))
       .toThrow("timeoutMs or deadlineMs, not both");

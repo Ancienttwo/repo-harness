@@ -140,7 +140,7 @@ sequenceDiagram
 6. **contract preflight 只校验元数据。** `verify-contract.sh --contract <file> --preflight` 校验 Task Profile、Allowed Paths 和 Review File，不运行测试，不写 Status，不生成 receipt（`scripts/verify-contract.sh:6`）。其他参数交给 `verify-sprint.sh`。
 7. **workflow gate 只做诊断。** `check-task-workflow.sh` 只报告 JSON 是否可读，并总是以 0 退出（`scripts/check-task-workflow.sh:25`）。`check-task-sync.sh` 不再要求 plan、contract、review、notes、digest 行或 waiver（`scripts/check-task-sync.sh:23`）。
 8. **昂贵 benchmark 串行。** profile benchmark 在执行前获取 expensive-run lock（`scripts/run-harness-profile-benchmark.ts:1501`）。
-9. **有界命令按进程组回收。** `run-bounded-verifier-command.ts` 用绝对截止时间运行命令，并在强制 SIGKILL 后继续确认进程组已消失（`scripts/run-bounded-verifier-command.ts:43`）。
+9. **有界命令按进程组回收。** Verification Plan 执行器把一个绝对截止时间传给 `runProcess({ processGroup: true, deadlineMs })`（`src/effects/evidence/verification-execution.ts:1037`）。进程组监督器在截止时间终止整个进程组，并在组长退出后继续等待进程组消失（`src/effects/process-supervisor.ts:279-281,312-337`）。
 
 ### 3.2 关键权衡
 
