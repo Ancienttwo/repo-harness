@@ -1,7 +1,9 @@
-import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
+export { processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
+import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { dirname, isAbsolute, join, relative } from 'path';
+import { isAbsolute, join, relative } from 'path';
 import { loadEngineerProfile } from '../engineers/profile-store';
 import { observeActiveReviewAdmission } from '../review/issue-goal';
 import type { ReviewAdmissionSource } from '../review/admission-source';
@@ -150,28 +152,6 @@ export interface TaskRequest {
 }
 export interface TaskResult { request_id: string; context_sha256: string; value: unknown }
 
-export function processIdentity(pid: number): string {
-  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('task_agent_invalid_process');
-  const identity = execFileSync('ps', ['-p', String(pid), '-o', 'pid=,pgid=,lstart=,comm='], { encoding: 'utf8' }).trim();
-  if (!identity) throw new Error('task_agent_process_identity_lost');
-  return identity;
-}
-export function readSessionArtifact<T>(path: string): T {
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { return JSON.parse(readFileSync(fd, 'utf8')) as T; } finally { closeSync(fd); }
-}
-export function writeSessionArtifact(path: string, value: unknown, immutable = true): void {
-  writeSessionBytes(path, `${JSON.stringify(value, null, 2)}\n`, immutable);
-}
-function writeSessionBytes(path: string, bytes: string, immutable = true): void {
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-  try { writeFileSync(fd, bytes); fsyncSync(fd); } finally { closeSync(fd); }
-  try { if (immutable) linkSync(temporary, path); else renameSync(temporary, path); }
-  finally { if (existsSync(temporary)) unlinkSync(temporary); }
-  const directory = openSync(dirname(path), constants.O_RDONLY);
-  try { fsyncSync(directory); } finally { closeSync(directory); }
-}
 function assertSessionDirectory(root: string, path: string): void {
   const segments = relative(root, path).split('/');
   if (segments.includes('..') || isAbsolute(relative(root, path))) throw new Error('task_agent_unsafe_directory');
