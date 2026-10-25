@@ -31,7 +31,7 @@ async function fixture() {
   cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
-    worktree_strategy: { merge_back: { target: 'main' } },
+    worktree_strategy: { review_base: 'main', merge_back: { target: 'main' } },
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   }));
   const id = repoHarnessRepoIdFor(root);

@@ -116,6 +116,7 @@ async function fixture(
   cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(repoRoot, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
   writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({
+    worktree_strategy: { review_base: 'main' },
     agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
   })}\n`);
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
