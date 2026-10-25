@@ -13,6 +13,7 @@ import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import { spawnSync } from 'child_process';
 import type { ContinuationEnvelopeV1 } from '../src/core/state/types';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import {
   PLAN,
   commitFixture,
@@ -277,7 +278,7 @@ describe('continuation envelope determinism and read-only contract', () => {
     });
   }, 30_000);
 
-  test('performs no writes: repo tree, .ai/harness, and the state cache are untouched', () => {
+  test('performs no writes: repo tree, .ai/harness, and the version owner are untouched', () => {
     withRepo((cwd) => {
       dropActivePlan(cwd);
       useSprint(cwd, PENDING_SPRINT);
@@ -290,7 +291,7 @@ describe('continuation envelope determinism and read-only contract', () => {
       expect(run.status).toBe(0);
       expect(treeFingerprint(cwd)).toBe(before);
       expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(beforeStatus);
-      expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
     });
   }, 30_000);
 });
