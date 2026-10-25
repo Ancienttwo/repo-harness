@@ -87,8 +87,8 @@ function ActivityEvidence({ repositoryId, taskId, generation, readActivity, t }:
   const state = useObservation(JSON.stringify([repositoryId, taskId, page]), generation, read);
   const value = state.value;
   const lookup = (message: string) => setPage({ after: null, message });
-  return <section className="task-evidence__activity" aria-label={t('evidence.activity')}>
-    <h3>{t('evidence.activity')}</h3>
+  return <section className="task-evidence__activity" aria-label={t('evidence.historicalActivity')}>
+    <h3>{t('evidence.historicalActivity')}</h3>
     <p>{t('evidence.receiptBoundary')}</p>
     <Notice loading={state.loading} failed={state.failed} code={state.code} historical={!!value && (state.loading || state.failed)} t={t} />
     {(page.after !== null || page.message !== null) && <button type="button" onClick={() => setPage({ after: null, message: null })}>{t('evidence.firstPage')}</button>}

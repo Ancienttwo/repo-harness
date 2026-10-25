@@ -1,3 +1,5 @@
+import { readOperatorAdmittedTaskActivity } from '../../src/effects/operator/admitted-task-activity';
+import { buildTaskMessageEvent, canonicalTaskMessageEventBytes } from '../../src/core/fleet/admitted-task-message';
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -33,7 +35,7 @@ afterEach(() => {
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const digest = (value: unknown) => 'sha256:' + createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex');
-function fixture(linkedOwner = false) {
+function fixture(linkedOwner = false, task = 'review-diff') {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'operator-diff-'))); cleanup.push(parent);
   const root = join(parent, 'repo'), worktree = join(parent, 'worktree'), home = join(parent, 'home');
   mkdirSync(root); mkdirSync(home, { mode: 0o700 });
@@ -51,7 +53,7 @@ function fixture(linkedOwner = false) {
   const { policy_revision: _, ...external_sources } = approved.policy;
   writeFileSync(join(sourceRoot, '.ai/harness/policy.json'), JSON.stringify({ external_sources, worktree_strategy: { review_base: 'main' } }));
   const claim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) };
-  const spec = { task: 'review-diff', role: 'deep-reasoner', harness_kind: 'codex' };
+  const spec = { task, role: 'deep-reasoner', harness_kind: 'codex' };
   // Read-only transport fixture, not a live process or operator approval proof.
   const binding: HerdrTaskBinding = { protocol: 2, ...spec, runtime: 'herdr', repository_id: taskRepository(root).repository_id,
     execution_root: worktree, max_requests: 3, endpoint: { session: 'fixture' }, pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace',
@@ -329,4 +331,44 @@ test('discovery refuses directory overflow instead of presenting a partial list'
   const f = fixture();
   for (let index = 0; index < 201; index++) mkdirSync(join(f.dir, '..', index.toString(16).padStart(64, '0')));
   expect(() => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env })).toThrow('too_large');
+});
+
+
+test('active activity observes protected session approval around modern history and rejects stale selected grants', () => {
+  const f = fixture(false, 'a'.repeat(64));
+  const request = { selector:f.selector,limit:50,after:null,message_id:null,env:f.input.env };
+  const event = buildTaskMessageEvent({ message_id:'123e4567-e89b-42d3-a456-000000000001', task_id:f.selector.task,
+    task_identity:{repository_id:f.selector.provider_repository_id,issue_id:f.selector.issue_id,campaign_id:f.selector.campaign_id},
+    admission_sha256:f.approved.admission.admission_sha256,scope:'task',target_claim:null,sender_kind:'operator',sender_id:'operator',sender_trust:'local_operator',audience:'owner',
+    body:'<script>stored evidence</script>',created_at:'2026-10-25T00:00:00Z',in_reply_to:null });
+  const directory = join(f.root,'.git/repo-harness/task-inbox/v2',f.selector.task,'admitted/events');
+  mkdirSync(directory,{recursive:true}); writeFileSync(join(directory,`${event.message_id}.json`),canonicalTaskMessageEventBytes(event)+'\n');
+  const value = readOperatorAdmittedTaskActivity(request,f.effects);
+  expect(value.entries[0]?.event).toEqual(event); expect(value.admission_sha256).toBe(f.approved.admission.admission_sha256);
+  expect(JSON.stringify(value)).not.toContain(f.root);
+  expect(() => readOperatorAdmittedTaskActivity({...request,selector:{...f.selector,grant_sha256:'sha256:'+'0'.repeat(64)}},f.effects)).toThrow('stale');
+  let observations = 0;
+  const changing = { admissionSource: ((...args: Parameters<typeof readReviewAdmissionSource>) => {
+    const source = f.effects.admissionSource(...args);
+    if (++observations === 2) seedReviewAdmissionFixture(f.sourceRoot,f.home);
+    return source;
+  }) as typeof readReviewAdmissionSource };
+  expect(() => readOperatorAdmittedTaskActivity(request,changing)).toThrow();
+  expect(observations).toBe(2);
+});
+
+test('active activity HTTP requires exact admitted selection and has no historical route fallback', async () => {
+  const f=fixture(false,'a'.repeat(64));
+  const {startOperatorServer}=await import('../../src/effects/operator/server');
+  const server=await startOperatorServer({port:0,static_root:f.root,env:f.input.env,read_admitted_task_activity:async ({signal:_,...request})=>readOperatorAdmittedTaskActivity({...request,env:f.input.env},f.effects)});
+  try {
+    const query=new URLSearchParams(Object.entries(f.selector).filter(([key])=>key!=='repository_id'));
+    const path=`/api/v1/fleet/task-sessions/${f.selector.repository_id}/activity`;
+    expect((await fetch(server.url+path)).status).toBe(400);
+    const missing=await fetch(server.url+path+'?'+query);
+    expect(missing.status).toBe(404);expect(await missing.json()).toEqual({code:'history_unavailable'});
+    query.append('grant_sha256',f.selector.grant_sha256);
+    expect((await fetch(server.url+path+'?'+query)).status).toBe(400);
+    expect((await fetch(`${server.url}/api/v1/fleet/tasks/${f.selector.repository_id}/${f.selector.task}/activity`)).status).toBe(404);
+  } finally {await server.close();}
 });

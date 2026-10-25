@@ -126,7 +126,7 @@ test('strict decoder binds scope and rejects injected fields, duplicate entries 
 test('production HTTP worker reads historical records in a read-only repository', async () => {
   const f=fixture(), before=tree(f.root); const server=await startOperatorServer({port:0,env:f.input.env});
   try {
-    const path=`/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const path=`/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity?message_id=${id(2)}`;
     const response=await fetch(server.url+path); expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({entries:[{provenance:'recorded_claim_actor'}]});
     const missing=await fetch(server.url+path.replace(id(2),id(99))); expect(missing.status).toBe(404); expect(await missing.json()).toEqual({code:'history_unavailable'});
@@ -141,7 +141,7 @@ test.each(['legacy', 'migration'] as const)('production HTTP GET refuses %s layo
   else put(join(root, 'migration-v1-v2.json'), '{}\n');
   const before = tree(f.root), server = await startOperatorServer({ port: 0, env: f.input.env });
   try {
-    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity?message_id=${id(2)}`;
     const response = await fetch(server.url + path);
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ code: 'unavailable' });
@@ -166,7 +166,7 @@ test('activity preserves an empty canonical reply through the production HTTP re
   const f = fixture(''), before = tree(f.root);
   const server = await startOperatorServer({ port: 0, env: f.input.env });
   try {
-    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/activity?message_id=${id(2)}`;
+    const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity?message_id=${id(2)}`;
     const response = await fetch(server.url + path);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ entries: [{ provenance: 'recorded_claim_actor', event: { body: '', body_sha256: f.intent.reply.body_sha256 } }] });

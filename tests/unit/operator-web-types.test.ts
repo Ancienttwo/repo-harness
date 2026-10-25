@@ -385,7 +385,7 @@ describe('historical activity browser transport', () => {
     try {
       globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(snapshot);}) as typeof fetch;
       expect(await fetchTaskActivity(request,controller.signal)).toEqual(snapshot);
-      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/history/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
       globalThis.fetch=(async()=>Response.json({...snapshot,repository_id:'repo-b'})) as unknown as typeof fetch;
       await expect(fetchTaskActivity(request,controller.signal)).rejects.toThrow('Invalid task activity response');
     } finally {globalThis.fetch=original;}
@@ -443,4 +443,19 @@ test('history transport uses only the explicit context mode, uncached signal and
     }) as typeof fetch;
     await expect(fetchTaskHistory({repository_id:'repo-1',task_id:'a'.repeat(64),expected_task_revision:null},controller.signal)).rejects.toThrow('history_unavailable');
   } finally {globalThis.fetch=original;}
+});
+
+test('admitted activity requires a closed selected session and unique pagination keys', async () => {
+  const {parseAdmittedTaskActivityRequest,decodeAdmittedTaskActivity} = await import('../../src/core/operator/admitted-task-activity');
+  const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:'a'.repeat(64),role:'deep-reasoner',claim_ref:'claim:1',claim_revision:snapshotDigest,grant_sha256:snapshotDigest,policy_sha256:snapshotDigest,actor_id:'owner',session_binding_sha256:snapshotDigest};
+  const query=new URLSearchParams(Object.entries(selector).filter(([key])=>key!=='repository_id'));
+  const request=parseAdmittedTaskActivityRequest('repo-a',query);
+  expect(request).toEqual({selector,limit:50,after:null,message_id:null});
+  const duplicate=new URLSearchParams(query);duplicate.append('issue_id','789');expect(()=>parseAdmittedTaskActivityRequest('repo-a',duplicate)).toThrow();
+  const extra=new URLSearchParams(query);extra.set('source_root','/tmp/foreign');expect(()=>parseAdmittedTaskActivityRequest('repo-a',extra)).toThrow();
+  const value={...request,protocol:2,kind:'operator_admitted_task_activity',admission_sha256:snapshotDigest,observed_at:'2026-10-25T00:00:00Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null};
+  expect(decodeAdmittedTaskActivity(value,request)).toEqual(value);
+  expect(()=>decodeAdmittedTaskActivity({...value,selector:{...selector,grant_sha256:'sha256:'+'9'.repeat(64)}},request)).toThrow();
+  expect(()=>decodeAdmittedTaskActivity({...value,source_root:'/tmp/private'},request)).toThrow();
+  expect(()=>decodeAdmittedTaskActivity({...value,protocol:1,kind:'operator_task_activity'},request)).toThrow();
 });

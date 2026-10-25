@@ -1,3 +1,4 @@
+import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { useState } from 'react';
 import type { RepositoryViewState } from './RepositoryWorkspace';
 import type { OperatorTranslate } from './i18n';
@@ -51,7 +52,7 @@ export function OrganizationSummary({ state, repositoryId, t }: { readonly state
             <p>{t('org.profileSelection')}: {selected.execution.selection.state}</p>
             <p>{t('org.claim')}: <code>{selected.execution.session.selector.claim_ref}</code> · <code>{selected.execution.session.selector.claim_revision}</code></p>
             <p>{t('org.provider')}: {selected.execution.session.runtime} · {selected.execution.session.harness_kind} · {selected.execution.session.branch}</p>
-            <TaskDiff key={JSON.stringify(selected.execution.session.selector)} selector={selected.execution.session.selector} t={t} />
+            <div key={JSON.stringify(selected.execution.session.selector)}><TaskDiff selector={selected.execution.session.selector} t={t} /><AdmittedTaskActivity selector={selected.execution.session.selector} t={t} /></div>
             <details><summary>{t('org.source')}</summary><pre>{JSON.stringify(selected, null, 2)}</pre></details>
           </div>}
         </>}

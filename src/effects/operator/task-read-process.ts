@@ -1,3 +1,5 @@
+import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
+import { readOperatorAdmittedTaskActivity } from './admitted-task-activity';
 import { isTaskSessionsRequest } from '../../core/operator/task-sessions';
 import { readOperatorTaskSessions } from './task-sessions';
 import { Worker } from 'node:worker_threads';
@@ -47,6 +49,8 @@ function run(): void {
         worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });
       } else if (message.kind === 'context' && isTaskContextRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
+      } else if (message.kind === 'admitted_activity' && isAdmittedTaskActivityRequest(message.request)) {
+        finish({ok:true,snapshot:readOperatorAdmittedTaskActivity({...message.request,env})});
       } else if (message.kind === 'activity' && isTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskActivity({...message.request,env})});
       } else if (message.kind === 'sessions' && isTaskSessionsRequest(message.request)) {

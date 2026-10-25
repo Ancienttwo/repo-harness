@@ -136,12 +136,12 @@ test.skipIf(process.platform === 'win32').each(['context', 'activity'] as const)
     const server = await startOperatorServer({port:0,env:f.input.env,timeout_ms:1000,max_concurrency:1});
     let closing: Promise<void> | undefined;
     try {
-      const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/${kind}`);
+      const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/${kind === 'activity' ? 'history/activity' : kind}`);
       expect(await response.json()).toEqual({code:'timeout'});
       let status = 503;
       const until = Date.now() + 2200;
       while (Date.now() < until) {
-        status = (await fetch(`${server.url}/api/v1/fleet/tasks/unknown-repo/${f.input.task_id}/${kind}`)).status;
+        status = (await fetch(`${server.url}/api/v1/fleet/tasks/unknown-repo/${f.input.task_id}/${kind === 'activity' ? 'history/activity' : kind}`)).status;
         if (status !== 503) break;
         await Bun.sleep(25);
       }
