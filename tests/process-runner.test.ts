@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { spawn } from "child_process";
+import { existsSync, mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { capProcessOutput, runProcess } from "../src/effects/process-runner";
 import {
   processGroupExists,
@@ -55,6 +58,38 @@ describe("process runner", () => {
     expect(result.timedOut).toBe(true);
     expect(result.error).toContain("process timed out after 20ms");
     expect(result.stderr).toContain("process timed out after 20ms");
+  });
+
+  test("supervised runs stop at an absolute deadline", () => {
+    const result = runProcess(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {
+      processGroup: true,
+      deadlineMs: Date.now() + 200,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+  });
+
+  test("an expired deadline refuses to start the supervised command", () => {
+    const root = mkdtempSync(join(tmpdir(), "process-runner-expired-"));
+    try {
+      const marker = join(root, "started");
+      const result = runProcess(process.execPath, ["-e", `require("fs").writeFileSync(${JSON.stringify(marker)}, "yes")`], {
+        processGroup: true,
+        deadlineMs: Date.now() - 1,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.timedOut).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a relative timeout combined with an absolute deadline", () => {
+    expect(() => runProcess(process.execPath, ["-e", ""], { timeoutMs: 100, deadlineMs: Date.now() + 100 }))
+      .toThrow("timeoutMs or deadlineMs, not both");
   });
 
   test("treats only a zero taskkill exit status as confirmed termination", () => {

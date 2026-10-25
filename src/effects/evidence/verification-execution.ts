@@ -1034,7 +1034,7 @@ function executeCheck(
       cwd: invocation.cwd,
       env: verificationChildEnv(context.env),
       inheritEnv: false,
-      timeoutMs: Math.max(1, deadlineMs - Date.now()),
+      deadlineMs,
       maxOutputBytes: VERIFICATION_DIAGNOSTIC_MAX_BYTES,
       processGroup: true,
       ...(check.cost === "expensive"

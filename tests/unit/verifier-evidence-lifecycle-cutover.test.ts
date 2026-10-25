@@ -120,7 +120,7 @@ describe('verifier evidence lifecycle cutover', () => {
   test('explicit execution owns a fixed default deadline and timing evidence', () => {
     const source = readFileSync(join(ROOT, 'src/effects/evidence/verification-execution.ts'), 'utf-8');
     expect(source).toContain('input.timeoutMs ?? 3_600_000');
-    expect(source).toContain('deadlineMs - Date.now()');
+    expect(source).toContain('const deadlineMs = Date.now() + budgetMs');
     expect(source).toContain('duration_ms: Date.now() - started');
     expect(source).toContain('timed_out: run.timedOut');
     expect(source).toContain('signal: run.signal');
