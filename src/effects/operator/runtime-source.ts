@@ -1,5 +1,5 @@
-import { decodeRuntimeIdentity, decodeRuntimePaneObservation, runtimeId, runtimeInteger, runtimeBindingKeys, runtimeIdentityKey, RUNTIME_LIMIT, type RuntimeIdentity, type RuntimePaneObservation } from '../../core/operator/runtime-status';
-import { observeHerdrPane, observeProgramStatus, type ProgramStatusV1, type RuntimeInvalidation, type RuntimeSource } from './runtime-status';
+import { decodeRuntimeIdentity, decodeRuntimePaneObservation, runtimeId, runtimeInteger, runtimeBindingKeys, runtimeIdentityKey, RUNTIME_LIMIT, type ProgramStatusV1, type RuntimeIdentity, type RuntimePaneObservation } from '../../core/operator/runtime-status';
+import { observeHerdrPane, observeProgramStatus, type RuntimeInvalidation, type RuntimeSource } from './runtime-status';
 
 /** Normalized adapter contract, not a claim about Herdr's socket envelope. */
 export const RUNTIME_SOURCE_PROTOCOL = 'repo-harness.runtime-source.v1';

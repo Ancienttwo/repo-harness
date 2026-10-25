@@ -1,8 +1,7 @@
 import { createConnection, type Socket } from 'node:net';
 import { randomUUID, createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
-import { runtimeInteger, runtimeTime } from '../../core/operator/runtime-status';
-import type { ProgramStatusV1 } from '../operator/runtime-status';
+import { runtimeInteger, runtimeTime, type ProgramStatusV1 } from '../../core/operator/runtime-status';
 
 /** Schema source revision. Reported version fields do not attest this commit. */
 export const HERDR_OBSERVATION_REVISION = 'add5f99a8351e66464f9abec0920778303f0e885';
