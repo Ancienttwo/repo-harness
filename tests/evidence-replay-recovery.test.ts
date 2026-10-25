@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "child_process";
 import { appendFileSync, closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, writeSync } from "fs";
 import { join } from "path";
@@ -11,6 +11,7 @@ import {
   appendGenesisRecord,
   readAcceptedEvents,
   readGenesisRecord,
+  quarantineEvidenceTail,
   type EvidenceEventInput,
 } from "../src/effects/evidence/event-log";
 
@@ -183,7 +184,119 @@ describe("replay determinism across the append-only store", () => {
   });
 });
 
+describe("quarantine I/O durability", () => {
+  for (const failure of ["none", "create", "write", "quarantine-flush", "directory-flush", "log-flush"] as const) {
+    if (failure === "directory-flush" && process.platform === "win32") continue;
+    test(`I/O repair persistence order with ${failure}`, () => {
+      const root = tmpWorkspace("quarantine-io-order");
+      try {
+        const path = join(root, "log.jsonl");
+        const quarantine = join(root, "events.corrupt-123456789");
+        const prefix = Buffer.from("valid\n");
+        const tail = Buffer.from([0xff, 0xe4, 0xb8]);
+        const original = Buffer.concat([prefix, tail]);
+        writeFileSync(path, original);
+        // Isolate the fs module mock; named imports bind before an in-process spy.
+        // This calls only the I/O primitive, never the lock or process identity query.
+        const child = spawnSync(process.execPath, ["-e", `
+          import * as fs from "fs";
+          import { mock } from "bun:test";
+          const actual = { ...fs };
+          const [path, quarantine, root, failure, validEnd] = ${JSON.stringify([path, quarantine, root, failure, prefix.length])};
+          const trace = [];
+          const descriptors = new Map();
+          const stage = (name) => {
+            trace.push(name);
+            if (name === failure) throw new Error("injected " + name);
+          };
+          const mocked = {
+            ...actual,
+            openSync(...args) {
+              const target = String(args[0]);
+              if (target === quarantine) stage("create");
+              const fd = actual.openSync(...args);
+              descriptors.set(fd, target);
+              return fd;
+            },
+            writeSync(...args) {
+              if (descriptors.get(args[0]) === quarantine) stage("write");
+              return actual.writeSync(...args);
+            },
+            fsyncSync(fd) {
+              const target = descriptors.get(fd);
+              stage(target === quarantine ? "quarantine-flush" : target === root ? "directory-flush" : "log-flush");
+              actual.fsyncSync(fd);
+            },
+            ftruncateSync(fd, length) {
+              stage("truncate");
+              actual.ftruncateSync(fd, length);
+            },
+          };
+          mock.module("fs", () => ({ ...mocked, default: mocked }));
+          const { quarantineEvidenceTail } = await import(${JSON.stringify(join(import.meta.dir, "../src/effects/evidence/event-log.ts"))});
+          let error = null;
+          try { quarantineEvidenceTail(path, quarantine, actual.readFileSync(path), validEnd); }
+          catch (caught) { error = String(caught); }
+          process.stdout.write(JSON.stringify({ trace, error }));
+        `], { encoding: "utf8" });
+        expect(child.status).toBe(0);
+        expect(child.stderr).toBe("");
+        const { trace, error } = JSON.parse(child.stdout) as { trace: string[]; error: string | null };
+        const order = ["create", "write", "quarantine-flush",
+          ...(process.platform === "win32" ? [] : ["directory-flush"]), "truncate", "log-flush"];
+        expect(trace).toEqual(failure === "none" ? order : order.slice(0, order.indexOf(failure) + 1));
+        if (failure === "none") expect(error).toBeNull();
+        else expect(String(error)).toContain(`injected ${failure}`);
+        expect(readFileSync(path)).toEqual(failure === "none" || failure === "log-flush" ? prefix : original);
+        if (["none", "quarantine-flush", "directory-flush", "log-flush"].includes(failure)) {
+          expect(readFileSync(quarantine)).toEqual(tail);
+        }
+      } finally { rmSync(root, { recursive: true, force: true }); }
+    });
+  }
+
+  test("same-timestamp I/O repairs preserve the first quarantine and second log", () => {
+    const root = tmpWorkspace("quarantine-io-collision");
+    try {
+      const path = join(root, "log.jsonl");
+      const quarantine = join(root, "events.corrupt-123456789");
+      const prefix = Buffer.from("valid\n");
+      const first = Buffer.from([0xff, 0x41]);
+      const second = Buffer.from([0xfe, 0x42]);
+      writeFileSync(path, Buffer.concat([prefix, first]));
+      quarantineEvidenceTail(path, quarantine, readFileSync(path), prefix.length);
+      expect(readFileSync(quarantine)).toEqual(first);
+      appendFileSync(path, second);
+      expect(() => quarantineEvidenceTail(path, quarantine, readFileSync(path), prefix.length)).toThrow(/EEXIST/);
+      expect(readFileSync(quarantine)).toEqual(first);
+      expect(readFileSync(path)).toEqual(Buffer.concat([prefix, second]));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
 describe("corrupt-tail recovery and quarantine", () => {
+  test("same-timestamp repairs never overwrite an earlier quarantine", () => {
+    withTempRepo("evidence-quarantine-collision", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const path = logPathFor(repoRoot);
+      const prefix = readFileSync(path);
+      const firstTail = Buffer.from([0xff, 0x41]);
+      const secondTail = Buffer.from([0xfe, 0x42]);
+      const clock = spyOn(Date, "now").mockReturnValue(123456789);
+      try {
+        appendFileSync(path, firstTail);
+        const first = readAcceptedEvents(repoRoot);
+        expect(readFileSync(first.quarantinedPath!)).toEqual(firstTail);
+        appendFileSync(path, secondTail);
+        expect(() => readAcceptedEvents(repoRoot)).toThrow(/EEXIST/);
+        expect(readFileSync(first.quarantinedPath!)).toEqual(firstTail);
+        expect(readFileSync(path)).toEqual(Buffer.concat([prefix, secondTail]));
+      } finally {
+        clock.mockRestore();
+      }
+    });
+  });
+
   test("an unterminated genesis cannot authorize an append and can be recovered", () => {
     withTempRepo("evidence-genesis-newline", (repoRoot) => {
       freshGenesisRepo(repoRoot);
