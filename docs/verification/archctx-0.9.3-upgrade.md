@@ -165,3 +165,29 @@ Real clean-room integration is still blocked by the execution restriction;
 there was no attempt to retry the earlier listen EPERM or choose another port.
 The unchanged provider test for the old 0.9.1 receipt remains unresolved.
 Required CI and independent review of this implementation delta are pending.
+
+### Independent review fixes R1 and R2
+
+Astra found that a stopped socket can report `running: false` with
+`staleConnection: true` before daemon/store cleanup completes. That state now
+continues the bounded wait. A sequence of stale connection, live lock and clean
+stopped status must finish before workspace deletion. Persistent stale status
+fails and retains state.
+
+Astra also found that a filesystem cleanup exception could replace the original
+operation failure. Both stop and filesystem cleanup now share the error
+retention path. A cleanup-only failure still propagates directly. A filesystem
+cleanup failure may leave a partially cleaned directory; it is not described as
+an automatic rollback.
+
+Focused RED on the 3be464f3 implementation plus the new tests: 0 pass, 3 fail,
+10 filtered. The stale sequence read only one status instead of three; persistent
+stale status did not throw; EBUSY replaced the projection failure instead of
+producing AggregateError. Test command exited 1 (the subsequent log display
+exited 0). No daemon or listener was used.
+
+After repair: `bun run check:type` passed;
+`bun run test:files tests/axr5-clean-room-runtime.test.ts --timeout 60000 --max-concurrency 1`
+passed 13 tests / 46 assertions. Existing assertions remain intact. These results
+supersede neither the old clean-room receipt failure nor the missing real
+integration run. Independent review of the delta remains required.

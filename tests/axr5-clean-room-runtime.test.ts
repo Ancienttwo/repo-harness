@@ -86,6 +86,40 @@ describe('AXR5 isolated runtime lifecycle (no listener)', () => {
     expect(cleaned).toBe(false);
   });
 
+  test('waits through a stale connection and live lock before removing state', () => {
+    const statuses = [
+      { running: false, staleConnection: true },
+      { running: false, lockOwnerPid: 123 },
+      { running: false },
+    ];
+    let reads = 0;
+    let cleaned = false;
+    const daemon = new CleanRoomDaemon((_binary, args) => envelope(args[1] === 'stop' ? { stopping: true } : statuses[reads++]), () => {});
+    daemon.arm('/package/archctx', '/fixture/repo', {});
+    finishCleanRoom({ daemon, cleanup: () => { cleaned = true; } });
+    expect(reads).toBe(3);
+    expect(cleaned).toBe(true);
+  });
+
+  test('persistent stale connection keeps the workspace', () => {
+    let cleaned = false;
+    const daemon = new CleanRoomDaemon((_binary, args) => envelope(args[1] === 'stop' ? { stopping: true } : { running: false, staleConnection: true }), () => {});
+    daemon.arm('/package/archctx', '/fixture/repo', {});
+    expect(() => finishCleanRoom({ daemon, cleanup: () => { cleaned = true; } })).toThrow('stop was not confirmed');
+    expect(cleaned).toBe(false);
+  });
+
+  test('retains the original failure when filesystem cleanup throws', () => {
+    const original = new Error('projection failed');
+    const cleanupFailure = new Error('EBUSY');
+    let caught: unknown;
+    try {
+      finishCleanRoom({ daemon: { stop: () => {} }, failure: { error: original }, cleanup: () => { throw cleanupFailure; } });
+    } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect((caught as AggregateError).errors).toEqual([original, cleanupFailure]);
+  });
+
   test('malformed status cannot authorize workspace removal', () => {
     const daemon = new CleanRoomDaemon((_binary, args) => args[1] === 'stop' ? envelope({ stopping: true }) : { status: 0, stdout: '{}' }, () => {});
     daemon.arm('/package/archctx', '/fixture/repo', {});

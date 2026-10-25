@@ -48,7 +48,7 @@ export class CleanRoomDaemon {
     invoke('stop');
     for (let attempt = 0; attempt < 10; attempt++) {
       const status = invoke('status');
-      if (status.running === false && status.lockOwnerPid === undefined && status.versionUnsupported === undefined) {
+      if (status.running === false && status.staleConnection !== true && status.lockOwnerPid === undefined && status.versionUnsupported === undefined) {
         this.target = undefined;
         return;
       }
@@ -63,9 +63,11 @@ export function finishCleanRoom(input: {
   cleanup: () => void;
   failure?: { error: unknown };
 }): void {
-  try { input.daemon.stop(); } catch (error) {
-    if (input.failure) throw new AggregateError([input.failure.error, error], 'clean-room operation and daemon cleanup failed; workspace preserved');
+  try {
+    input.daemon.stop();
+    input.cleanup();
+  } catch (error) {
+    if (input.failure) throw new AggregateError([input.failure.error, error], 'clean-room operation and cleanup failed; inspect retained workspace');
     throw error;
   }
-  input.cleanup();
 }
