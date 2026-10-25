@@ -1,8 +1,8 @@
 /**
  * Pure coordination identity: sprint rows -> task identity, task revision, and
  * the lease owner record schema. No clock, PID, randomness, or filesystem
- * input reaches this layer; `src/effects/state/coordination-lease-store.ts`
- * reads historical records for the operator.
+ * input reaches this layer. Canonical task history and historical message
+ * fixtures retain these parsers; lease records do not authorize current work.
  *
  * Identity is read, not derived:
  *
@@ -61,16 +61,6 @@ export const COORDINATION_PROTOCOL = 1;
 export const SPRINT_IDENTITY_PROTOCOL_V2 = 'protocol-v2';
 
 export const LEASE_OWNER_KIND = 'repo-harness-lease-owner';
-
-/** The only backlog status cell a claim may be taken against. */
-export const PENDING_ROW_STATUS = '[ ]';
-
-/**
- * The completed status cell, matching the historical backlog
- * `$2 ~ /^\[[xX]\]$/` counting rule. A completed canonical row is the one piece
- * of evidence that proves a residual lease has nothing left to protect.
- */
-export const COMPLETED_ROW_STATUS_PATTERN = /^\[[xX]\]$/;
 
 /** Shape every `task_id` and `task_revision` must have before it is trusted. */
 export const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
@@ -271,9 +261,6 @@ export const PERSISTED_LEASE_STATES = [
 
 export type PersistedLeaseState = (typeof PERSISTED_LEASE_STATES)[number];
 export type NonReviewingPersistedLeaseState = Exclude<PersistedLeaseState, 'reviewing'>;
-
-/** The full lifecycle, including the no-lease state the store reports. */
-export type LeaseState = 'available' | PersistedLeaseState;
 
 export interface LeaseClaimedBy {
   readonly session_id: string;
@@ -627,7 +614,3 @@ function parseCurrentPublicationPointer(value: unknown): CurrentPublicationPoint
     ship_transaction_key: pointer.ship_transaction_key,
   };
 }
-
-export type LeaseTransition =
-  | { readonly ok: true; readonly record: LeaseOwnerRecord }
-  | { readonly ok: false; readonly error: string };

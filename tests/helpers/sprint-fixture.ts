@@ -1,5 +1,15 @@
 import type { LeaseOwnerRecord, CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
-import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { TASK_DIGEST_PATTERN } from '../../src/core/state/coordination-identity';
+
+export const LEASE_OWNER_FILE_NAME = 'owner.json';
+export function coordinationRoot(cwd: string): string {
+  return join(resolveGitCommonDirectory(cwd), 'repo-harness/coordination/v1');
+}
+export function leaseDirectory(cwd: string, taskId: string): string {
+  if (!TASK_DIGEST_PATTERN.test(taskId)) throw new Error('invalid historical fixture task id');
+  return join(coordinationRoot(cwd), 'leases', taskId);
+}
 /**
  * Fixture helpers for backlog schema 2 sprints.
  *
@@ -101,7 +111,7 @@ export function reviewingLeaseFixture(record: LeaseOwnerRecord, input: {
     finish_transaction_key: null, current_publication: input.publication } };
 }
 
-/** Canonical historical bytes for tests of the production owner reader. */
+/** Canonical historical bytes for historical codec fixtures. */
 export function serializeHistoricalLease(record: LeaseOwnerRecord): string {
   return `${JSON.stringify(record, null, 2)}\n`;
 }

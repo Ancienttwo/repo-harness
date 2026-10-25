@@ -5,7 +5,6 @@ import { resolve } from 'node:path';
 export const integrationFiles = new Set([
   'tests/herdr-task-lifecycle.test.ts',
   'tests/contract-worktree-closeout-journal.test.ts',
-  'tests/sprint-claim-concurrency.test.ts',
   'tests/continuation-conformance.test.ts',
 ]);
 

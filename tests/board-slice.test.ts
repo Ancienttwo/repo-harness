@@ -27,8 +27,6 @@ import {
   type LeaseOwnerRecordV1,
   type NonReviewingPersistedLeaseState,
 } from '../src/core/state/coordination-identity';
-import { projectBoardSlice } from '../src/core/state/project-board-slice';
-import type { BoardOwnershipInput } from '../src/core/state/project-board';
 import {
   BOARD_SLICE_MARKER,
   BOARD_SLICE_MAX_BYTES,
@@ -44,7 +42,7 @@ import { findClaimTokenByUnitRef } from '../src/effects/state/coordination-claim
 import {
   coordinationRoot,
   LEASE_OWNER_FILE_NAME,
-} from '../src/effects/state/coordination-lease-store';
+} from './helpers/sprint-fixture';
 import { resolveRepoIdentity } from '../src/effects/git/repository-identity';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
@@ -233,92 +231,6 @@ function extractSliceBlock(text: string): string {
   expect(end).toBeGreaterThan(start);
   return text.slice(start, end + pointer.length);
 }
-
-// ---------------------------------------------------------------------------
-// Pure projection: the structural absences are the contract
-// ---------------------------------------------------------------------------
-
-const PURE_TASK_ID = 'a'.repeat(64);
-const PURE_PEER_ID = 'b'.repeat(64);
-
-function pureTask(overrides: Partial<BoardOwnershipInput> = {}): BoardOwnershipInput {
-  return {
-    task_id: PURE_TASK_ID,
-    task_revision: 'rev-own',
-    row: {
-      index: '1',
-      status: '[ ]',
-      task: 'wire the hook slice',
-      mode: 'contract',
-      acceptance: 'slice tests pass',
-      plan: '(pending)',
-    },
-    lease: { classification: 'bound', unknown_reason: null, record: null },
-    worktree_present: true,
-    ...overrides,
-  };
-}
-
-describe('BoardSliceV1 omits the dimensions it cannot observe', () => {
-  test('self carries no progress_state, no column, and no conflict field', () => {
-    const slice = projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: PURE_TASK_ID,
-      tasks: [pureTask()],
-    });
-    const self = slice.self;
-    expect(self).not.toBeNull();
-    // Absence, not an empty value: a `not_observed` field would advertise a
-    // dimension this document does not have (WP2's precedent).
-    expect(Object.hasOwn(self!, 'progress_state')).toBe(false);
-    expect(Object.hasOwn(self!, 'column')).toBe(false);
-    expect(Object.hasOwn(self!.diagnostics, 'progress_unreadable_reason')).toBe(false);
-    expect(Object.hasOwn(self!.diagnostics, 'actual_path_overlap')).toBe(false);
-    expect(Object.hasOwn(self!.diagnostics, 'scope_overlap')).toBe(false);
-    expect(Object.hasOwn(self!.diagnostics, 'stalled')).toBe(false);
-  });
-
-  test('self is null when no claim token names a row, and peers still resolve', () => {
-    const slice = projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: null,
-      tasks: [pureTask({ task_id: PURE_PEER_ID })],
-    });
-    expect(slice.self).toBeNull();
-    expect(slice.peers.map((peer) => peer.task_id)).toEqual([PURE_PEER_ID]);
-  });
-
-  test('only live leases are peers: released and unknown name no owner to coordinate with', () => {
-    const slice = projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: null,
-      tasks: [
-        pureTask({ task_id: 'c'.repeat(64), lease: { classification: 'released', unknown_reason: null, record: null } }),
-        pureTask({ task_id: 'd'.repeat(64), lease: { classification: 'unknown', unknown_reason: 'owner_record_missing', record: null } }),
-        pureTask({ task_id: 'e'.repeat(64), lease: { classification: 'available', unknown_reason: null, record: null } }),
-        pureTask({ task_id: 'f'.repeat(64), lease: { classification: 'completing', unknown_reason: null, record: null } }),
-      ],
-    });
-    expect(slice.peers.map((peer) => peer.task_id)).toEqual(['f'.repeat(64)]);
-  });
-
-  test('peers sort by task_id regardless of canonical file order', () => {
-    const slice = projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: null,
-      tasks: [
-        pureTask({ task_id: 'f'.repeat(64) }),
-        pureTask({ task_id: 'c'.repeat(64) }),
-        pureTask({ task_id: 'a'.repeat(64) }),
-      ],
-    });
-    expect(slice.peers.map((peer) => peer.task_id[0])).toEqual(['a', 'c', 'f']);
-  });
-});
 
 function providerFixture(count: number, title = 'peer row'): { slice: ProviderBoardSliceV2; sessions: OperatorTaskSessions } {
   const digest = `sha256:${'a'.repeat(64)}`;

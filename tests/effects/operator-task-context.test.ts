@@ -10,7 +10,6 @@ import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 
-import * as boardModule from '../../src/effects/state/resolve-board';
 import { readOperatorPlanningSnapshot } from '../../src/effects/operator/repository-snapshot';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import * as schedulingModule from '../../src/effects/engineers/scheduling';

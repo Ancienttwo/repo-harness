@@ -1,15 +1,8 @@
-import { seedLeaseDirectory } from '../helpers/sprint-fixture';
-import { readFileSync, writeFileSync } from 'fs';
 import {
   claimActorReceiptFixture,
-  seedClaimActorReceipt,
   principalMappingFixture,
 } from '../helpers/engineer-state-fixture';
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 
 import {
   canonicalClaimActorReceiptBytes,
@@ -18,11 +11,6 @@ import {
   validateEngineerPrincipalMapping,
 } from '../../src/core/engineers/principal-claim';
 import { engineerSha256, type EngineerBindingV1 } from '../../src/core/engineers/profile-binding';
-import {
-  listLiveClaimActorReceiptsForEngineer,
-  readClaimActorReceipt,
-} from '../../src/effects/engineers/claim-actor-store';
-import { readLease } from '../../src/effects/state/coordination-lease-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const binding: EngineerBindingV1 = {
@@ -102,81 +90,4 @@ describe('ME-0B principal and claim actor protocols', () => {
     expect(() => validateClaimActorReceipt({ ...receipt, branch: 'codex/other' })).toThrow('receipt digest is invalid');
   });
 
-  test('receipt reads validate canonical historical bytes without rewriting them', () => {
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-me0b-receipt-'));
-    try {
-      execFileSync('git', ['init', '-q'], { cwd: root });
-      const work = envelope();
-      const receipt = claimActorReceiptFixture({ envelope: work, binding, session_id: null, bound_at: '2026-08-25T00:02:00.000Z' });
-      seedClaimActorReceipt(root, receipt);
-      const path = join(root, '.git/repo-harness/engineers/v1/claim-actors', work.task_id, `${work.claim_id}.json`);
-      expect(readClaimActorReceipt(root, work.task_id, work.claim_id)).toEqual(receipt);
-      writeFileSync(path, JSON.stringify({ ...receipt, branch: 'changed' }));
-      const before = readFileSync(path, 'utf8');
-      expect(() => readClaimActorReceipt(root, work.task_id, work.claim_id)).toThrow('claim actor receipt');
-      expect(readFileSync(path, 'utf8')).toBe(before);
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  });
-
-  test('live receipt listing counts only the exact current Lease owner', () => {
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-me1a-live-receipts-'));
-    try {
-      execFileSync('git', ['init', '-q'], { cwd: root });
-      const work = envelope();
-      const receipt = claimActorReceiptFixture({ envelope: work, binding, session_id: null, bound_at: '2026-08-25T00:02:00.000Z' });
-      seedClaimActorReceipt(root, receipt);
-      const live = listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
-        record: {
-          claim_id: work.claim_id,
-          generation: work.generation,
-          task_revision: work.task_revision,
-          state: 'bound',
-        },
-      } as never));
-      expect(live).toEqual([receipt]);
-      expect(listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
-        record: {
-          claim_id: work.claim_id,
-          generation: work.generation,
-          task_revision: work.task_revision,
-          state: 'released',
-        },
-      } as never))).toEqual([]);
-      expect(listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
-        record: {
-          claim_id: '44444444-4444-4444-8444-444444444444',
-          generation: work.generation + 1,
-          task_revision: work.task_revision,
-          state: 'bound',
-        },
-      } as never))).toEqual([]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test('live receipt listing refuses a known actor whose Lease is unknown', () => {
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-me1a-unknown-receipt-'));
-    try {
-      execFileSync('git', ['init', '-q'], { cwd: root });
-      const work = envelope();
-      seedClaimActorReceipt(root, claimActorReceiptFixture({ envelope: work, binding, session_id: null, bound_at: '2026-08-25T00:02:00.000Z' }));
-      // A lease directory without an owner record is the real unknown state.
-      expect(seedLeaseDirectory(root, work.task_id)).toBeTrue();
-      expect(readLease(root, work.task_id)).toMatchObject({ classification: 'unknown', record: null });
-      // The unavailable Lease state is named, so the operator repairs the
-      // Lease instead of the valid receipt store.
-      const refusal = (() => {
-        try { listLiveClaimActorReceiptsForEngineer(root, engineerId); return null; }
-        catch (error) { return error as EngineerPrincipalError; }
-      })();
-      expect(refusal).toBeInstanceOf(EngineerPrincipalError);
-      expect(refusal?.code).toBe('claim_actor_lease_unavailable');
-      expect(refusal?.message).toContain('Lease is unknown');
-      // Another Engineer's receipts never read this Engineer's Lease state.
-      expect(listLiveClaimActorReceiptsForEngineer(root, 'engineer:capability.workflow-engine.contract-assets')).toEqual([]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
 });

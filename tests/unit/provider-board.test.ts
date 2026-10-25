@@ -65,3 +65,58 @@ test('unknown provider state or execution observations remain visible and unclas
   expect(result.repositories[0]!.cards[0]!.placement).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
   expect(result.snapshot_consistency).toBe('degraded');
 });
+
+// Exercise the real bounded collector loop. The scripted readers supply observations,
+// not precomputed board revisions or a replacement snapshot-consistency algorithm.
+import { resolveProviderBoard, type ProviderBoardReaders } from '../../src/effects/state/collect-provider-board-inputs';
+import { OperatorTaskDiffError } from '../../src/effects/operator/task-diff';
+function scriptedBoardReads(snapshots: readonly ReturnType<typeof fixture>[], failure?: 'stale' | 'too_large' | 'unavailable') {
+  let reads = 0;
+  let current = snapshots[0]!;
+  const readers: ProviderBoardReaders = {
+    registry: () => {
+      current = snapshots[Math.min(reads++, snapshots.length - 1)]!;
+      return { registryPath: '/fixture/registry.json', authorizationRevision: 1, registryRevision: digest,
+        repos: [{ id: 'repo_1', path: '/fixture/repository', accessMode: 'read_only', source: 'manual',
+          registeredAt: '2026-08-31T00:00:00.000Z', lastSeenAt: '2026-08-31T00:00:00.000Z' }] };
+    },
+    observations: root => { expect(root).toBe('/fixture/repository'); return current.issues.issues.map(row => row.latest_observation); },
+    receipts: root => { expect(root).toBe('/fixture/repository'); return [current.issues.latest_complete_refresh!]; },
+    sessions: input => {
+      expect(input.repository_id).toBe('repo_1');
+      if (failure) throw new OperatorTaskDiffError(failure);
+      return current.sessions;
+    },
+  };
+  return { readers, count: () => reads };
+}
+test('quiet provider board settles after exactly two complete observations', () => {
+  const input = fixture(), script = scriptedBoardReads([input]);
+  expect(resolveProviderBoard({ repository_id: 'repo_1' }, script.readers)).toEqual(projectProviderBoard(input));
+  expect(script.count()).toBe(2);
+});
+test('one changed provider round can settle within the bounded retry', () => {
+  const before = fixture(), after = fixture('closed'), script = scriptedBoardReads([before, after, after]);
+  expect(resolveProviderBoard({ repository_id: 'repo_1' }, script.readers)).toEqual(projectProviderBoard(after));
+  expect(script.count()).toBe(3);
+});
+test('unchanged issue state cannot hide changing admitted session evidence', () => {
+  const initial = fixture();
+  const snapshots = ['a', 'b', 'c'].map(task => ({ ...initial, sessions: { ...initial.sessions, sessions: [session(task)] } }));
+  const script = scriptedBoardReads(snapshots);
+  const board = resolveProviderBoard({ repository_id: 'repo_1' }, script.readers);
+  expect(script.count()).toBe(3);
+  expect(board).toEqual({ ...projectProviderBoard(snapshots[2]!), snapshot_consistency: 'changed_during_read' });
+  expect(board.cards[0]!.issue!.state).toBe('open');
+  expect(board.cards[0]!.sessions.map(row => row.selector.task)).toEqual(['c']);
+});
+test.each(['stale', 'too_large', 'unavailable'] as const)('discovery %s stays explicit and never creates an unassigned successful observation', failure => {
+  const input = fixture(), script = scriptedBoardReads([input], failure);
+  const board = resolveProviderBoard({ repository_id: 'repo_1' }, script.readers);
+  expect(board.cards).toHaveLength(1);
+  expect(board.cards[0]!.issue_status).toBe('observed');
+  expect(board.cards[0]!.execution_status).toBe('unavailable');
+  expect(board.cards[0]!.execution_error).toBe(failure);
+  expect(board.cards[0]!.sessions).toEqual([]);
+  expect(script.count()).toBe(2);
+});

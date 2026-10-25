@@ -7,7 +7,7 @@ import {
   assertCanonicalSprintTaskIdsUniqueAtCommit,
   readCanonicalSprint,
 } from '../src/effects/state/coordination-canonical-source';
-import { leaseDirectory } from '../src/effects/state/coordination-lease-store';
+import { leaseDirectory } from './helpers/sprint-fixture';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const SPRINT_DIR = 'workflow/sprints';

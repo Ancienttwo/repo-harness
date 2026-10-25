@@ -1,11 +1,46 @@
 import { createHash } from 'crypto';
-
-import type { TaskOfferBlockerV1, TaskOfferExecutionReadiness } from './task-offer';
 import type { MergeReadinessBlockerCode, PullRequestReadinessV2 } from '../publication/merge-readiness';
 import type { OperatorTaskSession } from '../operator/task-sessions';
 import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
-/** A fleet projection is its own read model; it never changes BoardColumn. */
+export type FleetExecutionReadiness =
+  | 'execution_ready'
+  | 'planning_required'
+  | 'inline_ready'
+  | 'unsupported';
+
+/**
+ * The blocker vocabulary is intentionally closed.  A caller can route every
+ * preparation row without interpreting a free-form diagnostic string.
+ */
+export type FleetBlockerCode =
+  | 'repo_read_only'
+  | 'repo_unavailable'
+  | 'canonical_unavailable'
+  | 'canonical_target_mismatch'
+  | 'row_not_pending'
+  | 'lease_unavailable'
+  | 'lease_unknown'
+  | 'snapshot_changed_during_read'
+  | 'mode_unsupported'
+  | 'plan_missing'
+  | 'plan_ambiguous'
+  | 'plan_not_approved'
+  | 'plan_source_mismatch'
+  | 'plan_not_projectable'
+  | 'contract_missing'
+  | 'contract_not_projectable';
+
+export type FleetAttentionOwner = 'agent' | 'user' | 'external';
+
+export interface FleetBlockerV1 {
+  readonly code: FleetBlockerCode;
+  readonly attention_owner: FleetAttentionOwner;
+}
+
+
+
+/** Fleet placement is a read model over provider issues and admitted sessions. */
 export const FLEET_BOARD_PROTOCOL = 6 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
@@ -84,8 +119,8 @@ export interface FleetBoardCardV2 {
   readonly task_index: number | null;
   readonly placement: FleetBoardPlacement;
   readonly attention_owner: FleetBoardAttentionOwner;
-  readonly execution_readiness: TaskOfferExecutionReadiness | null;
-  readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
+  readonly execution_readiness: FleetExecutionReadiness | null;
+  readonly readiness_blockers: readonly FleetBlockerV1[] | null;
   readonly merge_readiness: PullRequestReadinessV2 | null;
   readonly blocker_codes: readonly MergeReadinessBlockerCode[];
   readonly feedback: FleetBoardFeedbackSummaryV1;
@@ -147,8 +182,8 @@ export interface FleetBoardCardInputV2 {
   readonly task_label: string | null;
   readonly task_index: number | null;
   readonly merge_readiness: PullRequestReadinessV2 | null;
-  readonly execution_readiness: TaskOfferExecutionReadiness | null;
-  readonly readiness_blockers: readonly TaskOfferBlockerV1[] | null;
+  readonly execution_readiness: FleetExecutionReadiness | null;
+  readonly readiness_blockers: readonly FleetBlockerV1[] | null;
   readonly feedback: FleetBoardFeedbackSummaryV1;
   readonly inbox: FleetBoardInboxSummaryV1;
   readonly snapshot_consistency: 'stable' | 'changed_during_read';
