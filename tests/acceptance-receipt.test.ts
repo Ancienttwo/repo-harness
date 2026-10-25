@@ -1,3 +1,4 @@
+import { observeActiveReviewAdmission } from '../src/effects/review/issue-goal';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
@@ -22,6 +23,19 @@ function authorityFor(root: string) {
   const fixture = admissions.get(root);
   if (!fixture) throw new Error('missing explicit test admission');
   return fixture.source;
+}
+// Explicit separate upstream decision fixture. This is not authentication proof.
+function recordFixtureUserWaiverGrant(args: Parameters<typeof recordUserWaiverGrant>[0]) {
+  const active = observeActiveReviewAdmission(args.authority), admission = active.admission;
+  return recordUserWaiverGrant({ ...args, authorization: {
+    protocol: 1, kind: 'repo-harness-upstream-waiver-authorization', action: 'human-approved-user-waiver',
+    authorization_ref: 'fixture-separate-human-decision', bot_id: 'fixture-control-bot',
+    repository_root: realpathSync(args.root), repository_id: admission.repository_id,
+    issue_id: admission.issue_id, campaign_id: admission.campaign_id,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: active.grant_sha256, goal_sha256: admission.goal.revision,
+    actor: admission.actor_id, summary: args.summary, expires_at: Date.now() + 3_600_000,
+  } });
 }
 const fixturePlan = { protocol: 1 as const, checks: [{ id: 'feature-content', kind: 'command' as const,
   command: "test \"$(wc -l < feature.txt | tr -d ' ')\" = 1 && LC_ALL=C grep -qx '[a-z][a-z 0-9]*' feature.txt",
@@ -403,9 +417,9 @@ describe('AcceptanceReceipt', () => {
 
   test('typed user waiver stays distinct from external pass and obeys the approved policy', async () => {
     const allowed = makeFixture('allowed');
-    expect(() => recordUserWaiverGrant({ root: allowed.root, authorityHome: allowed.home, authority: authorityFor(allowed.root),
+    expect(() => recordFixtureUserWaiverGrant({ root: allowed.root, authorityHome: allowed.home, authority: authorityFor(allowed.root),
       actor: 'unapproved-actor', summary: 'attempted waiver' })).toThrow('approved actor');
-    const grant = recordUserWaiverGrant({
+    const grant = recordFixtureUserWaiverGrant({
       root: allowed.root, authority: authorityFor(allowed.root),
       authorityHome: allowed.home,
       actor: 'kito',
@@ -434,7 +448,7 @@ describe('AcceptanceReceipt', () => {
     })).rejects.toThrow('must be materialized from a valid UserWaiverGrant');
 
     const forbidden = makeFixture('forbidden');
-    expect(() => recordUserWaiverGrant({
+    expect(() => recordFixtureUserWaiverGrant({
       root: forbidden.root, authority: authorityFor(forbidden.root),
       authorityHome: forbidden.home,
       actor: 'kito',
@@ -444,7 +458,7 @@ describe('AcceptanceReceipt', () => {
 
   test('reuses one owner grant after semantic correction while every receipt stays exact', async () => {
     const { root, home } = makeFixture();
-    const grant = recordUserWaiverGrant({
+    const grant = recordFixtureUserWaiverGrant({
       root, authority: authorityFor(root),
       authorityHome: home,
       actor: 'kito',
@@ -478,18 +492,18 @@ describe('AcceptanceReceipt', () => {
 
   test('replaced admission or changed issue goal invalidates the separate waiver grant', () => {
     const changed = makeFixture();
-    recordUserWaiverGrant({ root: changed.root, authorityHome: changed.home, authority: authorityFor(changed.root), actor: 'kito', summary: 'bounded decision' });
+    recordFixtureUserWaiverGrant({ root: changed.root, authorityHome: changed.home, authority: authorityFor(changed.root), actor: 'kito', summary: 'bounded decision' });
     approveFixture(changed.root, changed.home, { allowedPaths: ['feature.txt'] });
     expect(() => verifyUserWaiverGrant({ root: changed.root, authorityHome: changed.home, authority: authorityFor(changed.root) })).toThrow('authority is stale');
     const goalChanged = makeFixture();
-    recordUserWaiverGrant({ root: goalChanged.root, authorityHome: goalChanged.home, authority: authorityFor(goalChanged.root), actor: 'kito', summary: 'bounded decision' });
+    recordFixtureUserWaiverGrant({ root: goalChanged.root, authorityHome: goalChanged.home, authority: authorityFor(goalChanged.root), actor: 'kito', summary: 'bounded decision' });
     admissions.get(goalChanged.root)!.issue.body = 'Changed approved goal';
     expect(() => verifyUserWaiverGrant({ root: goalChanged.root, authorityHome: goalChanged.home, authority: authorityFor(goalChanged.root) })).toThrow('goal_or_actor_changed');
   }, 30_000);
 
   test('revocation invalidates a user-waiver receipt and external pass never binds a grant', async () => {
     const waived = makeFixture();
-    recordUserWaiverGrant({
+    recordFixtureUserWaiverGrant({
       root: waived.root, authority: authorityFor(waived.root),
       authorityHome: waived.home,
       actor: 'kito',
@@ -807,7 +821,7 @@ darwinTest('generic review refuses failed owner turn even with forged completed 
 test('tampered empty and missing approved plans refuse external and waiver acceptance without publishing proof', async () => {
   for (const kind of ['empty_plan', 'missing_plan']) {
     const { root, home } = makeFixture();
-    recordUserWaiverGrant({ root, authorityHome: home, authority: authorityFor(root), actor: 'kito', summary: 'Waiver still requires execution proof.' });
+    recordFixtureUserWaiverGrant({ root, authorityHome: home, authority: authorityFor(root), actor: 'kito', summary: 'Waiver still requires execution proof.' });
     const fixture = admissions.get(root)!;
     const path = join(fixture.directory, fixture.grant.slice(7) + '.json');
     const protectedRecord = JSON.parse(readFileSync(path, 'utf8'));
@@ -833,7 +847,7 @@ test('semantic admission retains scope and required benchmark refusal', async ()
 
 test('synchronous binding inspection rejects missing observations and revoked waivers', async () => {
   const { root, home } = makeFixture();
-  recordUserWaiverGrant({ root, authority: authorityFor(root), authorityHome: home, actor: 'kito', summary: 'Bound waiver.' });
+  recordFixtureUserWaiverGrant({ root, authority: authorityFor(root), authorityHome: home, actor: 'kito', summary: 'Bound waiver.' });
   const receipt = await recordUserWaiverAcceptance({ root, authority: authorityFor(root), authorityHome: home, verification: '.ai/harness/runs/acceptance.report.json' });
   const subject = buildReviewSubject(root, { targetRef: 'main' });
   const report = evaluateAdmittedVerification({ repoRoot: root, authority: authorityFor(root) });

@@ -375,7 +375,7 @@ function writeAcceptanceReceipt(subject: Fixture, receipt: AcceptanceReceipt, au
   writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
-function waiverAuthorization(subject: Fixture, summary: string) {
+function waiverAuthorization(subject: Pick<Fixture, 'root'>, summary: string) {
   const active = approval(subject.root), admission = active.admission;
   return { protocol: 1 as const, kind: 'repo-harness-upstream-waiver-authorization' as const,
     action: 'human-approved-user-waiver' as const, authorization_ref: 'fixture-separate-user-waiver', bot_id: 'fixture-bot',
