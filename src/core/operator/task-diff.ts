@@ -37,6 +37,8 @@ export function parseTaskDiffRequest(repository_id: string, params: URLSearchPar
 }
 export const TASK_DIFF_MAX_BYTES = 512 * 1024;
 export const TASK_DIFF_MAX_UNTRACKED = 1000;
+/** `stale` includes a selected grant that was revoked or replaced. Provider
+ * failures and invalid or unreadable source evidence remain `unavailable`. */
 export const TASK_DIFF_FAILURES = ['unavailable', 'filters_unsupported', 'index_unsupported', 'stale', 'too_large', 'busy', 'timeout'] as const;
 export type TaskDiffFailure = typeof TASK_DIFF_FAILURES[number];
 export interface OperatorTaskDiff extends OperatorTaskDiffRequest {

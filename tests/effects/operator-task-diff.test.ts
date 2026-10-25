@@ -281,7 +281,9 @@ test('current approval is reobserved, while same-campaign reapproval and empty c
   git(f.worktree, 'commit', '--allow-empty', '-m', 'provenance');
   expect(f.read().head_sha).toBe(git(f.worktree, 'rev-parse', 'HEAD'));
   const next = seedReviewAdmissionFixture(f.root, f.home);
-  expect(() => f.read()).toThrow('unavailable');
+  // The selector still names the replaced grant. Reapproval does not invalidate
+  // the session identity, but its old approval selector is precisely stale.
+  expect(() => f.read()).toThrow(/^stale$/);
   expect(f.read({ ...f.input, grant_sha256: next.grant }).session_binding_sha256).toBe(f.input.session_binding_sha256);
   next.issue.body = 'changed provider goal';
   const effects = { admissionSource: ((root, values) => ({ ...readReviewAdmissionSource(root, values), authorityHome: f.home, runner: next.source.runner })) as typeof readReviewAdmissionSource };
