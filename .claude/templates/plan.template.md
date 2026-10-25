@@ -25,16 +25,16 @@ Optional document: use this template only when the task calls for it. Ordinary w
 ## Workflow Inventory
 Record only artifacts selected for this task. Omit unused optional contract, review and notes entries; this inventory does not block ordinary implementation.
 
-- Active plan: `{{PLAN_FILE}}`
+- Optional plan: `{{PLAN_FILE}}`
 - Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 - Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; State resolution does not read `.claude/.active-plan`. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: use a worktree for actual concurrency or dirty-work conflicts. Use contract projection only when the task explicitly selects that workflow.
+- Scope authority: the active approved admission and its `allowed_paths`; this plan and contract only propose scope.
+- Concurrency rule: use the current admitted task/session and immutable claim. Preserve the owning Git worktree and do not infer execution ownership from planning files.
+- Execution isolation: use a worktree for actual concurrency or dirty-work conflicts. Worktree creation does not replace task/session admission.
 
 ## Approach
 ### Strategy
@@ -60,7 +60,7 @@ Record only artifacts selected for this task. Omit unused optional contract, rev
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verify-sprint --test <affected-test-file>` (repeat `--test` for each selected existing test; omit it for a typecheck-only task).
-- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; State resolution does not read `.claude/.active-plan`. Do not infer active execution from the latest non-archived plan.
+- Planning selection is metadata only. Do not infer active execution from an active-plan marker or the latest non-archived plan.
 
 ## Handoff
 
