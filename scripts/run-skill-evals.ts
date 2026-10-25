@@ -15,7 +15,9 @@ import {
 import { spawnSync } from "child_process";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { fileURLToPath } from "url";
-import type { VerificationExecutionReport } from "../src/effects/evidence/verification-execution";
+import type { EvalExecutionReport } from "../src/effects/evidence/verification-execution";
+
+import { captureEvalCatalogSource, readEvalCatalogPlan, type EvalCatalogSource } from "../src/effects/evidence/eval-catalog";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -933,57 +935,25 @@ function relativeLink(fromRoot: string, targetPath: string): string {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
-function renderEvalVerificationPlan(evalEntry: EvalEntry): string {
-  // Every declared predicate is an explicit canonical check. Preserve grep ERE
-  // semantics; shell arguments are literal data through the existing quoting.
-  const commands = [...(evalEntry.graders.commands_succeed ?? [])];
-  for (const path of evalEntry.graders.files_exist ?? []) commands.push(`test -e ${quoteShellArg(path)}`);
-  for (const { path, pattern } of evalEntry.graders.files_contain ?? []) {
-    commands.push(`test -f ${quoteShellArg(path)} && grep -Eq -- ${quoteShellArg(pattern)} ${quoteShellArg(path)}`);
-  }
-  for (const path of evalEntry.anti_graders?.files_not_exist ?? []) commands.push(`test ! -e ${quoteShellArg(path)}`);
-  for (const { path, pattern } of evalEntry.anti_graders?.files_not_contain ?? []) {
-    commands.push(`if [ ! -f ${quoteShellArg(path)} ]; then exit 0; fi; grep_status=0; grep -Eq -- ${quoteShellArg(pattern)} ${quoteShellArg(path)} || grep_status=$?; test "$grep_status" -eq 1`);
-  }
-  const checks = commands.map((command, index) => ({
-    id: `eval-grader-${index + 1}`,
-    kind: "command" as const,
-    command,
-    cwd: ".",
-    phase: "verification" as const,
-    cost: "normal" as const,
-    evidence_policy: "current_exact" as const,
-    necessity: `Declared eval grader ${index + 1} must pass for ${evalEntry.slug}.`,
-    inputs: { env: ['PATH'] },
-  }));
-  return JSON.stringify({ protocol: 1, checks }, null, 2);
-}
-
-function renderEvalContract(evalEntry: EvalEntry): string {
-  return [
-    `# Eval Contract: ${evalEntry.slug}`, '', '> **Status**: Pending', '',
-    '## Verification Plan', '', '```json', renderEvalVerificationPlan(evalEntry), '```', '',
-  ].join('\n');
-}
-
-function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: EvalEntry, home?: string): {
-  report: VerificationExecutionReport;
+function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: EvalEntry, catalog: EvalCatalogSource, home?: string): {
+  report: EvalExecutionReport;
   reportPath: string;
 } {
   const verifyScriptPath = join(repoRoot, "scripts", "verification-plan.ts");
-  const contractPath = join(workspacePath, "eval-grader.contract.md");
   const reportPath = join(workspacePath, "eval-grader-report.json");
-  writeTextFile(contractPath, renderEvalContract(evalEntry));
+  readEvalCatalogPlan(workspacePath, catalog);
 
   const result = runProcess(
     process.execPath,
     [
       verifyScriptPath,
-      "execute",
+      "execute-eval",
       "--repo",
       workspacePath,
-      "--contract",
-      "eval-grader.contract.md",
+      "--catalog", catalog.catalog_path,
+      "--catalog-sha256", catalog.catalog_sha256,
+      "--eval-id", catalog.eval_id,
+      "--eval-sha256", catalog.eval_sha256,
       "--report-file",
       "eval-grader-report.json",
     ],
@@ -1003,8 +973,11 @@ function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: Eval
   if (result.exitCode !== 0 && result.exitCode !== 1) {
     throw new Error(`Eval grader execution failed for ${evalEntry.slug}: ${result.stderr.trim() || `exit ${result.exitCode}`}`);
   }
-  const report = readJsonFile<VerificationExecutionReport>(reportPath);
-  if (report.protocol !== 1 || report.kind !== 'verification_execution_report'
+  const report = readJsonFile<EvalExecutionReport>(reportPath);
+  readEvalCatalogPlan(workspacePath, catalog);
+  if (report.protocol !== 2 || report.kind !== 'eval_execution_report'
+    || report.target.catalog_sha256 !== catalog.catalog_sha256
+    || report.target.eval_id !== catalog.eval_id || report.target.eval_sha256 !== catalog.eval_sha256
     || typeof report.passed !== 'boolean' || !Array.isArray(report.results)
     || report.passed !== (result.exitCode === 0)) {
     throw new Error(`Eval grader report is invalid for ${evalEntry.slug}`);
@@ -1024,7 +997,7 @@ function buildRunMetadata(params: {
   command: string;
   exitCode: number | null;
   graderReportPath: string | null;
-  graderReport: VerificationExecutionReport | null;
+  graderReport: EvalExecutionReport | null;
   durationMs: number;
   dryRun: boolean;
   stdoutPath: string;
@@ -1103,6 +1076,7 @@ function buildRunMetadata(params: {
 
 function runSingleEval(params: {
   repoRoot: string;
+  catalog: EvalCatalogSource;
   home?: string;
   evalEntry: EvalEntry;
   agent: AgentName;
@@ -1111,9 +1085,10 @@ function runSingleEval(params: {
   config: BenchmarkConfig;
   dryRun: boolean;
 }): RunMetadata {
-  const { repoRoot, home, evalEntry, agent, profile, iterationPath, config, dryRun } = params;
+  const { repoRoot, home, evalEntry, catalog, agent, profile, iterationPath, config, dryRun } = params;
   const runPath = join(iterationPath, agent, profile, evalEntry.slug);
   ensureDir(runPath);
+  if (!dryRun) readEvalCatalogPlan(runPath, catalog);
 
   copyEvalFixtures(evalEntry, repoRoot, runPath);
   const skillMount = config.profiles[profile]?.skillMount ?? "link";
@@ -1160,7 +1135,7 @@ function runSingleEval(params: {
   let exitCode: number | null = 0;
   let stdout = "";
   let stderr = "";
-  let graderReport: VerificationExecutionReport | null = null;
+  let graderReport: EvalExecutionReport | null = null;
   let graderReportPath: string | null = null;
   let structuredEvidence = unavailableStructuredEvidence("dry_run");
   const startedAt = Date.now();
@@ -1210,7 +1185,7 @@ function runSingleEval(params: {
     : captureGitArtifacts(runPath, home, baselineHead);
 
   if (!dryRun) {
-    const grading = runEvalGraders(repoRoot, runPath, evalEntry, home);
+    const grading = runEvalGraders(repoRoot, runPath, evalEntry, catalog, home);
     graderReport = grading.report;
     graderReportPath = grading.reportPath;
   }
@@ -1413,6 +1388,8 @@ export function runSkillEvals(options: RunSkillEvalsOptions = {}): IterationRepo
     throw new Error("No evals selected for execution");
   }
 
+  // Freeze every selected catalog entry before any candidate agent can run.
+  const catalogs = new Map(selected.map(entry => [entry.id, captureEvalCatalogSource(evalsPath, entry)]));
   ensureDir(workspaceRoot);
   ensureDir(dirname(summaryPath));
 
@@ -1429,6 +1406,7 @@ export function runSkillEvals(options: RunSkillEvalsOptions = {}): IterationRepo
             repoRoot,
             home,
             evalEntry,
+            catalog: catalogs.get(evalEntry.id)!,
             agent,
             profile,
             iterationPath,

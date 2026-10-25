@@ -858,7 +858,11 @@ printf 'not-json\\n'
       expect(record.status).toBe('failed');
       expect(record.graderSummary.failed).toBeGreaterThan(0);
       const execution = JSON.parse(readFileSync(record.graderReportPath!, 'utf8'));
-      expect(execution.kind).toBe('verification_execution_report');
+      expect(execution.kind).toBe('eval_execution_report');
+      expect(execution.protocol).toBe(2);
+      expect(execution.target.catalog_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(execution.target.eval_id).toBe(String(entry.id));
+      expect(execution.target.eval_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(execution.passed).toBe(false);
       const passingCommand = execution.results.find((result: { command: string }) => result.command.endsWith(' -c true'));
       expect(passingCommand).toMatchObject({ passed: true, exit_code: 0, execution: 'executed' });

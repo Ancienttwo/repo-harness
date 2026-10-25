@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
-import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity } from "../../core/evidence/types";
+import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
   fingerprintVerificationCheck,
@@ -15,6 +15,7 @@ import {
   type VerificationCheck,
   type VerificationPlan,
 } from "../../core/evidence/verification-plan";
+import { readEvalCatalogPlan, type EvalCatalogSource } from "./eval-catalog";
 import { observeActiveReviewAdmission } from "../review/issue-goal";
 import { resolveGitCommonDirectory } from "../git/common-directory";
 import {
@@ -90,6 +91,23 @@ export interface VerificationExecutionReport {
   readonly results: readonly VerificationExecutionResult[];
 }
 
+export interface EvalExecutionReport extends Omit<VerificationExecutionReport, "kind" | "target"> {
+  readonly kind: "eval_execution_report";
+  readonly target: {
+    readonly catalog_sha256: string;
+    readonly eval_id: string;
+    readonly eval_sha256: string;
+    readonly plan_hash: string;
+    readonly snapshot_hash: string;
+    readonly tree_hash: string;
+    readonly head_commit: string;
+  };
+}
+type ExecutionReport = VerificationExecutionReport | EvalExecutionReport;
+type ReviewBinding = Pick<AdmittedReviewSubjectIdentity, "authority_kind" | "campaign_sha256" | "admission_sha256" | "grant_sha256">;
+type EvalBinding = Pick<EvalCatalogSubjectIdentity, "authority_kind" | "catalog_sha256" | "eval_id" | "eval_sha256">;
+type AuthorityBinding = ReviewBinding | EvalBinding;
+
 export type VerificationOutcome = VerificationExecutionReport;
 
 export type ReviewAdmissionSource = Parameters<typeof observeActiveReviewAdmission>[0];
@@ -122,11 +140,8 @@ export interface VerificationExecutionReportValidation {
   readonly report: VerificationExecutionReport;
 }
 
-interface ExecutionPayload {
+type ExecutionPayload = AuthorityBinding & {
   readonly protocol: 2;
-  readonly campaign_sha256: string;
-  readonly admission_sha256: string;
-  readonly grant_sha256: string;
   readonly plan_hash: string;
   readonly check_id: string;
   readonly check_fingerprint: string;
@@ -144,8 +159,8 @@ interface ExecutionPayload {
 /** Ledger and admitted plan facts. Historical validation needs no live toolchain. */
 interface EvidenceContext {
   readonly repoRoot: string;
-  readonly authority: ReviewAdmissionSource;
-  readonly admission: ReturnType<typeof observeActiveReviewAdmission>;
+  readonly binding: AuthorityBinding;
+  readonly assertCurrent: () => void;
   readonly plan: VerificationPlan;
   readonly planHash: string;
   readonly snapshot: GitVirtualTreeSnapshot;
@@ -229,12 +244,28 @@ function admittedIdentity(active: ReturnType<typeof observeActiveReviewAdmission
     admission_sha256: active.admission.admission_sha256, grant_sha256: active.grant_sha256 };
 }
 
-function assertAdmissionCurrent(context: EvidenceContext): void {
-  const current = readAdmission(context);
-  if (current.revision !== context.admission.revision
-    || canonicalize(admittedIdentity(current)) !== canonicalize(admittedIdentity(context.admission))) {
-    throw new Error("verification admission changed during evaluation");
-  }
+function reviewAuthority(input: Pick<VerificationInput, "repoRoot" | "authority">) {
+  const active = readAdmission(input);
+  const binding: ReviewBinding = { authority_kind: "review-admission", ...admittedIdentity(active) };
+  return { binding, plan: active.admission.verification_plan, assertCurrent: () => {
+    const current = readAdmission(input);
+    if (current.revision !== active.revision
+      || canonicalize(admittedIdentity(current)) !== canonicalize(admittedIdentity(active))) {
+      throw new Error("verification admission changed during evaluation");
+    }
+  } };
+}
+
+function authorityBinding(identity: AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity | ExecutionPayload): AuthorityBinding {
+  return identity.authority_kind === "review-admission"
+    ? { authority_kind: identity.authority_kind, campaign_sha256: identity.campaign_sha256,
+        admission_sha256: identity.admission_sha256, grant_sha256: identity.grant_sha256 }
+    : { authority_kind: identity.authority_kind, catalog_sha256: identity.catalog_sha256,
+        eval_id: identity.eval_id, eval_sha256: identity.eval_sha256 };
+}
+
+function sameAuthority(left: AuthorityBinding, right: AuthorityBinding): boolean {
+  return canonicalize(left) === canonicalize(right);
 }
 
 function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string {
@@ -302,6 +333,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   const runnerSources = [
     ["verification-execution", join(packageRoot, "src/effects/evidence/verification-execution.ts")],
     ["verification-plan", join(packageRoot, "src/core/evidence/verification-plan.ts")],
+    ["eval-catalog", join(packageRoot, "src/effects/evidence/eval-catalog.ts")],
     ["evidence-redaction", join(packageRoot, "src/core/evidence/redaction.ts")],
     ["evidence-secret-env", join(packageRoot, "src/effects/evidence/secret-env.ts")],
     ["process-runner", join(packageRoot, "src/effects/process-runner.ts")],
@@ -336,15 +368,18 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   return { hash, providerId: `verification-execution/${hash}` };
 }
 
-function prepare(input: VerificationInput): PreparedContext {
+function prepareContext(input: Pick<VerificationInput, "repoRoot" | "env">,
+  authority: Pick<EvidenceContext, "binding" | "plan" | "assertCurrent">): PreparedContext {
   const repoRoot = resolve(input.repoRoot);
-  const admission = readAdmission(input);
-  const plan = admission.admission.verification_plan;
   const env = input.env ?? process.env;
   const toolchain = resolveToolchain(env);
-  return { repoRoot, authority: input.authority, admission, plan,
-    planHash: hashVerificationPlan(plan), snapshot: captureGitVirtualTreeSnapshot(repoRoot),
-    env, toolchainHash: toolchain.hash, envProviderId: toolchain.providerId };
+  return { repoRoot, ...authority, planHash: hashVerificationPlan(authority.plan),
+    snapshot: captureGitVirtualTreeSnapshot(repoRoot), env,
+    toolchainHash: toolchain.hash, envProviderId: toolchain.providerId };
+}
+
+function prepare(input: VerificationInput): PreparedContext {
+  return prepareContext(input, reviewAuthority(input));
 }
 
 export function validateAdmittedVerification(
@@ -511,7 +546,13 @@ function payloadOf(repoRoot: string, event: EvidenceEventRecord): ExecutionPaylo
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.protocol !== 2 || ![record.campaign_sha256, record.admission_sha256, record.grant_sha256, record.plan_hash].every(value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value)) || typeof record.check_id !== "string") return null;
+  const authorityHashes = record.authority_kind === "review-admission"
+    ? [record.campaign_sha256, record.admission_sha256, record.grant_sha256]
+    : record.authority_kind === "eval-catalog" && typeof record.eval_id === "string" && record.eval_id.length > 0
+      ? [record.catalog_sha256, record.eval_sha256] : [];
+  if (record.protocol !== 2 || !authorityHashes.length
+    || ![...authorityHashes, record.plan_hash].every(value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value))
+    || typeof record.check_id !== "string") return null;
   if (typeof record.cache_key !== "string" || typeof record.execution_id !== "string" || typeof record.run_file !== "string") return null;
   if (typeof record.run_record_hash !== "string" || typeof record.passed !== "boolean") return null;
   if (typeof record.inputs_hash !== "string" || typeof record.toolchain_hash !== "string") return null;
@@ -522,12 +563,15 @@ function executionEvents(context: EvidenceContext): readonly { event: EvidenceEv
   return readAcceptedEvents(context.repoRoot).accepted.flatMap((event) => {
     if (event.event_type !== EVENT_TYPE || event.producer !== PRODUCER || event.trust_class !== "authoritative_machine") return [];
     const payload = payloadOf(context.repoRoot, event);
-    if (!payload || payload.campaign_sha256 !== context.admission.admission.campaign_sha256) return [];
+    if (!payload || payload.authority_kind !== context.binding.authority_kind) return [];
+    // Review history is campaign-scoped only for explicit baseline references.
+    // Exact matching below still requires the current admission and grant.
+    if (payload.authority_kind === "review-admission" && context.binding.authority_kind === "review-admission") {
+      if (payload.campaign_sha256 !== context.binding.campaign_sha256) return [];
+    } else if (!sameAuthority(authorityBinding(payload), context.binding)) return [];
     const identity = event.subject_identity;
-    if (!("authority_kind" in identity) || identity.authority_kind !== "review-admission"
-      || identity.campaign_sha256 !== payload.campaign_sha256
-      || identity.admission_sha256 !== payload.admission_sha256
-      || identity.grant_sha256 !== payload.grant_sha256
+    if (!("authority_kind" in identity)
+      || !sameAuthority(authorityBinding(identity), authorityBinding(payload))
       || identity.plan_hash !== payload.plan_hash
       || identity.scope_hash !== payload.plan_hash
       || identity.subject_hash !== payload.snapshot_hash
@@ -696,12 +740,10 @@ function buildReport(
   results: readonly VerificationExecutionResult[],
   status: VerificationReportStatus,
   snapshotChanged = false,
-): VerificationExecutionReport {
-  return {
-    protocol: 2,
-    kind: "verification_execution_report",
+): ExecutionReport {
+  const shared = {
+    protocol: 2 as const,
     target: {
-      ...admittedIdentity(context.admission),
       plan_hash: context.planHash,
       snapshot_hash: context.snapshot.snapshot_hash,
       tree_hash: context.snapshot.tree_hash,
@@ -719,9 +761,17 @@ function buildReport(
     },
     results,
   };
+  if (context.binding.authority_kind === "review-admission") {
+    const review = context.binding;
+    return { ...shared, kind: "verification_execution_report", target: { ...shared.target,
+      campaign_sha256: review.campaign_sha256, admission_sha256: review.admission_sha256, grant_sha256: review.grant_sha256 } };
+  }
+  const evaluation = context.binding;
+  return { ...shared, kind: "eval_execution_report", target: { ...shared.target,
+    catalog_sha256: evaluation.catalog_sha256, eval_id: evaluation.eval_id, eval_sha256: evaluation.eval_sha256 } };
 }
 
-function evaluatePrepared(context: PreparedContext): VerificationExecutionReport {
+function evaluatePrepared(context: PreparedContext): ExecutionReport {
   const ledger = ledgerView(context);
   const current = new Map<string, VerificationExecutionResult>();
   for (const check of context.plan.checks) {
@@ -739,7 +789,8 @@ function evaluatePrepared(context: PreparedContext): VerificationExecutionReport
 export function evaluateAdmittedVerification(input: VerificationInput): VerificationOutcome {
   const context = prepare(input);
   const report = evaluatePrepared(context);
-  if (report.passed) assertAdmissionCurrent(context);
+  if (report.kind !== "verification_execution_report") throw new Error("review authority required");
+  if (report.passed) context.assertCurrent();
   return report;
 }
 
@@ -774,8 +825,7 @@ function matchingImmutableExecution(
   return ledger.events.some(({ event, payload }) => {
     if (currentToolchainHash !== null && (payload.toolchain_hash !== currentToolchainHash
       || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
-    if (payload.admission_sha256 !== context.admission.admission.admission_sha256
-      || payload.grant_sha256 !== context.admission.grant_sha256) return false;
+    if (!sameAuthority(authorityBinding(payload), context.binding)) return false;
     if (payload.check_id !== check.id
       || payload.plan_hash !== context.planHash
       || payload.check_fingerprint !== fingerprintVerificationCheck(check)
@@ -788,14 +838,12 @@ function matchingImmutableExecution(
     const genesis = ledger.genesis;
     if (!genesis || event.worktree_id !== genesis.worktree_id) return false;
     const identity = event.subject_identity;
-    if (!("authority_kind" in identity) || identity.authority_kind !== "review-admission"
+    if (!("authority_kind" in identity)
+      || !sameAuthority(authorityBinding(identity), authorityBinding(payload))
       || identity.authority_commit !== identity.base_commit
       || identity.target_commit !== context.snapshot.tree_hash
       || identity.scope_hash !== payload.plan_hash
       || identity.subject_hash !== payload.snapshot_hash
-      || identity.admission_sha256 !== payload.admission_sha256
-      || identity.grant_sha256 !== payload.grant_sha256
-      || identity.campaign_sha256 !== payload.campaign_sha256
       || identity.plan_hash !== payload.plan_hash
       || identity.command_hash !== payload.check_fingerprint
       || identity.env_provider_id !== `verification-execution/${payload.toolchain_hash}`) return false;
@@ -866,7 +914,13 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   const env = input.env ?? process.env;
   const currentToolchainHash = input.current ? resolveToolchain(env).hash : null;
   const context: EvidenceContext = {
-    repoRoot, authority: input.authority, admission, plan, planHash,
+    repoRoot, binding: { authority_kind: "review-admission", ...admittedIdentity(admission) },
+    assertCurrent: () => {
+      const current = readAdmission(input);
+      if (current.revision !== admission.revision || !sameAuthority(
+        { authority_kind: "review-admission", ...admittedIdentity(current) },
+        { authority_kind: "review-admission", ...admittedIdentity(admission) })) throw new Error("verification admission changed during evaluation");
+    }, plan, planHash,
     snapshot: {
       head_commit: stringValue(target.head_commit, "verification report target.head_commit"),
       tree_hash: treeHash,
@@ -939,7 +993,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   if (canonicalize(evaluation as JsonValue) !== canonicalize(projectedEvaluation)) {
     throw new Error("verification report evaluation metadata is inconsistent");
   }
-  assertAdmissionCurrent(context);
+  context.assertCurrent();
   return { valid: true, report: input.report as VerificationExecutionReport };
 }
 
@@ -952,7 +1006,8 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
   const offset = events.slice().reverse().findIndex(event => {
     const payload = payloadOf(input.repoRoot, event);
     return event.event_type === EVENT_TYPE && event.producer === PRODUCER
-      && payload?.campaign_sha256 === report.target.campaign_sha256
+      && payload?.authority_kind === "review-admission"
+      && payload.campaign_sha256 === report.target.campaign_sha256
       && payload?.execution_id === result.execution_id
       && payload.check_id === checkId
       && payload.cache_key === result.cache_key;
@@ -960,6 +1015,7 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
   if (offset < 0) throw new Error("verification sequence is unavailable");
   const index = events.length - 1 - offset;
   const payload = payloadOf(input.repoRoot, events[index]!)!;
+  if (payload.authority_kind !== "review-admission") throw new Error("review authority required");
   return { report, result, execution_order: index + 1,
     environment: `verification-execution/${payload.toolchain_hash}`,
     admission_identity: payload.admission_sha256,
@@ -978,15 +1034,14 @@ export function admittedVerificationProvenance(input: VerificationInput) {
     environment: resolveToolchain(input.env ?? process.env).providerId, check_ids: plan.checks.map(check => check.id) };
 }
 
-function subjectIdentity(context: PreparedContext, check: VerificationCheck): AdmittedReviewSubjectIdentity {
+function subjectIdentity(context: PreparedContext, check: VerificationCheck): AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity {
   return {
     authority_commit: context.snapshot.head_commit,
     base_commit: context.snapshot.head_commit,
     target_commit: context.snapshot.tree_hash,
     scope_hash: context.planHash,
     subject_hash: context.snapshot.snapshot_hash,
-    authority_kind: "review-admission",
-    ...admittedIdentity(context.admission),
+    ...context.binding,
     plan_hash: context.planHash,
     command_hash: fingerprintVerificationCheck(check),
     env_provider_id: context.envProviderId,
@@ -995,7 +1050,7 @@ function subjectIdentity(context: PreparedContext, check: VerificationCheck): Ad
 
 function ensureGenesis(context: PreparedContext): void {
   if (readGenesisRecord(context.repoRoot)) return;
-  const worktreeId = `verification-${context.admission.admission.campaign_sha256.slice(7, 27)}`;
+  const worktreeId = `verification-${sha256(canonicalize(context.binding)).slice(7, 27)}`;
   appendGenesisRecord(context.repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });
 }
 
@@ -1007,7 +1062,7 @@ interface ExecutedCheckOutcome {
 function executeCheck(
   context: PreparedContext,
   check: VerificationCheck,
-  input: ExecuteAdmittedVerificationInput,
+  input: ExecutionOptions,
   deadlineMs: number,
 ): ExecutedCheckOutcome | "waiting" {
   const key = cacheKey(context, check);
@@ -1028,7 +1083,7 @@ function executeCheck(
     // Another writer can append before this lock is held, so read a new view.
     const afterLock = input.forceReason ? null : reusableResult(context, check, ledgerView(context));
     if (afterLock) return { result: afterLock, snapshotStable: true };
-    assertAdmissionCurrent(context);
+    context.assertCurrent();
     const invocation = check.kind === "command"
       ? {
           command: context.env.REPO_HARNESS_BASH_BIN || "/bin/bash",
@@ -1060,7 +1115,7 @@ function executeCheck(
     } catch {
       snapshotDiagnostic = "repository snapshot could not be captured after execution";
     }
-    assertAdmissionCurrent(context);
+    context.assertCurrent();
     const passed = run.ok && snapshotStable;
     const executionId = `vx-${randomUUID().replace(/-/g, "").slice(0, 20)}`;
     const runFile = `.ai/harness/runs/verification-${executionId}.json`;
@@ -1116,7 +1171,7 @@ function executeCheck(
     const genesis = readGenesisRecord(context.repoRoot)!;
     const payload: ExecutionPayload = {
       protocol: 2,
-      ...admittedIdentity(context.admission),
+      ...context.binding,
       plan_hash: context.planHash,
       check_id: check.id,
       check_fingerprint: fingerprintVerificationCheck(check),
@@ -1131,7 +1186,7 @@ function executeCheck(
       passed: result.passed,
     };
     requestLock.assertOwned();
-    if (result.passed) assertAdmissionCurrent(context);
+    if (result.passed) context.assertCurrent();
     appendEvidenceEvent(context.repoRoot, {
       worktreeId: genesis.worktree_id,
       eventType: EVENT_TYPE,
@@ -1161,15 +1216,49 @@ export function writeVerificationExecutionReport(
   writeFileDurably(outputPath, `${JSON.stringify(materializeVerificationExecutionReport(report), null, 2)}\n`);
 }
 
-/** The only command-spawning Verification Plan effect. */
+interface ExecutionOptions {
+  readonly reportFile?: string;
+  readonly forceReason?: string;
+  readonly timeoutMs?: number;
+}
+
+/** Review callers cannot supply plans or alternate authority callbacks. */
 export function executeAdmittedVerification(input: ExecuteAdmittedVerificationInput): VerificationOutcome {
+  const report = executePrepared(input, () => prepare(input));
+  if (report.kind !== "verification_execution_report") throw new Error("review authority required");
+  return report;
+}
+
+/** Catalog grading has its own identity and cannot create review evidence. */
+export function executeCatalogEval(input: {
+  readonly repoRoot: string;
+  readonly catalog: EvalCatalogSource;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly timeoutMs?: number;
+  readonly reportFile?: string;
+}): EvalExecutionReport {
+  const report = executePrepared(input, () => {
+    const plan = readEvalCatalogPlan(input.repoRoot, input.catalog);
+    const binding: EvalBinding = { authority_kind: "eval-catalog", catalog_sha256: input.catalog.catalog_sha256,
+      eval_id: input.catalog.eval_id, eval_sha256: input.catalog.eval_sha256 };
+    return prepareContext(input, { plan, binding, assertCurrent: () => {
+      const current = readEvalCatalogPlan(input.repoRoot, input.catalog);
+      if (hashVerificationPlan(current) !== hashVerificationPlan(plan)) throw new Error("eval catalog plan changed");
+    } });
+  });
+  if (report.kind !== "eval_execution_report") throw new Error("eval catalog authority required");
+  return report;
+}
+
+/** Shared command machinery; authority construction stays in the adapters. */
+function executePrepared(input: ExecutionOptions, prepare: () => PreparedContext): ExecutionReport {
   if (input.forceReason !== undefined && input.forceReason.trim().length === 0) {
     throw new Error("forceReason must be non-empty when provided");
   }
   const budgetMs = input.timeoutMs ?? 3_600_000;
   if (!Number.isSafeInteger(budgetMs) || budgetMs < 1) throw new Error("timeoutMs must be a positive integer");
   const deadlineMs = Date.now() + budgetMs;
-  const context = prepare(input);
+  const context = prepare();
   const results = new Map<string, VerificationExecutionResult>();
   let waiting = false;
   let needsPlan = false;
@@ -1245,7 +1334,11 @@ export function executeAdmittedVerification(input: ExecuteAdmittedVerificationIn
   else if (planOrder.every((result) => result.passed)) status = "passed";
   else status = "missing";
   const report = buildReport(context, planOrder, status, snapshotChanged);
-  if (report.passed) assertAdmissionCurrent(context);
-  if (input.reportFile) writeVerificationExecutionReport(context.repoRoot, input.reportFile, report);
+  if (report.passed) context.assertCurrent();
+  if (input.reportFile) {
+    const outputPath = isAbsolute(input.reportFile) ? input.reportFile : resolve(context.repoRoot, input.reportFile);
+    const materialized = redactPayloadStrings(report as unknown as JsonValue, collectDenylistSecretValues());
+    writeFileDurably(outputPath, `${JSON.stringify(materialized, null, 2)}\n`);
+  }
   return report;
 }

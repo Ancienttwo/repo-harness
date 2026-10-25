@@ -20,7 +20,8 @@ async function loadExecutionModule(): Promise<VerificationExecutionModule> {
 
 function usage(): string {
   return [
-    "usage: verification-plan.ts validate --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id>",
+    "usage: verification-plan.ts execute-eval --repo <path> --catalog <path> --catalog-sha256 <hash> --eval-id <id> --eval-sha256 <hash> [--report-file <path>]",
+    "       verification-plan.ts validate --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id>",
     "       verification-plan.ts evaluate --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> [--report-file <path>]",
     "       verification-plan.ts execute --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> [--report-file <path>] [--force-reason <text>] [--timeout-ms <ms>]",
   ].join("\n");
@@ -58,6 +59,18 @@ export async function main(
   try {
     parsed = parseArgs(argv);
     const repoRoot = required(parsed.values, "repo");
+    if (parsed.action === "execute-eval") {
+      const flags = ["repo", "catalog", "catalog-sha256", "eval-id", "eval-sha256", "report-file"];
+      const unexpected = Object.keys(parsed.values).filter(key => !flags.includes(key));
+      if (unexpected.length) throw new Error(`execute-eval does not accept: ${unexpected.map(key => `--${key}`).join(", ")}`);
+      const execution = await loadExecutionModule();
+      const report = execution.executeCatalogEval({ repoRoot, catalog: {
+        catalog_path: required(parsed.values, "catalog"), catalog_sha256: required(parsed.values, "catalog-sha256"),
+        eval_id: required(parsed.values, "eval-id"), eval_sha256: required(parsed.values, "eval-sha256"),
+      }, reportFile: parsed.values["report-file"] });
+      writeJson(report);
+      return report.passed ? 0 : 1;
+    }
     const authority = admissionSource(repoRoot, parsed.values);
     const authorityFlags = ["repo", "repository-id", "issue-id", "campaign-id", "grant-sha256", "policy-sha256", "actor"];
     const reportFile = parsed.values["report-file"];
@@ -95,7 +108,7 @@ export async function main(
       writeJson(report);
       return report.passed ? 0 : 1;
     }
-    throw new Error(`action must be validate, evaluate, or execute`);
+    throw new Error(`action must be validate, evaluate, execute, or execute-eval`);
   } catch (error) {
     process.stderr.write(`verification-plan: ${error instanceof Error ? error.message : String(error)}\n${usage()}\n`);
     return 2;
