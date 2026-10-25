@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { projectProviderWorkGraph, validateProviderWorkGraph, validateProviderWorkGraphTopology } from '../../src/core/engineers/scheduling';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -192,4 +194,30 @@ test('module acceptance selector is a closed typed locator with exact approved d
   expect(() => validateModuleAcceptanceReference({ ...selector, repoRoot: '/candidate-selected' })).toThrow();
   expect(() => validateModuleAcceptanceReference({ ...selector, issuePolicy: {} })).toThrow();
   expect(() => validateModuleAcceptanceReference({ ...selector, protocol: 2 })).toThrow();
+});
+
+
+describe('provider work graph V2', () => {
+  const fixture = () => JSON.parse(readFileSync(new URL('../fixtures/provider-work-graph-v2/graph.json', import.meta.url), 'utf8'));
+  const issues = { protocol: 1 as const, kind: 'repo-harness-external-source-projection' as const,
+    registered_repository_id: REPO, latest_attempt: null, latest_complete_refresh: null, issues: [] };
+  test('authored provider IDs survive projection without a Sprint or fabricated completion', () => {
+    const graph = projectProviderWorkGraph(fixture(), issues, { commit: 'a'.repeat(40), graph_path: '.ai/harness/work-graph.v2.json' });
+    expect(graph.work_packages[0]!.task).toEqual({ provider_repository_id: '123456', issue_id: '987654' });
+    expect(graph.work_packages[0]!.issue).toBeNull();
+    expect(graph.work_packages[0]!.execution_surface).toBe('admitted_session');
+    validateProviderWorkGraphTopology([graph]);
+  });
+  test('legacy and guessed task mappings are refused', () => {
+    expect(() => validateProviderWorkGraph({ protocol: 1, kind: 'repo-harness-work-graph', repository_id: REPO, sprint_path: 'legacy.sprint.md', lane: 'generic-v1', work_packages: [] })).toThrow();
+    const graph = fixture(); graph.work_packages[0].task.issue_id = 'issue title';
+    expect(() => validateProviderWorkGraph(graph)).toThrow();
+  });
+  test('provider completion edges cannot carry acceptance authority and cycles are refused', () => {
+    const graph = fixture(); graph.work_packages[0].depends_on = [{ repository_id: REPO, work_package_id: 'provider-graph', required_state: 'provider_closed', acceptance_authority: MODULE_AUTHORITY }];
+    expect(() => validateProviderWorkGraph(graph)).toThrow();
+    graph.work_packages[0].depends_on[0].acceptance_authority = null;
+    const projected = projectProviderWorkGraph(graph, issues, { commit: 'a'.repeat(40), graph_path: '.ai/harness/work-graph.v2.json' });
+    expect(() => validateProviderWorkGraphTopology([projected])).toThrow();
+  });
 });

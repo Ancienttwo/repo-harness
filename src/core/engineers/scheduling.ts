@@ -293,6 +293,7 @@ export interface EngineerOffersV1 {
 
 export type EngineerSchedulingErrorCode =
   | 'provider_scheduling_invalid'
+  | 'provider_work_graph_missing'
   | 'work_graph_invalid'
   | 'work_graph_unclassified'
   | 'work_graph_reference_mismatch'
@@ -812,4 +813,173 @@ export function projectProviderEngineerScheduling(input: {
     .map(task => ({ ...task, sessions: task.sessions.sort((a, b) => a.session.selector.session_binding_sha256.localeCompare(b.session.selector.session_binding_sha256)) }));
   const basis = { protocol: 2 as const, kind: 'provider_engineer_scheduling' as const, repository_id: input.repository_id, profiles, tasks: rows };
   return Object.freeze({ ...basis, source_revision: engineerSha256(canonicalEngineerJson(basis)) });
+}
+
+export type ProviderDependencyState = Exclude<WorkPackageDependencyState, 'canonical_done'> | 'provider_closed';
+export interface ProviderWorkPackageDependency extends Omit<WorkPackageDependencyV1, 'required_state'> {
+  readonly required_state: ProviderDependencyState;
+}
+export interface ProviderRetryPolicy extends Omit<WorkPackageRetryPolicyV1, 'retryable_failure_classes'> { readonly retryable_failure_classes: readonly ('transient_failure' | 'external_blocked' | 'admission_changed')[] }
+export interface ProviderWorkPackageDefinition extends Omit<WorkPackageDefinitionV1, 'task_id' | 'depends_on' | 'retry_policy' | 'execution_surface'> {
+  readonly retry_policy: ProviderRetryPolicy;
+  readonly execution_surface: 'admitted_session';
+  readonly task: { readonly provider_repository_id: string; readonly issue_id: string };
+  readonly depends_on: readonly ProviderWorkPackageDependency[];
+}
+export interface ProviderWorkGraphV2 {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-provider-work-graph';
+  readonly repository_id: string;
+  readonly work_packages: readonly ProviderWorkPackageDefinition[];
+}
+export interface ProjectedProviderWorkPackage extends ProviderWorkPackageDefinition {
+  readonly repository_id: string;
+  readonly work_package_revision: string;
+  readonly issue: ProviderIssueObservationV1 | null;
+}
+export interface ProjectedProviderWorkGraph {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-provider-work-graph';
+  readonly repository_id: string;
+  readonly graph_path: string;
+  readonly commit: string;
+  readonly work_graph_revision: string;
+  readonly work_packages: readonly ProjectedProviderWorkPackage[];
+}
+export interface ProviderDependencyObservation extends ProviderWorkPackageDependency {
+  readonly status: DependencyObservationStatus;
+  readonly authority_revision: string | null;
+}
+function parseProviderDependency(value: unknown, index: number): ProviderWorkPackageDependency {
+  const label = `depends_on[${index}]`, input = record(value, label);
+  exact(input, ['repository_id', 'work_package_id', 'required_state', 'acceptance_authority'], label);
+  const state = input.required_state;
+  if (state !== 'provider_closed' && state !== 'module_accepted' && state !== 'publication_integrated' && state !== 'product_accepted') invalid(`${label}.required_state is invalid`);
+  return { repository_id: string(input.repository_id, `${label}.repository_id`, REPOSITORY_ID),
+    work_package_id: string(input.work_package_id, `${label}.work_package_id`, WORK_PACKAGE_ID), required_state: state,
+    acceptance_authority: parseDependencyAuthority(input.acceptance_authority, state === 'provider_closed' ? null : DEPENDENCY_AUTHORITY_KIND_BY_STATE[state], `${label}.acceptance_authority`) };
+}
+
+function parseProviderWorkPackage(value: unknown, index: number): ProviderWorkPackageDefinition {
+  const input = record(value, `work_packages[${index}]`);
+  exact(input, [
+    'work_package_id', 'task', 'primary_capability', 'depends_on', 'priority',
+    'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
+    'rollback_boundary', 'retry_policy',
+  ], `work_packages[${index}]`);
+  if (!Array.isArray(input.depends_on)) invalid(`work_packages[${index}].depends_on must be an array`);
+  if (!Array.isArray(input.required_acceptance) || input.required_acceptance.length === 0) {
+    invalid(`work_packages[${index}].required_acceptance must be a non-empty array`);
+  }
+  const task = record(input.task, 'task');
+  exact(task, ['provider_repository_id', 'issue_id'], 'task');
+  const concurrency = record(input.concurrency, `work_packages[${index}].concurrency`);
+  exact(concurrency, ['scope', 'key'], `work_packages[${index}].concurrency`);
+  if (concurrency.scope !== 'repo') invalid(`work_packages[${index}].concurrency.scope is unsupported`);
+  if (input.execution_surface !== 'admitted_session') invalid(`work_packages[${index}].execution_surface is invalid`);
+  const dependencies = input.depends_on.map(parseProviderDependency);
+  const dependencyKeys = dependencies.map((entry) => `${entry.repository_id}:${entry.work_package_id}`);
+  if (new Set(dependencyKeys).size !== dependencyKeys.length) invalid(`work_packages[${index}].depends_on contains duplicates`);
+  const policies = input.required_acceptance.map(parsePolicy);
+  const policyKeys = policies.map((entry) => `${entry.gate}:${entry.policy_id}`);
+  if (new Set(policyKeys).size !== policyKeys.length) invalid(`work_packages[${index}].required_acceptance contains duplicates`);
+  return Object.freeze({
+    work_package_id: string(input.work_package_id, `work_packages[${index}].work_package_id`, WORK_PACKAGE_ID),
+    task: Object.freeze({ provider_repository_id: string(task.provider_repository_id, 'task.provider_repository_id', /^[1-9][0-9]*$/), issue_id: string(task.issue_id, 'task.issue_id', /^[1-9][0-9]*$/) }),
+    primary_capability: string(input.primary_capability, `work_packages[${index}].primary_capability`, CAPABILITY_ID),
+    depends_on: Object.freeze(dependencies),
+    priority: integer(input.priority, `work_packages[${index}].priority`, 0, 100),
+    concurrency: Object.freeze({ scope: 'repo', key: string(concurrency.key, `work_packages[${index}].concurrency.key`, SAFE_TOKEN) }),
+    execution_surface: 'admitted_session',
+    integration_group: input.integration_group === null
+      ? null
+      : string(input.integration_group, `work_packages[${index}].integration_group`, SAFE_TOKEN),
+    required_acceptance: Object.freeze(policies),
+    rollback_boundary: parseRollback(input.rollback_boundary),
+    retry_policy: validateProviderRetryPolicy(input.retry_policy, index),
+  });
+}
+
+export function validateProviderWorkGraph(value: unknown): ProviderWorkGraphV2 {
+  const input = record(value, 'provider work graph');
+  exact(input, ['protocol', 'kind', 'repository_id', 'work_packages'], 'provider work graph');
+  if (input.protocol !== 2 || input.kind !== 'repo-harness-provider-work-graph' || !Array.isArray(input.work_packages) || input.work_packages.length > 200) invalid('authored V2 provider work graph required');
+  const packages = input.work_packages.map(parseProviderWorkPackage);
+  if (new Set(packages.map(item => item.work_package_id)).size !== packages.length
+    || new Set(packages.map(item => JSON.stringify(item.task))).size !== packages.length) invalid('duplicate provider work package identity');
+  return { protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: string(input.repository_id, 'repository_id', REPOSITORY_ID), work_packages: packages };
+}
+export function projectProviderWorkGraph(value: unknown, issues: ExternalSourceProjectionV1, source: { commit: string; graph_path: string }): ProjectedProviderWorkGraph {
+  const graph = validateProviderWorkGraph(value);
+  if (issues.registered_repository_id !== graph.repository_id) invalid('provider graph repository mismatch');
+  const commit = string(source.commit, 'commit', /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+  const graphPath = safeRepoPath(source.graph_path, 'graph_path', '.json');
+  return { protocol: 2, kind: graph.kind, repository_id: graph.repository_id, commit, graph_path: graphPath,
+    work_graph_revision: engineerSha256(canonicalEngineerJson(graph)), work_packages: graph.work_packages.map(item => ({ ...item,
+      repository_id: graph.repository_id, work_package_revision: engineerSha256(canonicalEngineerJson(item)),
+      issue: issues.issues.find(issue => issue.provider_repository_id === item.task.provider_repository_id && issue.provider_issue_id === item.task.issue_id)?.latest_observation ?? null,
+    })) };
+}
+export function validateProviderWorkGraphTopology(graphs: readonly ProjectedProviderWorkGraph[]): void {
+  const packages = new Map(graphs.flatMap(graph => graph.work_packages.map(item => [`${item.repository_id}:${item.work_package_id}`, item] as const)));
+  const active = new Set<string>(), done = new Set<string>();
+  const visit = (key: string): void => {
+    if (active.has(key)) invalid('provider work graph dependency cycle');
+    if (done.has(key)) return;
+    const item = packages.get(key);
+    if (!item) invalid(`provider work package dependency missing: ${key}`);
+    active.add(key);
+    for (const dependency of item.depends_on) visit(`${dependency.repository_id}:${dependency.work_package_id}`);
+    active.delete(key); done.add(key);
+  };
+  for (const key of packages.keys()) visit(key);
+}
+
+export interface ProviderIntegrationDependencyReferenceV3 {
+  readonly protocol: 3;
+  readonly provider_repository_id: string;
+  readonly issue_id: string;
+  readonly final_head_sha: string;
+  readonly final_tree_sha: string;
+  readonly required_pull_requests: readonly RequiredPullRequestV2[];
+  readonly product: { readonly projection_sha256: string; readonly approved_prd_ref: string; readonly approved_prd_sha256: string; readonly review_authority: ModuleAcceptanceReferenceV1 } | null;
+}
+
+export function validateProviderIntegrationDependencyReference(value: unknown): ProviderIntegrationDependencyReferenceV3 {
+  const label = 'integration dependency reference';
+  const input = record(value, label);
+  exact(input, ['protocol', 'provider_repository_id', 'issue_id', 'final_head_sha', 'final_tree_sha', 'required_pull_requests', 'product'], label);
+  if (input.protocol !== 3) invalid(`${label}.protocol must be 3`);
+  if (!Array.isArray(input.required_pull_requests) || input.required_pull_requests.length === 0) invalid(`${label}.required_pull_requests must be non-empty`);
+  const selected = input.required_pull_requests.map(validateRequiredPullRequest);
+  if (new Set(selected.map(pr => `${pr.provider_repository_id}:${pr.pr_number}`)).size !== selected.length) invalid(`${label} contains duplicate PRs`);
+  let product: ProviderIntegrationDependencyReferenceV3['product'] = null;
+  if (input.product !== null) {
+    const item = record(input.product, `${label}.product`);
+    exact(item, ['projection_sha256', 'approved_prd_ref', 'approved_prd_sha256', 'review_authority'], `${label}.product`);
+    product = Object.freeze({ review_authority: validateModuleAcceptanceReference(item.review_authority), projection_sha256: string(item.projection_sha256, 'projection_sha256', DIGEST),
+      approved_prd_ref: safeRepoPath(item.approved_prd_ref, 'approved_prd_ref'), approved_prd_sha256: string(item.approved_prd_sha256, 'approved_prd_sha256', DIGEST) });
+  }
+  return Object.freeze({ protocol: 3, provider_repository_id: string(input.provider_repository_id, 'provider_repository_id', /^[1-9][0-9]*$/),
+    issue_id: string(input.issue_id, 'issue_id', /^[1-9][0-9]*$/),
+    final_head_sha: string(input.final_head_sha, 'final_head_sha', /^[0-9a-f]{40}$/),
+    final_tree_sha: string(input.final_tree_sha, 'final_tree_sha', /^[0-9a-f]{40}$/),
+    required_pull_requests: Object.freeze(selected), product });
+}
+
+export function validateProviderRetryPolicy(value: unknown, index = 0): ProviderRetryPolicy {
+  const label = `work_packages[${index}].retry_policy`; const input = record(value, label);
+  exact(input, ['max_automated_attempts', 'retryable_failure_classes', 'backoff', 'attention_after_seconds', 'revision_reset'], label);
+  if (!Array.isArray(input.retryable_failure_classes) || input.retryable_failure_classes.length === 0) invalid(`${label}.retryable_failure_classes must be a non-empty array`);
+  const classes = input.retryable_failure_classes.map((value, classIndex) => {
+    if (!['transient_failure', 'external_blocked', 'admission_changed'].includes(String(value))) invalid(`${label}.retryable_failure_classes[${classIndex}] is invalid`);
+    return value as ProviderRetryPolicy['retryable_failure_classes'][number];
+  });
+  if (new Set(classes).size !== classes.length) invalid(`${label}.retryable_failure_classes contains duplicates`);
+  const backoff = record(input.backoff, `${label}.backoff`); exact(backoff, ['kind', 'initial_seconds', 'maximum_seconds'], `${label}.backoff`);
+  if (backoff.kind !== 'fixed' && backoff.kind !== 'exponential') invalid(`${label}.backoff.kind is invalid`);
+  const initial = integer(backoff.initial_seconds, `${label}.backoff.initial_seconds`, 1, 86_400);
+  const maximum = integer(backoff.maximum_seconds, `${label}.backoff.maximum_seconds`, initial, 604_800);
+  if (input.revision_reset !== 'reset_on_work_package_revision') invalid(`${label}.revision_reset is invalid`);
+  return Object.freeze({ max_automated_attempts: integer(input.max_automated_attempts, `${label}.max_automated_attempts`, 1, 100), retryable_failure_classes: Object.freeze(classes), backoff: Object.freeze({ kind: backoff.kind, initial_seconds: initial, maximum_seconds: maximum }), attention_after_seconds: integer(input.attention_after_seconds, `${label}.attention_after_seconds`, 1, 2_592_000), revision_reset: 'reset_on_work_package_revision' });
 }

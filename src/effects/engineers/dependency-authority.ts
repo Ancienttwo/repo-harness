@@ -1,12 +1,13 @@
-import { validateIntegrationDependencyReference, validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
+import { validateProviderIntegrationDependencyReference, validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
 import { observeActiveReviewAdmission } from '../review/issue-goal';
-import { readExternalSourcesPolicy } from '../external-sources/policy';
+import { readExternalSourcesPolicy, requireManualGithubPolicy } from '../external-sources/policy';
+import { fetchGithubIssues } from '../external-sources/github';
 import { currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.
  *
- * Every `WorkPackageDependencyState` is answered by the one authority that
- * already owns that verdict: the canonical Sprint row, the exact-subject
+ * Every `ProviderDependencyState` is answered by the one authority that
+ * already owns that verdict: the current GitHub issue, the exact-subject
  * AcceptanceReceipt, exact provider merge evidence and local commit/tree proof,
  * and the selected ME-4C product acceptance projection. This module reads
  * those authorities; it never records, completes, publishes or accepts, and it
@@ -28,12 +29,12 @@ import {
   engineerSha256,
 } from '../../core/engineers/profile-binding';
 import type {
-  ProjectedWorkGraphV1,
-  ProjectedWorkPackageV1,
+  ProjectedProviderWorkGraph,
+  ProjectedProviderWorkPackage,
   WorkPackageDependencyAuthorityRefV1,
-  WorkPackageDependencyObservationV1,
-  WorkPackageDependencyState,
-  WorkPackageDependencyV1,
+  ProviderDependencyObservation,
+  ProviderDependencyState,
+  ProviderWorkPackageDependency,
 } from '../../core/engineers/scheduling';
 import { assertCompletePassingMatrix } from '../../core/integration/product-acceptance';
 import type {
@@ -46,7 +47,6 @@ import { readAcceptanceMatrix, readProductAcceptanceProjection, readIntegrationC
 import { gitExecFileSync } from '../git/runner';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-identity';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
@@ -77,11 +77,12 @@ export interface DependencyAuthorityResolutionV1 {
 export interface DependencyAuthorityRepositoryRead {
   readonly repo: RepoHarnessRegisteredRepo;
   readonly commit: string | null;
-  readonly graph: ProjectedWorkGraphV1 | null;
+  readonly graph: ProjectedProviderWorkGraph | null;
 }
 
 export interface DependencyAuthorityReaders {
   readonly readIssuePolicy: typeof readExternalSourcesPolicy;
+  readonly observeProviderIssues: (repoRoot: string) => ReturnType<typeof fetchGithubIssues>;
   readonly observeReviewAdmission: typeof observeActiveReviewAdmission;
   readonly readCanonicalTargetRef: (repoRoot: string) => string;
   readonly readAcceptanceObservation: (
@@ -101,8 +102,8 @@ export interface DependencyAuthorityReaders {
 }
 
 export interface DependencyAuthorityInput {
-  readonly dependency: WorkPackageDependencyV1;
-  readonly target: ProjectedWorkPackageV1;
+  readonly dependency: ProviderWorkPackageDependency;
+  readonly target: ProjectedProviderWorkPackage;
   readonly reads: readonly DependencyAuthorityRepositoryRead[];
   readonly registry: RepoHarnessRegistrySnapshot;
   /**
@@ -123,6 +124,10 @@ function defaultAuthorityHome(): string {
 export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders {
   const value: DependencyAuthorityReaders = {
     readIssuePolicy: readExternalSourcesPolicy,
+    observeProviderIssues: repoRoot => {
+      if (currentReadonlyObservation()) rejectObservation('Live provider dependency requires an external observation');
+      return fetchGithubIssues(requireManualGithubPolicy(readExternalSourcesPolicy(repoRoot)));
+    },
     observeReviewAdmission: input => {
       if (currentReadonlyObservation()) rejectObservation('Live dependency admission requires an external observation');
       return observeActiveReviewAdmission(input);
@@ -197,12 +202,11 @@ function authorityRevision(
     canonical_commit: commit,
     target: {
       repository_id: input.target.repository_id,
-      sprint_path: input.target.sprint_path,
+
       work_package_id: input.target.work_package_id,
       work_package_revision: input.target.work_package_revision,
-      task_id: input.target.task_id,
-      task_revision: input.target.task_revision,
-      task_status: input.target.task_status,
+      task: input.target.task,
+      issue: input.target.issue,
     },
     status: result.status,
     evidence_refs: result.evidence_refs,
@@ -259,17 +263,17 @@ function subjectBytesAtCommit(
   return bytes;
 }
 
-function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
-  const satisfied = COMPLETED_ROW_STATUS_PATTERN.test(input.target.task_status);
-  return verdict(satisfied ? 'satisfied' : 'unsatisfied', [
-    evidence(
-      `canonical-task:${input.target.repository_id}:${input.target.task_id}`,
-      engineerSha256(canonicalEngineerJson({
-        task_revision: input.target.task_revision,
-        task_status: input.target.task_status,
-      })),
-    ),
-  ]);
+function providerClosed(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
+  try {
+    const before = reader.observeProviderIssues(read.repo.path), after = reader.observeProviderIssues(read.repo.path);
+    if (canonicalEngineerJson(before) !== canonicalEngineerJson(after)
+      || after.repository.provider_repository_id !== input.target.task.provider_repository_id) return UNAVAILABLE;
+    const issues = after.issues.filter(issue => issue.provider_issue_id === input.target.task.issue_id);
+    if (issues.length !== 1) return UNAVAILABLE;
+    return verdict(issues[0]!.state === 'closed' ? 'satisfied' : 'unsatisfied', [evidence(
+      `github-issue:${input.target.task.provider_repository_id}:${input.target.task.issue_id}`, engineerSha256(canonicalEngineerJson(issues[0])),
+    )]);
+  } catch { return UNAVAILABLE; }
 }
 
 /**
@@ -371,6 +375,7 @@ function moduleAccepted(
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
     // Repository path and policy location come only from the adopted registry.
     // The committed selector cannot supply a filesystem or provider endpoint.
+    if (selector.provider_repository_id !== input.target.task.provider_repository_id || selector.issue_id !== input.target.task.issue_id) return UNAVAILABLE;
     active = observeSelectedAdmission(reader, read.repo.path, authorityHome, selector);
     observation = reader.readAcceptanceObservation(read.repo.path, authorityHome,
       active.admission.campaign_sha256, active.admission.admission_sha256);
@@ -418,8 +423,8 @@ function integrationSelection(input: DependencyAuthorityInput, read: DependencyA
   if (!reference) throw new Error('explicit integration selector is required');
   const bytes = subjectBytesAtCommit(input, read, reference);
   if (bytes === null) throw new Error('committed integration selector unavailable');
-  const selection = validateIntegrationDependencyReference(JSON.parse(bytes));
-  if (selection.task_id !== input.target.task_id || selection.task_revision !== input.target.task_revision) throw new Error('integration task selection moved');
+  const selection = validateProviderIntegrationDependencyReference(JSON.parse(bytes));
+  if (selection.provider_repository_id !== input.target.task.provider_repository_id || selection.issue_id !== input.target.task.issue_id) throw new Error('integration task selection moved');
   return selection;
 }
 
@@ -463,6 +468,7 @@ function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthor
       || envelope.final_head_sha !== selection.final_head_sha || envelope.final_tree_sha !== selection.final_tree_sha
       || canonicalEngineerJson(sort(envelope.selected_pull_requests)) !== canonicalEngineerJson(sort(observed))) return UNAVAILABLE;
     const authorityHome = reader.resolveAuthorityHome();
+    if (product.review_authority.provider_repository_id !== input.target.task.provider_repository_id || product.review_authority.issue_id !== input.target.task.issue_id) return UNAVAILABLE;
     const active = observeSelectedAdmission(reader, read.repo.path, authorityHome, product.review_authority);
     const receiptBytes = reader.readAcceptanceReceiptBytes(read.repo.path, authorityHome);
     const receipt = JSON.parse(receiptBytes.toString('utf8'));
@@ -508,8 +514,7 @@ function pairingRefusal(input: DependencyAuthorityInput, reason: DependencyTarge
           repository_id: input.target.repository_id,
           work_package_id: input.target.work_package_id,
           work_package_revision: input.target.work_package_revision,
-          task_id: input.target.task_id,
-          task_revision: input.target.task_revision,
+          task: input.target.task,
         },
       })),
     )]),
@@ -519,7 +524,7 @@ function pairingRefusal(input: DependencyAuthorityInput, reason: DependencyTarge
 /**
  * The declared edge and the observed target arrive as two separate inputs, and
  * every adapter reads the target rather than the edge: `canonicalDone` decides
- * from `target.task_status` alone. This module is the closed authority for the
+ * from `target.issue.state` alone. This module is the closed authority for the
  * verdict and is injectable, so the pairing is proven here instead of being
  * trusted from the caller. An unpaired or stale target is
  * `authority_unavailable`, never a verdict about some other Work Package.
@@ -553,10 +558,10 @@ export function resolveDependencyAuthority(input: DependencyAuthorityInput): Dep
   if (read === null) return resolution(input, repo, UNAVAILABLE);
   const unpaired = targetPairingRefusal(input, read);
   if (unpaired !== null) return resolution(input, repo, unpaired);
-  const state: WorkPackageDependencyState = input.dependency.required_state;
+  const state: ProviderDependencyState = input.dependency.required_state;
   switch (state) {
-    case 'canonical_done':
-      return resolution(input, repo, input.dependency.acceptance_authority === null ? canonicalDone(input) : UNAVAILABLE);
+    case 'provider_closed':
+      return resolution(input, repo, input.dependency.acceptance_authority === null ? providerClosed(input, read, reader) : UNAVAILABLE);
     case 'module_accepted':
       return resolution(input, repo, moduleAccepted(input, read, reader));
     case 'publication_integrated':
@@ -569,7 +574,7 @@ export function resolveDependencyAuthority(input: DependencyAuthorityInput): Dep
 }
 
 /** The scheduling-facing projection: one observation per declared edge. */
-export function resolveDependencyObservation(input: DependencyAuthorityInput): WorkPackageDependencyObservationV1 {
+export function resolveDependencyObservation(input: DependencyAuthorityInput): ProviderDependencyObservation {
   const resolved = resolveDependencyAuthority(input);
   return Object.freeze({
     ...input.dependency,

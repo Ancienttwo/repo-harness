@@ -113,3 +113,33 @@ sequenceDiagram
 - 2026-09-06：尝试结果改为封闭集合，并执行重试准入（commit `dbce6cc2`）。
 - PR #617：repo-harness 只提供工具和证据，调度由 Bot 负责。CLI 内的尝试写入方被删除。
 - 2026-10-11：模型新增 capability → `component.engineer-scheduling.primary` 和 engineer-scheduling → integration-acceptance（`reads`）两条 relation。P2 flow 增加依赖权威读取和 offer 重新校验两步，失败分支改为过期 offer 拒绝。
+
+
+## Provider graph V2
+
+Planning reads GitHub issue observations and admitted execution sessions. A tracked
+V2 graph adds work package metadata. It does not supply task status or execution
+permission. Each package selects canonical REST repository and issue IDs. The
+reader refuses V1 Sprint mappings instead of guessing a provider task.
+
+The board reads `.ai/harness/work-graph.v2.json` at the policy target commit.
+For an explicit carrier, use:
+
+```sh
+repo-harness operator planning --repository-id repo_0123456789abcdef --graph-path .ai/harness/work-graph.v2.json --graph-commit <full-commit-oid>
+```
+
+The selected commit must contain the graph, acceptance policies, rollback files,
+and local dependency selectors with their declared byte digests. Cross-repository
+edges use registered repository paths and each target's policy commit. Missing
+provider mappings return `needs_provider_graph`. They do not create local tasks.
+
+`tests/fixtures/provider-work-graph-v2/graph.json` is an authored example. Its
+repository and issue IDs are test data. Replace them with observed REST IDs and
+compute digests from the actual referenced files before use. Runtime execution
+uses `admitted_session`; a lost admission is `admission_changed` in retry metadata.
+
+`provider_closed` observes GitHub twice and requires one exact stable issue. Module,
+publication, and product edges retain their protected admission, acceptance,
+waiver, and integration proof checks. Integration selectors use protocol 3 with
+`provider_repository_id` and `issue_id`; local Sprint IDs are not accepted.
