@@ -7,7 +7,6 @@ import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 
 import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
-import { FleetOffersError } from '../../effects/fleet/acquire';
 import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
 import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
@@ -16,7 +15,6 @@ import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/p
 
 function outputError(error: unknown): void {
   const code = error instanceof MergeReadinessError
-    || error instanceof FleetOffersError
     || error instanceof FleetBoardError
     || error instanceof FeedbackError
     || error instanceof FeedbackStoreError
