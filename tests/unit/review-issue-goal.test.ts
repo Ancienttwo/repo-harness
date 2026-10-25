@@ -38,3 +38,30 @@ test('goal rejects a replacement repository or issue, PR substitution and missin
   expect(() => observeReviewIssueGoal({ policy: parseExternalSourcesPolicy(undefined), repository_id: '101', issue_id: '201',
     runner: () => { throw new Error('must not fetch with disabled policy'); } })).toThrow('external_sources is off; manual GitHub refresh is not enabled');
 });
+
+test('launch-time GH_HOST cannot redirect canonical goal command arguments', () => {
+  const code = `
+    const { observeReviewIssueGoal } = await import(${JSON.stringify(new URL('../../src/effects/review/issue-goal.ts', import.meta.url).href)});
+    const calls = [];
+    const goal = observeReviewIssueGoal({ policy: ${JSON.stringify(policy)}, repository_id: '101', issue_id: '201', runner: (args) => {
+      calls.push(args);
+      const hostAt = args.indexOf('--hostname');
+      const host = hostAt < 0 ? process.env.GH_HOST : args[hostAt + 1];
+      return { stdout: JSON.stringify(args[3].endsWith('/issues/7')
+        ? { ...${JSON.stringify(issue)}, html_url: 'https://' + host + '/acme/widgets/issues/7', body: host === 'github.com' ? 'Approved GitHub goal' : 'Hostile same-id goal' }
+        : { id: 101, full_name: 'acme/widgets', html_url: 'https://' + host + '/acme/widgets' }) };
+    } });
+    console.log(JSON.stringify({ goal, calls }));
+  `;
+  const child = Bun.spawnSync([process.execPath, '-e', code], {
+    env: { ...process.env, GH_HOST: 'hostile.example.test' }, stdout: 'pipe', stderr: 'pipe',
+  });
+  expect(child.exitCode, child.stderr.toString()).toBe(0);
+  const observed = JSON.parse(child.stdout.toString());
+  expect(JSON.parse(observed.goal.content).body).toBe('Approved GitHub goal');
+  expect(observed.calls).toHaveLength(2);
+  for (const args of observed.calls) {
+    expect(args.filter((arg: string) => arg === '--hostname')).toHaveLength(1);
+    expect(args[args.indexOf('--hostname') + 1]).toBe('github.com');
+  }
+});

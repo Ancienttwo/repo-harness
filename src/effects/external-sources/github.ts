@@ -169,7 +169,9 @@ export function fetchGithubIssues(
   const run = (args: readonly string[]): GithubCommandResult => {
     const remaining = Math.floor(deadlineAt - nowMs());
     if (remaining <= 0) throw new GithubAdapterError('deadline', 'GitHub refresh exceeded deadline_ms', 'unavailable', identity, pagesFetched, issuesSeen);
-    const result = runner(args, { timeout_ms: remaining, max_buffer: safeMaxBuffer });
+    // This adapter's provider identity is github.com, not the caller's GH_HOST.
+    // Keep the host on every identity, exact-issue and pagination request.
+    const result = runner([...args, '--hostname', 'github.com'], { timeout_ms: remaining, max_buffer: safeMaxBuffer });
     if (nowMs() > deadlineAt) throw new GithubAdapterError('deadline', 'GitHub refresh exceeded deadline_ms', 'unavailable', identity, pagesFetched, issuesSeen);
     return result;
   };
