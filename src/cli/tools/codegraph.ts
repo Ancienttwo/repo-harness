@@ -1,4 +1,4 @@
-import { configurationPaths, withConfigurationMutation } from '../installer/configuration-ownership';
+import { configurationPaths, hostConfigurationRoot, withConfigurationMutation } from '../installer/configuration-ownership';
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -715,7 +715,7 @@ function configureCodegraphRuntime(opts: CodegraphConfigureOptions): CodegraphCo
 /** Keep restoration provenance for both standalone tools setup and runtime bootstrap. */
 export function configureCodegraph(opts: CodegraphConfigureOptions): CodegraphConfigureResult {
   if (opts.location !== 'global') return configureCodegraphRuntime(opts);
-  const env = { ...process.env, ...opts.env };
-  const paths = configurationPaths(env).filter((path) => opts.target === 'both' || (opts.target === 'codex' ? path.endsWith('.toml') : !path.endsWith('.toml')));
-  return withConfigurationMutation(paths, env, () => configureCodegraphRuntime(opts));
+  const root = hostConfigurationRoot({ ...process.env, ...opts.env });
+  const paths = configurationPaths(root).filter((path) => opts.target === 'both' || (opts.target === 'codex' ? path.endsWith('.toml') : !path.endsWith('.toml')));
+  return withConfigurationMutation(paths, root, () => configureCodegraphRuntime(opts));
 }

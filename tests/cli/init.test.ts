@@ -22,7 +22,7 @@ import {
   resolveOsAccountHome,
   syncCrossReviewSkills,
 } from "../../src/cli/commands/init";
-import { withRuntimeHostTransactionLock } from "../../src/cli/installer/runtime-host-lock";
+import { globalRuntimeScope, withRuntimeTransactionLock } from "../../src/cli/installer/runtime-host-lock";
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
@@ -233,7 +233,7 @@ describe("init command", () => {
       const options = { repo, sourceRoot: source, env, codegraph: false, verify: false };
       // Init takes no part in the host transaction, so a held update lock and
       // its rollback preimage neither block init nor see an init write.
-      withRuntimeHostTransactionLock(env, () => {
+      withRuntimeTransactionLock(globalRuntimeScope(env), () => {
         const transaction = beginInstallHostTransaction([configPath], env);
         try {
           const result = runInit(options);

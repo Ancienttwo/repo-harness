@@ -1,6 +1,6 @@
 import { recordMcpRegistryChanges, withMcpSetupLock } from './setup-ownership';
 import { replaceConfigurationFragment, writeOwnedConfiguration } from '../installer/configuration-ownership';
-import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { isIP } from 'net';
@@ -909,7 +909,7 @@ export function patchCodexConfigToml(current: string): string {
 export function runMcpSetupCodex(opts: Parameters<typeof setupCodexLocked>[0]): McpSetupResult {
   if (opts.dryRun) return setupCodexLocked(opts);
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
-  return withRuntimeHostTransactionLock({ HOME: repoRoot }, () => setupCodexLocked(opts));
+  return withRuntimeTransactionLock(projectRuntimeScope(repoRoot), () => setupCodexLocked(opts));
 }
 
 function setupCodexLocked(opts: { repo?: string; scope?: string; dryRun?: boolean }): McpSetupResult {
@@ -929,7 +929,7 @@ function setupCodexLocked(opts: { repo?: string; scope?: string; dryRun?: boolea
       lines: [`[repo-harness mcp] Dry run: would patch ${relative(repoRoot, configPath)}`, next],
     };
   }
-  writeOwnedConfiguration(configPath, next, { HOME: repoRoot });
+  writeOwnedConfiguration(configPath, next, repoRoot);
   if (current !== next) changed.push(configPath);
   return {
     status: 'ok',
