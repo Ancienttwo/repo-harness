@@ -1,3 +1,5 @@
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
 import { writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../../src/effects/external-sources/store';
 import type { FleetBoardPullRequestSelection } from '../../src/effects/fleet/board';
@@ -200,6 +202,85 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
 }
 
 describe('fleet board collector', () => {
+  test.each(['inline', 'contract'] as const)('selects only a fresh explicit %s campaign for an eligible issue', async executionMode => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-mode-')));
+    const authorityHome = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-home-')));
+    onTestFinished(() => { rmSync(root, { recursive: true, force: true }); rmSync(authorityHome, { recursive: true, force: true }); });
+    const registered = createPlainBoardFixture(root, 1, 'unused');
+    const entry = { ...registered, accessMode: 'read_write' as const };
+    const approved = seedReviewAdmissionFixture(root, authorityHome, { repositoryId: '1001', issueId: '2001', executionMode });
+    const association = { repository_id: entry.id, provider_repository_id: '1001', provider_issue_id: '2001',
+      admission: { campaign_id: approved.admission.campaign_id, grant_sha256: approved.grant,
+        policy_sha256: approved.admission.policy.policy_sha256, actor_id: approved.admission.actor_id } };
+    let reads = 0;
+    const dependencies: FleetBoardDependencies = { ...productionFleetBoardDependencies,
+      read_registry: () => registry([entry]),
+      read_admission_source: (selectedRoot, values) => {
+        expect(realpathSync(selectedRoot)).toBe(root);
+        expect(values).toEqual({ 'repository-id': '1001', 'issue-id': '2001', 'campaign-id': association.admission.campaign_id,
+          'grant-sha256': approved.grant, 'policy-sha256': association.admission.policy_sha256, actor: association.admission.actor_id });
+        return { ...approved.source, runner: (args, options) => {
+          reads++; expect(options.timeout_ms).toBeGreaterThan(0); expect(options.timeout_ms).toBeLessThanOrEqual(30_000);
+          return approved.source.runner!(args, options);
+        } };
+      } };
+    const without = await collectFleetBoard({}, dependencies);
+    expect(without.repositories[0]!.cards[0]!.placement.kind).toBe('unclassified');
+    expect(reads).toBe(0);
+    const result = await collectFleetBoard({ admission_associations: [association] }, dependencies);
+    expect(result.repositories[0]!.cards[0]).toMatchObject({
+      execution_readiness: executionMode === 'inline' ? 'inline_ready' : 'execution_ready', readiness_blockers: [],
+      placement: executionMode === 'inline' ? { kind: 'alternate_workflow', workflow: 'inline' } : { kind: 'column', column: 'available' },
+    });
+    expect(reads).toBe(8);
+    reads = 0;
+    const readOnly = await collectFleetBoard({ admission_associations: [association] }, { ...dependencies, read_registry: () => registry([registered]) });
+    expect(readOnly.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
+    expect(reads).toBe(0);
+    seedIssues(root, entry.id, ['ineligible'], ['missing_label:ready']);
+    const ineligible = await collectFleetBoard({ admission_associations: [association] }, dependencies);
+    expect(ineligible.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
+    expect(reads).toBe(0);
+  });
+
+  test.each(['revoked', 'stale', 'goal_changed', 'changed_during_read', 'provider_unavailable'] as const)('keeps %s campaign authority unclassified', async failure => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-refusal-')));
+    const authorityHome = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-admitted-home-')));
+    onTestFinished(() => { rmSync(root, { recursive: true, force: true }); rmSync(authorityHome, { recursive: true, force: true }); });
+    const entry = { ...createPlainBoardFixture(root, 1, 'unused'), accessMode: 'read_write' as const };
+    const approved = seedReviewAdmissionFixture(root, authorityHome, { repositoryId: '1001', issueId: '2001', executionMode: 'inline' });
+    const association = { repository_id: entry.id, provider_repository_id: '1001', provider_issue_id: '2001',
+      admission: { campaign_id: approved.admission.campaign_id, grant_sha256: approved.grant,
+        policy_sha256: approved.admission.policy.policy_sha256, actor_id: approved.admission.actor_id } };
+    if (failure === 'revoked') revokeReviewAdmission({ repoRoot: root, authorityHome, repository_id: '1001', issue_id: '2001',
+      campaign_id: approved.admission.campaign_id, expectedRevision: 1 });
+    if (failure === 'stale') seedReviewAdmissionFixture(root, authorityHome, { repositoryId: '1001', issueId: '2001', executionMode: 'contract' });
+    if (failure === 'goal_changed') approved.issue.body = 'different provider goal';
+    let issueReads = 0;
+    const result = await collectFleetBoard({ admission_associations: [association] }, {
+      ...productionFleetBoardDependencies, read_registry: () => registry([entry]),
+      read_admission_source: () => ({ ...approved.source, runner: (args, options) => {
+        if (failure === 'provider_unavailable') throw new Error('offline provider failure');
+        if (args.includes('repos/acme/widgets/issues/903') && ++issueReads === 3 && failure === 'changed_during_read') {
+          approved.issue.body = 'goal changes between board observations';
+        }
+        return approved.source.runner!(args, options);
+      } }),
+    });
+    expect(result.repositories[0]!.cards[0]).toMatchObject({ execution_readiness: null, readiness_blockers: null,
+      placement: { kind: 'unclassified', reason: 'readiness_unavailable' } });
+    if (failure === 'changed_during_read') expect(result.repositories[0]!.cards[0]!.snapshot_consistency).toBe('changed_during_read');
+  });
+
+  test('rejects duplicate and foreign admission associations before provider observations', async () => {
+    const association = { repository_id: 'repo-01', provider_repository_id: '1001', provider_issue_id: '2001',
+      admission: { campaign_id: 'review', grant_sha256: `sha256:${'a'.repeat(64)}`, policy_sha256: `sha256:${'b'.repeat(64)}`, actor_id: 'owner' } };
+    const dependencies: FleetBoardDependencies = { read_registry: () => registry([repo(1)]),
+      collect_repository: async () => { throw new Error('must not collect a foreign association'); } };
+    await expect(collectFleetBoard({ admission_associations: [association, association] }, dependencies)).rejects.toMatchObject({ code: 'fleet_board_argument_invalid' });
+    await expect(collectFleetBoard({ admission_associations: [{ ...association, repository_id: 'foreign' }] }, dependencies)).rejects.toMatchObject({ code: 'fleet_board_argument_invalid' });
+  });
+
   test.each([['read_only', 'inline', []], ['read_write', 'inline', []], ['read_write', 'contract', []], ['read_write', 'contract', ['missing_label:ready', 'assignee_not_allowed']]] as const)('real collector projects %s access and provider eligibility independently of retired %s mode', async (accessMode, mode, eligibilityReasons) => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-real-'));
     const repoRoot = join(root, 'repo');

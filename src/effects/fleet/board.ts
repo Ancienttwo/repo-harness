@@ -24,6 +24,8 @@ import { resolveProviderBoard } from '../state/collect-provider-board-inputs';
 import type { ProviderBoardCardV2 } from '../../core/state/provider-board';
 import type { AdmittedTaskSession } from '../../core/sessions/task-sessions';
 import { observeAdmittedSessionSource } from '../sessions/admitted-source';
+import { runGithubCommand } from '../github/issues';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readReviewAdmissionSource } from '../admission/admission-source';
 import {
   assertLocalPullRequestRepository,
@@ -65,8 +67,46 @@ export interface FleetBoardPullRequestSelection {
   readonly pull_request: import('../../core/publication/merge-readiness').PullRequestSelectionV2;
 }
 
+/** Explicit display association with an existing protected campaign grant. */
+export interface FleetBoardAdmissionAssociation {
+  readonly repository_id: string;
+  readonly provider_repository_id: string;
+  readonly provider_issue_id: string;
+  readonly admission: {
+    readonly campaign_id: string;
+    readonly grant_sha256: string;
+    readonly policy_sha256: string;
+    readonly actor_id: string;
+  };
+}
+
+export function parseFleetBoardAdmissionAssociations(input: unknown): readonly FleetBoardAdmissionAssociation[] {
+  const invalid = () => new FleetBoardError('fleet_board_argument_invalid', 'invalid admission associations');
+  if (!Array.isArray(input)) throw invalid();
+  const seen = new Set<string>();
+  return input.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== 'admission,provider_issue_id,provider_repository_id,repository_id'
+      || typeof value.repository_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value.repository_id)
+      || typeof value.provider_repository_id !== 'string' || !/^[1-9][0-9]*$/u.test(value.provider_repository_id)
+      || typeof value.provider_issue_id !== 'string' || !/^[1-9][0-9]*$/u.test(value.provider_issue_id)) throw invalid();
+    const admission = value.admission;
+    if (!admission || typeof admission !== 'object' || Array.isArray(admission)
+      || Object.keys(admission).sort().join(',') !== 'actor_id,campaign_id,grant_sha256,policy_sha256'
+      || Object.values(admission).some(part => typeof part !== 'string' || !part.trim() || part.includes('\0'))
+      || !/^sha256:[0-9a-f]{64}$/u.test(admission.grant_sha256)
+      || !/^sha256:[0-9a-f]{64}$/u.test(admission.policy_sha256)) throw invalid();
+    const key = JSON.stringify([value.repository_id, value.provider_repository_id, value.provider_issue_id]);
+    if (seen.has(key)) throw invalid();
+    seen.add(key);
+    return { repository_id: value.repository_id, provider_repository_id: value.provider_repository_id,
+      provider_issue_id: value.provider_issue_id, admission: { ...admission } };
+  });
+}
+
 export interface FleetBoardCollectorOptions {
   readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
+  readonly admission_associations?: readonly FleetBoardAdmissionAssociation[];
   /** Exact registered identity, selected before any repository/provider observation. */
   readonly repository_id?: string;
   readonly env?: NodeJS.ProcessEnv;
@@ -87,12 +127,16 @@ export interface FleetRepositoryCollectionOptions extends Required<Pick<FleetBoa
   readonly max_concurrency: number;
   readonly signal: AbortSignal;
   readonly deadline_exceeded: () => boolean;
+  readonly remaining_ms?: () => number;
   readonly provider_limiter: FleetProviderObservationLimiter;
+  readonly read_admission_source?: typeof readReviewAdmissionSource;
   readonly env?: NodeJS.ProcessEnv;
   readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
+  readonly admission_associations?: readonly FleetBoardAdmissionAssociation[];
 }
 
 export interface FleetBoardDependencies {
+  readonly read_admission_source?: typeof readReviewAdmissionSource;
   readonly read_registry: (input: { readonly env?: NodeJS.ProcessEnv }) => RepoHarnessRegistryStrictSnapshot;
   readonly collect_repository: (
     repo: RepoHarnessRegisteredRepo,
@@ -246,6 +290,33 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
     });
     assertCollectionActive(options.signal, options.deadline_exceeded);
   }
+  const association = options.admission_associations?.find(value => value.repository_id === repo.id
+    && value.provider_repository_id === card.provider_repository_id && value.provider_issue_id === card.provider_issue_id);
+  let admitted: ReturnType<typeof observeActiveReviewAdmission> | null = null;
+  let source: ReturnType<typeof readReviewAdmissionSource> | null = null;
+  // Closed/PR/session and preparation states retain precedence over campaign mode.
+  if (association && base.issue_state === 'open' && readiness === null && execution === null
+    && card.execution_status !== 'unavailable' && base.readiness_blockers === null) {
+    try {
+      source = (options.read_admission_source ?? readReviewAdmissionSource)(repo.path, {
+        'repository-id': association.provider_repository_id, 'issue-id': association.provider_issue_id,
+        'campaign-id': association.admission.campaign_id, 'grant-sha256': association.admission.grant_sha256,
+        'policy-sha256': association.admission.policy_sha256, actor: association.admission.actor_id,
+      });
+      const selectedRunner = source.runner ?? runGithubCommand;
+      source = { ...source, runner: (args, limits) => {
+        assertCollectionActive(options.signal, options.deadline_exceeded);
+        const timeout = Math.min(limits.timeout_ms, options.remaining_ms?.() ?? options.timeout_ms);
+        if (timeout <= 0) throw collectionAbortError(() => true);
+        return selectedRunner(args, { ...limits, timeout_ms: timeout });
+      } };
+      admitted = await options.provider_limiter.run(async () => {
+        assertCollectionActive(options.signal, options.deadline_exceeded);
+        return observeActiveReviewAdmission(source!);
+      });
+    } catch (error) { if (isCollectionPreemption(error)) throw error; }
+    assertCollectionActive(options.signal, options.deadline_exceeded);
+  }
   let inbox = base.inbox, feedback = base.feedback;
   let observedConsistency = consistency;
   // Arbitrary runtime labels are valid sessions but cannot address the stable task inbox.
@@ -271,7 +342,26 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
     }
   }
   if (runtimeEffectsRevision(observeAgentRuntimeEffects(repo.path)) !== runtimeRevision) observedConsistency = 'changed_during_read';
-  return { ...base, merge_readiness: readiness, inbox, feedback, snapshot_consistency: observedConsistency };
+  let executionReadiness = base.execution_readiness, blockers = base.readiness_blockers;
+  if (admitted && source) {
+    try {
+      const current = await options.provider_limiter.run(async () => {
+        assertCollectionActive(options.signal, options.deadline_exceeded);
+        return observeActiveReviewAdmission(source!);
+      });
+      if (current.revision !== admitted.revision || current.grant_sha256 !== admitted.grant_sha256
+        || current.admission.admission_sha256 !== admitted.admission.admission_sha256
+        || current.admission.goal.revision !== admitted.admission.goal.revision) throw new Error('fleet_admission_changed');
+      executionReadiness = current.admission.execution_mode === 'inline' ? 'inline_ready' : 'execution_ready';
+      blockers = [];
+    } catch (error) {
+      if (isCollectionPreemption(error)) throw error;
+      observedConsistency = 'changed_during_read';
+    }
+    assertCollectionActive(options.signal, options.deadline_exceeded);
+  }
+  return { ...base, execution_readiness: executionReadiness, readiness_blockers: blockers,
+    merge_readiness: readiness, inbox, feedback, snapshot_consistency: observedConsistency };
 }
 function isCollectionPreemption(error: unknown): boolean {
   return error instanceof FleetBoardError || (error instanceof FleetRepositoryError && error.code === 'repo_collection_timeout');
@@ -292,6 +382,12 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: Repo
       const card = board.cards.find(card => card.provider_repository_id === association.pull_request.provider_repository_id && card.provider_issue_id === association.provider_issue_id);
       if (!card || (association.task_id !== undefined && !card.sessions.some(session => session.selector.task === association.task_id))) {
         throw new FleetRepositoryError('repo_readiness_unavailable', 'selected PR has no exact provider issue display association');
+      }
+    }
+    for (const association of options.admission_associations ?? []) {
+      if (association.repository_id === repo.id && !board.cards.some(card => card.provider_repository_id === association.provider_repository_id
+        && card.provider_issue_id === association.provider_issue_id)) {
+        throw new FleetRepositoryError('repo_readiness_unavailable', 'selected admission has no exact provider issue display association');
       }
     }
     const runtimeEffects = observeAgentRuntimeEffects(repo.path), runtimeRevision = runtimeEffectsRevision(runtimeEffects);
@@ -384,6 +480,7 @@ export async function collectFleetBoard(
   if (options.repository_id !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(options.repository_id)) {
     throw new FleetBoardError('fleet_board_argument_invalid', 'invalid repository selector');
   }
+  const admissionAssociations = parseFleetBoardAdmissionAssociations(options.admission_associations ?? []);
   const maxConcurrency = positiveInteger(options.max_concurrency, 'max-concurrency', 1, 16);
   const timeoutMs = positiveInteger(options.timeout_ms, 'timeout-ms', 1_000, 30_000);
   const sequence = options.sequence ?? 1;
@@ -415,6 +512,12 @@ export async function collectFleetBoard(
     let registry: RepoHarnessRegistryStrictSnapshot;
     try {
       registry = dependencies.read_registry({ env: options.env });
+      for (const association of admissionAssociations) {
+        if (!registry.repos.some(repo => repo.id === association.repository_id)
+          || (options.repository_id !== undefined && options.repository_id !== association.repository_id)) {
+          throw new FleetBoardError('fleet_board_argument_invalid', 'admission association selects a repository outside this board');
+        }
+      }
       for (const association of options.pull_requests ?? []) {
         if (!registry.repos.some(repo => repo.id === association.repository_id)
           || (options.repository_id !== undefined && options.repository_id !== association.repository_id)) throw new FleetBoardError('fleet_board_argument_invalid', 'PR association selects a repository outside this board');
@@ -464,8 +567,10 @@ export async function collectFleetBoard(
           max_concurrency: maxConcurrency,
           signal: controller.signal,
           deadline_exceeded: deadlineExceededNow,
+          remaining_ms: () => Math.max(0, Math.floor(deadlineAt - Date.now())),
           provider_limiter: providerLimiter,
-          pull_requests: options.pull_requests, env: options.env,
+          pull_requests: options.pull_requests, admission_associations: admissionAssociations,
+          read_admission_source: dependencies.read_admission_source, env: options.env,
         });
         return preempted.has(token)
           ? repositoryError(repo, 'repo_collection_timeout', new Error('fleet collection round deadline exceeded'))

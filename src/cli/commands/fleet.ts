@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 
 import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
-import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
+import { collectFleetBoard, parseFleetBoardAdmissionAssociations, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
 import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
 import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/fleet/provider-feedback';
@@ -186,12 +186,13 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('board')
+    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
     .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Project every authorized repository as one deterministic fleet board snapshot')
     .requiredOption('--json', 'Output the FleetBoardSnapshotV2 document as JSON')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
-    .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
+    .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly admissionAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
       let maxConcurrency: number | undefined;
       let timeoutMs: number | undefined;
       try {
@@ -207,6 +208,8 @@ export function buildFleetCommand(): Command {
       try {
         const snapshot = await collectFleetBoard({
           pull_requests: readPrAssociations(options.prAssociations),
+          admission_associations: options.admissionAssociations === undefined ? []
+            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
           env: process.env,
           max_concurrency: maxConcurrency,
           timeout_ms: timeoutMs,
@@ -219,6 +222,7 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('watch')
+    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
     .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Emit immediate, non-overlapping fleet board snapshots as JSONL')
     .requiredOption('--format <format>', 'Output format (jsonl)')
@@ -226,7 +230,7 @@ export function buildFleetCommand(): Command {
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
     .action(async (options: {
-      readonly prAssociations?: string;
+      readonly prAssociations?: string; readonly admissionAssociations?: string;
       readonly format?: string;
       readonly intervalMs?: string;
       readonly maxConcurrency?: string;
@@ -254,6 +258,8 @@ export function buildFleetCommand(): Command {
       try {
         for await (const snapshot of watchFleetBoard({
           pull_requests: readPrAssociations(options.prAssociations),
+          admission_associations: options.admissionAssociations === undefined ? []
+            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
           env: process.env,
           interval_ms: intervalMs,
           max_concurrency: maxConcurrency,

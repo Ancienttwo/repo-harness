@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
@@ -36,6 +36,23 @@ describe('fleet board CLI transport', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test('board and watch accept explicit association JSON and reject authority-root injection', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fleet-board-cli-admission-'));
+    try {
+      const path = join(root, 'admissions.json'), env = { REPO_HARNESS_HOME: join(root, 'home') };
+      writeFileSync(path, '[]');
+      expect(run(['fleet', 'board', '--json', '--admission-associations', path], env).status).toBe(0);
+      writeFileSync(path, JSON.stringify([{ repository_id: 'unknown', provider_repository_id: '1001', provider_issue_id: '2001',
+        admission: { campaign_id: 'review', grant_sha256: `sha256:${'a'.repeat(64)}`, policy_sha256: `sha256:${'b'.repeat(64)}`, actor_id: 'owner', authorityHome: root } }]));
+      for (const command of [['board', '--json'], ['watch', '--format', 'jsonl']]) {
+        const result = run(['fleet', ...command, '--admission-associations', path], env);
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('fleet_board_argument_invalid');
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
   test('accepts only JSON board and JSONL watch render contracts', () => {
