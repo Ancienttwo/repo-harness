@@ -300,3 +300,32 @@ test('a bound owner root replaced by a symlink is unavailable', () => {
   symlinkSync(f.sourceRoot + '-moved', f.sourceRoot, 'dir');
   expect(() => f.read()).toThrow('unavailable');
 });
+
+test('discovery returns current protected selection, requires explicit sessions, and distinguishes failure from empty', async () => {
+  const { readOperatorTaskSessions } = await import('../../src/effects/operator/task-sessions');
+  const { readCurrentReviewAdmissionSource } = await import('../../src/effects/review/admission-source');
+  const f = fixture(true);
+  const currentSource: typeof readCurrentReviewAdmissionSource = input => readCurrentReviewAdmissionSource(input, { authorityHome: f.home, runner: f.approved.source.runner });
+  const discover = () => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env }, { currentSource });
+  const first = discover();
+  expect(first.sessions).toHaveLength(1);
+  expect(first.sessions[0]!.selector).toEqual(f.selector);
+  expect(first.sessions[0]!.admission_sha256).toBe(f.approved.admission.admission_sha256);
+  expect(JSON.stringify(first)).not.toContain(f.sourceRoot);
+  const next = seedReviewAdmissionFixture(f.sourceRoot, f.home);
+  const renewed = discover().sessions[0]!;
+  expect(renewed.selector.grant_sha256).toBe(next.grant);
+  expect(renewed.selector.session_binding_sha256).toBe(first.sessions[0]!.selector.session_binding_sha256);
+  f.approved.issue.body = 'provider changed';
+  expect(discover).toThrow('unavailable');
+  f.approved.issue.body = 'Migrate review authority.';
+  writeFileSync(join(next.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 3, grant_sha256: null }), { mode: 0o600 });
+  expect(discover().sessions).toEqual([]);
+});
+
+test('discovery refuses directory overflow instead of presenting a partial list', async () => {
+  const { readOperatorTaskSessions } = await import('../../src/effects/operator/task-sessions');
+  const f = fixture();
+  for (let index = 0; index < 201; index++) mkdirSync(join(f.dir, '..', index.toString(16).padStart(64, '0')));
+  expect(() => readOperatorTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env })).toThrow('too_large');
+});

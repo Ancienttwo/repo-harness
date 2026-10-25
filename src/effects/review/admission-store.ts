@@ -152,6 +152,21 @@ export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity &
   return { admission: admitted, grant_sha256: input.expectedGrantSha256, revision: before.revision };
 }
 
+/** Discover only the protected current selection. The caller must freshly
+ * observe the provider goal before using this selection for execution or UI. */
+export function readCurrentReviewAdmissionSelection(input: StoreInput & CampaignIdentity) {
+  const loc = location(input, input, false), selected = active(loc.active);
+  if (selected.grant_sha256 === null) return null;
+  const content = readProtected(join(loc.directory, `${selected.grant_sha256.slice(7)}.json`));
+  if (digest(content) !== selected.grant_sha256) fail('grant_digest');
+  const record = JSON.parse(content.toString('utf8')) as ApprovalRecord;
+  const admission = validateReviewAdmission(record.admission);
+  const checked = readActiveReviewAdmission({ ...input, expectedGrantSha256: selected.grant_sha256,
+    expectedActor: admission.actor_id, expectedPolicySha256: admission.policy.policy_sha256, expectedGoal: admission.goal });
+  return { expectedGrantSha256: checked.grant_sha256, expectedActor: checked.admission.actor_id,
+    expectedPolicySha256: checked.admission.policy.policy_sha256 };
+}
+
 /** Verification first consumes the approved plan above. Only after execution
  * can a round bind its actual subject and evidence to that same active grant. */
 export function readReviewAdmission(input: Parameters<typeof readActiveReviewAdmission>[0] & {

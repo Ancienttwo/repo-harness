@@ -1,3 +1,5 @@
+import { isTaskSessionsRequest } from '../../core/operator/task-sessions';
+import { readOperatorTaskSessions } from './task-sessions';
 import { Worker } from 'node:worker_threads';
 import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
@@ -47,6 +49,8 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
       } else if (message.kind === 'activity' && isTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskActivity({...message.request,env})});
+      } else if (message.kind === 'sessions' && isTaskSessionsRequest(message.request)) {
+        finish({ok:true,snapshot:readOperatorTaskSessions({...message.request,env})});
       } else if (message.kind === 'diff' && isTaskDiffRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
       } else if (message.kind === 'history' && isTaskHistoryRequest(message.request)) {

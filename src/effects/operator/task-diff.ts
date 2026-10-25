@@ -74,13 +74,10 @@ function physicalDirectory(path: string): string {
   return `${stat.dev}:${stat.ino}`;
 }
 
-/** Synchronous local authority/Git reads run only in the cancellable worker. */
-export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly env?: NodeJS.ProcessEnv },
-  effects: { readonly admissionSource?: typeof readReviewAdmissionSource } = {}): OperatorTaskDiff {
-  const { env, ...selector } = input;
-  try {
-    if (!isTaskDiffRequest(selector)) return refuse('unavailable');
-    const authority = () => {
+/** Shared read-only session check for discovery and explicit diff reads. */
+export function observeOperatorTaskDiffSource(input: OperatorTaskDiffRequest & { readonly env?: NodeJS.ProcessEnv },
+  effects: { readonly admissionSource?: typeof readReviewAdmissionSource } = {}) {
+
       const registry = readRepoHarnessRegistryStrictSnapshot({ env: input.env, adoptedOnly: false });
       const repo = registry.repos.find(r => r.id === input.repository_id);
       if (!repo) return refuse('unavailable');
@@ -122,7 +119,16 @@ export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly
         sourcePolicy: createHash('sha256').update(policyBytes).digest('hex'),
         binding: bindingDigest, identity: current.identity, approval: current.approval, registryRevision: registry.authorizationRevision,
         physical: [root, sourceRoot, worktree, resolveGitCommonDirectory(root)].map(physicalDirectory) };
-    };
+
+}
+
+/** Synchronous local authority/Git reads run only in the cancellable worker. */
+export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly env?: NodeJS.ProcessEnv },
+  effects: { readonly admissionSource?: typeof readReviewAdmissionSource } = {}): OperatorTaskDiff {
+  const { env, ...selector } = input;
+  try {
+    if (!isTaskDiffRequest(selector)) return refuse('unavailable');
+    const authority = () => observeOperatorTaskDiffSource(input, effects);
     const before = authority();
     refuseExternalFilters(before.worktree);
     const head = git(before.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']).trim();

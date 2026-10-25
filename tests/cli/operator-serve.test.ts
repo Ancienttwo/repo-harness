@@ -1471,3 +1471,18 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     child.kill('SIGTERM'); expect(await exited).toBe(0);
   } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } rmSync(root, { recursive: true, force: true }); }
 });
+
+test('session discovery is bounded read-only transport with a closed repository selector', async () => {
+  const value = { protocol: 1 as const, kind: 'operator_task_sessions' as const, repository_id: 'repo-a',
+    observed_at: '2026-10-25T00:00:00Z', sessions: [] };
+  let calls = 0;
+  const server = await startOperatorServer({ port: 0, read_task_sessions: async () => { calls++; return value; } });
+  try {
+    const path = server.url + '/api/v1/fleet/task-sessions/repo-a';
+    const response = await fetch(path); expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
+    expect((await fetch(path + '?root=/tmp')).status).toBe(400);
+    expect((await fetch(path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
+    expect((await fetch(path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
+    expect(calls).toBe(1);
+  } finally { await server.close(); }
+});

@@ -1,3 +1,4 @@
+import { decodeOperatorTaskSessions, isTaskSessionsRequest, type OperatorTaskSessionsRequest, type OperatorTaskSessions } from '../../core/operator/task-sessions';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -69,6 +70,7 @@ export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
 export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/context$/u;
 export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/activity$/u;
+export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
 export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
  * The repository id is matched loosely and resolved strictly, the same split the
@@ -108,6 +110,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
+  Object.freeze({ id: 'task_sessions', method: 'GET', pattern: OPERATOR_TASK_SESSIONS_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'runtime_status', method: 'GET', pattern: OPERATOR_RUNTIME_STATUS_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
@@ -133,6 +136,7 @@ export interface OperatorServerOptions {
   readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
   readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
+  readonly read_task_sessions?: (input: OperatorTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskSessions>;
   readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   /** Dev Activity cache reader. GET serves only this cache; it never collects. */
@@ -1346,7 +1350,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'history' | 'architecture',
+    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'sessions' | 'history' | 'architecture',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1561,6 +1565,18 @@ export async function startOperatorServer(
       catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid activity selector.'),headOnly); return; }
       handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskActivity,TASK_ACTIVITY_FAILURES,
         'activity',options.read_task_activity);
+      return;
+    }
+
+    const sessionsRoute = OPERATOR_TASK_SESSIONS_ROUTE.exec(pathname);
+    if (sessionsRoute !== null) {
+      const input = { repository_id: sessionsRoute[1]! };
+      if (url.searchParams.size || !isTaskSessionsRequest(input)) {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Session discovery accepts only a registered repository.'), headOnly);
+        return;
+      }
+      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskSessions, TASK_DIFF_FAILURES,
+        'sessions', options.read_task_sessions);
       return;
     }
 

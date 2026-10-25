@@ -1,3 +1,4 @@
+import { readCurrentReviewAdmissionSelection } from './admission-store';
 import { observeActiveReviewAdmission } from './issue-goal';
 import { readExternalSourcesPolicy } from '../external-sources/policy';
 
@@ -16,4 +17,14 @@ export function readReviewAdmissionSource(repoRoot: string, values: Readonly<Rec
     campaign_id: required('campaign-id'), expectedGrantSha256: required('grant-sha256'),
     expectedPolicySha256: required('policy-sha256'), expectedActor: required('actor'),
     issuePolicy: readExternalSourcesPolicy(repoRoot) };
+}
+
+/** Protected active selection plus a fresh provider check; never launch-time approval. */
+export function readCurrentReviewAdmissionSource(input: Pick<ReviewAdmissionSource, 'repoRoot' | 'repository_id' | 'issue_id' | 'campaign_id'>,
+  trusted: Pick<ReviewAdmissionSource, 'authorityHome' | 'runner'> = {}): ReviewAdmissionSource | null {
+  const selected = readCurrentReviewAdmissionSelection({ ...input, ...trusted });
+  if (!selected) return null;
+  const source = { ...input, ...trusted, ...selected, issuePolicy: readExternalSourcesPolicy(input.repoRoot) };
+  observeActiveReviewAdmission(source);
+  return source;
 }

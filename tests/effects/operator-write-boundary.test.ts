@@ -23,6 +23,7 @@ import {
   OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
+  OPERATOR_TASK_SESSIONS_ROUTE,
   OPERATOR_TASK_DIFF_ROUTE,
   OPERATOR_TASK_ACTIVITY_ROUTE,
   OPERATOR_TASK_CONTEXT_ROUTE,
@@ -79,6 +80,7 @@ describe('operator structural write boundary', () => {
       'repository_snapshot',
       'task_context',
       'task_activity',
+      'task_sessions',
       'task_diff',
       'runtime_status',
       'notify_status',
@@ -94,6 +96,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
+    expect(patterns.get('task_sessions')).toBe(OPERATOR_TASK_SESSIONS_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
