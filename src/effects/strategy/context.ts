@@ -127,7 +127,7 @@ export class StrategyReader {
     const packaged = new Set(['package.json', 'src/effects/evidence/verification-execution.ts', 'src/core/evidence/verification-plan.ts',
       'src/core/evidence/redaction.ts', 'src/effects/evidence/secret-env.ts', 'src/effects/process-runner.ts',
       'src/effects/process-supervisor.ts', 'src/effects/expensive-run-lock.ts', 'src/effects/process-group-launcher.ts',
-      'src/effects/git/common-directory.ts', 'src/effects/locking/exclusive-directory-lock.ts'].map(p => join(packageRoot, p)));
+      'src/effects/process-group-termination.ts', 'src/effects/git/common-directory.ts', 'src/effects/locking/exclusive-directory-lock.ts'].map(p => join(packageRoot, p)));
     const rawCommon = this.git(['rev-parse', '--git-common-dir']).trim();
     const common = realpathSync(resolve(this.root, rawCommon));
     const version = join(common, 'repo-harness/effective-state-version.json');

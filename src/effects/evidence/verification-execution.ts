@@ -290,6 +290,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
     ["process-supervisor", join(packageRoot, "src/effects/process-supervisor.ts")],
     ["expensive-run-lock", join(packageRoot, "src/effects/expensive-run-lock.ts")],
     ["process-group-launcher", join(packageRoot, "src/effects/process-group-launcher.ts")],
+    ["process-group-termination", join(packageRoot, "src/effects/process-group-termination.ts")],
     ["git-common-directory", join(packageRoot, "src/effects/git/common-directory.ts")],
     ["exclusive-directory-lock", join(packageRoot, "src/effects/locking/exclusive-directory-lock.ts")],
   ] as const;
