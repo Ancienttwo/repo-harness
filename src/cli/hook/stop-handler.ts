@@ -55,10 +55,9 @@ function writeRecoveryViews(
 ): void {
   const context = buildRecoveryContext(repoRoot, activePlan, env, { reason: 'session-stop', now: () => now, runId: identity.runId });
   const evidence = resolveRecoveryEvidence(repoRoot);
-  const contractPath = context.artifacts.contract;
   const views: readonly [StopProjectionTarget, string][] = [
-    [{ kind: 'handoff', path: context.paths.handoff }, renderRecoveryHandoff(context, evidence, contractPath)],
-    [{ kind: 'resume', path: context.paths.resume }, renderRecoveryResume(context, evidence, contractPath)],
+    [{ kind: 'handoff', path: context.paths.handoff }, renderRecoveryHandoff(context, evidence)],
+    [{ kind: 'resume', path: context.paths.resume }, renderRecoveryResume(context, evidence)],
   ];
   for (const [target, content] of views) {
     writeHookStateFile(repoRoot, join(repoRoot, target.path), content);
