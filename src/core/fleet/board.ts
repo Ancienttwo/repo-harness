@@ -14,6 +14,7 @@ export type FleetExecutionReadiness =
  * preparation row without interpreting a free-form diagnostic string.
  */
 export type FleetBlockerCode =
+  | 'provider_ineligible'
   | 'repo_read_only'
   | 'repo_unavailable'
   | 'canonical_unavailable'
@@ -33,10 +34,14 @@ export type FleetBlockerCode =
 
 export type FleetAttentionOwner = 'agent' | 'user' | 'external';
 
-export interface FleetBlockerV1 {
-  readonly code: FleetBlockerCode;
-  readonly attention_owner: FleetAttentionOwner;
-}
+export type FleetBlockerV1 = Readonly<{
+  code: Exclude<FleetBlockerCode, 'provider_ineligible'>;
+  attention_owner: FleetAttentionOwner;
+}> | Readonly<{
+  code: 'provider_ineligible';
+  attention_owner: 'user';
+  eligibility_reasons: readonly string[];
+}>;
 
 
 
@@ -250,10 +255,10 @@ export function classifyFleetBoardPlacement(input: FleetBoardCardInputV2): Fleet
   if (input.execution_status === 'unavailable') return { kind: 'unclassified', reason: 'readiness_unavailable' };
   if (input.execution !== null) return { kind: 'column', column: 'working' };
   const blockers = input.readiness_blockers;
-  if (input.execution_readiness === null && blockers === null) return { kind: 'column', column: 'available' };
+  if (input.execution_readiness === null && blockers === null) return { kind: 'unclassified', reason: 'readiness_unavailable' };
   if (input.execution_readiness === 'execution_ready' && blockers?.length === 0) return { kind: 'column', column: 'available' };
   if (input.execution_readiness === 'inline_ready' && blockers?.length === 0) return { kind: 'alternate_workflow', workflow: 'inline' };
-  const preparation = new Set(['repo_read_only', 'plan_missing', 'plan_not_approved', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable']);
+  const preparation = new Set(['provider_ineligible', 'repo_read_only', 'plan_missing', 'plan_not_approved', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable']);
   if (['planning_required', 'unsupported'].includes(input.execution_readiness ?? '') && blockers && blockers.length > 0 && blockers.every(blocker => preparation.has(blocker.code))) return { kind: 'preparation' };
   return { kind: 'unclassified', reason: blockers === null ? 'readiness_unavailable' : 'unsupported_readiness' };
 }
@@ -287,7 +292,9 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
       input.inbox.addressed_to_current_claim ? 'agent' : 'none',
     ),
     execution_readiness: input.execution_readiness,
-    readiness_blockers: input.readiness_blockers === null ? null : Object.freeze(input.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
+    readiness_blockers: input.readiness_blockers === null ? null : Object.freeze(input.readiness_blockers.map(blocker => Object.freeze(blocker.code === 'provider_ineligible'
+      ? { code: blocker.code, attention_owner: blocker.attention_owner, eligibility_reasons: Object.freeze([...blocker.eligibility_reasons]) }
+      : { code: blocker.code, attention_owner: blocker.attention_owner }))),
     merge_readiness: input.merge_readiness,
     blocker_codes: Object.freeze(input.merge_readiness?.blockers.map((blocker) => blocker.code) ?? []),
     feedback: Object.freeze({

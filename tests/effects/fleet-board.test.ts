@@ -61,12 +61,12 @@ function card(index: number): FleetBoardCardInputV2 {
     inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
     snapshot_consistency: 'stable', error: null };
 }
-function seedIssues(root: string, repositoryId: string, titles: readonly string[]): void {
+function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = []): void {
   const digest = `sha256:${'a'.repeat(64)}`;
   const issues = titles.map((title, index) => buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${index + 1}`, url: `https://github.com/example/fleet/issues/${index + 1}`,
     observed_at: '2026-08-31T00:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
-    comments_policy: 'omitted', policy_revision: digest, eligible: true, eligibility_reasons: [] }));
+    comments_policy: 'omitted', policy_revision: digest, eligible: eligibilityReasons.length === 0, eligibility_reasons: eligibilityReasons }));
   issues.forEach(issue => writeProviderIssueObservation(root, issue));
   writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
@@ -200,7 +200,7 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
 }
 
 describe('fleet board collector', () => {
-  test.each([['read_only', 'inline'], ['read_write', 'inline'], ['read_write', 'contract']] as const)('real collector preserves %s %s readiness without mutating repo or registry authority', async (accessMode, mode) => {
+  test.each([['read_only', 'inline', []], ['read_write', 'inline', []], ['read_write', 'contract', []], ['read_write', 'contract', ['missing_label:ready', 'assignee_not_allowed']]] as const)('real collector projects %s access and provider eligibility independently of retired %s mode', async (accessMode, mode, eligibilityReasons) => {
     const root = mkdtempSync(join(tmpdir(), 'fleet-board-real-'));
     const repoRoot = join(root, 'repo');
     const home = join(root, 'home');
@@ -230,7 +230,7 @@ describe('fleet board collector', () => {
           registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
         }],
       })}\n`);
-      seedIssues(repoRoot, repositoryId, ['inspect one registered repository']);
+      seedIssues(repoRoot, repositoryId, ['inspect one registered repository'], eligibilityReasons);
       const registryBefore = readFileSync(join(home, 'registered-repos.json'), 'utf8');
       const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
       // Real Git and readiness reads share process startup with the file pool.
@@ -245,7 +245,12 @@ describe('fleet board collector', () => {
       });
       expect(result.snapshot_consistency).toBe('stable');
       expect(result.counts.known_tasks).toBe(1);
-      expect(result.repositories[0]?.cards[0]).toMatchObject({ issue_state: 'open', placement: { kind: 'column', column: 'available' }, task_id: null, execution: null });
+      expect(result.repositories[0]?.cards[0]).toMatchObject({ issue_state: 'open',
+        placement: accessMode === 'read_only' || eligibilityReasons.length > 0 ? { kind: 'preparation' } : { kind: 'unclassified', reason: 'readiness_unavailable' },
+        task_id: null, execution: null,
+        readiness_blockers: accessMode === 'read_only' ? [{ code: 'repo_read_only', attention_owner: 'user' }]
+          : eligibilityReasons.length ? [{ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: [...eligibilityReasons].sort() }] : null,
+      });
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
     } finally {
@@ -279,7 +284,8 @@ describe('fleet board collector', () => {
     expect(result.repositories.find((entry) => entry.repository_id === 'repo-09')).toMatchObject({
       status: 'unreadable', error: { code: 'repo_board_unavailable' },
     });
-    expect(result.counts.available).toBe(9);
+    expect(result.counts.available).toBe(0);
+    expect(result.counts.unclassified).toBe(9);
     expect(result.counts.unreadable).toBe(1);
   });
 
@@ -518,7 +524,7 @@ describe('fleet board collector', () => {
       expect(failed[0]).toMatchObject({
         placement: { kind: 'unclassified', reason: 'observation_failed' },
         merge_readiness: null,
-        execution_readiness: null, readiness_blockers: null,
+        execution_readiness: 'unsupported', readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }],
         error: { code: 'repo_readiness_unavailable', message: 'repository readiness observation is unavailable' },
       });
       expect(failed[0]?.blocker_codes).toEqual([]);

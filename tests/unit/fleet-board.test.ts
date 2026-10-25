@@ -66,6 +66,16 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
     expect(classifyFleetBoardPlacement(card({ issue_state: 'closed' }))).toEqual({ kind: 'column', column: 'done' });
   });
 
+  test('does not infer admission readiness from an observed issue without a session', () => {
+    expect(classifyFleetBoardPlacement(card({ execution_readiness: null, readiness_blockers: null })))
+      .toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
+    const blocked = card({ execution_readiness: 'unsupported', readiness_blockers: [
+      { code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: ['missing_label:ready'] },
+    ] });
+    expect(classifyFleetBoardPlacement(blocked)).toEqual({ kind: 'preparation' });
+    expect(classifyFleetBoardPlacement({ ...blocked, execution: session() })).toEqual({ kind: 'column', column: 'working' });
+  });
+
   test('keeps runtime delivery facts out of Fleet column and execution readiness authority', () => {
     const baseline = card();
     const reconciled = card({

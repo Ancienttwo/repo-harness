@@ -6,6 +6,7 @@ import {
   projectFleetBoardSnapshot,
   fleetBoardErrorMessage,
   type FleetBoardCardInputV2,
+  type FleetBlockerV1,
   type FleetBoardErrorCode,
   type FleetBoardFeedbackSummaryV1,
   type FleetBoardInboxSummaryV1,
@@ -212,12 +213,18 @@ function assertCollectionActive(signal: AbortSignal, deadlineExceeded: () => boo
   if (deadlineExceeded() || signal.aborted) throw collectionAbortError(deadlineExceeded);
 }
 
-function baseCard(card: ProviderBoardCardV2, execution: AdmittedTaskSession | null, consistency: 'stable' | 'changed_during_read'): FleetBoardCardInputV2 {
+function baseCard(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: AdmittedTaskSession | null, consistency: 'stable' | 'changed_during_read'): FleetBoardCardInputV2 {
+  const blockers: FleetBlockerV1[] = [];
+  if (repo.accessMode === 'read_only') blockers.push({ code: 'repo_read_only', attention_owner: 'user' });
+  if (card.issue_status === 'observed' && card.issue?.eligible === false) {
+    blockers.push({ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: [...card.issue.eligibility_reasons] });
+  }
+  // Eligibility is a provider hint. No session is not proof of missing approval.
   return { provider_repository_id: card.provider_repository_id, provider_issue_id: card.provider_issue_id,
     issue_state: card.issue_status === 'observed' ? card.issue!.state : null, issue_revision: card.issue?.source_revision ?? null,
     execution_status: card.execution_status, execution, task_id: execution?.selector.task ?? null,
     task_label: card.issue?.title ?? null, task_index: card.issue ? Number(/#(\d+)$/u.exec(card.issue.display_ref)?.[1]) || null : null,
-    merge_readiness: null, execution_readiness: null, readiness_blockers: null,
+    merge_readiness: null, execution_readiness: blockers.length ? 'unsupported' : null, readiness_blockers: blockers.length ? blockers : null,
     feedback: emptyFeedback(), inbox: emptyInbox(), snapshot_consistency: consistency, error: null };
 }
 async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: AdmittedTaskSession | null,
@@ -225,7 +232,7 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
   runtimeEffects: readonly AgentRuntimeEffectStatus[], runtimeRevision: string): Promise<FleetBoardCardInputV2> {
   await yieldToEventLoop();
   assertCollectionActive(options.signal, options.deadline_exceeded);
-  const base = baseCard(card, execution, consistency);
+  const base = baseCard(repo, card, execution, consistency);
   const selections = (options.pull_requests ?? []).filter(value => value.repository_id === repo.id
     && value.provider_issue_id === card.provider_issue_id && value.pull_request.provider_repository_id === card.provider_repository_id);
   if (selections.length > 1) throw new MergeReadinessError('provider_data_incomplete', 'board issue requires one explicit PR association');
@@ -294,7 +301,7 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: Repo
       catch (error) {
         if (isCollectionPreemption(error)) throw error;
         const code = mapRepositoryError(error);
-        return { ...baseCard(card, execution, board.snapshot_consistency), error: { code, message: fleetBoardErrorMessage(code) } };
+        return { ...baseCard(repo, card, execution, board.snapshot_consistency), error: { code, message: fleetBoardErrorMessage(code) } };
       }
     });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
