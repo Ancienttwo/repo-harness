@@ -59,3 +59,24 @@ test('validated context is detached and deeply frozen, so later caller edits can
   expect(Object.isFrozen(context.allowed_paths)).toBe(true);
   expect(() => assertReviewAuthorityContext({ ...context, context_sha256: digest('9') }, input())).toThrow();
 });
+
+test('policy enum fields reject JSON arrays, objects and null without coercion', () => {
+  for (const [field, invalidValues] of [
+    ['reviewer', [['Codex'], ['Claude'], {}, null]],
+    ['user_waiver', [['allowed'], ['forbidden'], {}, null]],
+  ] as const) {
+    for (const invalid of invalidValues) {
+      const candidate = input();
+      (candidate.policy as Record<string, unknown>)[field] = invalid;
+      expect(() => createReviewAuthorityContext(candidate)).toThrow('review_context_invalid: policy values');
+    }
+  }
+});
+
+test('comma-bearing JSON keys cannot replace the four required verification fields', () => {
+  const candidate = {
+    ...input(),
+    verification: { 'evidence_sha256,plan_sha256,source_sha256,tree_sha256': digest('a') },
+  };
+  expect(() => createReviewAuthorityContext(candidate as unknown as ReviewAuthorityInput)).toThrow('review_context_invalid: verification');
+});

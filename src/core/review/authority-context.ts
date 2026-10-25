@@ -34,7 +34,7 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 function fail(message: string): never { throw new Error(`review_context_invalid: ${message}`); }
 function record(value: unknown, fields: readonly string[], label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).sort().join(',') !== [...fields].sort().join(',')) fail(label);
+    || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...fields].sort())) fail(label);
   return value as Record<string, unknown>;
 }
 function text(value: unknown, label: string): asserts value is string {
@@ -67,7 +67,8 @@ export function createReviewAuthorityContext(input: ReviewAuthorityInput): Revie
   const authorization = record(root.authorization, ['actor_id', 'grant_sha256'], 'authorization');
   text(authorization.actor_id, 'actor'); hash(authorization.grant_sha256, 'admission grant');
   const policy = record(root.policy, ['reviewer', 'user_waiver', 'policy_sha256'], 'policy');
-  if (!['Claude', 'Codex'].includes(String(policy.reviewer)) || !['allowed', 'forbidden'].includes(String(policy.user_waiver))) fail('policy values');
+  if ((policy.reviewer !== 'Claude' && policy.reviewer !== 'Codex')
+    || (policy.user_waiver !== 'allowed' && policy.user_waiver !== 'forbidden')) fail('policy values');
   hash(policy.policy_sha256, 'policy digest');
   if (!Array.isArray(root.allowed_paths) || !root.allowed_paths.length) fail('allowed paths');
   for (const path of root.allowed_paths) {
@@ -78,7 +79,7 @@ export function createReviewAuthorityContext(input: ReviewAuthorityInput): Revie
   if (new Set(root.allowed_paths).size !== root.allowed_paths.length) fail('duplicate allowed path');
   if (root.benchmark !== 'required' && root.benchmark !== 'not_required') fail('benchmark requirement');
   const verification = record(root.verification, ['plan_sha256', 'source_sha256', 'evidence_sha256', 'tree_sha256'], 'verification');
-  for (const [key, value] of Object.entries(verification)) hash(value, key);
+  for (const key of ['plan_sha256', 'source_sha256', 'evidence_sha256', 'tree_sha256']) hash(verification[key], key);
   const subject = record(root.subject, ['status', 'scope', 'target_ref', 'target_rev', 'head_rev', 'review_subject_sha256'], 'subject');
   if (subject.status !== 'ok' || subject.scope !== 'normalized-final-content') fail('subject unavailable');
   text(subject.target_ref, 'target ref');
