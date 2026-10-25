@@ -921,7 +921,7 @@ export function projectProviderWorkGraph(value: unknown, issues: ExternalSourceP
     })) };
 }
 export function validateProviderWorkGraphTopology(graphs: readonly ProjectedProviderWorkGraph[]): void {
-  const packages = new Map(graphs.flatMap(graph => graph.work_packages.map(item => [`${item.repository_id}:${item.work_package_id}`, item] as const)));
+  const packages = new Map<string, ProjectedProviderWorkPackage>(graphs.flatMap(graph => graph.work_packages.map(item => [`${item.repository_id}:${item.work_package_id}`, item] as const)));
   const active = new Set<string>(), done = new Set<string>();
   const visit = (key: string): void => {
     if (active.has(key)) invalid('provider work graph dependency cycle');

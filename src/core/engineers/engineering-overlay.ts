@@ -426,7 +426,7 @@ export interface EngineeringOverlaySnapshotV2 {
   readonly scheduling: import('./scheduling').ProviderEngineerSchedulingSnapshot | null;
   readonly runtime_effects: { readonly support: 'available' | 'unreadable'; readonly engineers: readonly { readonly engineer_id: string; readonly effects: OverlayRuntimeEffectProjectionV1 }[] };
   readonly components: readonly {
-    readonly component: 'scheduling';
+    readonly component: 'scheduling' | 'runtime_effects';
     readonly support: 'available' | 'unreadable';
     readonly observation_before: string | null;
     readonly observation_after: string | null;
@@ -442,10 +442,10 @@ export interface OrganizationAttentionSnapshotV2 {
   readonly observed_at: string;
   readonly snapshot_consistency: OverlayConsistency;
   readonly attention: readonly {
-    readonly session_binding_sha256: string;
+    readonly session_binding_sha256: string | null;
     readonly engineer_id: string | null;
-    readonly reason: 'profile_unassigned' | 'profile_missing' | 'engineer_contract_revision_changed';
-    readonly owner: 'maintainer';
+    readonly reason: 'profile_unassigned' | 'profile_missing' | 'engineer_contract_revision_changed' | 'runtime_reconciliation_required';
+    readonly owner: 'maintainer' | 'runtime_operator';
   }[];
   readonly snapshot_sha256: string;
 }
@@ -464,6 +464,9 @@ export function projectAdmittedOrganizationAttention(overlay: EngineeringOverlay
         reason: execution.selection.state === 'unassigned' ? 'profile_unassigned' : execution.selection.state === 'profile_missing' ? 'profile_missing' : 'engineer_contract_revision_changed',
         owner: 'maintainer' });
     }
+  }
+  for (const row of overlay.runtime_effects.engineers) {
+    if ((row.effects.reconciliation_required ?? 0) > 0) attention.push({ session_binding_sha256: null, engineer_id: row.engineer_id, reason: 'runtime_reconciliation_required', owner: 'runtime_operator' });
   }
   const basis = { protocol: 2 as const, kind: ORGANIZATION_ATTENTION_KIND, repository_id: overlay.repository_id,
     overlay_snapshot_sha256: overlay.snapshot_sha256, observed_at: overlay.observed_at,

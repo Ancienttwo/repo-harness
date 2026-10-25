@@ -7,7 +7,7 @@ import { EngineerSchedulingError, projectProviderEngineerScheduling, projectProv
 import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { gitExecFileSync } from '../git/runner';
-import { readCanonicalTargetRef } from '../state/collect-board-inputs';
+import { readCanonicalTargetRef } from '../git/canonical-target';
 import { readOperatorTaskSessions } from '../operator/task-sessions';
 import { listExternalSourceProjection } from '../external-sources/refresh';
 import { listEngineerProfiles, resolveCapabilityForEngineer } from './profile-store';
@@ -65,12 +65,17 @@ export function readProviderWorkGraph(repo: RepoHarnessRegisteredRepo, source: P
   return { repo, commit: source.commit, graph: projectProviderWorkGraph(definition, listExternalSourceProjection(repo.path, repo.id), source) };
 }
 /** Read the shared admission discovery and provider cache; never consult Sprint or leases. */
-export function readProviderEngineerScheduling(repo: RepoHarnessRegisteredRepo, env?: NodeJS.ProcessEnv) {
+export interface ProviderSchedulingReaders {
+  readonly readSessions: typeof readOperatorTaskSessions;
+  readonly readIssues: typeof listExternalSourceProjection;
+  readonly listProfiles: typeof listEngineerProfiles;
+}
+export function readProviderEngineerScheduling(repo: RepoHarnessRegisteredRepo, env?: NodeJS.ProcessEnv, readers: Partial<ProviderSchedulingReaders> = {}) {
   return projectProviderEngineerScheduling({
     repository_id: repo.id,
-    issues: listExternalSourceProjection(repo.path, repo.id),
-    sessions: readOperatorTaskSessions({ repository_id: repo.id, env }),
-    profiles: listEngineerProfiles(repo.path).map(profile => ({ engineer_id: profile.profile.engineer_id,
+    issues: (readers.readIssues ?? listExternalSourceProjection)(repo.path, repo.id),
+    sessions: (readers.readSessions ?? readOperatorTaskSessions)({ repository_id: repo.id, env }),
+    profiles: (readers.listProfiles ?? listEngineerProfiles)(repo.path).map(profile => ({ engineer_id: profile.profile.engineer_id,
       capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision })),
   });
 }

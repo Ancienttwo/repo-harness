@@ -46,8 +46,6 @@ import {
 } from './resolve-effective-state';
 
 const ACTIVE_SPRINT_MARKER = '.ai/harness/sprint/active-sprint';
-const POLICY_PATH = '.ai/harness/policy.json';
-const DEFAULT_CANONICAL_TARGET_REF = 'main';
 
 const TASK_AUTHORITY_DOMAIN = 'repo-harness-board-task-authority';
 const COORDINATION_DOMAIN = 'repo-harness-board-coordination';
@@ -64,48 +62,7 @@ export function readActiveSprintPath(cwd: string): string | null {
   return readTrimmed(cwd, ACTIVE_SPRINT_MARKER);
 }
 
-/**
- * The canonical ref the board validates against:
- * `.ai/harness/policy.json#worktree_strategy.merge_back.target`, defaulting to
- * `main`. This is the same field every ownership verb is handed as
- * `--target-ref`, so a board and a claim taken from the same repository agree
- * on which authority they are talking about.
- *
- * The policy read is local rather than shared because the existing reader in
- * `resolve-effective-state.ts` is private to that module and that file is
- * outside this work package's allowed paths -- the same reason
- * `session-context.ts` carries its own `policyGet`.
- */
-export function readCanonicalTargetRef(cwd: string): string {
-  const text = readText(cwd, POLICY_PATH);
-  if (text === null) return DEFAULT_CANONICAL_TARGET_REF;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
-  }
-  let current: unknown = parsed;
-  for (const segment of ['worktree_strategy', 'merge_back', 'target']) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) {
-      return DEFAULT_CANONICAL_TARGET_REF;
-    }
-    if (!Object.hasOwn(current as Record<string, unknown>, segment)) {
-      return DEFAULT_CANONICAL_TARGET_REF;
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-  if (current === undefined || current === null) return DEFAULT_CANONICAL_TARGET_REF;
-  if (typeof current !== 'string' || current.trim().length === 0) {
-    throw new Error(
-      `invalid workflow policy string .worktree_strategy.merge_back.target: ${POLICY_PATH}`,
-    );
-  }
-  return current.trim();
-}
+export { readCanonicalTargetRef } from '../git/canonical-target';
 
 export interface CollectBoardOptions {
   readonly sprintPath: string;

@@ -86,22 +86,31 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
   text(overlay.registry_revision, SHA); text(overlay.snapshot_sha256, SHA);
   if (!Number.isFinite(Date.parse(text(overlay.observed_at)))) invalid();
   if (overlay.scheduling !== null) decodeAdmittedScheduling(overlay.scheduling, repositoryId);
-  const components = array(overlay.components, 1);
-  if (components.length !== 1) invalid();
-  const component = object(components[0], ['component', 'support', 'observation_before', 'observation_after']);
-  if (component.component !== 'scheduling') invalid();
-  if (component.support === 'available') {
-    text(component.observation_before, SHA); text(component.observation_after, SHA);
-    if (overlay.scheduling === null || (overlay.scheduling as ProviderEngineerSchedulingSnapshot).source_revision !== component.observation_after) invalid();
-  } else if (component.support !== 'unreadable' || component.observation_before !== null || component.observation_after !== null || overlay.scheduling !== null) invalid();
-  const expected = component.support === 'unreadable' ? 'degraded' : component.observation_before === component.observation_after ? 'stable' : 'changed_during_read';
+  const components = array(overlay.components, 2).map(raw => object(raw, ['component', 'support', 'observation_before', 'observation_after']));
+  if (components.length !== 2 || new Set(components.map(component => component.component)).size !== 2
+    || components.some(component => component.component !== 'scheduling' && component.component !== 'runtime_effects')) invalid();
+  for (const component of components) {
+    if (component.support === 'available') { text(component.observation_before, SHA); text(component.observation_after, SHA); }
+    else if (component.support !== 'unreadable' || component.observation_before !== null || component.observation_after !== null) invalid();
+  }
+  const schedulingComponent = components.find(component => component.component === 'scheduling')!;
+  if (schedulingComponent.support === 'available') {
+    if (overlay.scheduling === null || (overlay.scheduling as ProviderEngineerSchedulingSnapshot).source_revision !== schedulingComponent.observation_after) invalid();
+  } else if (overlay.scheduling !== null) invalid();
+  const expected = components.some(component => component.support === 'unreadable') ? 'degraded'
+    : components.some(component => component.observation_before !== component.observation_after) ? 'changed_during_read' : 'stable';
   if (overlay.snapshot_consistency !== expected) invalid();
   const runtime = object(overlay.runtime_effects, ['support', 'engineers']);
   if (!['available', 'unreadable'].includes(runtime.support as string)) invalid();
+  if (components.find(component => component.component === 'runtime_effects')!.support !== runtime.support) invalid();
   const engineers = array(runtime.engineers);
+  if (runtime.support === 'available' && (overlay.scheduling === null || engineers.length !== (overlay.scheduling as ProviderEngineerSchedulingSnapshot).profiles.length)) invalid();
+  const runtimeIds = new Set<string>();
   if (runtime.support === 'unreadable' && engineers.length) invalid();
   for (const raw of engineers) {
-    const row = object(raw, ['engineer_id', 'effects']); text(row.engineer_id, ENGINEER);
+    const row = object(raw, ['engineer_id', 'effects']); const id = text(row.engineer_id, ENGINEER);
+    if (runtimeIds.has(id) || !(overlay.scheduling as ProviderEngineerSchedulingSnapshot).profiles.some(profile => profile.engineer_id === id)) invalid();
+    runtimeIds.add(id);
     const effects = object(row.effects, ['support', 'active', 'reconciliation_required', 'failed', 'wake', 'revision']);
     if (effects.support !== 'available') invalid();
     for (const key of ['active', 'reconciliation_required', 'failed']) if (!Number.isSafeInteger(effects[key]) || (effects[key] as number) < 0) invalid();
@@ -115,9 +124,15 @@ export function decodeOperatorOrganizationSnapshot(value: unknown, repositoryId:
   text(attention.snapshot_sha256, SHA);
   for (const raw of array(attention.attention)) {
     const item = object(raw, ['session_binding_sha256', 'engineer_id', 'reason', 'owner']);
-    text(item.session_binding_sha256, SHA);
-    if (item.engineer_id !== null) text(item.engineer_id, ENGINEER);
-    if (item.owner !== 'maintainer' || !['profile_unassigned', 'profile_missing', 'engineer_contract_revision_changed'].includes(item.reason as string)) invalid();
+    if (item.reason === 'runtime_reconciliation_required') {
+      if (item.session_binding_sha256 !== null || item.owner !== 'runtime_operator') invalid();
+      text(item.engineer_id, ENGINEER);
+      if (!engineers.some(raw => (raw as {engineer_id: unknown; effects: {reconciliation_required: number}}).engineer_id === item.engineer_id && (raw as {effects: {reconciliation_required: number}}).effects.reconciliation_required > 0)) invalid();
+    } else {
+      text(item.session_binding_sha256, SHA);
+      if (item.engineer_id !== null) text(item.engineer_id, ENGINEER);
+      if (item.owner !== 'maintainer' || !['profile_unassigned', 'profile_missing', 'engineer_contract_revision_changed'].includes(item.reason as string)) invalid();
+    }
   }
   return value as OperatorOrganizationSnapshot;
 }
