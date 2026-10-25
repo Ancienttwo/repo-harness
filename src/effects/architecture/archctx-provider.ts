@@ -1,11 +1,11 @@
 import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration } from './projection-config';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
+import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
-import { execFileSync } from 'node:child_process';
 import type { CapabilityOwnership } from '../../core/state/types';
 import { capabilityRegistryFromNativeContext } from '../../core/capabilities/registry';
 import {
@@ -22,7 +22,7 @@ import {
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
-
+import { gitExecFileSync } from '../git/runner';
 export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
@@ -130,39 +130,20 @@ export function resolveCompatibleNodeRuntime(
     if (result.timedOut && budget.deadlineMs !== undefined) remainingTimeout(budget, 5_000, 'Node runtime selection');
     return result.ok ? result.stdout.trim().replace(/^v/, '') : null;
   };
-  const explicitRuntime = env.REPO_HARNESS_NODE_BIN?.trim();
-  if (explicitRuntime) {
-    if (!isAbsolute(explicitRuntime)) throw new Error('REPO_HARNESS_NODE_BIN must be an absolute path');
-    const actual = realpathSync(explicitRuntime);
-    const stat = statSync(actual);
-    if (!stat.isFile() || (stat.mode & 0o111) === 0) throw new Error('REPO_HARNESS_NODE_BIN is not an executable file');
-    const actualVersion = version(actual);
-    if (actualVersion === null || !Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) {
-      throw new Error(`REPO_HARNESS_NODE_BIN must satisfy Node ${ARCHCONTEXT_NODE_RANGE}`);
-    }
-    return actual;
-  }
   const pathValue = env.PATH ?? '';
-  const extensions = process.platform === 'win32'
-    ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
-    : [''];
-  for (const directory of pathValue.split(process.platform === 'win32' ? ';' : ':')) {
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const candidate = join(directory, `node${extension}`);
-      if (!existsSync(candidate)) continue;
-      const actualVersion = version(candidate);
-      if (actualVersion !== null && Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) return realpathSync(candidate);
-    }
-  }
-  const trustedCandidates = trustedCandidateSource();
-  for (const candidate of trustedCandidates) {
-    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const actual = realpathSync(candidate);
-    const stat = statSync(actual);
-    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
-    const actualVersion = version(actual);
-    if (actualVersion !== null && Bun.semver.satisfies(actualVersion, ARCHCONTEXT_NODE_RANGE)) return actual;
+  let trustedCandidates: readonly string[] = [];
+  const selected = selectCompatibleNode({
+    explicit: env.REPO_HARNESS_NODE_BIN,
+    pathValue,
+    pathExt: env.PATHEXT,
+    candidates: () => (trustedCandidates = trustedCandidateSource()),
+    versionOf: version,
+  });
+  if (selected.status === 'selected') return selected.path;
+  if (selected.status === 'explicit-rejected') {
+    if (selected.reason === 'not-absolute') throw new Error('REPO_HARNESS_NODE_BIN must be an absolute path');
+    if (selected.reason === 'not-executable') throw new Error('REPO_HARNESS_NODE_BIN is not an executable file');
+    throw new Error(`REPO_HARNESS_NODE_BIN must satisfy Node ${ARCHCONTEXT_NODE_RANGE}`);
   }
   throw new Error(
     `archctx requires Node ${ARCHCONTEXT_NODE_RANGE}; no compatible node executable was found. `
@@ -625,7 +606,7 @@ export function completeArchitectureDebt(repoRoot: string, headSha: string, opti
 
 /** One notice phase: each Git call gets the time left before the caller's deadline, at most 3 s. */
 function noticeGit(repoRoot: string, bounded: ArchctxProviderOptions): (args: string[]) => string {
-  return args => execFileSync('git', ['-C', repoRoot, ...args], {
+  return args => gitExecFileSync(['-C', repoRoot, ...args], {
     encoding: 'utf8', env: bounded.env ?? process.env, stdio: ['ignore', 'pipe', 'pipe'],
     timeout: remainingTimeout(bounded, 3_000, 'notice git'), maxBuffer: 8 * 1024 * 1024,
   });

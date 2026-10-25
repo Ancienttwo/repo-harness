@@ -1,8 +1,13 @@
 import { createHash, randomBytes } from 'crypto';
-import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync, type Dirent } from 'fs';
+import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
+import {
+  acquireExclusiveDirectoryLock,
+  ExclusiveLockContentionError,
+  type ExclusiveDirectoryLockHandle,
+} from '../../effects/locking/exclusive-directory-lock';
 import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { createCodeGraphCliAdapter, type CodeGraphRefreshResult, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
@@ -193,7 +198,6 @@ const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
 export const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
 const MCP_MUTATION_LOCKS_RELATIVE_PATH = 'mcp/mutation-locks';
-const MUTATION_LOCK_OWNER_FILE = 'owner.json';
 export const MCP_METRICS_RELATIVE_PATH = '.ai/harness/mcp/metrics.jsonl';
 export const MCP_TRACE_RELATIVE_PATH = '.ai/harness/mcp/trace.jsonl';
 const MUTATION_FAULT_ENV = 'REPO_HARNESS_MCP_MUTATION_FAULT_POINT';
@@ -609,20 +613,6 @@ function responseCacheKey(repo: RepoRecord, ignore: IgnorePolicy, snapshot: Visi
   return { key, paths, pathDigest };
 }
 
-interface MutationPathLock {
-  relativePath: string;
-  lockPath: string;
-  ownerToken: string;
-}
-
-interface MutationLockOwner {
-  repo_id: string;
-  path: string;
-  pid: number;
-  token?: string;
-  created_at: string;
-}
-
 function mutationLockRoot(repo: RepoRecord): string {
   const harnessHome = dirname(repoHarnessRegisteredReposPath());
   const lockRoot = resolve(harnessHome, MCP_MUTATION_LOCKS_RELATIVE_PATH, repo.repoId);
@@ -641,129 +631,46 @@ function mutationLockRoot(repo: RepoRecord): string {
         lock_root: MCP_MUTATION_LOCKS_RELATIVE_PATH,
       }, true);
     }
+    return rootRealpath;
   } catch (error) {
     if (error instanceof GeneralRepoAccessError) throw error;
     throw new GeneralRepoAccessError('LOCK_UNAVAILABLE', 'mutation lock root is unavailable', {
       lock_root: MCP_MUTATION_LOCKS_RELATIVE_PATH,
     }, true);
   }
-  return lockRoot;
 }
 
-function mutationLockPath(lockRoot: string, relativePath: string): string {
-  return resolve(lockRoot, `${sha256(relativePath).slice(0, 32)}.lock`);
+function mutationLockName(relativePath: string): string {
+  return `${sha256(relativePath).slice(0, 32)}.lock`;
 }
 
-function mutationLockOwnerPath(lockPath: string): string {
-  return resolve(lockPath, MUTATION_LOCK_OWNER_FILE);
-}
-
-function readMutationLockOwner(lockPath: string): MutationLockOwner | null {
-  try {
-    const stats = lstatSync(lockPath);
-    if (!stats.isDirectory() || stats.isSymbolicLink()) return null;
-    const raw = readFileSync(mutationLockOwnerPath(lockPath), 'utf-8');
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const pid = typeof parsed.pid === 'number' ? parsed.pid : Number(parsed.pid);
-    const owner = {
-      repo_id: typeof parsed.repo_id === 'string' ? parsed.repo_id : '',
-      path: typeof parsed.path === 'string' ? parsed.path : '',
-      pid,
-      token: typeof parsed.token === 'string' ? parsed.token : undefined,
-      created_at: typeof parsed.created_at === 'string' ? parsed.created_at : '',
-    };
-    return owner.repo_id && owner.path && Number.isSafeInteger(owner.pid) && owner.pid > 0 ? owner : null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
-    return code === 'EPERM';
-  }
-}
-
-function tryReclaimStaleMutationLock(repo: RepoRecord, relativePath: string, lockPath: string): boolean {
-  const owner = readMutationLockOwner(lockPath);
-  if (!owner || owner.repo_id !== repo.repoId || owner.path !== relativePath || isProcessAlive(owner.pid)) {
-    return false;
-  }
-  const reclaimPath = `${lockPath}.reclaim-${process.pid}-${Date.now()}-${randomBytes(4).toString('hex')}`;
-  try {
-    renameSync(lockPath, reclaimPath);
-    rmSync(reclaimPath, { recursive: true, force: true });
-    return true;
-  } catch (_error) {
-    return false;
-  }
-}
-
-function writeMutationLockOwner(repo: RepoRecord, relativePath: string, lockPath: string, ownerToken: string): void {
-  const payload = `${JSON.stringify({
-    repo_id: repo.repoId,
-    path: relativePath,
-    pid: process.pid,
-    token: ownerToken,
-    created_at: new Date().toISOString(),
-  })}\n`;
-  writeFileSync(mutationLockOwnerPath(lockPath), payload, { encoding: 'utf-8', mode: 0o600 });
-}
-
-function acquireMutationLocks(repo: RepoRecord, paths: string[]): MutationPathLock[] {
+function acquireMutationLocks(repo: RepoRecord, paths: string[]): ExclusiveDirectoryLockHandle[] {
   const lockRoot = mutationLockRoot(repo);
-  const locks: MutationPathLock[] = [];
-  for (const relativePath of cachePaths(paths)) {
-    const lockPath = mutationLockPath(lockRoot, relativePath);
-    const ownerToken = randomBytes(16).toString('hex');
-    let created = false;
-    try {
-      mkdirSync(lockPath, { mode: 0o700 });
-      created = true;
-      writeMutationLockOwner(repo, relativePath, lockPath, ownerToken);
-      locks.push({ relativePath, lockPath, ownerToken });
-    } catch (error) {
-      if (created) rmSync(lockPath, { recursive: true, force: true });
-      releaseMutationLocks(locks);
-      const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
-      if (code === 'EEXIST') {
-        if (tryReclaimStaleMutationLock(repo, relativePath, lockPath)) {
-          try {
-            mkdirSync(lockPath, { mode: 0o700 });
-            try {
-              writeMutationLockOwner(repo, relativePath, lockPath, ownerToken);
-              locks.push({ relativePath, lockPath, ownerToken });
-              continue;
-            } catch (retryOwnerError) {
-              rmSync(lockPath, { recursive: true, force: true });
-              throw retryOwnerError;
-            }
-          } catch (retryError) {
-            if (typeof retryError === 'object' && retryError !== null && 'code' in retryError && String((retryError as { code?: unknown }).code) === 'EEXIST') {
-              throw new GeneralRepoAccessError('REVISION_CONFLICT', 'path is locked by another repo mutation', { path: relativePath }, true);
-            }
-            throw retryError;
-          }
-        }
+  const locks: ExclusiveDirectoryLockHandle[] = [];
+  try {
+    for (const relativePath of cachePaths(paths)) {
+      try {
+        // A mutation never waits for another one: a held path is a retryable conflict.
+        locks.push(acquireExclusiveDirectoryLock(lockRoot, mutationLockName(relativePath), {
+          waitTimeoutMs: 1,
+          reclaimStaleEmptyDirectory: true,
+        }));
+      } catch (error) {
+        if (!(error instanceof ExclusiveLockContentionError)) throw error;
         throw new GeneralRepoAccessError('REVISION_CONFLICT', 'path is locked by another repo mutation', { path: relativePath }, true);
       }
-      throw error;
     }
+    return locks;
+  } catch (error) {
+    releaseMutationLocks(locks);
+    throw error;
   }
-  return locks;
 }
 
-function releaseMutationLocks(locks: MutationPathLock[]): void {
+function releaseMutationLocks(locks: ExclusiveDirectoryLockHandle[]): void {
   for (const lock of locks.reverse()) {
     try {
-      const owner = readMutationLockOwner(lock.lockPath);
-      if (owner?.pid === process.pid && owner.token === lock.ownerToken) {
-        rmSync(lock.lockPath, { recursive: true, force: true });
-      }
+      lock.release();
     } catch (_error) {
       // Best-effort cleanup: never hide the mutation result behind lock cleanup.
     }

@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import { getRoute, routeSupportsHost, type HookEvent, type HookHandlerId, type RouteHost, type RouteId } from './route-registry';
 import { getHandlerForRoute } from './handler-registry';
 import { budgetSessionContext, errorHash } from './session-context-budget';
@@ -20,6 +19,7 @@ import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } f
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
 import { WORKFLOW_CONTRACT_MARKER_PATH, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
 import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
 const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
@@ -41,7 +41,7 @@ export interface RunHookResult {
 
 export function resolveRepoRoot(cwd: string): string | null {
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });

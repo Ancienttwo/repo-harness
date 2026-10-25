@@ -53,6 +53,28 @@ function writeActiveSprintFixture(cwd: string) {
 }
 
 describe("run command", () => {
+  test("retired bounded verifier helper fails closed without running the command", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-retired-bounded-"));
+    try {
+      const marker = join(tmp, "ran");
+      const result = join(tmp, "result.json");
+      const res = spawnSync("bun", [
+        CLI, "run", "run-bounded-verifier-command",
+        "--deadline-ms", String(Date.now() + 30_000), "--log", join(tmp, "log"), "--result", result,
+        "--", "/bin/sh", "-c", `touch "${marker}"`,
+      ], { cwd: tmp, encoding: "utf-8", env: packageRuntimeEnv() });
+
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('helper "run-bounded-verifier-command" is retired');
+      expect(res.stderr).toContain("repo-harness run verification-plan execute");
+      expect(existsSync(marker)).toBe(false);
+      expect(existsSync(result)).toBe(false);
+      expect(resolveHelper("run-bounded-verifier-command")).toBeNull();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("retired context helper is absent from the registry", () => {
     expect(listHelpers().map((helper) => helper.id)).not.toContain("context-contract-sync");
     expect(resolveHelper("context-contract-sync")).toBeNull();

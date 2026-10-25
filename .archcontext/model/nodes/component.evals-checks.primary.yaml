@@ -13,5 +13,4 @@ source:
   include:
     - "scripts/verification-plan.ts"
     - "scripts/migrate-verification-plan.ts"
-    - "scripts/run-bounded-verifier-command.ts"
     - "scripts/verify-*.sh"

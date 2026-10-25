@@ -15,7 +15,7 @@ export interface ExpensiveRunLockHandle extends ExclusiveDirectoryLockHandle {
   registerProcessGroup(pid: number): void;
 }
 
-function registeredProcessGroup(owner: ExclusiveDirectoryLockOwner, record: Readonly<Record<string, unknown>>): number | null {
+function registeredProcessGroup(owner: Pick<ExclusiveDirectoryLockOwner, 'pid' | 'token'>, record: Readonly<Record<string, unknown>>): number | null {
   const value = record.expensive_group;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const group = value as Record<string, unknown>;
@@ -103,7 +103,7 @@ export function acquireExpensiveRunLock(
       if (registeredPid !== null) {
         lock.assertOwned();
         const record = JSON.parse(readFileSync(ownerPath, 'utf-8')) as Record<string, unknown>;
-        const pid = registeredProcessGroup({ lockPath: lock.lockPath, pid: lock.ownerPid, token: lock.ownerToken }, record);
+        const pid = registeredProcessGroup({ pid: lock.ownerPid, token: lock.ownerToken }, record);
         if (pid === null || pid !== registeredPid || !processGroupDrained(pid)) {
           throw new Error('expensive run process group has not been proven drained; preserving lock');
         }

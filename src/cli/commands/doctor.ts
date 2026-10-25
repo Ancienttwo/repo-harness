@@ -448,7 +448,7 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
     id,
     describe,
     status,
-    detail: `index=${indexStatus}${remediation ? `; remediation=${remediation}` : ''}`,
+    detail: `index=${indexStatus}${raw.project_index?.detail ? `; ${raw.project_index.detail}` : ''}${remediation ? `; remediation=${remediation}` : ''}`,
   };
 }
 

@@ -39,11 +39,11 @@
  * still be rolled back by manifest. After the window the operator restores an
  * archived backup by hand.
  */
-import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, type Stats } from 'fs';
 import { dirname, join } from 'path';
 import { FS_TRANSACTION_BACKUP_ROOT } from './fs-transaction';
 import { ensureRepoRelativePath, resolveInsideRepo } from './path-safety';
+import { gitExecFileSync, gitSpawnSync } from './git/runner';
 
 export const DEFAULT_RETENTION_DAYS = 30;
 /** Default time an archived entry stays in the archive root before it is deleted. */
@@ -189,14 +189,14 @@ export function readRetentionConfig(repoRoot: string): RetentionConfig {
 }
 
 function git(repoRoot: string, args: readonly string[]): string {
-  return execFileSync('git', ['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return gitExecFileSync(['-C', repoRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
 /** Paths among `paths` that Git ignores. */
 function ignoredPaths(repoRoot: string, paths: readonly string[]): Set<string> {
   if (paths.length === 0) return new Set();
   // check-ignore exits 1 when it ignores none of the paths.
-  const result = spawnSync('git', ['-C', repoRoot, 'check-ignore', '-z', '--stdin'], { input: paths.join('\0'), encoding: 'utf8' });
+  const result = gitSpawnSync(['-C', repoRoot, 'check-ignore', '-z', '--stdin'], { input: paths.join('\0'), encoding: 'utf8' });
   if (result.status !== 0 && result.status !== 1) throw new Error(`git check-ignore failed: ${result.stderr.trim()}`);
   return new Set(result.stdout.split('\0').filter(Boolean));
 }
@@ -234,7 +234,7 @@ function occupied(path: string): boolean {
 function commitTimes(repoRoot: string, dir: string): Map<string, number> {
   const times = new Map<string, number>();
   // A repository without commits has no commit times; git log would fail.
-  if (spawnSync('git', ['-C', repoRoot, 'rev-parse', '--verify', '--quiet', 'HEAD']).status !== 0) return times;
+  if (gitSpawnSync(['-C', repoRoot, 'rev-parse', '--verify', '--quiet', 'HEAD']).status !== 0) return times;
   let current = 0;
   const log = git(repoRoot, ['-c', 'core.quotePath=false', 'log', '--format=@%ct', '--name-only', '--', dir]);
   for (const line of log.split('\n')) {

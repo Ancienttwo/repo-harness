@@ -28,7 +28,8 @@ let preserveExpensiveRunLock = false;
 interface SupervisorOptions {
   readonly metadataPath: string;
   readonly parentPid: number;
-  readonly timeoutMs: number;
+  /** Absolute epoch-ms deadline. `--timeout-ms` is measured from supervisor start. */
+  readonly deadlineMs: number;
   readonly captureBytes: number;
   readonly stdio: 'pipe' | 'inherit' | 'ignore';
   readonly expensiveLockCwd: string | null;
@@ -63,7 +64,7 @@ interface LauncherResult {
 
 function usage(): never {
   process.stderr.write(
-    'Usage: process-supervisor.ts --metadata <path> --parent-pid <pid> --timeout-ms <ms> '
+    'Usage: process-supervisor.ts --metadata <path> --parent-pid <pid> (--timeout-ms <ms> | --deadline-ms <epoch-ms>) '
     + '--capture-bytes <bytes> --stdio pipe|inherit|ignore '
     + '[--expensive-lock-cwd <path> --git-bin <path>] [--taskkill-bin <path>] -- <command> [args...]\n',
   );
@@ -116,11 +117,21 @@ function parseArgs(argv: readonly string[]): SupervisorOptions {
     if (index === options.length - 1) usage();
     return options[index + 1];
   };
-  const timeoutMs = Number(value('--timeout-ms'));
+  const timeout = optionalValue('--timeout-ms');
+  const deadline = optionalValue('--deadline-ms');
+  if ((timeout === null) === (deadline === null)) usage();
+  let deadlineMs: number;
+  if (timeout !== null) {
+    const timeoutMs = Number(timeout);
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1) usage();
+    deadlineMs = Date.now() + timeoutMs;
+  } else {
+    deadlineMs = Number(deadline);
+    if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) usage();
+  }
   const parentPid = Number(value('--parent-pid'));
   const captureBytes = Number(value('--capture-bytes'));
   const stdio = value('--stdio');
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 1) usage();
   if (!Number.isSafeInteger(parentPid) || parentPid < 1) usage();
   if (!Number.isSafeInteger(captureBytes) || captureBytes < 1) usage();
   if (stdio !== 'pipe' && stdio !== 'inherit' && stdio !== 'ignore') usage();
@@ -130,7 +141,7 @@ function parseArgs(argv: readonly string[]): SupervisorOptions {
   return {
     metadataPath: value('--metadata'),
     parentPid,
-    timeoutMs,
+    deadlineMs,
     captureBytes,
     stdio,
     expensiveLockCwd,
@@ -299,7 +310,7 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
   }, 25);
 
   const timedOut = new Promise<'timeout'>((resolve) => {
-    timeoutId = setTimeout(() => resolve('timeout'), options.timeoutMs);
+    timeoutId = setTimeout(() => resolve('timeout'), Math.max(0, options.deadlineMs - Date.now()));
   });
 
   let outcome: 'completed' | 'timeout' | NodeJS.Signals | 'parent-lost';
@@ -390,7 +401,6 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
 }
 
 async function supervise(options: SupervisorOptions): Promise<number> {
-  const deadlineMs = Date.now() + options.timeoutMs;
   if (!parentIsAlive(options.parentPid)) throw new Error('helper caller exited before lock acquisition');
   const expensiveLock = options.expensiveLockCwd === null
     ? null
@@ -398,8 +408,7 @@ async function supervise(options: SupervisorOptions): Promise<number> {
   try {
     if (!parentIsAlive(options.parentPid)) throw new Error('helper caller exited during lock acquisition');
     expensiveLock?.assertOwned();
-    const remainingMs = deadlineMs - Date.now();
-    if (remainingMs < 1) {
+    if (options.deadlineMs - Date.now() < 1) {
       publishResult(options.metadataPath, {
         status: 1,
         signal: null,
@@ -412,7 +421,7 @@ async function supervise(options: SupervisorOptions): Promise<number> {
       });
       return 1;
     }
-    return await superviseTarget({ ...options, timeoutMs: remainingMs }, expensiveLock);
+    return await superviseTarget(options, expensiveLock);
   } finally {
     // Never release while a superviseTarget() exception left the process
     // group's fate unconfirmed (see preserveExpensiveRunLock above): the

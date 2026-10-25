@@ -9,8 +9,8 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import { configuredBrainRoot } from './brain-root';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
 export type BrainCategory = 'decisions' | 'runbooks' | 'patterns' | 'references';
@@ -128,7 +128,7 @@ function stripWildcard(value: string): string {
 function resolveRepoRoot(input?: string): string {
   const cwd = path.resolve(input ?? process.cwd());
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();

@@ -15,7 +15,6 @@ source:
     - "scripts/run-skill-evals.ts"
     - "scripts/run-harness-profile-benchmark.ts"
     - "scripts/validate-harness-profile-benchmark.ts"
-    - "scripts/run-bounded-verifier-command.ts"
     - "scripts/verify-contract.sh"
     - "scripts/verify-sprint.sh"
     - "scripts/check-task-workflow.sh"
