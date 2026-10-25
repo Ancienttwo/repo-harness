@@ -2,34 +2,79 @@
 
 This is a draft closeout plan, not a release receipt. No release candidate SHA is fixed.
 
-Current main observed: 2cee26d888af9dd34ed52982e13df0c16db00681.
-Historical #951 AXR5 slice: `3be464f3ad5c81e00dd55d2b9d1cc43d519a084d` (before R1/R2 fixes).
-Current [#951](https://github.com/Ancienttwo/repo-harness/pull/951): `45ddb7e7be0272ceaeb53245181f5f8bea980969`.
-Independent script-only [#953](https://github.com/Ancienttwo/repo-harness/pull/953): `99041f2870387ea29e1977745ddd6a505783104c`; dependencies and receipt remain 0.9.1.
+Source observed on 2026-10-25: `e9acac851ce539a1c62a2f84cd80852c0b4034ae`.
+The package version remains 0.24.1. Both archctx and archctx-contracts are 0.9.3.
+This documentation update changes no version, runtime, model or generated output.
 
-## Open scope
+## Completed source work
 
-- #951: paired archctx 0.9.3 upgrade and AXR5 cleanup repair. Await bounded CI integration, exact-head independent review and real clean-room evidence. Old receipt failure remains visible.
-- #950 / #948: separate architecture documentation owner. Head `a94f3870b04bce8ab7c71b4d40f6bfc836eff380` has [successful CI40203361611](https://github.com/Ancienttwo/repo-harness/actions/runs/40203361611) and an [independent Astra summary](https://github.com/Ancienttwo/repo-harness/pull/950#issuecomment-6399051350). Visual/model verification remains blocked. Do not use the older36ea33d result or close by documentation-only inference.
-- #895 / #898: writer-owned generated outputs. Read-only GitHub check returned head ef33704a1c46a883b80ef6210de494aa536f0ba5 and baseRefOid11227768b683580531f29dd489400dc47cd94501. It returned MERGEABLE, which differs from an earlier conflict report. This is not freshness or owner GO. Existing review comment covers old4891805, not current head. #898 remains open, no assignee or comments. Do not start a replacement writer or edit generated files.
-- #903: parent confirms active prior owner and incomplete generic review identity migration. Dependencies926/906 are merged; they are not current blockers. Stop927 alone does not close the issue.
+These commits are merged source changes, not a published 0.24.2 release.
 
-## Release preparation after candidate scope is settled
+| PR | Result | Merge SHA |
+| --- | --- | --- |
+| #952 | Initial bounded CI support | `2b212057380c28983e6138b7c561bc2b05bc3e8f` |
+| #953 | AXR5 isolation and confirmed cleanup | `468c88ce3c6fa9415be6beafa5cc086d62eaef51` |
+| #954 | Initial release HOLD documents | `846c6d1a45782ec2e18fac815ef2ba026f290869` |
+| #955 | Exact final receipt-bearing CI admission | `536a1d9831e03fd6e0ab46e58e49de9b4f949901` |
+| #951 | Paired 0.9.3 upgrade and real clean-room receipt | `cb900a7fe5ebd04830fdfa62e1b18e25ec969148` |
+| #957 | Acceptance receipt flow sink correction; #956 closed | `b4c8b53b43c376a4da1e17a10c1fe40fc98e7d72` |
+| #950 | Handwritten architecture views and acceptance account; #948 closed | `e9acac851ce539a1c62a2f84cd80852c0b4034ae` |
 
-- Update package.json and assets/skill-version.json version/templateVersion consistently to0.24.2. Inspect CLI/status version derivation and lock metadata before editing; do not mass-replace historical version strings.
-- Add docs/CHANGELOG.md0.24.2 entry from the exact merged commit range, separating shipped fixes from pending PRs. Do not list pending changes as released.
-- Add deploy/release-checklists/261025-repo-harness-0.24.2.md with exact candidate/base, verification and publication status HOLD.
-- Obtain current readiness evidence. The0.24.1 yellow-flag acceptance was specific to that release and does not carry forward.
-- Record skill evaluation fields full_test_count,dry_run_ratio,grader_pass_rate,effectiveness_authority, or explicitly unavailable.
-- Include consumer architecture smoke evidence for the no-codefacts/no-manifest registry case in tests/hook-runtime.test.ts.
-- Only after fixing the candidate and confirming authority, consider one release full-CI run. bun run check:release is a separate expensive/package/install lane, not a replacement for exact-SHA green CI. Do not run either now.
+#951 final-head CI40212319529 passed. Its isolated clean-room receipt is real
+0.9.3 evidence; the old 0.9.1 assertion failure remains historical evidence.
+The clean-room result was `human-action-required` with CodeGraph unavailable,
+not a fully indexed projection pass. Separately, #957 used ready CodeGraph and
+proved 108/108 flow selectors after the official one-path ChangeSet. CI40214204040
+passed on its exact head. These results do not replace release-candidate gates.
 
-No merge, tag, GitHub Release, npm publish, deployment, service operation or issue closure is authorized by this preparation note.
+## Remaining scope and ownership
 
-## Current execution checkpoint
+| Item | Observed state and owner | Minimum next coordination |
+| --- | --- | --- |
+| #895 / #898 | One open generated PR, owned by the existing rolling writer. #895 head `829dae036a60466e32176fffb007e2f28d139a26` declares base main `b4c8b53b43c376a4da1e17a10c1fe40fc98e7d72`. #898 is open with no assignee or claim comment. | Existing writer must verify its final head against current main and supply publication acceptance evidence. Coordinator must determine whether that result closes #898. Do not start a competing writer or hand-edit generated files. |
+| #903 | Open. Active Claude Code Opus 5.5 claim: session `issue-903-review-key-d49bb5`, branch `claude/issue-903-review-key-d49bb5`. No release of that claim was observed. Stop recovery #927 is merged; the review-key/acceptance-receipt identity half remains open. #926/#906 are merged, not current blockers. | Obtain the existing owner's status and disposition of the six contract-supplied receipt inputs. This plan neither selects a replacement identity design nor takes over the branch. |
+| #917 | Closed on GitHub. Its last status says blocked, with the Claude deep-worker claim retained. Reader removal would affect live features; closure alone does not prove final product acceptance. | Coordinator must resolve or explicitly retain the reported product decision before treating this as release-accepted. Do not infer a code deletion or waiver from the closed state. |
 
-- #951 updated to45ddb7e7be0272ceaeb53245181f5f8bea980969. Astra closed the two cleanup findings on this head; real integration and Required CI are still open.
-- #952 is the standalone CI bootstrap at4475af0f7cfbdce9750ac58cc76c15dd1584e683. Its PR-event selector selected136 of295 test files, not the full suite. CI40203733912 completed successfully at this exact head: three affected shards, native OAR, three HOME platforms and Required / CI passed. Daily/full jobs were skipped, not passed. The [independent Astra bootstrap review](https://github.com/Ancienttwo/repo-harness/pull/952#issuecomment-6399118396) found no blocking bootstrap defect. This does not approve the final0.9.3 integration.
-- Planned stack: reviewed CI bootstrap, AXR5-only support (script, helper, regression tests), then paired dependency upgrade. Keep Required checks on each exact candidate. No layer is merged merely to enable another layer.
-- The current upgrade-only residual diff is exactly package.json,bun.lock,tests/architecture-projection-e2e.test.ts and three archctx-0.9.3 verification files. The upgrade note's current blob is c3dc61b8fee7ced041f7e22478e8e2e3b505c940, which differs from the bootstrap policy. Rebind only after the exact scope is settled and reviewed.
-- A genuine new clean-room receipt would add another changed file. Do not assume the current six-file exception accepts it, or edit a receipt just to satisfy that exception. Reassess the exact reviewed scope when real evidence is available.
+Claim sources: [#903 claim](https://github.com/Ancienttwo/repo-harness/issues/903#issuecomment-6392699152),
+[#903 remaining scope](https://github.com/Ancienttwo/repo-harness/issues/903#issuecomment-6392817649),
+[#917 blocked status](https://github.com/Ancienttwo/repo-harness/issues/917#issuecomment-6393184902).
+At this observation, #895 is the only open PR; #898 and #903 are the open issues.
+This is a timestamped inventory, not a guarantee that another owner has stopped.
+
+## Retained measurements and acceptance gaps
+
+The following measurements came from #957 at head
+`24633552040b45739e7dccec79017ac7ed1ed435`. They were not rerun for this document
+or after the latest writer update.
+
+- Projection check required human action for 17 capabilities, including acceptance-review.
+  Generated publication and major-change acceptance remain with the existing writer.
+- Anchors checked 1,077 citations across 84 nodes and 28 documents: 10 findings
+  (3 line-out-of-range, 7 missing-path), 0 unchecked. No per-finding owner or
+  dedicated issue was confirmed here; #950 closure does not resolve them by implication.
+- Architecture-debt comparison introduced no items and resolved two IDs, but
+  coverage remained partial because practices were not enabled/evaluated.
+  No owner or acceptance decision for that gap was confirmed here.
+- Model validation retained the warning that manifest `review.failOn` is ignored;
+  `.archcontext/policies/review.yaml` is the policy source.
+
+The coordinator must identify owners or obtain explicit current dispositions for
+these gaps. This document makes no design decision, waiver or new acceptance claim.
+
+## Release preparation after scope is settled
+
+- Freeze one candidate only after remaining work and acceptance decisions are resolved.
+- Prepare the 0.24.2 changelog from the exact merged range. Do not call pending work shipped.
+- Update package.json and assets/skill-version.json consistently only in the eventual
+  authorized version change; inspect CLI/status derivation and lock metadata first.
+- Obtain current readiness evidence. The 0.24.1 yellow-flag acceptance does not carry forward.
+- Record skill evaluation fields full_test_count, dry_run_ratio, grader_pass_rate
+  and effectiveness_authority, or explicitly unavailable.
+- Include consumer architecture smoke evidence for the no-codefacts/no-manifest
+  registry case in tests/hook-runtime.test.ts.
+- Only after scope and authority are fixed, run the release full-CI gate once.
+  `bun run check:release` is a separate package/install gate. Neither has run for 0.24.2.
+
+The [release checklist](../deploy/release-checklists/261025-repo-harness-0.24.2.md)
+remains HOLD. This preparation note authorizes no merge, tag, release, deployment,
+service operation, issue closure or generated publication.
