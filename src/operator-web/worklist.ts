@@ -99,7 +99,8 @@ function compareCards(left: OperatorFleetCardV1, right: OperatorFleetCardV1): nu
   const leftIndex = left.task_index ?? Number.MAX_SAFE_INTEGER;
   const rightIndex = right.task_index ?? Number.MAX_SAFE_INTEGER;
   if (leftIndex !== rightIndex) return leftIndex - rightIndex;
-  return left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0;
+  const leftKey = taskKey(left), rightKey = taskKey(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
 export interface WorklistGroup {

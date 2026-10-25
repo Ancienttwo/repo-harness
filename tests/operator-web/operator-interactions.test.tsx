@@ -473,19 +473,19 @@ describe('operator web worklist projection', () => {
     expect(primaryCause(cards[4])).toBeNull();
   });
 
-  test('falls back to a 12 character task id when the sprint row carries no label', () => {
+  test('falls back to the provider issue ID when the issue has no label', () => {
     const labelled = taskDisplayLabel(stableSnapshot.repositories[0].cards[0]);
     const unlabelled = taskDisplayLabel({ ...stableSnapshot.repositories[0].cards[0], task_label: null });
 
     expect(labelled).toEqual({ text: fixtureTasks.available.task_label, isLabel: true });
-    expect(unlabelled).toEqual({ text: fixtureTasks.available.task_id.slice(0, 12), isLabel: false });
-    expect(unlabelled.text.length).toBe(12);
+    expect(unlabelled).toEqual({ text: stableSnapshot.repositories[0].cards[0].provider_issue_id, isLabel: false });
+    expect(unlabelled.text).toMatch(/^[1-9][0-9]*$/u);
   });
 
-  test('selection identity ignores the task revision', () => {
+  test('selection identity binds provider issue and execution while ignoring issue revision', () => {
     const card = stableSnapshot.repositories[0].cards[0];
-    expect(taskKey(card)).toBe(`repo-harness:${fixtureTasks.available.task_id}`);
-    expect(taskKey({ ...card, task_revision: 'rev-next' })).toBe(taskKey(card));
+    expect(taskKey(card)).toBe(`repo-harness:${card.provider_repository_id}:${card.provider_issue_id}:unassigned`);
+    expect(taskKey({ ...card, issue_revision: `sha256:${'f'.repeat(64)}` })).toBe(taskKey(card));
   });
 });
 
@@ -828,7 +828,7 @@ describe('operator web interactions', () => {
     }
   });
 
-  test('a new task revision keeps the pane open and says so; a removed task closes it', async () => {
+  test('a new issue revision keeps the pane open and says so; a removed task closes it', async () => {
     const nextSnapshot = (revision: string | null): OperatorFleetSnapshotV1 => ({
       ...stableSnapshot,
       sequence: stableSnapshot.sequence + 1,
@@ -837,7 +837,7 @@ describe('operator web interactions', () => {
         cards: repository.cards.flatMap((card) => {
           if (card.task_id !== fixtureTasks.blocked.task_id) return [card];
           if (revision === null) return [];
-          return [{ ...card, task_revision: revision }];
+          return [{ ...card, issue_revision: revision }];
         }),
       })),
     });
@@ -846,14 +846,14 @@ describe('operator web interactions', () => {
       <OperatorApp
         initialState={projectSnapshotViewState(stableSnapshot)}
         initialLocale="en"
-        fetchSnapshot={async () => nextSnapshot('rev-blocked-next')}
+        fetchSnapshot={async () => nextSnapshot(`sha256:${'d'.repeat(64)}`)}
       />,
     );
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
     await act(async () => buttonWithText('Refresh').click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(paneText()).toContain('Task definition changed since last snapshot');
-    expect(paneText()).toContain('rev-blocked-next');
+    expect(paneText()).toContain(`sha256:${'d'.repeat(64)}`);
     await act(async () => root?.unmount());
     root = null;
 
@@ -877,20 +877,20 @@ describe('operator web interactions', () => {
       sequence: stableSnapshot.sequence + 1,
       repositories: stableSnapshot.repositories.map((repository) => ({
         ...repository,
-        cards: repository.cards.map((row) => row.task_id === card.task_id ? { ...row, task_revision: revision } : row),
+        cards: repository.cards.map((row) => row.task_id === card.task_id ? { ...row, issue_revision: revision } : row),
       })),
     });
     let current = stableSnapshot;
-    window.history.replaceState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+    window.history.replaceState(null, '', `?repository=${card.repository_id}&provider_repository_id=${card.provider_repository_id}&issue_id=${card.provider_issue_id}&session_binding_sha256=${encodeURIComponent(card.execution!.selector.session_binding_sha256)}`);
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => current} />);
     expect(paneText()).toContain(fixtureTasks.blocked.task_label);
     expect(paneText()).not.toContain('Task definition changed');
-    current = revised('rev-url-next');
+    current = revised(`sha256:${'e'.repeat(64)}`);
     await act(async () => buttonWithText('Refresh').click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(paneText()).toContain('Task definition changed since last snapshot');
-    expect(paneText()).toContain(card.task_revision);
-    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).toContain(card.issue_revision!);
+    expect(paneText()).toContain(`sha256:${'e'.repeat(64)}`);
 
     // A Back/Forward restore builds a fresh selection without a revision; the
     // restored pane re-baselines from the snapshot it first resolves.
@@ -900,16 +900,16 @@ describe('operator web interactions', () => {
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => {
-      window.history.pushState(null, '', `?repository=${card.repository_id}&task=${card.task_id}`);
+      window.history.pushState(null, '', `?repository=${card.repository_id}&provider_repository_id=${card.provider_repository_id}&issue_id=${card.provider_issue_id}&session_binding_sha256=${encodeURIComponent(card.execution!.selector.session_binding_sha256)}`);
       window.dispatchEvent(new window.PopStateEvent('popstate'));
     });
-    expect(paneText()).toContain('rev-url-next');
+    expect(paneText()).toContain(`sha256:${'e'.repeat(64)}`);
     expect(paneText()).not.toContain('Task definition changed');
-    current = revised('rev-url-third');
+    current = revised(`sha256:${'f'.repeat(64)}`);
     await act(async () => buttonWithText('Refresh').click());
     expect(paneText()).toContain('Task definition changed since last snapshot');
-    expect(paneText()).toContain('rev-url-next');
-    expect(paneText()).toContain('rev-url-third');
+    expect(paneText()).toContain(`sha256:${'e'.repeat(64)}`);
+    expect(paneText()).toContain(`sha256:${'f'.repeat(64)}`);
     expect(new URLSearchParams(window.location.search).get('task_revision')).toBeNull();
   });
 

@@ -44,7 +44,7 @@ test('Planning transport binds provider tasks, explicit admitted sessions and in
 
 function validFleetPayload(): Record<string, unknown> {
   return {
-    protocol: 7,
+    protocol: 8,
     service_epoch: '00000000-0000-4000-8000-000000000001',
     kind: 'operator_fleet_snapshot',
     registry_revision: `sha256:${'d'.repeat(64)}`,
@@ -60,22 +60,22 @@ function validFleetPayload(): Record<string, unknown> {
       cards: [{
         repository_id: 'repo-1',
         task_id: taskId,
-        task_revision: taskRevision,
+        provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${taskRevision}`,
+        execution_status: 'observed', execution: {
+          admission_sha256: snapshotDigest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex',
+          selector: { repository_id: 'repo-1', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker',
+            claim_ref: claimId, claim_revision: snapshotDigest, grant_sha256: snapshotDigest, policy_sha256: snapshotDigest, actor_id: 'owner', session_binding_sha256: snapshotDigest },
+        },
         task_label: 'validate operator identity',
         task_index: 1,
-        claim_id: claimId,
-        generation: 1,
-        task_state: 'pending',
         placement: { kind: 'column', column: 'working' },
         attention_owner: 'agent',
         execution_readiness: 'execution_ready', readiness_blockers: [],
-        lease_state: 'bound',
-        publication_id: null,
-        head_sha: null,
         merge_readiness: null,
         blocker_codes: [],
-        feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
+        feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
         inbox: {
+          observation_status: 'observed',
           unread_count: 0,
           addressed_to_current_claim: false,
           delivery_state: 'pending',
@@ -115,13 +115,17 @@ describe('operator browser payload contracts', () => {
     const decoded = decodeOperatorFleetSnapshot(validFleetPayload());
     const card = decoded.repositories[0]?.cards[0];
 
-    expect(card).toMatchObject({ task_id: taskId, task_revision: taskRevision, claim_id: claimId, generation: 1 });
+    expect(card).toMatchObject({ task_id: taskId, provider_repository_id: '1001', provider_issue_id: '2001', execution: { admission_sha256: snapshotDigest, selector: { claim_ref: claimId, claim_revision: snapshotDigest } } });
     expect(card?.task_id).toMatch(/^[0-9a-f]{64}$/u);
-    expect(card?.task_revision).toMatch(/^[0-9a-f]{64}$/u);
-    expect(card?.claim_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+    expect(card?.issue_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(card?.execution?.selector.claim_ref).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   });
 
   test.each([
+    ['GraphQL ID in canonical REST field', { provider_repository_id: 'R_node' }],
+    ['zero issue ID', { provider_issue_id: '0' }],
+    ['malformed issue revision', { issue_revision: 'revision-1' }],
+    ['execution missing with task ID', { execution: null }],
     ['malformed task digest', { task_id: 'task-1' }],
     ['uppercase task digest', { task_id: 'A'.repeat(64) }],
     ['malformed task revision digest', { task_revision: 'revision-1' }],
@@ -132,6 +136,17 @@ describe('operator browser payload contracts', () => {
     ['generation without claim', { claim_id: null }],
   ])('rejects %s before rendering a write affordance', (_name, changes) => {
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard(changes))).toThrow(OperatorPayloadError);
+  });
+
+  test('binds execution to its exact provider issue and task rather than a matching display row', () => {
+    expect(decodeOperatorFleetSnapshot(validFleetPayload()).repositories[0]!.cards[0]!.execution).not.toBeNull();
+    for (const delta of [{ provider_repository_id: '1002' }, { issue_id: '2002' }, { task: 'other-runtime-task' }, { repository_id: 'repo-2' }]) {
+      const payload = validFleetPayload();
+      const card = (payload.repositories as { cards: Record<string, unknown>[] }[])[0]!.cards[0]!;
+      const execution = card.execution as { selector: Record<string, unknown> };
+      execution.selector = { ...execution.selector, ...delta };
+      expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+    }
   });
 
   // `effect_sha256` is rendered as a copyable identifier, so a value that is
@@ -311,6 +326,7 @@ describe('notification delivery evidence protocol', () => {
     }
     const { value, card } = payload(null);
     card.error = { code: 'repo_runtime_effect_unreadable', message: 'unavailable' };
+    (card.inbox as Record<string, unknown>).observation_status = 'unavailable';
     card.placement = { kind: 'unclassified', reason: 'observation_failed' };
     value.snapshot_consistency = 'degraded';
     (value.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
@@ -333,7 +349,7 @@ describe('notification delivery evidence protocol', () => {
 
 describe('placement protocol and count conservation', () => {
   test.each([
-    { placement: undefined }, { task_state: undefined }, { readiness_blockers: undefined },
+    { placement: undefined }, { issue_state: undefined }, { readiness_blockers: undefined },
     { column: 'working' }, { placement: { kind: 'preparation', column: 'working' } },
     { placement: { kind: 'alternate_workflow', workflow: 'unknown' } },
     { placement: { kind: 'unclassified', reason: 'unknown' } },
@@ -359,14 +375,14 @@ describe('placement protocol and count conservation', () => {
   });
   test('preserves exact preparation ownership without degrading health', () => {
     const blockers = [{ code: 'plan_not_approved', attention_owner: 'user' }, { code: 'contract_missing', attention_owner: 'agent' }] as const;
-    const payload = fleetPayloadWithCard({ placement: { kind: 'preparation' }, execution_readiness: 'planning_required', readiness_blockers: blockers, lease_state: 'available', claim_id: null, generation: null });
+    const payload = fleetPayloadWithCard({ placement: { kind: 'preparation' }, execution_readiness: 'planning_required', readiness_blockers: blockers, execution: null, task_id: null });
     payload.counts = { ...(payload.counts as object), working: 0, preparation: 1 };
     const result = decodeOperatorFleetSnapshot(payload);
     expect(result.snapshot_consistency).toBe('stable');
     expect(result.repositories[0]!.cards[0]!.readiness_blockers).toEqual(blockers);
   });
   test('counts a missing canonical row only as isolated execution', () => {
-    const payload = fleetPayloadWithCard({ task_state: 'missing', task_label: null, task_index: null, placement: { kind: 'unclassified', reason: 'canonical_missing' } });
+    const payload = fleetPayloadWithCard({ issue_state: null, task_label: null, task_index: null, placement: { kind: 'unclassified', reason: 'canonical_missing' } });
     payload.snapshot_consistency = 'degraded';
     (payload.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
     payload.counts = { ...(payload.counts as object), working: 0, known_tasks: 0, isolated_execution: 1 };
@@ -411,7 +427,7 @@ test('current context transport preserves expected revision, abort and uncached 
   } finally {globalThis.fetch=original;}
 });
 
-test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () => {
+test('Fleet protocol8 requires a valid service epoch and rejects protocol6', () => {
   const payload = validFleetPayload();
   expect(() => decodeOperatorFleetSnapshot({ ...payload, protocol: 6 })).toThrow();
   for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {

@@ -246,7 +246,7 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
     const current_claim = { reference: execution.selector.claim_ref, revision: execution.selector.claim_revision };
     const input = { repo_root: repo.path, task_id: execution.selector.task, admission_sha256: execution.admission_sha256, current_claim };
     const messages = summarizeTaskInboxForFleet(input);
-    const runtime = projectTaskAgentRuntimeState({ ...input, session_binding_sha256: execution.selector.session_binding_sha256, statuses: runtimeEffects, env: options.env });
+    const runtime = projectTaskAgentRuntimeState({ ...input, session_binding_sha256: execution.selector.session_binding_sha256, statuses: runtimeEffects });
     inbox = { observation_status: 'observed', unread_count: messages.unread_count, addressed_to_current_claim: messages.addressed_to_current_claim, ...runtime };
     if (messages.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
     if (selections.length === 1) {
