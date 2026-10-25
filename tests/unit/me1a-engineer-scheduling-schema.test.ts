@@ -6,6 +6,7 @@ import {
   schedulingCarrierPath,
   validateWorkGraph,
   validateModuleAcceptanceReference,
+  validateIntegrationDependencyReference,
   validateWorkGraphTopology,
   type SchedulingCanonicalTask,
   type WorkGraphV1,
@@ -75,6 +76,22 @@ function task(ref = 'task A', id = '1', revision = '2', rowOrder = 1): Schedulin
 }
 
 describe('ME-1A closed scheduling schema', () => {
+  test('requires explicit provider selectors and accepts several PRs for one issue', () => {
+    const edge = { repository_id: REPO, work_package_id: 'wp-b', required_state: 'publication_integrated', acceptance_authority: null };
+    expect(() => graph([workPackage('wp-a', 'task A', [edge]), workPackage('wp-b', 'task B')])).toThrow('authority reference');
+    expect(() => graph([workPackage('wp-a', 'task A', [{ ...edge, acceptance_authority: {
+      authority_kind: 'provider_integration', subject_ref: 'plans/integration/selected.json', subject_revision: DIGEST,
+    } }]), workPackage('wp-b', 'task B')])).not.toThrow();
+    const pr = { provider_repository_id: 'R_example', repository: 'example/product', issue_id: 'I_903', issue_number: 903,
+      pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) };
+    const selector = { protocol: 2, task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64),
+      final_head_sha: 'c'.repeat(40), final_tree_sha: 'd'.repeat(40), required_pull_requests: [pr, { ...pr, pr_number: 2 }], product: null };
+    expect(validateIntegrationDependencyReference(selector).required_pull_requests).toHaveLength(2);
+    expect(() => validateIntegrationDependencyReference({ ...selector, required_pull_requests: [pr, pr] })).toThrow('duplicate');
+    expect(() => validateIntegrationDependencyReference({ ...selector, protocol: 1 })).toThrow('protocol');
+    expect(() => validateIntegrationDependencyReference({ ...selector, final_tree_sha: null })).toThrow();
+  });
+
   test('uses one deterministic sibling carrier and explicit legacy lane', () => {
     expect(schedulingCarrierPath('plans/sprints/demo.sprint.md'))
       .toBe('plans/sprints/demo.work-graph.v1.json');

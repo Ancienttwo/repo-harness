@@ -398,7 +398,7 @@ export function createIntegrationContract(
   return contract;
 }
 
-function observeSelectedPullRequest(
+export function observeSelectedPullRequest(
   environment: IntegrationAcceptanceEnvironment,
   repoRoot: string,
   gitBin: string,
@@ -514,7 +514,7 @@ export function createAcceptanceMatrix(
   return matrix;
 }
 
-function defaultReadAcceptanceReceiptBytes(root: string, authorityHome: string): Buffer {
+export function defaultReadAcceptanceReceiptBytes(root: string, authorityHome: string): Buffer {
   return readRegular(acceptanceReceiptPath(root, authorityHome), 'AcceptanceReceipt');
 }
 

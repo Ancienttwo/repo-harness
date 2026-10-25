@@ -1,9 +1,9 @@
+import type { RequiredPullRequestV2 } from '../../src/core/integration/product-acceptance';
+import { observeSelectedPullRequest, type IntegrationAcceptanceEnvironment } from '../../src/effects/integration/product-acceptance';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { observeActiveReviewAdmission } from '../../src/effects/review/issue-goal';
 import { createReviewAdmission } from '../../src/core/review/authority-context';
-import { historicalPublicationPointer } from '../helpers/publication-fixture';
-import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
-import { seedPublicationReceipt } from '../helpers/publication-fixture';
+import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance } from '../helpers/repo-fixture';
@@ -33,16 +33,8 @@ import {
   type WorkPackageDependencyState,
   type WorkPackageDependencyV1,
 } from '../../src/core/engineers/scheduling';
-import {
-  buildPublicationIntegrationObservation,
-  canonicalPublicationIntegrationObservationBytes,
-} from '../../src/core/publication/publication-lifecycle';
-import {
-  buildPublicationReceipt,
-  publicationReceiptDigest,
-  publicationSha256,
-} from '../../src/core/publication/publication-receipt';
-import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../../src/core/state/coordination-identity';
+import { publicationSha256 } from '../../src/core/publication/publication-receipt';
+import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,
   defaultDependencyAuthorityReaders,
@@ -60,7 +52,6 @@ import {
   createProductAcceptanceProjection,
   listProductAcceptanceProjections,
 } from '../../src/effects/integration/product-acceptance';
-import { readPublicationIntegrationObservations } from '../../src/effects/publication/publication-lifecycle';
 import { repoHarnessRegisteredReposPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
@@ -173,7 +164,7 @@ function dependency(state: WorkPackageDependencyState, repositoryId = REPO_ID): 
     required_state: state,
     acceptance_authority: state === 'module_accepted'
       ? moduleAuthority()
-      : state === 'product_accepted' ? productAuthority() : null,
+      : state === 'product_accepted' ? productAuthority() : state === 'publication_integrated' ? { authority_kind: 'provider_integration', subject_ref: 'plans/integration/wp-a.json', subject_revision: engineerSha256('{}') } : null,
   };
 }
 
@@ -322,6 +313,67 @@ function gitShow(root: string, commit: string, path: string): string | null {
   }
 }
 
+function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2; merge: string; tree: string }>): NonNullable<IntegrationAcceptanceEnvironment['gh_runner']> {
+  const response = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+  return args => {
+    const command = `${args[0]} ${args[1]}`;
+    if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
+    if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
+    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ node_id: 'I_product', number: 903 });
+    const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
+      ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
+      : Number(args[1]?.match(/(?:pulls|runs)\/(\d+)$/)?.[1]);
+    const item = provider.get(number);
+    if (args[0] === 'api' && args[1]?.includes('/git/commits/')) {
+      const commit = args[1].split('/').at(-1);
+      const entry = [...provider.values()].find(value => value.merge === commit);
+      if (!entry) throw new Error('unexpected merge commit');
+      return response({ sha: entry.merge, tree: { sha: entry.tree }, parents: [{ sha: entry.selection.expected_base_sha }] });
+    }
+    if (!item) throw new Error(`unexpected provider args: ${args.join(' ')}`);
+    const selection = item.selection;
+    if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
+      state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
+    if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
+    if (command === 'api graphql') return response({ data: { node: { id: selection.provider_repository_id, pullRequest: {
+      number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
+      latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
+      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] },
+    } } } });
+    if (args[1]?.includes('/actions/runs/')) return response({ path: '.github/workflows/ci.yml', event: 'pull_request',
+      head_sha: selection.expected_head_sha, pull_requests: [{ number, head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha } }],
+      status: 'completed', conclusion: 'success' });
+    if (args[1]?.includes('/pulls/')) return response({ number, merged: true, merge_commit_sha: item.merge,
+      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { node_id: selection.provider_repository_id } } });
+    throw new Error(`unexpected provider args: ${args.join(' ')}`);
+  };
+}
+
+function providerFixture(subject: Fixture, head: string, base: string) {
+  const selection: RequiredPullRequestV2 = { provider_repository_id: 'R_me4c_fixture', repository: 'example/product',
+    issue_id: 'I_product', issue_number: 903, pr_number: 1, expected_head_sha: head, expected_base_sha: base };
+  const tree = git(subject.root, 'rev-parse', `${head}^{tree}`);
+  const provider = new Map([[1, { selection, merge: head, tree }]]);
+  const environment = { repo_root: subject.root, gh_runner: providerRunner(provider) };
+  return { selection, tree, provider, environment };
+}
+
+function integrationInput(subject: Fixture, state: 'publication_integrated' | 'product_accepted',
+  provider: ReturnType<typeof providerFixture>, product: { projection_sha256: string; approved_prd_ref: string; approved_prd_sha256: string } | null = null): DependencyAuthorityInput {
+  const selector = { protocol: 2, task_id: subject.target.task_id, task_revision: subject.target.task_revision,
+    final_head_sha: provider.provider.get(1)!.merge, final_tree_sha: provider.tree, required_pull_requests: [provider.selection], product };
+  const path = 'plans/integration/wp-a.json';
+  const bytes = `${JSON.stringify(selector)}\n`;
+  writeRepoFile(subject.root, path, bytes);
+  git(subject.root, 'add', path); git(subject.root, 'commit', '-m', 'select exact provider integration');
+  const commit = git(subject.root, 'rev-parse', 'HEAD');
+  return input(subject, state, { dependency: { ...dependency(state), acceptance_authority: {
+    authority_kind: state === 'publication_integrated' ? 'provider_integration' : 'product_acceptance', subject_ref: path, subject_revision: engineerSha256(bytes) } },
+    reads: subject.reads.map(read => ({ ...read, commit })),
+    readers: { ...admissionReaders(subject.root, subject.home), observeIntegration: (_env, ...args) => observeSelectedPullRequest(provider.environment, ...args) } });
+}
+
 function input(
   subject: Fixture,
   state: WorkPackageDependencyState,
@@ -444,90 +496,6 @@ function observationPathFor(subject: Fixture, receipt: AcceptanceReceipt = accep
     receipt.campaign_sha256,
     receipt.admission_sha256,
   );
-}
-
-function reviewingPublication(subject: Fixture, head: string, base: string, number: number): ReturnType<typeof buildPublicationReceipt> {
-  const receipt = buildPublicationReceipt({
-    repo_id: subject.identity,
-    task_id: subject.target.task_id,
-    task_revision: subject.target.task_revision,
-    claim_id: `claim-${number}`,
-    generation: 1,
-    target_ref: 'main',
-    base_sha: base,
-    branch: 'main',
-    head_sha: head,
-    tree_sha: git(subject.root, 'rev-parse', `${head}^{tree}`),
-    candidate_diff_fingerprint: `sha256:${'5'.repeat(64)}`,
-    provider: 'github',
-    provider_repo_id: 'R_issue284',
-    pr_number: number,
-    pr_url: `https://example.invalid/pr/${number}`,
-    created_at: `2026-09-02T00:00:0${number}Z`,
-  });
-  seedPublicationReceipt(subject.root, receipt);
-  const owner = buildLeaseOwnerRecord({
-    claimId: `claim-${number}`,
-    taskId: subject.target.task_id,
-    taskRevision: subject.target.task_revision,
-    sprintPath: SPRINT,
-    targetRef: 'main',
-    generation: 1,
-    sessionId: `session-${number}`,
-    sourceWorktree: subject.root,
-  });
-  const bound = boundLeaseFixture(owner, {
-    executionWorktree: subject.root,
-    branch: 'main',
-    unitRef: `plans/plan-${number}.md`,
-  });
-  const completing = completingLeaseFixture(bound, {
-    claimId: owner.claim_id,
-    executionWorktree: subject.root,
-    finishTransactionKey: null,
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = reviewingLeaseFixture(completing.record, {
-    claimId: owner.claim_id,
-    publication: historicalPublicationPointer(receipt, `ship-${number}`),
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!seedLeaseDirectory(subject.root, subject.target.task_id)) throw new Error('lease election failed');
-  writeHistoricalLease(subject.root, subject.target.task_id, reviewing.record);
-  return receipt;
-}
-
-/** Persists an integration observation exactly where the publication authority stores it. */
-function persistObservation(
-  subject: Fixture,
-  receipt: ReturnType<typeof buildPublicationReceipt>,
-  overrides: { readonly task_revision?: string } = {},
-): ReturnType<typeof buildPublicationIntegrationObservation> {
-  const observation = buildPublicationIntegrationObservation({
-    publication_id: receipt.publication_id,
-    receipt_sha256: publicationReceiptDigest(receipt),
-    task_id: receipt.task_id,
-    task_revision: overrides.task_revision ?? receipt.task_revision,
-    claim_id: receipt.claim_id,
-    generation: receipt.generation,
-    head_sha: receipt.head_sha,
-    target_ref: receipt.target_ref,
-    fetched_target_oid: receipt.head_sha,
-    observation_ref: `refs/repo-harness/observations/publication/${receipt.publication_id.slice('sha256:'.length)}/${receipt.head_sha}`,
-    provider_pr_number: receipt.pr_number,
-    provider_state: 'MERGED',
-    provider_merged_at: '2026-09-02T00:00:00Z',
-    integration_state: 'merged',
-  });
-  const path = join(
-    resolveGitCommonDirectory(subject.root),
-    'repo-harness/publications/v1/integration',
-    observation.publication_id.slice('sha256:'.length),
-    `${observation.observation_id.slice('sha256:'.length)}.json`,
-  );
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${canonicalPublicationIntegrationObservationBytes(observation)}\n`);
-  return observation;
 }
 
 const ENGINEER = `engineer:${CAPABILITY}`;
@@ -1026,61 +994,33 @@ describe('issue #284 closed dependency authority', () => {
       waiverGrant: sealedGrant }).ok).toBe(false);
   });
 
-  test('publication_integrated needs the immutable observation, not a merged-looking Git state', () => {
+  test('publication_integrated requires committed exact provider evidence and refuses moved selections', () => {
     const subject = fixture();
     const base = subject.commit;
     writeRepoFile(subject.root, 'feature.txt', 'feature\n');
-    git(subject.root, 'add', 'feature.txt');
-    git(subject.root, 'commit', '-m', 'feature');
+    git(subject.root, 'add', 'feature.txt'); git(subject.root, 'commit', '-m', 'feature');
     const head = git(subject.root, 'rev-parse', 'HEAD');
-    const receipt = reviewingPublication(subject, head, base, 1);
-
-    const reviewing = resolveDependencyAuthority(input(subject, 'publication_integrated'));
-    expect(reviewing.status).toBe('unsatisfied');
-    expect(reviewing.evidence_refs.map((entry) => entry.ref))
-      .toEqual([`publication-lease:${subject.target.task_id}`]);
-
-    const observation = persistObservation(subject, receipt);
-    expect(readPublicationIntegrationObservations(subject.root, subject.target.task_id, subject.target.task_revision))
-      .toEqual([observation]);
-    const integrated = resolveDependencyAuthority(input(subject, 'publication_integrated'));
+    const provider = providerFixture(subject, head, base);
+    const exact = integrationInput(subject, 'publication_integrated', provider);
+    const integrated = resolveDependencyAuthority(exact);
     expect(integrated.status).toBe('satisfied');
-    expect(integrated.evidence_refs.map((entry) => entry.ref))
-      .toContain(`publication-integration-observation:${observation.observation_id}`);
-    expect(integrated.authority_revision).not.toBe(reviewing.authority_revision);
-
-    // The same observation no longer answers a moved task revision.
-    const moved = resolveDependencyAuthority(input(subject, 'publication_integrated', {
-      ...retargeted(subject, { task_revision: 'a'.repeat(64) }),
-    }));
-    expect(moved.status).toBe('unsatisfied');
-
-    const unreadable = resolveDependencyAuthority(input(subject, 'publication_integrated', {
-      readers: {
-        readCanonicalTargetRef: () => 'main',
-        readLease: () => { throw new Error('lease store unavailable'); },
-      } as Partial<DependencyAuthorityReaders>,
-    }));
+    expect(integrated.evidence_refs.map(entry => entry.ref)).toContain(`provider-integration:${head}`);
+    const movedTarget = retargeted(subject, { task_revision: 'a'.repeat(64) });
+    const moved = resolveDependencyAuthority({ ...exact, ...movedTarget, reads: movedTarget.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
+    expect(moved.status).toBe('authority_unavailable');
+    provider.provider.get(1)!.tree = 'f'.repeat(40);
+    const unreadable = resolveDependencyAuthority(exact);
     expect(unreadable.status).toBe('authority_unavailable');
     expect(unreadable.authority_revision).toBeNull();
+    expect(resolveDependencyAuthority({ ...exact, dependency: { ...exact.dependency, acceptance_authority: null } }).status).toBe('authority_unavailable');
   });
 
-  test('publication_integrated rejects an observation whose receipt no longer matches', () => {
+  test('publication_integrated refuses a merge outside the selected candidate', () => {
     const subject = fixture();
-    const base = subject.commit;
-    writeRepoFile(subject.root, 'feature.txt', 'feature\n');
-    git(subject.root, 'add', 'feature.txt');
-    git(subject.root, 'commit', '-m', 'feature');
-    const head = git(subject.root, 'rev-parse', 'HEAD');
-    const receipt = reviewingPublication(subject, head, base, 1);
-    persistObservation(subject, receipt);
-    const detached = resolveDependencyAuthority(input(subject, 'publication_integrated', {
-      readers: {
-        readCanonicalTargetRef: () => 'main',
-        readPublicationReceipt: () => null,
-      } as Partial<DependencyAuthorityReaders>,
-    }));
-    expect(detached.status).toBe('unsatisfied');
+    const provider = providerFixture(subject, subject.commit, subject.commit);
+    const exact = integrationInput(subject, 'publication_integrated', provider);
+    provider.provider.get(1)!.merge = git(subject.root, 'commit-tree', provider.tree, '-p', subject.commit, '-m', 'unrelated merge');
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
   });
 
   test('product_accepted needs an exact ME-4C projection and never reuses a module receipt', async () => {
@@ -1092,29 +1032,27 @@ describe('issue #284 closed dependency authority', () => {
     git(subject.root, 'add', '.');
     git(subject.root, 'commit', '-m', 'candidate');
     const head = git(subject.root, 'rev-parse', 'HEAD');
-    reviewingPublication(subject, head, base, 1);
+    const provider = providerFixture(subject, head, base);
 
     recordAcceptanceObservation(subject);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
     const withoutProduct = resolveDependencyAuthority(input(subject, 'product_accepted'));
-    expect(withoutProduct.status).toBe('unsatisfied');
+    expect(withoutProduct.status).toBe('authority_unavailable');
 
     const contract = createIntegrationContract({ repo_root: subject.root }, {
       approved_prd_ref: PRD_REF,
       source_spec_ref: 'docs/spec.md',
       integration_group: 'issue-284',
-      required_work_packages: [{
-        work_package_id: subject.target.task_id,
-        work_package_revision: subject.target.task_revision,
-      }],
+      required_pull_requests: [provider.selection],
       required_constraints: ['constraint-a'],
     });
-    const envelope = createIntegrationEnvelope({ repo_root: subject.root }, {
+    const envelope = createIntegrationEnvelope(provider.environment, {
       contract_sha256: contract.contract_sha256,
       base_sha: base,
       final_head_sha: head,
+      final_tree_sha: provider.tree,
     });
-    const matrix = createAcceptanceMatrix({ repo_root: subject.root }, {
+    const matrix = createAcceptanceMatrix(provider.environment, {
       contract_sha256: contract.contract_sha256,
       envelope_sha256: envelope.envelope_sha256,
       rows: [{ constraint_id: 'constraint-a', evidence_ref: 'docs/evidence/constraint-a.json', result: 'pass' }],
@@ -1123,7 +1061,7 @@ describe('issue #284 closed dependency authority', () => {
     const receipt = acceptanceReceipt(subject, { target_revision: base });
     const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
     const projection = await createProductAcceptanceProjection(
-      { repo_root: subject.root, authority_home: subject.root },
+      { ...provider.environment, authority_home: subject.root },
       {
         contract_sha256: contract.contract_sha256,
         envelope_sha256: envelope.envelope_sha256,
@@ -1134,16 +1072,18 @@ describe('issue #284 closed dependency authority', () => {
     );
     expect(listProductAcceptanceProjections(subject.root)).toEqual([projection]);
 
-    const accepted = resolveDependencyAuthority(input(subject, 'product_accepted'));
+    const exact = integrationInput(subject, 'product_accepted', provider, { projection_sha256: projection.projection_sha256,
+      approved_prd_ref: PRD_REF, approved_prd_sha256: engineerSha256(PRD_TEXT) });
+    const withReceipt = { ...exact, readers: { ...exact.readers, readAcceptanceReceiptBytes: () => receiptBytes } };
+    const accepted = resolveDependencyAuthority(withReceipt);
     expect(accepted.status).toBe('satisfied');
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`product-acceptance-projection:${projection.projection_sha256}`);
     expect(accepted.authority_revision).not.toBe(withoutProduct.authority_revision);
 
-    const movedTarget = resolveDependencyAuthority(input(subject, 'product_accepted', {
-      ...retargeted(subject, { task_revision: 'b'.repeat(64) }),
-    }));
-    expect(movedTarget.status).toBe('unsatisfied');
+    const moved = retargeted(subject, { task_revision: 'b'.repeat(64) });
+    const movedTarget = resolveDependencyAuthority({ ...withReceipt, ...moved, reads: moved.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
+    expect(movedTarget.status).toBe('authority_unavailable');
 
     const otherRequirement = resolveDependencyAuthority(input(subject, 'product_accepted', {
       dependency: {
@@ -1151,14 +1091,13 @@ describe('issue #284 closed dependency authority', () => {
         acceptance_authority: { authority_kind: 'product_acceptance', subject_ref: 'docs/spec.md', subject_revision: engineerSha256('# Source spec\n') },
       },
     }));
-    expect(otherRequirement.status).toBe('unsatisfied');
+    expect(otherRequirement.status).toBe('authority_unavailable');
 
-    const unreadable = resolveDependencyAuthority(input(subject, 'product_accepted', {
-      readers: {
-        readCanonicalTargetRef: () => 'main',
-        readProductAcceptanceProjections: () => { throw new Error('product store unavailable'); },
-      } as Partial<DependencyAuthorityReaders>,
-    }));
+    const unreadable = resolveDependencyAuthority({ ...withReceipt,
+      readers: { ...withReceipt.readers, readProductAcceptanceProjection: () => { throw new Error('product store unavailable'); } },
+    });
+    expect(resolveDependencyAuthority({ ...withReceipt, readers: { ...withReceipt.readers,
+      readAcceptanceReceiptBytes: () => Buffer.from('{"substituted":true}\n') } }).status).toBe('authority_unavailable');
     expect(unreadable.status).toBe('authority_unavailable');
     expect(unreadable.authority_revision).toBeNull();
   });

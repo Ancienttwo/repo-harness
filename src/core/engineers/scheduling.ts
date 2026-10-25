@@ -1,3 +1,4 @@
+import { validateRequiredPullRequest, type RequiredPullRequestV2 } from '../integration/product-acceptance';
 import { canonicalEngineerJson, engineerSha256 } from './profile-binding';
 
 export const WORK_GRAPH_PROTOCOL = 1 as const;
@@ -23,7 +24,7 @@ export type WorkPackageDependencyState =
   | 'publication_integrated'
   | 'product_accepted';
 
-export type WorkPackageDependencyAuthorityKind = 'module_acceptance' | 'product_acceptance';
+export type WorkPackageDependencyAuthorityKind = 'module_acceptance' | 'product_acceptance' | 'provider_integration';
 
 /**
  * A dependency edge that requires an acceptance verdict must name the exact
@@ -67,6 +68,39 @@ export function validateModuleAcceptanceReference(value: unknown): ModuleAccepta
     policy_sha256: string(input.policy_sha256, `${label}.policy_sha256`, DIGEST),
     actor_id: string(input.actor_id, `${label}.actor_id`, OPAQUE),
   });
+}
+
+/** Committed selection only; provider and acceptance effects establish proof. */
+export interface IntegrationDependencyReferenceV2 {
+  readonly protocol: 2;
+  readonly task_id: string;
+  readonly task_revision: string;
+  readonly final_head_sha: string;
+  readonly final_tree_sha: string;
+  readonly required_pull_requests: readonly RequiredPullRequestV2[];
+  readonly product: { readonly projection_sha256: string; readonly approved_prd_ref: string; readonly approved_prd_sha256: string } | null;
+}
+
+export function validateIntegrationDependencyReference(value: unknown): IntegrationDependencyReferenceV2 {
+  const label = 'integration dependency reference';
+  const input = record(value, label);
+  exact(input, ['protocol', 'task_id', 'task_revision', 'final_head_sha', 'final_tree_sha', 'required_pull_requests', 'product'], label);
+  if (input.protocol !== 2) invalid(`${label}.protocol must be 2`);
+  if (!Array.isArray(input.required_pull_requests) || input.required_pull_requests.length === 0) invalid(`${label}.required_pull_requests must be non-empty`);
+  const selected = input.required_pull_requests.map(validateRequiredPullRequest);
+  if (new Set(selected.map(pr => `${pr.provider_repository_id}:${pr.pr_number}`)).size !== selected.length) invalid(`${label} contains duplicate PRs`);
+  let product: IntegrationDependencyReferenceV2['product'] = null;
+  if (input.product !== null) {
+    const item = record(input.product, `${label}.product`);
+    exact(item, ['projection_sha256', 'approved_prd_ref', 'approved_prd_sha256'], `${label}.product`);
+    product = Object.freeze({ projection_sha256: string(item.projection_sha256, 'projection_sha256', DIGEST),
+      approved_prd_ref: safeRepoPath(item.approved_prd_ref, 'approved_prd_ref'), approved_prd_sha256: string(item.approved_prd_sha256, 'approved_prd_sha256', DIGEST) });
+  }
+  return Object.freeze({ protocol: 2, task_id: string(input.task_id, 'task_id', /^[0-9a-f]{64}$/),
+    task_revision: string(input.task_revision, 'task_revision', /^[0-9a-f]{64}$/),
+    final_head_sha: string(input.final_head_sha, 'final_head_sha', /^[0-9a-f]{40}$/),
+    final_tree_sha: string(input.final_tree_sha, 'final_tree_sha', /^[0-9a-f]{40}$/),
+    required_pull_requests: Object.freeze(selected), product });
 }
 
 export interface WorkPackageDependencyV1 {
@@ -312,7 +346,7 @@ function safeRepoPath(value: unknown, field: string, suffix?: string): string {
 const DEPENDENCY_AUTHORITY_KIND_BY_STATE: Readonly<Record<WorkPackageDependencyState, WorkPackageDependencyAuthorityKind | null>> = Object.freeze({
   canonical_done: null,
   module_accepted: 'module_acceptance',
-  publication_integrated: null,
+  publication_integrated: 'provider_integration',
   product_accepted: 'product_acceptance',
 });
 
