@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { dirname, join } from 'path';
+import { repoHarnessHome } from '../../effects/repo-registry';
 
 export interface McpLocalConfig {
   version: 1 | 2 | 3;
@@ -45,10 +45,6 @@ export interface McpLocalConfig {
 }
 
 export type McpHttpAuthMode = 'oauth' | 'bearer' | 'url-token';
-
-function repoHarnessHome(): string {
-  return resolve(process.env.REPO_HARNESS_HOME ?? join(process.env.HOME ?? homedir(), '.repo-harness'));
-}
 
 /** Single MCP storage authority: `~/.repo-harness/`, overridable with REPO_HARNESS_HOME. */
 export function mcpStorageDir(): string {

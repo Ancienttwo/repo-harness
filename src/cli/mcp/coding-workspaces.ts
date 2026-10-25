@@ -11,12 +11,13 @@ import {
   statSync,
   writeFileSync,
 } from 'fs';
-import { homedir, tmpdir } from 'os';
+import { tmpdir } from 'os';
 import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import {
   isRepoHarnessAdoptedPath,
   readRegisteredRepoHarnessRepos,
+  repoHarnessHome,
   type RepoHarnessRegisteredRepo,
 } from '../../effects/repo-registry';
 import { globMatches, isPathInside } from './paths';
@@ -108,10 +109,6 @@ const ALWAYS_READ_DENIED = [
   '_ops/**',
 ];
 const ALWAYS_WRITE_DENIED = [...ALWAYS_READ_DENIED, '_ref/**'];
-
-function repoHarnessHome(env: NodeJS.ProcessEnv): string {
-  return resolve(env.REPO_HARNESS_HOME ?? join(env.HOME ?? homedir(), '.repo-harness'));
-}
 
 export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): string {
   return join(repoHarnessHome(env), 'mcp-workspaces.json');

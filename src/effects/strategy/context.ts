@@ -3,6 +3,7 @@ import { ObservationViolation, type ReadonlyObservationIO } from '../state/reado
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { userInfo } from 'node:os';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
@@ -122,7 +123,7 @@ export class StrategyReader {
   read(path: string): string {
     return new TextDecoder('utf-8', { fatal: true }).decode(this.readBytes(scopedPath(this.root, path)));
   }
-  observationIO(): ReadonlyObservationIO {
+  observationIO(authorityHome = userInfo().homedir): ReadonlyObservationIO {
     const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
     const packaged = new Set(['package.json', 'src/effects/evidence/verification-execution.ts', 'src/core/evidence/verification-plan.ts',
       'src/core/evidence/redaction.ts', 'src/effects/evidence/secret-env.ts', 'src/effects/process-runner.ts',
@@ -131,18 +132,19 @@ export class StrategyReader {
     const rawCommon = this.git(['rev-parse', '--git-common-dir']).trim();
     const common = realpathSync(resolve(this.root, rawCommon));
     const version = join(common, 'repo-harness/effective-state-version.json');
-    const home = process.env.HOME ? realpathSync(process.env.HOME) : null;
-    const authority = home ? join(home, '.repo-harness/gates', strategyHash(this.root)) : null;
+    // Gate receipts root at the OS account home, the same anchor as every gate writer.
+    const home = realpathSync(authorityHome);
+    const authority = join(home, '.repo-harness/gates', strategyHash(this.root));
     const validatePath = (path: string): void => {
       const absolute = resolve(path);
       try {
         if (absolute === version) { scopedPath(common, relative(common, absolute), true); return; }
         if (packaged.has(absolute)) { scopedPath(packageRoot, relative(packageRoot, absolute), true); return; }
-        if (authority && absolute.startsWith(`${authority}${sep}`)) {
+        if (absolute.startsWith(`${authority}${sep}`)) {
           const leaf = relative(authority, absolute).split(sep).join('/');
           if (!/^(acceptance\.latest|acceptance\.review-result|user-waiver-grant\.latest)\.json$/.test(leaf)
             && !/^acceptance-observations\/[a-f0-9]{64}\.json$/.test(leaf)) throw new Error('Unrecognized project authority file');
-          scopedPath(home!, relative(home!, absolute), true); return;
+          scopedPath(home, relative(home, absolute), true); return;
         }
         const rel = relative(this.root, absolute).split(sep).join('/');
         scopedPath(this.root, rel, true);

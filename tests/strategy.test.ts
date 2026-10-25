@@ -502,18 +502,20 @@ describe('optional strategy and progressive memory', () => {
     expect(validateProposal(proposal(packet), packet).status).toBe('blocked');
   });
   test('observation permits only current-project authority and fixed package inputs', () => {
-    const { root } = fixture(); const savedHome = process.env.HOME; const home = temp(); process.env.HOME = home;
-    try {
-      const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
-      write(home, allowed.slice(home.length + 1), 'Synthetic authority');
-      const foreign = join(home, '.repo-harness/gates', strategyHash('another-project'), 'acceptance.latest.json');
-      write(home, foreign.slice(home.length + 1), 'Foreign authority');
-      const io = new StrategyReader(root).observationIO();
-      expect(io.readFile(allowed).toString()).toBe('Synthetic authority');
-      expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
-      expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
-      expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
-    } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
+    const { root } = fixture(); const home = temp();
+    const allowed = join(home, '.repo-harness/gates', strategyHash(root), 'user-waiver-grant.latest.json');
+    write(home, allowed.slice(home.length + 1), 'Synthetic authority');
+    const foreign = join(home, '.repo-harness/gates', strategyHash('another-project'), 'acceptance.latest.json');
+    write(home, foreign.slice(home.length + 1), 'Foreign authority');
+    const io = new StrategyReader(root).observationIO(home);
+    expect(io.readFile(allowed).toString()).toBe('Synthetic authority');
+    expect(() => io.readFile(foreign)).toThrow(ObservationViolation);
+    expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
+    expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
+    // An env HOME override must not move the gate authority away from the account home.
+    const savedHome = process.env.HOME; process.env.HOME = home;
+    try { expect(() => new StrategyReader(root).observationIO().readFile(allowed)).toThrow(ObservationViolation); }
+    finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
   });
   test('explicit pilot document selection leaves the default marker disabled', () => {
     const { root, doc } = fixture(); rmSync(join(root, 'docs/strategy/context.json'));

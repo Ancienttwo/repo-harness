@@ -106,7 +106,7 @@ export interface DependencyAuthorityReaders {
   readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV1;
   readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV1;
   readonly repositoryIdentity: (repoRoot: string) => string;
-  readonly resolveAuthorityHome: (env: NodeJS.ProcessEnv | undefined) => string;
+  readonly resolveAuthorityHome: () => string;
 }
 
 export interface DependencyAuthorityInput {
@@ -114,7 +114,6 @@ export interface DependencyAuthorityInput {
   readonly target: ProjectedWorkPackageV1;
   readonly reads: readonly DependencyAuthorityRepositoryRead[];
   readonly registry: RepoHarnessRegistrySnapshot;
-  readonly env?: NodeJS.ProcessEnv;
   /**
    * The same-commit tracked file reader the Work Graph projection already uses.
    * It is required rather than defaulted so no caller can silently resolve a
@@ -124,9 +123,10 @@ export interface DependencyAuthorityInput {
   readonly readers?: Partial<DependencyAuthorityReaders>;
 }
 
-function defaultAuthorityHome(env: NodeJS.ProcessEnv | undefined): string {
-  const home = env?.REPO_HARNESS_HOME ?? env?.HOME ?? userInfo().homedir;
-  return realpathSync(home);
+// Gate receipts root at the OS account home, the anchor every gate writer and
+// merge-gate use; an injected env must not move it.
+function defaultAuthorityHome(): string {
+  return realpathSync(userInfo().homedir);
 }
 
 export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders {
@@ -368,7 +368,7 @@ function moduleAccepted(
   let authorityHome: string;
   let targetRef: string;
   try {
-    authorityHome = reader.resolveAuthorityHome(input.env);
+    authorityHome = reader.resolveAuthorityHome();
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
   } catch {
     return UNAVAILABLE;

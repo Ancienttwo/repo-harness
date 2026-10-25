@@ -17,8 +17,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
-import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { tmpdir, userInfo } from 'os';
+import { dirname, join, sep } from 'path';
 
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import {
@@ -42,6 +42,7 @@ import {
 import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import {
   OBSERVATION_PATH_RULE_COVERAGE,
+  defaultDependencyAuthorityReaders,
   resolveDependencyAuthority,
   type DependencyAuthorityInput,
   type DependencyAuthorityReaders,
@@ -56,7 +57,7 @@ import {
   listProductAcceptanceProjections,
 } from '../../src/effects/integration/product-acceptance';
 import { readPublicationIntegrationObservations } from '../../src/effects/publication/publication-lifecycle';
-import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
+import { repoHarnessRegisteredReposPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
@@ -308,9 +309,8 @@ function input(
     target: subject.target,
     reads: subject.reads,
     registry: subject.registry,
-    env: { HOME: subject.root },
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-    readers: { readCanonicalTargetRef: () => 'main' },
+    readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => subject.root },
     ...overrides,
   };
 }
@@ -657,7 +657,6 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
     target: graph.work_packages[0]!,
     reads: [{ repo, commit: fixtureValue.commit, graph }],
     registry: { registryPath: join(fixtureValue.root, 'registry.json'), authorizationRevision: 3, repos: [repo] },
-    env: { HOME: fixtureValue.home },
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
     readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => fixtureValue.home },
   };
@@ -668,6 +667,26 @@ afterEach(() => {
 });
 
 describe('issue #284 closed dependency authority', () => {
+  test('a harness home override moves the registry but never the gate authority home', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-912-')));
+    roots.push(root);
+    const harnessHome = join(root, 'account', '.repo-harness');
+    const saved = { HOME: process.env.HOME, REPO_HARNESS_HOME: process.env.REPO_HARNESS_HOME };
+    process.env.HOME = join(root, 'account');
+    process.env.REPO_HARNESS_HOME = harnessHome;
+    try {
+      expect(repoHarnessRegisteredReposPath()).toBe(join(harnessHome, 'registered-repos.json'));
+      const gates = acceptanceReceiptPath(root, defaultDependencyAuthorityReaders().resolveAuthorityHome());
+      expect(gates.startsWith(join(realpathSync(userInfo().homedir), '.repo-harness', 'gates') + sep)).toBe(true);
+      expect(gates.startsWith(root + sep)).toBe(false);
+      expect(gates).not.toContain(join('.repo-harness', '.repo-harness'));
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+  });
+
   test('every declared dependency state has an adapter and no state falls through', () => {
     expect([...WORK_PACKAGE_DEPENDENCY_STATES].sort()).toEqual([
       'canonical_done', 'module_accepted', 'product_accepted', 'publication_integrated',
@@ -1103,9 +1122,8 @@ describe('issue #284 closed dependency authority', () => {
       target: remoteTarget,
       reads,
       registry,
-      env: { HOME: remote.root },
       readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-      readers: { readCanonicalTargetRef: () => 'main' },
+      readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => remote.root },
     };
     const resolved = resolveDependencyAuthority(crossInput);
     expect(resolved.status).toBe('satisfied');
