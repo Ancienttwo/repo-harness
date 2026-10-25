@@ -190,6 +190,27 @@ afterEach(() => {
 
 describe('ME-4C integration product acceptance', () => {
 
+  test('accepts squash integration in a main-only clone without feature head objects', () => {
+    const value = fixture();
+    const clone = mkdtempSync(join(tmpdir(), 'product-main-only-')); roots.push(clone);
+    git(value.root, 'clone', '--no-local', '--single-branch', '--branch', 'main', value.root, clone);
+    for (const item of value.provider.values()) {
+      expect(() => git(clone, 'cat-file', '-e', `${item.selection.expected_head_sha}^{commit}`)).toThrow();
+      expect(git(clone, 'rev-parse', `${item.merge}^{tree}`)).toBe(item.tree);
+    }
+    const contract = createIntegrationContract({ repo_root: clone }, {
+      approved_prd_ref: 'plans/prds/product.md', source_spec_ref: 'docs/spec.md', integration_group: 'main-only',
+      required_pull_requests: [...value.provider.values()].map(item => item.selection),
+      required_constraints: ['constraint-a', 'constraint-b'],
+    });
+    const envelope = createIntegrationEnvelope({ ...value.environment, repo_root: clone }, {
+      contract_sha256: contract.contract_sha256, base_sha: value.base,
+      final_head_sha: value.finalHead, final_tree_sha: value.finalTree,
+    });
+    expect(envelope.selected_pull_requests).toHaveLength(2);
+    expect(envelope.final_tree_sha).toBe(value.finalTree);
+  });
+
   test.each(['repository-rest', 'repository-node', 'issue-rest', 'pull-repository'])('refuses a provider identity namespace mismatch: %s', scenario => {
     const value = fixture();
     const environment = { ...value.environment, gh_runner: (args: readonly string[]) => {
@@ -301,6 +322,20 @@ describe('ME-4C integration product acceptance', () => {
     // authorize persistence after its exact merge evidence moves.
     const products = join(resolveGitCommonDirectory(value.root), 'repo-harness/integration/v2/products');
     const productsBefore = readdirSync(products);
+    for (const state of ['unstaged', 'staged', 'untracked']) {
+      const changedPath = state === 'untracked' ? 'extra-source.txt' : 'module-a.txt';
+      writeFileSync(join(value.root, changedPath), 'reviewed change absent from final commit\n');
+      if (state === 'staged') git(value.root, 'add', changedPath);
+      await expect(createProductAcceptanceProjection(
+        { ...value.environment, authority_home: value.root },
+        { contract_sha256: value.contract.contract_sha256, envelope_sha256: value.envelope.envelope_sha256,
+          matrix_sha256: value.matrix.matrix_sha256, review_authority: fixtureAuthority(value.root) },
+        { verify_acceptance: async () => acceptance, read_acceptance_receipt_bytes: () => receiptBytes },
+      )).rejects.toMatchObject({ code: 'candidate_stale' });
+      expect(readdirSync(products)).toEqual(productsBefore);
+      if (state === 'untracked') rmSync(join(value.root, changedPath));
+      else git(value.root, 'restore', '--source=HEAD', '--staged', '--worktree', changedPath);
+    }
     await expect(createProductAcceptanceProjection(
       { ...value.environment, authority_home: value.root },
       { contract_sha256: value.contract.contract_sha256, envelope_sha256: value.envelope.envelope_sha256,
@@ -309,6 +344,23 @@ describe('ME-4C integration product acceptance', () => {
         read_acceptance_receipt_bytes: () => receiptBytes },
     )).rejects.toMatchObject({ code: 'publication_stale' });
     expect(readdirSync(products)).toEqual(productsBefore);
+    value.provider.get(1)!.tree = git(value.root, 'rev-parse', `${value.headA}^{tree}`);
+    git(value.root, 'commit', '--allow-empty', '-m', 'provenance only');
+    const nextEnvelope = createIntegrationEnvelope(value.environment, {
+      contract_sha256: value.contract.contract_sha256, base_sha: value.base,
+      final_head_sha: git(value.root, 'rev-parse', 'HEAD'), final_tree_sha: value.finalTree,
+    });
+    const nextMatrix = createAcceptanceMatrix(value.environment, {
+      contract_sha256: value.contract.contract_sha256, envelope_sha256: nextEnvelope.envelope_sha256,
+      rows: value.matrix.rows, verifier_receipt_ref: 'docs/evidence/verifier.json',
+    });
+    const sameContent = await createProductAcceptanceProjection(
+      { ...value.environment, authority_home: value.root },
+      { contract_sha256: value.contract.contract_sha256, envelope_sha256: nextEnvelope.envelope_sha256,
+        matrix_sha256: nextMatrix.matrix_sha256, review_authority: fixtureAuthority(value.root) },
+      { verify_acceptance: async () => acceptance, read_acceptance_receipt_bytes: () => receiptBytes },
+    );
+    expect(sameContent.acceptance_receipt_sha256).toBe(projection.acceptance_receipt_sha256);
   });
 
   test('fails closed on stale requirement, selected PR or evidence bytes', async () => {

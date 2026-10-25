@@ -1,3 +1,4 @@
+import { captureGitVirtualTreeSnapshot } from '../evidence/verification-execution';
 import { osAccountHome } from '../runtime/os-account-home';
 import type { ReviewAdmissionSource } from '../review/admission-source';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
@@ -416,7 +417,6 @@ export function observeSelectedPullRequest(
   if (treeForCommit(repoRoot, gitBin, mergeCommit) !== integrated.merge_tree_sha) {
     throw fail('publication_stale', 'provider merge tree does not match the exact local commit');
   }
-  resolveCommit(repoRoot, gitBin, selection.expected_head_sha, 'selected PR head');
   resolveCommit(repoRoot, gitBin, selection.expected_base_sha, 'selected PR base');
   assertAncestor(repoRoot, gitBin, selection.expected_base_sha, mergeCommit, 'selected PR base');
   // Squash creates a new commit: prove the provider's actual merge commit,
@@ -537,6 +537,13 @@ export async function createProductAcceptanceProjection(
     if (error instanceof IntegrationAcceptanceError) throw error;
     throw fail('matrix_invalid', 'acceptance matrix is stale or incomplete', error);
   }
+  // Acceptance validates the complete Git-visible source, not HEAD provenance.
+  const assertAcceptedTree = () => {
+    if (captureGitVirtualTreeSnapshot(repoRoot).tree_hash !== envelope.final_tree_sha) {
+      throw fail('candidate_stale', 'Acceptance source tree differs from the final integration tree');
+    }
+  };
+  assertAcceptedTree();
   const verifier = dependencies.verify_acceptance ?? verifyAcceptance;
   let receipt: AcceptanceReceipt;
   try {
@@ -561,6 +568,7 @@ export async function createProductAcceptanceProjection(
   if (stablePublicationJson(observedReceipt) !== stablePublicationJson(receipt)) {
     throw fail('acceptance_unavailable', 'AcceptanceReceipt bytes changed after verification');
   }
+  assertAcceptedTree();
   const projection = buildProductAcceptanceProjection({
     envelope_sha256: envelope.envelope_sha256,
     matrix_sha256: matrix.matrix_sha256,
