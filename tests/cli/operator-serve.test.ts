@@ -849,11 +849,19 @@ describe('operator serve command and HTTP boundary', () => {
   });
 });
 
+const admittedDiffSelector = {
+  repository_id: 'repo-a', provider_repository_id: '123', issue_id: '456', campaign_id: 'campaign',
+  task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2',
+  claim_revision: 'sha256:' + 'a'.repeat(64), grant_sha256: 'sha256:' + 'b'.repeat(64),
+  policy_sha256: 'sha256:' + 'c'.repeat(64), actor_id: 'owner', session_binding_sha256: 'sha256:' + 'd'.repeat(64),
+};
+const admittedDiffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
+  Object.fromEntries(Object.entries(admittedDiffSelector).filter(([key]) => key !== 'repository_id')));
+
 describe('reader retirement', () => {
-  const diffPath = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const diffPath = admittedDiffPath;
   const diff = {
-    protocol: 1 as const, kind: 'operator_task_diff' as const, repository_id: 'repo-a', task_id: TASK_ID,
-    task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+    ...admittedDiffSelector, protocol: 2 as const, kind: 'operator_task_diff' as const,
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
   };
@@ -944,10 +952,9 @@ describe('reader retirement', () => {
 });
 
 describe('read-only task diff route', () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const path = admittedDiffPath;
   const result = {
-    protocol: 1 as const, kind: 'operator_task_diff' as const, repository_id: 'repo-a', task_id: TASK_ID,
-    task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+    ...admittedDiffSelector, protocol: 2 as const, kind: 'operator_task_diff' as const,
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-10T00:00:00.000Z', patch: '', untracked_paths: [],
   };
@@ -958,7 +965,7 @@ describe('read-only task diff route', () => {
       const response = await fetch(server.url+path); expect(response.status).toBe(200); expect(await response.json()).toEqual(result);
       const head = await fetch(server.url+path, { method: 'HEAD' }); expect(head.status).toBe(200); expect(await head.text()).toBe('');
       expect((await fetch(server.url+path+'&root=/tmp')).status).toBe(400);
-      expect((await fetch(server.url+path+'&generation=2')).status).toBe(400);
+      expect((await fetch(server.url+path+'&actor_id=other')).status).toBe(400);
       expect((await fetch(server.url+path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
       expect((await fetch(server.url+path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
       expect(calls).toBe(2);
@@ -977,14 +984,14 @@ describe('read-only task diff route', () => {
     } finally { await server.close(); }
   });
   test('rejects mismatched reader payload', async () => {
-    const server = await startOperatorServer({ port: 0, read_task_diff: async () => ({ ...result, generation: 2 }) });
+    const server = await startOperatorServer({ port: 0, read_task_diff: async () => ({ ...result, actor_id: 'other' }) });
     try { expect(await (await fetch(server.url+path)).json()).toEqual({ code: 'unavailable' }); }
     finally { await server.close(); }
   });
 });
 
 test('task diff disconnect and shutdown cancel active reads', async () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const path = admittedDiffPath;
   let entered!: () => void;
   let stopped!: () => void;
   let started = new Promise<void>(resolve => { entered = resolve; });

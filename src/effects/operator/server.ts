@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
-import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { decodeOperatorTaskDiff, parseTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -69,7 +69,7 @@ export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
 export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/context$/u;
 export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/activity$/u;
-export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/diff$/u;
+export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
  * The repository id is matched loosely and resolved strictly, the same split the
  * repository snapshot route uses: the registry is the authority on which ids
@@ -1570,16 +1570,10 @@ export async function startOperatorServer(
         sendJson(response, 503, { code: 'unavailable' }, headOnly);
         return;
       }
-      const params = url.searchParams;
-      const input = {
-        repository_id: diffRoute[1]!, task_id: diffRoute[2]!,
-        task_revision: params.get('task_revision'), claim_id: params.get('claim_id'),
-        generation: Number(params.get('generation')),
-      };
-      const keys = [...params.keys()];
-      if (keys.length !== 3 || new Set(keys).size !== 3
-        || keys.some(key => !['task_revision', 'claim_id', 'generation'].includes(key)) || !isTaskDiffRequest(input)) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires the current task and claim fence.'), headOnly);
+      let input: OperatorTaskDiffRequest;
+      try { input = parseTaskDiffRequest(diffRoute[1]!, url.searchParams); }
+      catch {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires an explicit admitted session selector.'), headOnly);
         return;
       }
       handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, TASK_DIFF_FAILURES,

@@ -1,13 +1,14 @@
-import { realpathSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { canonicalize } from '../../core/evidence/canonical-json';
+import { readTaskAgent, observeTaskSessionAdmission } from '../terminal/task-session';
+import { readReviewAdmissionSource } from '../review/admission-source';
+import { resolvePolicyReviewBase } from '../review/diff-fingerprint';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { TASK_DIFF_MAX_BYTES, TASK_DIFF_MAX_UNTRACKED, isTaskDiffRequest, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../../core/operator/task-diff';
-import { lookupCanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { resolveRepoIdentity } from '../git/repository-identity';
-import { readCanonicalSprint } from '../state/coordination-canonical-source';
-import { readLease } from '../state/coordination-lease-store';
 import { gitExecFileSync } from '../git/runner';
 
 export class OperatorTaskDiffError extends Error {
@@ -67,34 +68,60 @@ function sameDirectory(left: string, right: string): boolean {
   }
 }
 
+function physicalDirectory(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  if (!stat.isDirectory() || stat.ino === 0n) return refuse('unavailable');
+  return `${stat.dev}:${stat.ino}`;
+}
+
 /** Synchronous local authority/Git reads run only in the cancellable worker. */
-export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly env?: NodeJS.ProcessEnv }): OperatorTaskDiff {
+export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly env?: NodeJS.ProcessEnv },
+  effects: { readonly admissionSource?: typeof readReviewAdmissionSource } = {}): OperatorTaskDiff {
+  const { env, ...selector } = input;
   try {
-    if (!isTaskDiffRequest(input)) return refuse('unavailable');
+    if (!isTaskDiffRequest(selector)) return refuse('unavailable');
     const authority = () => {
       const registry = readRepoHarnessRegistryStrictSnapshot({ env: input.env, adoptedOnly: false });
       const repo = registry.repos.find(r => r.id === input.repository_id);
       if (!repo) return refuse('unavailable');
       const root = realpathSync(repo.path);
-      const sprintPath = readActiveSprintPath(root);
-      if (!sprintPath) return refuse('unavailable');
-      const targetRef = readCanonicalTargetRef(root);
-      const canonical = readCanonicalSprint(root, { targetRef, sprintPath });
-      if (!canonical.ok) return refuse('unavailable');
-      const task = lookupCanonicalTask({ repoIdentity: resolveRepoIdentity(root), sprintPath, sprintText: canonical.text }, input.task_id);
-      if (!task.ok || task.task.task_revision !== input.task_revision) return refuse('stale');
-      const lease = readLease(root, input.task_id);
-      const owner = lease.record;
-      if (!owner || !owner.execution_worktree || !owner.branch || !['bound', 'reviewing', 'completing'].includes(owner.state)) return refuse('unavailable');
-      if (owner.claim_id !== input.claim_id || owner.generation !== input.generation || owner.task_revision !== input.task_revision
-        || owner.target_ref !== targetRef || owner.sprint_path !== sprintPath) return refuse('stale');
-      const worktree = realpathSync(owner.execution_worktree);
-      if (worktree !== owner.execution_worktree || !sameDirectory(resolveGitCommonDirectory(root), resolveGitCommonDirectory(worktree))) return refuse('unavailable');
-      const entry = readWorktreeTopology(root).worktrees.find(w => sameDirectory(w.path, worktree));
-      if (!entry || entry.branch !== `refs/heads/${owner.branch}` || entry.detached) return refuse('unavailable');
+      const { dir, binding } = readTaskAgent(root, input.task, input.role);
+      if (existsSync(join(dir, 'closed.json')) || !binding.task_admission) return refuse('unavailable');
+      const boundSource = binding.task_admission.identity.source_root;
+      if (typeof boundSource !== 'string') return refuse('stale');
+      const sourceRoot = realpathSync(boundSource);
+      if (sourceRoot !== boundSource || !sameDirectory(resolveGitCommonDirectory(root), resolveGitCommonDirectory(sourceRoot))) return refuse('unavailable');
+      const topology = readWorktreeTopology(root).worktrees;
+      if (!topology.some(entry => !entry.prunable && sameDirectory(entry.path, sourceRoot))) return refuse('unavailable');
+      const worktree = realpathSync(binding.execution_root);
+      if (worktree !== binding.execution_root || !sameDirectory(resolveGitCommonDirectory(root), resolveGitCommonDirectory(worktree))) return refuse('unavailable');
+      const entry = topology.find(w => sameDirectory(w.path, worktree));
+      if (!entry || !entry.branch || entry.detached) return refuse('unavailable');
       if (!sameDirectory(git(worktree, ['rev-parse', '--show-toplevel']).trim(), worktree)
         || git(worktree, ['symbolic-ref', 'HEAD']).trim() !== entry.branch) return refuse('unavailable');
-      return { root, worktree, base: canonical.commit, targetRef, branch: owner.branch, lease: lease.raw };
+      const bindingDigest = `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`;
+      if (bindingDigest !== input.session_binding_sha256) return refuse('stale');
+      const source = (effects.admissionSource ?? readReviewAdmissionSource)(sourceRoot, {
+        'repository-id': input.provider_repository_id, 'issue-id': input.issue_id, 'campaign-id': input.campaign_id,
+        'grant-sha256': input.grant_sha256, 'policy-sha256': input.policy_sha256, actor: input.actor_id,
+      });
+      const current = observeTaskSessionAdmission(worktree, binding, binding.runtime,
+        { source, claim: { reference: input.claim_ref, revision: input.claim_revision } });
+      if (canonicalize(JSON.parse(JSON.stringify(current.identity))) !== canonicalize(JSON.parse(JSON.stringify(binding.task_admission.identity)))
+        || current.identity.repository_id !== input.provider_repository_id || current.identity.issue_id !== input.issue_id
+        || current.identity.campaign_id !== input.campaign_id || current.identity.execution_actor !== input.actor_id
+        || current.approval.grant_sha256 !== input.grant_sha256) return refuse('stale');
+      const policyPath = join(sourceRoot, '.ai/harness/policy.json');
+      const policyBytes = readFileSync(policyPath);
+      const policyBase = resolvePolicyReviewBase(sourceRoot);
+      if (!policyBytes.equals(readFileSync(policyPath))) return refuse('stale');
+      if (!policyBase.ok) return refuse('unavailable');
+      const targetRef = policyBase.targetRef;
+      const base = git(worktree, ['rev-parse', '--verify', '--end-of-options', `${targetRef}^{commit}`]).trim();
+      return { root, sourceRoot, worktree, base, targetRef, branch: entry.branch.slice('refs/heads/'.length),
+        sourcePolicy: createHash('sha256').update(policyBytes).digest('hex'),
+        binding: bindingDigest, identity: current.identity, approval: current.approval, registryRevision: registry.authorizationRevision,
+        physical: [root, sourceRoot, worktree, resolveGitCommonDirectory(root)].map(physicalDirectory) };
     };
     const before = authority();
     refuseExternalFilters(before.worktree);
@@ -112,8 +139,7 @@ export function readOperatorTaskDiff(input: OperatorTaskDiffRequest & { readonly
     const after = authority();
     if (JSON.stringify(before) !== JSON.stringify(after) || git(before.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']).trim() !== head) return refuse('stale');
     return {
-      protocol: 1, kind: 'operator_task_diff', repository_id: input.repository_id, task_id: input.task_id,
-      task_revision: input.task_revision, claim_id: input.claim_id, generation: input.generation,
+      ...selector, protocol: 2, kind: 'operator_task_diff',
       target_ref: before.targetRef, branch: before.branch, base_sha: before.base, head_sha: head,
       observed_at: new Date().toISOString(), patch, untracked_paths: untracked,
     };
