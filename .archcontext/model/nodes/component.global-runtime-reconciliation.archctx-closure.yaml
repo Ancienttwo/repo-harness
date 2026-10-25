@@ -27,7 +27,8 @@
       "docs/verification/**"
     ],
     "exclude": [
-      "src/effects/architecture/archcontext-owners.ts"
+      "src/effects/architecture/archcontext-owners.ts",
+      "src/effects/architecture/archcontext-resolve-cache.ts"
     ]
   }
 }
