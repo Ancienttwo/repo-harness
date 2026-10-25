@@ -27,8 +27,8 @@
  */
 import { createHash } from 'crypto';
 import { realpathSync } from 'fs';
-import { observationExecFileSync as execFileSync } from '../state/readonly-observation';
 import { configuredGitBinary, resolveGitCommonDirectory } from './common-directory';
+import { gitExecFileSync } from './runner';
 
 export interface RepositoryIdentity {
   readonly repositoryId: string;
@@ -40,8 +40,9 @@ export function resolveRepoIdentity(cwd: string, gitBin = configuredGitBinary())
 }
 
 export function resolveWorktreeId(cwd: string, gitBin = configuredGitBinary()): string {
-  const topLevel = execFileSync(gitBin, ['rev-parse', '--show-toplevel'], {
+  const topLevel = gitExecFileSync(['rev-parse', '--show-toplevel'], {
     cwd,
+    gitBin,
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
