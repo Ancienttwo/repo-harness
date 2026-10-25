@@ -13,7 +13,7 @@ import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
-import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
+import { executeAdmittedVerification, evaluateAdmittedVerification, materializeVerificationExecutionReport } from '../src/effects/evidence/verification-execution';
 import { acceptanceContext, authorityFingerprint, acceptanceReceiptPath, acceptanceVerificationObservationPath, inspectAcceptanceEvidence, inspectAcceptanceCurrentBinding, projectAcceptance, recordAcceptance, recordUserWaiverAcceptance, recordUserWaiverGrant, revokeUserWaiverGrant, verifyAcceptance, verifyUserWaiverGrant } from '../scripts/acceptance-receipt';
 
 const tempDirs: string[] = [];
@@ -837,7 +837,7 @@ test('synchronous binding inspection rejects missing observations and revoked wa
   const receipt = await recordUserWaiverAcceptance({ root, authority: authorityFor(root), authorityHome: home, verification: '.ai/harness/runs/acceptance.report.json' });
   const subject = buildReviewSubject(root, { targetRef: 'main' });
   const report = evaluateAdmittedVerification({ repoRoot: root, authority: authorityFor(root) });
-  const evidence = inspectAcceptanceEvidence({ root, authority: authorityFor(root), report, subject, current: true });
+  const evidence = inspectAcceptanceEvidence({ root, authority: authorityFor(root), report: materializeVerificationExecutionReport(report), subject, current: true });
   const args = { root, authority: authorityFor(root), authorityHome: home, subject, evidence };
   expect(inspectAcceptanceCurrentBinding(args)).toEqual(receipt);
   const observation = acceptanceVerificationObservationPath(root, home, receipt.campaign_sha256, receipt.admission_sha256);
@@ -882,7 +882,7 @@ test('external acceptance and current inspection survive HEAD-only provenance ch
   expect(await verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).toEqual(receipt);
   const context = await acceptanceContext({ root, authority: authorityFor(root), verification: receipt.verification_file });
   const report = evaluateAdmittedVerification({ repoRoot: root, authority: authorityFor(root) });
-  const evidence = inspectAcceptanceEvidence({ root, authority: authorityFor(root), report, subject: context.subject, current: true });
+  const evidence = inspectAcceptanceEvidence({ root, authority: authorityFor(root), report: materializeVerificationExecutionReport(report), subject: context.subject, current: true });
   expect(evidence.fingerprint).toBe(receipt.verification_evidence_sha256);
   expect(inspectAcceptanceCurrentBinding({ root, authority: authorityFor(root), authorityHome: home, subject: context.subject, evidence })).toEqual(receipt);
 });

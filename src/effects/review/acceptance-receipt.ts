@@ -243,7 +243,8 @@ function verificationReportFile(root: string, requested: string): { path: string
   return readRegular(root, requested, 'verification evidence');
 }
 
-/** Validate owner facts supplied by a current evaluator, without another tree capture. */
+/** Validate a materialized report, without another tree capture. Raw evaluator
+ * results must cross the materialization boundary exactly once at the caller. */
 export function inspectAcceptanceEvidence(args: {
   root: string;
   authority: ReviewAdmissionSource;
@@ -260,9 +261,7 @@ export function inspectAcceptanceEvidence(args: {
   let report: import('../evidence/verification-execution').VerificationExecutionReport;
   try {
     report = execution.validateMaterializedVerificationExecutionReport({ repoRoot: root, authority: args.authority,
-      report: args.current && isRecord(args.report) && args.report.kind === 'verification_execution_report'
-        ? execution.materializeVerificationExecutionReport(args.report as unknown as import('../evidence/verification-execution').VerificationExecutionReport)
-        : args.report,
+      report: args.report,
       env: args.env, current: args.current }).report;
   } catch (error) { fail('verification execution evidence is invalid: ' + (error as Error).message); }
   const subject = args.subject;
@@ -1061,7 +1060,8 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
     const report = execution.evaluateAdmittedVerification({ repoRoot: root, authority });
     const subject = currentSubject(root);
-    const evidence = inspectAcceptanceEvidence({ root, authority, report, subject, current: true });
+    const evidence = inspectAcceptanceEvidence({ root, authority,
+      report: execution.materializeVerificationExecutionReport(report), subject, current: true });
     console.log(JSON.stringify(inspectAcceptanceCurrentBinding({ root, authorityHome, authority, subject, evidence })));
     return 0;
   }
