@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // @generated-from src/core/capabilities/registry.ts sha256:68d11540967639ad476223b02f19d4190bf46800d0395ad4fa66f83bbc09e300
-// Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
+// Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
 export interface ContractFiles {
@@ -713,11 +713,8 @@ export function capabilityPathResolutionFromArchcontextOwners<C extends { readon
     diagnostics,
   };
 }
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import { relative, resolve } from "path";
-import { spawnSync } from "child_process";
-import { createRequire } from "node:module";
-
+export const HARNESS_POLICY = ".ai/harness/policy.json";
+const CAPABILITY_SOURCE_KEY = `${HARNESS_POLICY}#context.capability_source`;
 
 // Explicit one-shot registry -> ArchContext node/v2 migration projection. The
 // exporter carries only facts already present in the registry; it does not
@@ -743,21 +740,6 @@ export type ArchContextNodeV2 = {
   };
 };
 
-type Format = "json" | "text" | "prefixes" | "archcontext-nodes-v2";
-
-type Args = {
-  command: string;
-  repo: string;
-  path: string;
-  pathsFrom: string;
-  format: Format;
-};
-
-const DEFAULT_REGISTRY = ".ai/context/capabilities.json";
-const HARNESS_POLICY = ".ai/harness/policy.json";
-const CAPABILITY_SOURCE_KEY = `${HARNESS_POLICY}#context.capability_source`;
-const ARCHCONTEXT_NODES_DIR = ".archcontext/model/nodes";
-
 /**
  * Capability source selection failures. These are configuration/authority
  * failures rather than registry content failures, so they exit 2 and never
@@ -778,6 +760,302 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/** Read `context.capability_source` from an already loaded policy document. */
+export function capabilitySourceModeFromPolicy(policy: unknown): CapabilitySourceMode {
+  const value = plainRecord(plainRecord(policy)?.context)?.capability_source;
+  if (value === undefined) return "registry";
+  if (typeof value === "string" && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
+    return value as CapabilitySourceMode;
+  }
+  throw new CapabilitySourceError(
+    `unknown capability source: ${JSON.stringify(value)}; ${CAPABILITY_SOURCE_KEY} must be one of ` +
+      CAPABILITY_SOURCE_MODES.join(", ")
+  );
+}
+
+// Under `archcontext`, `winner.prefix` is the owner's stable node id: ArchContext
+// does not report which include matched, so no synthetic path prefix is shown.
+export function matchRecord(filePath: string, winner: CapabilityPathMatch | null) {
+  if (winner === null) {
+    return {
+      matched: false,
+      file_path: filePath,
+      functional_block: "root",
+      matched_prefix: "root",
+      capability_id: "root",
+      architecture_domain: "root",
+      architecture_capability: "_root",
+      architecture_module: "docs/architecture/index.md",
+      workstream_dir: "tasks/workstreams/root/_root",
+    };
+  }
+  return {
+    matched: true,
+    file_path: winner.filePath,
+    functional_block: winner.prefix,
+    matched_prefix: winner.prefix,
+    capability_id: winner.capability.id,
+    architecture_domain: winner.capability.domain,
+    architecture_capability: winner.capability.name,
+    architecture_module: winner.capability.architecture_module,
+    workstream_dir: winner.capability.workstream_dir,
+    contract_agents: winner.capability.contract_files.agents,
+    contract_claude: winner.capability.contract_files.claude,
+    lsp_profile: winner.capability.lsp_profile,
+    verification_hints: winner.capability.verification_hints,
+  };
+}
+
+/** Registry-mode longest-prefix match. Under `archcontext`, use findMatches. */
+export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
+  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
+  if (result.status === "invalid") {
+    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
+  }
+  return result.status === "matched" ? matchRecord(result.match.filePath, result.match) : matchRecord(result.filePath, null);
+}
+
+export type MatchAuthority =
+  | { readonly mode: "registry"; readonly registry: CapabilityRegistry }
+  | { readonly mode: "archcontext"; readonly owners: ArchcontextCapabilityOwners };
+
+export function toArchContextNodeV2(capability: Capability, isExistingDirectory: (path: string) => boolean): ArchContextNodeV2 {
+  const displayName = capability.name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  const includes = capability.prefixes.map((prefix) => {
+    try {
+      return isExistingDirectory(prefix) ? `${prefix}/**` : prefix;
+    } catch {
+      return prefix;
+    }
+  });
+  return {
+    schemaVersion: "archcontext.node/v2",
+    id: `capability.${capability.domain}.${capability.name}`,
+    kind: "capability",
+    name: displayName,
+    status: "active",
+    summary: `Capability boundary for ${capability.domain}/${capability.name}.`,
+    responsibilities: [`Own the source paths declared by the ${capability.id} capability boundary.`],
+    source: {
+      include: includes,
+    },
+    extensions: {
+      contractFiles: {
+        agents: capability.contract_files.agents,
+        claude: capability.contract_files.claude,
+      },
+      lspProfile: capability.lsp_profile,
+      verification: [...capability.verification_hints],
+    },
+  };
+}
+import { AsyncLocalStorage } from 'node:async_hooks';
+import * as fs from 'node:fs';
+import * as child from 'node:child_process';
+
+/** An opt-in IO capability. Ordinary owners retain their original defaults. */
+export interface ReadonlyObservationIO {
+  readFile(path: string): Buffer;
+  readDirectory(path: string): string[];
+  validatePath(path: string): void;
+  exec(file: string, args: string[], options: child.ExecFileSyncOptions): Buffer;
+}
+export class ObservationViolation extends Error {}
+interface Scope { io: ReadonlyObservationIO; failure?: ObservationViolation }
+const scopes = new AsyncLocalStorage<Scope>();
+export function currentReadonlyObservation(): ReadonlyObservationIO | undefined { return scopes.getStore()?.io; }
+function checked<T>(call: () => T): T {
+  try { return call(); }
+  catch (error) {
+    if (error instanceof ObservationViolation) { const scope = scopes.getStore(); if (scope) scope.failure ??= error; }
+    throw error;
+  }
+}
+export function withReadonlyObservation<T>(io: ReadonlyObservationIO, call: () => T): T {
+  const scope: Scope = { io };
+  return scopes.run(scope, () => {
+    const result = call();
+    if (scope.failure) throw scope.failure;
+    return result;
+  });
+}
+export function assertObservationPath(path: string): void {
+  const io = currentReadonlyObservation(); if (io) checked(() => io.validatePath(path));
+}
+export function rejectObservation(reason: string): never { return checked(() => { throw new ObservationViolation(reason); }); }
+function encoding(options: unknown): BufferEncoding | undefined {
+  return typeof options === 'string' ? options as BufferEncoding
+    : options && typeof options === 'object' ? (options as { encoding?: BufferEncoding }).encoding ?? undefined : undefined;
+}
+export const observationReadFileSync: typeof fs.readFileSync = ((path: fs.PathOrFileDescriptor, options?: unknown) => {
+  const io = currentReadonlyObservation();
+  if (!io) return fs.readFileSync(path, options as BufferEncoding);
+  if (typeof path !== 'string') return rejectObservation('Observation requires a named source file');
+  const bytes = checked(() => io.readFile(path)); const enc = encoding(options);
+  return enc ? bytes.toString(enc) : bytes;
+}) as typeof fs.readFileSync;
+export const observationReaddirSync: typeof fs.readdirSync = ((path: fs.PathLike, options?: unknown) => {
+  const io = currentReadonlyObservation();
+  if (!io) return fs.readdirSync(path, options as BufferEncoding);
+  if (typeof path !== 'string' || options) return rejectObservation('Unsupported observation directory options');
+  return checked(() => io.readDirectory(path));
+}) as typeof fs.readdirSync;
+export const observationExecFileSync: typeof child.execFileSync = ((file: string, args: string[], options: child.ExecFileSyncOptions = {}) => {
+  const io = currentReadonlyObservation(); if (!io) return child.execFileSync(file, args, options);
+  const bytes = checked(() => io.exec(file, args, options)); const enc = encoding(options);
+  return enc && String(enc) !== 'buffer' ? bytes.toString(enc) : bytes;
+}) as typeof child.execFileSync;
+export const observationSpawnSync: typeof child.spawnSync = ((file: string, args: string[], options: child.SpawnSyncOptions = {}) => {
+  if (!currentReadonlyObservation()) return child.spawnSync(file, args, options);
+  try {
+    const stdout = observationExecFileSync(file, args, options as child.ExecFileSyncOptions);
+    return { pid: 0, status: 0, signal: null, output: [null, stdout, ''], stdout, stderr: '' };
+  } catch (error) {
+    if (error instanceof ObservationViolation) throw error;
+    const failed = error as { status?: number; stdout?: Buffer; stderr?: Buffer };
+    const enc = encoding(options);
+    const decode = (value?: Buffer) => enc ? (value ?? Buffer.alloc(0)).toString(enc) : value ?? Buffer.alloc(0);
+    return { pid: 0, status: failed.status ?? 1, signal: null, output: [], stdout: decode(failed.stdout), stderr: decode(failed.stderr), error };
+  }
+}) as typeof child.spawnSync;
+import { basename } from 'node:path';
+import {
+  execFileSync as execFileSyncRaw,
+  spawn as spawnRaw,
+  spawnSync as spawnSyncRaw,
+  type ChildProcess,
+  type ExecFileSyncOptions,
+  type ExecFileSyncOptionsWithBufferEncoding,
+  type ExecFileSyncOptionsWithStringEncoding,
+  type SpawnOptions,
+  type SpawnSyncOptions,
+  type SpawnSyncOptionsWithBufferEncoding,
+  type SpawnSyncOptionsWithStringEncoding,
+  type SpawnSyncReturns,
+} from 'node:child_process';
+
+
+/**
+ * Wall clock for a git call that does not set its own timeout.
+ * Same bound as the shared process runner, so a forgotten deadline still
+ * ends a hung git instead of waiting forever.
+ */
+export const DEFAULT_GIT_TIMEOUT_MS = 120_000;
+
+const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
+
+export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
+  return env.REPO_HARNESS_GIT_BIN ?? 'git';
+}
+
+export function isGitExecutableName(command: string): boolean {
+  return GENERIC_GIT_NAMES.has(basename(command).toLowerCase());
+}
+
+function configuredFrom(env: NodeJS.ProcessEnv | undefined, onlyOwn: boolean): string | undefined {
+  if (!env) return undefined;
+  if (onlyOwn && !Object.prototype.hasOwnProperty.call(env, 'REPO_HARNESS_GIT_BIN')) return undefined;
+  const value = env.REPO_HARNESS_GIT_BIN?.trim();
+  return value ? value : undefined;
+}
+
+/**
+ * An explicit path wins. The bare name `git` does not: that is the call site
+ * that used to ignore `REPO_HARNESS_GIT_BIN`. A child env that sets the
+ * variable wins over the parent; a child env that omits it does not hide it.
+ */
+export function resolveGitExecutable(
+  explicit?: string,
+  env?: NodeJS.ProcessEnv,
+  parent: NodeJS.ProcessEnv = process.env,
+): string {
+  const named = explicit?.trim();
+  if (named && !GENERIC_GIT_NAMES.has(named.toLowerCase())) return named;
+  return configuredFrom(env, true) ?? configuredFrom(parent, false) ?? named ?? 'git';
+}
+
+export function resolveGitTimeout(explicit: number | undefined): number {
+  return explicit === undefined ? DEFAULT_GIT_TIMEOUT_MS : explicit;
+}
+
+type GitCallFields = { gitBin?: string; direct?: boolean };
+
+function bindGit<T extends GitCallFields & { timeout?: number; env?: NodeJS.ProcessEnv }>(
+  options: T,
+): { bin: string; options: Omit<T, 'gitBin' | 'direct'> & { timeout: number } } {
+  const { gitBin, direct, timeout, env, ...rest } = options;
+  // Observation policy allows the caller's git name. Re-entering it from the
+  // observation executor would loop, so that executor sets direct.
+  const observing = direct !== true && currentReadonlyObservation() !== undefined;
+  const bin = observing ? (gitBin?.trim() || 'git') : resolveGitExecutable(gitBin, env);
+  return {
+    bin,
+    options: { ...rest, env, timeout: resolveGitTimeout(timeout) } as Omit<T, 'gitBin' | 'direct'> & { timeout: number },
+  };
+}
+
+type GitExecStringOptions = ExecFileSyncOptionsWithStringEncoding & GitCallFields;
+type GitExecBufferOptions = ExecFileSyncOptionsWithBufferEncoding & GitCallFields;
+type GitExecOptions = ExecFileSyncOptions & GitCallFields;
+
+export function gitExecFileSync(args: readonly string[], options: GitExecStringOptions): string;
+export function gitExecFileSync(args: readonly string[], options?: GitExecBufferOptions): Buffer;
+export function gitExecFileSync(args: readonly string[], options: GitExecOptions = {}): string | Buffer {
+  const bound = bindGit(options);
+  const argv = [...args];
+  if (currentReadonlyObservation() !== undefined && options.direct !== true) {
+    return observationExecFileSync(bound.bin, argv, bound.options) as string | Buffer;
+  }
+  return execFileSyncRaw(bound.bin, argv, bound.options);
+}
+
+type GitSpawnStringOptions = SpawnSyncOptionsWithStringEncoding & GitCallFields;
+type GitSpawnBufferOptions = SpawnSyncOptionsWithBufferEncoding & GitCallFields;
+type GitSpawnOptions = SpawnSyncOptions & GitCallFields;
+
+export function gitSpawnSync(args: readonly string[], options: GitSpawnStringOptions): SpawnSyncReturns<string>;
+export function gitSpawnSync(args: readonly string[], options?: GitSpawnBufferOptions): SpawnSyncReturns<Buffer>;
+export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions = {}): SpawnSyncReturns<string | Buffer> {
+  const bound = bindGit(options);
+  const argv = [...args];
+  if (currentReadonlyObservation() !== undefined && options.direct !== true) {
+    return observationSpawnSync(bound.bin, argv, bound.options) as SpawnSyncReturns<string | Buffer>;
+  }
+  return spawnSyncRaw(bound.bin, argv, bound.options);
+}
+
+export function spawnGit(args: readonly string[], options: SpawnOptions & GitCallFields = {}): ChildProcess {
+  const { gitBin, env, direct: _direct, ...rest } = options;
+  return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env });
+}
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { relative, resolve } from "path";
+
+import { createRequire } from "node:module";
+
+
+
+
+
+
+
+
+
+type Format = "json" | "text" | "prefixes" | "archcontext-nodes-v2";
+
+type Args = {
+  command: string;
+  repo: string;
+  path: string;
+  pathsFrom: string;
+  format: Format;
+};
+
+const DEFAULT_REGISTRY = ".ai/context/capabilities.json";
+const ARCHCONTEXT_NODES_DIR = ".archcontext/model/nodes";
+
+
+
 export function capabilitySourceMode(repo: string): CapabilitySourceMode {
   const policyPath = resolve(repo, HARNESS_POLICY);
   if (!existsSync(policyPath)) return "registry";
@@ -789,15 +1067,7 @@ export function capabilitySourceMode(repo: string): CapabilitySourceMode {
       `malformed harness policy: ${HARNESS_POLICY}: ${(error as Error).message}`
     );
   }
-  const value = plainRecord(plainRecord(policy)?.context)?.capability_source;
-  if (value === undefined) return "registry";
-  if (typeof value === "string" && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
-    return value as CapabilitySourceMode;
-  }
-  throw new CapabilitySourceError(
-    `unknown capability source: ${JSON.stringify(value)}; ${CAPABILITY_SOURCE_KEY} must be one of ` +
-      CAPABILITY_SOURCE_MODES.join(", ")
-  );
+  return capabilitySourceModeFromPolicy(policy);
 }
 
 function usage(): never {
@@ -862,7 +1132,7 @@ function parseArgs(argv: string[]): Args {
 
 function repoRoot(input: string): string {
   const cwd = resolve(input);
-  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+  const result = gitSpawnSync(["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
   });
@@ -991,54 +1261,13 @@ function validateRegistryEffects(
   return errors;
 }
 
-// Under `archcontext`, `winner.prefix` is the owner's stable node id: ArchContext
-// does not report which include matched, so no synthetic path prefix is shown.
-function matchRecord(filePath: string, winner: CapabilityPathMatch | null) {
-  if (winner === null) {
-    return {
-      matched: false,
-      file_path: filePath,
-      functional_block: "root",
-      matched_prefix: "root",
-      capability_id: "root",
-      architecture_domain: "root",
-      architecture_capability: "_root",
-      architecture_module: "docs/architecture/index.md",
-      workstream_dir: "tasks/workstreams/root/_root",
-    };
-  }
-  return {
-    matched: true,
-    file_path: winner.filePath,
-    functional_block: winner.prefix,
-    matched_prefix: winner.prefix,
-    capability_id: winner.capability.id,
-    architecture_domain: winner.capability.domain,
-    architecture_capability: winner.capability.name,
-    architecture_module: winner.capability.architecture_module,
-    workstream_dir: winner.capability.workstream_dir,
-    contract_agents: winner.capability.contract_files.agents,
-    contract_claude: winner.capability.contract_files.claude,
-    lsp_profile: winner.capability.lsp_profile,
-    verification_hints: winner.capability.verification_hints,
-  };
-}
-
-/** Registry-mode longest-prefix match. Under `archcontext`, use findMatches. */
-export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
-  const result = matchCapabilityPath(registry, inputPath, { repoRoot: repo });
-  if (result.status === "invalid") {
-    throw new Error(result.diagnostics.map((item) => item.message).join("; "));
-  }
-  return result.status === "matched" ? matchRecord(result.match.filePath, result.match) : matchRecord(result.filePath, null);
-}
 
 type ArchcontextPathResolver = (repo: string, owners: ArchcontextCapabilityOwners, paths: readonly string[]) => CapabilityPathResolution;
 
 // The standalone projection of this helper has no package-local archctx, so the
 // import fails there and archcontext mode fails closed instead of guessing. The
 // specifier is not a literal, so the projection type-checks without that module.
-const ARCHCONTEXT_OWNERS_MODULE = "../src/effects/capabilities/archcontext-owners";
+const ARCHCONTEXT_OWNERS_MODULE = "./archcontext-owners";
 
 function archcontextModule(): {
   readArchcontextCapabilityAuthority(repo: string): ArchcontextCapabilityResolution;
@@ -1054,9 +1283,6 @@ function archcontextModule(): {
   }
 }
 
-export type MatchAuthority =
-  | { readonly mode: "registry"; readonly registry: CapabilityRegistry }
-  | { readonly mode: "archcontext"; readonly owners: ArchcontextCapabilityOwners };
 
 /**
  * One match per input path. Under `archcontext`, one archctx call resolves the
@@ -1079,36 +1305,6 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function toArchContextNodeV2(capability: Capability, isExistingDirectory: (path: string) => boolean): ArchContextNodeV2 {
-  const displayName = capability.name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
-  const includes = capability.prefixes.map((prefix) => {
-    try {
-      return isExistingDirectory(prefix) ? `${prefix}/**` : prefix;
-    } catch {
-      return prefix;
-    }
-  });
-  return {
-    schemaVersion: "archcontext.node/v2",
-    id: `capability.${capability.domain}.${capability.name}`,
-    kind: "capability",
-    name: displayName,
-    status: "active",
-    summary: `Capability boundary for ${capability.domain}/${capability.name}.`,
-    responsibilities: [`Own the source paths declared by the ${capability.id} capability boundary.`],
-    source: {
-      include: includes,
-    },
-    extensions: {
-      contractFiles: {
-        agents: capability.contract_files.agents,
-        claude: capability.contract_files.claude,
-      },
-      lspProfile: capability.lsp_profile,
-      verification: [...capability.verification_hints],
-    },
-  };
-}
 
 export function buildArchContextNodesV2(
   registry: CapabilityRegistry,
@@ -1134,8 +1330,8 @@ async function readPathLines(input: string): Promise<string[]> {
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
   const repo = repoRoot(args.repo);
   const mode = capabilitySourceMode(repo);
   const authority = capabilityAuthorityPath(mode);
@@ -1233,7 +1429,7 @@ async function main(): Promise<void> {
 
 if (import.meta.main) {
   try {
-    await main();
+    await runCapabilityResolverCli(process.argv.slice(2));
   } catch (error) {
     console.error(`[CapabilityResolver] ${(error as Error).message}`);
     process.exit((error as { exitCode?: number }).exitCode ?? 1);
