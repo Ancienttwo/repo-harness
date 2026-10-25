@@ -37,7 +37,7 @@ import {
   type RepoHarnessRegistryStrictSnapshot,
 } from '../../src/effects/repo-registry';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
-import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../../src/effects/git/repository-identity';
 
 function repo(index: number): RepoHarnessRegisteredRepo {
   return {

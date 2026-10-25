@@ -17,7 +17,7 @@ function put(home: string, path: string, content: string) { const absolute = joi
 function tree(home: string): string { return readdirSync(home, {recursive:true}).sort().map(String).map(p => {try{return `${p}:${readFileSync(join(home,p),'utf8')}`;}catch{return p;}}).join('\n'); }
 test('restores original config, preserves siblings and archives, dry run is byte-identical', () => fixture((home, env) => {
  put(home,'.codex/config.toml','default_mode_request_user_input = false\nmodel = "user"\n');
- writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\nmodel = "user"\n',env);
+ writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\nmodel = "user"\n',home);
  put(home,'.claude/settings.json',JSON.stringify({theme:'dark',hooks:{...buildManagedHooks('claude'),UserPromptSubmit:[{hooks:[{type:'command',command:'user-hook'}]}]}}));
  put(home,'.repo-harness/config.json',JSON.stringify({brainRoot:join(home,'vault'),refactor_recommendations:{enabled:true},architecture:{projection_provider:'archctx',projection_apply:'manual'},custom:42}));
  put(home,'vault/archive.md','keep'); put(home,'.repo-harness/history/log','keep');
@@ -30,23 +30,23 @@ test('restores original config, preserves siblings and archives, dry run is byte
  expect(JSON.parse(readFileSync(join(home,'.repo-harness/config.json'),'utf8'))).toEqual({custom:42});
  expect(readFileSync(join(home,'vault/archive.md'),'utf8')).toBe('keep');
  expect(runUserUninstall({target:'both',env}).status).toBe('complete');
- expect(existsSync(configurationReceiptPath(env))).toBe(true);
+ expect(existsSync(configurationReceiptPath(home))).toBe(true);
 }));
 test('user edits are preserved and return partial, with receipt retained', () => fixture((home,env)=>{
- writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',env);
+ writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',home);
  put(home,'.codex/config.toml','default_mode_request_user_input = false\n');
  const result=runUserUninstall({target:'both',env});expect(result.status).toBe('partial');
- expect(readFileSync(join(home,'.codex/config.toml'),'utf8')).toContain('false');expect(existsSync(configurationReceiptPath(env))).toBe(true);
+ expect(readFileSync(join(home,'.codex/config.toml'),'utf8')).toContain('false');expect(existsSync(configurationReceiptPath(home))).toBe(true);
 }));
 test('fresh adapter-only uninstall is idempotent',()=>fixture((home,env)=>{
- writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',env);
+ writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',home);
  put(home,'.codex/hooks.json',JSON.stringify({hooks:buildManagedHooks('codex')}));
  expect(runUserUninstall({target:'both',env}).exitCode).toBe(0);
  expect(existsSync(join(home,'.codex/hooks.json'))).toBe(false);
  const after=tree(home);expect(runUserUninstall({target:'both',env}).exitCode).toBe(0);expect(tree(home)).toBe(after);
 }));
 test('target codex retains Claude and shared brain configuration',()=>fixture((home,env)=>{
- writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',env);
+ writeOwnedConfiguration(join(home,'.codex/config.toml'),'default_mode_request_user_input = true\n',home);
  put(home,'.claude/settings.json',JSON.stringify({hooks:buildManagedHooks('claude')}));
  put(home,'.repo-harness/config.json','{"brainRoot":"/archive"}');
  const claude=readFileSync(join(home,'.claude/settings.json'),'utf8');
@@ -74,7 +74,7 @@ test('symlinked host root is never traversed for cleanup',()=>fixture((home,env)
 test('restores existing MCP config without deleting sibling registrations or permissions',()=>fixture((home,env)=>{
  const path=join(home,'.claude.json');
  put(home,'.claude.json',JSON.stringify({mcpServers:{codegraph:{command:'original'},user:{command:'keep'}},allowedTools:['user-tool']}));
- writeOwnedConfiguration(path,JSON.stringify({mcpServers:{codegraph:{command:'new'},user:{command:'keep'}},allowedTools:['user-tool','mcp__codegraph__*']}),env);
+ writeOwnedConfiguration(path,JSON.stringify({mcpServers:{codegraph:{command:'new'},user:{command:'keep'}},allowedTools:['user-tool','mcp__codegraph__*']}),home);
  const result=runUserUninstall({target:'claude',env});expect(result.status,result.lines.join('\n')).toBe('complete');
  expect(JSON.parse(readFileSync(path,'utf8'))).toEqual({mcpServers:{codegraph:{command:'original'},user:{command:'keep'}},allowedTools:['user-tool']});
  expect(runUserUninstall({target:'claude',env}).status).toBe('complete');
@@ -82,7 +82,7 @@ test('restores existing MCP config without deleting sibling registrations or per
 test('restores Codex MCP section while preserving other TOML tables',()=>fixture((home,env)=>{
  const path=join(home,'.codex/config.toml');
  put(home,'.codex/config.toml','model = "user"\n[mcp_servers.other]\ncommand = "keep"\n');
- writeOwnedConfiguration(path,'model = "user"\n[mcp_servers.other]\ncommand = "keep"\n[mcp_servers.codegraph]\ncommand = "cg"\n',env);
+ writeOwnedConfiguration(path,'model = "user"\n[mcp_servers.other]\ncommand = "keep"\n[mcp_servers.codegraph]\ncommand = "cg"\n',home);
  expect(runUserUninstall({target:'codex',env}).status).toBe('complete');
  expect(readFileSync(path,'utf8')).toBe('model = "user"\n[mcp_servers.other]\ncommand = "keep"\n');
 }));
@@ -122,11 +122,11 @@ test('old transaction-owned MCP projection composes with hook removal',()=>fixtu
 }));
 test('historical receipt cannot delete a user same-value setting after no-op reinstall',()=>fixture((home,env)=>{
  const path=join(home,'.codex/config.toml');
- writeOwnedConfiguration(path,'default_mode_request_user_input = true\n',env);
+ writeOwnedConfiguration(path,'default_mode_request_user_input = true\n',home);
  expect(runUserUninstall({target:'codex',env}).status).toBe('complete');
  put(home,'.codex/config.toml','default_mode_request_user_input = true\n');
  // A no-op writer must not acquire a new installation ownership epoch.
- writeOwnedConfiguration(path,'default_mode_request_user_input = true\n',env);
+ writeOwnedConfiguration(path,'default_mode_request_user_input = true\n',home);
  const result=runUserUninstall({target:'codex',env});
  expect(readFileSync(path,'utf8')).toContain('true');expect(result.status).toBe('partial');
 }));

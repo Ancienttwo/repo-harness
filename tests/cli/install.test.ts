@@ -46,7 +46,7 @@ describe('issue 698 host configuration ownership', () => {
         expect(parsed.default_mode_request_user_input).toBe(true);
         expect(parsed.profiles.work.default_mode_request_user_input).toBe(false);
         expect(installed).toContain('[profiles.work]\ndefault_mode_request_user_input = false\n');
-        const receipt = readConfigurationReceipt({ HOME: home });
+        const receipt = readConfigurationReceipt(home);
         expect(receipt.pending).toBeUndefined();
         expect(receipt.changes).toEqual([{
           path: filePath,
@@ -57,7 +57,7 @@ describe('issue 698 host configuration ownership', () => {
         }]);
         expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
         expect(fs.readFileSync(filePath, 'utf8')).toBe(installed);
-        expect(readConfigurationReceipt({ HOME: home })).toEqual(receipt);
+        expect(readConfigurationReceipt(home)).toEqual(receipt);
 
         expect(runUninstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
         expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
@@ -73,7 +73,7 @@ describe('issue 698 host configuration ownership', () => {
       fs.writeFileSync(filePath, original);
       expect(runInstall({ target: 'codex', location: 'global' }).exitCode).toBe(0);
       expect(fs.readFileSync(filePath, 'utf8')).toBe(original);
-      expect(readConfigurationReceipt({ HOME: home }).changes).toEqual([]);
+      expect(readConfigurationReceipt(home).changes).toEqual([]);
     });
   });
 

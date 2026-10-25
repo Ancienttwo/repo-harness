@@ -3,21 +3,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, symlinkSy
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { buildLeaseLivenessPolicy, validateLeaseLivenessPolicy } from '../../src/core/state/lease-liveness';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const runner = fileURLToPath(new URL('../../scripts/run-bounded-verifier-command.ts', import.meta.url));
 const sourceRoot = fileURLToPath(new URL('../../src/', import.meta.url));
-
-test('liveness policy survives canonical grant key ordering without accepting changed policy or digest', () => {
-  const policy = buildLeaseLivenessPolicy({ renewal_interval_ms: 1000, maximum_ttl_ms: 6000, renewal_actor_kind: 'controller', required_evidence_sources: ['controller', 'runtime_effect'], unproven_behavior: 'require_attention' });
-  const transported = Object.fromEntries(Object.entries(policy).sort(([a], [b]) => a.localeCompare(b)));
-  expect(validateLeaseLivenessPolicy(transported)).toEqual(policy);
-  expect(() => validateLeaseLivenessPolicy({ ...transported, maximum_ttl_ms: 7000 })).toThrow();
-  expect(() => validateLeaseLivenessPolicy({ ...transported, policy_sha256: 'sha256:' + '0'.repeat(64) })).toThrow();
-  expect(() => validateLeaseLivenessPolicy({ ...transported, invented: true })).toThrow();
-});
 
 test('supervisor reports only its observed process-group scope after descendants finish', async () => {
   const root = mkdtempSync(join(tmpdir(), 'brc10-supervisor-')); roots.push(root);

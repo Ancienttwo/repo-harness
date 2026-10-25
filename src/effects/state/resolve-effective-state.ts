@@ -17,7 +17,8 @@ import {
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
-import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup } from '../capabilities/archcontext-owners';
+import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../capabilities/archcontext-owners';
+import { archcontextResolveFileCache } from '../capabilities/archcontext-resolve-cache';
 import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import type {
   CapabilityOwnership,
@@ -41,10 +42,6 @@ import {
   StateVersionConfirmMismatchError,
   type StateVersionWriteEffects,
 } from './git-state-version-store';
-import {
-  publishEffectiveStateCache,
-  type StateCacheWriteEffects,
-} from './state-cache';
 import { withStateLock } from './state-lock';
 import {
   collectStateInputs,
@@ -71,7 +68,6 @@ export type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
 
 export interface EffectiveStatePublicationEffects {
-  readonly cache?: StateCacheWriteEffects;
   readonly version?: StateVersionWriteEffects;
 }
 
@@ -383,6 +379,7 @@ function resolveArchcontextPaths(
   paths: readonly string[],
   readSource: (path: string) => string | null,
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityPathResolution<CapabilityIdentity> {
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
@@ -391,7 +388,7 @@ function resolveArchcontextPaths(
   // Only ordinary state passes share the default transport's memo.
   if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options);
+    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options, cache);
     // An unavailable answer is not memoized: a later pass outside observation computes it.
     if (!options && resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
     return resolution;
@@ -415,6 +412,7 @@ function capabilityIdsForPathGroups(
   readSource = (path: string) => readText(cwd, path),
   select: (paths: readonly string[]) => readonly string[] = (paths) => paths,
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityResolution[] {
   const mode = capabilitySourceMode(policy);
   const inputs = groups.map((paths) => {
@@ -453,7 +451,7 @@ function capabilityIdsForPathGroups(
     ? resolveCapabilityPaths(registry.registry, union, { repoRoot: cwd })
     : union.length === 0
       ? { status: 'valid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [] }
-      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource, options);
+      : resolveArchcontextPaths(cwd, ARCHCONTEXT_IDENTITY_OWNERS, union, readSource, options, cache);
   return subjects.map(({ paths, diagnostics: pathErrors, outOfRepoPathCount }): CapabilityResolution => {
     const diagnostics = [...pathErrors, ...resolution.diagnostics.filter((entry) => {
       // Empty subjects did not need archctx before this union query either.
@@ -479,8 +477,9 @@ function capabilityIdsForPaths(
   readSource?: (path: string) => string | null,
   select?: (paths: readonly string[]) => readonly string[],
   options?: ArchctxProviderOptions,
+  cache?: ArchcontextResolveCache,
 ): CapabilityResolution {
-  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options)[0]!;
+  return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options, cache)[0]!;
 }
 
 const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
@@ -577,7 +576,8 @@ export interface CapabilityPathOwner {
  * state lock and writes nothing. A path is absent from the map when it is not
  * an implementation surface or has no owner; the map is empty when the
  * repository declares no registry. One call resolves the whole batch, so an
- * archcontext repository starts one `archctx resolve`. `select` narrows the
+ * archcontext repository starts at most one `archctx resolve`, and none when
+ * the per-HEAD resolve cache already answers every path. `select` narrows the
  * batch after the authority loads and before ownership resolves, so a caller
  * pays for its own filter only when a registry exists. It throws when
  * ownership is unavailable.
@@ -590,7 +590,7 @@ export function capabilityOwnersForPaths(
   const owners = new Map<string, CapabilityPathOwner>();
   const surfaces = paths.filter(isImplementationSurfacePath);
   if (surfaces.length === 0) return owners;
-  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select);
+  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select, undefined, archcontextResolveFileCache(cwd));
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }
@@ -632,8 +632,7 @@ function collectStateSnapshotFacts(
 
 /**
  * Resolve all workflow projections into one fail-closed, versioned state model.
- * Markdown remains the human-editable authority; the JSON cache is only an
- * ignored, atomically replaced read model and never feeds authority back in.
+ * Markdown remains the human-editable authority.
  */
 function resolveEffectiveStateUnlocked(
   cwd: string,
@@ -901,11 +900,11 @@ export class StateResolutionUnstableError extends Error {
  * candidate version is computed and compares them against this attempt's own
  * `confirmed.source_hashes`; a mismatch means a source mutated after the
  * stability loop returned but before allocation, so it throws
- * `StateVersionConfirmMismatchError` with no owner write and no cache
- * publish -- `resolveEffectiveState` below decides whether to retry. The
- * confirm callback reuses the review subject slot of the confirmed pass,
- * because it compares authority hashes for the commit window only. The slot
- * still builds the subject again if the policy review base changed.
+ * `StateVersionConfirmMismatchError` with no owner write --
+ * `resolveEffectiveState` below decides whether to retry. The confirm callback
+ * reuses the review subject slot of the confirmed pass, because it compares
+ * authority hashes for the commit window only. The slot still builds the
+ * subject again if the policy review base changed.
  */
 function resolveAndCommitEffectiveState(
   cwd: string,
@@ -914,20 +913,18 @@ function resolveAndCommitEffectiveState(
   publicationEffects: EffectiveStatePublicationEffects | undefined,
 ): EffectiveState {
   const { state: confirmed, reviewSubjectFor } = resolveStableEffectiveState(cwd, nowMs, risk);
-  let finalized: EffectiveState | null = null;
-  commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
-    const candidate = { ...confirmed, state_version: version };
-    const publication = publishEffectiveStateCache(cwd, candidate, publicationEffects?.cache);
-    finalized = candidate;
-    return publication;
-  }, publicationEffects?.version, () => {
+  const version = commitStateVersionAfter(cwd, confirmed.state_revision, publicationEffects?.version, () => {
     return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, reviewSubjectFor, risk))
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
-  if (finalized === null) throw new Error('effective-state publication did not produce a final state');
-  return finalized;
+  return { ...confirmed, state_version: version };
 }
 
+/**
+ * The only `state_version` publisher. Its production caller is
+ * `repo-harness state resolve`; every other reader uses
+ * `resolveEffectiveStateReadOnly`.
+ */
 export function resolveEffectiveState(
   cwd = process.cwd(),
   nowMs = Date.now(),
@@ -958,6 +955,11 @@ export function resolveEffectiveState(
   });
 }
 
+/**
+ * The no-write resolution for hooks, MCP and the other readers. It returns the
+ * last published `state_version`, which can belong to another revision of any
+ * linked worktree; `state_revision` identifies the content.
+ */
 export function resolveEffectiveStateReadOnly(
   cwd = process.cwd(),
   nowMs = Date.now(),

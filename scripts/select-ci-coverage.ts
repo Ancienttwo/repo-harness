@@ -226,12 +226,10 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
   const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));
   try {
-    for (const name of ['build:oar-review-host', 'build:oar-coding-host']) {
-      const metafile = join(directory, `${name.replaceAll(':', '-')}.json`);
-      const build = spawnSync(process.execPath, ['run', name, `--metafile=${metafile}`, `--outfile=${join(directory, 'host.js')}`], { cwd: root, encoding: 'utf8' });
-      if (build.status !== 0) throw new Error(`Platform bundle failed: ${name}\n${build.stdout}\n${build.stderr}`);
-      for (const path of bundleInputPaths(JSON.parse(readFileSync(metafile, 'utf8')))) native.add(path);
-    }
+    const name = 'build:oar-review-host', metafile = join(directory, 'build-oar-review-host.json');
+    const build = spawnSync(process.execPath, ['run', name, `--metafile=${metafile}`, `--outfile=${join(directory, 'host.js')}`], { cwd: root, encoding: 'utf8' });
+    if (build.status !== 0) throw new Error(`Platform bundle failed: ${name}\n${build.stdout}\n${build.stderr}`);
+    for (const path of bundleInputPaths(JSON.parse(readFileSync(metafile, 'utf8')))) native.add(path);
   } finally { rmSync(directory, { recursive: true, force: true }); }
   return { native, home };
 }

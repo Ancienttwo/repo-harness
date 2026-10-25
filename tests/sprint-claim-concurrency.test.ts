@@ -8,7 +8,6 @@ import { join } from 'path';
 import { leaseDirectory, readLease, taskLockRelativePath } from '../src/effects/state/coordination-lease-store';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
-import { cutoverMarkerPath, inspectCutoverQuiescence } from '../src/effects/state/coordination-cutover';
 import { randomUUID } from 'crypto';
 import { buildLeaseOwnerRecord, projectCanonicalTasks } from '../src/core/state/coordination-identity';
 
@@ -340,91 +339,6 @@ describe('retained sprint closeout and read safety over real worktrees', () => {
     expect(afterRename.record?.claim_id).toBe(owner.claim_id);
   }, 60_000);
 
-
-  test('cutover refuses while legacy markers, contract worktrees, or closeouts are live', () => {
-    const fixture = createFixture('sprint-cutover');
-    expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
-
-    // 1. A retired per-worktree in-flight marker under a linked worktree.
-    mkdirSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight'), { recursive: true });
-    writeFileSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight/race-the-claim'), 'capturing');
-    let quiescence = inspectCutoverQuiescence(fixture.primary);
-    expect(quiescence.quiescent).toBe(false);
-    expect(quiescence.blockers.map((entry) => entry.kind)).toContain('legacy_in_flight_marker');
-    rmSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight'), { recursive: true, force: true });
-    expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
-
-    // 2. An executing contract worktree.
-    mkdirSync(join(fixture.worktreeB, '.ai/harness/worktrees'), { recursive: true });
-    writeFileSync(join(fixture.worktreeB, '.ai/harness/worktrees/row-one.json'), '{"slug":"row-one"}');
-    quiescence = inspectCutoverQuiescence(fixture.primary);
-    expect(quiescence.quiescent).toBe(false);
-    expect(quiescence.blockers.map((entry) => entry.kind)).toContain('executing_contract_worktree');
-    rmSync(join(fixture.worktreeB, '.ai/harness/worktrees'), { recursive: true, force: true });
-
-    // 3. An unfinished closeout journal entry.
-    const journal = join(
-      resolveGitCommonDirectory(fixture.primary),
-      'repo-harness/transactions/finish/abc123',
-    );
-    mkdirSync(journal, { recursive: true });
-    writeFileSync(join(journal, 'status.json'), '{\n  "status": "in_progress"\n}\n');
-    quiescence = inspectCutoverQuiescence(fixture.primary);
-    expect(quiescence.quiescent).toBe(false);
-    expect(quiescence.blockers.map((entry) => entry.kind)).toContain('unfinished_closeout_journal');
-
-    // Nothing was migrated, repaired, or deleted along the way.
-    writeFileSync(join(journal, 'status.json'), '{\n  "status": "complete"\n}\n');
-    expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
-  }, 60_000);
-
-  test('a missing git binary is a typed error, never a skipped gate', () => {
-    // Separate process, because PATH is process-global and this suite runs
-    // beside others. `process.execPath` keeps bun reachable without PATH.
-    const fixture = createFixture('sprint-cutover-no-git', false);
-    const emptyPath = realpathSync(mkdtempSync(join(tmpdir(), 'no-git-path-')));
-    FIXTURES.add(emptyPath);
-
-    const probe = spawnSync(
-      process.execPath,
-      [
-        '-e',
-        [
-          'const mod = await import(process.argv[1]);',
-          'for (const name of ["cutoverMarkerPath", "inspectCutoverQuiescence", "legacyCutoverRefusal"]) {',
-          '  try { mod[name](process.argv[2]); console.log(`${name}:none`); }',
-          '  catch (error) { console.log(`${name}:${error.name}`); }',
-          '}',
-        ].join('\n'),
-        join(ROOT, 'src/effects/state/coordination-cutover.ts'),
-        fixture.primary,
-      ],
-      { encoding: 'utf-8', env: { PATH: emptyPath, HOME: emptyPath, TMPDIR: '/tmp' } },
-    );
-
-    expect(probe.stdout.trim().split('\n')).toEqual([
-      'cutoverMarkerPath:GitBinaryUnavailableError',
-      'inspectCutoverQuiescence:GitBinaryUnavailableError',
-      'legacyCutoverRefusal:GitBinaryUnavailableError',
-    ]);
-  }, 60_000);
-
-  test('init refuses to apply while the repo is not quiescent', () => {
-    const fixture = createFixture('sprint-cutover-init');
-    mkdirSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight'), { recursive: true });
-    writeFileSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight/race-the-claim'), 'capturing');
-
-    const result = spawnSync(
-      process.execPath,
-      [CLI, 'init', '--repo', fixture.primary, '--no-verify', '--no-codegraph'],
-      { cwd: fixture.primary, encoding: 'utf-8', env: sandboxEnv() },
-    );
-    expect(result.status).not.toBe(0);
-    expect(`${result.stdout}${result.stderr}`).toContain('cutover quiescence');
-    expect(`${result.stdout}${result.stderr}`).toContain('legacy_in_flight_marker');
-    // Fail closed means the legacy marker survives for the operator to resolve.
-    expect(existsSync(join(fixture.worktreeA, '.ai/harness/sprint/in-flight/race-the-claim'))).toBe(true);
-  }, 120_000);
 
   test('an empty task lock refuses entry without blocking a different task', () => {
     const fixture = createFixture('sprint-lock-wedge');

@@ -16,21 +16,26 @@ export interface ConfigurationReceipt {
   changes: ConfigurationRestore[];
   pending?: { id: string; before: Array<{ path: string; selector: string; value: string | null }> };
 }
-export const configurationReceiptPath = (env: NodeJS.ProcessEnv = process.env): string =>
-  join(env.HOME ?? homedir(), '.repo-harness', 'configuration-restore.json');
+/**
+ * The scope root owns the configuration files and their receipt: the account
+ * home for host installs, or one repository root for project setup.
+ */
+export const hostConfigurationRoot = (env: NodeJS.ProcessEnv = process.env): string => env.HOME ?? homedir();
+
+export const configurationReceiptPath = (root: string): string =>
+  join(root, '.repo-harness', 'configuration-restore.json');
 
 /** Only these shared configuration fragments can be restored by an install receipt. */
-export function configurationPaths(env: NodeJS.ProcessEnv = process.env): string[] {
-  const home = env.HOME ?? homedir();
-  return [join(home, '.codex/config.toml'), join(home, '.claude.json'), join(home, '.claude/settings.json')];
+export function configurationPaths(root: string): string[] {
+  return [join(root, '.codex/config.toml'), join(root, '.claude.json'), join(root, '.claude/settings.json')];
 }
 
-export function assertConfigurationPath(path: string, env: NodeJS.ProcessEnv = process.env): void {
-  const home = resolve(env.HOME ?? homedir());
-  const rel = relative(home, resolve(path));
+export function assertConfigurationPath(path: string, root: string): void {
+  const base = resolve(root);
+  const rel = relative(base, resolve(path));
   if (!rel) return;
   if (rel === '..' || rel.startsWith(`..${sep}`) || resolve(path) !== path) throw new Error(`unsafe configuration path: ${path}`);
-  let current = home;
+  let current = base;
   for (const part of rel.split(sep)) {
     current = join(current, part);
     try {
@@ -40,8 +45,8 @@ export function assertConfigurationPath(path: string, env: NodeJS.ProcessEnv = p
   }
 }
 
-export function writePrivateConfiguration(path: string, content: string, env: NodeJS.ProcessEnv = process.env): void {
-  assertConfigurationPath(path, env);
+export function writePrivateConfiguration(path: string, content: string, root: string): void {
+  assertConfigurationPath(path, root);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
@@ -123,12 +128,12 @@ export function replaceConfigurationFragment(path: string, raw: string, selector
   return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
-export function readConfigurationReceipt(env: NodeJS.ProcessEnv = process.env): ConfigurationReceipt {
-  const path = configurationReceiptPath(env);
-  assertConfigurationPath(path, env);
+export function readConfigurationReceipt(root: string): ConfigurationReceipt {
+  const path = configurationReceiptPath(root);
+  assertConfigurationPath(path, root);
   if (!existsSync(path)) return { protocol: 1, changes: [] };
   const raw = JSON.parse(readFileSync(path, 'utf8'));
-  const paths = configurationPaths(env);
+  const paths = configurationPaths(root);
   const keys = new Set<string>();
   if (raw?.protocol !== 1 || !Array.isArray(raw.changes)) throw new Error(`invalid configuration receipt: ${path}`);
   for (const change of raw.changes) {
@@ -158,17 +163,17 @@ export function readConfigurationReceipt(env: NodeJS.ProcessEnv = process.env): 
   return raw;
 }
 
-export function saveConfigurationReceipt(receipt: ConfigurationReceipt, env: NodeJS.ProcessEnv = process.env): void {
-  const path = configurationReceiptPath(env);
-  if (receipt.changes.length || receipt.pending) writePrivateConfiguration(path, `${JSON.stringify(receipt, null, 2)}\n`, env);
-  else { assertConfigurationPath(path, env); if (existsSync(path)) unlinkSync(path); }
+export function saveConfigurationReceipt(receipt: ConfigurationReceipt, root: string): void {
+  const path = configurationReceiptPath(root);
+  if (receipt.changes.length || receipt.pending) writePrivateConfiguration(path, `${JSON.stringify(receipt, null, 2)}\n`, root);
+  else { assertConfigurationPath(path, root); if (existsSync(path)) unlinkSync(path); }
 }
 
-export function recordConfigurationChange(path: string, before: string, after: string, env: NodeJS.ProcessEnv = process.env, alreadyRecorded = false, pendingId?: string): void {
-  if (!configurationPaths(env).includes(path)) return;
-  assertConfigurationPath(path, env);
-  const receipt = readConfigurationReceipt(env);
-  if (receipt.pending && receipt.pending.id !== pendingId) throw new Error(`interrupted configuration transaction; preimage retained at ${configurationReceiptPath(env)}`);
+export function recordConfigurationChange(path: string, before: string, after: string, root: string, alreadyRecorded = false, pendingId?: string): void {
+  if (!configurationPaths(root).includes(path)) return;
+  assertConfigurationPath(path, root);
+  const receipt = readConfigurationReceipt(root);
+  if (receipt.pending && receipt.pending.id !== pendingId) throw new Error(`interrupted configuration transaction; preimage retained at ${configurationReceiptPath(root)}`);
   const selectors = path.endsWith('.toml') ? ['default_mode_request_user_input', 'mcp_servers.codegraph', 'mcp_servers.repo_harness'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
   for (const selector of selectors) {
     const previous = readConfigurationFragment(path, before, selector);
@@ -182,55 +187,55 @@ export function recordConfigurationChange(path: string, before: string, after: s
       existing.active = true;
     } else receipt.changes.push({ path, selector, before: previous, installed, active: true });
   }
-  saveConfigurationReceipt(receipt, env);
+  saveConfigurationReceipt(receipt, root);
 }
 
-export function writeOwnedConfiguration(path: string, content: string, env: NodeJS.ProcessEnv = process.env): void {
-  withConfigurationMutation([path], env, () => writePrivateConfiguration(path, content, env));
+export function writeOwnedConfiguration(path: string, content: string, root: string): void {
+  withConfigurationMutation([path], root, () => writePrivateConfiguration(path, content, root));
 }
 
-export function captureConfigurationRestores(transaction: { snapshots: readonly { path: string; existed: boolean; backup_path: string | null }[] }, env: NodeJS.ProcessEnv = process.env): void {
+export function captureConfigurationRestores(transaction: { snapshots: readonly { path: string; existed: boolean; backup_path: string | null }[] }, root: string): void {
   for (const snapshot of transaction.snapshots) {
-    if (!configurationPaths(env).includes(snapshot.path)) continue;
+    if (!configurationPaths(root).includes(snapshot.path)) continue;
     const before = snapshot.existed && snapshot.backup_path ? readFileSync(snapshot.backup_path, 'utf8') : '';
     const after = existsSync(snapshot.path) ? readFileSync(snapshot.path, 'utf8') : '';
-    recordConfigurationChange(snapshot.path, before, after, env, true);
+    recordConfigurationChange(snapshot.path, before, after, root, true);
   }
 }
 
-export function assertRecordedConfigurationCurrent(paths: readonly string[], env: NodeJS.ProcessEnv = process.env): void {
-  const receipt = readConfigurationReceipt(env);
-  if (receipt.pending) throw new Error(`interrupted configuration transaction; preimage retained at ${configurationReceiptPath(env)}`);
+export function assertRecordedConfigurationCurrent(paths: readonly string[], root: string): void {
+  const receipt = readConfigurationReceipt(root);
+  if (receipt.pending) throw new Error(`interrupted configuration transaction; preimage retained at ${configurationReceiptPath(root)}`);
   for (const entry of receipt.changes) {
     if (!entry.active || !paths.includes(entry.path)) continue;
-    assertConfigurationPath(entry.path, env);
+    assertConfigurationPath(entry.path, root);
     const raw = existsSync(entry.path) ? readFileSync(entry.path, 'utf8') : '';
     const current = readConfigurationFragment(entry.path, raw, entry.selector);
     if (current !== entry.installed && current !== entry.before) throw new Error(`configuration changed since installation: ${entry.path} ${entry.selector}`);
   }
 }
 
-/** Caller holds the host transaction lock. A killed external writer leaves its preimage durable. */
-export function withConfigurationMutation<T>(paths: readonly string[], env: NodeJS.ProcessEnv, mutate: () => T): T {
-  assertRecordedConfigurationCurrent(paths, env);
-  const receipt = readConfigurationReceipt(env);
+/** Caller holds the runtime transaction lock of the same scope. A killed external writer leaves its preimage durable. */
+export function withConfigurationMutation<T>(paths: readonly string[], root: string, mutate: () => T): T {
+  assertRecordedConfigurationCurrent(paths, root);
+  const receipt = readConfigurationReceipt(root);
   const before = paths.map((path) => {
-    if (!configurationPaths(env).includes(path)) throw new Error(`unsupported configuration mutation: ${path}`);
-    assertConfigurationPath(path, env);
+    if (!configurationPaths(root).includes(path)) throw new Error(`unsupported configuration mutation: ${path}`);
+    assertConfigurationPath(path, root);
     return { path, raw: existsSync(path) ? readFileSync(path, 'utf8') : '' };
   });
   const id = randomUUID();
   receipt.pending = { id, before: before.flatMap(({ path, raw }) => (path.endsWith('.toml')
     ? ['default_mode_request_user_input', 'mcp_servers.codegraph', 'mcp_servers.repo_harness'] : ['mcpServers.codegraph', 'allowedTools.codegraph'])
     .map((selector) => ({ path, selector, value: readConfigurationFragment(path, raw, selector) }))) };
-  saveConfigurationReceipt(receipt, env);
+  saveConfigurationReceipt(receipt, root);
   const result = mutate();
   for (const snapshot of before) {
-    recordConfigurationChange(snapshot.path, snapshot.raw, existsSync(snapshot.path) ? readFileSync(snapshot.path, 'utf8') : '', env, false, id);
+    recordConfigurationChange(snapshot.path, snapshot.raw, existsSync(snapshot.path) ? readFileSync(snapshot.path, 'utf8') : '', root, false, id);
   }
-  const finalized = readConfigurationReceipt(env);
+  const finalized = readConfigurationReceipt(root);
   if (finalized.pending?.id !== id) throw new Error('configuration transaction ownership changed');
   delete finalized.pending;
-  saveConfigurationReceipt(finalized, env);
+  saveConfigurationReceipt(finalized, root);
   return result;
 }

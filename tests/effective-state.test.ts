@@ -98,8 +98,7 @@ describe('effective state resolver', () => {
         results.push({
           name: entry.name,
           failedClosed,
-          published: existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))
-            || existsSync(stateVersionOwnerPath(fixture.cwd)),
+          published: existsSync(stateVersionOwnerPath(fixture.cwd)),
         });
       } finally {
         rmSync(outsidePath, { force: true });
@@ -124,7 +123,6 @@ describe('effective state resolver', () => {
       symlinkSync(outsidePath, linkedPlan);
       write(fixture.cwd, '.ai/harness/active-plan', 'plans/external-plan.md\n');
       expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
-      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
       rmSync(outsidePath, { force: true });
@@ -141,7 +139,6 @@ describe('effective state resolver', () => {
       symlinkSync(outsideDirectory, join(fixture.cwd, 'plans/external'));
       write(fixture.cwd, '.ai/harness/active-plan', 'plans/external/missing.md\n');
       expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
-      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
       rmSync(outsideDirectory, { recursive: true, force: true });
@@ -478,11 +475,10 @@ describe('effective state resolver', () => {
       });
     }, 30_000);
 
-    test('a corrupt policy.json fails closed before cache/version publication', () => {
+    test('a corrupt policy.json fails closed before version publication', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/harness/policy.json', 'not json{{{');
         expect(() => resolveFixtureState(cwd)).toThrow();
-        expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
         expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
       });
     }, 30_000);
@@ -518,7 +514,6 @@ describe('effective state resolver', () => {
         withRepo((cwd) => {
           write(cwd, '.ai/harness/policy.json', JSON.stringify(malformed.policy));
           expect(() => malformed.resolve(cwd)).toThrow();
-          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
           expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
         });
       }, 30_000);
@@ -536,7 +531,6 @@ describe('effective state resolver', () => {
             targetPaths: [],
             operationKind: 'inspect',
           })).toThrow();
-          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
           expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
         });
       }, 30_000);

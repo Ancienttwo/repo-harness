@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'crypto';
-import { appendFileSync, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
+import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
@@ -8,6 +8,7 @@ import {
   ExclusiveLockContentionError,
   type ExclusiveDirectoryLockHandle,
 } from '../../effects/locking/exclusive-directory-lock';
+import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { createCodeGraphCliAdapter, type CodeGraphRefreshResult, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { isPathInside } from './paths';
@@ -195,10 +196,10 @@ const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
 const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
-const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
+export const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
 const MCP_MUTATION_LOCKS_RELATIVE_PATH = 'mcp/mutation-locks';
-const MCP_METRICS_RELATIVE_PATH = '.ai/harness/mcp/metrics.jsonl';
-const MCP_TRACE_RELATIVE_PATH = '.ai/harness/mcp/trace.jsonl';
+export const MCP_METRICS_RELATIVE_PATH = '.ai/harness/mcp/metrics.jsonl';
+export const MCP_TRACE_RELATIVE_PATH = '.ai/harness/mcp/trace.jsonl';
 const MUTATION_FAULT_ENV = 'REPO_HARNESS_MCP_MUTATION_FAULT_POINT';
 const PATH_ESCAPE_ERROR_CODES = new Set(['INVALID_RELATIVE_PATH', 'PATH_OUTSIDE_REPO', 'SYMLINK_ESCAPE']);
 
@@ -379,15 +380,13 @@ function tryWriteIndexEvent(ctx: GeneralRepoToolContext, repo: RepoRecord, event
     ? event.event_id
     : indexEventId(repo, String(event.event_type ?? 'index_event'), JSON.stringify(event));
   try {
-    const logPath = mcpIndexEventsPath(ctx.repoRoot);
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, `${JSON.stringify({
+    appendSegmentedLog(mcpIndexEventsPath(ctx.repoRoot), `${JSON.stringify({
       schema_version: 1,
       timestamp: new Date().toISOString(),
       event_id: eventId,
       repo_id: repo.repoId,
       ...event,
-    })}\n`, 'utf-8');
+    })}\n`, ctx.repoRoot);
     return eventId;
   } catch (_error) {
     return null;
@@ -445,10 +444,9 @@ function indexRecovery(paths: string[], retryable = true): Record<string, unknow
   };
 }
 
-function tryAppendJsonLine(path: string, entry: Record<string, unknown>): void {
+function tryAppendJsonLine(repoRoot: string, path: string, entry: Record<string, unknown>): void {
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, `${JSON.stringify(entry)}\n`, 'utf-8');
+    appendSegmentedLog(path, `${JSON.stringify(entry)}\n`, repoRoot);
   } catch (_error) {
     // Observability must never change MCP tool behavior.
   }
@@ -599,8 +597,8 @@ function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, statu
     index_event_id: stringField(index?.event_id),
   };
 
-  tryAppendJsonLine(mcpMetricsPath(ctx.repoRoot), metric);
-  tryAppendJsonLine(mcpTracePath(ctx.repoRoot), trace);
+  tryAppendJsonLine(ctx.repoRoot, mcpMetricsPath(ctx.repoRoot), metric);
+  tryAppendJsonLine(ctx.repoRoot, mcpTracePath(ctx.repoRoot), trace);
 }
 
 function injectMutationFault(point: string): void {

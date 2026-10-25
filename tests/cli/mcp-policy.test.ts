@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { hashMcpInput, mcpAuditLogPath, tryWriteMcpAuditEntry, writeMcpAuditEntry } from '../../src/cli/mcp/audit';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { SEGMENTED_LOG_SEGMENT_BYTES } from '../../src/effects/segmented-log';
 
 async function jsonTool(repoRoot: string, policy: ReturnType<typeof getMcpPolicy>, name: string, args: Record<string, unknown> = {}) {
   const result = await callMcpTool({ repoRoot, policy }, name, args);
@@ -276,6 +277,23 @@ describe('mcp redaction and audit', () => {
       expect(line).toContain('Authorization: Bearer [REDACTED]');
       expect(line).not.toContain('secret body');
       expect(line).not.toContain('token-value');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('audit log rotates a full segment into its archive before the next append', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-audit-rotate-'));
+    try {
+      const logPath = mcpAuditLogPath(tmp);
+      mkdirSync(dirname(logPath), { recursive: true });
+      writeFileSync(logPath, `${'x'.repeat(SEGMENTED_LOG_SEGMENT_BYTES)}\n`);
+      writeMcpAuditEntry(tmp, { timestamp: '2026-06-17T00:00:00.000Z', tool: 'read_workflow_file', status: 'ok', inputHash: hashMcpInput({}) });
+
+      expect(JSON.parse(readFileSync(logPath, 'utf-8')).tool).toBe('read_workflow_file');
+      const archived = readdirSync(`${logPath}.archive`);
+      expect(archived).toHaveLength(1);
+      expect(statSync(join(`${logPath}.archive`, archived[0]!)).size).toBe(SEGMENTED_LOG_SEGMENT_BYTES + 1);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

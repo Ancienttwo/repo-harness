@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { hostSkillRoot, type SkillHost } from '../host-skill-roots';
 
 const NAME = 'repo-harness-strategy';
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -17,11 +18,12 @@ export function projectStrategySkill(opts: { action: 'install' | 'uninstall'; ta
   const source = realpathSync(join(PACKAGE_ROOT, pkg.source));
   if (!lstatSync(join(source, 'SKILL.md')).isFile()) throw new Error('Missing strategy Skill');
   const home = realpathSync(opts.home ?? process.env.HOME ?? homedir());
-  const hosts = target === 'both' ? ['codex', 'claude'] : [target];
+  const hosts = (target === 'both' ? ['codex', 'claude'] : [target]) as SkillHost[];
   const projections = hosts.map(host => {
-    const parents = [join(home, `.${host}`), join(home, `.${host}`, 'skills')];
+    const root = hostSkillRoot(home, host);
+    const parents = [dirname(root), root];
     for (const parent of parents) if (existsSync(parent) && (!lstatSync(parent).isDirectory() || lstatSync(parent).isSymbolicLink())) throw new Error('Refusing unsafe Skill parent');
-    const destination = join(parents[1]!, NAME);
+    const destination = join(root, NAME);
     let present = false;
     try {
       const stat = lstatSync(destination); present = true;

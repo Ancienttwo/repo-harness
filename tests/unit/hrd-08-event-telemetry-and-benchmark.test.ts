@@ -29,7 +29,7 @@ function identity(overrides: Partial<HookIdentity> = {}): HookIdentity {
 describe('HRD-08 event telemetry authority', () => {
   test('writes one v2 record that carries the resolved identity', () => {
     const repoRoot = tempDir('hrd08-event-telemetry-');
-    const record = createHookEventTelemetry({ repoRoot, event: 'PostToolUse', routeId: 'edit' }).finalize({
+    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({
       identity: identity({ host: 'codex', sessionId: 'session-1', runId: 'run-1', turnId: 'turn-1' }),
       exitCode: 0,
       blocked: false,
@@ -48,7 +48,7 @@ describe('HRD-08 event telemetry authority', () => {
       session_id: 'session-1',
       run_id: 'run-1',
       turn_id: 'turn-1',
-      event: 'PostToolUse',
+      event: 'PreToolUse',
       route_id: 'edit',
       exit_code: 0,
       blocked: false,

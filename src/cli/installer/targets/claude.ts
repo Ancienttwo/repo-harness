@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { assertConfigurationPath } from '../configuration-ownership';
+import { assertConfigurationPath, hostConfigurationRoot } from '../configuration-ownership';
 import type {
   AgentTarget,
   DetectionResult,
@@ -80,7 +80,7 @@ class ClaudeTarget implements AgentTarget {
 
   install(loc: Location, opts: InstallOptions): WriteResult {
     const filePath = userConfigPath(loc);
-    assertConfigurationPath(filePath);
+    assertConfigurationPath(filePath, hostConfigurationRoot());
     const data = readJsonOrEmpty<SettingsFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
     const managed = buildManagedHooks('claude', opts.profile);
@@ -106,7 +106,7 @@ class ClaudeTarget implements AgentTarget {
 
   uninstall(loc: Location, opts: { dryRun?: boolean } = {}): WriteResult {
     const filePath = userConfigPath(loc);
-    assertConfigurationPath(filePath);
+    assertConfigurationPath(filePath, hostConfigurationRoot());
     if (!fs.existsSync(filePath)) {
       return { files: [{ path: filePath, action: 'not-found' }] };
     }

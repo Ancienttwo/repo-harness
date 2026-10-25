@@ -24,9 +24,9 @@ export type WorkflowMarkerGateCode = "harness-upgrade-required" | "workflow-mark
 
 /**
  * Session and turn events report the gate. Tool events skip it, so the edit
- * guards still decide every PreToolUse and PostToolUse.
+ * guards still decide every PreToolUse.
  */
-export const WORKFLOW_MARKER_GATE_EVENTS: ReadonlySet<string> = new Set(["SessionStart", "UserPromptSubmit", "Stop", "SubagentStop"]);
+export const WORKFLOW_MARKER_GATE_EVENTS: ReadonlySet<string> = new Set(["SessionStart", "UserPromptSubmit", "Stop"]);
 
 export interface WorkflowMarkerGate {
   readonly code: WorkflowMarkerGateCode;

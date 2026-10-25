@@ -84,7 +84,7 @@ if [[ "$lane" == affected ]]; then
     BUN_TEST_MAX_CONCURRENCY=1
     BUN_TEST_JOBS="${BUN_TEST_JOBS:-8}"
     bun run build:hook-bundle
-    bun run build:oar-hosts
+    bun run build:oar-review-host
     run_bun_tests
   else
     echo "[ci] No affected tests${CI_SHARD:+ in shard $CI_SHARD}."
@@ -156,7 +156,7 @@ fi
 # --ignore-scripts, so build the dist files here as the functional lane does.
 if [[ "$lane" == release ]]; then
   bun run build:hook-bundle
-  bun run build:oar-hosts
+  bun run build:oar-review-host
   echo "[ci] expensive release tests"
   run_bun_test_file tests/harness-benchmark-matrix.test.ts
   echo "[ci] package/install smoke (one shared tarball)"
@@ -219,7 +219,7 @@ fi
 if [[ "$lane" == all || "$lane" == functional ]]; then
   echo "[ci] tests"
   bun run build:hook-bundle
-  bun run build:oar-hosts
+  bun run build:oar-review-host
   run_bun_tests
 
   echo "[ci] package/install smoke (one shared tarball)"

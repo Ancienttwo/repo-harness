@@ -31,7 +31,7 @@ import { upsertManagedBlock } from "../core/adoption/managed-block";
 import { runProcess } from "./process-runner";
 import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
 
-const BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
+export const FS_TRANSACTION_BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";
 let atomicWriteSequence = 0;
 let transactionSequence = 0;
@@ -220,14 +220,14 @@ function checkExpectedFileState(repoRoot: string, operation: AdoptionOperation):
   return null;
 }
 
-function backupPathFor(path: string, backupRoot = BACKUP_ROOT): string {
+function backupPathFor(path: string, backupRoot = FS_TRANSACTION_BACKUP_ROOT): string {
   atomicWriteSequence += 1;
   return `${backupRoot}/${sanitizeBackupStem(path)}.${Date.now()}-${process.pid}-${atomicWriteSequence}.bak`;
 }
 
 function transactionDirFor(): string {
   transactionSequence += 1;
-  return `${BACKUP_ROOT}/${Date.now()}-${process.pid}-${transactionSequence}`;
+  return `${FS_TRANSACTION_BACKUP_ROOT}/${Date.now()}-${process.pid}-${transactionSequence}`;
 }
 
 export function withTargetLock<T>(targetPath: string, fn: () => T): T {
@@ -745,8 +745,8 @@ function resolveTransactionManifest(repoRoot: string, transaction: string): { ok
   if (rel === "" || rel.startsWith("..") || rel.includes("\0")) {
     return { ok: false, error: `transaction manifest escapes repo root: ${transaction}` };
   }
-  if (!rel.startsWith(`${BACKUP_ROOT}/`) || !rel.endsWith("/manifest.json")) {
-    return { ok: false, error: `transaction manifest must be under ${BACKUP_ROOT}/<transaction>/manifest.json` };
+  if (!rel.startsWith(`${FS_TRANSACTION_BACKUP_ROOT}/`) || !rel.endsWith("/manifest.json")) {
+    return { ok: false, error: `transaction manifest must be under ${FS_TRANSACTION_BACKUP_ROOT}/<transaction>/manifest.json` };
   }
   return { ok: true, path: target, rel };
 }
