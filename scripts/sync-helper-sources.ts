@@ -20,6 +20,8 @@ const CANONICAL_ROOT = join(REPO_ROOT, "scripts");
 const TARGET_ROOT = join(REPO_ROOT, "assets", "templates", "helpers");
 const CAPABILITY_HELPER = "capability-resolver.ts";
 const CAPABILITY_CORE = join(REPO_ROOT, "src", "core", "capabilities", "registry.ts");
+const CAPABILITY_RESOLVER = join(REPO_ROOT, "src", "core", "capabilities", "resolver.ts");
+const CAPABILITY_EFFECTS = join(REPO_ROOT, "src", "effects", "capabilities", "capability-resolver.ts");
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-helper-sources.ts [--check|--write]\n");
@@ -40,6 +42,18 @@ function parseMode(argv: string[]): Mode {
     usage();
   }
   return mode;
+}
+
+function stripInlinedImports(source: string, specifiers: readonly string[]): string {
+  const targets = new Set(specifiers);
+  return source.replace(
+    /(?:^|\n)(?:import\s+[\s\S]*?\sfrom\s+["']([^"']+)["'];|export\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+["']([^"']+)["'];)/g,
+    (full, importSpecifier: string | undefined, exportSpecifier: string | undefined) => {
+      const specifier = importSpecifier || exportSpecifier;
+      if (!specifier || !targets.has(specifier)) return full;
+      return full.startsWith("\n") ? "\n" : "";
+    },
+  );
 }
 
 function buildCapabilityProjection(): ProjectionFileRecord {
@@ -64,16 +78,23 @@ function buildCapabilityProjection(): ProjectionFileRecord {
   if (!typeExport.test(adapter)) {
     throw new Error("canonical capability helper must re-export canonical registry contract types");
   }
-  adapter = adapter.replace(typeExport, "");
-
+  if (!existsSync(CAPABILITY_RESOLVER) || !existsSync(CAPABILITY_EFFECTS)) {
+    throw new Error("canonical capability resolver library is missing under src/core/capabilities or src/effects/capabilities");
+  }
   const core = readFileSync(CAPABILITY_CORE, "utf-8");
+  const resolver = stripInlinedImports(readFileSync(CAPABILITY_RESOLVER, "utf-8"), ["./registry"]);
+  const effects = stripInlinedImports(readFileSync(CAPABILITY_EFFECTS, "utf-8"), [
+    "../../core/capabilities/registry",
+    "../../core/capabilities/resolver",
+  ]);
   const sourceHash = createHash("sha256").update(core).digest("hex");
   const content = [
     "#!/usr/bin/env bun",
     `// @generated-from src/core/capabilities/registry.ts sha256:${sourceHash}`,
-    "// Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.",
+    "// Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.",
     core.trimEnd(),
-    adapter.trim(),
+    resolver.trim(),
+    effects.trim(),
   ].join("\n") + "\n";
   return {
     relPath: CAPABILITY_HELPER,

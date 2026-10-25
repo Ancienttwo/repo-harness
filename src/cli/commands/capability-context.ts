@@ -7,10 +7,8 @@ import {
   capabilitySourceMode,
   findMatch,
   readRegistry as readCapabilityRegistry,
-  type Capability,
-  type CapabilityRegistry,
-  type ContractFiles,
-} from '../../../scripts/capability-resolver';
+} from '../../effects/capabilities/capability-resolver';
+import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
 import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';

@@ -53,7 +53,7 @@ import {
   acceptanceReceiptPath,
   verifyAcceptance,
   type AcceptanceReceipt,
-} from '../../../scripts/acceptance-receipt';
+} from '../review/acceptance-receipt';
 
 export const INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH = 'repo-harness/integration/v1';
 
