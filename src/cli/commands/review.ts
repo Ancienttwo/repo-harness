@@ -1,3 +1,4 @@
+import { readReviewAdmissionSource } from '../../effects/review/admission-source';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';
@@ -6,7 +7,12 @@ import { recordCircuitAttempt } from '../hook/circuit-breaker';
 export function buildReviewCommand(): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
   for (const operation of ['round', 'status', 'close', 'cancel'] as const) {
-    const child = command.command(operation).requiredOption('--contract <path>', 'Task contract')
+    const child = command.command(operation).requiredOption('--repository-id <id>', 'Approved provider repository identity')
+      .requiredOption('--issue-id <id>', 'Approved provider issue identity')
+      .requiredOption('--campaign-id <id>', 'Stable review campaign')
+      .requiredOption('--grant-sha256 <sha256>', 'Protected active approval')
+      .requiredOption('--policy-sha256 <sha256>', 'Approved policy digest')
+      .requiredOption('--actor <id>', 'Approved actor identity')
       .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print JSON');
     if (operation === 'round') child.requiredOption('--reviewer-repo <path>', 'Dedicated linked reviewer checkout')
       .option('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}; required for --launch herdr')
@@ -16,25 +22,26 @@ export function buildReviewCommand(): Command {
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
     child.action(async opts => {
       try {
+        const authority = readReviewAdmissionSource(opts.repo, opts);
         let result;
         if (operation === 'round') {
           if (!['herdr', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
           if ((opts.launch === 'herdr') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr and refused for app-terminal');
           const addressing = opts.herdrEndpoint ? JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8')) : {};
           if (opts.harness && !['claude', 'codex'].includes(opts.harness)) throw new Error('review_harness_unsupported');
-          result = await runReviewRound({ repoRoot: opts.repo, contract: opts.contract, verification: opts.verification,
+          result = await runReviewRound({ repoRoot: opts.repo, authority, verification: opts.verification,
             reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane, launch: opts.launch,
             harness: opts.harness, timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs),
             admitSession: () => {
-              const location = reviewLocation(opts.repo, opts.contract);
+              const location = reviewLocation(opts.repo, authority);
               const decision = recordCircuitAttempt(location.root, { kind: 'semantic-review', guard: 'one-semantic-review-per-work-package',
-                reason: 'persistent generic review admission', pathOrAction: 'review:session', progressToken: location.contract,
-                fingerprint: location.contract, strongBoundary: true });
+                reason: 'persistent generic review admission', pathOrAction: 'review:session', progressToken: location.campaign,
+                fingerprint: location.campaign, strongBoundary: true });
               if (!decision.allowed) throw new Error('review_session_budget_exhausted; do not start another reviewer');
             } });
           if (result.status === 'rejected') process.exitCode = 1;
-        } else if (operation === 'status') result = reviewStatus(opts.repo, opts.contract);
-        else result = await closeReview(opts.repo, opts.contract, operation === 'cancel');
+        } else if (operation === 'status') result = reviewStatus(opts.repo, authority);
+        else result = await closeReview(opts.repo, authority, operation === 'cancel');
         console.log(JSON.stringify(result, null, opts.json ? undefined : 2));
       } catch (error) {
         console.error(`review: ${error instanceof Error ? error.message : String(error)}`);

@@ -1,7 +1,8 @@
+import { reviewCampaignKey } from '../../core/review/authority-context';
+import type { ReviewAdmissionSource } from './admission-source';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { createHash } from 'crypto';
-import { isAbsolute, join, relative, resolve } from 'path';
+import { join, relative, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -25,7 +26,7 @@ type Harness = 'claude' | 'codex';
 interface ReviewSession {
   protocol: 1;
   owner_root: string;
-  contract_sha256: string;
+  campaign_sha256: string;
   goal_sha256: string;
   task: string;
   reviewer_repo: string;
@@ -42,7 +43,7 @@ interface ReviewSession {
 interface RoundRecord { subject_sha256: string; context_sha256: string; task_request: TaskRequest }
 export interface ReviewOptions {
   repoRoot: string;
-  contract: string;
+  authority: ReviewAdmissionSource;
   verification?: string;
   reviewerRepo: string;
   /** Herdr launch addressing. An app-terminal launch has neither field. */
@@ -161,21 +162,17 @@ const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApp
   } };
 export type ReviewEffects = Partial<typeof runtime>;
 
-export function reviewLocation(repoRoot: string, contractPath: string) {
-  const repository = taskRepository(repoRoot);
-  const root = repository.execution_root;
-  const contract = relative(root, resolve(root, contractPath));
-  if (isAbsolute(contract) || contract.split('/').includes('..') || !contract.startsWith('tasks/contracts/') || !contract.endsWith('.contract.md')) {
-    throw new Error('review_invalid_contract_path');
-  }
-  const key = createHash('sha256').update(contract).digest('hex');
+export function reviewLocation(repoRoot: string, authority: ReviewAdmissionSource) {
+  const repository = taskRepository(repoRoot), root = repository.execution_root;
+  if (realpathSync(authority.repoRoot) !== root) throw new Error('review_admission_repository_mismatch');
+  const campaign = reviewCampaignKey(authority), key = campaign.slice(7);
   const dir = join(repository.primary_root, '.ai/harness/runs/generic-review', key);
   ensureSessionDirectory(repository.primary_root, dir);
-  return { root, primary: repository.primary_root, contract, key, dir };
+  return { root, primary: repository.primary_root, campaign, key, dir };
 }
 
 function contextIdentity(context: Awaited<ReturnType<typeof acceptanceContext>>) {
-  return { contract_sha256: authorityFingerprint(context.contract.content), goal_sha256: authorityFingerprint(context.goal.content),
+  return { admission_sha256: context.admission.admission_sha256, goal_sha256: context.goal.revision,
     subject_sha256: context.subject.review_subject_sha256, verification_evidence_sha256: context.evidence.fingerprint,
     target_revision: context.subject.target_rev };
 }
@@ -221,7 +218,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   if (!terminal) validateHerdrEndpoint(options.endpoint!);
   const endpoint = options.endpoint ?? null, parentPane = options.parentPane ?? null;
   const client = { ...runtime, ...effects };
-  const { root, primary, contract, key, dir } = reviewLocation(options.repoRoot, options.contract);
+  const { root, primary, campaign, key, dir } = reviewLocation(options.repoRoot, options.authority);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
   let authOutput: string | undefined;
   try {
@@ -234,12 +231,12 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const timeout = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > REVIEW_TIMEOUT_MS) throw new Error('review_invalid_timeout');
     if (!options.verification) throw new Error('review_requires_explicit_verification_report');
-    const context = await acceptanceContext({ root, contract, verification: options.verification! });
+    const context = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     const identity = contextIdentity(context);
     let session: ReviewSession;
     if (existsSync(join(dir, 'session.json'))) {
       session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-      if (session.protocol !== 1 || session.owner_root !== root || session.contract_sha256 !== identity.contract_sha256 || session.goal_sha256 !== identity.goal_sha256
+      if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
         || session.control_directory !== dir || session.parent_pane !== parentPane || (options.harness && options.harness !== session.actual_harness)) throw new Error('review_session_spec_changed');
     } else {
@@ -257,7 +254,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
       options.admitSession();
-      session = { protocol: 1, owner_root: root, contract_sha256: identity.contract_sha256, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
+      session = { protocol: 1, owner_root: root, campaign_sha256: campaign, goal_sha256: identity.goal_sha256, task: `review-${key.slice(0, 32)}`, reviewer_repo: reviewerRepo,
         endpoint, parent_pane: parentPane, requested_harness: requested, actual_harness: actual,
         owner_harness: owner, fallback_reason: reason, control_directory: dir, started_at: Date.now() };
       writeSessionArtifact(join(dir, 'session.json'), session);
@@ -267,7 +264,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const contextDigest = acceptanceReviewContextDigest(context);
     const packet = composeReviewPacket({ context_sha256: contextDigest, subject_sha256: identity.subject_sha256,
       actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE, prior_findings: previous,
-      contract: context.contract.content, goal: context.goal.content, verification: context.verification.content,
+      admission: JSON.stringify(context.admission), goal: context.goal.content, verification: context.verification.content,
       source: sourcePacket(root, context.subject.paths, context.subject.target_rev) });
     const inputDir = join(reviewerRepo, '.ai/harness/runs/generic-review-input', key);
     ensureSessionDirectory(reviewerRepo, inputDir);
@@ -276,7 +273,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     else if (readFileSync(packetPath, 'utf8') !== packet) {
       // A failed start does not consume a round. Preserve its packet even when
       // the launch outcome is unknown; do not replace it or start another pane.
-      throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with repo-harness review status --repo ${shellQuote(root)} --contract ${shellQuote(contract)} --json; restore the original subject and verification before retrying the same review round.`);
+      throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with repo-harness review status --repo ${shellQuote(root)} --campaign-id ${shellQuote(options.authority.campaign_id)} --json; restore the original subject and verification before retrying the same review round.`);
     }
     const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
     const outbox = join(reviewerRepo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
@@ -291,7 +288,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
-    const isolationPaths = { subject: root, primary, ownerRecord: resolve(root, contract), journal: dir,
+    const isolationPaths = { subject: root, primary, ownerRecord: dir, journal: dir,
       gitCommonDir: repository.repository_id, output: outbox };
     const policy = reviewIsolationPolicy(isolationPaths);
     const profilePath = join(dir, 'isolation.sb');
@@ -332,7 +329,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     }
     client.assertBinding(binding);
     if (binding.runtime === 'herdr' && binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
-    const recheck = await acceptanceContext({ root, contract, verification: options.verification! });
+    const recheck = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
     if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no request sent');
@@ -376,7 +373,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const findings = output.findings.filter(finding => finding.status !== 'resolved').map(({ severity, message }) => ({ severity, message }));
     const reviewResult = { ...output, findings };
     const reviewer = session.actual_harness === 'codex' ? 'Codex' : 'Claude';
-    const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? userInfo().homedir, contract,
+    const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? userInfo().homedir, authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,
       summary: output.summary, findings, reviewResult });
@@ -392,8 +389,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   } finally { lock.release(); }
 }
 
-export function reviewStatus(repoRoot: string, contract: string, effects: ReviewEffects = {}) {
-  const { dir } = reviewLocation(repoRoot, contract);
+export function reviewStatus(repoRoot: string, authority: ReviewAdmissionSource, effects: ReviewEffects = {}) {
+  const { dir } = reviewLocation(repoRoot, authority);
   if (!existsSync(join(dir, 'session.json'))) return { status: 'absent' };
   const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
   return { ...session, lifecycle: ({ ...runtime, ...effects }).status(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE),
@@ -410,9 +407,9 @@ function acceptedRounds(dir: string): number[] {
  * cancel. Round-1 admission and host start can hold the lock longer
  * than this bound; a timed-out cancel must be run again. */
 const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
-export async function closeReview(repoRoot: string, contract: string, cancel = false, authorityHome = userInfo().homedir,
+export async function closeReview(repoRoot: string, authority: ReviewAdmissionSource, cancel = false, authorityHome = userInfo().homedir,
   effects: ReviewEffects = {}) {
-  const { dir, primary, root } = reviewLocation(repoRoot, contract);
+  const { dir, primary, root } = reviewLocation(repoRoot, authority);
   // An active round holds caller.lock until it ends. Cancel first publishes the
   // durable close request, which the round and the OAR host both observe, and
   // then waits for the lock so receipt and cleanup publication stay serialized.
@@ -430,7 +427,7 @@ export async function closeReview(repoRoot: string, contract: string, cancel = f
       if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
       const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
       if (!cancel) {
-        const receipt = await verifyAcceptance({ root, authorityHome, contract });
+        const receipt = await verifyAcceptance({ root, authorityHome, authority });
         const completed = acceptedRounds(dir);
         if (!completed.length) throw new Error('review_no_accepted_round');
         const last = readSessionArtifact<{ output: ReviewOutput; receipt: AcceptanceReceipt }>(join(dir, `accepted-${completed.at(-1)}.json`));

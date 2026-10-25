@@ -1,3 +1,4 @@
+import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import { createHash } from 'crypto';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
@@ -23,12 +24,12 @@ export type AcceptanceFinding = {
 };
 
 export type AcceptanceReceipt = {
-  protocol: 2;
+  protocol: 3;
   kind: 'repo-harness-acceptance-receipt';
   repository_root: string;
-  contract_file: string;
-  contract_sha256: string;
-  goal_file: string;
+  campaign_sha256: string;
+  admission_sha256: string;
+  grant_sha256: string;
   goal_sha256: string;
   verification_file: string;
   verification_evidence_sha256: string;
@@ -72,16 +73,8 @@ export interface AcceptanceReviewResult {
   findings: AcceptanceFinding[];
 }
 
-export function acceptanceReviewContextDigest(context: {
-  contract: { content: string };
-  goal: { content: string };
-  subject: { review_subject_sha256: string; target_rev: string };
-  evidence: { fingerprint: string };
-}): string {
-  return authorityFingerprint(stableJson([
-    authorityFingerprint(context.contract.content), authorityFingerprint(context.goal.content),
-    context.subject.review_subject_sha256, context.evidence.fingerprint, context.subject.target_rev,
-  ]));
+export function acceptanceReviewContextDigest(context: { authorityContext: ReviewAuthorityContext }): string {
+  return context.authorityContext.context_sha256;
 }
 
 export function validateDomainReview(value: unknown): AcceptanceReviewResult {
@@ -109,15 +102,15 @@ export function assertReviewFields(receipt: AcceptanceReceipt): void {
 }
 
 export type UserWaiverGrant = {
-  protocol: 1;
+  protocol: 2;
   kind: 'repo-harness-user-waiver-grant';
   repository_root: string;
-  contract_file: string;
-  contract_sha256: string;
-  goal_file: string;
+  campaign_sha256: string;
+  admission_sha256: string;
+  grant_sha256: string;
   goal_sha256: string;
   actor: string;
-  scope: 'contract-authority';
+  scope: 'admission-authority';
   summary: string;
   issued_at: string;
 };
@@ -129,6 +122,7 @@ export type ReviewSubject = {
   target_rev: string;
   paths: readonly string[];
   target_overlap_count: number;
+  head_rev: string;
   review_subject_sha256: string;
 };
 
@@ -327,7 +321,7 @@ export interface AcceptanceEvidence {
 }
 
 
-export const ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL = 1 as const;
+export const ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL = 2 as const;
 export const ACCEPTANCE_VERIFICATION_OBSERVATION_KIND = 'repo-harness-acceptance-verification-observation' as const;
 
 /**
@@ -344,9 +338,9 @@ export type AcceptanceVerificationObservationV1 = {
   observation_id: string;
   repository_root: string;
   acceptance_receipt_sha256: string;
-  contract_file: string;
-  contract_sha256: string;
-  goal_file: string;
+  campaign_sha256: string;
+  admission_sha256: string;
+  grant_sha256: string;
   goal_sha256: string;
   target_ref: string;
   target_revision: string;
@@ -365,8 +359,8 @@ type AcceptanceVerificationObservationBasis = Omit<AcceptanceVerificationObserva
  * current observation, so re-recording the same subject overwrites its file
  * and a changed contract lands under a different key.
  */
-export function acceptanceVerificationObservationSubjectKey(contractFile: string, contractSha256: string): string {
-  return sha256(stableJson({ contract_file: contractFile, contract_sha256: contractSha256 }));
+export function acceptanceVerificationObservationSubjectKey(campaignSha256: string, admissionSha256: string): string {
+  return sha256(stableJson({ campaign_sha256: campaignSha256, admission_sha256: admissionSha256 }));
 }
 
 function acceptanceVerificationObservationId(basis: AcceptanceVerificationObservationBasis): string {
@@ -375,9 +369,9 @@ function acceptanceVerificationObservationId(basis: AcceptanceVerificationObserv
     ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
     basis.repository_root,
     basis.acceptance_receipt_sha256,
-    basis.contract_file,
-    basis.contract_sha256,
-    basis.goal_file,
+    basis.campaign_sha256,
+    basis.admission_sha256,
+    basis.grant_sha256,
     basis.goal_sha256,
     basis.target_ref,
     basis.target_revision,
@@ -431,7 +425,7 @@ export function validateDisposition(
     // Its identity is joined to the owner-held domain Result, never an alias.
     const expectedSource = acceptancePolicySource();
     if (!['Claude', 'Codex'].includes(reviewer) || source !== expectedSource || actor !== null) {
-      fail('external_pass reviewer/source must match the frozen contract reviewer');
+      fail('external_pass reviewer/source must match the approved reviewer policy');
     }
     if (findings.some((finding) => finding.severity === 'P0' || finding.severity === 'P1')) {
       fail('external_pass cannot carry P0 or P1 findings');
@@ -439,14 +433,14 @@ export function validateDisposition(
     return;
   }
   if (disposition === 'user_waiver') {
-    if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
+    if (policy.user_waiver !== 'allowed') fail('admission forbids user waiver');
     if (reviewer !== 'User' || source !== 'user-waiver' || actor !== owner) {
-      fail('user_waiver actor must equal the contract owner');
+      fail('user_waiver actor must equal the approved actor');
     }
     return;
   }
   if (!['Claude', 'Codex'].includes(reviewer) || source !== acceptancePolicySource()) {
-    fail('reject reviewer/source must match the frozen contract reviewer');
+    fail('reject reviewer/source must match the approved reviewer policy');
   }
   if (findings.length === 0) fail('reject requires at least one finding');
 }
@@ -459,10 +453,10 @@ export function validateDisposition(
 export type AcceptanceValidatorRuleId =
   | 'receipt_protocol_kind'
   | 'repository_root'
-  | 'contract_file'
-  | 'contract_fingerprint'
+  | 'campaign_identity'
+  | 'admission_binding'
   | 'reviewer_policy'
-  | 'goal_file_shape'
+  | 'grant_digest_shape'
   | 'goal_fingerprint'
   | 'verification_file_shape'
   | 'verification_evidence_shape'
@@ -478,7 +472,7 @@ export type AcceptanceValidatorRuleId =
   | 'waiver_grant_present'
   | 'waiver_policy_allowed'
   | 'waiver_grant_repository'
-  | 'waiver_grant_contract'
+  | 'waiver_grant_admission'
   | 'waiver_grant_goal'
   | 'waiver_grant_owner'
   | 'waiver_grant_fingerprint'
@@ -487,12 +481,12 @@ export type AcceptanceValidatorRuleId =
   | 'validator_threw';
 
 export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[] = [
-  'receipt_protocol_kind', 'repository_root', 'contract_file', 'contract_fingerprint',
-  'reviewer_policy', 'goal_file_shape', 'goal_fingerprint', 'verification_file_shape',
+  'receipt_protocol_kind', 'repository_root', 'campaign_identity', 'admission_binding',
+  'reviewer_policy', 'grant_digest_shape', 'goal_fingerprint', 'verification_file_shape',
   'verification_evidence_shape', 'benchmark_evidence_present', 'subject_sha256_shape',
   'subject_scope', 'target_ref_present', 'target_revision_shape', 'reviewed_paths_shape',
   'summary_present', 'issued_at_shape', 'disposition_not_reject', 'waiver_grant_present',
-  'waiver_policy_allowed', 'waiver_grant_repository', 'waiver_grant_contract',
+  'waiver_policy_allowed', 'waiver_grant_repository', 'waiver_grant_admission',
   'waiver_grant_goal', 'waiver_grant_owner', 'waiver_grant_fingerprint',
   'waiver_binding_symmetry', 'disposition_policy', 'validator_threw',
 ];
@@ -504,9 +498,8 @@ export type AcceptanceReceiptPolicyVerdict =
 export type AcceptanceReceiptPolicyInput = {
   receipt: AcceptanceReceipt;
   repositoryRoot: string;
-  expectedContractFile: string;
-  contractContent: string;
-  goalContent: string;
+  admission: ReviewAdmission;
+  grantSha256: string;
   waiverGrant: UserWaiverGrant | null;
 };
 
@@ -517,8 +510,8 @@ export type AcceptanceReceiptPolicyInput = {
  * this gate counts as accepted.
  */
 export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
-  'protocol', 'kind', 'repository_root', 'contract_file', 'contract_sha256',
-  'goal_file', 'goal_sha256', 'verification_file', 'verification_evidence_sha256',
+  'protocol', 'kind', 'repository_root', 'campaign_sha256', 'admission_sha256',
+  'grant_sha256', 'goal_sha256', 'verification_file', 'verification_evidence_sha256',
   'benchmark_evidence_sha256', 'subject_sha256', 'subject_scope', 'target_ref',
   'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
   'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
