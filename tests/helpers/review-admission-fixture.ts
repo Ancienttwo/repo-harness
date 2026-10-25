@@ -13,7 +13,7 @@ import type { ReviewAdmissionSource } from '../../src/effects/admission/admissio
 /** Explicit synthetic approval fixture. This writes real account-owned record bytes;
  * it does not exercise operator approval or a live GitHub endpoint. */
 export function seedReviewAdmissionFixture(root: string, home: string, options: {
-  repositoryId?: string; issueId?: string;
+  repositoryId?: string; issueId?: string; executionMode?: ReviewAdmissionInput['execution_mode'];
   plan?: ReviewAdmissionInput['verification_plan']; oracles?: ReviewAdmissionInput['oracles'];
   benchmark?: ReviewAdmissionInput['benchmark']; allowedPaths?: string[]; campaignId?: string;
   reviewer?: 'Codex' | 'Claude'; userWaiver?: 'allowed' | 'forbidden'; actor?: string;
@@ -28,7 +28,7 @@ export function seedReviewAdmissionFixture(root: string, home: string, options: 
   const repo = { id: options.repositoryId ?? 'R_provider', node_id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' };
   const runner: ReviewAdmissionSource['runner'] = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903') ? issue : repo) });
   const goal = observeReviewIssueGoal({ policy, repository_id: repo.id, issue_id: issue.id, runner });
-  const admission = createReviewAdmission({ repository_id: repo.id, issue_id: issue.id, campaign_id: options.campaignId ?? 'review',
+  const admission = createReviewAdmission({ execution_mode: options.executionMode ?? 'contract', repository_id: repo.id, issue_id: issue.id, campaign_id: options.campaignId ?? 'review',
     actor_id: options.actor ?? 'U_owner', goal, policy: { reviewer: options.reviewer ?? 'Codex', user_waiver: options.userWaiver ?? 'forbidden', policy_sha256: hash('fixture-approved-policy') },
     allowed_paths: options.allowedPaths ?? ['*'], benchmark: options.benchmark ?? 'not_required',
     oracles: options.oracles ?? [{ id: 'deterministic', kind: 'deterministic_test', paths: ['*'] }],

@@ -18,7 +18,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 const hash = (s: string) => `sha256:${createHash('sha256').update(s).digest('hex')}`;
 function fixture(goal = { revision: 'goal-1', content: 'Preserve feedback and acceptance.' }) {
   const root = tmpWorkspace('review-admitted-repo'), home = tmpWorkspace('review-admitted-home'); roots.push(root, home); initGitRepo(root);
-  const input: ReviewAdmissionInput = { repository_id: 'R_provider', issue_id: 'I_903', campaign_id: 'review', actor_id: 'U_owner',
+  const input: ReviewAdmissionInput = { execution_mode: 'contract', repository_id: 'R_provider', issue_id: 'I_903', campaign_id: 'review', actor_id: 'U_owner',
     goal, oracles: [],
     policy: { reviewer: 'Codex', user_waiver: 'forbidden', policy_sha256: hash('policy') }, allowed_paths: ['src/**'], benchmark: 'not_required',
     verification_plan: { protocol: 1, checks: [{ id: 'behavior', kind: 'command', command: 'test -f feature.txt', cwd: '.', phase: 'verification',
@@ -214,4 +214,23 @@ test('invalid upstream transition does not replace the current admission', () =>
     admission: f.input, approval: wrong, expectedRevision: 1 })).toThrow('identity');
   expect(readFileSync(join(f.directory, 'active.json'), 'utf8')).toBe(before);
   expect(readReviewAdmission(f.args(first.grant_sha256)).admission).toEqual(f.admission);
+});
+
+test('changing execution mode requires new approval and supersedes the old grant context', () => {
+  const f = fixture();
+  const approve = (admission: ReviewAdmissionInput, revision: number, controlApproval: unknown) => approveReviewAdmission({
+    repoRoot: f.root, authorityHome: f.home, admission, expectedAdmissionSha256: createReviewAdmission(admission).admission_sha256,
+    expectedRevision: revision, controlApproval,
+  });
+  const first = approve(f.input, 0, controlApprovalFixture(f.root, f.admission, 0));
+  const before = readReviewAdmission(f.args(first.grant_sha256));
+  const changed = { ...f.input, execution_mode: 'inline' as const };
+  const nextAdmission = createReviewAdmission(changed);
+  expect(() => approve(changed, 1, controlApprovalFixture(f.root, f.admission, 1))).toThrow();
+  expect(readReviewAdmission(f.args(first.grant_sha256)).context.context_sha256).toBe(before.context.context_sha256);
+  const next = approve(changed, 1, controlApprovalFixture(f.root, nextAdmission, 1));
+  expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
+  const after = readReviewAdmission(f.args(next.grant_sha256));
+  expect(after.context.context_sha256).not.toBe(before.context.context_sha256);
+  expect(after.context.campaign_sha256).toBe(before.context.campaign_sha256);
 });

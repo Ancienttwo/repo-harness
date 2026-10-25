@@ -101,7 +101,7 @@ const plan: VerificationPlan = { protocol: 1, checks: [{
 }] };
 function admissionInput() {
   const { authorization, subject: _subject, verification: _verification, ...scope } = input();
-  return { ...scope, actor_id: authorization.actor_id, oracles: [], verification_plan: structuredClone(plan) };
+  return { ...scope, execution_mode: 'contract' as const, actor_id: authorization.actor_id, oracles: [], verification_plan: structuredClone(plan) };
 }
 
 test('admission binds the actual verification plan and a fixed goal while allowing later subject rounds', () => {
@@ -182,4 +182,19 @@ test('semantic context survives an actual unchanged-tree HEAD commit while retai
     after.authorization.grant_sha256 = digest('9');
     expect(createReviewAuthorityContext(after).context_sha256).not.toBe(oldContext.context_sha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('admission requires an explicit closed execution mode and binds it without changing campaign identity', () => {
+  const spec = admissionInput();
+  const contract = createReviewAdmission(spec);
+  const inline = createReviewAdmission({ ...spec, execution_mode: 'inline' });
+  expect(inline.execution_mode).toBe('inline');
+  expect(inline.admission_sha256).not.toBe(contract.admission_sha256);
+  expect(inline.campaign_sha256).toBe(contract.campaign_sha256);
+  const { execution_mode: _mode, ...missing } = spec;
+  expect(() => createReviewAdmission(missing as never)).toThrow('admission fields');
+  for (const execution_mode of [undefined, null, '', 'INLINE', 'admitted_session', {}]) {
+    expect(() => createReviewAdmission({ ...spec, execution_mode } as never)).toThrow('execution mode');
+  }
+  expect(() => bindReviewAdmission({ ...contract, execution_mode: 'inline' }, input(), digest('5'))).toThrow('admission digest');
 });

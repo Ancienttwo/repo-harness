@@ -134,6 +134,7 @@ export function assertReviewAuthorityContext(value: unknown, current: ReviewAuth
  * stored here. Its digest is an approval subject, not proof that approval occurred.
  */
 export interface ReviewAdmissionInput extends ReviewScope {
+  execution_mode: 'inline' | 'contract';
   actor_id: string;
   verification_plan: VerificationPlan;
   oracles: readonly DeclaredReviewOracle[];
@@ -146,8 +147,9 @@ export type ReviewAdmission = Frozen<ReviewAdmissionInput & {
 }>;
 
 export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmission {
-  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'verification_plan', 'oracles'], 'admission fields');
+  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'execution_mode', 'verification_plan', 'oracles'], 'admission fields');
   validateScope(input); text(input.actor_id, 'actor');
+  if (input.execution_mode !== 'inline' && input.execution_mode !== 'contract') fail('execution mode');
   const plan = validateVerificationPlan(input.verification_plan);
   if (!plan.checks.length) fail('empty verification plan');
   if (!Array.isArray(input.oracles)) fail('oracle declarations');
@@ -163,7 +165,7 @@ export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmiss
     goal: { revision: input.goal.revision, content: input.goal.content },
     policy: { reviewer: input.policy.reviewer, user_waiver: input.policy.user_waiver, policy_sha256: input.policy.policy_sha256 },
     allowed_paths: [...input.allowed_paths].sort(), benchmark: input.benchmark,
-    actor_id: input.actor_id, verification_plan: detachedPlan, oracles, campaign_sha256: reviewCampaignKey(input),
+    actor_id: input.actor_id, execution_mode: input.execution_mode, verification_plan: detachedPlan, oracles, campaign_sha256: reviewCampaignKey(input),
   };
   return freeze({ ...basis, admission_sha256: digest(basis) });
 }
@@ -177,7 +179,10 @@ export function validateReviewAdmission(admission: ReviewAdmission): ReviewAdmis
   return rebuilt;
 }
 
-/** Effects first authenticate a current protected admission and then call this
+/** Execution mode is bound by the approved admission and its grant bytes. A mode
+ * change requires new approval; existing contexts retain the old grant identity.
+ * Campaign identity and its budget scope do not change.
+ * Effects first authenticate a current protected admission and then call this
  * binding check. It does not read a self-reported grant from the candidate. */
 export function bindReviewAdmission(admission: ReviewAdmission, round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>, verifiedGrantSha256: string): ReviewAuthorityContext {
   hash(verifiedGrantSha256, 'protected grant');
