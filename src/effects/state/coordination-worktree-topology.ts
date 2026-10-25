@@ -2,6 +2,7 @@ import { tmpdir } from 'os';
 import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
+import { gitExecFileSync } from '../git/runner';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
@@ -43,7 +44,7 @@ function timeout(limits: Limits): number | undefined {
   return remaining;
 }
 function git(root: string, args: string[], limits: Limits = {}): string {
-  return execFileSync(gitBinary(limits), args, { cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return gitExecFileSync(args, { cwd: root, gitBin: gitBinary(limits), encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 /** Bind and destructive cleanup serialize across every worktree of this clone. */
@@ -284,8 +285,8 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
 function deleteCheckedBranch(root: string, expected: ExactWorktreeCleanup, limits: Limits): void {
   const ref = git(root, ['rev-parse', '--symbolic-full-name', expected.target_ref], limits);
   if (!ref.startsWith('refs/')) throw new Error('cleanup target must be a local ref');
-  execFileSync(gitBinary(limits), ['update-ref', '--stdin'], {
-    cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['pipe', 'pipe', 'pipe'],
+  gitExecFileSync(['update-ref', '--stdin'], {
+    cwd: root, gitBin: gitBinary(limits), encoding: 'utf8', timeout: timeout(limits), stdio: ['pipe', 'pipe', 'pipe'],
     input: `start\nverify ${ref} ${expected.target_oid}\ndelete refs/heads/${expected.branch} ${expected.head_sha}\nprepare\ncommit\n`,
   });
 }

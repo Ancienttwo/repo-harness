@@ -1,6 +1,6 @@
 import { join, resolve } from 'path';
 import { spawn, spawnSync } from 'child_process';
-
+import { gitSpawnSync } from '../git/runner';
 import {
   projectMergeReadiness,
   projectPullRequestMergeReadiness,
@@ -545,7 +545,7 @@ const WORKTREE_MERGE_LIB = resolve(import.meta.dir, '../../../scripts/worktree-m
 function classifyIntegration(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: PublicationReadinessInput): MergeReadinessIntegrationMode {
   const gitBin = input.git_bin ?? process.env.REPO_HARNESS_GIT_BIN ?? 'git';
   for (const oid of [identity.base_sha, receipt.head_sha]) {
-    const objectCheck = spawnSync(gitBin, ['cat-file', '-e', `${oid}^{commit}`], { cwd: input.repo_root, encoding: 'utf-8' });
+    const objectCheck = gitSpawnSync(['cat-file', '-e', `${oid}^{commit}`], { cwd: input.repo_root, gitBin, encoding: 'utf-8' });
     if (objectCheck.error || objectCheck.status !== 0) return 'unavailable';
   }
   const result = spawnSync('/bin/bash', [WORKTREE_MERGE_LIB, '--target', identity.base_sha, '--', receipt.head_sha], {

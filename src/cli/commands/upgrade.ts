@@ -23,6 +23,7 @@ import {
 } from '../installer/install-profile';
 import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
+import { gitExecFileSync } from '../../effects/git/runner';
 
 /** The audit file is rewritten whole on each cleanup, so it keeps the newest records only. */
 export const UPGRADE_AUDIT_MAX_RECORDS = 100;
@@ -385,7 +386,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     if (!['project', 'global', 'all'].includes(scope)) throw new Error(`invalid upgrade scope: ${scope}`);
     let cwd = resolve(opts.cwd ?? process.cwd());
     if (scope !== 'global') {
-      try { cwd = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+      try { cwd = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
       catch { if (scope === 'project') throw new Error('project upgrade needs a git repository'); scope = 'global'; }
     }
     const home = resolve(opts.home ?? opts.env?.HOME ?? process.env.HOME ?? homedir());

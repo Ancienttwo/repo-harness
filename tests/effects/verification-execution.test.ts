@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawn, spawnSync } from "child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { appendFileSync, cpSync, symlinkSync, chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -1205,3 +1205,26 @@ ${path === secondBash ? 'if [ "$1" = --version ]; then sleep 5.1; fi\n' : ''}exe
     }
   }, 30_000);
 });
+
+test("changing an installed Git runner invalidates downstream verification", async () => {
+  const fixture = setupRepo("verification-installed-git-runner");
+  const installed = mkdtempSync(join(tmpdir(), "verification-package-"));
+  const packageRoot = join(import.meta.dir, "../..");
+  try {
+    for (const name of ["src", "scripts", "assets", "package.json"]) {
+      cpSync(join(packageRoot, name), join(installed, name), { recursive: true });
+    }
+    symlinkSync(join(packageRoot, "node_modules"), join(installed, "node_modules"), "dir");
+    const runner = await import(join(installed, "src/effects/evidence/verification-execution.ts"));
+    const env = { ...process.env, COUNTER_PATH: fixture.counterPath };
+    const input = { repoRoot: fixture.root, contractPath: fixture.contractPath, env };
+    expect(runner.executeVerificationContract(input).passed).toBe(true);
+    expect(runner.evaluateVerificationContract(input).passed).toBe(true);
+    appendFileSync(join(installed, "src/effects/git/runner.ts"), "\n// changed installed runner bytes\n");
+    expect(runner.evaluateVerificationContract(input).passed).toBe(false);
+    expect(readFileSync(fixture.counterPath, "utf8")).toBe("x\n");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+    rmSync(installed, { recursive: true, force: true });
+  }
+}, 30_000);

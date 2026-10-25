@@ -1,4 +1,4 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync, observationExecFileSync as execFileSync } from './readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from './readonly-observation';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -54,6 +54,7 @@ import {
   sha256,
   sourceHash,
 } from './collect-state-inputs';
+import { gitExecFileSync } from '../git/runner';
 
 const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
@@ -485,7 +486,7 @@ function capabilityIdsForPaths(
 const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
 
 function git(repoRoot: string, args: readonly string[]): string {
-  return execFileSync('git', ['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
+  return gitExecFileSync(['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'ignore'],
     maxBuffer: 64 * 1024 * 1024,

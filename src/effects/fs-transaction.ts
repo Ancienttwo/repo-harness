@@ -28,8 +28,8 @@ import type {
 } from "../core/adoption/operations";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
-import { runProcess } from "./process-runner";
 import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
+import { runGit } from './git/run-git';
 
 export const FS_TRANSACTION_BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";
@@ -485,7 +485,7 @@ const GIT_OBJECT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 // Reads the single stage-0 regular-file index entry for path. Rollback restores
 // this exact entry, because the staged blob can differ from the working-tree bytes.
 function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
-  const listed = runProcess("git", ["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
+  const listed = runGit(["-C", repoRoot, "ls-files", "-z", "--stage", "--", path]);
   if (!listed.ok) return { kind: "git_failed", error: listed.stderr || listed.error || "git ls-files failed" };
   const records = listed.stdout.split("\0").filter(Boolean);
   if (records.length === 0) return { kind: "absent" };
@@ -496,7 +496,7 @@ function readGitIndexEntry(repoRoot: string, path: string): GitIndexRead {
   }
   // An intent-to-add entry lists the empty blob but stages no content. Porcelain v2
   // reports it with index mode 000000; restoring the blob would stage an empty file.
-  const status = runProcess("git", ["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
+  const status = runGit(["--no-optional-locks", "-C", repoRoot, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--", path]);
   if (!status.ok) return { kind: "git_failed", error: status.stderr || status.error || "git status failed" };
   if (status.stdout.split("\0").some((record) => record.startsWith("1 ") && record.split(" ")[4] === "000000")) {
     return { kind: "unsupported", error: `git index entry is intent-to-add: ${path}` };
@@ -518,7 +518,7 @@ export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrack
   }
   if (indexed.kind === "unsupported") return failure(operation, indexed.error);
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
-  const result = runProcess("git", ["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
+  const result = runGit(["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
   return result.ok
     ? { id: operation.id, kind: operation.kind, path: operation.path, status: "applied", gitIndexEntry: indexed.entry }
     : failure(operation, result.stderr || result.error || "git rm --cached failed");
@@ -935,9 +935,9 @@ function rollbackGitUntrackOperation(repoRoot: string, operation: FsTransactionM
       : rollbackFailed(operation, "restore_git_index", "git index entry changed after apply; refusing to replace it");
   }
   // update-index accepts an absent object, so prove the recorded blob still exists.
-  const object = runProcess("git", ["-C", repoRoot, "cat-file", "-e", `${recorded.objectId}^{blob}`]);
+  const object = runGit(["-C", repoRoot, "cat-file", "-e", `${recorded.objectId}^{blob}`]);
   if (!object.ok) return rollbackFailed(operation, "restore_git_index", `recorded git object is missing: ${recorded.objectId}`);
-  const restore = runProcess("git", [
+  const restore = runGit([
     "-C", repoRoot, "update-index", "--add", "--cacheinfo", `${recorded.mode},${recorded.objectId},${operation.path}`,
   ]);
   return restore.ok
