@@ -8,6 +8,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'pat
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { acquireExpensiveRunLock } from '../src/effects/expensive-run-lock';
+import { terminateProcessGroup } from '../src/effects/process-group-termination';
 import type { ExclusiveDirectoryLockHandle } from '../src/effects/locking/exclusive-directory-lock';
 import {
   HOOK_EVENT_TELEMETRY_PATH,
@@ -233,15 +234,6 @@ function sha256(value: string | Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
-  try {
-    if (process.platform === 'win32') process.kill(pid, signal);
-    else process.kill(-pid, signal);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
-  }
-}
-
 function processGroupExists(pid: number): boolean {
   try {
     if (process.platform === 'win32') process.kill(pid, 0);
@@ -263,14 +255,12 @@ async function waitForProcessGroupExit(pid: number, deadlineMs = Number.POSITIVE
 
 async function terminateActiveProviderGroups(): Promise<void> {
   PRODUCER_TERMINATING = true;
-  const cleanupDeadline = Date.now() + (BENCHMARK_TERMINATION_GRACE_MS * 2);
   try {
     if (ACTIVE_PROVIDER_PROCESS_GROUPS.size > 0) {
-      for (const pid of ACTIVE_PROVIDER_PROCESS_GROUPS) signalProcessGroup(pid, 'SIGTERM');
-      await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
-      for (const pid of ACTIVE_PROVIDER_PROCESS_GROUPS) signalProcessGroup(pid, 'SIGKILL');
+      await Promise.all([...ACTIVE_PROVIDER_PROCESS_GROUPS].map((pid) => terminateProcessGroup(pid, BENCHMARK_TERMINATION_GRACE_MS)));
       // Let each provider promise observe exit and delete its PID before
       // deciding the lane is empty. New spawns are blocked above.
+      const cleanupDeadline = Date.now() + BENCHMARK_TERMINATION_GRACE_MS;
       while (ACTIVE_PROVIDER_PROCESS_GROUPS.size > 0 && Date.now() < cleanupDeadline) {
         await Bun.sleep(10);
       }
@@ -345,16 +335,8 @@ export async function runBoundedProviderProcess(
     if (timer) clearTimeout(timer);
     const timedOut = outcome === 'timed-out';
     if (timedOut) {
-      signalProcessGroup(processHandle.pid, 'SIGTERM');
-      await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
-      // The group leader may exit before a descendant that ignored SIGTERM.
-      // Always address the original process group after the grace period; ESRCH
-      // means the whole group is already gone.
-      signalProcessGroup(processHandle.pid, 'SIGKILL');
-      groupDrained = await waitForProcessGroupExit(
-        processHandle.pid,
-        Date.now() + BENCHMARK_TERMINATION_GRACE_MS,
-      );
+      const termination = await terminateProcessGroup(processHandle.pid, BENCHMARK_TERMINATION_GRACE_MS);
+      groupDrained = termination.confirmed;
       if (!groupDrained) {
         PRESERVE_EXPENSIVE_RUN_LOCK = true;
         throw new Error(`benchmark provider process group ${processHandle.pid} did not terminate`);
