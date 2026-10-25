@@ -141,6 +141,8 @@ describe('Admitted Task Inbox common-directory effects', () => {
       recipient: c1, execution_worktree: realpathSync(value.root), acknowledged_at: '2026-08-23T05:06:00Z',
     });
     expect(unreadFor(CLAIM_ONE)).toEqual(unread(2));
+    // bind selects C2 in the fixture; C1's distinct role binding still exists.
+    const c1Source = { ...value.source };
     await value.bind(CLAIM_TWO, 'replacement-owner');
     expect(unreadFor(CLAIM_TWO)).toEqual(unread(1));
     const beforeDelivery = bindingBytes(value);
@@ -157,8 +159,13 @@ describe('Admitted Task Inbox common-directory effects', () => {
     expect(delivered.superseded_count).toBe(1);
     expect(delivered.deliveries.map((entry) => entry.event.message_id)).toEqual([task.message_id]);
     expect(JSON.stringify(delivered)).not.toContain(claim.body);
-    expect(readTaskMessageDelivery({
+    expect(() => readTaskMessageDelivery({
       repo_root: value.root, task_id: value.task_id, source: value.source, message_id: claim.message_id, recipient: c1,
+      execution_worktree: realpathSync(value.root),
+    })).toThrow('recipient does not match admitted claim reference');
+    expect(readTaskMessageDelivery({
+      repo_root: value.root, task_id: value.task_id, source: c1Source, message_id: claim.message_id, recipient: c1,
+      execution_worktree: realpathSync(value.root),
     }).receipt?.delivery_state).toBe('superseded');
     // The task message now holds a delivered receipt for C1 and for C2.
     expect(unreadFor(CLAIM_TWO)).toEqual(unread(1));
