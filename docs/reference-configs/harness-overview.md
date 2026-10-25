@@ -126,7 +126,7 @@ The roles and the state flow below apply to contract-level work only.
 
 ## Trace Evidence
 
-`repo-harness run verify-sprint` runs local checks. It writes no verification report. Run `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` to record declared checks. Before semantic review or acceptance, run `repo-harness run change-assessment prepare --contract <contract>` from the execution repository. This command writes the independent assessment. If a packet has a reviewer-disagreement overlay, pass its path with `--packet` when you prepare it again. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
+`repo-harness run verify-sprint` runs local checks. It writes no verification report. The trusted control Bot first supplies an approved admission through `repo-harness review admit --request <request.json> --repo .`. Verification and assessment consume that admission, not a contract path. Pass `--repository-id`, `--issue-id`, `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor` from the active admission to `repo-harness run verification-plan execute --repo . --report-file .ai/harness/runs/<run-id>.report.json` and `repo-harness run change-assessment prepare`. The latter writes the independent assessment. These selectors bind an existing approval; they do not grant permission. If a packet has a reviewer-disagreement overlay, pass its path with `--packet` when you prepare it again. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
 
 Required v1 fields:
 

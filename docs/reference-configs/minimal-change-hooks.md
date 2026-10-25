@@ -27,16 +27,17 @@ closed. Run `repo-harness run evidence-gc --repo <path>` once to remove it.
 
 ## What Remains
 
-The smallest coherent change is a review rule, not a hook. The active plan,
-the contract scope, the tests and the review decide whether a change grew too
-large. Change Assessment is the deterministic boundary.
+The smallest coherent change is a review rule, not a hook. The approved admission scope,
+verification plan, tests and review decide whether a change grew too large. Change Assessment is the deterministic boundary.
 
 ## Change Assessment Boundary
 
 Hook output and `.ai/harness/events.jsonl` remain advisory and fail-open: a
 hook crash must not create or remove merge authority. Before semantic review or acceptance, run
-`repo-harness run change-assessment prepare --contract <contract>` from the
-execution repository. Change Assessment v1 then recomputes the normalized final subject from the sole policy-owned base
+`repo-harness run change-assessment prepare` from the execution
+repository with the active admission selectors: `--repository-id`, `--issue-id`,
+`--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor`. The trusted
+control Bot supplies the approval; selector values alone do not grant permission. Change Assessment v1 then recomputes the normalized final subject from the sole policy-owned base
 `.ai/harness/policy.json#worktree_strategy.review_base`. Missing/malformed
 policy, an unobservable final subject, an invalid packet, or an unmet declared
 oracle fails the assessment boundary closed. `verification-plan execute`
@@ -47,8 +48,8 @@ reason vocabulary `authority_change`, `irreversible_effect`,
 `pattern_novelty`, `reviewer_disagreement`, and `oracle_gap`. A later reviewer
 may append `reviewer_disagreement` for paths already bound to the packet, but
 cannot remove a reason, lower a selection, or change the packet subject/target.
-Prepare it again with `change-assessment prepare --contract <contract>
---packet .ai/harness/checks/change-assessment.latest.json` to preserve the
+Prepare it again with the same admission selectors and
+`change-assessment prepare --packet .ai/harness/checks/change-assessment.latest.json` to preserve the
 overlay. The acceptance owner recomputes the base assessment and validates the
 packet against the current subject and target. A missing or stale packet fails
 closed. Native execution facts remain separate.

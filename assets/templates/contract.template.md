@@ -51,8 +51,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Review file: `{{REVIEW_FILE}}`
 - Notes file: `{{NOTES_FILE}}`
 - Run snapshots: `.ai/harness/runs/`
-- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: run the checks in the Verification Plan, run `repo-harness run change-assessment prepare --contract <contract>` from the execution repository before semantic review, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+- Scope gate: edit only paths in the active approved admission. This contract records planning metadata; editing it does not widen permission. Obtain a new scoped admission from the trusted control Bot before widening scope.
+- Completion gate: execute the active admitted verification plan and prepare change assessment with its repository, issue, campaign, grant, policy and actor selectors. Record one typed AcceptanceReceipt under the approved admission policy, then run `verify-sprint`. The sections below propose inputs for upstream approval; they are not execution authority. Review Markdown is projection only.
 
 ## Change Assessment
 
