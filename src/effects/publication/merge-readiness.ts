@@ -35,6 +35,7 @@ export class MergeReadinessError extends Error {
 
 export interface PublicationReadinessInput {
   readonly repo_root: string;
+  readonly repository?: string;
   readonly publication_id?: string;
   readonly pr_number?: number;
   readonly gh_bin?: string;
@@ -71,7 +72,7 @@ export interface ProviderIdentity {
   readonly base_ref: string;
   readonly body: string;
   readonly review_decision: string | null;
-  readonly mergeable: 'MERGEABLE' | 'CONFLICTING';
+  readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
 const PROVIDER_TERMINATION_GRACE_MS = 500;
@@ -135,6 +136,10 @@ function string(value: unknown, label: string): string {
 }
 
 function gh(input: PublicationReadinessInput, args: readonly string[], accepted = [0]): unknown {
+  if (input.repository) {
+    if (args[0] === 'repo' && args[1] === 'view') args = [...args.slice(0, 2), input.repository, ...args.slice(2)];
+    else if (args[0] === 'pr') args = [...args, '--repo', input.repository];
+  }
   const injected = input.gh_runner?.(args);
   const result = injected ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root,
@@ -275,7 +280,8 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
     || !['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(reviewDecision))) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider PR reviewDecision is unknown');
   }
-  if (pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'CONFLICTING') {
+  if (pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'CONFLICTING'
+    && !(pr.state === 'MERGED' && pr.mergeable === 'UNKNOWN')) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider PR mergeable is unknown');
   }
   const identity: ProviderIdentity = Object.freeze({
@@ -510,31 +516,96 @@ export async function observeProviderReadinessFactsAbortable(
   return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)));
 }
 
-/** Ordinary main PRs consume the same provider/check decoder as fleet publications, without a receipt or Lease. */
-export function collectPullRequestMergeReadiness(
-  input: PublicationReadinessInput & { readonly pr_number: number; readonly expected_head_sha: string; readonly expected_base_sha: string },
-): ReturnType<typeof projectPullRequestMergeReadiness> {
-  if (!Number.isInteger(input.pr_number) || input.pr_number < 1) throw new MergeReadinessError('provider_data_incomplete', 'pr_number must be positive');
-  const observe = () => parseProviderPullRequestIdentity(input.pr_number,
+export interface PullRequestReadinessInput extends PublicationReadinessInput {
+  readonly repository: string;
+  readonly provider_repository_id: string;
+  readonly pr_number: number;
+  readonly expected_head_sha: string;
+  readonly expected_base_sha: string;
+}
+
+function explicitPullRequestIdentity(input: PullRequestReadinessInput): ProviderIdentity {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repository)
+    || !input.provider_repository_id?.trim() || !Number.isSafeInteger(input.pr_number) || input.pr_number < 1) {
+    throw new MergeReadinessError('provider_data_incomplete', 'explicit provider repository and PR identity are required');
+  }
+  const identity = parseProviderPullRequestIdentity(input.pr_number,
     gh(input, ['repo', 'view', '--json', 'id,nameWithOwner']),
     gh(input, ['pr', 'view', String(input.pr_number), '--json', 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,mergeable']));
+  if (identity.provider_repo_id !== input.provider_repository_id || identity.repo_name_with_owner !== input.repository
+    || identity.base_ref !== 'main') throw new MergeReadinessError('provider_data_incomplete', 'provider repository or main target does not match selection');
+  return identity;
+}
+
+/** One observation loop for both open-PR readiness and exact merged-PR evidence. */
+function stablePullRequestRound<T>(input: PullRequestReadinessInput, observeExtra: (identity: ProviderIdentity) => T) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = explicitPullRequestIdentity(input);
+    const extra = observeExtra(before);
+    const facts = observeProviderReadinessFacts(before, input, input);
+    const after = explicitPullRequestIdentity(input);
+    const extraAfter = observeExtra(after);
+    if (identityBytes(before) === identityBytes(after) && JSON.stringify(extra) === JSON.stringify(extraAfter)) {
+      return { identity: after, facts, extra };
+    }
+  }
+  return null;
+}
+
+/** Ordinary main PRs consume the shared provider decoder without a receipt or Lease. */
+export function collectPullRequestMergeReadiness(input: PullRequestReadinessInput): ReturnType<typeof projectPullRequestMergeReadiness> {
   const project = (provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation) => projectPullRequestMergeReadiness({
     expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
     integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider,
   });
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const before = observe();
-      if (before.base_ref !== 'main') throw new MergeReadinessError('provider_data_incomplete', 'automatic code merge target must be main');
-      const facts = observeProviderReadinessFacts(before, input, input);
-      const after = observe();
-      if (identityBytes(before) === identityBytes(after)) return project(facts, 'stable');
-    }
-    return project(null, 'changed_during_read');
+    const round = stablePullRequestRound(input, () => null);
+    return round ? project(round.facts, 'stable') : project(null, 'changed_during_read');
   } catch (error) {
     if (!(error instanceof MergeReadinessError) || !['provider_unavailable', 'provider_data_incomplete'].includes(error.code)) throw error;
     return project(null, error.code as 'provider_unavailable' | 'provider_data_incomplete');
   }
+}
+
+export interface PullRequestIntegrationInput extends PullRequestReadinessInput {
+  readonly issue_id: string;
+  readonly issue_number: number;
+}
+
+/** Provider proof only. The integration consumer must also prove exact local tree and ancestry. */
+export function collectPullRequestIntegration(input: PullRequestIntegrationInput): { readonly merge_commit_sha: string; readonly merge_tree_sha: string } {
+  if (!Number.isSafeInteger(input.issue_number) || input.issue_number < 1 || !input.issue_id?.trim()) {
+    throw new MergeReadinessError('provider_data_incomplete', 'explicit issue identity is required');
+  }
+  const round = stablePullRequestRound(input, identity => {
+    const root = `repos/${input.repository}`;
+    const issue = object(gh(input, ['api', `${root}/issues/${input.issue_number}`]), 'selected issue');
+    if (issue.node_id !== input.issue_id || issue.number !== input.issue_number || 'pull_request' in issue) {
+      throw new MergeReadinessError('provider_data_incomplete', 'selected issue identity changed');
+    }
+    const detail = object(gh(input, ['api', `${root}/pulls/${input.pr_number}`]), 'merged PR');
+    const base = object(detail.base, 'merged PR base');
+    const head = object(detail.head, 'merged PR head');
+    const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
+    if (identity.state !== 'MERGED' || detail.merged !== true || detail.number !== input.pr_number
+      || object(base.repo, 'merged PR repository').node_id !== input.provider_repository_id
+      || base.ref !== 'main' || base.sha !== input.expected_base_sha || head.sha !== input.expected_head_sha
+      || !validSha(detail.merge_commit_sha)) throw new MergeReadinessError('provider_data_incomplete', 'exact merged PR identity is unavailable');
+    const commit = object(gh(input, ['api', `${root}/git/commits/${detail.merge_commit_sha}`]), 'provider merge commit');
+    const tree = object(commit.tree, 'provider merge tree');
+    if (commit.sha !== detail.merge_commit_sha || !validSha(tree.sha) || !Array.isArray(commit.parents)
+      || commit.parents.length === 0 || !commit.parents.every(parent => validSha(object(parent, 'merge parent').sha))) {
+      throw new MergeReadinessError('provider_data_incomplete', 'merge commit/tree or parents are unavailable');
+    }
+    return { issue_id: issue.node_id, issue_number: issue.number, merge_commit_sha: detail.merge_commit_sha, merge_tree_sha: tree.sha };
+  });
+  if (!round) throw new MergeReadinessError('provider_data_incomplete', 'integration selection changed during read');
+  const verdict = projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha,
+    expected_base_sha: input.expected_base_sha, integration_mode: 'ancestor', observation: 'stable', provider: round.facts });
+  // These three blockers describe merge lifecycle, not CI/review acceptance of an already merged PR.
+  const blockers = verdict.blockers.filter(blocker => !['already_integrated', 'pr_not_open', 'not_mergeable'].includes(blocker.code));
+  if (blockers.length) throw new MergeReadinessError('provider_data_incomplete', `integrated PR evidence refused: ${blockers.map(blocker => blocker.code).join(', ')}`);
+  return Object.freeze({ merge_commit_sha: round.extra.merge_commit_sha, merge_tree_sha: round.extra.merge_tree_sha });
 }
 
 // Same authority rule as publication reconcile: the candidate repository is

@@ -223,7 +223,13 @@ function requireChecks(root: string, current: Candidate): number {
   try { value = JSON.parse(result.stdout); } catch { fail('invalid GitHub PR readback'); }
   if (!isRecord(value) || !Number.isSafeInteger(value.number) || Number(value.number) < 1) fail('invalid GitHub PR identity');
   const number = Number(value.number);
+  const repoRead = runGh(['repo', 'view', '--json', 'id,nameWithOwner']);
+  if (repoRead.error || repoRead.status !== 0) fail('GitHub repository identity unavailable');
+  let repo: unknown;
+  try { repo = JSON.parse(repoRead.stdout); } catch { fail('invalid GitHub repository identity'); }
+  if (!isRecord(repo) || typeof repo.id !== 'string' || typeof repo.nameWithOwner !== 'string') fail('invalid GitHub repository identity');
   const readiness = collectPullRequestMergeReadiness({ repo_root: root, pr_number: number, gh_bin: ghBin,
+    provider_repository_id: repo.id, repository: repo.nameWithOwner,
     // Keep every provider query on the same binary and cleared caller environment.
     gh_runner: args => {
       const observed = runGh(args);

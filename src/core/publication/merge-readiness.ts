@@ -60,7 +60,7 @@ export interface ProviderMergeReadinessFactsV1 {
     readonly name: string;
     readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
   }[];
-  readonly mergeable: 'MERGEABLE' | 'CONFLICTING';
+  readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
 export interface PullRequestMergeReadinessInput {

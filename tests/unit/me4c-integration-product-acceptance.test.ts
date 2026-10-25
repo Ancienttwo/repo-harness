@@ -1,7 +1,4 @@
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { historicalPublicationPointer } from '../helpers/publication-fixture';
-import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, leaseOwnerPath } from '../helpers/sprint-fixture';
-import { seedPublicationReceipt } from '../helpers/publication-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
@@ -21,34 +18,28 @@ import {
   assertCompletePassingMatrix,
   buildAcceptanceMatrix,
   validateIntegrationContract,
+  validateIntegrationEnvelope,
+  type RequiredPullRequestV2,
 } from '../../src/core/integration/product-acceptance';
 import {
-  buildPublicationReceipt,
-  publicationReceiptDigest,
   publicationSha256,
   stablePublicationJson,
 } from '../../src/core/publication/publication-receipt';
-import { buildLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import {
   createAcceptanceMatrix,
   createIntegrationContract,
   createIntegrationEnvelope,
   createProductAcceptanceProjection,
   IntegrationAcceptanceError,
+  type IntegrationAcceptanceEnvironment,
   readAcceptanceMatrix,
   readIntegrationContract,
   readIntegrationEnvelope,
   readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { readPublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { readLease } from '../../src/effects/state/coordination-lease-store';
 import type { AcceptanceReceipt } from '../../scripts/acceptance-receipt';
 
-const TASK_A = '1'.repeat(64);
-const TASK_B = '2'.repeat(64);
-const REV_A = '3'.repeat(64);
-const REV_B = '4'.repeat(64);
 const SUBJECT = `sha256:${'5'.repeat(64)}`;
 const DIGEST = `sha256:${'6'.repeat(64)}`;
 const roots: string[] = [];
@@ -77,64 +68,50 @@ interface Fixture {
   readonly base: string;
   readonly headA: string;
   readonly finalHead: string;
+  readonly finalTree: string;
+  readonly environment: IntegrationAcceptanceEnvironment;
+  readonly provider: Map<number, { selection: RequiredPullRequestV2; merge: string; tree: string }>;
+  readonly legacyPath: string;
   readonly contract: ReturnType<typeof createIntegrationContract>;
   readonly envelope: ReturnType<typeof createIntegrationEnvelope>;
   readonly matrix: ReturnType<typeof createAcceptanceMatrix>;
 }
 
-function reviewingPublication(root: string, taskId: string, revision: string, head: string, base: string, number: number): void {
-  const repoId = publicationSha256(realpathSync(resolveGitCommonDirectory(root)));
-  const receipt = buildPublicationReceipt({
-    repo_id: repoId,
-    task_id: taskId,
-    task_revision: revision,
-    claim_id: `claim-${number}`,
-    generation: 1,
-    target_ref: 'main',
-    base_sha: base,
-    branch: 'main',
-    head_sha: head,
-    tree_sha: git(root, 'rev-parse', `${head}^{tree}`),
-    candidate_diff_fingerprint: SUBJECT,
-    provider: 'github',
-    provider_repo_id: 'R_me4c_fixture',
-    pr_number: number,
-    pr_url: `https://example.invalid/pr/${number}`,
-    created_at: `2026-08-26T00:00:0${number}Z`,
-  });
-  seedPublicationReceipt(root, receipt);
-  const owner = buildLeaseOwnerRecord({
-    claimId: `claim-${number}`,
-    taskId,
-    taskRevision: revision,
-    sprintPath: 'plans/sprints/me4c.sprint.md',
-    targetRef: 'main',
-    generation: 1,
-    sessionId: `session-${number}`,
-    sourceWorktree: root,
-  });
-  const bound = boundLeaseFixture(owner, {
-    executionWorktree: root,
-    branch: 'main',
-    unitRef: `plans/plan-${number}.md`,
-  });
-  const completing = completingLeaseFixture(bound, {
-    claimId: owner.claim_id,
-    executionWorktree: root,
-    finishTransactionKey: null,
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = reviewingLeaseFixture(completing.record, {
-    claimId: owner.claim_id,
-    publication: historicalPublicationPointer(receipt, `ship-${number}`),
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!seedLeaseDirectory(root, taskId)) throw new Error('lease election failed');
-  writeHistoricalLease(root, taskId, reviewing.record);
-  if (!('current_publication' in reviewing.record) || reviewing.record.current_publication === null) {
-    throw new Error('reviewing transition did not retain its publication pointer');
-  }
-  expect(publicationReceiptDigest(receipt)).toBe(reviewing.record.current_publication.receipt_sha256);
+function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationAcceptanceEnvironment['gh_runner']> {
+  const response = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+  return args => {
+    const command = `${args[0]} ${args[1]}`;
+    if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
+    if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
+    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ node_id: 'I_product', number: 903 });
+    const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
+      ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
+      : Number(args[1]?.match(/(?:pulls|runs)\/(\d+)$/)?.[1]);
+    const item = provider.get(number);
+    if (args[0] === 'api' && args[1]?.includes('/git/commits/')) {
+      const commit = args[1].split('/').at(-1);
+      const entry = [...provider.values()].find(value => value.merge === commit);
+      if (!entry) throw new Error('unexpected merge commit');
+      return response({ sha: entry.merge, tree: { sha: entry.tree }, parents: [{ sha: entry.selection.expected_base_sha }] });
+    }
+    if (!item) throw new Error(`unexpected provider args: ${args.join(' ')}`);
+    const selection = item.selection;
+    if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
+      state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
+    if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
+    if (command === 'api graphql') return response({ data: { node: { id: selection.provider_repository_id, pullRequest: {
+      number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
+      latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
+      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] },
+    } } } });
+    if (args[1]?.includes('/actions/runs/')) return response({ path: '.github/workflows/ci.yml', event: 'pull_request',
+      head_sha: selection.expected_head_sha, pull_requests: [{ number, head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha } }],
+      status: 'completed', conclusion: 'success' });
+    if (args[1]?.includes('/pulls/')) return response({ number, merged: true, merge_commit_sha: item.merge,
+      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { node_id: selection.provider_repository_id } } });
+    throw new Error(`unexpected provider args: ${args.join(' ')}`);
+  };
 }
 
 function fixture(): Fixture {
@@ -165,24 +142,36 @@ function fixture(): Fixture {
   git(root, 'commit', '-m', 'combined candidate');
   const finalHead = git(root, 'rev-parse', 'HEAD');
 
-  reviewingPublication(root, TASK_A, REV_A, headA, base, 1);
-  reviewingPublication(root, TASK_B, REV_B, finalHead, base, 2);
+  // Separate feature heads from their actual squash commits in the candidate.
+  const featureA = git(root, 'commit-tree', git(root, 'rev-parse', `${headA}^{tree}`), '-p', base, '-m', 'feature A before squash');
+  const featureB = git(root, 'commit-tree', git(root, 'rev-parse', `${finalHead}^{tree}`), '-p', headA, '-m', 'feature B before squash');
+  const selection = (pr_number: number, head: string, base: string): RequiredPullRequestV2 => ({
+    provider_repository_id: 'R_me4c_fixture', repository: 'example/product', issue_id: 'I_product', issue_number: 903,
+    pr_number, expected_head_sha: head, expected_base_sha: base,
+  });
+  const finalTree = git(root, 'rev-parse', `${finalHead}^{tree}`);
+  const provider: Fixture['provider'] = new Map([
+    [1, { selection: selection(1, featureA, base), merge: headA, tree: git(root, 'rev-parse', `${headA}^{tree}`) }],
+    [2, { selection: selection(2, featureB, headA), merge: finalHead, tree: finalTree }],
+  ]);
+  const environment = { repo_root: root, gh_runner: providerRunner(provider) };
+  const legacyPath = join(resolveGitCommonDirectory(root), 'repo-harness/coordination/v1/leases/legacy/owner.json');
+  mkdirSync(join(legacyPath, '..'), { recursive: true });
+  writeFileSync(legacyPath, 'historical owner bytes: preserve without reading as authority\n');
   const contract = createIntegrationContract({ repo_root: root }, {
     approved_prd_ref: 'plans/prds/product.md',
     source_spec_ref: 'docs/spec.md',
     integration_group: 'fixture',
-    required_work_packages: [
-      { work_package_id: TASK_B, work_package_revision: REV_B },
-      { work_package_id: TASK_A, work_package_revision: REV_A },
-    ],
+    required_pull_requests: [provider.get(2)!.selection, provider.get(1)!.selection],
     required_constraints: ['constraint-b', 'constraint-a'],
   });
-  const envelope = createIntegrationEnvelope({ repo_root: root }, {
+  const envelope = createIntegrationEnvelope(environment, {
     contract_sha256: contract.contract_sha256,
     base_sha: base,
     final_head_sha: finalHead,
+    final_tree_sha: finalTree,
   });
-  const matrix = createAcceptanceMatrix({ repo_root: root }, {
+  const matrix = createAcceptanceMatrix(environment, {
     contract_sha256: contract.contract_sha256,
     envelope_sha256: envelope.envelope_sha256,
     rows: [
@@ -191,7 +180,7 @@ function fixture(): Fixture {
     ],
     verifier_receipt_ref: 'docs/evidence/verifier.json',
   });
-  return { root, base, headA, finalHead, contract, envelope, matrix };
+  return { root, base, headA, finalHead, finalTree, environment, provider, legacyPath, contract, envelope, matrix };
 }
 
 afterEach(() => {
@@ -200,36 +189,28 @@ afterEach(() => {
 
 describe('ME-4C integration product acceptance', () => {
 
-  test('refuses an integration reference bound to an old receipt digest and retains history', () => {
+  test('refuses a changed provider merge tree and retains stored evidence and historical bytes', () => {
     const value = fixture();
-    const owner = readLease(value.root, TASK_A).record;
-    if (owner === null || owner.state !== 'reviewing' || owner.current_publication === null) throw new Error('fixture expected reviewing publication');
-    const receipt = readPublicationReceiptCache(value.root, owner.current_publication.publication_id);
-    if (receipt === null) throw new Error('fixture expected cached receipt');
-    const { candidate_diff_fingerprint, ...retained } = receipt;
-    const oldDigest = publicationSha256(stablePublicationJson({ ...retained, protocol: 1,
-      review_subject_sha256: SUBJECT, verification_evidence_sha256: DIGEST }));
-    writeHistoricalLease(value.root, TASK_A, { ...owner,
-      current_publication: { ...owner.current_publication, receipt_sha256: oldDigest } });
-    const leaseBefore = readFileSync(leaseOwnerPath(value.root, TASK_A), 'utf8');
+    value.provider.get(1)!.tree = 'f'.repeat(40);
+    const legacyBefore = readFileSync(value.legacyPath, 'utf8');
     const historicalEnvelope = readIntegrationEnvelope(value.root, value.envelope.envelope_sha256);
-    expectCode(() => createIntegrationEnvelope({ repo_root: value.root }, {
-      contract_sha256: value.contract.contract_sha256, base_sha: value.base, final_head_sha: value.finalHead,
+    expectCode(() => createIntegrationEnvelope(value.environment, {
+      contract_sha256: value.contract.contract_sha256, base_sha: value.base, final_head_sha: value.finalHead, final_tree_sha: value.finalTree,
     }), 'publication_stale');
     expect(readIntegrationEnvelope(value.root, value.envelope.envelope_sha256)).toEqual(historicalEnvelope);
-    expect(readFileSync(leaseOwnerPath(value.root, TASK_A), 'utf8')).toBe(leaseBefore);
+    expect(readFileSync(value.legacyPath, 'utf8')).toBe(legacyBefore);
   });
 
-  test('freezes two current publications and projects the existing AcceptanceReceipt without mutating leases', async () => {
+  test('freezes two squash PRs for one issue and projects acceptance without mutating historical data', async () => {
     const value = fixture();
-    expect(value.contract.required_work_packages.map((item) => item.work_package_id)).toEqual([TASK_A, TASK_B]);
-    expect(value.envelope.selected_publications.map((item) => item.head_sha)).toEqual([value.headA, value.finalHead]);
+    expect(value.contract.required_pull_requests.map(item => item.pr_number)).toEqual([1, 2]);
+    expect(new Set(value.contract.required_pull_requests.map(item => item.issue_id)).size).toBe(1);
+    expect(value.envelope.selected_pull_requests.map(item => item.merge_commit_sha)).toEqual([value.headA, value.finalHead]);
     expect(readIntegrationContract(value.root, value.contract.contract_sha256)).toEqual(value.contract);
     expect(readIntegrationEnvelope(value.root, value.envelope.envelope_sha256)).toEqual(value.envelope);
     expect(readAcceptanceMatrix(value.root, value.matrix.matrix_sha256)).toEqual(value.matrix);
 
-    const leaseA = readFileSync(leaseOwnerPath(value.root, TASK_A));
-    const leaseB = readFileSync(leaseOwnerPath(value.root, TASK_B));
+    const legacy = readFileSync(value.legacyPath);
     const acceptance = {
       protocol: 3,
       kind: 'repo-harness-acceptance-receipt',
@@ -257,7 +238,7 @@ describe('ME-4C integration product acceptance', () => {
     } satisfies AcceptanceReceipt;
     const receiptBytes = Buffer.from(`${JSON.stringify(acceptance, null, 2)}\n`);
     const projection = await createProductAcceptanceProjection(
-      { repo_root: value.root, authority_home: value.root },
+      { ...value.environment, authority_home: value.root },
       {
         contract_sha256: value.contract.contract_sha256,
         envelope_sha256: value.envelope.envelope_sha256,
@@ -272,24 +253,35 @@ describe('ME-4C integration product acceptance', () => {
     expect(projection.acceptance_receipt_sha256).toBe(publicationSha256(receiptBytes));
     expect(projection.acceptance_disposition).toBe('user_waiver');
     expect(readProductAcceptanceProjection(value.root, projection.projection_sha256)).toEqual(projection);
-    expect(readFileSync(leaseOwnerPath(value.root, TASK_A))).toEqual(leaseA);
-    expect(readFileSync(leaseOwnerPath(value.root, TASK_B))).toEqual(leaseB);
+    expect(readFileSync(value.legacyPath)).toEqual(legacy);
+
+    // Acceptance is asynchronous: a previously valid provider selection cannot
+    // authorize persistence after its exact merge evidence moves.
+    const products = join(resolveGitCommonDirectory(value.root), 'repo-harness/integration/v2/products');
+    const productsBefore = readdirSync(products);
+    await expect(createProductAcceptanceProjection(
+      { ...value.environment, authority_home: value.root },
+      { contract_sha256: value.contract.contract_sha256, envelope_sha256: value.envelope.envelope_sha256,
+        matrix_sha256: value.matrix.matrix_sha256, review_authority: fixtureAuthority(value.root) },
+      { verify_acceptance: async () => { value.provider.get(1)!.tree = 'f'.repeat(40); return acceptance; },
+        read_acceptance_receipt_bytes: () => receiptBytes },
+    )).rejects.toMatchObject({ code: 'publication_stale' });
+    expect(readdirSync(products)).toEqual(productsBefore);
   });
 
-  test('fails closed on stale requirement, current publication or evidence bytes', async () => {
+  test('fails closed on stale requirement, selected PR or evidence bytes', async () => {
     const requirement = fixture();
     writeFileSync(join(requirement.root, 'docs/spec.md'), '# changed\n');
-    expectCode(() => createIntegrationEnvelope({ repo_root: requirement.root }, {
+    expectCode(() => createIntegrationEnvelope(requirement.environment, {
       contract_sha256: requirement.contract.contract_sha256,
       base_sha: requirement.base,
       final_head_sha: requirement.finalHead,
+      final_tree_sha: requirement.finalTree,
     }), 'requirement_invalid');
 
     const publication = fixture();
-    const lease = JSON.parse(readFileSync(leaseOwnerPath(publication.root, TASK_A), 'utf8')) as Record<string, unknown>;
-    lease.generation = 2;
-    writeFileSync(leaseOwnerPath(publication.root, TASK_A), `${JSON.stringify(lease, null, 2)}\n`);
-    expectCode(() => createAcceptanceMatrix({ repo_root: publication.root }, {
+    publication.provider.get(1)!.selection = { ...publication.provider.get(1)!.selection, expected_head_sha: 'e'.repeat(40) };
+    expectCode(() => createAcceptanceMatrix(publication.environment, {
       contract_sha256: publication.contract.contract_sha256,
       envelope_sha256: publication.envelope.envelope_sha256,
       rows: publication.matrix.rows,
@@ -299,7 +291,7 @@ describe('ME-4C integration product acceptance', () => {
     const evidence = fixture();
     writeFileSync(join(evidence.root, 'docs/evidence/constraint-a.json'), '{"pass":false}\n');
     await expect(createProductAcceptanceProjection(
-      { repo_root: evidence.root, authority_home: evidence.root },
+      { ...evidence.environment, authority_home: evidence.root },
       {
         contract_sha256: evidence.contract.contract_sha256,
         envelope_sha256: evidence.envelope.envelope_sha256,
@@ -336,7 +328,7 @@ describe('ME-4C integration product acceptance', () => {
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;
     await expect(createProductAcceptanceProjection(
-      { repo_root: receiptRace.root, authority_home: receiptRace.root },
+      { ...receiptRace.environment, authority_home: receiptRace.root },
       {
         contract_sha256: receiptRace.contract.contract_sha256,
         envelope_sha256: receiptRace.envelope.envelope_sha256,
@@ -372,6 +364,25 @@ describe('ME-4C integration product acceptance', () => {
     ]))).toThrow('constraints do not exactly match');
   });
 
+  test('refuses a provider merge commit outside the final candidate even with the expected tree', () => {
+    const value = fixture();
+    const item = value.provider.get(1)!;
+    item.merge = git(value.root, 'commit-tree', item.tree, '-p', item.selection.expected_base_sha, '-m', 'unrelated squash');
+    expectCode(() => createIntegrationEnvelope(value.environment, {
+      contract_sha256: value.contract.contract_sha256, base_sha: value.base,
+      final_head_sha: value.finalHead, final_tree_sha: value.finalTree,
+    }), 'candidate_stale');
+  });
+
+  test('rejects legacy envelope schema and an incorrect final candidate tree', () => {
+    const value = fixture();
+    expect(() => validateIntegrationEnvelope({ ...value.envelope, protocol: 1 })).toThrow('protocol');
+    expectCode(() => createIntegrationEnvelope(value.environment, {
+      contract_sha256: value.contract.contract_sha256, base_sha: value.base, final_head_sha: value.finalHead,
+      final_tree_sha: 'f'.repeat(40),
+    }), 'candidate_stale');
+  });
+
   test('rejects non-canonical objects and repository symlink evidence', () => {
     const value = fixture();
     expect(() => validateIntegrationContract({ ...value.contract, extra: true })).toThrow('fields are invalid');
@@ -380,7 +391,7 @@ describe('ME-4C integration product acceptance', () => {
       approved_prd_ref: 'plans/prds/product.md',
       source_spec_ref: 'docs/spec-link.md',
       integration_group: 'symlink',
-      required_work_packages: [{ work_package_id: TASK_A, work_package_revision: REV_A }],
+      required_pull_requests: value.contract.required_pull_requests,
       required_constraints: ['constraint-a'],
     }), 'evidence_conflict');
   });
@@ -398,7 +409,7 @@ describe('ME-4C integration product acceptance', () => {
       approved_prd_ref: 'plans/prds/product.md',
       source_spec_ref: 'docs/spec.md',
       integration_group: 'unsafe-store',
-      required_work_packages: [{ work_package_id: TASK_A, work_package_revision: REV_A }],
+      required_pull_requests: value.contract.required_pull_requests,
       required_constraints: ['constraint-a'],
     }), 'evidence_conflict');
     expect(readdirSync(outside)).toEqual([]);

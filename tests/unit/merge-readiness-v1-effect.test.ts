@@ -390,11 +390,11 @@ test('ordinary PR consumer uses trusted CI head/base once and needs no local art
     if (args[0] === 'api' && args[1]?.includes('/actions/runs/')) return { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), status: 'completed', conclusion: 'success' }) };
     return observed;
   };
-  const verdict = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+  const verdict = collectPullRequestMergeReadiness({ repository: 'example/repo-harness', provider_repository_id: receipt.provider_repo_id, repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
     expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
   expect(verdict.ready).toBe(true); expect(ciCalls).toBe(1);
   expect('publication_id' in verdict).toBe(false);
-  const moved = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+  const moved = collectPullRequestMergeReadiness({ repository: 'example/repo-harness', provider_repository_id: receipt.provider_repo_id, repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
     expected_head_sha: HEAD, expected_base_sha: '9'.repeat(40), gh_runner });
   expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
 });
@@ -424,7 +424,7 @@ test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved',
     if (scenario === 'unavailable') return { status: 1, stdout: '', stderr: 'provider unavailable' };
     return { status: 0, stdout: JSON.stringify(graph) };
   };
-  const verdict = collectPullRequestMergeReadiness({ repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
+  const verdict = collectPullRequestMergeReadiness({ repository: 'example/repo-harness', provider_repository_id: receipt.provider_repo_id, repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
     expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
   const expected: MergeReadinessBlockerCode[] = scenario === 'changes' ? ['changes_requested']
     : ['threads', 'outdated-unresolved'].includes(scenario) ? ['unresolved_threads']
@@ -457,7 +457,7 @@ test('ordinary provider collector blocks decision changes after normalized empty
     }) };
     return observed;
   };
-  const verdict = collectPullRequestMergeReadiness({ ...input, pr_number: 42,
+  const verdict = collectPullRequestMergeReadiness({ ...input, repository: 'example/repo-harness', provider_repository_id: receipt.provider_repo_id, pr_number: 42,
     expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
   expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['changed_during_read']);
   expect(identityReads).toBe(4);
