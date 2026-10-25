@@ -2,26 +2,18 @@
 import { spawnSync } from 'child_process';
 
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
-import {
-  lookupCanonicalTask,
-  type LeaseOwnerRecord,
-} from '../../core/state/coordination-identity';
-import { readCanonicalSprint } from '../state/coordination-canonical-source';
-import { resolveRepoIdentity } from '../git/repository-identity';
-import { readLease } from '../state/coordination-lease-store';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { withTaskLock } from '../locking/task-lock';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt, readFeedbackDeliveryReceipts, readFeedbackEvent, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from './feedback-store';
-import {
-  PublicationReceiptError,
-  readPublicationReceiptCache,
-} from './publication-receipt';
-import {
-  canonicalPublicationReceiptBytes,
-  publicationSha256,
-  publicationReceiptDigest,
-  stablePublicationJson,
-  type PublicationReceiptV3,
-} from '../../core/publication/publication-receipt';
+import { publicationSha256, stablePublicationJson } from '../../core/publication/publication-receipt';
+import { observeProviderReadinessIdentity, validatePullRequestSelection } from './merge-readiness';
+import type { PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
+import { observeTaskInboxContext, type TaskInboxSessionSource } from '../fleet/task-inbox';
+import { readTaskAgent } from '../terminal/task-session';
+import { observeActiveReviewAdmission } from '../review/issue-goal';
+import { readActiveReviewAdmission } from '../review/admission-store';
+import type { TaskMessageClaim } from '../../core/fleet/admitted-task-message';
 
 export type FeedbackErrorCode =
   | 'feedback_provider_failed'
@@ -65,6 +57,8 @@ export interface FeedbackObservationInput {
 
 export interface FeedbackIntakeInput extends FeedbackObservationInput {
   readonly publication_id: string;
+  readonly selection: PullRequestSelectionV2;
+  readonly source: TaskInboxSessionSource;
   readonly git_bin?: string;
 }
 
@@ -108,10 +102,24 @@ interface ProviderIdentity {
   readonly mergeability: FeedbackMergeability;
 }
 
+/** Explicit observed provider subject. This is not a publication receipt or authority. */
+export interface FeedbackSubject {
+  readonly publication_id: string;
+  readonly selection: PullRequestSelectionV2;
+  readonly task_id: string;
+  readonly repository_id: string;
+  readonly issue_id: string;
+  readonly campaign_id: string;
+  readonly claim: TaskMessageClaim;
+  readonly admission_sha256: string;
+  readonly head_sha: string;
+  readonly base_sha: string;
+  readonly pr_number: number;
+}
 interface CurrentPublicationSnapshot {
-  readonly receipt: PublicationReceiptV3;
-  readonly lease_raw: string;
-  readonly record: LeaseOwnerRecord;
+  readonly receipt: FeedbackSubject;
+  readonly session_bytes: string;
+  readonly assertCurrent: () => void;
 }
 
 class TornReadError extends Error {
@@ -218,33 +226,18 @@ function identityBytes(identity: ProviderIdentity): string {
   return JSON.stringify(identity);
 }
 
-function observeIdentity(receipt: PublicationReceiptV3, input: FeedbackObservationInput): ProviderIdentity {
-  const repo = asObject(ghJson(input, ['repo', 'view', '--json', 'id']), 'provider repository');
-  const pr = asObject(ghJson(input, [
-    'pr', 'view', String(receipt.pr_number), '--json',
-    'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,mergeStateStatus',
-  ]), 'provider PR');
-  if (pr.number !== receipt.pr_number) throw providerShape('provider PR number does not match the publication receipt');
-  const state = requiredString(pr.state, 'provider PR state');
-  if (state !== 'OPEN' && state !== 'CLOSED' && state !== 'MERGED') throw providerShape('provider PR state is unknown');
-  const identity: ProviderIdentity = Object.freeze({
-    provider_repo_id: requiredString(repo.id, 'provider repository id'),
-    pr_number: receipt.pr_number,
-    provider_url: requiredString(pr.url, 'provider PR URL'),
-    state,
-    is_draft: requiredBoolean(pr.isDraft, 'provider PR isDraft'),
-    head_sha: requiredString(pr.headRefOid, 'provider PR head OID'),
-    head_ref: requiredString(pr.headRefName, 'provider PR head ref'),
-    base_sha: requiredString(pr.baseRefOid, 'provider PR base OID'),
-    base_ref: requiredString(pr.baseRefName, 'provider PR base ref'),
-    mergeability: requiredMergeability(pr.mergeStateStatus),
-  });
-  if (identity.provider_repo_id !== receipt.provider_repo_id
-    || identity.provider_url !== receipt.pr_url
-    || identity.head_ref !== receipt.branch
-    || identity.base_ref !== receipt.target_ref) {
-    throw new FeedbackError('publication_claim_mismatch', 'provider identity does not match the publication receipt');
-  }
+function observeIdentity(receipt: FeedbackSubject, input: FeedbackObservationInput): ProviderIdentity {
+  const selected = observeProviderReadinessIdentity({ ...receipt.selection, repo_root: input.repo_root,
+    gh_bin: input.gh_bin, gh_runner: input.gh_runner ? args => {
+      const result = input.gh_runner!(args);
+      if (result.error || result.status === null) throw providerFailure('provider identity observation failed', result.error);
+      return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    } : undefined });
+  if (selected.state !== 'OPEN' && selected.state !== 'CLOSED' && selected.state !== 'MERGED') throw providerShape('provider PR state is unknown');
+  const identity: ProviderIdentity = Object.freeze({ provider_repo_id: selected.provider_repo_id,
+    pr_number: selected.pr_number, provider_url: selected.pr_url, state: selected.state, is_draft: selected.is_draft,
+    head_sha: selected.head_sha, head_ref: selected.head_ref, base_sha: selected.base_sha, base_ref: selected.base_ref,
+    mergeability: requiredMergeability(selected.mergeable) });
   return identity;
 }
 
@@ -255,7 +248,7 @@ function requiredMergeability(value: unknown): FeedbackMergeability {
   return value;
 }
 
-function assertStableIdentity(identity: ProviderIdentity, receipt: PublicationReceiptV3): void {
+function assertStableIdentity(identity: ProviderIdentity, receipt: FeedbackSubject): void {
   if (identity.head_sha !== receipt.head_sha) {
     throw new FeedbackError('head_moved', 'provider PR head does not match the publication receipt');
   }
@@ -327,7 +320,7 @@ function checkRunState(run: Record<string, unknown>): { readonly status: string;
   return Object.freeze({ status, conclusion });
 }
 
-function checkSuiteIds(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: FeedbackObservationInput): readonly string[] {
+function checkSuiteIds(identity: ProviderIdentity, receipt: FeedbackSubject, input: FeedbackObservationInput): readonly string[] {
   const ids: string[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -351,7 +344,7 @@ function checkSuiteIds(identity: ProviderIdentity, receipt: PublicationReceiptV3
   return ids;
 }
 
-function failedCheckEvents(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function failedCheckEvents(identity: ProviderIdentity, receipt: FeedbackSubject, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   for (const suiteId of checkSuiteIds(identity, receipt, input)) {
     let after: string | null = null;
@@ -393,7 +386,7 @@ function failedCheckEvents(identity: ProviderIdentity, receipt: PublicationRecei
   return events;
 }
 
-function unresolvedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function unresolvedReviewEvents(identity: ProviderIdentity, receipt: FeedbackSubject, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -435,7 +428,7 @@ function unresolvedReviewEvents(identity: ProviderIdentity, receipt: Publication
  * connection itself so each CHANGES_REQUESTED decision is keyed by GitHub's
  * stable review object ID and pagination cannot silently hide another review.
  */
-function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: PublicationReceiptV3, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: FeedbackSubject, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const events: FeedbackEventV1[] = [];
   let after: string | null = null;
   let pageCount = 0;
@@ -481,7 +474,7 @@ function changesRequestedReviewEvents(identity: ProviderIdentity, receipt: Publi
  * intake operation repeats this entire observation once when either provider
  * identity read changes; partial pages and unknown enums are never accepted.
  */
-export function observeGitHubFeedback(receipt: PublicationReceiptV3, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
+export function observeGitHubFeedback(receipt: FeedbackSubject, input: FeedbackObservationInput): readonly FeedbackEventV1[] {
   const before = observeIdentity(receipt, input);
   const events = [
     ...failedCheckEvents(before, receipt, input),
@@ -499,8 +492,7 @@ export function observeGitHubFeedback(receipt: PublicationReceiptV3, input: Feed
   return Object.freeze(events);
 }
 
-export interface ShowGitHubFeedbackInput extends FeedbackObservationInput {
-  readonly publication_id: string;
+export interface ShowGitHubFeedbackInput extends FeedbackIntakeInput {
   readonly provider_event_id: string;
   readonly git_bin?: string;
 }
@@ -593,11 +585,11 @@ function reviewBody(input: FeedbackObservationInput, providerEventId: string): s
  * Fetch a full provider body only when an operator explicitly asks for it.
  * The stored event is used solely to identify the immutable provider object;
  * returned text is untrusted display data and is never written back to any
- * feedback, delivery, reaction, or lease surface.
+ * feedback, delivery, reaction, or session surface.
  */
 export function showGitHubFeedback(input: ShowGitHubFeedbackInput): ShowGitHubFeedbackResult {
   const gitBin = input.git_bin ?? 'git';
-  const before = currentPublication(input.repo_root, input.publication_id, gitBin);
+  const before = currentPublication(input);
   let event: FeedbackEventV1 | null;
   try {
     event = readFeedbackEvent(input.repo_root, before.receipt.publication_id, input.provider_event_id, gitBin);
@@ -632,9 +624,9 @@ export function showGitHubFeedback(input: ShowGitHubFeedbackInput): ShowGitHubFe
     if (error instanceof FeedbackError) throw error;
     throw new FeedbackError('feedback_provider_incomplete', 'cannot fetch the requested provider feedback body', error);
   }
-  const after = currentPublication(input.repo_root, input.publication_id, gitBin);
-  if (canonicalPublicationReceiptBytes(before.receipt) !== canonicalPublicationReceiptBytes(after.receipt)
-    || before.lease_raw !== after.lease_raw) {
+  const after = currentPublication(input);
+  if (stablePublicationJson(before.receipt) !== stablePublicationJson(after.receipt)
+    || before.session_bytes !== after.session_bytes) {
     throw new FeedbackError('feedback_provider_incomplete', 'publication changed during provider feedback display observation');
   }
   return Object.freeze({
@@ -645,57 +637,40 @@ export function showGitHubFeedback(input: ShowGitHubFeedbackInput): ShowGitHubFe
   });
 }
 
-function cachedPublicationReceipt(repoRoot: string, publicationId: string, gitBin: string): PublicationReceiptV3 {
-  let receipt: PublicationReceiptV3 | null;
-  try {
-    receipt = readPublicationReceiptCache(repoRoot, publicationId, gitBin);
-  } catch (error) {
-    if (error instanceof PublicationReceiptError) throw new FeedbackError('publication_claim_mismatch', error.message, error);
-    throw new FeedbackError('publication_not_found', `publication receipt is unreadable: ${publicationId}`, error);
-  }
-  if (receipt === null) throw new FeedbackError('publication_not_found', `publication receipt is unavailable: ${publicationId}`);
-  return receipt;
+/** Read-only request preparation. References bind already-authorized inputs; they do not authenticate an actor. */
+export function prepareFeedbackSubject(input: Omit<FeedbackIntakeInput, 'publication_id'>): FeedbackSubject {
+  const selection = validatePullRequestSelection(input.selection);
+  const session = observeTaskInboxContext({ repo_root: input.repo_root, source: input.source, task_id: input.source.session.task });
+  if (selection.provider_repository_id !== session.identity.repository_id) throw new FeedbackError('publication_claim_mismatch', 'selected PR repository differs from admitted issue repository');
+  if (selection.expected_head_sha !== session.head_revision) throw new FeedbackError('head_moved', 'selected PR head differs from current execution HEAD');
+  const basis = { protocol: 2, kind: 'repo-harness-admitted-feedback-subject', selection,
+    task_id: session.identity.task, repository_id: session.identity.repository_id, issue_id: session.identity.issue_id,
+    campaign_id: session.identity.campaign_id, claim: session.identity.claim,
+    admission_sha256: session.approval.admission_sha256 };
+  return Object.freeze({ publication_id: publicationSha256(stablePublicationJson(basis)), selection,
+    task_id: basis.task_id, repository_id: basis.repository_id, issue_id: basis.issue_id, campaign_id: basis.campaign_id,
+    claim: basis.claim, admission_sha256: basis.admission_sha256,
+    head_sha: selection.expected_head_sha, base_sha: selection.expected_base_sha, pr_number: selection.pr_number });
 }
 
-function currentReviewingPublication(repoRoot: string, taskId: string, gitBin: string): CurrentPublicationSnapshot {
-  const lease = readLease(repoRoot, taskId);
-  const record = lease.record;
-  if (record === null || lease.raw === null || record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
-    throw new FeedbackError('repair_completion_unverified', `task ${taskId} is not reviewing a publication`);
-  }
-  const pointer = record.current_publication;
-  const receipt = cachedPublicationReceipt(repoRoot, pointer.publication_id, gitBin);
-  if (pointer.publication_id !== receipt.publication_id || pointer.receipt_sha256 !== publicationReceiptDigest(receipt)) {
-    throw new FeedbackError('publication_claim_mismatch', 'current publication pointer does not match the immutable receipt');
-  }
-  if (pointer.head_sha !== receipt.head_sha) throw new FeedbackError('head_moved', 'current publication pointer head does not match the immutable receipt');
-  if (record.claim_id !== receipt.claim_id || record.generation !== receipt.generation || record.task_revision !== receipt.task_revision) {
-    throw new FeedbackError('publication_claim_mismatch', 'reviewing lease does not match the immutable receipt');
-  }
-  assertCanonicalPending(repoRoot, record);
-  return Object.freeze({ receipt, lease_raw: lease.raw, record });
-}
-
-function currentPublication(repoRoot: string, publicationId: string, gitBin: string): CurrentPublicationSnapshot {
-  const receipt = cachedPublicationReceipt(repoRoot, publicationId, gitBin);
-  const snapshot = currentReviewingPublication(repoRoot, receipt.task_id, gitBin);
-  if (snapshot.receipt.publication_id !== publicationId) {
-    throw new FeedbackError('publication_not_found', `publication ${publicationId} is not the current reviewing publication`);
-  }
-  return snapshot;
-}
-
-function assertCanonicalPending(repoRoot: string, record: LeaseOwnerRecord): void {
-  const canonical = readCanonicalSprint(repoRoot, { targetRef: record.target_ref, sprintPath: record.sprint_path });
-  if (!canonical.ok) throw new FeedbackError('feedback_incomplete', canonical.error);
-  const lookup = lookupCanonicalTask({
-    repoIdentity: resolveRepoIdentity(repoRoot),
-    sprintPath: record.sprint_path,
-    sprintText: canonical.text,
-  }, record.task_id);
-  if (!lookup.ok || lookup.task.task_revision !== record.task_revision || lookup.task.row.status !== '[ ]') {
-    throw new FeedbackError('publication_claim_mismatch', 'canonical task no longer matches the reviewing publication');
-  }
+function currentPublication(input: FeedbackIntakeInput): CurrentPublicationSnapshot {
+  const receipt = prepareFeedbackSubject(input);
+  if (receipt.publication_id !== input.publication_id) throw new FeedbackError('publication_claim_mismatch', 'feedback subject differs from the explicit current admission and PR selection');
+  assertStableIdentity(observeIdentity(receipt, input), receipt);
+  const active = observeActiveReviewAdmission(input.source.authority.source);
+  if (active.admission.admission_sha256 !== receipt.admission_sha256) throw new TornReadError('admission changed during feedback observation');
+  const binding = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
+  const sessionBytes = stablePublicationJson({ binding: binding.binding, grant_sha256: active.grant_sha256 });
+  const assertCurrent = () => {
+    const current = readActiveReviewAdmission({ ...input.source.authority.source, expectedGoal: active.admission.goal });
+    const latest = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
+    const head = spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'], { cwd: latest.binding.execution_root, encoding: 'utf8' });
+    if (head.status !== 0 || head.stdout.trim() !== receipt.head_sha) throw new TornReadError('execution HEAD changed during feedback observation');
+    if (current.grant_sha256 !== active.grant_sha256 || current.admission.admission_sha256 !== receipt.admission_sha256
+      || existsSync(join(latest.dir, 'closed.json')) || stablePublicationJson({ binding: latest.binding, grant_sha256: current.grant_sha256 }) !== sessionBytes) throw new TornReadError('admitted feedback session changed');
+  };
+  assertCurrent();
+  return { receipt, session_bytes: sessionBytes, assertCurrent };
 }
 
 function mapStoreError(error: unknown): never {
@@ -739,18 +714,17 @@ function persistObservedEvents(input: FeedbackIntakeInput, snapshot: CurrentPubl
 
 /**
  * Intake is intentionally the only observer write path. It fences local
- * reviewing-pointer/canonical state before and after provider observation,
+ * admitted session state before and after provider observation,
  * retries exactly once for either local or provider torn reads, and never
- * mutates lease bytes.
+ * mutates session admission.
  */
 export function intakeGitHubFeedback(input: FeedbackIntakeInput): FeedbackIntakeResult {
-  const gitBin = input.git_bin ?? 'git';
   let lastTorn: unknown = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let before: CurrentPublicationSnapshot;
     let events: readonly FeedbackEventV1[];
     try {
-      before = currentPublication(input.repo_root, input.publication_id, gitBin);
+      before = currentPublication(input);
       events = observeGitHubFeedback(before.receipt, input);
     } catch (error) {
       if (error instanceof TornReadError) {
@@ -762,16 +736,14 @@ export function intakeGitHubFeedback(input: FeedbackIntakeInput): FeedbackIntake
     }
     try {
       const result = withTaskLock(input.repo_root, before.receipt.task_id, () => {
-        const after = currentPublication(input.repo_root, input.publication_id, gitBin);
-        if (canonicalPublicationReceiptBytes(after.receipt) !== canonicalPublicationReceiptBytes(before.receipt)
-          || after.lease_raw !== before.lease_raw) {
-          return null;
-        }
-        return persistObservedEvents(input, after, events);
+        before.assertCurrent();
+        const persisted = persistObservedEvents(input, before, events);
+        before.assertCurrent();
+        return persisted;
       });
-      if (result !== null) return result;
-      lastTorn = new TornReadError('current publication changed during provider feedback observation');
+      return result;
     } catch (error) {
+      if (error instanceof TornReadError) { lastTorn = error; continue; }
       if (error instanceof FeedbackError) throw error;
       throw new FeedbackError('feedback_incomplete', 'feedback intake failed', error);
     }
@@ -781,10 +753,10 @@ export function intakeGitHubFeedback(input: FeedbackIntakeInput): FeedbackIntake
 
 /**
  * Project a repair offer entirely from durable feedback facts. This path reads
- * no provider and writes neither deliveries, reactions, nor the lease.
+ * current admission and writes neither deliveries nor reactions.
  */
 export function projectPendingFeedbackOffer(
-  input: Pick<FeedbackIntakeInput, 'repo_root' | 'publication_id' | 'git_bin'>,
+  input: FeedbackIntakeInput,
 ): PendingFeedbackOffer {
   const gitBin = input.git_bin ?? 'git';
   let lastTorn: unknown = null;
@@ -818,18 +790,18 @@ const productionFleetFeedbackProjectionDependencies: FleetFeedbackProjectionDepe
 });
 
 function observeFeedbackProjection(
-  input: Pick<FeedbackIntakeInput, 'repo_root' | 'publication_id'>,
+  input: FeedbackIntakeInput,
   gitBin: string,
   dependencies: FleetFeedbackProjectionDependencies,
 ): FeedbackProjectionObservation {
-  const before = currentPublication(input.repo_root, input.publication_id, gitBin);
+  const before = currentPublication(input);
   const publicationId = before.receipt.publication_id;
   const events = dependencies.read_events(input.repo_root, publicationId, gitBin);
   const deliveries = dependencies.read_deliveries(input.repo_root, publicationId, gitBin);
   const reactions = dependencies.read_reactions(input.repo_root, publicationId, gitBin);
-  const after = currentPublication(input.repo_root, input.publication_id, gitBin);
-  if (canonicalPublicationReceiptBytes(before.receipt) !== canonicalPublicationReceiptBytes(after.receipt)
-    || before.lease_raw !== after.lease_raw) {
+  const after = currentPublication(input);
+  if (stablePublicationJson(before.receipt) !== stablePublicationJson(after.receipt)
+    || before.session_bytes !== after.session_bytes) {
     throw new TornReadError('current publication changed during feedback projection');
   }
 
@@ -862,8 +834,8 @@ function observeFeedbackProjection(
     projection = projectRepairOffer({
       task_id: before.receipt.task_id,
       publication_id: publicationId,
-      expected_claim_id: before.receipt.claim_id,
-      expected_generation: before.receipt.generation,
+      expected_claim: before.receipt.claim,
+      admission_sha256: before.receipt.admission_sha256,
       expected_head_sha: before.receipt.head_sha,
       feedback_revision: feedbackRevision,
       reaction_token: deriveReactionToken({
@@ -877,8 +849,8 @@ function observeFeedbackProjection(
     });
   }
   const storeRevision = publicationSha256(stablePublicationJson({
-    publication_receipt: canonicalPublicationReceiptBytes(before.receipt),
-    lease: before.lease_raw,
+    publication_receipt: stablePublicationJson(before.receipt),
+    admitted_session: before.session_bytes,
     events: events.map(canonicalFeedbackEventBytes),
     deliveries: deliveries.map(canonicalFeedbackDeliveryReceiptBytes),
     reactions: reactions.map(canonicalReactionAttemptReceiptBytes),
@@ -907,7 +879,7 @@ function fleetFeedbackProjection(
  * second change is published only as explicitly torn input.
  */
 export function projectFleetFeedback(
-  input: Pick<FeedbackIntakeInput, 'repo_root' | 'publication_id' | 'git_bin'>,
+  input: FeedbackIntakeInput,
   dependencyOverrides: Partial<FleetFeedbackProjectionDependencies> = {},
 ): FleetFeedbackProjection {
   const gitBin = input.git_bin ?? 'git';
@@ -937,27 +909,25 @@ export function projectFleetFeedback(
 
 /**
  * Advance one delivery receipt under the publication task lock. Delivery is
- * notification evidence only; it cannot authorize a repair or change a lease.
+ * notification evidence only; it cannot authorize a repair or change session admission.
  */
 export function transitionFeedbackDelivery(
-  input: Pick<FeedbackIntakeInput, 'repo_root' | 'publication_id' | 'git_bin'> & {
+  input: FeedbackIntakeInput & {
     readonly provider_event_id: string;
     readonly transition: FeedbackDeliveryTransitionInput;
   },
 ) {
   const gitBin = input.git_bin ?? 'git';
-  const snapshot = currentPublication(input.repo_root, input.publication_id, gitBin);
+  const snapshot = currentPublication(input);
   try {
     return withTaskLock(input.repo_root, snapshot.receipt.task_id, () => {
-      const current = currentPublication(input.repo_root, input.publication_id, gitBin);
-      if (canonicalPublicationReceiptBytes(snapshot.receipt) !== canonicalPublicationReceiptBytes(current.receipt)
-        || snapshot.lease_raw !== current.lease_raw) {
-        throw new FeedbackError('feedback_incomplete', 'publication changed before feedback delivery transition');
-      }
+      snapshot.assertCurrent();
+      const current = snapshot;
       const receipt = readFeedbackDeliveryReceipt(input.repo_root, current.receipt.publication_id, input.provider_event_id, gitBin);
       if (receipt === null) throw new FeedbackError('feedback_unreadable', 'feedback delivery receipt is unavailable');
       const next = transitionFeedbackDeliveryReceipt(receipt, input.transition);
       writeFeedbackDeliveryReceipt(input.repo_root, current.receipt.publication_id, next, gitBin);
+      snapshot.assertCurrent();
       return next;
     });
   } catch (error) {

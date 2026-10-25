@@ -10,8 +10,8 @@ import { admittedTaskInboxRecipientStorageKey } from '../../src/core/fleet/task-
 
 const time = '2026-10-25T01:00:00Z';
 const budget = { max_scan: 100, max_bytes: 1024 * 1024, deadline_ms: 5000 };
-test('admitted inbox preserves retry, delivery, acknowledgement and exact immutable claim binding', () => {
-  const f = admittedInboxFixture();
+test('admitted inbox preserves retry, delivery, acknowledgement and exact immutable claim binding', async () => {
+  const f = await admittedInboxFixture();
   try {
     sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
     sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
@@ -29,8 +29,8 @@ test('admitted inbox preserves retry, delivery, acknowledgement and exact immuta
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
-test('admitted reply recovery bytes and bounded activity retain session provenance without legacy fallback', () => {
-  const f = admittedInboxFixture();
+test('admitted reply recovery bytes and bounded activity retain session provenance without legacy fallback', async () => {
+  const f = await admittedInboxFixture();
   try {
     sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
     deliverTaskInbox({ ...f.input, delivery_channel: 'manual', delivered_at: time });

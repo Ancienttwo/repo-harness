@@ -4,23 +4,15 @@ import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/f
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
 import { pruneRepoHarnessRegistry } from '../../effects/repo-registry';
 import { randomUUID } from 'crypto';
-import { lstatSync, readdirSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from 'fs';
 
 import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import { collectFleetBoard, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
 import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
-import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
-import { readCanonicalSprint } from '../../effects/state/coordination-canonical-source';
-import { resolveRepoIdentity } from '../../effects/git/repository-identity';
-import { lookupCanonicalTask } from '../../core/state/coordination-identity';
-import { FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
+import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/publication/feedback-store';
-import { publicationReceiptDigest } from '../../core/publication/publication-receipt';
-import { readPublicationReceiptCache } from '../../effects/publication/publication-receipt';
-import { coordinationRoot, readLease } from '../../effects/state/coordination-lease-store';
 
 function outputError(error: unknown): void {
   const code = error instanceof MergeReadinessError
@@ -74,7 +66,9 @@ type TaskMessageScope = 'task' | 'claim';
 type TaskMessageAudience = 'owner' | 'orchestrator' | 'user';
 
 function admittedInboxContext(repoRoot: string, taskId: string, contextFile: string) {
-  const value = JSON.parse(readFileSync(contextFile, 'utf8'));
+  return parseAdmittedInboxContext(repoRoot, taskId, JSON.parse(readFileSync(contextFile, 'utf8')));
+}
+function parseAdmittedInboxContext(repoRoot: string, taskId: string, value: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['admission', 'claim', 'session'])) throw new Error('inbox context fields are invalid');
   const selector = value.admission;
@@ -130,74 +124,16 @@ function optionalStringOption(value: string | undefined, name: string): string |
 }
 
 
-function resolveCurrentFeedbackPublication(): string {
-  const repoRoot = process.cwd();
-  const leasesRoot = join(coordinationRoot(repoRoot), 'leases');
-  let leaseEntries: string[];
-  try {
-    const stat = lstatSync(leasesRoot);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new FeedbackError('feedback_unreadable', 'coordination lease root is not a real directory');
-    }
-    leaseEntries = readdirSync(leasesRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return failCurrentFeedbackPublication('none');
-    if (error instanceof FeedbackError) throw error;
-    throw new FeedbackError('feedback_unreadable', 'coordination lease root is unreadable', error);
-  }
-
-  const candidates: string[] = [];
-  for (const taskId of leaseEntries.sort()) {
-    if (!/^[0-9a-f]{64}$/u.test(taskId)) {
-      throw new FeedbackError('feedback_unreadable', `coordination lease entry is invalid: ${taskId}`);
-    }
-    const lease = readLease(repoRoot, taskId);
-    if (lease.classification === 'unknown') {
-      throw new FeedbackError('feedback_unreadable', `coordination lease ${taskId} is unreadable`);
-    }
-    const record = lease.record;
-    if (record === null || record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
-      continue;
-    }
-    const pointer = record.current_publication;
-    let receipt;
-    try {
-      receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id, process.env.REPO_HARNESS_GIT_BIN);
-    } catch (error) {
-      throw new FeedbackError('publication_claim_mismatch', `current publication receipt is unreadable for task ${taskId}`, error);
-    }
-    if (receipt === null) {
-      throw new FeedbackError('publication_not_found', `current publication receipt is unavailable for task ${taskId}`);
-    }
-    if (
-      receipt.task_id !== record.task_id
-      || receipt.task_revision !== record.task_revision
-      || receipt.claim_id !== record.claim_id
-      || receipt.generation !== record.generation
-      || pointer.publication_id !== receipt.publication_id
-      || pointer.receipt_sha256 !== publicationReceiptDigest(receipt)
-      || pointer.head_sha !== receipt.head_sha
-    ) {
-      throw new FeedbackError('publication_claim_mismatch', `current publication pointer is inconsistent for task ${taskId}`);
-    }
-    candidates.push(pointer.publication_id);
-  }
-
-  if (candidates.length === 1) return candidates[0];
-  return failCurrentFeedbackPublication(candidates.length === 0 ? 'none' : 'multiple', candidates);
-}
-
-function failCurrentFeedbackPublication(
-  state: 'none' | 'multiple',
-  candidates: readonly string[] = [],
-): never {
-  if (state === 'none') {
-    throw new FeedbackError('publication_not_found', 'no unique current reviewing publication is available');
-  }
-  throw new FeedbackError(
-    'publication_claim_mismatch',
-    `current reviewing publication is ambiguous: ${candidates.join(', ')}`,
-  );
+function feedbackContext(contextFile: string, publicationId?: string) {
+  const value = JSON.parse(readFileSync(contextFile, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).sort().join(',') !== 'admission,claim,selection,session') throw new Error('feedback context fields are invalid');
+  const context = parseAdmittedInboxContext(process.cwd(), value.session?.task,
+    { admission: value.admission, claim: value.claim, session: value.session });
+  const input = { ...feedbackEnvironment(), source: context.source, selection: value.selection };
+  const subject = prepareFeedbackSubject(input);
+  if (publicationId !== undefined && subject.publication_id !== publicationId) throw new Error('publication-id differs from explicit feedback context');
+  return { ...input, publication_id: subject.publication_id };
 }
 
 function integerOption(
@@ -344,8 +280,9 @@ export function buildFleetCommand(): Command {
     .command('intake')
     .description('Observe GitHub checks and review threads and persist immutable feedback events')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to observe')
-    .action((options: { readonly json?: boolean; readonly publicationId?: string }) => {
+    .action((options: { readonly context: string; readonly json?: boolean; readonly publicationId?: string }) => {
       let publicationId: string | undefined;
       try {
         requireJson(options.json);
@@ -354,12 +291,9 @@ export function buildFleetCommand(): Command {
         return;
       }
       try {
-        publicationId = options.publicationId === undefined
-          ? resolveCurrentFeedbackPublication()
-          : requiredStringOption(options.publicationId, 'publication-id');
+        publicationId = options.publicationId === undefined ? undefined : requiredStringOption(options.publicationId, 'publication-id');
         const result = intakeGitHubFeedback({
-          ...feedbackEnvironment(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {
@@ -371,8 +305,9 @@ export function buildFleetCommand(): Command {
     .command('offers')
     .description('Project the pending provider feedback repair offer')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to inspect')
-    .action((options: { readonly json?: boolean; readonly publicationId?: string }) => {
+    .action((options: { readonly context: string; readonly json?: boolean; readonly publicationId?: string }) => {
       let publicationId: string;
       try {
         requireJson(options.json);
@@ -383,9 +318,7 @@ export function buildFleetCommand(): Command {
       }
       try {
         const result = projectPendingFeedbackOffer({
-          repo_root: process.cwd(),
-          publication_id: publicationId,
-          git_bin: process.env.REPO_HARNESS_GIT_BIN,
+          ...feedbackContext(options.context, publicationId),
         });
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
@@ -397,10 +330,11 @@ export function buildFleetCommand(): Command {
     .command('ack')
     .description('Acknowledge one durable provider feedback delivery receipt')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to acknowledge')
     .option('--provider-event-id <providerEventId>', 'Opaque provider event identity')
     .action((options: {
-      readonly json?: boolean;
+      readonly context: string; readonly json?: boolean;
       readonly publicationId?: string;
       readonly providerEventId?: string;
     }) => {
@@ -418,8 +352,7 @@ export function buildFleetCommand(): Command {
         const gitBin = process.env.REPO_HARNESS_GIT_BIN;
         const current = readFeedbackDeliveryReceipt(process.cwd(), publicationId, providerEventId, gitBin);
         const receipt = transitionFeedbackDelivery({
-          repo_root: process.cwd(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
           provider_event_id: providerEventId,
           git_bin: gitBin,
           transition: {
@@ -438,10 +371,11 @@ export function buildFleetCommand(): Command {
     .command('show')
     .description('Display one provider feedback body as untrusted text')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to inspect')
     .option('--provider-event-id <providerEventId>', 'Opaque provider event identity')
     .action((options: {
-      readonly json?: boolean;
+      readonly context: string; readonly json?: boolean;
       readonly publicationId?: string;
       readonly providerEventId?: string;
     }) => {
@@ -457,8 +391,7 @@ export function buildFleetCommand(): Command {
       }
       try {
         const result = showGitHubFeedback({
-          ...feedbackEnvironment(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
           provider_event_id: providerEventId,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);

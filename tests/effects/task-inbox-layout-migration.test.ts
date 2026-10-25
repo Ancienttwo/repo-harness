@@ -217,8 +217,8 @@ test('confirmed offline migration preserves historical lease bytes without treat
   expect(tree(f.paths.backup)).toEqual(f.original);
 });
 
-test('inbox writers share the migration mutex even for a task outside its captured inventory', () => {
-  const f = admittedInboxFixture('3'.repeat(64)); roots.push(f.directory);
+test('inbox writers share the migration mutex even for a task outside its captured inventory', async () => {
+  const f = await admittedInboxFixture('3'.repeat(64)); roots.push(f.directory);
   const common = resolveGitCommonDirectory(f.root), paths = inboxLayoutPaths(common);
   const legacy = buildTaskMessageEvent({ message_id: ID, task_id: TASK, task_revision: REVISION,
     scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'user', sender_id: 'alice',

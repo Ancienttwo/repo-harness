@@ -249,8 +249,8 @@ describe('reaction and repair projection', () => {
     const noProgress = projectRepairOffer({
       task_id: TASK_ID,
       publication_id: PUBLICATION_ID,
-      expected_claim_id: 'claim-fixture',
-      expected_generation: 3,
+      expected_claim: { reference: 'claim-fixture', revision: `sha256:${'3'.repeat(64)}` },
+      admission_sha256: `sha256:${'4'.repeat(64)}`,
       expected_head_sha: HEAD,
       feedback_revision: revision,
       reaction_token: TOKEN,
@@ -263,8 +263,8 @@ describe('reaction and repair projection', () => {
     const offered = projectRepairOffer({
       task_id: TASK_ID,
       publication_id: PUBLICATION_ID,
-      expected_claim_id: 'claim-fixture',
-      expected_generation: 3,
+      expected_claim: { reference: 'claim-fixture', revision: `sha256:${'3'.repeat(64)}` },
+      admission_sha256: `sha256:${'4'.repeat(64)}`,
       expected_head_sha: HEAD,
       feedback_revision: revision,
       reaction_token: TOKEN,
