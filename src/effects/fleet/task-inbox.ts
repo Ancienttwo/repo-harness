@@ -1047,10 +1047,23 @@ export function readHistoricalTaskMessageDelivery(input: { repo_root: string; ta
   const common = resolveGitCommonDirectory(input.repo_root), layout = inspectTaskInboxLayout(common);
   const directory = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id);
   const event = optionalReplyRecord(common, join(directory, 'events', `${input.message_id}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes);
-  if (!event || event.task_id !== input.task_id) fail('task_message_unreadable', 'historical event unavailable');
+  if (!event || event.task_id !== input.task_id || event.message_id !== input.message_id) fail('task_message_unreadable', 'historical event unavailable');
   const receipt = optionalReplyRecord(common, join(directory, 'delivery', input.message_id, `${historicalRecipientStorageKey(input.recipient)}.json`), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes);
+  if (receipt && (receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
+    || historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(receipt)) !== historicalMessage.deriveTaskMessageRecipientKey(input.recipient))) fail('task_message_unreadable', 'historical receipt identity is mismatched');
+  let globallySatisfied = false;
+  const deliveryDirectory = join(directory, 'delivery', input.message_id);
+  if (event.scope === 'task' && inspectSafeDirectoryChain(common, deliveryDirectory, false, 'historical deliveries')) {
+    for (const name of readdirSync(deliveryDirectory)) {
+      if (!name.endsWith('.json')) fail('task_message_unreadable', 'historical receipt filename is invalid');
+      const other = optionalReplyRecord(common, join(deliveryDirectory, name), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes);
+      if (!other || other.message_id !== event.message_id || other.recipient_task_revision !== event.task_revision
+        || `${historicalRecipientStorageKey(historicalMessage.recipientFromTaskMessageReceipt(other))}.json` !== name) fail('task_message_unreadable', 'historical receipt path is mismatched');
+      if (other.delivery_state === 'acknowledged') globallySatisfied = true;
+    }
+  }
   assertTaskInboxLayoutUnchanged(common, layout);
-  return { event, receipt, globally_satisfied: receipt?.delivery_state === 'acknowledged' };
+  return { event, receipt, globally_satisfied: globallySatisfied };
 }
 
 function readAdmittedReplyChain(input: { repo_root: string; task_id: string; recipient: TaskMessageRecipient }, parent: TaskMessageEventV2, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
