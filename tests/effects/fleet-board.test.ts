@@ -65,15 +65,15 @@ function card(index: number): FleetBoardCardInputV2 {
     inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
     snapshot_consistency: 'stable', error: null };
 }
-function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = [], firstIssueNumber = 1): void {
+function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = [], firstIssueNumber = 1, observedAt = '2026-08-31T00:00:00.000Z'): void {
   const digest = `sha256:${'a'.repeat(64)}`;
   const issues = titles.map((title, index) => buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
     provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${firstIssueNumber + index}`, url: `https://github.com/example/fleet/issues/${firstIssueNumber + index}`,
-    observed_at: '2026-08-31T00:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
+    observed_at: observedAt, provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
     comments_policy: 'omitted', policy_revision: digest, eligible: eligibilityReasons.length === 0, eligibility_reasons: [...eligibilityReasons].sort() }));
   issues.forEach(issue => writeProviderIssueObservation(root, issue));
   writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
-    provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
+    provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: observedAt, completed_at: new Date(Date.parse(observedAt) + 1000).toISOString(),
     outcome: 'complete', pages_fetched: 1, issues_seen: issues.length, observations_written: issues.length, limits: { max_pages: 2, max_issues: 1000, max_body_bytes: 1000, max_total_bytes: 1000000, deadline_ms: 1000 },
     source_revisions: issues.map(issue => issue.source_revision).sort(), failure: null }));
 }
@@ -294,9 +294,13 @@ describe('fleet board collector', () => {
     const readOnly = await collectFleetBoard({ admission_associations: [association] }, { ...dependencies, read_registry: () => registry([registered]) });
     expect(readOnly.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
     expect(reads).toBe(0);
-    seedIssues(root, entry.id, ['ineligible'], ['missing_label:ready'], 903);
+    // This is a later provider refresh, not a same-time competing snapshot.
+    seedIssues(root, entry.id, ['ineligible'], ['missing_label:ready'], 903, '2026-08-31T00:01:00.000Z');
     const ineligible = await collectFleetBoard({ admission_associations: [association] }, dependencies);
     expect(ineligible.repositories[0]!.cards[0]!.placement.kind).toBe('preparation');
+    expect(ineligible.repositories[0]!.cards[0]!.readiness_blockers).toEqual([
+      { code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: ['missing_label:ready'] },
+    ]);
     expect(reads).toBe(0);
   });
 
