@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
-import { appendFileSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
+import { join } from 'path';
+import { appendSegmentedLog } from '../../effects/segmented-log';
 import { redactMcpText } from './redaction';
 import type { McpAuditEntry } from './types';
 
@@ -8,18 +8,18 @@ export function hashMcpInput(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
+export const MCP_AUDIT_LOG_RELATIVE_PATH = '.ai/harness/mcp/audit.log';
+
 export function mcpAuditLogPath(repoRoot: string): string {
-  return join(repoRoot, '.ai', 'harness', 'mcp', 'audit.log');
+  return join(repoRoot, MCP_AUDIT_LOG_RELATIVE_PATH);
 }
 
 export function writeMcpAuditEntry(repoRoot: string, entry: McpAuditEntry): void {
-  const logPath = mcpAuditLogPath(repoRoot);
-  mkdirSync(dirname(logPath), { recursive: true });
   const safeEntry = {
     ...entry,
     error: entry.error ? redactMcpText(entry.error).text : undefined,
   };
-  appendFileSync(logPath, `${JSON.stringify(safeEntry)}\n`, 'utf-8');
+  appendSegmentedLog(mcpAuditLogPath(repoRoot), `${JSON.stringify(safeEntry)}\n`, repoRoot);
 }
 
 export function tryWriteMcpAuditEntry(repoRoot: string, entry: McpAuditEntry): boolean {
