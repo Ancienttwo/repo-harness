@@ -529,8 +529,10 @@ describe('doctor command (Phase 1C)', () => {
       writeFakeBunx(envRoot.fakeBin);
 
       const root = path.join(import.meta.dir, '..', '..');
+      fs.mkdirSync(path.join(envRoot.root, '.codegraph'));
+      fs.copyFileSync(path.join(root, 'package.json'), path.join(envRoot.root, 'package.json'));
       const res = spawnSync('bun', [path.join(root, 'src/cli/index.ts'), 'doctor', '--json'], {
-        cwd: root,
+        cwd: envRoot.root,
         encoding: 'utf-8',
         env: {
           ...process.env,
