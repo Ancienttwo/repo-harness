@@ -2,27 +2,21 @@
 
 > **Status**: Accepted and implemented by ESA-01..05 / ESA-07
 > **Decision date**: 2026-07-15
-> **Behavior baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
+> **Historical ESA baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
 > **Protocol**: `repo-harness-effective-state`, version `1`
+
+> **Current source review**: `d04211d5e8f87e52e209e4b6b3ad364a4ee452b5`.
+> See [current sequences](current-architecture.md#runtime-sequences). Historical ESA evidence below is not a new execution result.
 
 ## Decision
 
 The GitHub issue and PR own current task identity, claim, status and dependency. Repository Markdown supplies planning context. Effective State projects the retained local plan, worktree and capability facts. `tasks/current.md` is a replaceable read model and must never feed authority back into resolution.
 
-The dependency direction for the convergence sprint is:
-
-```text
-CLI adapter   MCP adapter   Hook adapter
-      \          |          /
-       \         |         /
-        shared effectful resolver
-          /               \
- source collection     lock/version
-          \               /
-           pure state projector
-             |          |
-      workflow policy  capability registry
-```
+Current read path: CLI readers, hooks and MCP → stable source collection → pure
+projection → render, with the last published version attached. Only the explicit
+`state resolve` command takes the writer path and publishes the shared version.
+The resolver's read-only contract does not make every hook side effect read-only:
+Stop publishes checkpoint and handoff/resume views.
 
 Adapters render, trigger, or guard. They do not own workflow policy, artifact semantics, capability matching, or a competing state algorithm.
 
@@ -45,7 +39,11 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
   State projection, and the compatibility snapshot projection.
 - `src/core/workflow/profile.ts` owns deterministic risk/profile policy.
 - `src/core/capabilities/registry.ts` owns registry parsing, validation,
-  normalization, diagnostics, and longest-prefix matching.
+  normalization, diagnostics, and registry-mode longest-prefix matching.
+  In archcontext mode, `src/effects/capabilities/archcontext-owners.ts` delegates
+  ownership to package-local `archctx resolve`. Cache answers are reusable
+  observations, not another authority. An unavailable provider does not select
+  registry mode; read-only observation reports unavailable on a cache miss.
 - `src/effects/state` owns source collection, stable-read retries, canonical-
   ancestor directory-token locking, and one Git-common-dir version
   transaction. `resolveEffectiveState` is its only writer, and the shared
@@ -73,17 +71,17 @@ Decision date: 2026-10-11. The architecture model now names the owners of this b
 | Area | Model node |
 |---|---|
 | `src/core/state`, `src/core/workflow`, `src/effects/state` resolver, lock and version store, `src/cli/commands/state.ts`, `interfaces/**`, `scripts/check-state-boundaries.ts` | `component.workflow-state.primary` in `capability.workflow-engine.workflow-state` |
-| Shared coordination plane (leases, board, Sprint identity) | `component.workflow-state.coordination-plane` |
+| Historical coordination readers (leases, board, Sprint identity) | `component.workflow-state.coordination-plane` |
 | Continuation envelope and attempt ledger | `component.workflow-state.continuation-ledger` |
 | `src/core/capabilities/registry.ts` | `component.contract-assets.capability-registry` in `capability.workflow-engine.contract-assets` |
 | `src/effects/locking/**`, `src/effects/git/**` | `capability.workflow-engine.execution-primitives` |
 | `src/effects/review/diff-fingerprint.ts` | `capability.verification.acceptance-review` (whole `src/effects/review/**`) |
 
-The registry is still part of the pure core that `scripts/check-state-boundaries.ts` guards. The model shows this as the relation `relation.workflow-state.primary.contract-assets`. The review-subject observer is named in Implemented Boundary above, but its file is owned by acceptance-review. A move of that one file needs `source.exclude` support (arch-context#296). The module page is `docs/architecture/modules/workflow-engine/workflow-state.md`.
+The registry is still part of the pure core that `scripts/check-state-boundaries.ts` guards. The model shows this as the relation `relation.workflow-state.primary.contract-assets`. The review-subject observer is named in Implemented Boundary above, but its file is owned by acceptance-review. Model ownership changes use the supported ChangeSet route. The module page is `docs/architecture/modules/workflow-engine/workflow-state.md`.
 
-## Baseline P1 Boundary
+## Historical ESA Baseline P1 Boundary
 
-At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules and effects:
+At `82550779cdccf0575d674ae53bbc95ba63e44743`, `src/cli/hook/state-snapshot.ts` owns both deterministic rules and effects:
 
 - plan/contract/review/check/handoff/current parsing;
 - phase, blocker, freshness, next-action, and compatibility snapshot projection;
@@ -93,26 +91,29 @@ At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules 
 
 `src/cli/hook/workflow-profile.ts` owns pure risk policy. `src/cli/commands/state.ts` owns CLI rendering and process exit. `src/cli/mcp/tools.ts` still has a separate state summary and is not authority-safe until ESA-05 converges it.
 
-## P2 Resolution Trace
+## Current P2 Resolution Trace
 
 1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override; hook and MCP deliberately request the fixed `inspect` policy.
 2. The write path acquires an exclusive directory-token state lock under a canonical repository root. Every ancestor is created and validated one level at a time, and any symlink, non-directory, or identity change fails closed. The read-only path takes no lock.
 3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Every artifact-derived read must also remain lexically and canonically inside the repository; existing external symlinks and missing targets whose nearest existing ancestor resolves outside abort before publication. Only in-repository `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
-4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected from the declared registry, then pure workflow policy returns a profile or a structured fail-closed error.
+4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected through the policy-selected capability resolver, then pure workflow policy returns a profile or a structured fail-closed error.
 5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. Revision keys use explicit code-unit ordering, not host locale collation. A second read confirms that the exact source-hash set stayed stable.
 6. Under the Git common-dir lock, the write path reads the authority source hashes again. A mismatch retries the whole round once. On a match, an unchanged revision keeps its version and writes nothing, and a changed revision atomically replaces the shared version owner with the next version. An owner write failure consumes no version. The read-only path reads the last published version without the lock.
 7. CLI renders the requested-risk result. Hook and MCP render a read-only `inspect` result. All three agree on the content-derived authority fields. Hook and MCP report the last published `state_version`, so it matches the CLI only after `state resolve` publishes the current revision. The intentional policy input difference remains explicit.
 
 ## Authority and Projection Table
 
-| Surface | Role | May influence canonical state? |
-|---|---|---:|
-| active plan/worktree markers | authority selector and ownership | yes |
-| plan and contract | task/status/scope authority | yes |
-| review plus exact review subject | acceptance evidence | yes, through freshness/blockers |
-| checks/handoff/resume | bound evidence/projection | only when exact bindings are fresh |
-| capability registry and workflow policy | path-to-capability, risk, and review-base input | yes, both are source-hashed and stability-checked |
-| `tasks/current.md` | orientation projection | no |
+| Surface | Role | Authority boundary |
+|---|---|---|
+| GitHub issue and PR | current task identity, claim, status, dependency | Human/Bot task decisions |
+| Active plan/worktree markers and plan Markdown | retained local context, ownership, scope and blockers | may affect the local projection; do not replace GitHub task state |
+| Review and verification evidence | exact-subject acceptance input | owned by review/verification readers; not an Effective State acceptance projection |
+| Handoff/resume | recovery pointers and historical evidence | do not grant task ownership |
+| Policy-selected capability source and workflow policy | ownership and risk input | one resolver per mode; no fallback authority |
+| `state_revision` | exact resolved content identity | compare this to detect a content change |
+| `state_version` | last shared published version | only `state resolve` allocates; read-only results can show another revision's version |
+| `tasks/current.md` | orientation snapshot | never task authority |
+| Old `effective.json` | retired cache | no reader or writer |
 
 ## Characterization Evidence
 
