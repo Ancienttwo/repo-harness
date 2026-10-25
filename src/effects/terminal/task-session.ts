@@ -1,3 +1,5 @@
+import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent } from './task-session-reader';
+export { assertCreated, taskSessionDirectory, readTaskAgent } from './task-session-reader';
 import { processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
 export { processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
@@ -10,7 +12,7 @@ import type { ReviewAdmissionSource } from '../admission/admission-source';
 import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
-import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
+import { taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -133,9 +135,9 @@ export interface TaskAgentSpec {
   max_requests: number;
 }
 export type TerminalHostSpec = Pick<TaskAgentSpec, 'task' | 'role' | 'harness_kind' | 'max_requests'>;
-interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
-interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
-interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
+export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
+export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
+export interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
 export type TaskPrePromptInbox = { status: 'bound'; path: string; sha256: string } | { status: 'unsupported'; reason: 'historical_task_label' };
 export interface TaskRequest {
   pre_prompt_inbox?: TaskPrePromptInbox;
@@ -154,16 +156,6 @@ export interface TaskRequest {
 }
 export interface TaskResult { request_id: string; context_sha256: string; value: unknown }
 
-function assertSessionDirectory(root: string, path: string): void {
-  const segments = relative(root, path).split('/');
-  if (segments.includes('..') || isAbsolute(relative(root, path))) throw new Error('task_agent_unsafe_directory');
-  let current = root;
-  for (const segment of segments) {
-    current = join(current, segment);
-    const stat = lstatSync(current);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('task_agent_unsafe_directory');
-  }
-}
 export function ensureSessionDirectory(root: string, path: string): void {
   const parts = relative(root, path).split('/');
   if (parts.includes('..') || isAbsolute(relative(root, path))) throw new Error('task_agent_unsafe_directory');
@@ -172,11 +164,6 @@ export function ensureSessionDirectory(root: string, path: string): void {
     current = join(current, part);
     try { mkdirSync(current, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     if (!lstatSync(current).isDirectory() || lstatSync(current).isSymbolicLink()) throw new Error('task_agent_unsafe_directory');
-  }
-}
-export function assertCreated(ownership: ObjectOwnership): asserts ownership is Extract<ObjectOwnership, { disposition: 'created' }> {
-  if (ownership?.disposition !== 'created' || typeof ownership.intent_id !== 'string' || !ownership.intent_id) {
-    throw new Error('task_agent_attached_object_not_closeable');
   }
 }
 export function assertProcessProof(proof: ProcessProof): void {
@@ -449,10 +436,6 @@ function validateSpec(spec: TaskAgentSpec): void {
     throw new Error('task_agent_spec_invalid');
   }
 }
-export function taskSessionDirectory(root: string, task: string, role: string): string {
-  const repository = taskRepository(root);
-  return join(repository.primary_root, '.ai/harness/runs/task-agents', taskSessionKey(repository.repository_id, task, role));
-}
 export async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
   const deadline = Date.now() + waitTimeoutMs;
   for (;;) {
@@ -508,12 +491,6 @@ function reconcile(dir: string, intent: StartIntent): HerdrTaskBinding {
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   return binding;
 }
-function sameSessionData(left: unknown, right: unknown): boolean {
-  // Compare the JSON wire values, using the existing canonical key order.
-  return canonicalize(JSON.parse(JSON.stringify(left))) === canonicalize(JSON.parse(JSON.stringify(right)));
-}
-/** A contending starter waits this long for the lock holder, which can wait up to 50 s for its host to be ready. */
-const TASK_START_LOCK_WAIT_MS = 70_000;
 export interface TaskStartEffects {
   /** Launches the host in the new pane and names the agent. It is an internal seam, never CLI input. */
   start: (endpoint: HerdrEndpoint, name: string, pane: string, kind: string, args: string[]) => Promise<void>;
@@ -663,33 +640,6 @@ export async function bindTerminalApplicationHost(repoRoot: string, spec: Termin
   });
 }
 
-export function readTaskAgent(repoRoot: string, task: string, role: string): { dir: string; binding: TaskPaneBinding } {
-  const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
-  assertSessionDirectory(root, dir);
-  const binding = readSessionArtifact<TaskPaneBinding>(join(dir, 'binding.json'));
-  if (binding.task !== task || binding.role !== role || binding.protocol !== 2 || binding.repository_id !== repository.repository_id
-    || !['herdr', 'terminal'].includes(binding.runtime)) throw new Error('task_agent_binding_invalid');
-  if (!Number.isSafeInteger(binding.max_requests) || binding.max_requests < 1 || binding.max_requests > 100) throw new Error('task_agent_binding_invalid');
-  if (binding.runtime === 'terminal') {
-    assertCreated(binding.ownership);
-    const intent = readSessionArtifact<TerminalStartIntent>(join(dir, 'intent.json'));
-    const created = readSessionArtifact<TerminalTaskBinding>(join(dir, 'provider-created.json'));
-    if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || intent.runtime !== 'terminal' || intent.intent_id !== binding.ownership.intent_id || !sameSessionData(intent.command, binding.command)
-      || intent.spec.task !== binding.task || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind
-      || intent.spec.max_requests !== binding.max_requests || !sameSessionData(created, binding)) throw new Error('task_agent_binding_invalid');
-  } else if (binding.ownership.disposition === 'created') {
-    const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
-    const pane = readSessionArtifact<CreatedPane>(join(dir, 'pane-created.json'));
-    if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || !sameSessionData(intent.spec.endpoint, binding.endpoint) || intent.spec.task !== binding.task
-      || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind || intent.spec.max_requests !== binding.max_requests) throw new Error('task_agent_binding_invalid');
-    if (intent.intent_id !== binding.ownership.intent_id || pane.intent_id !== intent.intent_id
-      || pane.pane_id !== binding.pane_id || pane.terminal_id !== binding.terminal_id) throw new Error('task_agent_pane_identity_lost');
-    if (binding.provider.ownership.disposition === 'created' && binding.provider.ownership.intent_id !== intent.intent_id) throw new Error('task_agent_binding_invalid');
-    const provider = readSessionArtifact<TaskPaneBinding>(join(dir, 'provider-created.json')).provider;
-    if (provider.pid !== binding.provider.pid || provider.identity !== binding.provider.identity) throw new Error('task_agent_process_identity_lost');
-  }
-  return { dir, binding };
-}
 function requestOutbox(binding: TaskPaneBinding, dir: string): string {
   return join(binding.execution_root, '.ai/harness/runs/task-agent-outbox', dir.split('/').pop()!);
 }

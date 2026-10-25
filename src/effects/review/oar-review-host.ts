@@ -1,4 +1,4 @@
-import { consumePrePromptInbox } from './pre-prompt-inbox';
+import { consumePrePromptInbox } from './pre-prompt-inbox-consumer';
 import { claudeRuntime, codexRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';

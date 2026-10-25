@@ -44,7 +44,8 @@ test('foreign process, scripted identity, changed binding and closed session can
 });
 
 import { randomUUID } from 'node:crypto';
-import { preparePrePromptInbox, consumePrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
+import { preparePrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
+import { consumePrePromptInbox } from '../../src/effects/review/pre-prompt-inbox-consumer';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage, readTaskMessageDelivery } from '../../src/effects/fleet/task-inbox';
 import type { TaskRequest } from '../../src/effects/terminal/task-session';
