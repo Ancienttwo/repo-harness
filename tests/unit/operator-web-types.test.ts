@@ -467,7 +467,7 @@ test('admitted activity requires a closed selected session and unique pagination
   expect(request).toEqual({selector,limit:50,after:null,message_id:null});
   const duplicate=new URLSearchParams(query);duplicate.append('issue_id','789');expect(()=>parseAdmittedTaskActivityRequest('repo-a',duplicate)).toThrow();
   const extra=new URLSearchParams(query);extra.set('source_root','/tmp/foreign');expect(()=>parseAdmittedTaskActivityRequest('repo-a',extra)).toThrow();
-  const value={...request,protocol:2,kind:'operator_admitted_task_activity',admission_sha256:snapshotDigest,observed_at:'2026-10-25T00:00:00Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null};
+  const value: import('../../src/core/operator/admitted-task-activity').AdmittedTaskActivity={...request,protocol:2,kind:'operator_admitted_task_activity',admission_sha256:snapshotDigest,observed_at:'2026-10-25T00:00:00Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null};
   expect(decodeAdmittedTaskActivity(value,request)).toEqual(value);
   expect(()=>decodeAdmittedTaskActivity({...value,selector:{...selector,grant_sha256:'sha256:'+'9'.repeat(64)}},request)).toThrow();
   expect(()=>decodeAdmittedTaskActivity({...value,source_root:'/tmp/private'},request)).toThrow();
