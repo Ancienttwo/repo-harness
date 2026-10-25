@@ -1528,14 +1528,84 @@ test('automatic epoch change cancels associated evidence and late responses cann
     });
     expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain('1');
     expect(document.querySelector<HTMLButtonElement>('.task-sessions > button')!.disabled).toBe(false);
-    expect(document.querySelector('.task-diff')).toBeNull();
-    expect(document.querySelector('.task-diff [role="status"]')).toBeNull();
+    expect(document.querySelector('.task-sessions .task-diff')).toBeNull();
+    expect(document.querySelector('.task-sessions .task-diff [role="status"]')).toBeNull();
+    expect(document.querySelector('.detail-pane .task-diff')).not.toBeNull();
     expect(contexts[1]!.signal.aborted).toBe(false);
   } finally {
     await act(async () => root?.unmount()); root = null;
     globalThis.fetch = originalFetch; clock.restore();
   }
 });
+
+// Exercise the selected card drawer, not the separate session discovery panel.
+for (const transition of ['service epoch', 'explicit refresh'] as const) {
+  test(`drawer diff and activity reset loaded evidence and abort late replies on ${transition} with an unchanged selector`, async () => {
+    const clock = observationClock(), originalFetch = globalThis.fetch;
+    const card = stableSnapshot.repositories.flatMap(repository => repository.cards).find(card => card.task_id === fixtureTasks.blocked.task_id)!;
+    const selector = card.execution!.selector;
+    const requests: Array<{ kind: 'diff' | 'activity'; signal: AbortSignal; finish: (response: Response) => void }> = [];
+    let fleetReads = 0;
+    globalThis.fetch = (async (input, init) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname.endsWith('/diff') || url.pathname.endsWith('/activity')) {
+        for (const [key, value] of Object.entries(selector)) {
+          if (key !== 'repository_id') expect(url.searchParams.get(key)).toBe(value);
+        }
+        return new Promise<Response>(finish => requests.push({ kind: url.pathname.endsWith('/diff') ? 'diff' : 'activity', signal: init!.signal as AbortSignal, finish }));
+      }
+      return Response.json({ code: 'unavailable' }, { status: 503 });
+    }) as typeof fetch;
+    const result = (kind: 'diff' | 'activity', marker: string) => kind === 'diff'
+      ? { ...selector, protocol: 2, kind: 'operator_task_diff', target_ref: 'refs/heads/review-base', branch: card.execution!.branch,
+        base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40), observed_at: '2026-10-25T00:00:00Z', patch: marker, untracked_paths: [] }
+      : { selector, limit: 50, after: null, message_id: null, protocol: 2, kind: 'operator_admitted_task_activity',
+        admission_sha256: card.execution!.admission_sha256, observed_at: '2026-10-25T00:00:00Z', consistency: 'observed', entries: [],
+        coverage: { scope: 'task', complete: true, reason: null, scanned: 0, bytes: 0 }, next_cursor: null };
+    const diff = () => document.querySelector<HTMLElement>('.detail-pane .task-diff')!;
+    const activity = () => document.querySelector<HTMLElement>('.detail-pane .task-evidence__activity')!;
+    const load = async () => {
+      await act(async () => { diff().querySelector<HTMLButtonElement>('button')!.click(); activity().querySelector<HTMLButtonElement>('button')!.click(); });
+    };
+    const change = async () => {
+      if (transition === 'service epoch') await clock.advance(30_000);
+      else await act(async () => document.querySelector<HTMLButtonElement>('.detail-pane__actions button')!.click());
+    };
+    try {
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
+        fetchSnapshot={async () => { fleetReads++; return { ...stableSnapshot, sequence: stableSnapshot.sequence + fleetReads,
+          service_epoch: transition === 'service epoch' ? `00000000-0000-4000-8000-${String(fleetReads + 1).padStart(12, '0')}` : stableSnapshot.service_epoch }; }}
+        fetchRepositorySnapshot={async () => repositorySnapshot} readTaskContext={async () => { throw new Error('unavailable'); }} />);
+      await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+      expect(document.querySelector('.task-sessions select')).toBeNull();
+      await load(); expect(requests).toHaveLength(2);
+      await act(async () => { for (const request of requests) request.finish(Response.json(result(request.kind, 'loaded drawer patch'))); });
+      expect(diff().textContent).toContain('loaded drawer patch');
+      expect(activity().textContent).toContain(card.execution!.admission_sha256);
+      const loadedDiff = diff(), loadedActivity = activity();
+      await change();
+      expect(diff()).not.toBe(loadedDiff); expect(activity()).not.toBe(loadedActivity);
+      expect(diff().textContent).not.toContain('loaded drawer patch');
+      expect(activity().textContent).not.toContain(card.execution!.admission_sha256);
+      expect(diff().querySelector('button')!.textContent).toBe('Load diff');
+      expect(activity().querySelector('button')!.textContent).toBe('Load history');
+      await load(); expect(requests).toHaveLength(4);
+      const pendingDiff = diff(), pendingActivity = activity();
+      await change();
+      expect(requests[2]!.signal.aborted).toBe(true); expect(requests[3]!.signal.aborted).toBe(true);
+      expect(diff()).not.toBe(pendingDiff); expect(activity()).not.toBe(pendingActivity);
+      await act(async () => { for (const request of requests.slice(2)) request.finish(Response.json(result(request.kind, 'late drawer patch'))); });
+      expect(diff().textContent).not.toContain('late drawer patch');
+      expect(activity().textContent).not.toContain(card.execution!.admission_sha256);
+      expect(diff().querySelector<HTMLButtonElement>('button')!.disabled).toBe(false);
+      expect(activity().querySelector<HTMLButtonElement>('button')!.disabled).toBe(false);
+      expect(document.querySelector('.detail-pane')?.textContent).toContain(card.task_label!);
+    } finally {
+      await act(async () => root?.unmount()); root = null;
+      globalThis.fetch = originalFetch; clock.restore();
+    }
+  });
+}
 
 async function historyValue(repositoryId:string,taskId:string) {
   const {deriveTaskRevision}=await import('../../src/core/state/coordination-identity');
