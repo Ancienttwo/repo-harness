@@ -16,10 +16,13 @@ import {
 } from 'fs';
 import { randomUUID } from 'crypto';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
+import { currentProcessStartTime, readProcessStartTime } from './process-start-time';
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;
 const MAX_LOCK_WAIT_MS = 2_147_483_647;
+// A live verdict may delay a reclaim by this much; it can never cause one.
+const LIVE_OWNER_RECHECK_MS = 1_000;
 
 /**
  * Thrown when the lock cannot be held because another holder is contending for
@@ -87,8 +90,17 @@ export interface ExclusiveDirectoryLockHandle {
 export interface ExclusiveDirectoryLockOwner {
   readonly lockPath: string;
   readonly pid: number;
+  /** OS process start time of the owner; see readProcessStartTime. */
+  readonly startTime: string;
   readonly token: string;
 }
+
+/**
+ * `dead` means no process now runs as the recorded owner: the PID is free, or
+ * a process with a different start time has it. `unverified` means the PID is
+ * in use but the process table could not be read.
+ */
+export type ExclusiveDirectoryLockOwnerLiveness = 'live' | 'dead' | 'unverified';
 
 export interface ExclusiveDirectoryLockOptions {
   readonly reclaimStaleEmptyDirectory?: boolean;
@@ -128,13 +140,42 @@ function ownerTokenFromFileName(entry: string): { readonly token: string; readon
   return { token: entry.slice(0, -'.json'.length), pid };
 }
 
-function ownerIsAlive(pid: number): boolean {
+let lastLiveOwner: { readonly pid: number; readonly startTime: string; readonly checkedAt: number } | null = null;
+
+function ownerLiveness(pid: number, startTime: string): ExclusiveDirectoryLockOwnerLiveness {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 'dead';
   }
+  // Waiters poll every 10 ms. Reuse of a recently verified owner's PID needs
+  // that owner to exit first, so the table read runs at most once per interval.
+  if (lastLiveOwner !== null
+    && lastLiveOwner.pid === pid
+    && lastLiveOwner.startTime === startTime
+    && Date.now() - lastLiveOwner.checkedAt < LIVE_OWNER_RECHECK_MS) return 'live';
+  let observed: string | null;
+  try {
+    observed = readProcessStartTime(pid);
+  } catch {
+    return 'unverified';
+  }
+  if (observed !== startTime) return 'dead';
+  lastLiveOwner = { pid, startTime, checkedAt: Date.now() };
+  return 'live';
+}
+
+/** Only a proven dead owner is stale; an unverified owner keeps the lock. */
+function ownerIsAlive(pid: number, startTime: string): boolean {
+  return ownerLiveness(pid, startTime) !== 'dead';
+}
+
+export function exclusiveDirectoryLockOwnerLiveness(owner: ExclusiveDirectoryLockOwner): ExclusiveDirectoryLockOwnerLiveness {
+  return ownerLiveness(owner.pid, owner.startTime);
+}
+
+function recordedStartTime(record: Readonly<Record<string, unknown>>): string | null {
+  return typeof record.start_time === 'string' && record.start_time !== '' ? record.start_time : null;
 }
 
 function fileIdentity(value: { readonly dev: number; readonly ino: number }): FileIdentity {
@@ -292,13 +333,16 @@ export function readExclusiveDirectoryLockOwner(
   const observedOwner = lstatSync(ownerPath);
   if (!observedOwner.isFile()) return null;
   const ownerIdentity = fileIdentity(observedOwner);
-  let parsed: { pid?: unknown; token?: unknown };
+  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(readFileSync(ownerPath, 'utf-8')) as { pid?: unknown; token?: unknown };
+    const value: unknown = JSON.parse(readFileSync(ownerPath, 'utf-8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    parsed = value as Record<string, unknown>;
   } catch {
     return null;
   }
-  if (parsed.pid !== owner.pid || parsed.token !== owner.token) return null;
+  const startTime = recordedStartTime(parsed);
+  if (parsed.pid !== owner.pid || parsed.token !== owner.token || startTime === null) return null;
   assertLockAncestors(location);
   const currentDirectory = lstatSync(location.lockPath);
   const currentOwner = lstatSync(ownerPath);
@@ -308,7 +352,7 @@ export function readExclusiveDirectoryLockOwner(
     || !sameFileIdentity(fileIdentity(currentOwner), ownerIdentity)
     || readdirSync(location.lockPath).length !== 1
     || readdirSync(location.lockPath)[0] !== entry) return null;
-  return { lockPath: location.lockPath, pid: owner.pid, token: owner.token };
+  return { lockPath: location.lockPath, pid: owner.pid, startTime, token: owner.token };
 }
 
 function reclaimStaleLockDirectory(
@@ -370,15 +414,20 @@ function reclaimStaleLockDirectory(
   }
   let observedBytes: string;
   let ownerRecord: Record<string, unknown>;
-  const owner = { lockPath: location.lockPath, pid: observedToken.pid, token: observedToken.token };
+  let owner: ExclusiveDirectoryLockOwner;
   try {
     observedBytes = readFileSync(observedOwnerPath, 'utf-8');
     const parsed: unknown = JSON.parse(observedBytes);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
     ownerRecord = parsed as Record<string, unknown>;
+    // A record without a start time cannot tell its owner from a process that
+    // reused the PID, so it is never proven stale.
+    const startTime = recordedStartTime(ownerRecord);
+    if (startTime === null) return false;
+    owner = { lockPath: location.lockPath, pid: observedToken.pid, startTime, token: observedToken.token };
     reclaim = ownerRecord.token === observedToken.token
       && ownerRecord.pid === observedToken.pid
-      && !ownerIsAlive(observedToken.pid)
+      && !ownerIsAlive(owner.pid, owner.startTime)
       && (!canReclaimStaleOwner || canReclaimStaleOwner(owner, ownerRecord) === true);
   } catch {
     // A filename and elapsed time cannot authenticate a malformed owner record.
@@ -397,7 +446,7 @@ function reclaimStaleLockDirectory(
       || readdirSync(location.lockPath).length !== 1
       || readdirSync(location.lockPath)[0] !== entry
       || readFileSync(observedOwnerPath, 'utf-8') !== observedBytes
-      || ownerIsAlive(observedToken.pid)
+      || ownerIsAlive(owner.pid, owner.startTime)
       || (canReclaimStaleOwner && canReclaimStaleOwner(owner, ownerRecord) !== true)) return false;
     // Delete only the exact observed token. A legitimate new owner always has
     // a different UUID filename, so its token makes rmdir fail closed.
@@ -421,6 +470,7 @@ function reclaimStaleLockDirectory(
  * so a process that dies at any point never leaves a partial owner record.
  */
 function stageOwnerRecord(location: LockLocation): StagedOwner {
+  const startTime = currentProcessStartTime();
   const token = `${process.pid}-${Date.now()}-${randomUUID()}`;
   const parent = location.ancestors[location.ancestors.length - 1]!.path;
   // The name does not embed the lock name, so a long lock name cannot overflow it.
@@ -433,7 +483,7 @@ function stageOwnerRecord(location: LockLocation): StagedOwner {
   );
   try {
     const identity = fileIdentity(fstatSync(fd));
-    writeFileSync(fd, `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\n`);
+    writeFileSync(fd, `${JSON.stringify({ pid: process.pid, start_time: startTime, created_at: Date.now(), token })}\n`);
     return { fd, token, path, identity };
   } catch (error) {
     closeSync(fd);
