@@ -6,7 +6,6 @@ import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkS
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../evidence/atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
-import { listLeaseReads } from './coordination-lease-store';
 import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
@@ -113,11 +112,7 @@ function mergeProof(root: string, branch: string, head: string, targetRef: strin
   return { provider: true, merge_commit_sha: merge };
 }
 
-function assertNoOwner(root: string, worktree: string, branch: string, limits: Limits, allowSelfMarker = false): void {
-  for (const lease of listLeaseReads(root, timeout(limits), gitBinary(limits))) {
-    if (!lease.record) throw new Error('cleanup has unknown Lease ownership');
-    if (lease.record.branch === branch || (lease.record.execution_worktree !== null && checkoutPath(lease.record.execution_worktree) === worktree)) throw new Error('cleanup has an active Lease reference');
-  }
+function assertNoOwner(root: string, worktree: string, limits: Limits, allowSelfMarker = false): void {
   for (const entry of entries(root, limits)) {
     const marker = join(entry.path, '.ai/harness/active-worktree');
     timeout(limits);
@@ -232,7 +227,7 @@ export function assertReusableWorktree(root: string, worktree: string, branch: s
   assertWorktreeBinding(root, worktree, branch);
   const entry = entries(root).find(item => checkoutPath(item.path) === worktree);
   if (entry?.locked) throw new Error('recovery worktree is locked');
-  assertNoOwner(root, worktree, branch, {}, true);
+  assertNoOwner(root, worktree, {}, true);
 }
 
 /** The actuator runs inside the same barrier as final bind, including readback. */
@@ -250,7 +245,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
     // A renamed receipt binds the original inode. Its old name may now belong
     // to another user; registration cleanup must never traverse that new data.
     const path = expected.worktree ? (renamed ? expected.worktree : checkoutPath(expected.worktree)) : '';
-    assertNoOwner(root, path, expected.branch, limits, limits.closeout === true);
+    assertNoOwner(root, path, limits, limits.closeout === true);
     if (git(root, ['rev-parse', `${expected.target_ref}^{commit}`], limits) !== expected.target_oid) throw new Error('cleanup target moved');
     git(root, ['merge-base', '--is-ancestor', expected.merge_commit_sha, expected.target_oid], limits);
     if (git(root, ['rev-parse', `refs/heads/${expected.branch}`], limits) !== expected.head_sha) throw new Error('cleanup execution head moved');
@@ -275,7 +270,7 @@ export function cleanupExactWorktree(root: string, expected: ExactWorktreeCleanu
         const stat = lstatSync(marker);
         if (stat.isFile() && !stat.isSymbolicLink() && readFileSync(marker, 'utf8').trim() === path) unlinkSync(marker);
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-      assertNoOwner(root, path, expected.branch, limits);
+      assertNoOwner(root, path, limits);
     }
     const result = actuator();
     if (!renamed && path && existsSync(path)) throw new Error('cleanup worktree removal is unproven');
@@ -348,7 +343,7 @@ function assertPruneMetadata(context: SweepContext, approval?: WorktreeTrashRece
         const file = lstatSync(commonFile);
         if (!file.isFile() || file.isSymbolicLink() || realpathSync(resolve(path, readFileSync(commonFile, 'utf8').trim())) !== context.common) throw new Error('prune has changed Git registration metadata');
       }
-      assertNoOwner(context.main, known.worktree, known.branch, context.limits);
+      assertNoOwner(context.main, known.worktree, context.limits);
       if (!taskWorktreeRuntimeClosed({ repository_id: context.common, primary_root: context.main, execution_root: known.worktree })) throw new Error('missing runtime is open');
       continue;
     }
@@ -374,7 +369,7 @@ function assertPruneScope(context: SweepContext, approval?: WorktreeTrashReceipt
     if (!managed(path) || protectsCwd(path, cwd)) throw new Error('prune would affect a protected path');
     const branch = item.branch?.replace(/^refs\/heads\//, '') ?? (approval?.expected.worktree === path ? approval.expected.branch : null);
     if (!branch) throw new Error('missing branch ownership');
-    assertNoOwner(main, path, branch, limits);
+    assertNoOwner(main, path, limits);
     if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('missing runtime is open');
   }
   return { missing, proofs };
@@ -471,7 +466,7 @@ function resumeSweepTrashAttempt(context: SweepContext, directory: string): void
   if (branchExists(context, approved.expected.branch)) commitSweepRemoval(context, approved.expected, approved);
   withWorktreeTopologyLock(context.main, () => {
     assertTrashIsUnregistered(context, directory);
-    assertNoOwner(context.main, approved.expected.worktree, approved.expected.branch, context.limits);
+    assertNoOwner(context.main, approved.expected.worktree, context.limits);
     if (branchExists(context, approved.expected.branch)) throw new Error('trash branch deletion is unproven');
     if (entries(context.main, context.limits).some(entry => checkoutPath(entry.path) === approved.expected.worktree)) throw new Error('trash source is still registered');
     retireWorktreeIdentity(context.common, approved.expected.worktree, context.limits);
@@ -567,7 +562,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
         if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
         if (branchExists(context, intent.branch)) {
           // Ownership precedes the merge proof, because that proof can query the provider.
-          assertNoOwner(main, intent.worktree, intent.branch, limits);
+          assertNoOwner(main, intent.worktree, limits);
           if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: intent.worktree })) throw new Error('runtime is open');
           let merge: string;
           try { merge = mergeProof(main, intent.branch, intent.head, targetRef, target, limits).merge_commit_sha; }
@@ -578,7 +573,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
           const expected = { worktree: '', branch: intent.branch, head_sha: intent.head, target_ref: targetRef, target_oid: target, merge_commit_sha: merge };
           cleanupExactWorktree(main, expected, () => {
             if (pathExists(intent.worktree) || pathExists(intent.git_directory)) throw new Error('pruned worktree path or registration reappeared');
-            assertNoOwner(main, intent.worktree, intent.branch, limits);
+            assertNoOwner(main, intent.worktree, limits);
             assertBranchHasCommits(main, intent.branch, limits);
             if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: intent.worktree })) throw new Error('runtime is open');
             deleteCheckedBranch(main, expected, limits);
@@ -608,7 +603,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
         if (entry.locked) throw new Error('locked');
         if (!entry.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('no local branch');
         const branch = entry.branch.slice('refs/heads/'.length);
-        assertNoOwner(main, path, branch, limits);
+        assertNoOwner(main, path, limits);
         assertBranchHasCommits(main, branch, limits);
         if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('runtime is open');
         if (!existsSync(path)) {

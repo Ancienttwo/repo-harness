@@ -106,7 +106,7 @@ if (force && acceptUserManaged) {
   process.exit(1);
 }
 
-const HOME = os.homedir();
+const HOME = process.env.HOME ?? os.homedir();
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;

@@ -200,7 +200,7 @@ setInterval(() => {}, 1000);
     });
   }
 
-  test('finishes a deadline when an exited child leaves stdout open in a grandchild', async () => {
+  test('a deadline reaps a grandchild that holds stdout open after its parent exits', async () => {
     const f = fixture(['inherited'], 0);
     const cwd = f.repos.inherited!;
     const ready = join(cwd, '.git', 'grandchild-pid');
@@ -222,7 +222,7 @@ process.exit(0);
       pid = Number(readFileSync(ready, 'utf8'));
       expect(await pending).toEqual({ ok: false, code: 'timeout' });
       expect(Date.now() - started).toBeLessThan(deadline_ms + 5000);
-      expect(() => process.kill(pid!, 0)).not.toThrow();
+      expect(() => process.kill(pid!, 0)).toThrow();
     } finally {
       if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
       rmSync(f.root, { recursive: true, force: true });

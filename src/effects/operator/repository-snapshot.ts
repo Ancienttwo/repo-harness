@@ -158,7 +158,7 @@ export function readOperatorPlanningSnapshot(input: ReadOperatorRepositorySnapsh
     });
     let graph: OperatorPlanningSnapshot['graph'];
     try {
-      graph = { status:'observed',observed_at:observedAt,snapshot:readPlanningGraph(repo,registry,current,input.env) };
+      graph = { status:'observed',observed_at:observedAt,snapshot:readPlanningGraph(repo,registry,current) };
     } catch {
       graph = { status:'unavailable',observed_at:observedAt,code:'source_unavailable' };
     }
@@ -176,7 +176,7 @@ export function readOperatorPlanningSnapshot(input: ReadOperatorRepositorySnapsh
   return after.value;
 }
 
-function readPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnessRegistrySnapshot, board: BoardDocumentV1 | null, env: NodeJS.ProcessEnv | undefined): OperatorPlanningGraph {
+function readPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnessRegistrySnapshot, board: BoardDocumentV1 | null): OperatorPlanningGraph {
   const unclassified: OperatorPlanningGraph = { lane:'unclassified',work_graph_revision:null,packages:[],sources:[] };
   if (board === null) return unclassified;
   const selected = readTrackedWorkGraphProjectionAt(repo.path,repo.id,board.sprint_path,board.canonical_target.oid);
@@ -215,7 +215,7 @@ function readPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnes
     dependencies:item.depends_on.map(dependency => {
       const target = graphs.flatMap(g => g.work_packages).find(p => p.repository_id === dependency.repository_id && p.work_package_id === dependency.work_package_id);
       if (!target) throw new Error('Planning dependency disappeared');
-      return resolveDependencyObservation({dependency,target,reads,registry:authorityRegistry,env,readFileAtCommit});
+      return resolveDependencyObservation({dependency,target,reads,registry:authorityRegistry,readFileAtCommit});
     }),
   }));
   return {lane:selected.graph.lane,work_graph_revision:selected.graph.work_graph_revision,packages,

@@ -130,6 +130,21 @@ describe('state architecture boundary checker', () => {
     }
   });
 
+  test('checks every src/core subdirectory and skips only the named impure files', async () => {
+    const { result } = await checkWith((root) => {
+      write(
+        root,
+        'src/core/upgrade/inventory.ts',
+        "import { readFileSync } from 'fs';\nimport { hashManagedTree } from '../../cli/installer/install-profile';\n",
+      );
+      write(root, 'src/core/adoption/plan.ts', "import { join } from 'path';\n");
+    });
+    expect(result.violations.map((item) => `${item.code} ${item.file}`)).toEqual([
+      'CORE_FORBIDDEN_IMPORT src/core/upgrade/inventory.ts',
+      'CORE_REVERSE_IMPORT src/core/upgrade/inventory.ts',
+    ]);
+  });
+
   test('checks literal and non-literal dynamic loads and reverse core dependencies', async () => {
     const { result } = await checkWith((root) => {
       write(
@@ -320,11 +335,15 @@ describe('state architecture boundary checker', () => {
     });
     expect(codes(syntax.result)).toContain('TYPESCRIPT_SYNTAX_ERROR');
 
-    const missing = await checkWith((root) => {
+    const missingRoot = await checkWith((root) => {
+      rmSync(join(root, 'src/core'), { recursive: true, force: true });
+    });
+    expect(codes(missingRoot.result)).toContain('REQUIRED_PATH_MISSING');
+
+    const missingOwner = await checkWith((root) => {
       rmSync(join(root, 'src/core/workflow'), { recursive: true, force: true });
     });
-    expect(codes(missing.result)).toContain('REQUIRED_PATH_MISSING');
-    expect(codes(missing.result)).toContain('CANONICAL_SYMBOL_MISSING');
+    expect(codes(missingOwner.result)).toContain('CANONICAL_SYMBOL_MISSING');
   });
 
   test('CLI output is deterministic, actionable, and non-zero on a violation', () => {

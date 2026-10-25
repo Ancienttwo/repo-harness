@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { hostSkillRoot, type SkillHost } from "../../effects/host-skill-roots";
 import type { InstallTargetSpec } from "./install";
 
 const STEP = "configure required Herdr skill";
@@ -89,19 +90,18 @@ export function configureRequiredHerdrSkill(
   }
   const content = result.stdout;
   const home = env.HOME || homedir();
-  const hosts = target === "both" ? ["claude", "codex"] : [target];
+  const hosts: readonly SkillHost[] = target === "both" ? ["claude", "codex"] : [target];
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);
     // Check every target before changing either host.
     for (const host of hosts) {
-      const hostName = host === "codex" ? ".codex" : ".claude";
-      const hostDir = join(home, hostName);
-      const root = join(hostDir, "skills");
+      const root = hostSkillRoot(home, host);
+      const canonicalRoot = hostSkillRoot(canonicalHome, host);
       const destination = join(root, "herdr");
       for (const [directory, expected] of [
-        [hostDir, join(canonicalHome, hostName)],
-        [root, join(canonicalHome, hostName, "skills")],
+        [dirname(root), dirname(canonicalRoot)],
+        [root, canonicalRoot],
       ]) {
         if (pathEntryExists(directory) && (lstatSync(directory).isSymbolicLink()
           || !lstatSync(directory).isDirectory() || realpathSync(directory) !== expected)) {
@@ -119,7 +119,7 @@ export function configureRequiredHerdrSkill(
         }
         current = existingContent === content;
       }
-      plans.push({ root: join(canonicalHome, hostName, "skills"), destination, staged: "", backup: null, changed: false, current });
+      plans.push({ root: canonicalRoot, destination, staged: "", backup: null, changed: false, current });
     }
     for (const plan of plans) {
       if (plan.current) continue;

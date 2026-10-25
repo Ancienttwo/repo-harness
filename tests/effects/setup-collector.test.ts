@@ -53,13 +53,15 @@ describe('setup collector', () => {
     expect(seen[0]!.env.REPO_HARNESS_CHECK_UPDATES).toBeUndefined();
   });
 
-  test('a deadline kills the child and every process it spawned', async () => {
+  test('a deadline sends SIGTERM first, then kills the child and every process it spawned', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'repo-harness-setup-timeout-'));
     try {
       const pidFile = join(dir, 'grandchild.pid');
+      const termFile = join(dir, 'term-received');
       const script = join(dir, 'hang.ts');
       writeFileSync(script, `import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+process.on('SIGTERM', () => writeFileSync(${JSON.stringify(termFile)}, 'received'));
 const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' });
 writeFileSync(${JSON.stringify(pidFile)}, String(sleeper.pid));
 setInterval(() => {}, 1000);
@@ -74,7 +76,9 @@ setInterval(() => {}, 1000);
       const result = await pending;
       expect(result).toEqual({ ok: false, code: 'timeout' });
       expect(Date.now() - started).toBeLessThan(deadline_ms + 5_000);
-      await until(() => !alive(grandchild));
+      // The result settles after the group is gone, so no polling is needed.
+      expect(alive(grandchild)).toBe(false);
+      expect(readFileSync(termFile, 'utf8')).toBe('received');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

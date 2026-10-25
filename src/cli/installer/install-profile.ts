@@ -2,6 +2,7 @@ import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
+import { globalRuntimeScope, runtimeTransactionRoot } from './runtime-host-lock';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -36,7 +37,9 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
+import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
+import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -180,7 +183,6 @@ const LEGACY_PROFILE_COMPONENTS: Readonly<Record<LegacyInstallProfile, readonly 
     'cross-model-acceptance', 'release-deployment-gates',
   ],
 });
-const OWNER_MARKER = '.repo-harness-owner.json';
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
 
 function managedAdapterHash(path: string): string | null {
@@ -263,78 +265,6 @@ function adapterHasRequiredProjection(path: string, host: HookHost, profile: Ins
   } catch {
     return false;
   }
-}
-
-export interface ManagedTreeOptions {
-  readonly excludes?: readonly string[];
-  readonly includes?: readonly string[];
-}
-
-/** The contract owns the source projection. Target ownership hashes stay complete. */
-export function installedCopyTreeOptions(
-  surface: 'canonical-skill' | 'command-facade',
-  contract: { readonly installedCopyExcludes?: unknown; readonly installedCopyIncludes?: unknown },
-): ManagedTreeOptions {
-  const excludes = contract.installedCopyExcludes;
-  if (!Array.isArray(excludes) || !excludes.every((value) => typeof value === 'string' && !value.includes('\n'))) {
-    throw new Error('installed copy exclusions are missing or invalid');
-  }
-  if (surface === 'command-facade') return { excludes };
-  const includes = contract.installedCopyIncludes;
-  if (!Array.isArray(includes) || includes.length === 0 || !includes.every((value) =>
-    typeof value === 'string' && value.length > 0 && !value.includes('\\') && !value.includes('\n')
-    && value.replace(/\/$/, '').split('/').every((part: string) => part !== '' && part !== '.' && part !== '..'))) {
-    throw new Error('installed copy includes are missing or invalid');
-  }
-  return { excludes, includes };
-}
-
-/** Both source hashes and rsync consume these exact files and links. */
-export function managedTreeEntries(root: string, options: ManagedTreeOptions = {}): Array<{ path: string; type: 'file' | 'symlink' }> {
-  const patterns = (options.excludes ?? []).map((pattern) => ({
-    directory: pattern.endsWith('/'),
-    basename: !pattern.replace(/\/$/, '').includes('/'),
-    glob: new Bun.Glob(`${pattern.replace(/\/$/, '').includes('/') ? '**/' : ''}${pattern.replace(/\/$/, '')}`),
-  }));
-  const entries: Array<{ path: string; type: 'file' | 'symlink' }> = [];
-  const visit = (directory: string, prefix: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === OWNER_MARKER) continue;
-      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (patterns.some((pattern) => (!pattern.directory || entry.isDirectory())
-        && pattern.glob.match(pattern.basename ? entry.name : relative))
-        // A declared runtime descendant keeps its excluded parent traversable.
-        && !(entry.isDirectory() && options.includes?.some((include) => include.startsWith(`${relative}/`)))) continue;
-      if (options.includes && !options.includes.some((include) => include.endsWith('/')
-        ? relative.startsWith(include) || `${relative}/` === include || include.startsWith(`${relative}/`)
-        : relative === include || include.startsWith(`${relative}/`))) continue;
-      const absolute = join(directory, entry.name);
-      if (entry.isDirectory()) visit(absolute, relative);
-      else if (entry.isFile()) entries.push({ path: relative, type: 'file' });
-      else if (entry.isSymbolicLink()) entries.push({ path: relative, type: 'symlink' });
-      else if (options.excludes !== undefined) throw new Error(`unsupported installed-copy source entry: ${relative}`);
-    }
-  };
-  visit(root, '');
-  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
-  return entries;
-}
-
-/** Hash one selected tree. No filters means the complete ownership proof. */
-export function hashManagedTree(root: string, options: ManagedTreeOptions = {}): string {
-  const entries = managedTreeEntries(root, options);
-  const hash = createHash('sha256');
-  for (const entry of entries) {
-    const absolute = join(root, entry.path);
-    if (entry.type === 'symlink') {
-      hash.update(`L\0${entry.path}\0${readlinkSync(absolute)}\0`);
-    } else {
-      hash.update(`F\0${entry.path}\0`);
-      hash.update(readFileSync(absolute));
-      hash.update('\0');
-    }
-  }
-  return `sha256:${hash.digest('hex')}`;
 }
 
 function captureDirectoryOrLink(
@@ -466,8 +396,10 @@ function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCata
 
 const FACADE_NAME_PREFIX = 'repo-harness-';
 
+const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude'];
+
 function hostSkillRoots(home: string): readonly string[] {
-  return [join(home, '.codex', 'skills'), join(home, '.claude', 'skills')];
+  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host));
 }
 
 /**
@@ -733,14 +665,14 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.claude.json'),
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
-    configurationReceiptPath(env),
+    configurationReceiptPath(home),
     join(home, '.agents', '.skill-lock.json'),
   ];
-  for (const host of ['.codex', '.claude']) {
-    for (const skill of [...skills, ...externalSkills]) paths.push(join(home, host, 'skills', skill));
+  for (const root of hostSkillRoots(home)) {
+    for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
   }
   for (const skill of externalSkills) {
-    paths.push(join(home, '.agents', 'skills', skill));
+    paths.push(join(stagedSkillRoot(home), skill));
   }
   for (const rule of wazaRules.files) {
     paths.push(
@@ -761,14 +693,12 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
 }
 
 /**
- * The skill roots that scripts/sync-codex-installed-copies.sh writes. An
- * explicit CODEX_SKILLS_ROOT without CLAUDE_SKILLS_ROOT disables the Claude
- * root. The skill sync tests compare this rule with the roots the shell reports.
+ * The skill roots that scripts/sync-codex-installed-copies.sh writes. The
+ * shell reads the same syncSkillRoots result from skill-surface-select.ts.
  */
 export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  const home = env.HOME ?? homedir();
-  if (env.CODEX_SKILLS_ROOT) return [env.CODEX_SKILLS_ROOT, ...(env.CLAUDE_SKILLS_ROOT ? [env.CLAUDE_SKILLS_ROOT] : [])];
-  return [join(home, '.codex', 'skills'), env.CLAUDE_SKILLS_ROOT || join(home, '.claude', 'skills')];
+  const roots = syncSkillRoots(env, env.HOME ?? homedir());
+  return roots.claude === null ? [roots.codex] : [roots.codex, roots.claude];
 }
 
 /**
@@ -796,7 +726,7 @@ export function beginInstallHostTransaction(
   env: NodeJS.ProcessEnv = process.env,
   options: { readonly retainBackup?: boolean } = {},
 ): InstallHostTransaction {
-  const transactionRoot = join(env.HOME ?? homedir(), '.repo-harness', 'transactions');
+  const transactionRoot = runtimeTransactionRoot(globalRuntimeScope(env));
   mkdirSync(transactionRoot, { recursive: true });
   const backupRoot = mkdtempSync(join(transactionRoot, 'install-'));
   try {
@@ -1182,7 +1112,7 @@ function existing(paths: readonly string[]): string[] {
 }
 
 function canonicalRoots(home: string): string[] {
-  return [join(home, '.codex', 'skills', 'repo-harness'), join(home, '.claude', 'skills', 'repo-harness')];
+  return hostSkillRoots(home).map((root) => join(root, 'repo-harness'));
 }
 
 function canonicalEvidence(home: string, relativePaths: readonly string[]): string[] {
@@ -1198,14 +1128,14 @@ function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
 }
 
 function skillEvidence(home: string, names: readonly string[]): string[] {
-  return existing(['.codex', '.claude'].flatMap((host) => (
-    names.map((name) => join(home, host, 'skills', name, 'SKILL.md'))
+  return existing(hostSkillRoots(home).flatMap((root) => (
+    names.map((name) => join(root, name, 'SKILL.md'))
   )));
 }
 
 function completeHostSkillSetEvidence(home: string, names: readonly string[]): string[] {
-  for (const host of ['.codex', '.claude']) {
-    const paths = names.map((name) => join(home, host, 'skills', name, 'SKILL.md'));
+  for (const root of hostSkillRoots(home)) {
+    const paths = names.map((name) => join(root, name, 'SKILL.md'));
     if (paths.every(existsSync)) return paths;
   }
   return [];

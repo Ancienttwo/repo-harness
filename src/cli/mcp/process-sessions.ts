@@ -1,7 +1,9 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync, statSync } from 'fs';
 import { isAbsolute, relative } from 'path';
+import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../../effects/process-group-registry';
+import { signalProcessGroup, terminateProcessGroup } from '../../effects/process-group-termination';
 
 const DEFAULT_MAX_CONCURRENT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1_000;
@@ -142,6 +144,7 @@ interface ManagedProcess {
   readonly pid?: number;
   write(data: string): void;
   signal(signal: NodeJS.Signals): void;
+  terminate(signal: NodeJS.Signals, graceMs: number): Promise<void>;
 }
 
 interface ProcessSession {
@@ -169,7 +172,7 @@ interface ProcessSession {
   activityWaiters: Set<() => void>;
   runtimeTimer?: ReturnType<typeof setTimeout>;
   retentionTimer?: ReturnType<typeof setTimeout>;
-  escalationTimer?: ReturnType<typeof setTimeout>;
+  terminationRequested?: boolean;
   requestedReason?: ProcessCompletionReason;
   completionEmitted: boolean;
 }
@@ -363,6 +366,8 @@ export class McpProcessSessionManager {
     this.now = options.now ?? Date.now;
     this.onComplete = options.onComplete;
     this.onCompletionError = options.onCompletionError;
+    // Shell groups of a coding runtime that died with SIGKILL have no other owner.
+    reapOrphanedProcessGroups();
   }
 
   get runningCount(): number {
@@ -508,13 +513,13 @@ export class McpProcessSessionManager {
   private startPipe(session: ProcessSession): void {
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(this.shellPath, ['-c', session.command], {
+      child = spawnRegisteredProcessGroup('mcp-coding-shell', () => spawn(this.shellPath, ['-c', session.command], {
         cwd: session.cwd,
         env: { ...this.environment, TERM: 'dumb' },
         detached: process.platform !== 'win32',
         windowsHide: true,
         stdio: 'pipe',
-      });
+      }));
     } catch (_error) {
       this.appendOutput(session, Buffer.from('process failed to start\n'));
       this.finish(session, undefined, undefined, 'spawn_error');
@@ -523,7 +528,8 @@ export class McpProcessSessionManager {
     session.process = {
       pid: child.pid,
       write: (data) => child.stdin.write(data),
-      signal: (signal) => signalProcessTree(child.pid, signal, child),
+      signal: (signal) => signalProcessTree(child, signal),
+      terminate: (signal, graceMs) => terminateProcessTree(child, signal, graceMs),
     };
     child.stdout.on('data', (data: Buffer) => this.appendOutput(session, data));
     child.stderr.on('data', (data: Buffer) => this.appendOutput(session, data));
@@ -573,7 +579,6 @@ export class McpProcessSessionManager {
     session.completedAtMs = this.now();
     session.command = '';
     if (session.runtimeTimer) clearTimeout(session.runtimeTimer);
-    if (session.escalationTimer) clearTimeout(session.escalationTimer);
     session.resolveExit();
     this.notifyActivity(session);
     session.retentionTimer = setTimeout(() => this.removeSession(session.id), this.completedRetentionMs);
@@ -608,22 +613,13 @@ export class McpProcessSessionManager {
   private requestTermination(session: ProcessSession, reason: ProcessCompletionReason, signal: NodeJS.Signals): void {
     if (!session.running) return;
     session.requestedReason = reason;
-    try {
-      session.process?.signal(signal);
-    } catch (_error) {
-      // The process may have exited between the ownership check and signal delivery.
-    }
-    if (signal === 'SIGKILL') return;
-    if (session.escalationTimer) clearTimeout(session.escalationTimer);
-    session.escalationTimer = setTimeout(() => {
-      if (!session.running) return;
-      try {
-        session.process?.signal('SIGKILL');
-      } catch (_error) {
-        // The process may have exited before escalation.
-      }
-    }, this.terminationGraceMs);
-    session.escalationTimer.unref?.();
+    // A termination in flight already escalates to SIGKILL; only SIGKILL overtakes it.
+    if (session.terminationRequested && signal !== 'SIGKILL') return;
+    session.terminationRequested = true;
+    void session.process?.terminate(signal, this.terminationGraceMs).catch(() => {
+      // A failed signal (for example EPERM) did not escalate; let the next request retry.
+      session.terminationRequested = false;
+    });
   }
 
   private terminateMatching(predicate: (session: ProcessSession) => boolean, reason: ProcessCompletionReason): number {
@@ -729,36 +725,25 @@ export class McpProcessSessionManager {
     if (!session) return;
     if (session.runtimeTimer) clearTimeout(session.runtimeTimer);
     if (session.retentionTimer) clearTimeout(session.retentionTimer);
-    if (session.escalationTimer) clearTimeout(session.escalationTimer);
     for (const resolveWaiter of session.activityWaiters) resolveWaiter();
     session.activityWaiters.clear();
     this.sessions.delete(sessionId);
   }
 }
 
-function signalProcessTree(
-  pid: number | undefined,
-  signal: NodeJS.Signals,
-  child?: ChildProcessWithoutNullStreams,
-): void {
-  if (!pid) {
-    child?.kill(signal);
-    return;
-  }
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
-      windowsHide: true,
-      stdio: 'ignore',
-    });
-    return;
-  }
+function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
   try {
-    process.kill(-pid, signal);
+    if (child.pid) signalProcessGroup(child.pid, signal);
+    else child.kill(signal);
   } catch (_error) {
-    try {
-      child?.kill(signal);
-    } catch (_childError) {
-      // The process has already exited.
-    }
+    // The process has already exited.
   }
+}
+
+async function terminateProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals, graceMs: number): Promise<void> {
+  if (!child.pid) {
+    signalProcessTree(child, signal);
+    return;
+  }
+  await terminateProcessGroup(child.pid, graceMs, { initialSignal: signal });
 }

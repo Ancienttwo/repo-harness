@@ -12,7 +12,6 @@
     "Fold OAR records in the owned hosts with the SDK reducer and expose bounded request-bound snapshots without task acceptance.",
     "Close Herdr workspaces and panes without removing Git checkouts.",
     "Install the shipped Herdr notify plugin, the release-matched Herdr skill and the fleet persona definitions.",
-    "Start and isolate the fixed OAR coding host through the task session boundary.",
     "Record bounded, redacted Clef shadow decisions after Herdr notification delivery and store blind Bot labels without changing notification routing or agent status."
   ],
   "source": {
@@ -28,9 +27,6 @@
       "agents/fleet/**",
       ".codex/agents/**",
       "scripts/install-agent-fleet.sh",
-      "src/effects/terminal/coding-isolation.ts",
-      "src/effects/terminal/coding-session.ts",
-      "src/effects/terminal/oar-coding-host.ts",
       "src/core/decision/**",
       "src/effects/terminal/herdr-decision.ts"
     ],
@@ -66,22 +62,6 @@
                 "id": "sink.task-agent-host.collect",
                 "path": "src/effects/terminal/task-session.ts",
                 "symbol": "readTaskRequestResult"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "entrypoint.task-agent-host.coding",
-        "path": "src/effects/terminal/coding-session.ts",
-        "symbols": [
-          {
-            "name": "startCodingTaskAgent",
-            "sinks": [
-              {
-                "id": "sink.task-agent-host.coding",
-                "path": "src/effects/terminal/task-session.ts",
-                "symbol": "startTaskApplicationHost"
               }
             ]
           }

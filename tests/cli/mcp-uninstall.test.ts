@@ -82,10 +82,10 @@ describe('MCP setup uninstall', () => {
   }));
   test('interrupted project setup needs explicit recovery', () => fixture((repo) => {
     runMcpSetupCodex({ repo });
-    const env = { HOME: repo }, receipt = readConfigurationReceipt(env);
+    const receipt = readConfigurationReceipt(repo);
     const path = join(repo, '.codex/config.toml');
     receipt.pending = { id: 'interrupted', before: [{ path, selector: 'mcp_servers.repo_harness', value: receipt.changes[0]!.installed }] };
-    saveConfigurationReceipt(receipt, env);
+    saveConfigurationReceipt(receipt, repo);
     writeFileSync(path, '[mcp_servers.repo_harness]\ncommand = "half-written"\n');
     expect(runMcpUninstall({ repo, target: 'codex' }).status).toBe('partial');
     expect(runMcpUninstall({ repo, target: 'codex', recoverInterrupted: true }).status).toBe('complete');

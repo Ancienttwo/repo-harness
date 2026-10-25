@@ -15,7 +15,7 @@ steps:
     label: "Dispatch Action Command Installer"
     evidence:
       entrypointId: entrypoint.action-commands.primary
-      sourceSymbol: "installExternalSkills"
+      sourceSymbol: "syncCrossReviewSkills"
       sinkId: sink.action-commands.primary
 outcomes:
   - id: success
@@ -28,7 +28,7 @@ outcomes:
         label: "Invoke Action Command Installer"
         evidence:
           entrypointId: entrypoint.action-commands.primary
-          sourceSymbol: "installExternalSkills"
+          sourceSymbol: "syncCrossReviewSkills"
           sinkId: sink.action-commands.primary
     terminal:
       participant: capability
@@ -43,7 +43,7 @@ outcomes:
         label: "Propagate Action Command Installer failure"
         evidence:
           entrypointId: entrypoint.action-commands.primary
-          sourceSymbol: "installExternalSkills"
+          sourceSymbol: "syncCrossReviewSkills"
           sinkId: sink.action-commands.primary
     terminal:
       participant: capability

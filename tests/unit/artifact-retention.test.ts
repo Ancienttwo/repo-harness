@@ -66,7 +66,7 @@ describe('artifact retention selection', () => {
     const report = runArtifactRetention({ repoRoot: root, apply: false, now: NOW });
 
     expect(report.mode).toBe('dry-run');
-    expect(report.config).toEqual({ days: 30, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] });
+    expect(report.config).toEqual({ days: 30, archiveDays: 90, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] });
     expect(report.archived.map((entry) => [entry.class, entry.path, entry.ageDays])).toEqual([
       ['closed-plans', 'plans/archive/plan-old.md', 45],
       ['closed-task-records', 'tasks/archive/gate-audit', 60],
@@ -134,6 +134,63 @@ describe('artifact retention selection', () => {
       'task-agents',
       'verification-vx-0123456789abcdef0123.json',
     ]);
+  });
+
+  test('fs-transaction backups past the window leave for the archive root and recent ones stay', () => {
+    const root = fixture('.ai/harness/backups/\n.ai/harness/archive/\n');
+    const backups = '.ai/harness/backups/fs-transaction';
+    seed(root, `${backups}/1700000000000-42-1/manifest.json`, 45);
+    seed(root, `${backups}/AGENTS.md.1700000000000-42-1.bak`, 45);
+    seed(root, `${backups}/1790000000000-43-1/manifest.json`, 2);
+
+    const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
+
+    expect(report.archived.map((entry) => [entry.class, entry.path])).toEqual([
+      ['transaction-backups', `${backups}/1700000000000-42-1`],
+      ['transaction-backups', `${backups}/AGENTS.md.1700000000000-42-1.bak`],
+    ]);
+    expect(report.skipped.map((entry) => [entry.path, entry.reason])).toEqual([[`${backups}/1790000000000-43-1`, 'recent']]);
+    expect(existsSync(join(root, DEFAULT_ARCHIVE_ROOT, backups, '1700000000000-42-1/manifest.json'))).toBe(true);
+    expect(readdirSync(join(root, backups))).toEqual(['1790000000000-43-1']);
+  });
+
+  test('archived entries past the archive window are deleted and the rest of the archive stays', () => {
+    const root = fixture();
+    policy(root, { keep: ['plans/archive/plan-pinned.md'] });
+    const archive = DEFAULT_ARCHIVE_ROOT;
+    seed(root, `${archive}/plans/archive/plan-expired.md`, 91);
+    seed(root, `${archive}/tasks/archive/batch-expired/notes.md`, 120);
+    seed(root, `${archive}/.ai/harness/checks/verify.log`, 89);
+    seed(root, `${archive}/plans/archive/plan-pinned.md`, 400);
+    seed(root, `${archive}/notes.md`, 400);
+
+    const dryRun = runArtifactRetention({ repoRoot: root, apply: false, now: NOW });
+    expect(dryRun.purged.map((entry) => [entry.class, entry.path, entry.ageDays])).toEqual([
+      ['closed-plans', `${archive}/plans/archive/plan-expired.md`, 91],
+      ['closed-task-records', `${archive}/tasks/archive/batch-expired`, 120],
+    ]);
+    expect(existsSync(join(root, archive, 'plans/archive/plan-expired.md'))).toBe(true);
+
+    const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
+
+    expect(report.purged).toEqual(dryRun.purged);
+    expect(report.purgeFailed).toEqual([]);
+    expect(existsSync(join(root, archive, 'plans/archive/plan-expired.md'))).toBe(false);
+    expect(existsSync(join(root, archive, 'tasks/archive/batch-expired'))).toBe(false);
+    expect(existsSync(join(root, archive, '.ai/harness/checks/verify.log'))).toBe(true);
+    expect(existsSync(join(root, archive, 'plans/archive/plan-pinned.md'))).toBe(true);
+    expect(existsSync(join(root, archive, 'notes.md'))).toBe(true);
+    expect(formatRetentionReport(report)).toContain(`deleted: ${archive}/plans/archive/plan-expired.md (91d)`);
+  });
+
+  test('an archived entry Git would see is refused before anything is deleted', () => {
+    const root = fixture('local-archive/*\n!local-archive/plans/\n');
+    policy(root, { archive_root: 'local-archive' });
+    seed(root, 'local-archive/plans/archive/plan-expired.md', 400);
+
+    expect(() => runArtifactRetention({ repoRoot: root, apply: true, now: NOW }))
+      .toThrow('archived entries are not gitignored: local-archive/plans/archive/plan-expired.md');
+    expect(existsSync(join(root, 'local-archive/plans/archive/plan-expired.md'))).toBe(true);
   });
 
   test('a directory entry is as recent as the newest file inside it', () => {
@@ -244,7 +301,7 @@ describe('artifact retention selection', () => {
 
     const report = runArtifactRetention({ repoRoot: root, apply: true, now: NOW });
 
-    expect(report.config).toEqual({ days: 7, archiveRoot: 'local-archive', keep: [] });
+    expect(report.config).toEqual({ days: 7, archiveDays: 67, archiveRoot: 'local-archive', keep: [] });
     expect(report.archived.map((entry) => entry.destination)).toEqual(['local-archive/plans/archive/plan-week.md']);
     expect(existsSync(join(root, 'local-archive/plans/archive/plan-week.md'))).toBe(true);
   });
@@ -286,6 +343,10 @@ describe('artifact retention selection', () => {
     [{ archive_root: 'plans/archive/old' }, 'overlaps scanned directory plans/archive'],
     [{ archive_root: '.ai/harness/runs/archive' }, 'overlaps scanned directory .ai/harness/runs'],
     [{ keep: 'plans/archive' }, 'retention.keep must be an array'],
+    [{ archive_days: 30 }, 'retention.archive_days must be an integer greater than days'],
+    [{ days: 60, archive_days: 45 }, 'retention.archive_days must be an integer greater than days'],
+    [{ archive_days: '90' }, 'retention.archive_days must be an integer greater than days'],
+    [{ archive_days: null }, 'retention.archive_days must be an integer greater than days'],
     [{ retain: 30 }, 'unknown information_lifecycle.retention key: retain'],
     [[], 'information_lifecycle.retention must be an object'],
   ])('malformed retention policy %j fails closed', (retention, message) => {
@@ -312,5 +373,34 @@ describe('retention command', () => {
     expect(report.mode).toBe('apply');
     expect(report.archived.map((entry) => entry.path)).toEqual(['plans/archive/plan-old.md']);
     expect(statSync(join(root, DEFAULT_ARCHIVE_ROOT, 'plans/archive/plan-old.md')).isFile()).toBe(true);
+  });
+
+  test('--json lists every harness storage root with its retention rule', async () => {
+    const root = fixture();
+    const result = await runCliInProcess(['retention', '--repo', root, '--json'], root, process.env);
+    expect(result.status).toBe(0);
+    const report = JSON.parse(result.stdout) as { roots: { path: string; rule: string; detail: string }[] };
+    expect(report.roots.map((entry) => [entry.path, entry.rule])).toEqual([
+      ['plans/archive', 'archive'],
+      ['tasks/archive', 'archive'],
+      ['.ai/harness/checks', 'archive'],
+      ['.ai/harness/runs', 'archive'],
+      ['.ai/harness/backups/fs-transaction', 'archive'],
+      [DEFAULT_ARCHIVE_ROOT, 'delete'],
+      ['.ai/harness/runs/hook-events.jsonl', 'rotate'],
+      ['.ai/harness/mcp/index-events.jsonl', 'rotate'],
+      ['.ai/harness/mcp/metrics.jsonl', 'rotate'],
+      ['.ai/harness/mcp/trace.jsonl', 'rotate'],
+      ['.ai/harness/mcp/audit.log', 'rotate'],
+      ['~/.repo-harness/packages', 'rotate'],
+      ['~/.repo-harness/upgrade-cleanup.log.jsonl', 'rotate'],
+      ['.ai/harness/runs/task-agents', 'keep'],
+      ['.ai/harness/runs/task-workspaces', 'keep'],
+      ['{common}/repo-harness/task-inbox/v2', 'keep'],
+      ['{common}/repo-harness/feedback/v1', 'keep'],
+      ['{common}/repo-harness/integration/v1', 'keep'],
+    ]);
+    expect(report.roots.find((entry) => entry.rule === 'delete')?.detail).toBe('archived entries are deleted 90 days after their newest write');
+    expect(report.roots[0]?.detail).toBe(`closed-plans move to ${DEFAULT_ARCHIVE_ROOT} after 30 days`);
   });
 });

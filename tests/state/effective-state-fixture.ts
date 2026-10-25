@@ -341,22 +341,6 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
     risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security', explicitOverride: 'routine' },
   },
   {
-    name: 'deleted-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => {
-      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
-      rmSync(join(cwd, '.ai/harness/state/effective.json'));
-    },
-  },
-  {
-    name: 'corrupt-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => {
-      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
-      writeFixture(cwd, '.ai/harness/state/effective.json', '{broken');
-    },
-  },
-  {
     name: 'stale-dead-lock-reclaimed',
     risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
     setup: (cwd, nowMs) => writeFixtureStateLock(cwd, {

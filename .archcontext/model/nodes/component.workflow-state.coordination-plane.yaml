@@ -9,13 +9,12 @@
   "responsibilities": [
     "Read persisted Sprint task identity and historical lease ownership without creating or completing task claims.",
     "Project the board from canonical Sprint rows, historical leases, worktree topology and attempt ledgers without a task lock.",
-    "Read historical claim tokens and liveness records without token deletion, renewal or lease cleanup writers.",
+    "Read historical claim tokens without token deletion or lease cleanup writers.",
     "Keep shared task locks for manual inbox and feedback operations. Keep worktree topology, sweep and deletion guards."
   ],
   "source": {
     "include": [
       "src/core/state/coordination-identity.ts",
-      "src/core/state/lease-liveness.ts",
       "src/core/state/sprint-*.ts",
       "src/core/state/project-board*.ts",
       "src/core/state/command-outcome.ts",
@@ -25,7 +24,6 @@
       "src/effects/state/resolve-board.ts",
       "src/effects/state/pruned-worktree-intents.ts",
       "src/effects/state/worktree-trash.ts",
-      "src/effects/state/write-journal.ts",
       "src/core/worktree-*"
     ]
   }

@@ -2,12 +2,12 @@
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs';
-import { userInfo } from 'os';
 import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import { acceptanceReceiptPath, resolveProtectedGitRuntime } from './acceptance-receipt';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
 import { resolveTrustedGhExecutable } from '../src/effects/runtime/protected-helper-platform';
+import { osAccountHome } from '../src/effects/runtime/os-account-home';
 
 type OutputFormat = 'json' | 'sha' | 'required';
 export type Candidate = { baseSha: string; headSha: string; diff: Buffer; diffFingerprint: string; changedFiles: string[] };
@@ -114,34 +114,6 @@ function repositoryRoot(): string {
 
 function pathIsInside(root: string, path: string): boolean {
   return path === root || path.startsWith(`${root}/`);
-}
-
-function osAccountHome(): string {
-  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
-  if (process.platform === "darwin" && uid !== undefined) {
-    const identity = spawnSync("/usr/bin/id", ["-un", String(uid)], { encoding: "utf-8" });
-    const username = identity.status === 0 ? identity.stdout.trim() : "";
-    if (!/^[A-Za-z0-9._-]+$/.test(username)) fail("cannot resolve the current macOS account name");
-    const directory = spawnSync("/usr/bin/dscl", [".", "-read", `/Users/${username}`, "NFSHomeDirectory"], { encoding: "utf-8" });
-    const match = directory.status === 0 ? directory.stdout.match(/^NFSHomeDirectory:\s*(.+)$/m) : null;
-    if (!match?.[1]?.trim()) fail("cannot resolve the current macOS account home");
-    return match[1].trim();
-  }
-  if (process.platform === "linux" && uid !== undefined) {
-    for (const getent of ["/usr/bin/getent", "/bin/getent"]) {
-      if (!existsSync(getent)) continue;
-      const account = spawnSync(getent, ["passwd", String(uid)], { encoding: "utf-8" });
-      const home = account.status === 0 ? account.stdout.trim().split(":")[5] : "";
-      if (home) return home;
-    }
-    const account = readFileSync("/etc/passwd", "utf-8")
-      .split("\n")
-      .find((line) => line.split(":")[2] === String(uid));
-    const home = account?.split(":")[5];
-    if (home) return home;
-    fail("cannot resolve the current Linux account home");
-  }
-  return userInfo().homedir;
 }
 
 function parseArgs(argv: string[]): { command: 'run' | 'verify' | 'fingerprint'; base: string; format: OutputFormat } {
@@ -278,14 +250,14 @@ function readSeal(path: string): Seal {
   return parsed as Seal;
 }
 
-export async function runMergeGateCli(argv: string[], authorityHome = osAccountHome()): Promise<void> {
+export async function runMergeGateCli(argv: string[], authorityHome?: string): Promise<void> {
   try {
   const args = parseArgs(argv); const root = repositoryRoot(); const current = candidate(root, args.base);
   const required = true;
   if (args.command === 'fingerprint') { requireLeakFreeCandidate(current); printResult(args.format, required, current); return; }
   requireCleanCandidate(root);
   const helper = helperFingerprint(root);
-  const trustedHome = realpathSync(authorityHome);
+  const trustedHome = realpathSync(authorityHome ?? osAccountHome());
   const number = requireChecks(root, current);
   const path = sealPath(root, trustedHome, args.command === 'run');
   if (args.command === 'run') {

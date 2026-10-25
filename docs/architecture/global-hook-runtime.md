@@ -18,7 +18,7 @@ The boundary has four layers:
 2. The installed command resolves the repository, checks the opt-in marker
    `.ai/harness/workflow-contract.json`, and invokes the hook-only CLI entry
    point. Opted-in repositories require this bin on PATH.
-3. `ROUTES` contains the 6 public `(event, routeId, matcher)` tuples. Every
+3. `ROUTES` contains the 7 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
 4. `handler-registry.ts` runs one typed in-process handler. The handler
@@ -65,7 +65,7 @@ A thrown handler exits 1, except the edit guard. The edit guard route is
 fail-closed: a throw exits 2 on Claude and Codex. A missing `HOOK_HOST`, an unknown route and a route that is not
 installed for the host also stop before a handler runs.
 
-The public route inventory has 6 `(event, routeId, matcher)` tuples. The
+The public route inventory has 7 `(event, routeId, matcher)` tuples. The
 Host column of the route table in
 [`hook-operations.md`](../reference-configs/hook-operations.md#hook-authority-map)
 lists the matcher, host and typed handler of each tuple.
@@ -130,7 +130,7 @@ hook state writes reject symlink paths and replace files atomically.
 
 `src/cli/hook/event-telemetry.ts` is the sole writer for
 `.ai/harness/runs/hook-events.jsonl`. Storage maintenance lives in
-`src/effects/hook-event-log.ts`: before the next append, an active file at or
+`src/effects/segmented-log.ts`: before the next append, an active file at or
 above 8 MiB is atomically renamed into `hook-events.jsonl.archive/`. The archive
 retains at most 32 owned segments and 256 MiB, deleting oldest segments first.
 The active threshold may be exceeded by the last record or concurrent appends;

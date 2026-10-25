@@ -15,7 +15,6 @@ import {
   installProfileTransactionPaths,
   effectiveSkillRoots,
   installedProfileStatus,
-  hashManagedTree,
   planInstallProfile,
   PROFILE_COMPONENTS,
   profileEnablesCodegraph,
@@ -28,6 +27,7 @@ import {
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
+import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
 import { parseSkillSurfaceCatalog, probeExpectations } from '../src/core/skill-surface/catalog';
@@ -59,8 +59,8 @@ function writePath(path: string, content = ''): void {
   writeFileSync(path, content);
 }
 
-// Mirrors install-profile.ts's internal hashManagedTree for a
-// single-file directory (its own algorithm is not exported), so tests can
+// Mirrors effects/managed-tree.ts hashManagedTree for a
+// single-file directory, so tests can
 // construct a facade whose owner marker is provably unmodified without
 // running an actual install/sync.
 function writeMarkedFacade(dest: string, skillMdContent: string): void {
@@ -718,6 +718,25 @@ describe('install profiles', () => {
       expect([codexRoot, claudeRoot].map(treeSnapshot)).toEqual(before);
     }));
   }
+
+  test('skill sync takes its roots from the TypeScript root rule', () => withHome((env) => {
+    const source = join(env.HOME!, 'package-source');
+    seedSyncRuntime(source);
+    writePath(join(source, 'SKILL.md'), '# managed\n');
+    const codexRoot = join(env.HOME!, 'custom', 'codex-skills');
+    const claudeRoot = join(env.HOME!, 'custom', 'claude-skills');
+    const custom = { ...env, CODEX_SKILLS_ROOT: `${codexRoot}/`, CLAUDE_SKILLS_ROOT: `${claudeRoot}/` };
+    const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(sync.status, sync.stderr).toBe(0);
+    expect(syncedSkillRoots(sync.stdout)).toEqual([codexRoot, claudeRoot]);
+    expect(effectiveSkillRoots(custom)).toEqual([codexRoot, claudeRoot]);
+
+    const { HOME: _home, CODEX_SKILLS_ROOT: _codex, ...homeless } = env;
+    const rejected = runSkillSync(homeless, { AGENTIC_DEV_SOURCE_ROOT: source, REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.stderr).toContain('HOME is required when CODEX_SKILLS_ROOT is not set.');
+    expect(rejected.stdout).not.toContain('command facades');
+  }));
 
   test('status detects actual managed host surface drift', () => withHome((env) => {
     const { canonical } = writeManagedHostSurfaces(env);

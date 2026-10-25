@@ -856,11 +856,14 @@ to native-role-routing `invalid` and receives no implementation boundary.
 `install_mode`:
 
 - This repo's own `.ai/harness/policy.json` sets
-  `"install_mode": "auto-install-on-init"` — `init` and `migrate --apply`
-  install the fleet automatically.
-- Generated downstream repos default to `"install_mode": "advisory"` — `init`
-  and `migrate` only print a one-line reminder naming
+  `"install_mode": "auto-install-on-init"` — the scaffold helper
+  `scripts/init-project.sh` installs the fleet automatically on apply.
+- Generated downstream repos default to `"install_mode": "advisory"` — the
+  scaffold helper only prints a one-line reminder naming
   `repo-harness run install-agent-fleet`; nothing is written automatically.
+- `repo-harness init` never installs the fleet. The full-profile
+  `repo-harness install` and `repo-harness update` install it inside the host
+  transaction.
 
 `migrate --dry-run` never installs the fleet regardless of `install_mode`;
 dry-run makes no writes to the global agent-fleet directories at all.
@@ -884,8 +887,8 @@ The CLI entry rejects older or unparseable Bun runtimes before command dispatch.
 The top-level Unix and Windows bootstrap installers upgrade an older detected
 Bun before installing repo-harness, rather than relying on package-engine
 metadata that older Bun releases do not enforce.
-The shared global runtime setup used by mutating `repo-harness install`, `init`,
-and `update` binds every Bun subprocess to the exact executable it probes. It
+The shared global runtime setup used by mutating `repo-harness install` and
+`update` binds every Bun subprocess to the exact executable it probes. It
 runs and verifies `bun upgrade` only for Bun self-installer-owned binaries;
 older Homebrew, Scoop, npm, or other package-manager-owned binaries fail closed
 with an actionable manager upgrade command. This covers direct

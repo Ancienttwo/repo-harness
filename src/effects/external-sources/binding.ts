@@ -14,9 +14,9 @@ import {
 import {
   readCanonicalSprint,
   readCanonicalTaskPlanProof,
-  resolveRepoIdentity,
   type CanonicalTaskPlanProofResult,
 } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 import {
   listExternalSourceBindingReceipts,
   listExternalSourceRefreshReceipts,

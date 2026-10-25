@@ -97,7 +97,7 @@ if (!["claude", "codex", "both"].includes(hostMode)) {
   process.exit(1);
 }
 
-const HOME = os.homedir();
+const HOME = process.env.HOME ?? os.homedir();
 const REPO_ROOT = process.cwd();
 const SELECTED_HOSTS = hostMode === "both" ? ["claude", "codex"] : [hostMode];
 const WAZA_SOURCE_REPO = "tw93/Waza";

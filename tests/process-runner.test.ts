@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { spawn } from "child_process";
 import { capProcessOutput, runProcess } from "../src/effects/process-runner";
-import { taskkillAttemptSucceeded } from "../src/effects/process-supervisor";
+import {
+  processGroupExists,
+  taskkillAttemptSucceeded,
+  terminateProcessGroup,
+  terminateProcessGroupSync,
+} from "../src/effects/process-group-termination";
 
 describe("process runner", () => {
   test("captures status and redacts common secrets from output and command args", () => {
@@ -56,5 +62,122 @@ describe("process runner", () => {
     expect(taskkillAttemptSucceeded({ status: 1 })).toBe(false);
     expect(taskkillAttemptSucceeded({ status: null })).toBe(false);
     expect(() => taskkillAttemptSucceeded({ status: null, error: new Error("spawn failed") })).toThrow("spawn failed");
+  });
+});
+
+// The leader exits on SIGTERM; its background grandchild ignores SIGTERM and
+// keeps the group alive. The launcher exits after readiness, so the group is
+// orphaned and reaped by init, as an abandoned supervised group is.
+const TERM_RESISTANT_GRANDCHILD = `trap 'exit 0' TERM; (trap '' TERM; exec sh -c 'echo "$PPID $$"; while :; do sleep 0.05; done') & wait`;
+const TERM_HONORING_GROUP = `echo "$$ $$"; while :; do sleep 0.05; done`;
+
+async function startOrphanedGroup(script: string): Promise<{ readonly pgid: number; readonly member: number }> {
+  const launcher = spawn(process.execPath, ["-e", [
+    "const { spawn } = require('child_process');",
+    `const group = spawn('bash', ['-c', ${JSON.stringify(script)}], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });`,
+    "group.stdout.once('data', (line) => { process.stdout.write(String(line)); process.exit(0); });",
+  ].join("\n")], { stdio: ["ignore", "pipe", "inherit"] });
+  const ready = await new Promise<string>((resolve, reject) => {
+    let buffered = "";
+    launcher.stdout!.on("data", (chunk: Buffer) => {
+      buffered += chunk.toString("utf8");
+      if (buffered.includes("\n")) resolve(buffered.trim());
+    });
+    launcher.once("error", reject);
+    launcher.once("close", () => reject(new Error(`launcher closed before readiness: ${buffered}`)));
+  });
+  const [pgid, member] = ready.split(" ").map(Number);
+  return { pgid: pgid!, member: member! };
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function killGroup(pgid: number): void {
+  try { process.kill(-pgid, "SIGKILL"); } catch { /* already gone */ }
+}
+
+const drivers = [
+  ["terminateProcessGroup", (pgid: number, graceMs: number) => terminateProcessGroup(pgid, graceMs)],
+  ["terminateProcessGroupSync", async (pgid: number, graceMs: number) => terminateProcessGroupSync(pgid, graceMs)],
+] as const;
+
+describe.skipIf(process.platform === "win32")("process group termination", () => {
+  for (const [name, terminate] of drivers) {
+    test(`${name} kills a TERM-resistant grandchild after its leader exits on SIGTERM`, async () => {
+      const { pgid, member: grandchild } = await startOrphanedGroup(TERM_RESISTANT_GRANDCHILD);
+      try {
+        expect(processExists(grandchild)).toBe(true);
+
+        const termination = await terminate(pgid, 200);
+
+        expect(termination).toEqual({ confirmed: true, forced: true });
+        expect(processGroupExists(pgid)).toBe(false);
+        expect(processExists(pgid)).toBe(false);
+        expect(processExists(grandchild)).toBe(false);
+      } finally {
+        killGroup(pgid);
+      }
+    }, 20_000);
+  }
+
+  test("ends the grace period when the whole group exits on SIGTERM", async () => {
+    const { pgid } = await startOrphanedGroup(TERM_HONORING_GROUP);
+    try {
+      const started = Date.now();
+
+      const termination = await terminateProcessGroup(pgid, 10_000);
+
+      expect(termination).toEqual({ confirmed: true, forced: false });
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(processGroupExists(pgid)).toBe(false);
+    } finally {
+      killGroup(pgid);
+    }
+  }, 20_000);
+
+  test("a throwing beforeForce hook stops the escalation", async () => {
+    const { pgid, member: grandchild } = await startOrphanedGroup(TERM_RESISTANT_GRANDCHILD);
+    try {
+      await expect(terminateProcessGroup(pgid, 100, {
+        beforeForce: () => { throw new Error("identity lost"); },
+      })).rejects.toThrow("identity lost");
+      expect(processExists(grandchild)).toBe(true);
+    } finally {
+      killGroup(pgid);
+    }
+  }, 20_000);
+
+  test("does not send SIGKILL when the group exits during the beforeForce hook", async () => {
+    const { pgid } = await startOrphanedGroup(TERM_RESISTANT_GRANDCHILD);
+    try {
+      const termination = await terminateProcessGroup(pgid, 100, {
+        // A blocking identity check can outlast the group; it exits here before the hook returns.
+        beforeForce: () => {
+          process.kill(-pgid, "SIGKILL");
+          const deadline = Date.now() + 5_000;
+          while (processGroupExists(pgid) && Date.now() < deadline) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+          }
+        },
+      });
+
+      expect(termination).toEqual({ confirmed: true, forced: false });
+    } finally {
+      killGroup(pgid);
+    }
+  }, 20_000);
+
+  test("does not signal a group that already exited", async () => {
+    const child = spawn("true", [], { detached: true, stdio: "ignore" });
+    await new Promise((resolve) => child.once("exit", resolve));
+
+    expect(await terminateProcessGroup(child.pid!, 10_000)).toEqual({ confirmed: true, forced: false });
   });
 });

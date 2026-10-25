@@ -12,7 +12,8 @@ import {
 import { EngineerProfileBindingError, engineerSha256 } from '../../core/engineers/profile-binding';
 
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
+import { readCanonicalSprint } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';

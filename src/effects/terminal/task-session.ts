@@ -3,9 +3,11 @@ import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { configuredGitBinary } from '../git/common-directory';
+import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
+import { terminateProcessGroup } from '../process-group-termination';
 import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
@@ -144,27 +146,19 @@ export function processProofAlive(proof: ProcessProof): boolean {
   }
   return true;
 }
-export function signalCreatedProcess(process: OwnedProcess, signal: NodeJS.Signals, group = false): void {
+/** False when the created process exited; a live process must still lead its own group. */
+function createdProcessGroupAlive(process: OwnedProcess): boolean {
   assertCreated(process.ownership);
-  if (!processProofAlive(process)) return;
+  if (!processProofAlive(process)) return false;
   try {
-    if (group) {
-      const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
-      if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
-    }
-    globalThis.process.kill(group ? -process.pid : process.pid, signal);
+    const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
+    if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
+    return true;
   } catch (error) {
     // The process can exit after the liveness proof above. Only a confirmed
     // exit of the same process is success; a live or reused PID still refuses.
     if (processProofAlive(process)) throw error;
-  }
-}
-export async function waitSessionArtifact(path: string, deadline: number, check: () => void): Promise<void> {
-  let nextCheck = 0;
-  while (!existsSync(path)) {
-    if (Date.now() >= nextCheck) { check(); nextCheck = Date.now() + 1000; }
-    if (Date.now() >= deadline) throw new Error('task_agent_wait_timeout; delivery may be ambiguous; inspect the same request');
-    await Bun.sleep(100);
+    return false;
   }
 }
 /** File artifacts, never a new process/session, own the monotonic round budget. */
@@ -261,8 +255,7 @@ interface TaskWorkspaceBinding {
   root_pane: { pane_id: string; terminal_id: string; shell: ProcessProof; ownership: ObjectOwnership };
 }
 function workspaceDirectory(repository: TaskRepository): string {
-  const key = createHash('sha256').update(JSON.stringify([repository.repository_id, repository.execution_root])).digest('hex');
-  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', key);
+  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(repository.repository_id, repository.execution_root));
 }
 /** The session sweep cannot close an open runtime or contact Herdr. */
 export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
@@ -389,8 +382,7 @@ function validateSpec(spec: TaskAgentSpec): void {
 }
 export function taskSessionDirectory(root: string, task: string, role: string): string {
   const repository = taskRepository(root);
-  const key = createHash('sha256').update(JSON.stringify([repository.repository_id, task, role])).digest('hex');
-  return join(repository.primary_root, '.ai/harness/runs/task-agents', key);
+  return join(repository.primary_root, '.ai/harness/runs/task-agents', taskSessionKey(repository.repository_id, task, role));
 }
 export async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
   const deadline = Date.now() + waitTimeoutMs;
@@ -414,7 +406,7 @@ function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBind
   const leader = processInfo?.foreground_process_group_id;
   // Herdr lists the whole foreground process group, so provider children can
   // appear beside the provider. The provider leads that group and is never the
-  // pane shell; signalCreatedProcess relies on the same leader rule. Anything
+  // pane shell; createdProcessGroupAlive relies on the same leader rule. Anything
   // else is refused, not guessed by name or list position.
   if (!Array.isArray(foreground) || !Number.isSafeInteger(leader) || leader < 1 || !Number.isSafeInteger(processInfo.shell_pid)
     || leader === processInfo.shell_pid || foreground.filter(item => item?.pid === leader).length !== 1) throw new Error('task_agent_provider_identity_unknown');
@@ -522,11 +514,9 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
  * and must be disposed before the existing task-agent pane cleanup is invoked.
  */
 function assertApplicationHostCommand(command: readonly string[]): void {
+  const bundle = join(import.meta.dir, '../../../dist/oar-review-host.js');
   if (command.length !== 4 || !isAbsolute(command[0]!) || command[1] !== '--disable-sigusr1'
-    || !['oar-review-host.js', 'oar-coding-host.js'].some(bundle => {
-      const path = join(import.meta.dir, '../../../dist', bundle);
-      return existsSync(path) && command[2] === realpathSync(path);
-    }) || !isAbsolute(command[3]!)
+    || !existsSync(bundle) || command[2] !== realpathSync(bundle) || !isAbsolute(command[3]!)
     || command.some(arg => /[\r\n]/.test(arg))) throw new Error('task_agent_application_host_command_invalid');
 }
 /** The process readback joins argv with spaces, so an argument must not contain one. */
@@ -619,7 +609,7 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
 function requestOutbox(binding: TaskPaneBinding, dir: string): string {
   return join(binding.execution_root, '.ai/harness/runs/task-agent-outbox', dir.split('/').pop()!);
 }
-export function assertTaskRequest(root: string, dir: string, request: TaskRequest): { binding: TaskPaneBinding; outbox: string } {
+function assertTaskRequest(root: string, dir: string, request: TaskRequest): { binding: TaskPaneBinding; outbox: string } {
   const { binding, dir: expectedDir } = readTaskAgent(root, request.task, request.role);
   const outbox = requestOutbox(binding, dir);
   if (request.protocol !== 2 || dir !== expectedDir || !Number.isSafeInteger(request.round) || request.round < 1
@@ -715,35 +705,16 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
 }
 async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promise<boolean> {
   assertCreated(proof.ownership);
-  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-    if (!processProofAlive(proof)) return true;
-    // Re-prove pane/process identity immediately before escalation. The guard
-    // must allow a provider exit after the check above; signalCreatedProcess
-    // makes the single alive decision before any signal.
-    guard();
-    signalCreatedProcess(proof, signal, true);
-    const deadline = Date.now() + 5000;
-    while (processProofAlive(proof) && Date.now() < deadline) await Bun.sleep(50);
-  }
-  return !processProofAlive(proof);
-}
-/** All task-agent cleanup paths must wait for the OAR owner's disposal. */
-async function disposeCodingApplication(dir: string, binding: TaskPaneBinding): Promise<boolean> {
-  const control = join(dir, 'coding-host');
-  if (!existsSync(join(control, 'spec.json'))) return true;
-  const ready = readSessionArtifact<{ pid: number; session_id: string }>(join(control, 'ready.json'));
-  if (ready.pid !== binding.provider.pid || !ready.session_id) throw new Error('task_agent_application_host_identity_lost');
-  const disposed = join(control, 'disposed.json');
-  if (!existsSync(disposed)) {
-    if (!processProofAlive(binding.provider)) return false;
-    assertTaskBinding(binding, true); // An exit before the receipt fails closed in the wait below.
-    if (!existsSync(join(control, 'close.request'))) writeSessionArtifact(join(control, 'close.request'), { task: binding.task, role: binding.role });
-    try { await waitSessionArtifact(disposed, Date.now() + 10_000, () => assertProcessProof(binding.provider)); }
-    catch { return false; }
-  }
-  const receipt = readSessionArtifact<{ disposed: boolean; session_id: string }>(disposed);
-  if (receipt.disposed !== true || receipt.session_id !== ready.session_id) throw new Error('task_agent_application_disposal_invalid');
-  return true;
+  if (!processProofAlive(proof)) return true;
+  // Re-prove pane/process identity before each signal. The guard must allow a
+  // provider exit after the check above; createdProcessGroupAlive makes the
+  // single alive decision before the first signal.
+  guard();
+  if (!createdProcessGroupAlive(proof)) return true;
+  // The provider leads the group, so its children exit with it even when the
+  // provider exits on SIGTERM first.
+  const termination = await terminateProcessGroup(proof.pid, 5000, { confirmMs: 5000, beforeForce: guard });
+  return termination.confirmed && !processProofAlive(proof);
 }
 export interface TaskCleanupResult { status: 'closed' | 'cleanup_pending'; pids: number[]; reason?: string }
 interface UnboundCleanupReceipt { intent_id: string; pane_id: string; terminal_id: string; pids: number[] }
@@ -784,17 +755,14 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
     const proof = readSessionArtifact<HerdrTaskBinding>(join(dir, 'provider-created.json'));
     assertCreated(proof.provider.ownership);
     if (proof.provider.ownership.intent_id !== intent.intent_id || proof.pane_id !== pane.pane_id || proof.terminal_id !== pane.terminal_id) throw new Error('task_agent_start_identity_unknown');
-    if (!await disposeCodingApplication(dir, proof)) return { status: 'cleanup_pending', pids: processProofAlive(proof.provider) ? [proof.provider.pid] : [], reason: 'oar_disposal_unproven' };
     const stopped = await stopCreatedProcess(proof.provider, () => {
       if (startPanePresent(intent.spec.endpoint, pane)) assertTaskBinding(proof, true);
       // Reparenting doesn't change birth/executable identity. A reused PID still
-      // throws; a confirmed exit is left to signalCreatedProcess.
+      // throws; a confirmed exit is left to createdProcessGroupAlive.
       else processProofAlive(proof.provider);
     });
     if (!stopped) return { status: 'cleanup_pending', pids: [proof.provider.pid] };
   }
-  if (existsSync(join(dir, 'coding-host/spec.json')) && existsSync(join(dir, 'launch-intent.json'))
-    && !existsSync(join(dir, 'provider-created.json'))) return { status: 'cleanup_pending', pids: [], reason: 'oar_unbound_disposal_unproven' };
   const receiptPath = join(dir, 'unbound-cleanup.json');
   let receipt: UnboundCleanupReceipt;
   if (existsSync(receiptPath)) {
@@ -856,7 +824,6 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       writeSessionArtifact(join(dir, 'closed.json'), { task, role, provider: binding.provider, disposition: mode === 'cancel' ? 'cancelled' : 'completed' });
       return { status: 'closed', pids: [] };
     }
-    if (!await disposeCodingApplication(dir, binding)) return { status: 'cleanup_pending', pids: processProofAlive(binding.provider) ? [binding.provider.pid] : [], reason: 'oar_disposal_unproven' };
     if (!await stopCreatedProcess(binding.provider, () => assertTaskBinding(binding, true))) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {

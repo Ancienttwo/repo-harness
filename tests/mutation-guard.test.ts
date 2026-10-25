@@ -6,6 +6,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
 import { getRoute } from '../src/cli/hook/route-registry';
 import { buildHookCommand } from '../src/cli/installer/managed-entries';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import { hookIdentity } from './helpers/hook-identity';
 
 // The in-process mutation guard keeps only the path boundaries that block:
@@ -343,7 +344,7 @@ describe('mutation boundaries', () => {
       });
       expect(result.status, result.stderr).toBe(0);
       expect(readFileSync(gitLog, 'utf8').trim().split('\n')).toEqual(['rev-parse --show-toplevel']);
-      expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(bin, { recursive: true, force: true }); }
   }, 30_000);
 

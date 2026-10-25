@@ -1,5 +1,6 @@
 import { buildProgram } from '../../src/cli/index';
-import { PROFILE_COMPONENTS, hashManagedTree, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
+import { PROFILE_COMPONENTS, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
+import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';

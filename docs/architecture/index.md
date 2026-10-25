@@ -18,6 +18,9 @@
   [Shared Coordination Plane](shared-coordination-plane.md),
   [Global Hook Runtime](global-hook-runtime.md) and
   [Transactional Adoption Planner](transactional-adoption-planner.md).
+- Hand-written overview views, in Chinese, each with a Remarks list for
+  simplification work: [layered architecture and sequences](layered-architecture.md)
+  and [process, namespace and mount topology](process-namespace-topology.md).
 
 ## System Boundary
 
@@ -117,7 +120,6 @@ flowchart LR
   Review["acceptance-review"]:::cap
   WS["workflow-state"]:::store
   EL["evidence-ledger"]:::store
-  CA["contract-assets"]:::cap
 
   Bot -.-> CLI
   CLI --> Fleet
@@ -125,7 +127,6 @@ flowchart LR
   CLI --> WS
   CLI --> Pub
   Fleet --> WS
-  Fleet --> CA
   Fleet --> Pub
   TAH -.-> Herdr
   Pub -.-> Provider
@@ -156,9 +157,8 @@ flowchart LR
 | Edge | Evidence |
 | --- | --- |
 | Bot -> CLI root | External. `README.md` "Two Layers": the Bot drives programs through the repo-harness CLI and Herdr. |
-| CLI root -> task-fleet, task-agent-host, workflow-state, publication | `relation.global-runtime-reconciliation.cli-root.task-fleet`, `.task-agent-host`, `.workflow-state`, `.publication` (`buildProgram` registers the fleet, herdr, task-agent, sprint, state and publication commands). |
+| CLI root -> task-fleet, task-agent-host, workflow-state, publication | `relation.global-runtime-reconciliation.cli-root.task-fleet`, `.task-agent-host`, `.workflow-state`, `.publication` (`buildProgram` registers the fleet, herdr, state and publication commands). |
 | task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read canonical Sprint tasks and leases to build offers and the board. |
-| task-fleet -> contract-assets | `relation.task-fleet.contract-assets`: run packaged contract worktree helpers to provision and bind an acquired task. |
 | task-fleet -> publication | `relation.task-fleet.publication`: read publication receipts, readiness and provider feedback. |
 | task-agent-host -> Herdr | External. The capability hosts persistent task agents in Herdr panes (capability summary). |
 | publication -> GitHub provider | External. Publication binds a claim generation to a pull request and never merges it (`modules/organization/publication.md` §3.1). |
@@ -186,16 +186,19 @@ Each datum has one authority. Every other representation is a projection.
 | Capability ownership | Capability nodes only (`src/core/capabilities/registry.ts`) | contract-assets | `scripts/capability-resolver.ts` longest-prefix match. |
 | Plans, contracts and reviews | Repository Markdown under `plans/` and `tasks/` | workflow-state reads them | Effective State is the single deterministic projection. Its JSON cache and `tasks/current.md` are read models ([Effective State Authority](effective-state-authority.md)). |
 | Task identity | The ID cell of the canonical Sprint row | workflow-state | Task revision, fleet offers and boards. |
-| Task execution (lease) | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims` | workflow-state | State board and fleet board (read-only, no persisted column). |
+| Task execution (lease), historical | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims`. Readers only since #834. `init` writes no cutover marker since #917. | workflow-state | State board and fleet board read them. Worktree safety does not. |
 | Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
-| Publication | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`; the `current_publication` pointer in the lease record | publication | Merge readiness is derived at read time and never stored. |
-| Acceptance | `~/.repo-harness/gates/<repo-id>/acceptance.latest.json` | acceptance-review | Effective State and integration acceptance read it. |
+| Publication, historical | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`. Readers only since #834. | publication | Merge readiness is derived at read time and never stored. |
+| Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json` | acceptance-review | Effective State and integration acceptance read it. |
 | Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
-| Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` | engineer-bindings | Engineer offers and the engineering overlay. |
+| Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` have readers only | engineer-bindings | Engineer offers and the engineering overlay. |
 | Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
 | Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Fleet offers and the operator read it. |
 | Global configuration | `~/.repo-harness/config.json` | global-runtime-reconciliation | Projection policy (`src/effects/architecture/projection-config.ts`). |
 | Merge | The provider and the user | none | repo-harness never merges. |
+
+Storage roots, sharing scope, locks and retention of these stores are in
+[process, namespace and mount topology](process-namespace-topology.md#3-命名空间拓扑).
 
 ## Capability Index
 

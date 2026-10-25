@@ -1,6 +1,6 @@
 # Plan: document handoff and bounded pstack reuse
 
-Status: Stage A local candidate. Independent review is pending. No live dispatch is enabled.
+Status: Retired. Issue #910 deleted the unconsumed Stage A pure API. No live dispatch is enabled.
 Date: 2026-10-06
 Source baseline: `ef695fb9f964f29342ee6c98ce150601006eb40f` (0.21.0, PR #583).
 

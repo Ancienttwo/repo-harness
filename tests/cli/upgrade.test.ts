@@ -3,10 +3,11 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { runUpgrade } from '../../src/cli/commands/upgrade';
-import { planLegacyLeftovers } from '../../src/core/upgrade/legacy-inventory';
+import { runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
-import { hashManagedTree, PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { hashManagedTree } from '../../src/effects/managed-tree';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
@@ -174,6 +175,21 @@ describe('upgrade with real release bytes', () => {
       }]);
       expect(settings.hooks.SessionStart).toBeUndefined();
     }
+  }));
+
+  test('the cleanup audit log keeps only the newest records', () => sandbox((opts) => {
+    const auditPath = join(opts.home, '.repo-harness/upgrade-cleanup.log.jsonl');
+    const prior = Array.from({ length: UPGRADE_AUDIT_MAX_RECORDS }, (_, index) => JSON.stringify({ transaction_id: `prior-${index}` }));
+    writeFileSync(auditPath, `${prior.join('\n')}\n`, { mode: 0o600 });
+
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true });
+
+    expect(result.exitCode).toBe(0);
+    const records = readFileSync(auditPath, 'utf8').trimEnd().split('\n').map((line) => JSON.parse(line));
+    expect(records).toHaveLength(UPGRADE_AUDIT_MAX_RECORDS);
+    expect(records[0].transaction_id).toBe('prior-1');
+    expect(records.at(-2).transaction_id).toBe(`prior-${UPGRADE_AUDIT_MAX_RECORDS - 1}`);
+    expect(records.at(-1).removed_paths).toEqual(result.removedPaths);
   }));
 
   test.each(['default', 'custom', 'custom-trailing-slash', 'custom-relative'])('global cleanup removes real installer shim commands from %s REPO_HARNESS_HOME', (kind) => sandbox((opts) => {
@@ -655,7 +671,7 @@ describe('upgrade copy projection fences', () => {
 });
 
 test('a non-root provider uses its declared surface for hashing and real staging', async () => {
-  const { hashUpgradeSource } = await import('../../src/core/upgrade/legacy-inventory');
+  const { hashUpgradeSource } = await import('../../src/effects/upgrade/legacy-inventory');
   projectionSandbox((opts) => {
     seed('upgrade-v0.19.5-home', opts.home);
     const provider = join(opts.home, '.codex/skills/repo-harness-cross-review');
@@ -688,7 +704,7 @@ test('a non-root provider uses its declared surface for hashing and real staging
 });
 
 test('directory source hashing rejects missing and invalid surfaces while file hashing needs no surface', async () => {
-  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/core/upgrade/legacy-inventory');
+  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/effects/upgrade/legacy-inventory');
   expect(() => hashUpgradeSource(ROOT, ROOT, undefined)).toThrow('source surface is missing or invalid');
   expect(() => Reflect.apply(hashUpgradeSource, undefined, [ROOT, ROOT, 'unknown-surface']))
     .toThrow('source surface is missing or invalid');
@@ -717,7 +733,7 @@ function nonRouterSkillSandbox(
 
 for (const name of ['repo-harness-cross-review', 'repo-harness-chatgpt'] as const) {
   test(`${name} refresh keeps top-level examples and matches a whole-folder copy with plain excludes`, async () => {
-    const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/cli/installer/install-profile');
+    const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/effects/managed-tree');
     nonRouterSkillSandbox(name, (opts, source, installed) => {
       const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === installed);
       expect(planned?.action).toBe('refresh');

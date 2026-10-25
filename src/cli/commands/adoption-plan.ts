@@ -94,7 +94,7 @@ export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanRe
   };
 }
 
-function renderApplyReport(report: AdoptionApplyReport, json = false): string {
+export function renderApplyReport(report: AdoptionApplyReport, json = false): string {
   if (json) return `${JSON.stringify(report, null, 2)}\n`;
   const lines = [
     `[init] repo: ${report.repoRoot}`,
@@ -111,6 +111,19 @@ function renderApplyReport(report: AdoptionApplyReport, json = false): string {
     if (report.apply.transactionManifestPath) lines.push(`[init] transaction: ${report.apply.transactionManifestPath}`);
     for (const result of report.apply.results.filter((entry) => entry.status === "failed")) {
       lines.push(`[init] failed operation: ${result.id}${result.error ? ` - ${result.error}` : ""}`);
+    }
+    const rollback = report.apply.rollback;
+    if (rollback) {
+      // The status counts above describe the attempt; this states what is on disk now.
+      const rolledBack = rollback.results.filter((result) => result.status === "rolled_back").length;
+      const failed = rollback.results.filter((result) => result.status === "failed");
+      lines.push(`[init] rollback: ${rollback.ok ? "complete" : "incomplete"} - ${rolledBack} rolled back, ${failed.length} failed`);
+      for (const result of failed) {
+        lines.push(`[init] rollback failed: ${result.path ?? result.id} (${result.action})${result.error ? ` - ${result.error}` : ""}`);
+      }
+      if (!rollback.ok) {
+        lines.push(`[init] not restored: ${failed.map((result) => result.path ?? result.id).join(", ")}`);
+      }
     }
   }
   if (report.registration) {

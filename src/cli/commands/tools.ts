@@ -1,4 +1,4 @@
-import { withRuntimeHostTransactionLock } from '../installer/runtime-host-lock';
+import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 /**
  * `repo-harness tools` — explicit tool lifecycle commands.
  *
@@ -154,7 +154,7 @@ export function buildToolsCommand(): Command {
       const repoRoot = rawOpts.repo ?? process.cwd();
       const configureHost = () => configureCodegraph({ repoRoot, target, location });
       const result = location === 'global'
-        ? withRuntimeHostTransactionLock(process.env, configureHost)
+        ? withRuntimeTransactionLock(globalRuntimeScope(process.env), configureHost)
         : configureHost();
       console.log(formatCodegraphConfigure(result, rawOpts.json === true, repoRoot));
       const failed = result.actions.some((entry) => entry.status === 'failed');

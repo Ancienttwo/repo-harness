@@ -72,7 +72,6 @@ function main(): void {
   if (options.status) {
     const status = recoveryStatus(repoRoot, activePlan);
     console.log(`Active plan: ${status.plan || "(none)"}`);
-    console.log(`Active contract: ${status.contract || "(none)"}`);
     console.log(`Handoff: ${status.handoff}`);
     console.log(`Resume packet: ${status.resume}`);
     return;
