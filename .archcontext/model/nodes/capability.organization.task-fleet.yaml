@@ -14,7 +14,6 @@
     "include": [
       "src/core/fleet/**",
       "src/effects/fleet/**",
-      "src/core/messages/document-handoff.ts",
       "src/cli/commands/fleet.ts",
       "src/core/messages/mechanics.ts"
     ],

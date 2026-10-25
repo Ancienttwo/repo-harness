@@ -112,7 +112,7 @@ sequenceDiagram
 
 ### 3.3 组件与依赖
 
-本 capability 只有一个组件 `component.strategy-reflection.primary`（Strategy Context Collector），7 个文件共 709 行。
+本 capability 只有一个组件 `component.strategy-reflection.primary`（Strategy Context Collector），5 个文件共 627 行。
 
 出向调用：
 - 到 action-commands 的 skill-surface-catalog 组件：`projectStrategySkill` 读取 manifest，检查 strategy skill 仍是 explicit-setup（`skill.ts:14-16`）。已声明为 relation。
@@ -120,10 +120,14 @@ sequenceDiagram
 
 ### 3.4 开放问题
 
-- `src/effects/strategy/wake.ts` 的 `exportStrategyWakePacket` 在 `src/` 和 `scripts/` 中没有调用方，只有 `tests/strategy.test.ts` 使用它。它是为后续 Bot wake 集成保留的边界，还是应该退役？没有记录。
 - 本仓库没有默认策略文档（路径定义见 `src/effects/strategy/context.ts#STRATEGY_DOCUMENT`），只有 `docs/strategy/repository-pilot.json`。所以 `strategy status` 在本仓库返回 `enabled: false`。PR #604 要求合并后在 main 上重跑一次 pilot。是否已经重跑？没有记录。
 
 ## 4. 歷史決策記錄(append-only)
+
+### 2026-10-25 退役 wake 导出适配器（issue #910）
+
+- 删除 wake 导出适配器 `exportStrategyWakePacket` 和它的纯合并逻辑 `coalesceStrategyWakes`。没有 CLI、host 或 Bot 调用它们。
+- reference config 删除 wake 契约段落。真实 host 集成需要另行批准，届时再加。
 
 ### 2026-10-11 建立 capability 节点
 
@@ -135,4 +139,3 @@ sequenceDiagram
 ## Optimization Backlog
 
 - 集成步骤已添加 relation：`component.strategy-reflection.primary` → `capability.workflow-engine.workflow-state`（`context.ts:2-3` import `readonly-observation.ts` 和 `resolve-effective-state.ts`）。
-- 决定 `exportStrategyWakePacket` 保留还是退役（见 §3.4）。

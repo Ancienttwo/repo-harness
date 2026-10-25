@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.operator.http-reader.architecture-view
-kind: calls
-source: component.operator.primary
-target: component.operator.architecture-view
-intent: "Build the docs graph from committed repository content"
