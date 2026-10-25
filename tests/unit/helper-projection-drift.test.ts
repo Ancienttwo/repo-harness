@@ -28,8 +28,8 @@ describe('single executable helper authority', () => {
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
-      for (const dir of ['scripts', 'src/core/capabilities', 'src/core/decision', 'src/effects/capabilities', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/decision/pane-status.mjs', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/effects/capabilities/capability-resolver.ts']) {
+      for (const dir of ['scripts', 'src/core/capabilities', 'src/core/decision', 'src/effects/capabilities', 'src/effects/git', 'src/effects/state', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/decision/pane-status.mjs', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/effects/capabilities/capability-resolver.ts', 'src/effects/git/runner.ts', 'src/effects/state/readonly-observation.ts']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
       copyFileSync(join(ROOT, 'src/core/worktree-location.mjs'), join(root, 'assets/herdr/webhook-notify/worktree-location.mjs'));

@@ -1,5 +1,6 @@
+import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
-import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync, observationSpawnSync as spawnSync } from '../state/readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../state/readonly-observation';
 import { createHash } from 'crypto';
 import {
   chmodSync,
@@ -194,7 +195,7 @@ export function resolveProtectedGitRuntime(): ProtectedGitRuntime {
 
 function gitText(root: string, args: string[]): string {
   const runtime = resolveProtectedGitRuntime();
-  const result = spawnSync(runtime.gitBin, ['-C', root, ...args], { encoding: 'utf-8', env: runtime.env });
+  const result = gitSpawnSync(['-C', root, ...args], { gitBin: runtime.gitBin, encoding: 'utf-8', env: runtime.env });
   if (result.status !== 0) fail(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'unknown error'}`);
   return result.stdout.trim();
 }

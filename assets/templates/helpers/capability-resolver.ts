@@ -849,9 +849,188 @@ export function toArchContextNodeV2(capability: Capability, isExistingDirectory:
     },
   };
 }
+import { AsyncLocalStorage } from 'node:async_hooks';
+import * as fs from 'node:fs';
+import * as child from 'node:child_process';
+
+/** An opt-in IO capability. Ordinary owners retain their original defaults. */
+export interface ReadonlyObservationIO {
+  readFile(path: string): Buffer;
+  readDirectory(path: string): string[];
+  validatePath(path: string): void;
+  exec(file: string, args: string[], options: child.ExecFileSyncOptions): Buffer;
+}
+export class ObservationViolation extends Error {}
+interface Scope { io: ReadonlyObservationIO; failure?: ObservationViolation }
+const scopes = new AsyncLocalStorage<Scope>();
+export function currentReadonlyObservation(): ReadonlyObservationIO | undefined { return scopes.getStore()?.io; }
+function checked<T>(call: () => T): T {
+  try { return call(); }
+  catch (error) {
+    if (error instanceof ObservationViolation) { const scope = scopes.getStore(); if (scope) scope.failure ??= error; }
+    throw error;
+  }
+}
+export function withReadonlyObservation<T>(io: ReadonlyObservationIO, call: () => T): T {
+  const scope: Scope = { io };
+  return scopes.run(scope, () => {
+    const result = call();
+    if (scope.failure) throw scope.failure;
+    return result;
+  });
+}
+export function assertObservationPath(path: string): void {
+  const io = currentReadonlyObservation(); if (io) checked(() => io.validatePath(path));
+}
+export function rejectObservation(reason: string): never { return checked(() => { throw new ObservationViolation(reason); }); }
+function encoding(options: unknown): BufferEncoding | undefined {
+  return typeof options === 'string' ? options as BufferEncoding
+    : options && typeof options === 'object' ? (options as { encoding?: BufferEncoding }).encoding ?? undefined : undefined;
+}
+export const observationReadFileSync: typeof fs.readFileSync = ((path: fs.PathOrFileDescriptor, options?: unknown) => {
+  const io = currentReadonlyObservation();
+  if (!io) return fs.readFileSync(path, options as BufferEncoding);
+  if (typeof path !== 'string') return rejectObservation('Observation requires a named source file');
+  const bytes = checked(() => io.readFile(path)); const enc = encoding(options);
+  return enc ? bytes.toString(enc) : bytes;
+}) as typeof fs.readFileSync;
+export const observationReaddirSync: typeof fs.readdirSync = ((path: fs.PathLike, options?: unknown) => {
+  const io = currentReadonlyObservation();
+  if (!io) return fs.readdirSync(path, options as BufferEncoding);
+  if (typeof path !== 'string' || options) return rejectObservation('Unsupported observation directory options');
+  return checked(() => io.readDirectory(path));
+}) as typeof fs.readdirSync;
+export const observationExecFileSync: typeof child.execFileSync = ((file: string, args: string[], options: child.ExecFileSyncOptions = {}) => {
+  const io = currentReadonlyObservation(); if (!io) return child.execFileSync(file, args, options);
+  const bytes = checked(() => io.exec(file, args, options)); const enc = encoding(options);
+  return enc && String(enc) !== 'buffer' ? bytes.toString(enc) : bytes;
+}) as typeof child.execFileSync;
+export const observationSpawnSync: typeof child.spawnSync = ((file: string, args: string[], options: child.SpawnSyncOptions = {}) => {
+  if (!currentReadonlyObservation()) return child.spawnSync(file, args, options);
+  try {
+    const stdout = observationExecFileSync(file, args, options as child.ExecFileSyncOptions);
+    return { pid: 0, status: 0, signal: null, output: [null, stdout, ''], stdout, stderr: '' };
+  } catch (error) {
+    if (error instanceof ObservationViolation) throw error;
+    const failed = error as { status?: number; stdout?: Buffer; stderr?: Buffer };
+    const enc = encoding(options);
+    const decode = (value?: Buffer) => enc ? (value ?? Buffer.alloc(0)).toString(enc) : value ?? Buffer.alloc(0);
+    return { pid: 0, status: failed.status ?? 1, signal: null, output: [], stdout: decode(failed.stdout), stderr: decode(failed.stderr), error };
+  }
+}) as typeof child.spawnSync;
+import { basename } from 'node:path';
+import {
+  execFileSync as execFileSyncRaw,
+  spawn as spawnRaw,
+  spawnSync as spawnSyncRaw,
+  type ChildProcess,
+  type ExecFileSyncOptions,
+  type ExecFileSyncOptionsWithBufferEncoding,
+  type ExecFileSyncOptionsWithStringEncoding,
+  type SpawnOptions,
+  type SpawnSyncOptions,
+  type SpawnSyncOptionsWithBufferEncoding,
+  type SpawnSyncOptionsWithStringEncoding,
+  type SpawnSyncReturns,
+} from 'node:child_process';
+
+
+/**
+ * Wall clock for a git call that does not set its own timeout.
+ * Same bound as the shared process runner, so a forgotten deadline still
+ * ends a hung git instead of waiting forever.
+ */
+export const DEFAULT_GIT_TIMEOUT_MS = 120_000;
+
+const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
+
+export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
+  return env.REPO_HARNESS_GIT_BIN ?? 'git';
+}
+
+export function isGitExecutableName(command: string): boolean {
+  return GENERIC_GIT_NAMES.has(basename(command).toLowerCase());
+}
+
+function configuredFrom(env: NodeJS.ProcessEnv | undefined, onlyOwn: boolean): string | undefined {
+  if (!env) return undefined;
+  if (onlyOwn && !Object.prototype.hasOwnProperty.call(env, 'REPO_HARNESS_GIT_BIN')) return undefined;
+  const value = env.REPO_HARNESS_GIT_BIN?.trim();
+  return value ? value : undefined;
+}
+
+/**
+ * An explicit path wins. The bare name `git` does not: that is the call site
+ * that used to ignore `REPO_HARNESS_GIT_BIN`. A child env that sets the
+ * variable wins over the parent; a child env that omits it does not hide it.
+ */
+export function resolveGitExecutable(
+  explicit?: string,
+  env?: NodeJS.ProcessEnv,
+  parent: NodeJS.ProcessEnv = process.env,
+): string {
+  const named = explicit?.trim();
+  if (named && !GENERIC_GIT_NAMES.has(named.toLowerCase())) return named;
+  return configuredFrom(env, true) ?? configuredFrom(parent, false) ?? named ?? 'git';
+}
+
+export function resolveGitTimeout(explicit: number | undefined): number {
+  return explicit === undefined ? DEFAULT_GIT_TIMEOUT_MS : explicit;
+}
+
+type GitCallFields = { gitBin?: string; direct?: boolean };
+
+function bindGit<T extends GitCallFields & { timeout?: number; env?: NodeJS.ProcessEnv }>(
+  options: T,
+): { bin: string; options: Omit<T, 'gitBin' | 'direct'> & { timeout: number } } {
+  const { gitBin, direct, timeout, env, ...rest } = options;
+  // Observation policy allows the caller's git name. Re-entering it from the
+  // observation executor would loop, so that executor sets direct.
+  const observing = direct !== true && currentReadonlyObservation() !== undefined;
+  const bin = observing ? (gitBin?.trim() || 'git') : resolveGitExecutable(gitBin, env);
+  return {
+    bin,
+    options: { ...rest, env, timeout: resolveGitTimeout(timeout) } as Omit<T, 'gitBin' | 'direct'> & { timeout: number },
+  };
+}
+
+type GitExecStringOptions = ExecFileSyncOptionsWithStringEncoding & GitCallFields;
+type GitExecBufferOptions = ExecFileSyncOptionsWithBufferEncoding & GitCallFields;
+type GitExecOptions = ExecFileSyncOptions & GitCallFields;
+
+export function gitExecFileSync(args: readonly string[], options: GitExecStringOptions): string;
+export function gitExecFileSync(args: readonly string[], options?: GitExecBufferOptions): Buffer;
+export function gitExecFileSync(args: readonly string[], options: GitExecOptions = {}): string | Buffer {
+  const bound = bindGit(options);
+  const argv = [...args];
+  if (currentReadonlyObservation() !== undefined && options.direct !== true) {
+    return observationExecFileSync(bound.bin, argv, bound.options) as string | Buffer;
+  }
+  return execFileSyncRaw(bound.bin, argv, bound.options);
+}
+
+type GitSpawnStringOptions = SpawnSyncOptionsWithStringEncoding & GitCallFields;
+type GitSpawnBufferOptions = SpawnSyncOptionsWithBufferEncoding & GitCallFields;
+type GitSpawnOptions = SpawnSyncOptions & GitCallFields;
+
+export function gitSpawnSync(args: readonly string[], options: GitSpawnStringOptions): SpawnSyncReturns<string>;
+export function gitSpawnSync(args: readonly string[], options?: GitSpawnBufferOptions): SpawnSyncReturns<Buffer>;
+export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions = {}): SpawnSyncReturns<string | Buffer> {
+  const bound = bindGit(options);
+  const argv = [...args];
+  if (currentReadonlyObservation() !== undefined && options.direct !== true) {
+    return observationSpawnSync(bound.bin, argv, bound.options) as SpawnSyncReturns<string | Buffer>;
+  }
+  return spawnSyncRaw(bound.bin, argv, bound.options);
+}
+
+export function spawnGit(args: readonly string[], options: SpawnOptions & GitCallFields = {}): ChildProcess {
+  const { gitBin, env, direct: _direct, ...rest } = options;
+  return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env });
+}
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
-import { spawnSync } from "child_process";
+
 import { createRequire } from "node:module";
 
 
@@ -953,7 +1132,7 @@ function parseArgs(argv: string[]): Args {
 
 function repoRoot(input: string): string {
   const cwd = resolve(input);
-  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+  const result = gitSpawnSync(["rev-parse", "--show-toplevel"], {
     cwd,
     encoding: "utf-8",
   });

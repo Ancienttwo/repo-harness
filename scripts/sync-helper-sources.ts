@@ -21,6 +21,8 @@ const TARGET_ROOT = join(REPO_ROOT, "assets", "templates", "helpers");
 const CAPABILITY_HELPER = "capability-resolver.ts";
 const CAPABILITY_CORE = join(REPO_ROOT, "src", "core", "capabilities", "registry.ts");
 const CAPABILITY_RESOLVER = join(REPO_ROOT, "src", "core", "capabilities", "resolver.ts");
+const GIT_RUNNER = join(REPO_ROOT, "src/effects/git/runner.ts");
+const READONLY_OBSERVATION = join(REPO_ROOT, "src/effects/state/readonly-observation.ts");
 const CAPABILITY_EFFECTS = join(REPO_ROOT, "src", "effects", "capabilities", "capability-resolver.ts");
 
 function usage(): never {
@@ -83,9 +85,12 @@ function buildCapabilityProjection(): ProjectionFileRecord {
   }
   const core = readFileSync(CAPABILITY_CORE, "utf-8");
   const resolver = stripInlinedImports(readFileSync(CAPABILITY_RESOLVER, "utf-8"), ["./registry"]);
+  const observation = readFileSync(READONLY_OBSERVATION, "utf-8");
+  const gitRunner = stripInlinedImports(readFileSync(GIT_RUNNER, "utf-8"), ["../state/readonly-observation"]);
   const effects = stripInlinedImports(readFileSync(CAPABILITY_EFFECTS, "utf-8"), [
     "../../core/capabilities/registry",
     "../../core/capabilities/resolver",
+    "../git/runner",
   ]);
   const sourceHash = createHash("sha256").update(core).digest("hex");
   const content = [
@@ -94,6 +99,8 @@ function buildCapabilityProjection(): ProjectionFileRecord {
     "// Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.",
     core.trimEnd(),
     resolver.trim(),
+    observation.trim(),
+    gitRunner.trim(),
     effects.trim(),
   ].join("\n") + "\n";
   return {
