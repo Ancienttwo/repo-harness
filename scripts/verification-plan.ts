@@ -2,6 +2,8 @@
 import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
+import { readReviewAdmissionSource } from "../src/effects/review/admission-source";
+
 type VerificationExecutionModule = typeof import("../src/effects/evidence/verification-execution");
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -18,9 +20,9 @@ async function loadExecutionModule(): Promise<VerificationExecutionModule> {
 
 function usage(): string {
   return [
-    "usage: verification-plan.ts validate --repo <path> --contract <repo-relative-path>",
-    "       verification-plan.ts evaluate --repo <path> --contract <repo-relative-path> [--report-file <path>]",
-    "       verification-plan.ts execute --repo <path> --contract <repo-relative-path> [--report-file <path>] [--force-reason <text>] [--timeout-ms <ms>]",
+    "usage: verification-plan.ts validate --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id>",
+    "       verification-plan.ts evaluate --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> [--report-file <path>]",
+    "       verification-plan.ts execute --repo <path> --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> [--report-file <path>] [--force-reason <text>] [--timeout-ms <ms>]",
   ].join("\n");
 }
 
@@ -48,40 +50,44 @@ function writeJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function main(argv: readonly string[]): Promise<number> {
+export async function main(
+  argv: readonly string[],
+  admissionSource: typeof readReviewAdmissionSource = readReviewAdmissionSource,
+): Promise<number> {
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs(argv);
     const repoRoot = required(parsed.values, "repo");
-    const contractPath = required(parsed.values, "contract");
+    const authority = admissionSource(repoRoot, parsed.values);
+    const authorityFlags = ["repo", "repository-id", "issue-id", "campaign-id", "grant-sha256", "policy-sha256", "actor"];
     const reportFile = parsed.values["report-file"];
     const execution = await loadExecutionModule();
     if (parsed.action === "validate") {
-      const unexpected = Object.keys(parsed.values).filter((key) => !["repo", "contract"].includes(key));
+      const unexpected = Object.keys(parsed.values).filter((key) => !authorityFlags.includes(key));
       if (unexpected.length > 0) throw new Error(`validate does not accept: ${unexpected.map((key) => `--${key}`).join(", ")}`);
-      writeJson(execution.validateVerificationContract({ repoRoot, contractPath }));
+      writeJson(execution.validateAdmittedVerification({ repoRoot, authority }));
       return 0;
     }
     if (parsed.action === "evaluate") {
-      const unexpected = Object.keys(parsed.values).filter((key) => !["repo", "contract", "report-file"].includes(key));
+      const unexpected = Object.keys(parsed.values).filter((key) => ![...authorityFlags, "report-file"].includes(key));
       if (unexpected.length > 0) throw new Error(`evaluate does not accept: ${unexpected.map((key) => `--${key}`).join(", ")}`);
-      const report = execution.evaluateVerificationContract({ repoRoot, contractPath });
+      const report = execution.evaluateAdmittedVerification({ repoRoot, authority });
       if (reportFile && report.kind === "verification_execution_report") execution.writeVerificationExecutionReport(repoRoot, reportFile, report);
       writeJson(report);
       return report.passed ? 0 : 1;
     }
     if (parsed.action === "execute") {
       const unexpected = Object.keys(parsed.values).filter((key) =>
-        !["repo", "contract", "report-file", "force-reason", "timeout-ms"].includes(key));
+        ![...authorityFlags, "report-file", "force-reason", "timeout-ms"].includes(key));
       if (unexpected.length > 0) throw new Error(`execute does not accept: ${unexpected.map((key) => `--${key}`).join(", ")}`);
       const timeoutRaw = parsed.values["timeout-ms"];
       const timeoutMs = timeoutRaw === undefined ? undefined : Number(timeoutRaw);
       if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)) {
         throw new Error("--timeout-ms must be a positive integer");
       }
-      const report = execution.executeVerificationContract({
+      const report = execution.executeAdmittedVerification({
         repoRoot,
-        contractPath,
+        authority,
         reportFile,
         forceReason: parsed.values["force-reason"],
         timeoutMs,
