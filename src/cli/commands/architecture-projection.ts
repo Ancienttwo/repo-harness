@@ -1,5 +1,4 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
-
 import { Command } from 'commander';
 import type { ProjectionHumanActionReasonCode, ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
 import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';

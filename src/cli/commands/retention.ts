@@ -1,4 +1,3 @@
-
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../../core/fleet/task-inbox-layout';

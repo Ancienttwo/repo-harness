@@ -1,10 +1,33 @@
-import { closeSync, constants, existsSync, fsyncSync, mkdirSync, openSync, lstatSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, writeSync } from "fs";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  writeSync,
+} from "fs";
 import { createHash } from "crypto";
 import { basename, dirname, relative, resolve, sep } from "path";
-import type { AdoptionOperation, AdoptionOperationStatus, AdoptionPlan, AppendManagedBlockOperation, GitUntrackOperation, MkdirOperation, MoveOperation, RemoveOperation, WriteFileOperation } from "../core/adoption/operations";
+import type {
+  AdoptionOperation,
+  AdoptionOperationStatus,
+  AdoptionPlan,
+  AppendManagedBlockOperation,
+  GitUntrackOperation,
+  MkdirOperation,
+  MoveOperation,
+  RemoveOperation,
+  WriteFileOperation,
+} from "../core/adoption/operations";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
-
 import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
 import { runGit } from './git/run-git';
 

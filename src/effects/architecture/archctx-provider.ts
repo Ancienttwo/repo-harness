@@ -6,12 +6,23 @@ import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, failureI
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
-
 import type { CapabilityOwnership } from '../../core/state/types';
 import { capabilityRegistryFromNativeContext } from '../../core/capabilities/registry';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, assertArchctxVersion, assertProjectionApplyReadbackResult, assertProjectionResult, decodeArchitectureDebtReport, decodeArchitectureHandEdits, decodeDocsAnchorsReport, decodeNativeContextExport, type NativeContextSource, type ArchitectureProjectionPolicy, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
+import {
+  ARCHCTX_REQUIRED_VERSION,
+  ArchctxClientError,
+  assertArchctxVersion,
+  assertProjectionApplyReadbackResult,
+  assertProjectionResult,
+  decodeArchitectureDebtReport,
+  decodeArchitectureHandEdits,
+  decodeDocsAnchorsReport,
+  decodeNativeContextExport,
+  type NativeContextSource,
+  type ArchitectureProjectionPolicy,
+  type ArchitectureProjectionReadinessV1,
+} from '../../core/architecture/projection';
 import { gitExecFileSync } from '../git/runner';
-
 export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }

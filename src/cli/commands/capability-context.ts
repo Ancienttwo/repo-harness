@@ -1,8 +1,15 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-
-import { CapabilitySourceError, capabilitySourceMode, findMatch, readRegistry as readCapabilityRegistry, type Capability, type CapabilityRegistry, type ContractFiles } from '../../../scripts/capability-resolver';
+import {
+  CapabilitySourceError,
+  capabilitySourceMode,
+  findMatch,
+  readRegistry as readCapabilityRegistry,
+  type Capability,
+  type CapabilityRegistry,
+  type ContractFiles,
+} from '../../../scripts/capability-resolver';
 import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/capabilities/archcontext-owners';
 import { readArchitectureNativeContext } from '../../effects/architecture/archctx-provider';
 import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';

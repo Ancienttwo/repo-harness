@@ -1,7 +1,6 @@
 import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 import { configuredGitBinary, gitExecFileSync } from './runner';
-
 export { configuredGitBinary } from './runner';
 
 export function resolveGitCommonDirectory(cwd: string, gitBin = configuredGitBinary(), timeoutMs?: number): string {

@@ -9,7 +9,6 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-
 import { configuredBrainRoot } from './brain-root';
 import { gitExecFileSync } from '../../effects/git/runner';
 

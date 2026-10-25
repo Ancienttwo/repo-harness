@@ -1,4 +1,3 @@
-
 import { realpathSync, statSync } from 'node:fs';
 import { TASK_DIFF_MAX_BYTES, TASK_DIFF_MAX_UNTRACKED, isTaskDiffRequest, type OperatorTaskDiff, type OperatorTaskDiffRequest, type TaskDiffFailure } from '../../core/operator/task-diff';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';

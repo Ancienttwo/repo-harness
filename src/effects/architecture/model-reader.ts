@@ -1,4 +1,3 @@
-
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contracts';

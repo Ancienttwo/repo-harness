@@ -1,4 +1,3 @@
-
 import { realpathSync } from 'node:fs';
 import type { BoardDocumentV1 } from '../../core/state/types';
 import { projectOperatorTaskContext } from '../../core/operator/task-context';
@@ -12,7 +11,11 @@ import { isRepoHarnessAdoptedPath, type RepoHarnessRegisteredRepo, type RepoHarn
 import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
 import { validateEngineeringOverlaySnapshot, validateOrganizationAttentionSnapshot } from '../../core/engineers/engineering-overlay';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
-import { OPERATOR_REPOSITORY_PROTOCOL, OPERATOR_REPOSITORY_SNAPSHOT_KIND, type OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
+import {
+  OPERATOR_REPOSITORY_PROTOCOL,
+  OPERATOR_REPOSITORY_SNAPSHOT_KIND,
+  type OperatorRepositorySnapshotV1,
+} from '../../core/operator/repository-snapshot';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { gitExecFileSync } from '../git/runner';
 

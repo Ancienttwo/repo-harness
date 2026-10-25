@@ -1,8 +1,13 @@
-
 import { realpathSync } from 'fs';
 
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
-import { EngineerSchedulingError, projectWorkGraph, schedulingCarrierPath, validateWorkGraph, type ProjectedWorkGraphV1 } from '../../core/engineers/scheduling';
+import {
+  EngineerSchedulingError,
+  projectWorkGraph,
+  schedulingCarrierPath,
+  validateWorkGraph,
+  type ProjectedWorkGraphV1,
+} from '../../core/engineers/scheduling';
 import { EngineerProfileBindingError, engineerSha256 } from '../../core/engineers/profile-binding';
 
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';

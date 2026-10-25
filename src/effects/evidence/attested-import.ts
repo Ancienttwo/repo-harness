@@ -24,12 +24,16 @@
  * tasks/notes/20260722-1810-epc-04-manual-external-attested-import.notes.md.
  */
 import { createHash } from "crypto";
-
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-
-import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity, TrustClass } from "../../core/evidence/types";
+import type {
+  EvidenceEventRecord,
+  GenesisRecord,
+  JsonValue,
+  SubjectIdentity,
+  TrustClass,
+} from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord, CorruptEvidenceLogError, UnterminatedEvidenceLogError } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { stripYamlInlineComment } from "../../core/state/artifact-parsers";

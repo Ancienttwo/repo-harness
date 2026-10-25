@@ -1,10 +1,15 @@
-
 import { existsSync, mkdtempSync, realpathSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import type { ArchitectureDebtItemV1, ArchitectureDebtReportV1 } from 'archctx-contracts';
-import { ArchctxClientError, completeArchitectureDebt, indexPackageLocalCodeGraph, stopWorkspaceArchitectureDaemons, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
+import {
+  ArchctxClientError,
+  completeArchitectureDebt,
+  indexPackageLocalCodeGraph,
+  stopWorkspaceArchitectureDaemons,
+  type ArchctxProviderOptions,
+} from '../../effects/architecture/archctx-provider';
 import { gitSpawnSync } from '../../effects/git/runner';
 
 export interface ArchitectureDebtOutputV1 {

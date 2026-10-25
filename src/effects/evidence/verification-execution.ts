@@ -8,9 +8,20 @@ import { basename, delimiter, isAbsolute, join, relative, resolve } from "path";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
-import { VerificationPlanValidationError, fingerprintVerificationCheck, fingerprintVerificationCheckExecution, hashVerificationPlan, parseVerificationPlanFromContractText, type VerificationCheck, type VerificationPlan } from "../../core/evidence/verification-plan";
+import {
+  VerificationPlanValidationError,
+  fingerprintVerificationCheck,
+  fingerprintVerificationCheckExecution,
+  hashVerificationPlan,
+  parseVerificationPlanFromContractText,
+  type VerificationCheck,
+  type VerificationPlan,
+} from "../../core/evidence/verification-plan";
 import { resolveGitCommonDirectory } from "../git/common-directory";
-import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from "../locking/exclusive-directory-lock";
+import {
+  acquireExclusiveDirectoryLock,
+  ExclusiveLockContentionError,
+} from "../locking/exclusive-directory-lock";
 import { resolveInsideRepo } from "../path-safety";
 import { redactProcessOutput, runProcess } from "../process-runner";
 import { createFileExclusiveDurably, writeFileDurably } from "./atomic-append";

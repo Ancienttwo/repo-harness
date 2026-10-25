@@ -1,11 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
-
 import { getRoute, routeSupportsHost, type HookEvent, type HookHandlerId, type RouteHost, type RouteId } from './route-registry';
 import { getHandlerForRoute } from './handler-registry';
 import { budgetSessionContext, errorHash } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
-import { createStateInputCollector, type EffectiveStateResolution } from '../../effects/loop/state-input-collector';
+import {
+  createStateInputCollector,
+  type EffectiveStateResolution,
+} from '../../effects/loop/state-input-collector';
 import { createHookEventTelemetry } from './event-telemetry';
 import {
   resolveEffectiveStateReadOnly,

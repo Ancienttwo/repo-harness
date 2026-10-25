@@ -1,4 +1,3 @@
-
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';

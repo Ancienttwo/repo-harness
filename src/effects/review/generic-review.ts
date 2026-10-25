@@ -11,11 +11,14 @@ import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../
 import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { taskRepository } from '../terminal/task-worktree';
-import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus, taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory, readSessionArtifact, writeSessionArtifact, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
+import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
+  taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
+  readSessionArtifact, writeSessionArtifact, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
-import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE, projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
+import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
+  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from '../../../scripts/acceptance-receipt';
 import { gitExecFileSync } from '../git/runner';
 
 type Harness = 'claude' | 'codex';

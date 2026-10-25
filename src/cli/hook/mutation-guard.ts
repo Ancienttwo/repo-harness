@@ -11,7 +11,11 @@
 
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname, join, posix, win32 } from 'path';
-import { canonicalExternalPath, canonicalRepoRelativePath, isForeignDriveAbsolutePath } from '../../effects/state/collect-state-inputs';
+import {
+  canonicalExternalPath,
+  canonicalRepoRelativePath,
+  isForeignDriveAbsolutePath,
+} from '../../effects/state/collect-state-inputs';
 import { parseStatusZ, splitNul } from '../../effects/review/diff-fingerprint';
 import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';

@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-
 import { lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';

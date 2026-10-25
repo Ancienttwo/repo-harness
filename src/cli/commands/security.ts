@@ -7,7 +7,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
 import { gitExecFileSync } from '../../effects/git/runner';
 

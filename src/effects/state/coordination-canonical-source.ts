@@ -14,12 +14,21 @@
  * clone's location.
  */
 import { createHash } from 'crypto';
-
 import { readdirSync } from 'fs';
 import { resolveRepoIdentity } from '../git/repository-identity';
 import { assertUniqueCanonicalTaskIds } from '../../core/state/coordination-identity';
-import { SPRINT_BACKLOG_SCHEMA_V2, sprintBacklogSchema } from '../../core/state/sprint-backlog-rows';
-import { evidenceContractComplete, markdownHeader, markdownSection, parseAllowedPaths, planSlugFromPath, planStatusFromText } from '../../core/state/artifact-parsers';
+import {
+  SPRINT_BACKLOG_SCHEMA_V2,
+  sprintBacklogSchema,
+} from '../../core/state/sprint-backlog-rows';
+import {
+  evidenceContractComplete,
+  markdownHeader,
+  markdownSection,
+  parseAllowedPaths,
+  planSlugFromPath,
+  planStatusFromText,
+} from '../../core/state/artifact-parsers';
 import { readText, repoPath } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
 

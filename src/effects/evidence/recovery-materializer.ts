@@ -28,7 +28,10 @@ import { basename, join } from 'path';
 import { escapeDecisionMarkdown, type CheckpointDecision } from '../../core/evidence/checkpoint';
 import { resolveHarnessPaths } from '../state/resolve-effective-state';
 import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
-import { CheckpointResolutionError, resolveLastPublishedCheckpoint } from './checkpoint-store';
+import {
+  CheckpointResolutionError,
+  resolveLastPublishedCheckpoint,
+} from './checkpoint-store';
 import { gitExecFileSync } from '../git/runner';
 
 export const RECOVERY_SCHEMA_VERSION = 1;

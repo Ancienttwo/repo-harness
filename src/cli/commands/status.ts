@@ -8,14 +8,27 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
-import { buildManagedHooks, compareManagedHookProjection, isManagedEntry, type HookHost, type HooksByEvent, type ManagedHookProjectionMismatch, type ManagedHookProjectionReport } from '../installer/managed-entries';
+import {
+  buildManagedHooks,
+  compareManagedHookProjection,
+  isManagedEntry,
+  type HookHost,
+  type HooksByEvent,
+  type ManagedHookProjectionMismatch,
+  type ManagedHookProjectionReport,
+} from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
-import { installProfileStatePath, readInstalledProfile, type InstallComponent, type InstallProfile, readLegacyInstalledProfileForMigration } from '../installer/install-profile';
+import {
+  installProfileStatePath,
+  readInstalledProfile,
+  type InstallComponent,
+  type InstallProfile,
+  readLegacyInstalledProfileForMigration,
+} from '../installer/install-profile';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harness-version';

@@ -1,11 +1,22 @@
-
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import type { NativeContextExportV1 } from 'archctx-contracts';
-
-import { capabilityRegistryFromNativeContext, type Capability, type CapabilityRegistry } from '../../core/capabilities/registry';
-import { EngineerProfileBindingError, canonicalEngineerJson, canonicalModuleEngineerProfileBytes, engineerContractRevision, engineerSha256, validateModuleEngineerProfile, type EngineerBindingCurrentV1, type ModuleEngineerProfileV1 } from '../../core/engineers/profile-binding';
+import {
+  capabilityRegistryFromNativeContext,
+  type Capability,
+  type CapabilityRegistry,
+} from '../../core/capabilities/registry';
+import {
+  EngineerProfileBindingError,
+  canonicalEngineerJson,
+  canonicalModuleEngineerProfileBytes,
+  engineerContractRevision,
+  engineerSha256,
+  validateModuleEngineerProfile,
+  type EngineerBindingCurrentV1,
+  type ModuleEngineerProfileV1,
+} from '../../core/engineers/profile-binding';
 import { gitExecFileSync } from '../git/runner';
 
 const PROFILE_ROOT = 'agents/engineers/profiles';

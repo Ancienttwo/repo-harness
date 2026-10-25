@@ -1,6 +1,5 @@
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
-
 import { runGit } from '../../effects/git/run-git';
 
 export function resolveMcpRepoRoot(repo = '.'): string {

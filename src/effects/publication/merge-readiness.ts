@@ -1,7 +1,6 @@
 import { join, resolve } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { gitSpawnSync } from '../git/runner';
-
 import {
   projectMergeReadiness,
   projectPullRequestMergeReadiness,
