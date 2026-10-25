@@ -100,3 +100,17 @@ test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default a
   expect(child.exitCode, child.stderr.toString()).toBe(0);
   expect(child.stdout.toString().trim()).toBe('rejected-forged-grant');
 });
+
+test('protected read returns a detached frozen admission and nested execution plan', () => {
+  const f = fixture(), grant = f.seed();
+  const value = readReviewAdmission(f.args(grant));
+  expect(Object.isFrozen(value.admission)).toBe(true);
+  expect(Object.isFrozen(value.admission.allowed_paths)).toBe(true);
+  expect(Object.isFrozen(value.admission.verification_plan.checks)).toBe(true);
+  expect(Reflect.set(value.admission.goal, 'content', 'Unapproved replacement')).toBe(false);
+  expect(Reflect.set(value.admission.allowed_paths, '0', 'outside/**')).toBe(false);
+  expect(Reflect.set(value.admission.verification_plan.checks[0]!, 'command', 'echo bypass')).toBe(false);
+  expect(value.admission.goal).toEqual(value.context.goal);
+  expect(hashVerificationPlan(value.admission.verification_plan)).toBe(value.context.verification.plan_sha256);
+  expect(readReviewAdmission(f.args(grant)).admission).toEqual(value.admission);
+});

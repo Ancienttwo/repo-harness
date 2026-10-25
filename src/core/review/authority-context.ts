@@ -158,14 +158,20 @@ export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmiss
   return freeze({ ...basis, admission_sha256: digest(basis) });
 }
 
-/** Effects first authenticate a current protected admission and then call this
- * binding check. It does not read a self-reported grant from the candidate. */
-export function bindReviewAdmission(admission: ReviewAdmission, round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>, verifiedGrantSha256: string): ReviewAuthorityContext {
-  hash(verifiedGrantSha256, 'protected grant');
+/** Validate stored metadata and return the detached canonical frozen value. */
+export function validateReviewAdmission(admission: ReviewAdmission): ReviewAdmission {
   const { protocol, kind, campaign_sha256, admission_sha256, ...input } = admission;
   const rebuilt = createReviewAdmission(input as ReviewAdmissionInput);
   if (protocol !== 1 || kind !== rebuilt.kind || campaign_sha256 !== rebuilt.campaign_sha256
     || admission_sha256 !== rebuilt.admission_sha256) fail('admission digest');
+  return rebuilt;
+}
+
+/** Effects first authenticate a current protected admission and then call this
+ * binding check. It does not read a self-reported grant from the candidate. */
+export function bindReviewAdmission(admission: ReviewAdmission, round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>, verifiedGrantSha256: string): ReviewAuthorityContext {
+  hash(verifiedGrantSha256, 'protected grant');
+  const rebuilt = validateReviewAdmission(admission);
   if (round.verification.plan_sha256 !== hashVerificationPlan(rebuilt.verification_plan)) fail('verification plan changed');
   return createReviewAuthorityContext({
     repository_id: rebuilt.repository_id, issue_id: rebuilt.issue_id, campaign_id: rebuilt.campaign_id,

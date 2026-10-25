@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
-import { createReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
+import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { taskRepository } from '../terminal/task-worktree';
 import { gatesDirectoryName, resolveRepositoryIdentity } from '../git/repository-identity';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -132,7 +132,7 @@ export function readReviewAdmission(input: StoreInput & CampaignIdentity & {
     || value.protocol !== 1 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
     || value.actor_id !== input.expectedActor || typeof value.activation_id !== 'string'
     || !/^[0-9a-f-]{36}$/.test(value.activation_id)) fail('grant_binding');
-  const admitted = value.admission;
+  const admitted = validateReviewAdmission(value.admission);
   if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id
     || admitted.actor_id !== input.expectedActor || admitted.goal.revision !== input.expectedGoal.revision
     || admitted.goal.content !== input.expectedGoal.content) fail('goal_or_actor_changed');
