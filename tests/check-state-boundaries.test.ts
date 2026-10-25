@@ -167,6 +167,25 @@ describe('state architecture boundary checker', () => {
     expect(codes(result)).toContain('CORE_DYNAMIC_IMPORT_UNRESOLVED');
   });
 
+  test('rejects src imports of the scripts layer', async () => {
+    const { result } = await checkWith((root) => {
+      write(
+        root,
+        'src/effects/state/imports-script.ts',
+        [
+          "import '../../../scripts/capability-resolver';",
+          "export async function load(): Promise<void> {",
+          "  await import('../../../scripts/capability-resolver');",
+          '}',
+          "export type ScriptType = import('../../../scripts/capability-resolver').CapabilitySourceError;",
+          '',
+        ].join('\n'),
+      );
+    });
+    expect(result.ok).toBe(false);
+    expect(messages(result, 'SRC_SCRIPT_IMPORT')).toHaveLength(3);
+  });
+
   test('forbids effect modules from importing CLI adapters', async () => {
     const { result } = await checkWith((root) => {
       write(

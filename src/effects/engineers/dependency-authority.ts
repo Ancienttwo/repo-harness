@@ -62,7 +62,7 @@ import {
   type AcceptanceDisposition,
   type AcceptanceValidatorRuleId,
   type AcceptanceVerificationObservationV1,
-} from '../../../scripts/acceptance-receipt';
+} from '../review/acceptance-receipt';
 
 export const DEPENDENCY_AUTHORITY_PROTOCOL = 1 as const;
 export const DEPENDENCY_AUTHORITY_KIND = 'repo-harness-dependency-authority-observation' as const;

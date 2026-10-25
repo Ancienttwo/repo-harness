@@ -379,6 +379,51 @@ function checkCoreDependencies(
   });
 }
 
+function resolvesToScriptsLayer(repoRoot: string, source: SourceFile, specifier: string): boolean {
+  let target = normalizePath(specifier);
+  if (specifier.startsWith('.')) {
+    target = relPath(repoRoot, resolve(dirname(source.fileName), specifier));
+  }
+  return target === 'scripts' || target.startsWith('scripts/');
+}
+
+function checkSrcScriptImports(
+  repoRoot: string,
+  source: SourceFile,
+  violations: StateBoundaryViolation[],
+): void {
+  const report = (node: Node, specifier: string): void => {
+    if (!resolvesToScriptsLayer(repoRoot, source, specifier)) return;
+    violations.push(nodeViolation(
+      repoRoot,
+      source,
+      node,
+      'SRC_SCRIPT_IMPORT',
+      `src cannot import scripts/: ${specifier}`,
+    ));
+  };
+
+  visit(source, (node) => {
+    const specifier = importSpecifier(node);
+    if (specifier !== null) report(node, specifier);
+    if (isCallExpression(node)) {
+      const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
+      const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
+      if (dynamicImport || requireCall) {
+        const argument = node.arguments[0];
+        if (argument && isStringLiteralLikeNode(argument)) report(node, argument.text);
+      }
+    }
+    if (node.kind === SyntaxKind.ImportType) {
+      const argument = (node as { argument?: Node }).argument;
+      if (argument?.kind === SyntaxKind.LiteralType) {
+        const literal = (argument as { literal?: Node }).literal;
+        if (literal && isStringLiteralLikeNode(literal)) report(node, literal.text);
+      }
+    }
+  });
+}
+
 function checkEffectDependencies(
   repoRoot: string,
   source: SourceFile,
@@ -771,14 +816,23 @@ export async function checkStateBoundaries(repoInput = '.'): Promise<StateBounda
 
     const coreSet = new Set(coreFiles.map((file) => relPath(repoRoot, file)));
     for (const file of coreSet) {
-      if (CORE_PURITY_EXCLUSIONS.has(file)) continue;
       const source = parsed.sources.get(file);
-      if (source) checkCoreDependencies(repoRoot, source, violations);
+      if (!source) continue;
+      checkSrcScriptImports(repoRoot, source, violations);
+      if (CORE_PURITY_EXCLUSIONS.has(file)) continue;
+      checkCoreDependencies(repoRoot, source, violations);
     }
     const effectsSet = new Set(effectsFiles.map((file) => relPath(repoRoot, file)));
     for (const file of effectsSet) {
       const source = parsed.sources.get(file);
-      if (source) checkEffectDependencies(repoRoot, source, violations);
+      if (!source) continue;
+      checkSrcScriptImports(repoRoot, source, violations);
+      checkEffectDependencies(repoRoot, source, violations);
+    }
+    const cliSet = new Set(cliFiles.map((file) => relPath(repoRoot, file)));
+    for (const file of cliSet) {
+      const source = parsed.sources.get(file);
+      if (source) checkSrcScriptImports(repoRoot, source, violations);
     }
     checkCanonicalDeclarations(repoRoot, parsed.sources, violations);
     checkCapabilityScript(repoRoot, parsed.sources.get(CAPABILITY_SCRIPT), violations);
