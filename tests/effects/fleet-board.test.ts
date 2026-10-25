@@ -1,6 +1,7 @@
+import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
+import { writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../../src/effects/external-sources/store';
 import type { FleetBoardPullRequestSelection } from '../../src/effects/fleet/board';
-import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
-import { seedPublicationReceipt } from '../helpers/publication-fixture';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 import { describe, expect, onTestFinished, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import {
@@ -26,20 +27,13 @@ import {
 } from '../../src/effects/fleet/board';
 import { AgentRuntimeEffectStoreError } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { TaskInboxError } from '../../src/effects/fleet/task-inbox';
-import type { FleetBoardCardInputV1 } from '../../src/core/fleet/board';
-import {
-  buildPublicationReceipt,
-  encodePublicationMarker,
-  publicationReceiptDigest,
-} from '../../src/core/publication/publication-receipt';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import type { FleetBoardCardInputV2 } from '../../src/core/fleet/board';
 import {
   repoHarnessRepoIdFor,
   type RepoHarnessRegisteredRepo,
   type RepoHarnessRegistryStrictSnapshot,
 } from '../../src/effects/repo-registry';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
-import { resolveRepoIdentity } from '../../src/effects/git/repository-identity';
 
 function repo(index: number): RepoHarnessRegisteredRepo {
   return {
@@ -59,17 +53,34 @@ function registry(repos: readonly RepoHarnessRegisteredRepo[]): RepoHarnessRegis
   };
 }
 
-function card(index: number): FleetBoardCardInputV1 {
-  return {
-    task_id: index.toString(16).padStart(64, '0'),
-    task_revision: 'b'.repeat(64),
-    task_label: `fixture row ${index}`, task_index: index,
-    task_state: 'pending', lease_state: 'available', claim_id: null, generation: null,
-    current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready', readiness_blockers: [],
-    feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null }, snapshot_consistency: 'stable',
-    error: null,
-  };
+function card(index: number): FleetBoardCardInputV2 {
+  return { provider_repository_id: '1001', provider_issue_id: String(2000 + index), issue_state: 'open', issue_revision: `sha256:${'b'.repeat(64)}`,
+    execution_status: 'observed', execution: null, task_id: null, task_label: `fixture row ${index}`, task_index: index,
+    merge_readiness: null, execution_readiness: null, readiness_blockers: null,
+    feedback: { observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: [] },
+    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
+    snapshot_consistency: 'stable', error: null };
+}
+function seedIssues(root: string, repositoryId: string, titles: readonly string[]): void {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  const issues = titles.map((title, index) => buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
+    provider_repository_id: '1001', provider_issue_id: String(2001 + index), display_ref: `example/fleet#${index + 1}`, url: `https://github.com/example/fleet/issues/${index + 1}`,
+    observed_at: '2026-08-31T00:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title, body: 'goal', labels: [], assignees: [],
+    comments_policy: 'omitted', policy_revision: digest, eligible: true, eligibility_reasons: [] }));
+  issues.forEach(issue => writeProviderIssueObservation(root, issue));
+  writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
+    provider_repository_id: '1001', provider_display_ref: 'example/fleet', policy_revision: digest, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
+    outcome: 'complete', pages_fetched: 1, issues_seen: issues.length, observations_written: issues.length, limits: { max_pages: 2, max_issues: 1000, max_body_bytes: 1000, max_total_bytes: 1000000, deadline_ms: 1000 },
+    source_revisions: issues.map(issue => issue.source_revision), failure: null }));
+}
+function registerFixture(root: string): RepoHarnessRegisteredRepo {
+  const entry: RepoHarnessRegisteredRepo = { id: repoHarnessRepoIdFor(realpathSync(root)), path: realpathSync(root), accessMode: 'read_only', source: 'manual',
+    registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z' };
+  const home = mkdtempSync(join(tmpdir(), 'provider-board-registry-')), previous = process.env.REPO_HARNESS_HOME;
+  writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [entry] }));
+  process.env.REPO_HARNESS_HOME = home;
+  onTestFinished(() => { if (previous === undefined) delete process.env.REPO_HARNESS_HOME; else process.env.REPO_HARNESS_HOME = previous; rmSync(home, { recursive: true, force: true }); });
+  return entry;
 }
 
 function git(root: string, ...args: string[]): string {
@@ -83,7 +94,7 @@ function shellSingleQuoted(value: string): string {
 function createReviewingProviderFixture(
   workspaceRoot: string,
   cards: number,
-  options: { readonly omit_receipt_for?: number } = {},
+  options: { readonly foreign_repository_for?: number } = {},
 ): { readonly repo: RepoHarnessRegisteredRepo; readonly gh_bin: string; readonly counter_dir: string; readonly pull_requests: readonly FleetBoardPullRequestSelection[] } {
   const root = join(workspaceRoot, 'repo');
   mkdirSync(root);
@@ -112,46 +123,14 @@ function createReviewingProviderFixture(
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'provider fixture');
   const head = git(root, 'rev-parse', 'HEAD');
-  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
-  const repoId = resolveRepoIdentity(root);
+  const entry = registerFixture(root);
+  seedIssues(root, entry.id, taskNames);
   const providerCases: string[] = [];
-  for (const [index, taskName] of taskNames.entries()) {
-    const taskId = fixtureTaskId(taskName);
-    const taskRevision = deriveTaskRevision({ taskCell: taskName, taskId, modeCell: 'inline', acceptanceCell: 'provider observation remains read only' });
-    const claimId = `fleet-provider-claim-${index + 1}`;
-    const receipt = buildPublicationReceipt({
-      repo_id: repoId, task_id: taskId, task_revision: taskRevision, claim_id: claimId, generation: 1,
-      target_ref: 'main', base_sha: base, branch: 'codex/fleet-provider', head_sha: head, tree_sha: tree,
-      candidate_diff_fingerprint: `sha256:${'1'.repeat(64)}`,
-      provider: 'github', provider_repo_id: 'R_fleet_provider', pr_number: index + 1,
-      pr_url: `https://example.invalid/pr/${index + 1}`, created_at: '2026-08-23T00:00:00.000Z',
-    });
-    // One card observes a publication whose receipt cache is absent: the
-    // fixture's damaged card, not a damaged repository.
-    if (options.omit_receipt_for !== index + 1) seedPublicationReceipt(root, receipt);
-    const owner = buildLeaseOwnerRecord({
-      claimId, taskId, taskRevision, sprintPath, targetRef: 'main', generation: 1,
-      sessionId: `fleet-provider-session-${index + 1}`, sourceWorktree: root,
-    });
-    const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: 'codex/fleet-provider', unitRef: 'plans/plan-fleet-provider.md' });
-    const completing = completingLeaseFixture(bound, { claimId, executionWorktree: root, finishTransactionKey: null });
-    if (!completing.ok) throw new Error(completing.error);
-    const reviewing = reviewingLeaseFixture(completing.record, {
-      claimId,
-      publication: {
-        publication_id: receipt.publication_id,
-        receipt_sha256: publicationReceiptDigest(receipt),
-        head_sha: head,
-        ship_transaction_key: `fleet-provider-ship-${index + 1}`,
-      },
-    });
-    if (!reviewing.ok) throw new Error(reviewing.error);
-    if (!seedLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
-    writeHistoricalLease(root, taskId, reviewing.record);
+  for (const [index] of taskNames.entries()) {
     const providerPr = JSON.stringify({
-      number: index + 1, url: receipt.pr_url, state: 'OPEN', isDraft: false,
-      headRefOid: head, headRefName: receipt.branch, baseRefOid: base, baseRefName: 'main',
-      body: encodePublicationMarker(receipt), reviewDecision: null, mergeable: 'MERGEABLE',
+      number: index + 1, url: `https://github.com/example/fleet/pull/${index + 1}`, state: 'OPEN', isDraft: false,
+      headRefOid: head, headRefName: 'codex/fleet-provider', baseRefOid: base, baseRefName: 'main',
+      body: '', reviewDecision: null, mergeable: 'MERGEABLE',
     });
     providerCases.push(`  ${index + 1}) printf '%s\\n' ${shellSingleQuoted(providerPr)} ;;`);
   }
@@ -188,14 +167,11 @@ function createReviewingProviderFixture(
   ].join('\n'));
   chmodSync(ghBin, 0o755);
   return {
-    repo: {
-      id: 'repo-provider', path: realpathSync(root), accessMode: 'read_only', source: 'manual',
-      registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
-    },
+    repo: entry,
     gh_bin: ghBin,
     counter_dir: counterDir,
-    pull_requests: taskNames.map((task, index) => ({ repository_id: 'repo-provider', task_id: fixtureTaskId(task),
-      pull_request: { repository: 'example/fleet', provider_repository_id: '1001', pr_number: index + 1, expected_head_sha: head, expected_base_sha: base } })),
+    pull_requests: taskNames.map((task, index) => ({ repository_id: entry.id, provider_issue_id: String(2001 + index),
+      pull_request: { repository: options.foreign_repository_for === index + 1 ? 'example/foreign' : 'example/fleet', provider_repository_id: '1001', pr_number: index + 1, expected_head_sha: head, expected_base_sha: base } })),
   };
 }
 
@@ -218,10 +194,9 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string): Re
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'plain fixture');
-  return {
-    id: repoId, path: realpathSync(root), accessMode: 'read_only', source: 'manual',
-    registeredAt: '2026-09-05T00:00:00.000Z', lastSeenAt: '2026-09-05T00:00:00.000Z',
-  };
+  const entry = registerFixture(root);
+  seedIssues(root, entry.id, rowNames);
+  return entry;
 }
 
 describe('fleet board collector', () => {
@@ -255,6 +230,7 @@ describe('fleet board collector', () => {
           registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
         }],
       })}\n`);
+      seedIssues(repoRoot, repositoryId, ['inspect one registered repository']);
       const registryBefore = readFileSync(join(home, 'registered-repos.json'), 'utf8');
       const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
       // Real Git and readiness reads share process startup with the file pool.
@@ -269,12 +245,7 @@ describe('fleet board collector', () => {
       });
       expect(result.snapshot_consistency).toBe('stable');
       expect(result.counts.known_tasks).toBe(1);
-      expect(result.repositories[0]?.cards[0]).toMatchObject(accessMode === 'read_only'
-        ? { placement: { kind: 'preparation' }, readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }] }
-        : mode === 'contract'
-          ? { placement: { kind: 'preparation' }, readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }
-          : { placement: { kind: 'alternate_workflow', workflow: 'inline' }, readiness_blockers: [] });
-      expect(result.repositories[0]?.cards[0]?.task_id).toMatch(/^[0-9a-f]{64}$/u);
+      expect(result.repositories[0]?.cards[0]).toMatchObject({ issue_state: 'open', placement: { kind: 'column', column: 'available' }, task_id: null, execution: null });
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
     } finally {
@@ -400,7 +371,7 @@ describe('fleet board collector', () => {
         read_registry: () => registry([fixture.repo]),
         collect_repository: productionFleetBoardDependencies.collect_repository,
       });
-      expect(snapshot.repositories[0]?.cards[0]?.error?.code).toBe('repo_readiness_unavailable');
+      expect(snapshot.repositories[0]?.error?.code).toBe('repo_readiness_unavailable');
       expect(existsSync(join(fixture.counter_dir, 'calls'))).toBe(false);
       expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
     } finally { rmSync(root, { recursive: true, force: true }); }
@@ -442,7 +413,7 @@ describe('fleet board collector', () => {
     expect(outcome.snapshot.repositories[0]).toMatchObject({ status: 'ok' });
     expect(outcome.snapshot.repositories[0]?.cards).toHaveLength(4);
     for (const card of outcome.snapshot.repositories[0]!.cards) {
-      const selected = fixture.pull_requests.find(selection => selection.task_id === card.task_id)!;
+      const selected = fixture.pull_requests.find(selection => selection.provider_issue_id === card.provider_issue_id)!;
       expect(card.merge_readiness).toMatchObject({ protocol: 2, ...selected.pull_request, ready: true, blockers: [] });
     }
     const calls = readFileSync(join(fixture.counter_dir, 'calls'), 'utf8');
@@ -453,6 +424,7 @@ describe('fleet board collector', () => {
       expect(calls).toContain(`number=${number}`);
       expect(calls.split('\n').filter(line => line.startsWith(`pr view ${number} `)).length).toBeGreaterThanOrEqual(2);
     }
+
 
     expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
     expect(readFileSync(join(fixture.counter_dir, 'active'), 'utf8').trim()).toBe('0');
@@ -529,7 +501,7 @@ describe('fleet board collector', () => {
     const previousGhBin = process.env.REPO_HARNESS_GH_BIN;
     const previousCounter = process.env.FLEET_PROVIDER_COUNTER_DIR;
     try {
-      const fixture = createReviewingProviderFixture(root, 2, { omit_receipt_for: 2 });
+      const fixture = createReviewingProviderFixture(root, 2, { foreign_repository_for: 2 });
       process.env.REPO_HARNESS_GH_BIN = fixture.gh_bin;
       process.env.FLEET_PROVIDER_COUNTER_DIR = fixture.counter_dir;
       const result = await collectFleetBoard({ pull_requests: fixture.pull_requests, max_concurrency: 2, timeout_ms: 30_000 }, {
@@ -547,11 +519,12 @@ describe('fleet board collector', () => {
         placement: { kind: 'unclassified', reason: 'observation_failed' },
         merge_readiness: null,
         execution_readiness: null, readiness_blockers: null,
-        error: { code: 'repo_feedback_unreadable', message: 'repository feedback observation is unavailable' },
+        error: { code: 'repo_readiness_unavailable', message: 'repository readiness observation is unavailable' },
       });
       expect(failed[0]?.blocker_codes).toEqual([]);
       expect(readable).toHaveLength(1);
-      for (const entry of repository.cards) expect(entry.inbox.delivery_evidence === null).toBe(entry.error !== null);
+      // No admitted execution was supplied: neither issue can claim a runtime delivery observation.
+      for (const entry of repository.cards) expect(entry.inbox).toMatchObject({ observation_status: 'unavailable', delivery_evidence: null });
       expect(readable[0]?.placement.kind).toBe('column');
       expect(repository.snapshot_consistency).toBe('degraded');
       expect(result.counts.unclassified).toBe(1);
@@ -644,7 +617,7 @@ describe('fleet board collector', () => {
         const repoRoot = join(root, 'aliased', 'repo');
         mkdirSync(repoRoot, { recursive: true });
         const entry = createPlainBoardFixture(repoRoot, 1, 'repo-aliased');
-        const aliased: RepoHarnessRegisteredRepo = { ...entry, id: 'repo-aliased', path: repoRoot };
+        const aliased: RepoHarnessRegisteredRepo = { ...entry, path: repoRoot };
 
         const underSymlinkedAncestor = await collectFleetBoard({ timeout_ms: 5_000 }, {
           read_registry: () => registry([aliased]),
@@ -654,7 +627,7 @@ describe('fleet board collector', () => {
         expect(underSymlinkedAncestor.repositories[0]?.cards).toHaveLength(1);
 
         const withTrailingSeparator = await collectFleetBoard({ timeout_ms: 5_000 }, {
-          read_registry: () => registry([{ ...aliased, id: 'repo-trailing', path: `${repoRoot}/` }]),
+          read_registry: () => registry([{ ...aliased, path: `${repoRoot}/` }]),
           collect_repository: productionFleetBoardDependencies.collect_repository,
         });
         expect(withTrailingSeparator.repositories[0]).toMatchObject({ status: 'ok' });

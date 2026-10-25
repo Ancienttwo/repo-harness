@@ -288,7 +288,7 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: Repo
       }
     }
     const runtimeEffects = observeAgentRuntimeEffects(repo.path), runtimeRevision = runtimeEffectsRevision(runtimeEffects);
-    const rows = board.cards.flatMap(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
+    const rows = board.cards.flatMap<{ card: ProviderBoardCardV2; execution: OperatorTaskSession | null }>(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
     const cards = await collectBounded(rows, options.max_concurrency, async ({ card, execution }) => {
       try { return await cardInput(repo, card, execution, { ...options, signal: controller.signal }, board.snapshot_consistency, runtimeEffects, runtimeRevision); }
       catch (error) {
