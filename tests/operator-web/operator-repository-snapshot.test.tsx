@@ -1,4 +1,4 @@
-import { buildEngineeringOverlaySnapshot, projectOrganizationAttention } from '../../src/core/engineers/engineering-overlay';
+import { buildAdmittedEngineeringOverlay, projectAdmittedOrganizationAttention } from '../../src/core/engineers/engineering-overlay';
 import { projectOperatorOrganizationSnapshot, decodeOperatorOrganizationSnapshot } from '../../src/core/operator/organization-snapshot';
 import { OrganizationSummary } from '../../src/operator-web/OrganizationSummary';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -81,57 +81,73 @@ afterEach(async () => {
 });
 
 function organizationBoardFixture(repositoryId = 'repo_a5b76eee64af71c3') {
-  const hash = `sha256:${'a'.repeat(64)}`;
-  const engineerId = 'engineer:capability.runtime-harness.collaboration';
-  const overlay = buildEngineeringOverlaySnapshot({
-    repository_id: repositoryId, registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
-    components: (['profiles', 'bindings', 'claims', 'runtime_effects'] as const).map(component => ({ component, support: 'available', observation_before: hash, observation_after: hash })),
-    engineers: [{ engineer_id: engineerId, capability_id: 'capability.runtime-harness.collaboration', engineer_contract_revision: hash,
-      binding: { support: 'available', state: 'active', revision: hash, value: { binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 2, engineer_contract_revision: hash, provider: 'codex', provider_thread_id: 'private-thread', host_id: 'private-host', observation: 'unknown' } },
-      active_claim: { support: 'available', revision: hash, value: { task_id: 'b'.repeat(64), task_revision: `sha256:${'c'.repeat(64)}`, claim_id: '22222222-2222-4222-8222-222222222222', lease_generation: 3, work_envelope_sha256: hash, worktree_path: '/private/worktree', branch: 'private-branch', unit_ref: 'private-unit', receipt_sha256: hash } },
-      delegations: { support: 'unsupported', value: null }, memory: { support: 'unsupported', value: null },
-      runtime_effects: { support: 'available', active: 1, reconciliation_required: 1, failed: 0, wake: { pending: 1, delivered: 0, failed: 0, reconciliation_required: 1 }, revision: hash },
-    }],
-  });
-  return { overlay, attention: projectOrganizationAttention(overlay) };
+  const hash = `sha256:${'a'.repeat(64)}`, engineerId = 'engineer:capability.runtime-harness.collaboration';
+  const profile = { engineer_id: engineerId, capability_id: 'capability.runtime-harness.collaboration', engineer_contract_revision: hash };
+  const selector = { repository_id: repositoryId, provider_repository_id: '123', issue_id: '456', campaign_id: 'review', task: 'review-task', role: 'deep-reasoner',
+    claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2', claim_revision: hash, grant_sha256: hash, policy_sha256: hash,
+    actor_id: 'upstream-actor', session_binding_sha256: `sha256:${'b'.repeat(64)}` };
+  const selected = { state: 'selected' as const, engineer_id: engineerId, engineer_contract_revision: hash };
+  const session = { selector, admission_sha256: hash, profile_selection: selected, branch: 'review-branch', runtime: 'terminal' as const, harness_kind: 'codex' };
+  const scheduling = { protocol: 2 as const, kind: 'provider_engineer_scheduling' as const, repository_id: repositoryId,
+    profiles: [profile], source_revision: hash, tasks: [{ provider_repository_id: '123', issue_id: '456', issue: null, sessions: [
+      { session, selection: selected },
+      { session: { ...session, selector: { ...selector, task: 'unassigned-task', session_binding_sha256: `sha256:${'c'.repeat(64)}` }, profile_selection: { state: 'unassigned' as const } }, selection: { state: 'unassigned' as const } },
+    ] }] };
+  const overlay = buildAdmittedEngineeringOverlay({ repository_id: repositoryId, registry_revision: hash, observed_at: '2026-09-22T07:00:00.000Z', snapshot_consistency: 'stable',
+    scheduling, components: [{ component: 'scheduling', support: 'available', observation_before: hash, observation_after: hash }],
+    runtime_effects: { support: 'available', engineers: [{ engineer_id: engineerId, effects: { support: 'available', active: 1, reconciliation_required: 1, failed: 0,
+      wake: { pending: 1, delivered: 0, failed: 0, reconciliation_required: 1 }, revision: hash } }] } });
+  return { overlay, attention: projectAdmittedOrganizationAttention(overlay) };
 }
 
 describe('Organization observation boundary', () => {
-  test('redacts private coordinates while preserving canonical owner, Claim and unknown observation', () => {
+  test('preserves provider issue and explicit profile/session identities without private runtime coordinates', () => {
     const board = organizationBoardFixture();
-    const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention), repositoryId = view.overlay.repository_id;
     const bytes = JSON.stringify(view);
-    for (const privateValue of ['private-thread', 'private-host', '/private/worktree', 'private-branch', 'private-unit', 'provider_thread_id', 'host_id', 'worktree_path']) expect(bytes).not.toContain(privateValue);
-    expect(view.attention).toEqual(board.attention);
-    expect(view.engineers[0]?.active_claim.value).toMatchObject({ claim_id: '22222222-2222-4222-8222-222222222222', lease_generation: 3 });
-    expect(view.engineers[0]?.binding.value?.observation).toBe('unknown');
-    expect(decodeOperatorOrganizationSnapshot(JSON.parse(bytes), view.repository_id)).toEqual(view);
+    for (const privateValue of ['private-thread', 'private-host', '/private/worktree', 'provider_thread_id', 'host_id', 'worktree_path', 'source_root']) expect(bytes).not.toContain(privateValue);
+    expect(view.organization_attention).toEqual(board.attention);
+    expect(view.overlay.scheduling!.tasks[0]!.sessions[0]!.selection.state).toBe('selected');
+    expect(view.overlay.scheduling!.tasks[0]!.sessions[1]!.selection.state).toBe('unassigned');
+    expect(decodeOperatorOrganizationSnapshot(JSON.parse(bytes), repositoryId)).toEqual(view);
+    const scheduling = view.overlay.scheduling!;
     for (const malformed of [
-      { ...view, repository_id: 'repo_other' },
-      { ...view, engineers: [...view.engineers, ...view.engineers] },
+      { ...view, overlay: { ...view.overlay, repository_id: 'repo_other' } },
+      { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, profiles: [...scheduling.profiles, ...scheduling.profiles] } } },
       { ...view, host_id: 'private-host' },
-      { ...view, snapshot_consistency: 'degraded' },
-      { ...view, engineers: [{ ...view.engineers[0], binding: { ...view.engineers[0]!.binding, value: { ...view.engineers[0]!.binding.value, host_id: 'private-host' } } }] },
-      { ...view, engineers: Array.from({length:201}, () => view.engineers[0]) },
-    ]) expect(() => decodeOperatorOrganizationSnapshot(malformed, view.repository_id)).toThrow();
+      { ...view, overlay: { ...view.overlay, snapshot_consistency: 'degraded' } },
+      { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, tasks: scheduling.tasks.map(task => ({ ...task, sessions: task.sessions.map(row => ({ ...row, session: { ...row.session, host_id: 'private-host' } })) })) } } },
+      { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, profiles: Array.from({length:201}, () => scheduling.profiles[0]) } } },
+    ]) expect(() => decodeOperatorOrganizationSnapshot(malformed, repositoryId)).toThrow();
   });
 
   test('refuses old transport and cross-source identity with independent source failures', async () => {
-    const board = organizationBoardFixture();
-    const view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
-    const payload: OperatorRepositorySnapshotV1 = { ...repositorySnapshot, repository_id: view.repository_id,
-      organization: { status: 'observed', observed_at: view.observed_at, snapshot: view } };
+    const board = organizationBoardFixture(), view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const repositoryId = view.overlay.repository_id;
+    const payload: OperatorRepositorySnapshotV1 = { ...repositorySnapshot, repository_id: repositoryId,
+      organization: { status: 'observed', observed_at: view.overlay.observed_at, snapshot: view } };
     expect(decodeOperatorRepositorySnapshot(payload)).toEqual(payload);
     expect(() => decodeOperatorRepositorySnapshot({ ...repositorySnapshot, protocol: 4 })).toThrow();
-    expect(() => decodeOperatorRepositorySnapshot({ ...payload, organization: { ...payload.organization, snapshot: { ...view, repository_id: 'repo_1111111111111111' } } })).toThrow();
-    const markup = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId={view.repository_id} t={key => translate('en',key)} />);
-    expect(markup).toContain('runtime_operator');
-    expect(markup).toContain('unknown');
-    expect(markup).toContain('does not prove execution is running');
-    expect(markup).not.toContain('private-host');
+    expect(() => decodeOperatorRepositorySnapshot({ ...payload, organization: { ...payload.organization, snapshot: { ...view, overlay: { ...view.overlay, repository_id: 'repo_1111111111111111' } } } })).toThrow();
+    const markup = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId={repositoryId} t={key => translate('en',key)} />);
+    expect(markup).toContain('maintainer'); expect(markup).toContain('profile_unassigned');
+    expect(markup).toContain('does not prove execution is running'); expect(markup).not.toContain('private-host');
     const stale = renderToStaticMarkup(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId="repo_1111111111111111" t={key => translate('en',key)} />);
-    expect(stale).not.toContain('engineer:capability.runtime-harness.collaboration');
-    expect(stale).toContain('Reading the selected repository');
+    expect(stale).not.toContain('engineer:capability.runtime-harness.collaboration'); expect(stale).toContain('Reading the selected repository');
+  });
+
+  test('session inspection is explicit and filtering profiles does not assign an unassigned actor', async () => {
+    const board = organizationBoardFixture(), view = projectOperatorOrganizationSnapshot(board.overlay, board.attention);
+    const payload: OperatorRepositorySnapshotV1 = { ...repositorySnapshot, repository_id: view.overlay.repository_id,
+      organization: { status: 'observed', observed_at: view.overlay.observed_at, snapshot: view } };
+    await mount(<OrganizationSummary state={{kind:'ready', snapshot:payload}} repositoryId={view.overlay.repository_id} t={key => translate('en',key)} />);
+    expect(document.querySelector('.organization-session')).toBeNull();
+    const selects = document.querySelectorAll('select');
+    await act(async () => { selects[1]!.value = `sha256:${'c'.repeat(64)}`; selects[1]!.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(document.querySelector('.organization-session')?.textContent).toContain('unassigned');
+    await act(async () => { selects[0]!.value = view.overlay.scheduling!.profiles[0]!.engineer_id; selects[0]!.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(document.querySelector('.organization-session')).toBeNull();
+    expect(document.querySelectorAll('select')[1]!.querySelectorAll('option')).toHaveLength(2);
   });
 });
 
@@ -174,7 +190,7 @@ describe('repository snapshot failure recovery', () => {
     const recovered: OperatorRepositorySnapshotV1 = {
       ...repositoryObservationFixture(repository.repository_id),
       planning: { status: 'observed', observed_at: planning.observation.observed_at, snapshot: planning },
-      organization: { status: 'observed', observed_at: organization.observed_at, snapshot: organization },
+      organization: { status: 'observed', observed_at: organization.overlay.observed_at, snapshot: organization },
     };
     const asked: string[] = [];
     await mount(<OperatorApp initialSnapshot={snapshot} initialLocale="en"
@@ -201,7 +217,7 @@ describe('repository snapshot failure recovery', () => {
     expect(asked).toEqual([repository.repository_id, repository.repository_id]);
     expect(window.location.search).toBe(selectedSearch);
     expect(detail().querySelector('#detail-pane-title')?.textContent).toBe(fixtureTasks.blocked.task_label);
-    expect(document.querySelector('.organization-summary')?.textContent).toContain(organization.engineers[0]!.engineer_id);
+    expect(document.querySelector('.organization-summary')?.textContent).toContain(organization.overlay.scheduling!.profiles[0]!.engineer_id);
     await tab('planning');
     expect(document.querySelector(`[data-planning-task="${fixtureTasks.blocked.task_id}"]`)).not.toBeNull();
     expect(window.location.search).toBe(selectedSearch);
