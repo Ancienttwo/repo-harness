@@ -1,3 +1,8 @@
+import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../src/core/external-sources/issue-observation';
+import { writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../src/effects/external-sources/store';
+import { collectSliceInputs } from '../src/effects/state/collect-slice-inputs';
+import type { OperatorTaskSessions } from '../src/core/operator/task-sessions';
+import type { ProviderBoardSliceV2, BoardSliceCollector } from '../src/cli/hook/board-slice-context';
 import { serializeHistoricalLease } from './helpers/sprint-fixture';
 import { readFileSync } from 'fs';
 /**
@@ -24,7 +29,6 @@ import {
 } from '../src/core/state/coordination-identity';
 import { projectBoardSlice } from '../src/core/state/project-board-slice';
 import type { BoardOwnershipInput } from '../src/core/state/project-board';
-import type { BoardSliceV1 } from '../src/core/state/types';
 import {
   BOARD_SLICE_MARKER,
   BOARD_SLICE_MAX_BYTES,
@@ -316,54 +320,63 @@ describe('BoardSliceV1 omits the dimensions it cannot observe', () => {
   });
 });
 
+function providerFixture(count: number, title = 'peer row'): { slice: ProviderBoardSliceV2; sessions: OperatorTaskSessions } {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  const sessions: OperatorTaskSessions = { protocol: 1, kind: 'operator_task_sessions', repository_id: 'repo_1', observed_at: '2026-08-31T00:00:00.000Z',
+    sessions: [{ admission_sha256: digest, profile_selection: { state: 'unassigned' }, branch: BRANCH, runtime: 'terminal', harness_kind: 'codex', selector: {
+      repository_id: 'repo_1', provider_repository_id: '100', issue_id: '200', campaign_id: 'campaign', task: OWN_TASK_CELL, role: 'worker',
+      claim_ref: CLAIM_ID, claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: digest,
+    } }] };
+  const cards = Array.from({ length: count }, (_, i) => {
+    const issue = buildProviderIssueObservation({ registered_repository_id: 'repo_1', provider: 'github', provider_host: 'github.com', provider_repository_id: '100',
+      provider_issue_id: String(200 + i), display_ref: `example/repo#${i + 1}`, url: `https://github.com/example/repo/issues/${i + 1}`,
+      observed_at: sessions.observed_at, provider_created_at: null, provider_updated_at: null, state: 'open', title: `${title} ${i}`, body: 'goal', labels: [], assignees: [],
+      comments_policy: 'omitted', policy_revision: digest, eligible: true, eligibility_reasons: [] });
+    return { provider_repository_id: '100', provider_issue_id: issue.provider_issue_id, issue, sessions: i === 0 ? sessions.sessions : [],
+      issue_status: 'observed' as const, execution_status: 'observed' as const, execution_error: null };
+  });
+  return { sessions, slice: { protocol: 2, kind: 'repo-harness-board-slice', self_session_binding_sha256: digest, board: {
+    protocol: 2, kind: 'repo-harness-provider-board', registered_repository_id: 'repo_1', revision: digest, snapshot_consistency: 'stable', source_status: 'observed', cards,
+  } } };
+}
+function seedProviderFixture(root: string): void {
+  const { slice } = providerFixture(2);
+  const observations = slice.board.cards.map((card, i) => {
+    const { protocol, kind, source_revision, observation_sha256, ...input } = card.issue!;
+    return buildProviderIssueObservation({ ...input, title: i === 0 ? OWN_TASK_CELL : PEER_TASK_CELL });
+  });
+  for (const issue of observations) writeProviderIssueObservation(root, issue);
+  writeExternalSourceRefreshReceipt(root, buildExternalSourceRefreshReceipt({ receipt_id: 'complete', registered_repository_id: 'repo_1', provider: 'github', provider_host: 'github.com',
+    provider_repository_id: '100', provider_display_ref: 'example/repo', policy_revision: `sha256:${'a'.repeat(64)}`, started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z',
+    outcome: 'complete', pages_fetched: 1, issues_seen: 2, observations_written: 2, limits: { max_pages: 2, max_issues: 10, max_body_bytes: 100, max_total_bytes: 1000, deadline_ms: 1000 },
+    source_revisions: observations.map(issue => issue.source_revision), failure: null }));
+}
 describe('renderBoardSlice is deterministic and bounded', () => {
-  function sliceWithPeers(count: number): BoardSliceV1 {
-    return projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: PURE_TASK_ID,
-      tasks: [
-        pureTask(),
-        ...Array.from({ length: count }, (_unused, index) => pureTask({
-          task_id: `${String(index).padStart(2, '0')}${'0'.repeat(62)}`,
-          row: { index: String(index + 2), status: '[ ]', task: `peer row ${index}`, mode: 'contract', acceptance: 'x', plan: '(pending)' },
-        })),
-      ],
-    });
-  }
-
   test('identical input yields identical bytes', () => {
-    const slice = sliceWithPeers(3);
+    const { slice } = providerFixture(3);
     expect(renderBoardSlice(slice)).toBe(renderBoardSlice(slice));
     expect(renderBoardSlice(slice).startsWith(BOARD_SLICE_MARKER)).toBe(true);
   });
-
-  test('at most eight peers render, the rest collapse into a +N more pointer', () => {
-    const rendered = renderBoardSlice(sliceWithPeers(11));
+  test('at most eight provider issues render, with a remaining count', () => {
+    const rendered = renderBoardSlice(providerFixture(11).slice);
     expect(rendered.match(/^ {2}- peer row /gm)?.length).toBe(8);
     expect(rendered).toContain('+3 more');
   });
-
-  test('the block never exceeds the structural cap and always ends with the pointer', () => {
-    const rendered = renderBoardSlice(sliceWithPeers(40));
-    expect(Buffer.byteLength(rendered, 'utf-8')).toBeLessThanOrEqual(BOARD_SLICE_MAX_BYTES);
-    expect(rendered.endsWith('progress/stall not computed here — repo-harness state board --json')).toBe(true);
-  });
-
-  test('a pathological sprint still fits the cap, keeping the marker and self', () => {
-    const long = 'x'.repeat(4000);
-    const slice = projectBoardSlice({
-      canonical_target: { ref: 'main', oid: '0'.repeat(40) },
-      sprint_path: SPRINT_PATH,
-      self_task_id: PURE_TASK_ID,
-      tasks: [pureTask({
-        row: { index: '1', status: '[ ]', task: long, mode: 'contract', acceptance: 'x', plan: '(pending)' },
-      })],
-    });
-    const rendered = renderBoardSlice(slice);
-    expect(Buffer.byteLength(rendered, 'utf-8')).toBeLessThanOrEqual(BOARD_SLICE_MAX_BYTES);
+  test.each([40, 1])('the byte cap preserves the marker and pointer for %i issues', count => {
+    const rendered = renderBoardSlice(providerFixture(count, '保留'.repeat(2000)).slice);
+    expect(Buffer.byteLength(rendered)).toBeLessThanOrEqual(BOARD_SLICE_MAX_BYTES);
     expect(rendered.startsWith(BOARD_SLICE_MARKER)).toBe(true);
     expect(rendered.endsWith('progress/stall not computed here — repo-harness state board --json')).toBe(true);
+  });
+  test('local hook collection preserves issue state without discovering sessions', () => {
+    const fixture = buildFixture();
+    try {
+      seedProviderFixture(fixture.worktree);
+      const board = collectSliceInputs(fixture.worktree)!;
+      expect(board.cards).toHaveLength(2);
+      expect(board.cards[0]!.issue!.state).toBe('open');
+      expect(board.cards.every(card => card.execution_status === 'unavailable' && card.sessions.length === 0)).toBe(true);
+    } finally { fixture.cleanup(); }
   });
 });
 
@@ -418,17 +431,17 @@ describe('claim tokens: ambiguity is never resolved by picking one', () => {
 // Byte-equality across hosts
 // ---------------------------------------------------------------------------
 
-function collectorFor(repoRoot: string): StateInputCollector {
-  return createStateInputCollector({
+function collectorFor(repoRoot: string): StateInputCollector & BoardSliceCollector {
+  return { ...createStateInputCollector({
     repoRoot,
     resolveEffectiveState: () =>
       resolveHookEffectiveState(repoRoot, Date.now()),
-  });
+  }), getAdmittedTaskSessions: () => providerFixture(2).sessions, getSelfSessionBinding: () => `sha256:${'a'.repeat(64)}` };
 }
 
 describe('one slice, two hosts, identical bytes', () => {
   let fixture: Fixture;
-  beforeEach(() => { fixture = buildFixture(); armFixture(fixture); });
+  beforeEach(() => { fixture = buildFixture(); armFixture(fixture); seedProviderFixture(fixture.worktree); });
   afterEach(() => fixture.cleanup());
 
   test.each([
