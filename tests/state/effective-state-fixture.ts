@@ -13,7 +13,12 @@ import { spawn, spawnSync } from 'child_process';
 import {
   resolveEffectiveState,
 } from '../../src/effects/state/resolve-effective-state';
-import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
+import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { parseVerificationPlanFromContractText } from '../../src/core/evidence/verification-plan';
+import { canonicalize } from '../../src/core/evidence/canonical-json';
+import type { JsonValue } from '../../src/core/evidence/types';
+import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../src/core/state/types';
 
 export const ROOT = join(import.meta.dir, '../..');
@@ -27,6 +32,8 @@ const FIXTURE_GIT_ENV = {
   GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z',
   GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z',
 };
+
+const fixtureAuthorities = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
 
 interface EffectiveStateFixture {
   readonly cwd: string;
@@ -154,7 +161,12 @@ export function createEffectiveStateFixture(
     }
     return {
       cwd,
-      cleanup: () => rmSync(cwd, { recursive: true, force: true }),
+      cleanup: () => {
+        const authority = fixtureAuthorities.get(cwd);
+        if (authority) rmSync(authority.source.authorityHome!, { recursive: true, force: true });
+        fixtureAuthorities.delete(cwd);
+        rmSync(cwd, { recursive: true, force: true });
+      },
     };
   } catch (error) {
     rmSync(cwd, { recursive: true, force: true });
@@ -226,12 +238,20 @@ export function nativeVerificationPlan(source = 'feature.txt'): string {
 
 export function seedNativeVerification(cwd: string, contractPath: string): string {
   const reportPath = '.ai/harness/runs/state-fixture-report.json';
-  const report = executeVerificationContract({ repoRoot: cwd, contractPath, reportFile: reportPath });
+  const fixture = seedReviewAdmissionFixture(cwd, mkdtempSync(join(tmpdir(), 'state-authority-')), {
+    plan: parseVerificationPlanFromContractText(readFileSync(join(cwd, contractPath), 'utf8')),
+    reviewer: 'Claude', userWaiver: 'allowed', actor: 'fixture-owner', oracles: [],
+  });
+  fixtureAuthorities.set(cwd, fixture);
+  const report = executeAdmittedVerification({ repoRoot: cwd, authority: fixture.source, reportFile: reportPath });
   if (!report.passed) throw new Error(JSON.stringify(report));
-  const assessment = spawnSync(process.execPath, [
-    join(ROOT, 'scripts/change-assessment.ts'), 'prepare', '--repo', cwd, '--contract', contractPath,
-  ], { cwd, encoding: 'utf8' });
-  if (assessment.status !== 0) throw new Error(assessment.stdout + assessment.stderr);
+  const prepared = prepareChangeAssessment({ repoRoot: cwd, authority: fixture.source });
+  const basis = { schema: 'repo-harness-change-assessment-evidence.v1',
+    status: prepared.assessment.status === 'ready' && prepared.packet?.status === 'ready' ? 'pass' : 'fail',
+    assessment: prepared.assessment, selection_packet: prepared.packet };
+  writeFixture(cwd, '.ai/harness/checks/change-assessment.latest.json', JSON.stringify({ ...basis,
+    evidence_sha256: sha256(canonicalize(basis as unknown as JsonValue)),
+  }) + '\n');
   return reportPath;
 }
 
@@ -281,12 +301,21 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
     '',
   ].join('\n'));
   const reportPath = seedNativeVerification(cwd, CONTRACT);
-  const cli = join(ROOT, 'scripts/acceptance-receipt.ts');
+  const fixture = fixtureAuthorities.get(cwd)!;
+  // Inject only the fixture's provider response and protected home in process.
+  // The child still reads and validates the real protected approval bytes.
+  const adapter = `
+    import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, 'scripts/acceptance-receipt.ts'))};
+    const source = ${JSON.stringify(fixture.source)};
+    source.runner = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903')
+      ? ${JSON.stringify(fixture.issue)} : { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) });
+    process.exit(await runAcceptanceReceiptCli(process.argv.slice(1), { authorityHome: source.authorityHome, admissionSource: () => source }));
+  `;
   for (const args of [
     ['grant-waiver', '--actor', 'fixture-owner', '--summary', 'Fixture owner accepts the current change.'],
     ['record', '--disposition', 'user_waiver', '--verification', reportPath],
   ]) {
-    const receipt = spawnSync(process.execPath, [cli, ...args, '--repo', cwd, '--contract', CONTRACT], { cwd, encoding: 'utf8' });
+    const receipt = spawnSync(process.execPath, ['-e', adapter, ...args], { cwd, encoding: 'utf8' });
     if (receipt.status !== 0) throw new Error(receipt.stdout + receipt.stderr);
   }
 

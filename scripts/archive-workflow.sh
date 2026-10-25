@@ -173,54 +173,8 @@ verify_prediction_scratch_binding() {
   done
 }
 
-promote_contract_to_fulfilled() {
-  local contract_file="$1"
-  local contract_status status_tmp
-
-  contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
-  if [[ "$contract_status" == "Fulfilled" ]]; then
-    return 0
-  fi
-  [[ "$contract_status" == "Active" ]] || {
-    echo "archive-workflow: cannot promote contract with status ${contract_status:-missing}: $contract_file" >&2
-    return 1
-  }
-  status_tmp="$(mktemp)"
-  awk '
-    BEGIN { updated = 0 }
-    {
-      if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
-        print "> **Status**: Fulfilled"
-        updated = 1
-        next
-      }
-      print
-    }
-  ' "$contract_file" > "$status_tmp"
-  cat "$status_tmp" > "$contract_file"
-  rm -f "$status_tmp"
-}
-
 completed_archive_gate() {
-  local contract_file="$1"
-  local review_file="$2"
-  local update_contract_status="${3:-1}"
-  local contract_status before_hash after_hash
-
-  [[ -f "$contract_file" ]] || {
-    echo "archive-workflow: Completed requires an active contract: $contract_file" >&2
-    return 1
-  }
-  [[ -f "$review_file" ]] || {
-    echo "archive-workflow: Completed requires an active review: $review_file" >&2
-    return 1
-  }
-
-  contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
-  if [[ "$contract_status" != "Active" && "$contract_status" != "Fulfilled" ]]; then
-    echo "archive-workflow: Completed requires a verified Active or Fulfilled contract, got ${contract_status:-missing}: $contract_file" >&2
-    return 1
-  fi
+  local before_hash after_hash
 
   before_hash="$(verification_report_hash "$PWD" "$verification_file")" || return 1
   if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" || ! -f "$helper_dir/acceptance-receipt.ts" ]]; then
@@ -228,7 +182,7 @@ completed_archive_gate() {
     return 1
   fi
   if ! REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
-    --contract "$contract_file" --verification "$verification_file" >/dev/null; then
+    "${admission_args[@]}" --verification "$verification_file" >/dev/null; then
     echo "archive-workflow: Completed AcceptanceReceipt gate failed" >&2
     return 1
   fi
@@ -244,39 +198,15 @@ completed_archive_gate() {
     echo "archive-workflow: verified report changed before archive mutation" >&2
     return 1
   }
-
-  if [[ "$update_contract_status" -eq 1 ]]; then
-    promote_contract_to_fulfilled "$contract_file"
-  fi
-}
-
-sealed_terminal_archive_gate() {
-  local contract_file="$1"
-  local review_file="$2"
-  local verifier="$helper_dir/classify-historical-plans.ts"
-  local result
-
-  [[ -f "$contract_file" ]] || {
-    echo "archive-workflow: sealed-terminal Completed requires a contract: $contract_file" >&2
-    return 1
-  }
-  [[ -f "$review_file" ]] || {
-    echo "archive-workflow: sealed-terminal Completed requires a review: $review_file" >&2
-    return 1
-  }
-  if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" || ! -f "$verifier" ]]; then
-    echo "archive-workflow: sealed-terminal Completed requires the historical-plan evidence verifier and trusted Bun runtime" >&2
-    return 1
-  fi
-  if ! result="$($BUN_BIN "$verifier" --verify-sealed-contract "$contract_file" --verify-sealed-review "$review_file")"; then
-    echo "archive-workflow: sealed-terminal Completed gate failed: ${result:-evidence verifier rejected the artifact family}" >&2
-    return 1
-  fi
 }
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--evidence-mode <current|sealed-terminal>] [--verification <native-report-path>] [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
+Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--evidence-mode <current|sealed-terminal>] [--verification <native-report-path>] [--repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <digest> --policy-sha256 <digest> --actor <id>] [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
+
+  Completed requires explicit protected admission selection and a native report.
+  Historical contract and review files are archived as data. sealed-terminal
+  uses the same live acceptance gate as current mode.
 
   --timestamp  Use this exact value as the archive-family filename timestamp
                instead of calling `date` here. Callers that predict archive
@@ -340,12 +270,9 @@ predict_archive_manifest() {
     echo "archive-workflow: manifest prediction requires a clean source worktree" >&2
     return 1
   }
-  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+  if [[ "$outcome" == "Completed" ]]; then
     resolve_archive_artifacts
-    completed_archive_gate "$contract_file" "$review_file" 0
-  elif [[ "$outcome" == "Completed" ]]; then
-    resolve_archive_artifacts
-    sealed_terminal_archive_gate "$contract_file" "$review_file"
+    completed_archive_gate
   fi
   scratch="$(mktemp -d)"
   scratch_repo="$scratch/repo"
@@ -368,7 +295,7 @@ predict_archive_manifest() {
     }
     git -C "$scratch_repo" update-ref "refs/heads/$target_branch" "refs/remotes/origin/$target_branch"
   fi
-  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+  if [[ "$outcome" == "Completed" ]]; then
     local review_base review_ref review_oid
     review_base="$("$REPO_HARNESS_BUN_BIN" -e '
       const policy = JSON.parse(await Bun.file(".ai/harness/policy.json").text());
@@ -385,7 +312,7 @@ predict_archive_manifest() {
       git -C "$scratch_repo" update-ref "$review_ref" "$review_oid" || { rm -rf "$scratch"; return 1; }
     fi
   fi
-  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+  if [[ "$outcome" == "Completed" ]]; then
     [[ "$(verification_report_hash "$source_repo" "$verification_file")" == "$verified_verification_sha" ]] || { rm -rf "$scratch"; return 1; }
     mkdir -p "$scratch_repo/$(dirname "$verification_file")"
     cp -p "$verification_file" "$scratch_repo/$verification_file"
@@ -396,7 +323,7 @@ predict_archive_manifest() {
       cp -p "$path" "$scratch_repo/$path"
     fi
   done
-  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+  if [[ "$outcome" == "Completed" ]]; then
     verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$verification_file"
   fi
   # Bind the clean tracked/runtime inputs before attaching the caller's
@@ -408,7 +335,7 @@ predict_archive_manifest() {
   if ! (
     cd "$scratch_repo"
     export REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo"
-    if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
+    if [[ "$outcome" == "Completed" ]]; then
       [[ "$(verification_report_hash "$source_repo" "$verification_file")" == "$verified_verification_sha" ]] || exit 1
       [[ "$(verification_report_hash "$scratch_repo" "$verification_file")" == "$verified_verification_sha" ]] || exit 1
     fi
@@ -502,7 +429,7 @@ rewrite_archive_projection_file() {
     awk \
       -v source_path="${archive_projection_sources[$index]}" \
       -v destination_path="${archive_projection_destinations[$index]}" '
-      # Executable acceptance criteria are frozen authority, not navigation.
+      # Preserve historical executable text verbatim while rewriting navigation.
       /^## / { verification_plan = ($0 ~ /^## Verification Plan[[:space:]]*$/) }
       verification_plan { print; next }
       {
@@ -689,12 +616,8 @@ apply_archive_workflow() {
   local archive_contract archive_review cleared_active marker_file marker_value plan_key
 
   resolve_archive_artifacts
-  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-required" ]]; then
-    completed_archive_gate "$contract_file" "$review_file"
-  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-preverified" ]]; then
-    promote_contract_to_fulfilled "$contract_file"
-  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "sealed-terminal-required" ]]; then
-    sealed_terminal_archive_gate "$contract_file" "$review_file"
+  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == *-required ]]; then
+    completed_archive_gate
   fi
 
   if [[ ! -f "$helper_dir/refresh-current-status.sh" ]]; then
@@ -818,6 +741,7 @@ predict_manifest_output=""
 evidence_mode="current"
 verification_file=""
 verified_verification_sha=""
+admission_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -829,6 +753,11 @@ while [[ $# -gt 0 ]]; do
     --outcome)
       [[ -n "${2:-}" ]] || { echo "Error: --outcome requires a value" >&2; usage; exit 1; }
       outcome="$2"
+      shift 2
+      ;;
+    --repository-id|--issue-id|--campaign-id|--grant-sha256|--policy-sha256|--actor)
+      [[ -n "${2:-}" && "$2" != --* ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
+      admission_args+=("$1" "$2")
       shift 2
       ;;
     --verification)
