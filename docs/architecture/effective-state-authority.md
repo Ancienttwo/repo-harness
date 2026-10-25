@@ -5,7 +5,7 @@
 > **Historical ESA baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
 > **Protocol**: `repo-harness-effective-state`, version `1`
 
-> **Current source review**: `2cee26d888af9dd34ed52982e13df0c16db00681`.
+> **Current source review**: `cb900a7fe5ebd04830fdfa62e1b18e25ec969148`.
 > See [current sequences](current-architecture.md#runtime-sequences). Historical ESA evidence below is not a new execution result.
 
 ## Decision

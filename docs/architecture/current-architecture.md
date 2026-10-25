@@ -1,6 +1,6 @@
 # Current Functional Architecture
 
-Source baseline: `2cee26d888af9dd34ed52982e13df0c16db00681` (2026-10-25).
+Source baseline: `cb900a7fe5ebd04830fdfa62e1b18e25ec969148` (2026-10-25).
 This hand-written view records source inspection, not a product execution or a
 performance measurement. Model inventory and generated proof stamps keep their
 own revisions. The [layered view](layered-architecture.md) and
@@ -219,13 +219,23 @@ valid topology persistence dependency. The old lease-write wording is no longer
 a pending edit to that removed relation. This PR does not recreate it or change
 model YAML.
 
-Model acceptance for #948 remains incomplete. Earlier ChangeSet planning and
-validation failed with `AC_RUNTIME_UNAVAILABLE` / `EPERM` on global state creation.
-An explicitly authorized isolated runtime then failed to listen on `127.0.0.1`
-with `EPERM`; status confirmed it was not running. No runtime workaround or new
-model validation is claimed for this main update. Six changed/new diagrams still
-lack visual rendering acceptance. The existing four sequence-parser passes do
-not prove the current topology diagram or full visual layout.
+On 2026-10-25, the package-local archctx 0.9.3 provider validated this model
+through an explicitly approved, task-isolated runtime: `valid: true`, no errors.
+It reported one existing warning: the manifest's `review.failOn` is ignored;
+`.archcontext/policies/review.yaml` owns that policy. The temporary runtime was
+stopped and its status confirmed `running: false`. No model edit or ChangeSet
+apply was needed after the main #945 relation removal.
+
+All six changed/new Mermaid diagrams rendered with the installed Mermaid CLI
+11.16.0 / Mermaid 11.16.1 and local Chrome, with external networking disabled.
+Visual inspection found readable labels and intact arrows and branch frames.
+Earlier sandbox `EPERM` failures are historical attempt results, not current
+validation blockers. No diagram was sent to an external renderer.
+
+Flow proof is separate: CodeGraph 1.6.2 and `flows check` proved 107 of 108
+selectors. The existing review-receipt selector remains unproven; this document
+change does not repair or waive that model proof. Issue #948 stays open for
+final review of this acceptance evidence.
 
 Current source takes precedence over historical Remarks. Reuse the existing
 issues for library moves and retained-reader decisions. Count differences in

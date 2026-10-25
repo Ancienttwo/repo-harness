@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { archctxConsumerPaths, isArchctx093Upgrade, analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
@@ -37,6 +37,81 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
 const record = `:100644 100644 ${sha} ${sha} M\0src/feature.ts\0`;
 
 describe('single affected verification and daily fallback', () => {
+  // Independently recorded raw diff for PR951 at f47e937c. No repo history or
+  // network is needed to exercise the admission boundary.
+  const upgradeDiff = [
+    ['100644', '100644', 'f8b767a51e24934870214582551da004dd5dcc81', '16d2b0050da97a42799593f5019c56b521bb7ad8', 'M', 'bun.lock'],
+    ['000000', '100644', '0'.repeat(40), 'e1b7f0bff6223a0ac596e9d452da2af42b241b68', 'A', 'docs/verification/archctx-0.9.3-capabilities.json'],
+    ['000000', '100644', '0'.repeat(40), '029c80f7c4f8720598c6ff0525effad9dcce79fa', 'A', 'docs/verification/archctx-0.9.3-installed-bytes.json'],
+    ['000000', '100644', '0'.repeat(40), '8ef66695b4a61550b2a70e7827ba2180a9b733e5', 'A', 'docs/verification/archctx-0.9.3-upgrade.md'],
+    ['100644', '100644', 'c8af35f4d7cfc2fe9c80702aefaf8895a4f64021', '612d382dcffed1412b00b566388898e73ec56b21', 'M', 'docs/verification/axr5-archctx-clean-room-readback.json'],
+    ['100644', '100644', 'd4ba864fb748205fbc55a531822c5deee308da18', '60ff292329fdcba945501cb727e60e73e48c7b4e', 'M', 'package.json'],
+    ['100644', '100644', '90f076567abf4e242a8997898401adfdade044a5', '3521418aebfddd8b22103e26f249193d8d2237a3', 'M', 'tests/architecture-projection-e2e.test.ts'],
+  ].map(([oldMode, newMode, oldBlob, newBlob, status, path]) =>
+    `:${oldMode} ${newMode} ${oldBlob} ${newBlob} ${status}\0${path}\0`).join('');
+
+  test('archctx narrow admission binds the full reviewed diff and exact checkout', () => {
+    expect(isArchctx093Upgrade({ ...input, diffRaw: upgradeDiff })).toBe(true);
+    for (const candidate of [
+      { ...input, actualHead: '2'.repeat(40) },
+      { ...input, eventName: 'local', event: { before: sha } },
+      { ...input, eventName: 'push', event: { before: sha } },
+      { ...input, eventName: 'workflow_dispatch' },
+      { ...input, event: { pull_request: { base: { sha: '' } } } },
+    ]) expect(isArchctx093Upgrade({ ...candidate, diffRaw: upgradeDiff })).toBe(false);
+    for (const diffRaw of [null, '', upgradeDiff.slice(0, -1),
+      upgradeDiff.replace('16d2b0050da97a42799593f5019c56b521bb7ad8', sha),
+      upgradeDiff.replace('d4ba864fb748205fbc55a531822c5deee308da18', sha),
+      upgradeDiff.replace('100644', '100755'),
+      upgradeDiff.replace('3521418aebfddd8b22103e26f249193d8d2237a3', sha),
+      upgradeDiff.replace('8ef66695b4a61550b2a70e7827ba2180a9b733e5', sha),
+      upgradeDiff.replace('612d382dcffed1412b00b566388898e73ec56b21', sha),
+      upgradeDiff.split('\0').slice(0, -3).join('\0') + '\0',
+    ]) expect(isArchctx093Upgrade({ ...input, diffRaw })).toBe(false);
+  });
+
+  test('archctx mixed changes cannot use the narrow dependency exception', async () => {
+    for (const path of ['src/feature.ts', '.github/workflows/ci.yml', 'scripts/select-ci-coverage.ts',
+      'scripts/axr5-archctx-clean-room.ts', 'bunfig.toml', 'docs/extra.md']) {
+      const diffRaw = upgradeDiff + `:100644 100644 ${sha} ${sha} M\0${path}\0`;
+      expect(isArchctx093Upgrade({ ...input, diffRaw })).toBe(false);
+    }
+    // Rejected dependency changes still take the established global-input path.
+    const coverage = await analyzeAffectedTests(['package.json', 'bun.lock'], new Map([
+      ['tests/architecture.test.ts', 'export {};'], ['tests/unrelated.test.ts', 'export {};'],
+    ]), []);
+    expect(coverage.fullReasons).toEqual(['package.json', 'bun.lock']);
+    expect(coverage.tests).toEqual(['tests/architecture.test.ts', 'tests/unrelated.test.ts']);
+  });
+
+  test('archctx consumers include CLI strings and propagate through normal imports', async () => {
+    const sources = new Map([
+      ['src/effects/architecture/archctx-provider.ts', 'export const name = "archctx";'],
+      ['src/core/architecture/projection.ts', 'import type { Json } from "archctx-contracts";'],
+      ['tests/architecture-projection-e2e.test.ts', 'spawnSync("archctx", ["capabilities"]);'],
+      ['tests/architecture-projection-provider.test.ts', 'const cli = "archctx";'],
+      ['tests/consumer.test.ts', 'import "../src/effects/architecture/archctx-provider"; import "../src/core/architecture/projection";'],
+      ['tests/unrelated.test.ts', 'export {};'],
+    ]);
+    const coverage = await analyzeAffectedTests(archctxConsumerPaths(sources), sources, []);
+    expect(coverage.uncovered).toEqual([]);
+    expect(coverage.fullReasons).toEqual([]);
+    expect(coverage.tests).toEqual(['tests/architecture-projection-e2e.test.ts', 'tests/architecture-projection-provider.test.ts', 'tests/consumer.test.ts']);
+    sources.delete('src/core/architecture/projection.ts');
+    expect(() => archctxConsumerPaths(sources)).toThrow('Missing archctx consumer');
+  });
+
+  test('affected artifacts bind to the selected SHA and verification checks that checkout', () => {
+    const upload = workflow.jobs.selection.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
+    const download = workflow.jobs.verify.steps.find((step: any) => step.uses === 'actions/download-artifact@v4');
+    expect(upload.with.name).toBe('affected-tests-${{ steps.select.outputs.sha }}');
+    expect(download.with.name).toBe('affected-tests-${{ needs.selection.outputs.sha }}');
+    const binding = workflow.jobs.verify.steps.find((step: any) => step.name === 'Verify selected checkout');
+    expect(binding.env.EXPECTED_SHA).toBe('${{ needs.selection.outputs.sha }}');
+    expect(binding.run).toBe('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"');
+    expect(workflow.jobs.verify.steps.indexOf(binding)).toBeLessThan(workflow.jobs.verify.steps.findIndex((step: any) => step.run === 'bash scripts/check-ci.sh affected'));
+  });
+
   test('rooted paths do not select suffix collisions and unknown roots keep consumers', async () => {
     const sources = new Map([
       ['scripts/tool.ts', 'export {};'], ['fixtures/scripts/tool.ts', 'export {};'],
