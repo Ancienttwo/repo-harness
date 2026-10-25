@@ -3,12 +3,14 @@
 This is a draft closeout plan, not a release receipt. No release candidate SHA is fixed.
 
 Current main observed: 2cee26d888af9dd34ed52982e13df0c16db00681.
-951 AXR5 slice: 3be464f3ad5c81e00dd55d2b9d1cc43d519a084d.
+Historical #951 AXR5 slice: `3be464f3ad5c81e00dd55d2b9d1cc43d519a084d` (before R1/R2 fixes).
+Current [#951](https://github.com/Ancienttwo/repo-harness/pull/951): `45ddb7e7be0272ceaeb53245181f5f8bea980969`.
+Independent script-only [#953](https://github.com/Ancienttwo/repo-harness/pull/953): `99041f2870387ea29e1977745ddd6a505783104c`; dependencies and receipt remain 0.9.1.
 
 ## Open scope
 
 - #951: paired archctx 0.9.3 upgrade and AXR5 cleanup repair. Await bounded CI integration, exact-head independent review and real clean-room evidence. Old receipt failure remains visible.
-- #950 / #948: separate architecture documentation owner. Preserve its unresolved model/rendering conditions; do not close by documentation-only inference.
+- #950 / #948: separate architecture documentation owner. Head `a94f3870b04bce8ab7c71b4d40f6bfc836eff380` has [successful CI40203361611](https://github.com/Ancienttwo/repo-harness/actions/runs/40203361611) and an [independent Astra summary](https://github.com/Ancienttwo/repo-harness/pull/950#issuecomment-6399051350). Visual/model verification remains blocked. Do not use the older36ea33d result or close by documentation-only inference.
 - #895 / #898: writer-owned generated outputs. Read-only GitHub check returned head ef33704a1c46a883b80ef6210de494aa536f0ba5 and baseRefOid11227768b683580531f29dd489400dc47cd94501. It returned MERGEABLE, which differs from an earlier conflict report. This is not freshness or owner GO. Existing review comment covers old4891805, not current head. #898 remains open, no assignee or comments. Do not start a replacement writer or edit generated files.
 - #903: parent confirms active prior owner and incomplete generic review identity migration. Dependencies926/906 are merged; they are not current blockers. Stop927 alone does not close the issue.
 
@@ -27,7 +29,7 @@ No merge, tag, GitHub Release, npm publish, deployment, service operation or iss
 ## Current execution checkpoint
 
 - #951 updated to45ddb7e7be0272ceaeb53245181f5f8bea980969. Astra closed the two cleanup findings on this head; real integration and Required CI are still open.
-- #952 is the standalone CI bootstrap at4475af0f7cfbdce9750ac58cc76c15dd1584e683. Its PR-event selector selected136 of295 test files, not the full suite. CI40203733912 completed successfully at this exact head: three affected shards, native OAR, three HOME platforms and Required / CI passed. Daily/full jobs were skipped, not passed. The independent CI policy review is still pending.
+- #952 is the standalone CI bootstrap at4475af0f7cfbdce9750ac58cc76c15dd1584e683. Its PR-event selector selected136 of295 test files, not the full suite. CI40203733912 completed successfully at this exact head: three affected shards, native OAR, three HOME platforms and Required / CI passed. Daily/full jobs were skipped, not passed. The [independent Astra bootstrap review](https://github.com/Ancienttwo/repo-harness/pull/952#issuecomment-6399118396) found no blocking bootstrap defect. This does not approve the final0.9.3 integration.
 - Planned stack: reviewed CI bootstrap, AXR5-only support (script, helper, regression tests), then paired dependency upgrade. Keep Required checks on each exact candidate. No layer is merged merely to enable another layer.
 - The current upgrade-only residual diff is exactly package.json,bun.lock,tests/architecture-projection-e2e.test.ts and three archctx-0.9.3 verification files. The upgrade note's current blob is c3dc61b8fee7ced041f7e22478e8e2e3b505c940, which differs from the bootstrap policy. Rebind only after the exact scope is settled and reviewed.
 - A genuine new clean-room receipt would add another changed file. Do not assume the current six-file exception accepts it, or edit a receipt just to satisfy that exception. Reassess the exact reviewed scope when real evidence is available.

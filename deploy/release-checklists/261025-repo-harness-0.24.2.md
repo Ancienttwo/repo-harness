@@ -21,14 +21,19 @@ working closeout map.
 - [ ] #951: complete paired0.9.3 integration, a genuine current clean-room
   receipt, independent review and Required checks on the final candidate.
   The old0.9.1 receipt assertion is still a real failure on the upgrade.
-- [ ] #952: review the standalone CI bootstrap. Its exact-head CI is green,
+- [ ] #952: integrate the independently reviewed standalone CI bootstrap. Its exact-head CI is green,
   but it proves0.9.1 bootstrap only. Rebind the complete final upgrade diff;
   do not put a0.9.3 receipt into a0.9.1 support branch.
-- [ ] AXR5 support: review the isolated script repair on its main-based head.
+- [ ] [#953 AXR5 support](https://github.com/Ancienttwo/repo-harness/pull/953): complete the exact-head gates for
+  `99041f2870387ea29e1977745ddd6a505783104c` on main.
   Mock lifecycle tests do not prove real daemon integration. No loopback
   restriction is waived by this checklist.
 - [ ] #950 / #948: the dedicated owner must resolve model/rendering conditions
-  and complete the architecture-documentation scope.
+  and complete the architecture-documentation scope. Head
+  `a94f3870b04bce8ab7c71b4d40f6bfc836eff380` has successful
+  [CI40203361611](https://github.com/Ancienttwo/repo-harness/actions/runs/40203361611)
+  and [Astra review](https://github.com/Ancienttwo/repo-harness/pull/950#issuecomment-6399051350); visual/model verification is still blocked.
+  The old36ea33d result is not evidence for this head.
 - [ ] #895 / #898: the existing writer must refresh the generated outputs and
   provide owner GO. Mergeability alone does not prove freshness. Do not edit
   the writer's generated files in a release-preparation branch.
