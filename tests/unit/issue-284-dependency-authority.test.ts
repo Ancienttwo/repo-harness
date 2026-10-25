@@ -49,6 +49,7 @@ import {
   type DependencyAuthorityRepositoryRead,
 } from '../../src/effects/engineers/dependency-authority';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { osAccountHome } from '../../src/effects/runtime/os-account-home';
 import {
   createAcceptanceMatrix,
   createIntegrationContract,
@@ -667,7 +668,8 @@ afterEach(() => {
 });
 
 describe('issue #284 closed dependency authority', () => {
-  test('a launch-time HOME and harness home override move the registry but never the gate authority home', () => {
+  // The account-database lookup is POSIX-only; Windows falls back to userInfo().
+  test.skipIf(process.platform === 'win32')('a launch-time HOME and harness home override move the registry but never the gate authority home', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-912-')));
     roots.push(root);
     const account = join(root, 'account');
@@ -683,12 +685,13 @@ describe('issue #284 closed dependency authority', () => {
       `console.log(JSON.stringify({ registry: repoHarnessRegisteredReposPath(), authorityHome, gates: acceptanceReceiptPath(${JSON.stringify(root)}, authorityHome) }));`,
     ].join('\n');
     const child = Bun.spawnSync([process.execPath, '-e', code], {
-      env: { ...process.env, HOME: account, USERPROFILE: account, REPO_HARNESS_HOME: harnessHome },
+      env: { ...process.env, HOME: account, REPO_HARNESS_HOME: harnessHome },
       stdout: 'pipe', stderr: 'pipe',
     });
     expect(child.exitCode, child.stderr.toString()).toBe(0);
     const observed = JSON.parse(child.stdout.toString()) as { registry: string; authorityHome: string; gates: string };
     expect(observed.registry).toBe(join(harnessHome, 'registered-repos.json'));
+    expect(observed.authorityHome).toBe(realpathSync(osAccountHome()));
     expect(observed.authorityHome.startsWith(root + sep)).toBe(false);
     expect(observed.gates.startsWith(join(observed.authorityHome, '.repo-harness', 'gates') + sep)).toBe(true);
     expect(observed.gates.startsWith(root + sep)).toBe(false);
