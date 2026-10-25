@@ -68,9 +68,11 @@ async function inboxFixture() {
 }
 test('reservation and unknown send stay pending; exact accepted host proof commits once without replay', async () => {
   const f = await inboxFixture();
-  const receiptInput = { repo_root: f.root, source: f.bound.source, task_id: f.request.task,
+  const receiptInput = { repo_root: f.root, execution_worktree: f.bound.binding.execution_root, source: f.bound.source, task_id: f.request.task,
     recipient: { kind: 'claim' as const, claim: f.bound.source.authority.claim }, message_id: f.event.message_id };
   expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
+  expect(() => readTaskMessageDelivery({ ...receiptInput, execution_worktree: undefined })).toThrow('recipient worktree does not match admitted session');
+  expect(() => readTaskMessageDelivery({ ...receiptInput, execution_worktree: f.bound.approved.source.authorityHome })).toThrow('recipient worktree does not match admitted session');
   f.request.pre_prompt_inbox = preparePrePromptInbox({ source: f.bound.source, request: f.request });
   const first = f.request.pre_prompt_inbox;
   expect(preparePrePromptInbox({ source: f.bound.source, request: f.request })).toEqual(first);

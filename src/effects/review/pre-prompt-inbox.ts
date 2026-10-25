@@ -15,13 +15,13 @@ export function preparePrePromptInbox(input: { source: TaskInboxSessionSource; r
   const { source, request } = input, now = input.now ?? Date.now();
   if (!/^[0-9a-f]{64}$/.test(request.task)) return { status: 'unsupported', reason: 'historical_task_label' };
   const repo_root = source.authority.source.repoRoot;
-  const { dir } = readTaskAgent(repo_root, request.task, request.role);
+  const { dir, binding } = readTaskAgent(repo_root, request.task, request.role);
   const finalPath = join(dir, `inbox-${request.round}.json`), intentPath = join(dir, `inbox-intent-${request.round}.json`);
   const active = observeActiveReviewAdmission(source.authority.source);
   if (active.admission.admission_sha256 !== request.task_admission?.approval.admission_sha256
     || active.grant_sha256 !== request.task_admission.approval.grant_sha256) throw new Error('pre_prompt_inbox_approval_changed');
   const recipient = { kind: 'claim' as const, claim: source.authority.claim };
-  const inbox = { repo_root, task_id: request.task, source, recipient };
+  const inbox = { repo_root, execution_worktree: binding.execution_root, task_id: request.task, source, recipient };
   if (!existsSync(intentPath)) {
     const events: TaskMessageEventV2[] = [];
     for (const entry of listTaskInbox(inbox).entries) {
@@ -78,7 +78,7 @@ export function commitPrePromptInbox(input: { source: TaskInboxSessionSource; re
   // Expiry bounds the actual read, not later owner recovery. Current local approval
   // and immutable binding still fence recovery, and deliver reobserves provider authority.
   assertCurrent(companion, request, receipt.consumed_at);
-  const inbox = { repo_root, task_id: request.task, source, recipient: { kind: 'claim' as const, claim: source.authority.claim } };
+  const inbox = { repo_root, execution_worktree: binding.execution_root, task_id: request.task, source, recipient: { kind: 'claim' as const, claim: source.authority.claim } };
   const delivery_ref = `controlled-request:${request.request_id}:${request.session_binding_sha256}`;
   for (const event of companion.events) {
     if (canonical(readTaskMessageDelivery({ ...inbox, message_id: event.message_id }).event) !== canonical(event)) throw new Error('pre_prompt_inbox_event_changed');
