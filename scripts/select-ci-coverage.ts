@@ -52,6 +52,35 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
   return result(eventName === 'push' ? 'report' : 'affected', 'complete-diff', paths);
 }
 
+/** One-shot policy for PR951's pinned 0.9.1 -> 0.9.3 pair. These are Git
+ * blob transitions, not a path exemption. Even a docs edit or CI change invalidates
+ * the exception. Remove this policy after the upgrade lands. */
+const ARCHCTX_093_DIFF = [
+  ':100644 100644 f8b767a51e24934870214582551da004dd5dcc81 16d2b0050da97a42799593f5019c56b521bb7ad8 M\0bun.lock\0',
+  ':000000 100644 0000000000000000000000000000000000000000 e1b7f0bff6223a0ac596e9d452da2af42b241b68 A\0docs/verification/archctx-0.9.3-capabilities.json\0',
+  ':000000 100644 0000000000000000000000000000000000000000 029c80f7c4f8720598c6ff0525effad9dcce79fa A\0docs/verification/archctx-0.9.3-installed-bytes.json\0',
+  ':000000 100644 0000000000000000000000000000000000000000 7b2c2bf87302218b15a2b8de2eb2ddd4b52e5e05 A\0docs/verification/archctx-0.9.3-upgrade.md\0',
+  ':100644 100644 d4ba864fb748205fbc55a531822c5deee308da18 60ff292329fdcba945501cb727e60e73e48c7b4e M\0package.json\0',
+  ':100644 100644 90f076567abf4e242a8997898401adfdade044a5 3521418aebfddd8b22103e26f249193d8d2237a3 M\0tests/architecture-projection-e2e.test.ts\0',
+].join('');
+
+export function isArchctx093Upgrade(input: CoverageInput): boolean {
+  return input.eventName === 'pull_request'
+    && selectCoverage(input).mode === 'affected' && input.diffRaw === ARCHCTX_093_DIFF;
+}
+
+/** Include literal CLI users as well as imports, then use the normal reverse
+ * graph. Type-only consumers are also included; check:type remains mandatory. */
+export function archctxConsumerPaths(sources: ReadonlyMap<string, string>): string[] {
+  const paths = [...sources].filter(([path, source]) => /^(src|tests)\/.*\.[cm]?[jt]sx?$/.test(path)
+    && /archctx/.test(source)).map(([path]) => path);
+  for (const required of ['src/effects/architecture/archctx-provider.ts', 'src/core/architecture/projection.ts',
+    'tests/architecture-projection-e2e.test.ts', 'tests/architecture-projection-provider.test.ts']) {
+    if (!paths.includes(required)) throw new Error(`Missing archctx consumer: ${required}`);
+  }
+  return paths;
+}
+
 /** Imports and exact paths propagate; directory content edges apply to direct changes only. */
 export async function selectAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()): Promise<string[]> {
   const result = await analyzeAffectedTests(paths, sources, documentationConsumers, previousSources);
@@ -251,7 +280,8 @@ if (import.meta.main) {
   const base = diffBase(eventName, event);
   const diffRaw = validSha(base) && validSha(headSha) && actualHead === headSha
     ? git(['diff', '--raw', '--no-abbrev', '--no-renames', '-z', base, ...(local ? [] : [headSha]), '--']) : null;
-  const selection = selectCoverage({ eventName, event, headSha, actualHead, diffRaw });
+  const input = { eventName, event, headSha, actualHead, diffRaw };
+  const selection = selectCoverage(input);
   if (selection.mode === 'invalid') throw new Error(selection.reason);
   if (selection.mode === 'daily' && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Daily validation requires the fixed main snapshot');
   let platforms = { native_oar: selection.mode === 'daily', home_isolation: selection.mode === 'daily' };
@@ -273,7 +303,18 @@ if (import.meta.main) {
     const documentationConsumers = selection.paths.some(isDocumentationPath)
       ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
     platforms = selectPlatformCoverage(selection.paths, discoverPlatformInputs(sources));
-    const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+    // Only committed PR Git objects can enable the one-shot policy. Local dirty
+    // trees, changed CI policy, extra scripts, and all other dependency edits use
+    // the existing global-input policy. Platform checks remain unchanged.
+    const narrow = isArchctx093Upgrade(input);
+    const coveragePaths = narrow
+      ? [...archctxConsumerPaths(sources), ...selection.paths.filter(path => isDocumentationPath(path))]
+      : selection.paths;
+    const coverage = await analyzeAffectedTests(coveragePaths, sources, documentationConsumers, previousSources);
+    if (narrow) {
+      if (!coverage.tests.length || coverage.fullReasons.length) throw new Error('Invalid archctx upgrade coverage');
+      selection.reason = 'archctx-0.9.3-pinned-blobs';
+    }
     if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
     for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
     const tests = coverage.tests;
