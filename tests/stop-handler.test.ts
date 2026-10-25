@@ -163,7 +163,11 @@ describe('Stop recovery and safety invariants', () => {
     expect(result.exitCode).toBe(0);
     const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
     expect(handoff).toContain('Continue task checklist sourced from plans/source-plan.md.');
-    expect(handoff).toContain(`- Active sprint row: | 6 | hrd-06 | ${plan} |`);
+    // The plan still declares a Task Contract and the sprint marker still
+    // exists; recovery reads neither.
+    expect(handoff).not.toContain('Active sprint row');
+    expect(handoff).not.toContain('hrd-06');
+    expect(handoff).not.toContain(contract);
     expect(handoff).not.toContain('## Commands Run');
     // The "## Evidence" section sources only from the checkpoint and renders a
     // typed minimal state when none is published (this fixture seeds no ledger).
@@ -177,6 +181,7 @@ describe('Stop recovery and safety invariants', () => {
     // resume check reads.
     expect(resume).toContain('<!-- generated-by: repo-harness codex-handoff-resume v1 -->');
     expect(resume).toContain('## Provenance');
+    expect(resume).not.toContain(contract);
   });
 
   test('does not shadow canonical finish authority when the active plan is complete', () => {

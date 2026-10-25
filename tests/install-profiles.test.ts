@@ -15,7 +15,6 @@ import {
   installProfileTransactionPaths,
   effectiveSkillRoots,
   installedProfileStatus,
-  hashManagedTree,
   planInstallProfile,
   PROFILE_COMPONENTS,
   profileEnablesCodegraph,
@@ -28,6 +27,7 @@ import {
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
+import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
 import { parseSkillSurfaceCatalog, probeExpectations } from '../src/core/skill-surface/catalog';
@@ -59,8 +59,8 @@ function writePath(path: string, content = ''): void {
   writeFileSync(path, content);
 }
 
-// Mirrors install-profile.ts's internal hashManagedTree for a
-// single-file directory (its own algorithm is not exported), so tests can
+// Mirrors effects/managed-tree.ts hashManagedTree for a
+// single-file directory, so tests can
 // construct a facade whose owner marker is provably unmodified without
 // running an actual install/sync.
 function writeMarkedFacade(dest: string, skillMdContent: string): void {

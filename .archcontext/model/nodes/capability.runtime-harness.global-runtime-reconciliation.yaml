@@ -33,7 +33,7 @@ source:
     - "src/cli/commands/doctor.ts"
     - "src/cli/commands/init-hook.ts"
     - "src/cli/commands/upgrade.ts"
-    - "src/core/upgrade/**"
+    - "src/effects/upgrade/**"
     - "src/effects/runtime/node-candidates.ts"
     - "src/effects/runtime/protected-helper-platform.ts"
     - "src/effects/skill-tree-integrity.ts"

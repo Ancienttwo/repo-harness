@@ -1,5 +1,3 @@
-import { coalesceStrategyWakes, createStrategyWakeSession, STRATEGY_WAKE_LIMITS } from '../src/core/strategy/wake';
-import { exportStrategyWakePacket } from '../src/effects/strategy/wake';
 import { observationReadFileSync, withReadonlyObservation, ObservationViolation } from '../src/effects/state/readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
 import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verification-execution';
@@ -516,60 +514,6 @@ describe('optional strategy and progressive memory', () => {
       expect(() => io.readFile(join(import.meta.dir, '../README.md'))).toThrow(ObservationViolation);
       expect(() => io.exec('git', ['diff', '--output=forbidden.txt'], {})).toThrow(ObservationViolation);
     } finally { if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome; }
-  });
-  test('wake coalescing is order independent, bounded and rejects conflicting identities', () => {
-    const session = createStrategyWakeSession('a'.repeat(64), 'host-1');
-    const event = (sequence: number) => ({ eventId: `event-${sequence}`, sequence, contextDigest: 'b'.repeat(64), reason: 'sources_changed' });
-    const input = (events: unknown[]) => JSON.stringify({ version: 1, repositoryId: session.repositoryId, epoch: session.epoch, events, proposal: null, capabilityClaims: { readOnly: true, resume: true } });
-    const a = coalesceStrategyWakes(session, input([event(3), event(1), event(3), event(2)]));
-    const b = coalesceStrategyWakes(session, input([event(2), event(3), event(1), event(3)]));
-    expect(a).toEqual(b); expect(a.selected?.sequence).toBe(3); expect(a.coalesced).toBe(2); expect(a.ignored).toBe(1);
-    expect(session.watermark).toBe(-1); expect(session.seen).toEqual([]);
-    const replay = coalesceStrategyWakes(a.session, input([event(3), event(2)]));
-    expect(replay.selected).toBeNull(); expect(replay.ignored).toBe(2);
-    expect(() => coalesceStrategyWakes(session, input([event(1), { ...event(1), contextDigest: 'c'.repeat(64) }]))).toThrow('Conflicting');
-    expect(() => coalesceStrategyWakes(session, input(Array.from({ length: 33 }, (_, i) => event(i))))).toThrow('event limit');
-    expect(() => coalesceStrategyWakes(session, ' '.repeat(STRATEGY_WAKE_LIMITS.requestBytes + 1))).toThrow('byte limit');
-    expect(() => coalesceStrategyWakes(session, input([{ ...event(1), dispatch: true }]))).toThrow('fields');
-    expect(a.capabilityStatus).toBe('unverified'); expect(a.executionAuthorized).toBe(false);
-  });
-  test('wake restart refuses old epochs and models safe replay without durable dedup', () => {
-    const first = createStrategyWakeSession('a'.repeat(64), 'boot-1');
-    const raw = (epoch: string) => JSON.stringify({ version: 1, repositoryId: first.repositoryId, epoch, events: [{ eventId: 'same', sequence: 1, contextDigest: 'b'.repeat(64), reason: 'resume' }], proposal: null, capabilityClaims: { readOnly: false, resume: false } });
-    const beforeRestart = coalesceStrategyWakes(first, raw('boot-1'));
-    const next = createStrategyWakeSession(first.repositoryId, 'boot-2');
-    expect(() => coalesceStrategyWakes(next, raw('boot-1'))).toThrow('epoch');
-    expect(coalesceStrategyWakes(next, raw('boot-2')).selected?.eventId).toBe('same');
-    expect(coalesceStrategyWakes(beforeRestart.session, raw('boot-1')).selected).toBeNull();
-    let retained = first;
-    for (let i = 0; i < 100; i++) {
-      const input = JSON.parse(raw('boot-1')); input.events[0].eventId = `e-${i}`; input.events[0].sequence = i;
-      retained = coalesceStrategyWakes(retained, JSON.stringify(input)).session;
-    }
-    expect(retained.seen.length).toBe(64); expect(retained.watermark).toBe(99);
-  });
-  test('one-shot wake adapter uses fresh production context and never trusts capability claims', () => {
-    const { root, doc, save } = fixture(); const packet = collectStrategyContext(root, { nowMs });
-    const session = createStrategyWakeSession(strategyHash(root), 'synthetic-host');
-    const raw = (digest: string, p: unknown = proposal(packet)) => JSON.stringify({ version: 1, repositoryId: session.repositoryId, epoch: session.epoch,
-      events: [{ eventId: 'one', sequence: 1, contextDigest: digest, reason: 'owner_request' }], proposal: p, capabilityClaims: { readOnly: true, resume: true } });
-    const before = snapshot(root);
-    const exported = exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs });
-    expect(exported.status).toBe('exported'); expect(exported.packet?.digest).toBe(packet.digest);
-    expect(exported.validation?.status).toBe('reviewable'); expect(exported.mode).toBe('context_packet_only');
-    expect(exported.capabilityStatus).toBe('unverified'); expect(exported.executionAuthorized).toBe(false);
-    expect(snapshot(root)).toEqual(before);
-    expect(exportStrategyWakePacket(root, exported.session, raw(packet.digest), { nowMs }).status).toBe('empty');
-    doc.goal.text = 'Owner changed the intended result'; save();
-    expect(exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs }).status).toBe('stale');
-    const changed = collectStrategyContext(root, { nowMs });
-    expect(exportStrategyWakePacket(root, session, raw(changed.digest), { nowMs }).validation?.status).toBe('stale');
-    write(root, 'docs/goal.md', 'Changed source');
-    expect(exportStrategyWakePacket(root, session, raw(changed.digest), { nowMs }).status).toBe('stale');
-    expect(() => exportStrategyWakePacket(temp(), session, raw(packet.digest), { nowMs })).toThrow('worktree');
-    expect(() => exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs, limits: { totalBytes: 128 } })).toThrow();
-    let tick = 0;
-    expect(() => exportStrategyWakePacket(root, session, raw(packet.digest), { nowMs }, { clock: () => tick += 1000 })).toThrow('deadline');
   });
   test('explicit pilot document selection leaves the default marker disabled', () => {
     const { root, doc } = fixture(); rmSync(join(root, 'docs/strategy/context.json'));

@@ -12,6 +12,7 @@ source:
   include:
     - "src/cli/hook/**"
     - "src/cli/installer/**"
+    - "src/effects/managed-tree.ts"
     - "src/cli/hook-entry.ts"
     - "src/effects/loop/**"
     - "src/effects/hook-event-log.ts"

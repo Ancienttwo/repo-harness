@@ -33,11 +33,21 @@ import {
   type SourceFile,
 } from 'typescript/unstable/ast';
 
-const CORE_ROOTS = [
-  'src/core/state',
-  'src/core/workflow',
-  'src/core/capabilities',
-] as const;
+const CORE_ROOTS = ['src/core'] as const;
+
+// Known impure core files whose I/O moves to src/effects in #924.
+// Remove each entry when its file is fixed; do not add new ones.
+const CORE_PURITY_EXCLUSIONS: ReadonlySet<string> = new Set([
+  'src/core/adoption/gitignore-plan.ts', // #924: fs, path
+  'src/core/adoption/manifest-templates.ts', // #924: path
+  'src/core/adoption/minimum-harness-version.ts', // #924: fs, path
+  'src/core/adoption/plan.ts', // #924: path
+  'src/core/adoption/source-checkout.ts', // #924: fs, path
+  'src/core/adoption/standard-plan.ts', // #924: fs, path, effects/upgrade/legacy-inventory
+  'src/core/adoption/workflow-contract-asset.ts', // #924: fs, path
+  'src/core/operator/fleet-snapshot.ts', // #924: path
+  'src/core/source-projection.ts', // #924: fs, path
+]);
 
 const CAPABILITY_SOURCE = 'src/core/capabilities/registry.ts';
 const CAPABILITY_SCRIPT = 'scripts/capability-resolver.ts';
@@ -761,6 +771,7 @@ export async function checkStateBoundaries(repoInput = '.'): Promise<StateBounda
 
     const coreSet = new Set(coreFiles.map((file) => relPath(repoRoot, file)));
     for (const file of coreSet) {
+      if (CORE_PURITY_EXCLUSIONS.has(file)) continue;
       const source = parsed.sources.get(file);
       if (source) checkCoreDependencies(repoRoot, source, violations);
     }

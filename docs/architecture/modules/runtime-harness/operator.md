@@ -190,21 +190,25 @@ sequenceDiagram
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 25 / 4884 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
+| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 24 / 4726 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
 | `component.operator.view-projections` | `src/core/operator/**` | 16 / 2112 | 纯投影、请求解析、严格 decoder |
 | `component.operator.activity-feeds` | `src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**` | 10 / 1948 | 开发活动和 setup 的 collector 与投影 |
-| `component.operator.architecture-view` | `module-view.ts`、`src/core/docs/**`、`src/cli/commands/module.ts` | 3 / 425 | 模块视图、module CLI、docs graph |
+| `component.operator.architecture-view` | `module-view.ts`、`src/cli/commands/module.ts` | 2 / 182 | 模块视图、module CLI |
 | `component.operator.web-console` | `src/operator-web/**`、`vite.operator.config.ts` | 45 / 9902 | 只读浏览器控制台 |
 
-依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用另外三个组件。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
+依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用 view-projections 和 activity-feeds，不调用 architecture-view。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
 
 ### 3.4 开放问题
 
-- `createDocsGraphReader`（`src/effects/operator/docs-graph.ts:35`）在 `src/` 中没有调用方，只有 `tests/docs/` 使用它。PR #579 明确没有加路由。PR #609 删除了 Docs 占位页。这个 reader 是保留给后续 Docs 工作区，还是应该退役？没有记录。
 - `src/cli/commands/module.ts` 归入本 capability 的置信度是 MEDIUM（归属提议 §5）。它和 architecture 路由共用 builder，但它是独立的 CLI 入口。它是否应该归入架构工具类 capability？没有记录。
 - `src/operator-web/fixture.ts` import `src/core/publication/merge-readiness.ts`。该文件的归属由 publication 范围决定。
 
 ## 4. 歷史決策記錄(append-only)
+
+### Retire the docs graph reader (2026-10-25, issue #910)
+
+- Delete the docs graph reader (`createDocsGraphReader`) and its pure builder (`buildDocsGraph`). No route or production caller read them after PR #609 removed the Docs page.
+- Remove `src/core/docs/**` from the capability and architecture-view includes. Remove `relation.operator.http-reader.architecture-view`, because the docs graph reader was its only code edge.
 
 ### Retire unused observations (2026-10-16, issue #769)
 
@@ -249,5 +253,4 @@ sequenceDiagram
 ## Optimization Backlog
 
 - `startOperatorServer` 仍集中处理路由、repository observation 队列、Fleet 队列和任务读取监督。拆分需要改动频率或性能证据。
-- docs graph reader 没有生产调用方（见 §3.4）。如果 Docs 工作区不在计划中，可以退役它和 `src/core/docs/**`。
 - 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。

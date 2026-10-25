@@ -25,7 +25,6 @@
       "src/effects/state/resolve-board.ts",
       "src/effects/state/pruned-worktree-intents.ts",
       "src/effects/state/worktree-trash.ts",
-      "src/effects/state/write-journal.ts",
       "src/core/worktree-*"
     ]
   }

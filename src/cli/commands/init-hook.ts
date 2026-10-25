@@ -20,7 +20,7 @@ import {
   type StatusReport,
 } from './status';
 import type { InstallTargetSpec } from './install';
-import { planLegacyLeftovers } from '../../core/upgrade/legacy-inventory';
+import { planLegacyLeftovers } from '../../effects/upgrade/legacy-inventory';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../core/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';

@@ -17,7 +17,7 @@ source:
     - "src/effects/runtime/protected-helper-platform.ts"
     - "src/effects/skill-tree-integrity.ts"
     - "src/cli/commands/upgrade.ts"
-    - "src/core/upgrade/**"
+    - "src/effects/upgrade/**"
     - "scripts/check-managed-runtime.ts"
     - "scripts/sync-codex-installed-copies.sh"
     - "install.sh"
