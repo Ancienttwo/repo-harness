@@ -1,3 +1,4 @@
+import { buildProviderEngineerOffers, validateProviderEngineerOffers } from '../../src/core/engineers/scheduling';
 import { readFileSync } from 'node:fs';
 import { projectProviderWorkGraph, validateProviderWorkGraph, validateProviderWorkGraphTopology } from '../../src/core/engineers/scheduling';
 import { describe, expect, test } from 'bun:test';
@@ -219,5 +220,23 @@ describe('provider work graph V2', () => {
     graph.work_packages[0].depends_on[0].acceptance_authority = null;
     const projected = projectProviderWorkGraph(graph, issues, { commit: 'a'.repeat(40), graph_path: '.ai/harness/work-graph.v2.json' });
     expect(() => validateProviderWorkGraphTopology([projected])).toThrow();
+  });
+});
+
+
+describe('provider engineer offer observations', () => {
+  const input = () => ({ repository_id: REPO, engineer_id: `engineer:${CAPABILITY}`,
+    engineer_contract_revision: DIGEST, session_binding_sha256: DIGEST, planning_revision: DIGEST, authorization_revision: 1,
+    offers: [{ provider_repository_id: '123456', issue_id: '987654', source_revision: DIGEST, eligible: true, blockers: [] }] });
+  test('an unchanged issue set still pins exact planning evidence', () => {
+    const first = buildProviderEngineerOffers(input());
+    const second = buildProviderEngineerOffers({ ...input(), planning_revision: `sha256:${'b'.repeat(64)}` });
+    expect(first.snapshot_revision).not.toBe(second.snapshot_revision);
+    expect(() => validateProviderEngineerOffers({ ...first, authorization_revision: 2 })).toThrow();
+  });
+  test('missing provider evidence cannot become an eligible offer', () => {
+    expect(() => buildProviderEngineerOffers({ ...input(), offers: [{ ...input().offers[0]!, source_revision: null }] })).toThrow();
+    const blocked = buildProviderEngineerOffers({ ...input(), offers: [{ ...input().offers[0]!, source_revision: null, eligible: false, blockers: ['provider_unavailable'] }] });
+    expect(blocked.offers[0]!.eligible).toBe(false);
   });
 });

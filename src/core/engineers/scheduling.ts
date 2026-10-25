@@ -983,3 +983,55 @@ export function validateProviderRetryPolicy(value: unknown, index = 0): Provider
   if (input.revision_reset !== 'reset_on_work_package_revision') invalid(`${label}.revision_reset is invalid`);
   return Object.freeze({ max_automated_attempts: integer(input.max_automated_attempts, `${label}.max_automated_attempts`, 1, 100), retryable_failure_classes: Object.freeze(classes), backoff: Object.freeze({ kind: backoff.kind, initial_seconds: initial, maximum_seconds: maximum }), attention_after_seconds: integer(input.attention_after_seconds, `${label}.attention_after_seconds`, 1, 2_592_000), revision_reset: 'reset_on_work_package_revision' });
 }
+
+export type ProviderEngineerOfferBlocker = 'provider_unavailable' | 'provider_closed' | 'provider_ineligible'
+  | 'profile_unassigned' | 'profile_revision_changed' | 'capability_mismatch' | 'dependency_not_ready'
+  | 'dependency_authority_unavailable' | 'session_conflict';
+export interface ProviderEngineerOffer {
+  readonly provider_repository_id: string;
+  readonly issue_id: string;
+  readonly source_revision: string | null;
+  readonly eligible: boolean;
+  readonly blockers: readonly ProviderEngineerOfferBlocker[];
+}
+export interface ProviderEngineerOffersV2 {
+  readonly protocol: 2;
+  readonly kind: 'provider_engineer_offers';
+  readonly repository_id: string;
+  readonly engineer_id: string;
+  readonly engineer_contract_revision: string;
+  readonly session_binding_sha256: string;
+  readonly authorization_revision: number;
+  readonly planning_revision: string;
+  readonly offers: readonly ProviderEngineerOffer[];
+  readonly snapshot_revision: string;
+}
+export function buildProviderEngineerOffers(input: Omit<ProviderEngineerOffersV2, 'protocol' | 'kind' | 'snapshot_revision'>): ProviderEngineerOffersV2 {
+  const basis = { protocol: 2 as const, kind: 'provider_engineer_offers' as const, ...input };
+  return validateProviderEngineerOffers({ ...basis, snapshot_revision: engineerSha256(canonicalEngineerJson(basis)) });
+}
+export function validateProviderEngineerOffers(value: unknown): ProviderEngineerOffersV2 {
+  const input = record(value, 'provider engineer offers');
+  exact(input, ['protocol', 'kind', 'repository_id', 'engineer_id', 'engineer_contract_revision', 'session_binding_sha256', 'authorization_revision', 'planning_revision', 'offers', 'snapshot_revision'], 'provider engineer offers');
+  if (input.protocol !== 2 || input.kind !== 'provider_engineer_offers' || !Array.isArray(input.offers) || input.offers.length > 200) invalid('provider engineer offers protocol or rows invalid');
+  const allowed: readonly ProviderEngineerOfferBlocker[] = ['provider_unavailable', 'provider_closed', 'provider_ineligible', 'profile_unassigned', 'profile_revision_changed', 'capability_mismatch', 'dependency_not_ready', 'dependency_authority_unavailable', 'session_conflict'];
+  const seen = new Set<string>();
+  const offers = input.offers.map(raw => {
+    const item = record(raw, 'provider offer'); exact(item, ['provider_repository_id', 'issue_id', 'source_revision', 'eligible', 'blockers'], 'provider offer');
+    const repository = string(item.provider_repository_id, 'provider_repository_id', /^[1-9][0-9]*$/), issue = string(item.issue_id, 'issue_id', /^[1-9][0-9]*$/);
+    const key = `${repository}:${issue}`; if (seen.has(key)) invalid('duplicate provider offer'); seen.add(key);
+    if (!Array.isArray(item.blockers) || item.blockers.some(blocker => !allowed.includes(blocker)) || new Set(item.blockers).size !== item.blockers.length) invalid('provider offer blockers invalid');
+    if (typeof item.eligible !== 'boolean' || item.eligible !== (item.blockers.length === 0)) invalid('provider offer eligibility disagrees with blockers');
+    const revision = item.source_revision === null ? null : string(item.source_revision, 'source_revision', DIGEST);
+    if (revision === null && !item.blockers.includes('provider_unavailable')) invalid('missing provider observation cannot be eligible');
+    return { provider_repository_id: repository, issue_id: issue, source_revision: revision, eligible: item.eligible, blockers: item.blockers as ProviderEngineerOfferBlocker[] };
+  });
+  const basis = { protocol: 2 as const, kind: 'provider_engineer_offers' as const,
+    repository_id: string(input.repository_id, 'repository_id', REPOSITORY_ID), engineer_id: string(input.engineer_id, 'engineer_id', ENGINEER_ID),
+    engineer_contract_revision: string(input.engineer_contract_revision, 'engineer_contract_revision', DIGEST),
+    session_binding_sha256: string(input.session_binding_sha256, 'session_binding_sha256', DIGEST),
+    authorization_revision: integer(input.authorization_revision, 'authorization_revision', 0, Number.MAX_SAFE_INTEGER), planning_revision: string(input.planning_revision, 'planning_revision', DIGEST), offers };
+  const revision = string(input.snapshot_revision, 'snapshot_revision', DIGEST);
+  if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('provider offer snapshot digest changed');
+  return Object.freeze({ ...basis, snapshot_revision: revision });
+}

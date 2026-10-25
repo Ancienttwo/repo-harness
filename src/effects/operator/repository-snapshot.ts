@@ -1,9 +1,7 @@
 import { realpathSync } from 'node:fs';
-import { decodeOperatorPlanningSnapshot, PLANNING_MAX_TASKS, PLANNING_MAX_REPOSITORIES, PLANNING_MAX_EDGES, type OperatorPlanningSnapshot, type OperatorPlanningGraph } from '../../core/operator/planning-snapshot';
-import { EngineerSchedulingError, validateProviderWorkGraphTopology } from '../../core/engineers/scheduling';
-import { readProviderEngineerScheduling, readProviderWorkGraph, readPlanningFileAtCommit, type ProviderWorkGraphRead, type ProviderWorkGraphSource } from '../engineers/scheduling';
-import { resolveDependencyObservation } from '../engineers/dependency-authority';
-import { isRepoHarnessAdoptedPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../repo-registry';
+import { decodeOperatorPlanningSnapshot, type OperatorPlanningSnapshot } from '../../core/operator/planning-snapshot';
+import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import { readProviderEngineerScheduling, readProviderPlanningGraph, type ProviderWorkGraphSource } from '../engineers/scheduling';
 import { decodeOperatorOrganizationSnapshot, projectOperatorOrganizationSnapshot } from '../../core/operator/organization-snapshot';
 import { collectEngineeringBoard } from '../engineers/engineering-overlay';
 import {
@@ -137,7 +135,7 @@ export function readOperatorPlanningSnapshot(input: ReadOperatorRepositorySnapsh
     const root = realpathSync(repo.path);
     const scheduling = readProviderEngineerScheduling(repo, input.env);
     let graph: OperatorPlanningSnapshot['graph'];
-    try { graph = { status: 'observed', snapshot: readPlanningGraph(repo, registry, input.graph_source) }; }
+    try { graph = { status: 'observed', snapshot: readProviderPlanningGraph(repo, registry, input.graph_source) }; }
     catch (error) { graph = { status: 'unavailable', code: error instanceof EngineerSchedulingError && error.code === 'provider_work_graph_missing' ? 'needs_provider_graph' : 'source_unavailable' }; }
     return { root, value: decodeOperatorPlanningSnapshot({ protocol: 2, kind: 'operator_planning_snapshot', repository_id: repo.id,
       scheduling, graph, observation: { observed_at: observedAt, authorization_revision: registry.authorizationRevision } }, repo.id) };
@@ -148,32 +146,4 @@ export function readOperatorPlanningSnapshot(input: ReadOperatorRepositorySnapsh
   const repo = registry.repos.find(item => item.id === input.repository_id);
   if (!repo || registry.authorizationRevision !== after.value.observation.authorization_revision || realpathSync(repo.path) !== after.root) throw new Error('Planning authorization changed');
   return after.value;
-}
-function readPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnessRegistrySnapshot, source?: ProviderWorkGraphSource): OperatorPlanningGraph {
-  const selected = readProviderWorkGraph(repo, source);
-  const reads: ProviderWorkGraphRead[] = [selected];
-  let edgeCount = 0;
-  for (let index = 0; index < reads.length; index++) {
-    const read = reads[index]!;
-    if (read.graph.work_packages.length > PLANNING_MAX_TASKS) throw new Error('Planning graph task limit');
-    const edges = read.graph.work_packages.flatMap(item => item.depends_on);
-    edgeCount += edges.length;
-    if (edgeCount > PLANNING_MAX_EDGES) throw new Error('Planning graph edge limit');
-    for (const edge of edges) {
-      if (reads.some(item => item.repo.id === edge.repository_id)) continue;
-      if (reads.length >= PLANNING_MAX_REPOSITORIES) throw new Error('Planning graph repository limit');
-      const target = registry.repos.find(item => item.id === edge.repository_id);
-      if (!target) throw new Error('Planning graph repository unavailable');
-      reads.push(readProviderWorkGraph(target));
-    }
-  }
-  validateProviderWorkGraphTopology(reads.map(read => read.graph));
-  const authorityRegistry = { ...registry, repos: registry.repos.filter(item => isRepoHarnessAdoptedPath(item.path)) };
-  const packages = selected.graph.work_packages.map(item => ({ ...item, dependencies: item.depends_on.map(dependency => {
-    const target = reads.flatMap(read => read.graph.work_packages).find(item => item.repository_id === dependency.repository_id && item.work_package_id === dependency.work_package_id);
-    if (!target) throw new Error('Planning dependency disappeared');
-    return resolveDependencyObservation({ dependency, target, reads, registry: authorityRegistry, readFileAtCommit: readPlanningFileAtCommit });
-  }) }));
-  return { packages, sources: reads.map(read => ({ repository_id: read.repo.id, commit: read.commit,
-    graph_path: read.graph.graph_path, work_graph_revision: read.graph.work_graph_revision })).sort((a, b) => a.repository_id.localeCompare(b.repository_id)) };
 }

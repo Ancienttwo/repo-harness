@@ -1,6 +1,10 @@
+import { PLANNING_MAX_TASKS, PLANNING_MAX_REPOSITORIES, PLANNING_MAX_EDGES, type OperatorPlanningGraph } from '../../core/operator/planning-snapshot';
+import { resolveDependencyObservation } from './dependency-authority';
+import { isRepoHarnessAdoptedPath, readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { validateProviderWorkGraphTopology, buildProviderEngineerOffers, type ProviderEngineerOfferBlocker } from '../../core/engineers/scheduling';
 import { realpathSync } from 'fs';
 import { EngineerSchedulingError, projectProviderEngineerScheduling, projectProviderWorkGraph, validateProviderWorkGraph, type ProjectedProviderWorkGraph } from '../../core/engineers/scheduling';
-import { engineerSha256 } from '../../core/engineers/profile-binding';
+import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { gitExecFileSync } from '../git/runner';
 import { readCanonicalTargetRef } from '../state/collect-board-inputs';
@@ -69,4 +73,73 @@ export function readProviderEngineerScheduling(repo: RepoHarnessRegisteredRepo, 
     profiles: listEngineerProfiles(repo.path).map(profile => ({ engineer_id: profile.profile.engineer_id,
       capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision })),
   });
+}
+
+export function readProviderPlanningGraph(repo: RepoHarnessRegisteredRepo, registry: RepoHarnessRegistrySnapshot, source?: ProviderWorkGraphSource): OperatorPlanningGraph {
+  const selected = readProviderWorkGraph(repo, source);
+  const reads: ProviderWorkGraphRead[] = [selected];
+  let edgeCount = 0;
+  for (let index = 0; index < reads.length; index++) {
+    const read = reads[index]!;
+    if (read.graph.work_packages.length > PLANNING_MAX_TASKS) throw new Error('Planning graph task limit');
+    const edges = read.graph.work_packages.flatMap(item => item.depends_on);
+    edgeCount += edges.length;
+    if (edgeCount > PLANNING_MAX_EDGES) throw new Error('Planning graph edge limit');
+    for (const edge of edges) {
+      if (reads.some(item => item.repo.id === edge.repository_id)) continue;
+      if (reads.length >= PLANNING_MAX_REPOSITORIES) throw new Error('Planning graph repository limit');
+      const target = registry.repos.find(item => item.id === edge.repository_id);
+      if (!target) throw new Error('Planning graph repository unavailable');
+      reads.push(readProviderWorkGraph(target));
+    }
+  }
+  validateProviderWorkGraphTopology(reads.map(read => read.graph));
+  const authorityRegistry = { ...registry, repos: registry.repos.filter(item => isRepoHarnessAdoptedPath(item.path)) };
+  const packages = selected.graph.work_packages.map(item => ({ ...item, dependencies: item.depends_on.map(dependency => {
+    const target = reads.flatMap(read => read.graph.work_packages).find(item => item.repository_id === dependency.repository_id && item.work_package_id === dependency.work_package_id);
+    if (!target) throw new Error('Planning dependency disappeared');
+    return resolveDependencyObservation({ dependency, target, reads, registry: authorityRegistry, readFileAtCommit: readPlanningFileAtCommit });
+  }) }));
+  return { packages, sources: reads.map(read => ({ repository_id: read.repo.id, commit: read.commit,
+    graph_path: read.graph.graph_path, work_graph_revision: read.graph.work_graph_revision })).sort((a, b) => a.repository_id.localeCompare(b.repository_id)) };
+}
+
+/** Eligibility is an observed hint. Starting a session or effect rechecks its admission. */
+export function readProviderEngineerOffers(input: {
+  repo_root: string; engineer_id: string; engineer_contract_revision: string;
+  session_binding_sha256: string; env?: NodeJS.ProcessEnv; graph_source?: ProviderWorkGraphSource;
+}) {
+  const registry = readRepoHarnessRegistryStrictSnapshot({ env: input.env });
+  const repo = resolveRegisteredRepoForWorktree(input.repo_root, registry);
+  const scheduling = readProviderEngineerScheduling(repo, input.env);
+  const matches = scheduling.tasks.flatMap(task => task.sessions).filter(item => item.session.selector.session_binding_sha256 === input.session_binding_sha256);
+  if (matches.length !== 1) fail('engineer_offer_stale', 'exact admitted session selection is unavailable');
+  const selected = matches[0]!.selection;
+  if (selected.state !== 'selected' || selected.engineer_id !== input.engineer_id || selected.engineer_contract_revision !== input.engineer_contract_revision) fail('engineer_offer_stale', 'explicit profile selection changed or is unassigned');
+  const profile = scheduling.profiles.find(item => item.engineer_id === input.engineer_id)!;
+  const graph = readProviderPlanningGraph(repo, registry, input.graph_source);
+  const offers = [...graph.packages].sort((a, b) => b.priority - a.priority || a.work_package_id.localeCompare(b.work_package_id)).map(item => {
+    const blockers: ProviderEngineerOfferBlocker[] = [];
+    const task = scheduling.tasks.find(row => row.provider_repository_id === item.task.provider_repository_id && row.issue_id === item.task.issue_id);
+    const issue = task?.issue ?? null;
+    if (!issue) blockers.push('provider_unavailable');
+    else if (issue.state === 'closed') blockers.push('provider_closed');
+    else if (!issue.eligible) blockers.push('provider_ineligible');
+    if (item.primary_capability !== profile.capability_id) blockers.push('capability_mismatch');
+    if (item.dependencies.some(edge => edge.status === 'authority_unavailable')) blockers.push('dependency_authority_unavailable');
+    if (item.dependencies.some(edge => edge.status === 'unsatisfied')) blockers.push('dependency_not_ready');
+    const conflicting = graph.packages.filter(other => other.concurrency.key === item.concurrency.key).some(other =>
+      scheduling.tasks.find(row => row.provider_repository_id === other.task.provider_repository_id && row.issue_id === other.task.issue_id)?.sessions.some(execution =>
+        execution.selection.state === 'selected' && execution.session.selector.session_binding_sha256 !== input.session_binding_sha256));
+    if (conflicting) blockers.push('session_conflict');
+    return { provider_repository_id: item.task.provider_repository_id, issue_id: item.task.issue_id,
+      source_revision: issue?.source_revision ?? null, eligible: blockers.length === 0, blockers };
+  });
+  const after = readProviderEngineerScheduling(repo, input.env);
+  if (scheduling.source_revision !== after.source_revision
+    || canonicalEngineerJson(graph) !== canonicalEngineerJson(readProviderPlanningGraph(repo, registry, input.graph_source))
+    || readRepoHarnessRegistryStrictSnapshot({ env: input.env }).authorizationRevision !== registry.authorizationRevision) fail('engineer_offer_stale', 'offer inputs changed during observation');
+  return buildProviderEngineerOffers({ repository_id: repo.id, engineer_id: input.engineer_id,
+    engineer_contract_revision: input.engineer_contract_revision, session_binding_sha256: input.session_binding_sha256,
+    authorization_revision: registry.authorizationRevision, planning_revision: engineerSha256(canonicalEngineerJson(graph)), offers });
 }
