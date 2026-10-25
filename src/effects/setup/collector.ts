@@ -7,13 +7,15 @@
 // process. The argv is a code constant (the child entry file); cwd and env are
 // the server's own. On POSIX the child is the leader of a new process group, so
 // the 90 s deadline and server shutdown terminate the child and every probe it
-// spawned.
+// spawned. The group is registered, so a later server start reaps it when this
+// server dies with SIGKILL.
 // stderr is discarded and stdout must decode as a public setup snapshot, so no
 // raw builder text reaches the cache.
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
@@ -35,17 +37,17 @@ export type SetupProcessRunner = (
 
 /**
  * Spawn `bun <argv>` with no shell, no stdin and no stderr capture. On POSIX the
- * child leads its own process group; a deadline, abort or oversized stdout
- * terminates that group (Windows: the `taskkill /T` tree) before settling.
+ * child leads its own registered process group; a deadline, abort or oversized
+ * stdout terminates that group (Windows: the `taskkill /T` tree) before settling.
  */
 export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
   const group = process.platform !== 'win32';
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(process.execPath, [...argv], {
+    child = spawnRegisteredProcessGroup('setup-collector', () => spawn(process.execPath, [...argv], {
       cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], detached: group, windowsHide: true,
-    });
+    }));
   } catch {
     settle({ ok: false, code: 'failed' });
     return;

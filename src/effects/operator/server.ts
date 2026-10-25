@@ -19,6 +19,7 @@ import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type Ope
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -670,7 +671,7 @@ function windowsFleetControllerPath(): string {
 }
 
 /**
- * POSIX collection runs in a server-owned detached process group. Windows
+ * POSIX collection runs in a server-owned, registered detached process group. Windows
  * collection is different: the server owns only the controller child, while
  * that Job owner creates the inert collector and assigns its exact handle
  * before forwarding the start payload. Provider descendants then inherit the
@@ -723,12 +724,12 @@ function readSupervisedOperatorProcess<T>(input: {
     const workerEnvironment = { ...process.env, ...repositoryWorkerEnvironment(input.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT };
     const collector = process.platform === 'win32'
       ? null
-      : spawn(process.execPath, [input.process_path], {
+      : spawnRegisteredProcessGroup('operator-collector', () => spawn(process.execPath, [input.process_path], {
         env: workerEnvironment,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true,
         windowsHide: true,
-      });
+      }));
     const controller = process.platform === 'win32'
       ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsFleetControllerPath()], {
         env: workerEnvironment,
@@ -1638,6 +1639,8 @@ export async function startOperatorServer(
   };
 
   if (options.runtime_status_config && options.read_runtime_status) throw new OperatorServerError('invalid_argument', 'Select runtime config or cache reader.', 400);
+  // Collector groups of a server that died with SIGKILL have no other owner.
+  reapOrphanedProcessGroups();
   const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config) : null;
   const devActivity = options.dev_activity_collector && !options.read_dev_activity
     ? startDevActivityCollector({
