@@ -189,7 +189,6 @@
     "tests/state/artifact-parsers.test.ts": 0.42,
     "tests/state/cli-state-golden.test.ts": 31912.17,
     "tests/state/effective-state-stability.test.ts": 1242.75,
-    "tests/state/effective-state-transient-classification.test.ts": 16.37,
     "tests/state/project-effective-state.test.ts": 3.37,
     "tests/state/state-concurrency.test.ts": 13281.76,
     "tests/state/state-effects.test.ts": 9935.18,

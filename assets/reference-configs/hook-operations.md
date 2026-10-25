@@ -102,7 +102,9 @@ manual removal. Review local changes first.
 No hook answers `/delegate` or `/parallel`. `.ai/harness/delegation/` holds
 only the native-role evidence.
 
-`SessionStart` resolves Effective State once. The `[HarnessState]` section, or
+`SessionStart` resolves Effective State once, read-only. It writes no state,
+and its `state_version` is the last version that `repo-harness state resolve`
+published. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
 The `architecture-debt` section follows at priority 2 and is mandatory when
 present. Its 800-byte limit keeps it bounded. `pending-plan-capture` remains

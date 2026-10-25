@@ -55,7 +55,7 @@ describe('state-snapshot hook command', () => {
         marker: { problem: 'none' },
       });
       expect(existsSync(join(cwd, '.ai/harness/active-plan'))).toBe(false);
-      expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(join(cwd, '.ai/harness/state'))).toBe(false);
     });
   }, 30_000);
 

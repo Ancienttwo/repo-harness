@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join, relative } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import type { AttemptReceiptV1, ContinuationEnvelopeV1 } from '../src/core/state/types';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import {
   buildAttemptReceipt,
   evaluateAttemptStall,
@@ -620,7 +621,7 @@ describe('attempt ledger authority fences', () => {
       expect(run.status).toBe(0);
       expect(treeFingerprint(cwd)).toBe(before);
       expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(beforeStatus);
-      expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
     });
   }, 30_000);
 

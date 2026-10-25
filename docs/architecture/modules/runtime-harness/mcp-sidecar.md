@@ -178,7 +178,7 @@ sequenceDiagram
 5. **HTTP session 绑定一个已验证的 authorization ID。** 另一个 authorization 复用该 session 会失败（见 §4 的 2026-08-25 条目）。coding session 的权限来自已验证的 authorization ID。请求不能选择另一个授权身份。
 6. **worktree 优先。** `open_workspace` 默认新建独立 worktree，`checkout` 模式必须显式指定（`src/cli/mcp/coding-tools.ts:242-247`）。远端代理的失败只影响一个可丢弃的分支。
 7. **仓库授权选择工作区，不提供 shell 沙箱。** 授权页文案写明：shell 命令能访问本地 OS 用户能访问的一切（`transports/http.ts:222`）。文档和 UI 不得声称 allowed roots 限制了 shell。
-8. **MCP 只投影状态，不解释状态。** `summarize_repo_harness_state`（`src/cli/mcp/state-tools.ts:9`）使用与 CLI、Stop hook 相同的解析器。`current` 预览字段标注为非权威。
+8. **MCP 只投影状态，不解释状态，也不写状态。** `summarize_repo_harness_state`（`src/cli/mcp/state-tools.ts:9`）与 hook 使用同一个只读解析器 `resolveEffectiveStateReadOnly`，工具声明 `readOnlyHint: true`。它报告最后发布的 `state_version`；只有 `repo-harness state resolve` 分配版本。`current` 预览字段标注为非权威。
 9. **CodeGraph 是可选适配器。** 文件系统与注册表是内容和授权的真相。索引刷新失败只返回 `dead_letter` 信息（`coding-tools.ts:174`），不回滚已成功的变更。coding runtime 构造适配器时传 `allowRepoLocalBin: false`（`server.ts:138-141`）。被索引的仓库因此不能提供 codegraph 可执行文件。
 
 ### 3.2 关键权衡

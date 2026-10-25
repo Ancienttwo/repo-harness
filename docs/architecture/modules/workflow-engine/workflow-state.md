@@ -180,11 +180,11 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **仓库 Markdown 与工作流工件是唯一权威。** `.ai/harness/state/effective.json` 与 `tasks/current.md` 只是读模型，不能把权威反馈回解析（`effective-state-authority.md` Frozen Invariants 1-3）。
+1. **仓库 Markdown 与工作流工件是唯一权威。** Effective State 没有持久化的 JSON 读模型。`tasks/current.md` 只是读模型，不能把权威反馈回解析（`effective-state-authority.md` Frozen Invariants 1-3）。
 2. **纯核心不做 IO。** `src/core/state`、`src/core/workflow` 与 `src/core/capabilities` 是一个纯核心（`scripts/check-state-boundaries.ts:36-40`）。它们不能导入 `fs`、`child_process` 等运行时模块（`:106-130`），也不能导入 `src/cli` 或 `src/effects`（`:277`）。门禁命令是 `bun run check:state-boundaries`。
-3. **缓存先发布，版本 owner 最后提交。** `commitStateVersionAfter` 在 Git common dir 的锁内先调用 `publishCache`，再写版本记录；任何一步失败都回滚缓存字节（`src/effects/state/git-state-version-store.ts:129-167`）。失败不会暴露已消耗的版本号。
-4. **解析在仓库状态锁内串行。** `resolveEffectiveState` 先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:893-920`）。
-5. **只读路径不写任何东西。** `resolveEffectiveStateReadOnly` 走同一个稳定性循环，但不分配版本，也不发布缓存（`resolve-effective-state.ts:922-933`）。board 与 continuation envelope 都只用这条路径。
+3. **版本 owner 是唯一的持久化输出。** `commitStateVersionAfter` 在 Git common dir 的锁内先重读权威源哈希，再写版本记录。revision 未变时它不写文件（`src/effects/state/git-state-version-store.ts:125-143`）。写入失败不会暴露已消耗的版本号。
+4. **写路径在仓库状态锁内串行。** 生产代码里只有 `repo-harness state resolve` 调用 `resolveEffectiveState`。它先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:923-951`）。
+5. **只读路径不写任何东西。** `resolveEffectiveStateReadOnly` 走同一个稳定性循环，但不取锁，也不分配版本。它不取版本锁，直接报告最后发布的 `state_version`（`resolve-effective-state.ts:958-969`）。每个 hook 事件、MCP `summarize_repo_harness_state`、board 与 continuation envelope 都只用这条路径。
 6. **身份是读出来的。** `task_id` 是 Sprint 行 `ID` 单元格的原文，必须匹配 `TASK_DIGEST_PATTERN`（`src/core/state/coordination-identity.ts:77`）。只有 `task_revision` 是推导值。
 7. **任务锁保护保留的写入。** manual inbox 和 feedback 在任务锁中校验历史 owner。lease transition 和 cleanup writer 已删除。
 8. **board 不取锁，也不授予执行权限。** 双采样暴露 torn read。GitHub issue 和 PR 保存当前任务 authority。
@@ -198,7 +198,7 @@ sequenceDiagram
 | 共享协调面是本 capability 的组件，不是独立 capability（2026-10-11 用户决定） | 协调面复用 Effective State 的工件读取、只读解析与纯核心门禁。它独立成 capability 会把这些调用变成跨 capability 依赖。代价是本 capability 有 50 个文件、约 13.9k 行，需要组件表来说明内部边界 |
 | 版本 owner 放在 Git common dir，而不是 worktree 本地 | 所有 linked worktree 共享一个单调版本（Frozen Invariant 6）。代价是每次发布都要解析 common dir 并取第二把锁 |
 | board 无锁读取，用双采样暴露撕裂 | 观察者不会串行化所有 agent。代价是读者可能拿到 `changed_during_read` 文档，只能当诊断用 |
-| continuation ledger 只读 Effective State | `state next` 保持零写入。代价是它看到的 `state_version` 是当前已发布的版本，不是新分配的版本 |
+| hook、MCP 与 continuation ledger 只读 Effective State（2026-10-25 扩展到 hook 与 MCP） | SessionStart、MCP 摘要与 `state next` 保持零写入。SessionStart 的快乐路径从三次解析降到两次。代价是它们看到的 `state_version` 是最后发布的版本，可能属于另一个 revision。判断内容变化要比较 `state_revision` |
 | CLI 通过依赖注入把 resolver 传给命令函数 | 命令函数可以在测试中替换 resolver。代价是 CodeGraph 只记录 `references` 边，flow 选择器只能从 effects 层开始 |
 
 ### 3.3 组件
@@ -207,7 +207,7 @@ sequenceDiagram
 
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
-| `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、缓存与版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
+| `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
 | `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | 历史 Sprint 身份、lease 和 claim token 读取、cutover、worktree 安全、board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
@@ -215,7 +215,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 ### 3.4 10x 规模下先垮的点
 
-1. **同步的 Git 与源收集。** `effective-state-authority.md` Consequences 已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧的 `resolveEffectiveState` 锁竞争已在 `hook-adapters.md` §3.3 第 5 条记录。
+1. **同步的 Git 与源收集。** `effective-state-authority.md` Consequences 已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.3 第 5 条。
 2. **board 的 owner worktree 观察。** `collectBoardInputs` 对每个 owner worktree 调一次 `resolveEffectiveStateReadOnly`，再读一次 attempt ledger，而且每轮采样两次。并行 worktree 增加时，读成本按 worktree 数线性增长。
 3. **`coordination-sprint.ts` 1,261 行。** 所有所有权动词都在这一个文件里，`processSprintDependencies` 是它们共享的依赖注入点。
 4. **`coordination-identity.ts` 1,076 行的纯核心。** 身份、lease record 解析与状态转换都在一个文件里。
@@ -250,3 +250,11 @@ State snapshot no longer reads a task contract. Its contract presence and path
 fields are removed. Recovery policy no longer contains `reviews_dir` or
 `notes_dir`. Historical operator reads and worktree safety remain separate
 from current GitHub task authority.
+
+## 2026-10-25: Read-only adapters
+
+Every hook event and the MCP state summary use the read-only resolution. They
+take no lock and write no state, and they report the last published
+`state_version`. `repo-harness state resolve` is the only version allocator.
+The `.ai/harness/state/effective.json` cache had no reader and is deleted with
+its writer.

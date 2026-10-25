@@ -154,13 +154,11 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     });
   }
 
-  test('default MCP summary truthfully declares and materializes its canonical read model', () => {
+  test('default MCP summary declares itself read-only and writes no state', () => {
     const fixture = createEffectiveStateFixture();
     try {
-      const cachePath = join(fixture.cwd, '.ai/harness/state/effective.json');
       const ownerPath = stateVersionOwnerPath(fixture.cwd);
-      expect(existsSync(cachePath)).toBe(false);
-      expect(buildStateToolDefinitions()[0].annotations.readOnlyHint).toBe(false);
+      expect(buildStateToolDefinitions()[0].annotations.readOnlyHint).toBe(true);
       const result = callStateTool({
         repoRoot: fixture.cwd,
         mcpPolicyProfile: 'planner',
@@ -169,21 +167,21 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         branch: () => 'main',
       });
       expect(result.kind).toBe('repo-harness-effective-state');
-      expect(result.state_version).toBe(1);
-      expect(existsSync(cachePath)).toBe(true);
-      expect(existsSync(ownerPath)).toBe(true);
-      const persisted = resolveEffectiveState(fixture.cwd, Date.now(), {
+      expect(result.state_version).toBe(0);
+      expect(existsSync(join(ownerPath, '..'))).toBe(false);
+      expect(existsSync(join(fixture.cwd, '.ai/harness/state'))).toBe(false);
+      const published = resolveEffectiveState(fixture.cwd, Date.now(), {
         targetPaths: [],
         operationKind: 'inspect',
       });
-      expect(persisted.state_revision).toBe(result.state_revision);
-      expect(persisted.state_version).toBe(result.state_version);
+      expect(published.state_revision).toBe(result.state_revision);
+      expect(published.state_version).toBe(1);
     } finally {
       fixture.cleanup();
     }
   });
 
-  test('MCP allocates the next durable version after authority mutation', () => {
+  test('MCP reports the last published version after authority mutation; only state resolve allocates', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const first = resolveEffectiveState(fixture.cwd, Date.now(), {
@@ -191,6 +189,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         operationKind: 'inspect',
       });
       const ownerPath = stateVersionOwnerPath(fixture.cwd);
+      const ownerBefore = readFileSync(ownerPath);
       const plan = readFileSync(join(fixture.cwd, PLAN), 'utf-8');
       writeFixture(fixture.cwd, PLAN, `${plan}\n<!-- authority mutation -->\n`);
       const projected = callStateTool({
@@ -201,14 +200,14 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         branch: () => 'main',
       });
       expect(projected.state_revision).not.toBe(first.state_revision);
-      expect(projected.state_version).toBe(first.state_version + 1);
-      expect(JSON.parse(readFileSync(ownerPath, 'utf-8')).version).toBe(projected.state_version);
-      const persisted = resolveEffectiveState(fixture.cwd, Date.now(), {
+      expect(projected.state_version).toBe(first.state_version);
+      expect(readFileSync(ownerPath).equals(ownerBefore)).toBe(true);
+      const published = resolveEffectiveState(fixture.cwd, Date.now(), {
         targetPaths: [],
         operationKind: 'inspect',
       });
-      expect(persisted.state_revision).toBe(projected.state_revision);
-      expect(persisted.state_version).toBe(projected.state_version);
+      expect(published.state_revision).toBe(projected.state_revision);
+      expect(published.state_version).toBe(first.state_version + 1);
     } finally {
       fixture.cleanup();
     }

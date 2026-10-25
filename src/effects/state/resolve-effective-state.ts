@@ -41,10 +41,6 @@ import {
   StateVersionConfirmMismatchError,
   type StateVersionWriteEffects,
 } from './git-state-version-store';
-import {
-  publishEffectiveStateCache,
-  type StateCacheWriteEffects,
-} from './state-cache';
 import { withStateLock } from './state-lock';
 import {
   collectStateInputs,
@@ -71,7 +67,6 @@ export type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
 
 export interface EffectiveStatePublicationEffects {
-  readonly cache?: StateCacheWriteEffects;
   readonly version?: StateVersionWriteEffects;
 }
 
@@ -632,8 +627,7 @@ function collectStateSnapshotFacts(
 
 /**
  * Resolve all workflow projections into one fail-closed, versioned state model.
- * Markdown remains the human-editable authority; the JSON cache is only an
- * ignored, atomically replaced read model and never feeds authority back in.
+ * Markdown remains the human-editable authority.
  */
 function resolveEffectiveStateUnlocked(
   cwd: string,
@@ -901,11 +895,11 @@ export class StateResolutionUnstableError extends Error {
  * candidate version is computed and compares them against this attempt's own
  * `confirmed.source_hashes`; a mismatch means a source mutated after the
  * stability loop returned but before allocation, so it throws
- * `StateVersionConfirmMismatchError` with no owner write and no cache
- * publish -- `resolveEffectiveState` below decides whether to retry. The
- * confirm callback reuses the review subject slot of the confirmed pass,
- * because it compares authority hashes for the commit window only. The slot
- * still builds the subject again if the policy review base changed.
+ * `StateVersionConfirmMismatchError` with no owner write --
+ * `resolveEffectiveState` below decides whether to retry. The confirm callback
+ * reuses the review subject slot of the confirmed pass, because it compares
+ * authority hashes for the commit window only. The slot still builds the
+ * subject again if the policy review base changed.
  */
 function resolveAndCommitEffectiveState(
   cwd: string,
@@ -914,20 +908,18 @@ function resolveAndCommitEffectiveState(
   publicationEffects: EffectiveStatePublicationEffects | undefined,
 ): EffectiveState {
   const { state: confirmed, reviewSubjectFor } = resolveStableEffectiveState(cwd, nowMs, risk);
-  let finalized: EffectiveState | null = null;
-  commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
-    const candidate = { ...confirmed, state_version: version };
-    const publication = publishEffectiveStateCache(cwd, candidate, publicationEffects?.cache);
-    finalized = candidate;
-    return publication;
-  }, publicationEffects?.version, () => {
+  const version = commitStateVersionAfter(cwd, confirmed.state_revision, publicationEffects?.version, () => {
     return JSON.stringify(resolveAuthoritySourceHashes(cwd, nowMs, reviewSubjectFor, risk))
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
-  if (finalized === null) throw new Error('effective-state publication did not produce a final state');
-  return finalized;
+  return { ...confirmed, state_version: version };
 }
 
+/**
+ * The only `state_version` publisher. Its production caller is
+ * `repo-harness state resolve`; every other reader uses
+ * `resolveEffectiveStateReadOnly`.
+ */
 export function resolveEffectiveState(
   cwd = process.cwd(),
   nowMs = Date.now(),
@@ -958,6 +950,11 @@ export function resolveEffectiveState(
   });
 }
 
+/**
+ * The no-write resolution for hooks, MCP and the other readers. It returns the
+ * last published `state_version`, which can belong to another revision of any
+ * linked worktree; `state_revision` identifies the content.
+ */
 export function resolveEffectiveStateReadOnly(
   cwd = process.cwd(),
   nowMs = Date.now(),
