@@ -1017,9 +1017,13 @@ describe("init command cutover", () => {
         env: { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") },
       });
       expect(apply.status).toBe(0);
-      const config = JSON.parse(readFileSync(join(home, ".repo-harness", "config.json"), "utf8"));
-      expect(config.architecture.projection_apply).toBe("manual");
-      expect(config.refactor_recommendations).toBeUndefined();
+      // Init leaves account configuration to `repo-harness update` and names it.
+      expect(existsSync(join(home, ".repo-harness", "config.json"))).toBe(false);
+      expect(JSON.parse(apply.stdout).steps).toContainEqual(expect.objectContaining({
+        step: "required Herdr skill",
+        status: "skipped",
+        detail: expect.stringContaining("run: repo-harness update"),
+      }));
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       const retired = spawnSync("bun", [CLI, "init", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
       expect(retired.status).toBe(1);

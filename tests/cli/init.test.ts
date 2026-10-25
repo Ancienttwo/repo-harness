@@ -5,27 +5,24 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
   chmodSync,
-  cpSync,
   copyFileSync,
   symlinkSync,
 } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import { PassThrough, Writable } from "stream";
+import { createHash } from "crypto";
 import {
   runInit,
-  runInteractiveInit,
   resolveOsAccountHome,
   syncCrossReviewSkills,
-  writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
 import { withRuntimeHostTransactionLock } from "../../src/cli/installer/runtime-host-lock";
-import { inspectGlobalContext, renderGlobalRulesBlock } from "../../src/cli/installer/global-context";
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
@@ -43,15 +40,6 @@ const CODEGRAPH_INIT_TIMEOUT_MS = 30000;
 function makeExecutable(path: string, body: string): void {
   writeFileSync(path, body);
   chmodSync(path, 0o755);
-}
-
-// scripts/check-agent-tooling.sh resolves `skills` from PATH; the probe itself
-// only runs under --probe-skills-cli. This stub keeps both paths hermetic.
-function writeFakeSkillsCli(fakeBin: string): void {
-  makeExecutable(
-    join(fakeBin, "skills"),
-    `#!/bin/bash\nif [[ "$*" == "ls -g --json" ]]; then echo '[]'; exit 0; fi\nexit 1\n`,
-  );
 }
 
 function writeOfficialCodexPluginFixture(pluginRoot: string): void {
@@ -90,13 +78,28 @@ function writeReadyOfficialCodexPluginCli(fakeBin: string, home: string): string
   return claude;
 }
 
+/**
+ * Every entry under root, keyed by absolute path: a file's content digest, a
+ * symlink's target, or the entry kind. A projected skill can be a link, so a
+ * file-only view would miss it.
+ */
+function snapshotTree(root: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+  for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    entries[path] = entry.isSymbolicLink() ? `link:${readlinkSync(path)}`
+      : entry.isFile() ? `file:${createHash("sha256").update(readFileSync(path)).digest("hex")}`
+        : entry.isDirectory() ? "dir" : "other";
+  }
+  return Object.fromEntries(Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "assets"), { recursive: true });
   mkdirSync(join(root, "assets", "reference-configs"), { recursive: true });
-  // installExternalSkills()/syncCrossReviewSkills() read this manifest via
-  // sourceRoot (see loadSkillSurfaceCatalog in init.ts); a real copy keeps
-  // this synthetic package tree loadable exactly like the real repo.
+  // A real skill-surface manifest keeps this synthetic package tree loadable
+  // exactly like the real repo.
   mkdirSync(join(root, "assets", "skill-commands"), { recursive: true });
   copyFileSync(
     join(ROOT, "assets", "skill-commands", "manifest.json"),
@@ -127,14 +130,6 @@ function setupFakeSource(root: string): void {
       "```",
       "",
     ].join("\n"),
-  );
-  makeExecutable(
-    join(root, "scripts", "sync-codex-installed-copies.sh"),
-    "#!/bin/bash\nset -euo pipefail\necho \"sync link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}\"\n",
-  );
-  writeFileSync(
-    join(root, "scripts", "inspect-project-state.ts"),
-    "console.log('mode: initialize')\n",
   );
   mkdirSync(join(root, "assets", "skills", "repo-harness-cross-review"), { recursive: true });
   writeFileSync(
@@ -187,7 +182,7 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
 }
 
 describe("init command", () => {
-  test("init defaults enable architecture projection and Stop recommendations without overriding user choices", () => {
+  test("init leaves account architecture defaults to update and names the command", () => {
     const tmp = join(tmpdir(), `repo-harness-init-architecture-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
@@ -200,8 +195,7 @@ describe("init command", () => {
       setupFakeSource(source);
       writeFileSync(configPath, JSON.stringify({ brainRoot: "/existing/brain" }));
       const options = {
-        repo, sourceRoot: source, syncSkill: false, hostAdapters: false,
-        externalSkills: false, codegraph: false, verify: false,
+        repo, sourceRoot: source, codegraph: false, verify: false,
         env: { ...process.env, HOME: accountHome, REPO_HARNESS_HOME: join(accountHome, ".repo-harness") },
       };
       const initial = readFileSync(configPath, "utf8");
@@ -210,12 +204,12 @@ describe("init command", () => {
 
       const applied = runInit(options);
       expect(applied.exitCode).toBe(0);
-      expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
-        brainRoot: "/existing/brain",
-        architecture: { projection_provider: "archctx", projection_apply: "manual" },
+      expect(readFileSync(configPath, "utf8")).toBe(initial);
+      expect(applied.steps.find((step) => step.step === "global architecture projection")).toBeUndefined();
+      expect(applied.steps.find((step) => step.step === "architecture projection readiness")).toMatchObject({
+        status: "skipped",
+        detail: expect.stringContaining("run repo-harness update"),
       });
-      expect(JSON.parse(readFileSync(configPath, "utf8")).refactor_recommendations).toBeUndefined();
-      expect(applied.steps.find((step) => step.step === "global architecture projection")?.status).toBe("ok");
       const disabled = JSON.stringify({
         architecture: { projection_provider: "disabled", projection_apply: "disabled" },
         refactor_recommendations: { enabled: false },
@@ -228,7 +222,7 @@ describe("init command", () => {
     }
   }, 60000);
 
-  test("init cannot write defaults during a host transaction that rolls back", () => {
+  test("init applies while an install transaction holds the host lock and writes no host state", () => {
     const tmp = join(tmpdir(), `repo-harness-init-host-lock-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
@@ -242,33 +236,80 @@ describe("init command", () => {
       const original = JSON.stringify({ brainRoot: "/existing/brain" });
       writeFileSync(configPath, original);
       const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") };
-      const options = {
-        repo, sourceRoot: source, env, syncSkill: false, hostAdapters: false,
-        externalSkills: false, codegraph: false, verify: false,
-      };
-      // Hold the update lock and its real rollback preimage while init attempts
-      // the write. No timing window can let an unprotected writer escape.
+      const options = { repo, sourceRoot: source, env, codegraph: false, verify: false };
+      // Init takes no part in the host transaction, so a held update lock and
+      // its rollback preimage neither block init nor see an init write.
       withRuntimeHostTransactionLock(env, () => {
         const transaction = beginInstallHostTransaction([configPath], env);
         try {
           const result = runInit(options);
-          expect(result.exitCode).toBe(1);
-          expect(result.steps).toContainEqual(expect.objectContaining({
-            step: "global automation defaults", status: "failed",
-          }));
+          expect(result.exitCode).toBe(0);
+          expect(result.steps.find((step) => step.step === "global automation defaults")).toBeUndefined();
           expect(readFileSync(configPath, "utf8")).toBe(original);
         } finally {
           rollbackInstallHostTransaction(transaction);
         }
       });
-      expect(runInit(options).exitCode).toBe(0);
-      expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
-        architecture: { projection_apply: "manual" },
-      });
+      expect(readFileSync(configPath, "utf8")).toBe(original);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30000);
+
+  test("applied init leaves install-managed HOME state unchanged", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-home-unchanged-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    // Init owns the registry entry. The verify step's handoff refresh writes the
+    // policy's global Codex packet (`global_handoff_dir`); that projection
+    // belongs to the recovery materializer, not to the install transaction.
+    const registry = join(home, ".repo-harness", "registered-repos.json");
+    const handoffPackets = join(home, ".codex", "handoffs");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      setupFakeSource(source);
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      for (const [path, content] of [
+        [".repo-harness/config.json", JSON.stringify({ brainRoot: "/existing/brain" })],
+        [".claude/settings.json", "{}\n"],
+        [".claude/CLAUDE.md", "user rules\n"],
+        [".codex/AGENTS.md", "user rules\n"],
+        [".codex/hooks.json", "{}\n"],
+      ] as const) {
+        mkdirSync(dirname(join(home, path)), { recursive: true });
+        writeFileSync(join(home, path), content);
+      }
+      const before = snapshotTree(home);
+
+      // Verify runs bun child processes; their transpiler cache is Bun's, not a
+      // repo-harness host surface, so it lives beside HOME instead of under it.
+      const result = runInit({
+        repo, sourceRoot: source, codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          REPO_HARNESS_HOME: join(home, ".repo-harness"),
+          BUN_RUNTIME_TRANSPILER_CACHE_PATH: join(tmp, "bun-cache"),
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
+      expect(result.steps.find((step) => step.step === "required Herdr skill")).toMatchObject({
+        status: "skipped",
+        detail: "missing for claude,codex; run: repo-harness update --target both",
+      });
+      const after = snapshotTree(home);
+      expect(Object.keys(after).filter((path) =>
+        path !== registry && path !== handoffPackets && dirname(path) !== handoffPackets))
+        .toEqual(Object.keys(before));
+      for (const [path, entry] of Object.entries(before)) expect(after[path]).toBe(entry);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60000);
 
   test("defaults --repo to cwd and applies the existing-repo harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-${Date.now()}`);
@@ -286,9 +327,6 @@ describe("init command", () => {
       const result = runInit({
         sourceRoot: source,
         env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         codegraph: false,
       });
 
@@ -316,9 +354,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         codegraph: false,
         env: {
@@ -355,9 +390,6 @@ describe("init command", () => {
       const result = runInit({
         sourceRoot: source,
         env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         codegraph: false,
       });
 
@@ -373,108 +405,6 @@ describe("init command", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30000);
-
-  test("runInit bootstraps the full-profile Waza, Mermaid, and cross-review set without explicit-only Reverse Skill", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-skills-${Date.now()}`);
-    const source = join(tmp, "source");
-    const repo = join(tmp, "repo");
-    const home = join(tmp, "home");
-    const fakeBin = join(tmp, "bin");
-    const bunxLog = join(tmp, "bunx.log");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      mkdirSync(fakeBin, { recursive: true });
-      setupFakeSource(source);
-      mkdirSync(join(home, ".agents", "rules"), { recursive: true });
-      writeFileSync(join(home, ".agents", "rules", "anti-patterns.md"), "anti\n");
-      writeFileSync(join(home, ".agents", "rules", "chinese.md"), "zh\n");
-      writeFileSync(join(home, ".agents", "rules", "durable-context.md"), "durable\n");
-      writeFileSync(join(home, ".agents", "rules", "english.md"), "en\n");
-      writeFakeSkillsCli(fakeBin);
-      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
-      makeExecutable(
-        join(fakeBin, "bunx"),
-        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`,
-      );
-
-      const result = runInit({
-        repo,
-        sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        verify: false,
-        codegraph: false,
-        env: {
-          ...process.env,
-          HOME: home,
-          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
-        },
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(readFileSync(bunxLog, "utf-8")).toContain(
-        "skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y",
-      );
-      expect(readFileSync(join(home, ".claude", "rules", "anti-patterns.md"), "utf-8")).toBe("anti\n");
-      expect(readFileSync(join(home, ".codex", "rules", "anti-patterns.md"), "utf-8")).toBe("anti\n");
-      expect(readFileSync(bunxLog, "utf-8")).toContain(
-        "skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
-      );
-      expect(readFileSync(bunxLog, "utf-8")).not.toContain("zhaoxuya520/reverse-skill");
-      // SSD-06: repo-harness-cross-review installs on both hosts (host-aware
-      // provider mode selection lives inside the package); claude-plan stays
-      // Codex-only (unchanged, R4).
-      expect(existsSync(join(home, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  for (const failure of ['host edit', 'missing staging rule'] as const) {
-    test(`runInit keeps all host rules unchanged on ${failure}`, () => {
-      const tmp = join(tmpdir(), `repo-harness-init-rule-guard-${failure}-${Date.now()}`);
-      const source = join(tmp, 'source');
-      const repo = join(tmp, 'repo');
-      const home = join(tmp, 'home');
-      const fakeBin = join(tmp, 'bin');
-      const rules = ['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md'];
-      try {
-        mkdirSync(source, { recursive: true });
-        mkdirSync(repo, { recursive: true });
-        mkdirSync(fakeBin, { recursive: true });
-        setupFakeSource(source);
-        mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
-        for (const rule of rules) writeFileSync(join(home, '.agents', 'rules', rule), `# ${rule}\n`);
-        mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
-        const edited = join(home, '.codex', 'rules', 'english.md');
-        writeFileSync(edited, '# local host rule\n');
-        if (failure === 'missing staging rule') rmSync(join(home, '.agents', 'rules', 'chinese.md'));
-        writeFakeSkillsCli(fakeBin);
-        const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
-        makeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
-        const result = runInit({
-          repo, sourceRoot: source, syncSkill: false, hostAdapters: false, verify: false, codegraph: false,
-          env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_CLAUDE_EXECUTABLE: claude },
-        });
-        expect(result.exitCode).toBe(1);
-        expect(result.steps.find(({ step }) => step === 'external skills Waza shared rules')).toMatchObject({
-          status: 'failed', detail: expect.stringContaining(failure === 'host edit' ? 'refusing to overwrite unowned rule' : 'missing chinese.md'),
-        });
-        expect(readFileSync(edited, 'utf-8')).toBe('# local host rule\n');
-        expect(existsSync(join(home, '.claude', 'rules', 'anti-patterns.md'))).toBe(false);
-        expect(existsSync(join(home, '.codex', 'rules', 'anti-patterns.md'))).toBe(false);
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
-    });
-  }
 
   test("dry-run does not mutate host runtime or apply the target harness", () => {
     const tmp = join(tmpdir(), `repo-harness-init-dry-run-${Date.now()}`);
@@ -498,65 +428,20 @@ describe("init command", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "sync repo-harness skills")?.detail).toBe("dry-run");
-      expect(result.steps.find((step) => step.step === "install host adapters")?.detail).toBe("dry-run");
-      expect(existsSync(join(home, ".codex", "hooks.json"))).toBe(false);
+      expect(existsSync(home)).toBe(false);
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test("npx cache sources force copy-based installed skill sync", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-npx-${Date.now()}`);
-    const source = join(tmp, "_npx", "abc123", "node_modules", "repo-harness");
-    const repo = join(tmp, "repo");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      setupFakeSource(source);
-
-      // Init writes account configuration as well as registry state, so both
-      // home authorities must stay inside this fixture. Remove the ambient
-      // link flag to exercise the npx default deterministically.
-      const childEnv: NodeJS.ProcessEnv = {
-        ...process.env,
-        HOME: join(tmp, "home"),
-        REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness"),
-      };
-      mkdirSync(childEnv.HOME!, { recursive: true });
-      delete childEnv.AGENTIC_DEV_LINK_INSTALLED_COPIES;
-
-      const result = runInit({
-        repo,
-        sourceRoot: source,
-        hostAdapters: false,
-        externalSkills: false,
-        verify: false,
-        codegraph: false,
-        env: childEnv,
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "sync repo-harness skills")?.stdout).toContain(
-        "sync link=0",
-      );
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("npx cache sources keep process.env as the constructed command env base", () => {
-    // Regression guard for initCommandEnv() (src/cli/commands/init.ts): for an
-    // npx cache source with no caller env it used to return
-    // `{ ...(env ?? {}), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" }` — a child env
-    // holding exactly one key, with the whole process environment discarded.
-    // commandEnv is not only spawned with (runProcess re-merges process.env), it
-    // is also read as an environment record: runAdoptionApply threads it into
-    // registerRepoHarnessRepo, and repoHarnessHome (src/effects/repo-registry.ts:60)
-    // resolves REPO_HARNESS_HOME ?? HOME ?? homedir() off that record. Dropping
-    // the base therefore silently redirects the registry write to the operator's
-    // real home — the one hole tests/preload-home-isolation.ts cannot defend.
+  test("npx cache sources without a caller env register the repo under process.env", () => {
+    // Init passes the caller env to the adoption apply unchanged. With no caller
+    // env, registerRepoHarnessRepo resolves REPO_HARNESS_HOME ?? HOME ?? homedir()
+    // from process.env (src/effects/repo-registry.ts). A constructed env that
+    // dropped that base would silently redirect the registry write to the
+    // operator's real home, the one hole tests/preload-home-isolation.ts cannot
+    // defend.
     const tmp = join(tmpdir(), `repo-harness-init-npx-env-base-${Date.now()}`);
     const source = join(tmp, "_npx", "abc123", "node_modules", "repo-harness");
     const repo = join(tmp, "repo");
@@ -586,9 +471,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         codegraph: false,
       });
@@ -750,55 +632,6 @@ describe("init command", () => {
     }
   }, 15000);
 
-  test("configures CodeGraph MCP only when explicitly requested", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-configure-codegraph-${Date.now()}`);
-    const source = join(tmp, "source");
-    const repo = join(tmp, "repo");
-    const home = join(tmp, "home");
-    const fakeBin = join(tmp, "bin");
-    const logFile = join(tmp, "codegraph.log");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      mkdirSync(fakeBin, { recursive: true });
-      setupFakeSource(source);
-      writeFakeCodegraph(fakeBin, logFile);
-
-      const result = runInit({
-        repo,
-        sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
-        verify: false,
-        configureCodegraphMcp: true,
-        env: {
-          ...process.env,
-          HOME: home,
-          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
-        },
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.detail).toContain(
-        "init-index:changed",
-      );
-      const configureStep = result.steps.find((step) => step.step === "configure codegraph mcp");
-      expect(configureStep?.status).toBe("ok");
-      expect(configureStep?.detail).toContain("configure-codex:changed");
-      expect(configureStep?.detail).toContain("configure-claude:changed");
-
-      const log = readFileSync(logFile, "utf-8");
-      expect(log).toContain("codegraph init -i .");
-      expect(log).toContain("codegraph install --target codex --location global --yes");
-      expect(log).toContain("codegraph install --target claude --location global --yes");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }, CODEGRAPH_INIT_TIMEOUT_MS);
-
   test("enabled applied init fails closed when the CodeGraph CLI is missing", () => {
     const tmp = join(tmpdir(), `repo-harness-init-codegraph-missing-${Date.now()}`);
     const source = join(tmp, "source");
@@ -813,9 +646,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         env: {
           ...process.env,
@@ -856,9 +686,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         syncCodegraph: true,
         env: {
@@ -899,9 +726,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         env: {
           ...process.env,
@@ -941,9 +765,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         env: {
           ...process.env,
@@ -981,9 +802,6 @@ describe("init command", () => {
       const result = runInit({
         repo,
         sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: false,
         env: {
           ...process.env,
@@ -997,193 +815,6 @@ describe("init command", () => {
       expect(codegraphStep?.status).toBe("failed");
       expect(codegraphStep?.detail).toBe("CodeGraph readiness check failed");
       expect(codegraphStep?.stderr).toContain("JSON Parse error");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("writes global working rules as an idempotent managed block", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-global-rules-${Date.now()}`);
-    const source = join(tmp, "source");
-    const home = join(tmp, "home");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-      mkdirSync(join(home, ".codex"), { recursive: true });
-      writeFileSync(join(home, ".codex", "AGENTS.md"), "user content\n");
-
-      const first = writeGlobalContextFiles(
-        source,
-        "both",
-        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
-        { ...process.env, HOME: home },
-      );
-      const second = writeGlobalContextFiles(
-        source,
-        "both",
-        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
-        { ...process.env, HOME: home },
-      );
-
-      expect(first.status).toBe("ok");
-      expect(second.detail).toContain("unchanged");
-      const codex = readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
-      const claude = readFileSync(join(home, ".claude", "CLAUDE.md"), "utf-8");
-      expect(codex).toContain("user content");
-      expect(codex).toContain("<!-- BEGIN: repo-harness global-working-rules -->");
-      expect(codex).toContain(
-        "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
-      );
-      expect(codex).toContain("- Use Chinese to report to user.");
-      expect(codex).toContain(
-        '<!-- repo-harness reporting-language: {"preset":"zh-CN","instruction":"Use Chinese to report to user."} -->',
-      );
-      expect(inspectGlobalContext(codex, source).state).toBe("managed-current");
-      expect(codex).toContain("Rule 0: You may spend as much time as needed thinking.");
-      expect(codex).toContain("Reasoning: Prefer first principles over pattern matching.");
-      expect(codex).toContain("Generality: These are general working rules.");
-      expect(claude).toContain("- Use Chinese to report to user.");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("blocks the global working rules write when repo-harness markers are unbalanced", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-global-rules-unbalanced-${Date.now()}`);
-    const source = join(tmp, "source");
-    const home = join(tmp, "home");
-    const duplicated = [
-      "<!-- BEGIN: repo-harness global-working-rules -->",
-      "# Global Working Rules",
-      "- one",
-      "<!-- END: repo-harness global-working-rules -->",
-      "",
-      "<!-- BEGIN: repo-harness global-working-rules -->",
-      "# Global Working Rules",
-      "- two",
-      "<!-- END: repo-harness global-working-rules -->",
-      "",
-    ].join("\n");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-      mkdirSync(join(home, ".codex"), { recursive: true });
-      writeFileSync(join(home, ".codex", "AGENTS.md"), duplicated);
-
-      const result = writeGlobalContextFiles(
-        source,
-        "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
-        { ...process.env, HOME: home },
-      );
-
-      expect(result.status).toBe("failed");
-      expect(result.detail).toContain(`blocked:${join(home, ".codex", "AGENTS.md")}`);
-      const codex = readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
-      expect(codex).toBe(duplicated);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("resolves host context paths from USERPROFILE when HOME is absent", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-userprofile-${Date.now()}`);
-    const source = join(tmp, "source");
-    const home = join(tmp, "profile");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-
-      const result = writeGlobalContextFiles(
-        source,
-        "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
-        { ...process.env, HOME: undefined, USERPROFILE: home } as NodeJS.ProcessEnv,
-      );
-
-      expect(result.status).toBe("ok");
-      expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(true);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("replaces a legacy unmarked rules copy with the managed block", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-global-rules-existing-${Date.now()}`);
-    const source = join(tmp, "source");
-    const home = join(tmp, "home");
-    const existing = [
-      "# Global Working Rules",
-      "",
-      "- Custom user-owned rule.",
-      "",
-    ].join("\n");
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-      mkdirSync(join(home, ".codex"), { recursive: true });
-      writeFileSync(join(home, ".codex", "AGENTS.md"), existing);
-
-      const result = writeGlobalContextFiles(
-        source,
-        "codex",
-        { reportLanguageInstruction: "Use Chinese to report to user.", reportLanguagePreset: "zh-CN" },
-        { ...process.env, HOME: home },
-      );
-
-      const path = join(home, ".codex", "AGENTS.md");
-      expect(result.status).toBe("ok");
-      expect(result.detail).toBe(`migrated-legacy:${path} (replaced: Global Working Rules; kept user sections: none)`);
-      const codex = readFileSync(path, "utf-8");
-      // The H1 preamble is part of the shipped legacy span.
-      expect(codex).not.toContain("- Custom user-owned rule.");
-      expect(codex).toBe(renderGlobalRulesBlock(source, { preset: "zh-CN", instruction: "Use Chinese to report to user." }));
-      expect(inspectGlobalContext(codex, source).state).toBe("managed-current");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("init migrates a mixed legacy file and keeps a custom sentence refreshable", () => {
-    const tmp = join(tmpdir(), `repo-harness-init-global-rules-mixed-${Date.now()}`);
-    const home = join(tmp, "home");
-    const userBefore = "## CodeGraph\n\nUse codegraph first.\n\n";
-    const userAfter = "## Disk hygiene\n\nKeep the disk clean.\n";
-    const existing = [
-      userBefore,
-      "# Global Working Rules\n\nOld preamble.\n\n",
-      "## Reporting\n\n- Old reporting rule.\n\n",
-      userAfter,
-    ].join("");
-    const instruction = "Report in French --> keep code terms in English.";
-    try {
-      mkdirSync(join(home, ".codex"), { recursive: true });
-      writeFileSync(join(home, ".codex", "AGENTS.md"), existing);
-
-      const result = writeGlobalContextFiles(
-        ROOT,
-        "codex",
-        { reportLanguageInstruction: instruction, reportLanguagePreset: "custom" },
-        { ...process.env, HOME: home },
-      );
-
-      const path = join(home, ".codex", "AGENTS.md");
-      expect(result.status).toBe("ok");
-      expect(result.detail).toBe(
-        `migrated-legacy:${path} (replaced: Global Working Rules, Reporting; kept user sections: CodeGraph, Disk hygiene)`,
-      );
-      const codex = readFileSync(path, "utf-8");
-      const block = renderGlobalRulesBlock(ROOT, { preset: "custom", instruction });
-      expect(codex).toBe(`${userBefore}${block}\n${userAfter}`);
-      expect(codex).toContain(`- ${instruction}`);
-      expect(codex).not.toContain('"instruction":"Report in French -->');
-      const inspection = inspectGlobalContext(codex, ROOT);
-      expect(inspection.state).toBe("managed-current");
-      expect(inspection.language).toEqual({ preset: "custom", instruction });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1204,139 +835,6 @@ describe("init command", () => {
     }
   });
 
-  test("interactive init collects a plan then calls existing init primitives", async () => {
-    const tmp = join(tmpdir(), `repo-harness-init-interactive-${Date.now()}`);
-    const source = join(tmp, "source");
-    const repo = join(tmp, "repo");
-    const home = join(tmp, "home");
-    const fakeBin = join(tmp, "bin");
-    const bunxLog = join(tmp, "bunx.log");
-    const codegraphLog = join(tmp, "codegraph.log");
-    const outputChunks: string[] = [];
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      mkdirSync(fakeBin, { recursive: true });
-      setupFakeSource(source);
-      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
-      writeFakeCodegraph(fakeBin, codegraphLog);
-      writeFakeSkillsCli(fakeBin);
-      makeExecutable(join(fakeBin, "bunx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
-
-      const input = new PassThrough();
-      // Answers, in prompt order: host target, human-facing language
-      // (English), brain location, brain mode, external skills confirm,
-      // CodeGraph confirm, final "Proceed" confirm. Blank lines take each
-      // prompt's default (defaults to "yes" for the two new confirms),
-      // preserving today's default-on outcome.
-      ["\n", "3\n", "\n", "\n", "\n", "\n", "y\n"].forEach((answer, index) => {
-        setTimeout(() => input.write(answer), index * 5);
-      });
-      setTimeout(() => input.end(), 40);
-      const output = new Writable({
-        write(chunk, _encoding, callback) {
-          outputChunks.push(String(chunk));
-          callback();
-        },
-      });
-      const result = await runInteractiveInit({
-        repo,
-        sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        verify: false,
-        input,
-        output,
-        env: {
-          ...process.env,
-          HOME: home,
-          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
-          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
-        },
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "official Codex plugin")).toBeUndefined();
-      expect(existsSync(join(home,'plugin-invoked'))).toBe(false);
-      expect(result.steps.find((step) => step.step === "global working rules")?.status).toBe("ok");
-      expect(result.steps.find((step) => step.step === "ensure brain root")?.detail).toBe(join(home, "Documents", "brain"));
-      expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain("Use English to report to user.");
-      expect(outputChunks.join("")).toContain("documentation_language=en");
-      expect(
-        JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8")).documentation.language,
-      ).toBe("en");
-      expect(readFileSync(bunxLog, "utf-8")).toContain("skills add tw93/Waza");
-      expect(readFileSync(codegraphLog, "utf-8")).toContain("codegraph sync .");
-      expect(outputChunks.join("")).toContain("externalSkills=true");
-      expect(outputChunks.join("")).toContain("CodeGraph=ensure --init --sync plus global MCP configure");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }, CODEGRAPH_INIT_TIMEOUT_MS);
-
-  test("interactive init skips external skills and CodeGraph when declined", async () => {
-    const tmp = join(tmpdir(), `repo-harness-init-interactive-declined-${Date.now()}`);
-    const source = join(tmp, "source");
-    const repo = join(tmp, "repo");
-    const home = join(tmp, "home");
-    const outputChunks: string[] = [];
-    try {
-      mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
-      mkdirSync(home, { recursive: true });
-      setupFakeSource(source);
-
-      const input = new PassThrough();
-      // Same prompt order as above, but take the default human-facing
-      // language ("Follow user's language") and decline both new confirms
-      // ("n"). Neither bunx nor codegraph should be invoked, so no fake
-      // binaries are needed on PATH for this run.
-      ["\n", "\n", "\n", "\n", "n\n", "n\n", "y\n"].forEach((answer, index) => {
-        setTimeout(() => input.write(answer), index * 5);
-      });
-      setTimeout(() => input.end(), 40);
-      const output = new Writable({
-        write(chunk, _encoding, callback) {
-          outputChunks.push(String(chunk));
-          callback();
-        },
-      });
-      const result = await runInteractiveInit({
-        repo,
-        sourceRoot: source,
-        syncSkill: false,
-        hostAdapters: false,
-        verify: false,
-        input,
-        output,
-        env: {
-          ...process.env,
-          HOME: home,
-        },
-      });
-
-      expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "external skills")?.status).toBe("skipped");
-      expect(result.steps.find((step) => step.step === "external skills")?.detail).toBe("disabled");
-      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.status).toBe("skipped");
-      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.detail).toBe("disabled");
-      expect(outputChunks.join("")).toContain("externalSkills=false");
-      expect(outputChunks.join("")).toContain("CodeGraph=skip");
-      // The single question drives both projections: the host reporting
-      // sentence and the repo-level human-facing document language.
-      expect(outputChunks.join("")).toContain("documentation_language=follow-user");
-      expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain(
-        "Use the user's language for reports; keep technical terms in English.",
-      );
-      expect(
-        JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8")).documentation.language,
-      ).toBe("follow-user");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }, CODEGRAPH_INIT_TIMEOUT_MS);
 });
 
 /**
@@ -1373,9 +871,6 @@ describe("init cutover quiescence gate", () => {
   }
 
   const initOptions = {
-    syncSkill: false,
-    hostAdapters: false,
-    externalSkills: false,
     verify: false,
     codegraph: false,
   } as const;

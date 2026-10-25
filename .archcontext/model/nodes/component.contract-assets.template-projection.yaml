@@ -7,7 +7,7 @@ parent: capability.workflow-engine.contract-assets
 summary: Projects the standalone capability resolver, reference configs and template assets and drives repository init.
 responsibilities:
   - Write the standalone capability resolver and reference config copies atomically with the source bytes and mode and report drift in check mode.
-  - Run repository init through adoption, install profile and architecture preference steps.
+  - Run repository init through adoption and registry registration, and report host runtime state that update must project.
 source:
   include:
     - assets/templates/**

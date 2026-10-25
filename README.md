@@ -115,10 +115,12 @@ bun test
 
 ### Success looks like this
 
-Successful init enables the architecture projection provider when that
-preference is unset. An explicit disabled choice is preserved. Dry-run does not
-write the preference. repo-harness supplies tools and evidence; the Bot decides
-what to schedule.
+Init writes repo-local files and two files under `HOME`: the repo registry
+entry and, when verification runs, the global Codex handoff packet under
+`~/.codex/handoffs/`. It writes no install-managed host files. When the
+required Herdr skill or the architecture projection preference is missing, init
+reports a skipped step that names `repo-harness update`. repo-harness supplies tools and evidence; the Bot
+decides what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`

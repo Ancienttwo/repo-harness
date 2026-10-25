@@ -862,53 +862,13 @@ export function hostSkillPlacements(
 
 /**
  * External marketplace skill names. Pass `profile` for the profile-gated
- * projection; omit it for the unconditional bundle (init.ts's init flow).
+ * projection; omit it for the unconditional bundle.
  */
 export function externalSkillsForProfile(
   catalog: SkillSurfaceCatalog,
   profile?: SkillSurfaceProfile,
 ): readonly string[] {
   return computeExternalSkillsForProfile(catalog.packages, profile);
-}
-
-/**
- * External marketplace install groups for one concrete host target. A null
- * Provider and host-set form the grouping key because one upstream may expose
- * Skills to different hosts.
- */
-export function externalSkillInstallGroups(
-  catalog: SkillSurfaceCatalog,
-  options: {
-    readonly hosts: readonly SkillSurfaceHost[];
-    readonly profileGate: SkillSurfaceProfile | null;
-    readonly names?: readonly string[];
-  },
-): readonly ExternalSkillInstallGroup[] {
-  const groups = new Map<string, {
-    provider: string;
-    hosts: SkillSurfaceHost[];
-    skills: string[];
-    integrityBySkill: Record<string, string | null>;
-  }>();
-  for (const pkg of catalog.packages) {
-    if (pkg.kind !== "external" || pkg.provider === null) continue;
-    if (options.names !== undefined && !options.names.includes(pkg.name)) continue;
-    if (pkg.profiles.length === 0) continue;
-    if (options.profileGate !== null && !pkg.profiles.includes(options.profileGate)) continue;
-    const hosts = options.hosts.filter((host) => pkg.hosts.includes(host));
-    if (hosts.length === 0) continue;
-    const key = `${pkg.provider}\u0000${hosts.join("\u0000")}`;
-    const group = groups.get(key) ?? {
-      provider: pkg.provider,
-      hosts: [...hosts],
-      skills: [],
-      integrityBySkill: {},
-    };
-    group.skills.push(pkg.name);
-    group.integrityBySkill[pkg.name] = pkg.integrity;
-    groups.set(key, group);
-  }
-  return [...groups.values()];
 }
 
 /** Select one named explicit-only external package, or fail closed. */

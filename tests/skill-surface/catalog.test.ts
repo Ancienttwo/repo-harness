@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  externalSkillInstallGroups,
   externalSkillsForProfile,
   facadesForProfile,
   hostSkillPlacements,
@@ -509,18 +508,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(externalSkillsForProfile(catalog, undefined)).toContain("reverse-skill-router");
   });
 
-  test("externalSkillInstallGroups applies profile and host gates while excluding explicit-only packages", () => {
-    expect(externalSkillInstallGroups(catalog, {
-      hosts: ["claude", "codex"],
-      profileGate: "minimal",
-    })).toEqual([]);
-    expect(externalSkillInstallGroups(catalog, {
-      hosts: ["claude", "codex"],
-      profileGate: "full",
-    }).map(({ provider, hosts, skills }) => ({ provider, hosts, skills }))).toEqual([
-      { provider: "tw93/Waza", hosts: ["claude", "codex"], skills: ["think", "hunt", "check", "health"] },
-      { provider: "BfdCampos/dotfiles", hosts: ["claude", "codex"], skills: ["mermaid"] },
-    ]);
+  test("requiredExplicitExternalSkillInstallGroup selects the pinned explicit-only package", () => {
     expect(requiredExplicitExternalSkillInstallGroup(catalog, "reverse-skill-router", ["codex"])).toEqual({
       status: "selected",
       group: {
