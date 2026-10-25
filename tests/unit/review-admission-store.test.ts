@@ -104,6 +104,12 @@ test('protected read reobserves the provider goal instead of trusting a caller s
   expect(observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: runner() }).admission.verification_plan).toEqual(f.input.verification_plan);
   expect(observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner() }).context.goal).toEqual(goal);
   expect(() => observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner(true) })).toThrow('review_goal_changed_during_read');
+  const duringRead = runner(); let calls = 0;
+  expect(() => observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: () => {
+    const response = duringRead();
+    if (++calls === 4) writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
+    return response;
+  } })).toThrow('revoked_or_replaced');
 });
 
 test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default admission', () => {

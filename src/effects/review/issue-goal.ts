@@ -49,7 +49,9 @@ export function observeActiveReviewAdmission(input: Omit<Parameters<typeof readA
   const result = readActiveReviewAdmission({ ...input, expectedGoal: before });
   const after = observe();
   if (after.revision !== before.revision || after.content !== before.content) throw new Error('review_goal_changed_during_read');
-  return result;
+  const current = readActiveReviewAdmission({ ...input, expectedGoal: after });
+  if (current.revision !== result.revision) throw new Error('review_admission_changed_during_read');
+  return current;
 }
 
 export function observeAdmittedReviewContext(input: Parameters<typeof observeActiveReviewAdmission>[0] & {
