@@ -91,6 +91,30 @@ describe("AXR7 repo-harness architecture consumer", () => {
     for (const stamp of stamps) expect(stamp).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  test("accepts paired runtime topology source stamps from the installed contracts", () => {
+    const manifest = topologyManifest();
+    expect(architectureDocsProjectionManifestIssues(manifest)).toEqual([]);
+  });
+
+  test("rejects unequal topology source stamps", () => {
+    const manifest = topologyManifest();
+    manifest.targets["runtime-summary"]!.sourceStamps!["process.example.worker"] = `sha256:${"b".repeat(64)}`;
+    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("must equal the sourceStamps"))).toBe(true);
+  });
+
+  test("rejects topology source stamps duplicated on an entity summary", () => {
+    const manifest = topologyManifest();
+    const entity = Object.values(manifest.targets).find(row => row.type === "entity-summary")!;
+    entity.sourceStamps = { ...entity.sourceStamps, "process.example.worker": `sha256:${"a".repeat(64)}` };
+    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("is already stamped on"))).toBe(true);
+  });
+
+  test("rejects capability scale on runtime topology targets", () => {
+    const manifest = topologyManifest();
+    manifest.targets["runtime-summary"]!.scale = { fileCountBucket: { lower: 1, upper: 2 }, lineCountBucket: { lower: 10, upper: 20 } };
+    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("scale is only allowed on entity-summary"))).toBe(true);
+  });
+
   test("authors no repository architecture policy or host projection preferences", () => {
     const policy = JSON.parse(readFileSync(join(ROOT, ".ai", "harness", "policy.json"), "utf8"));
     expect(policy.context.capability_source).toBe("archcontext");
@@ -99,3 +123,18 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(policy.architecture).toBeUndefined();
   });
 });
+
+function topologyManifest(): ArchitectureDocsProjectionManifestV3 {
+  const manifest = JSON.parse(readFileSync(join(ROOT, "docs", "architecture", ".projection-manifest.json"), "utf8")) as ArchitectureDocsProjectionManifestV3;
+  for (const [id, type, path, format] of [
+    ["runtime-diagram", "diagram-runtime-topology", "docs/architecture/runtime.mmd", "mermaid"],
+    ["runtime-summary", "runtime-topology-summary", "docs/architecture/runtime.md", "markdown"],
+  ] as const) {
+    manifest.targets[id] = {
+      type, scope: { kind: "repository" }, path, format, ownership: "generated",
+      outputDigest: `sha256:${"c".repeat(64)}`,
+      sourceStamps: { "process.example.worker": `sha256:${"a".repeat(64)}` },
+    };
+  }
+  return manifest;
+}

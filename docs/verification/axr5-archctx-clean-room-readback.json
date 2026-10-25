@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "b4d62fa7b0c3eca4d45dd00c0fd300ae1e79edaa",
+    "revision": "0e08d30cb9e3daf87730a7126ca9b785d7663f72",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.9.1",
-      "file": "archctx-contracts-0.9.1.tgz"
+      "version": "0.9.3",
+      "file": "archctx-contracts-0.9.3.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.9.1",
-      "file": "archctx-0.9.1.tgz"
+      "version": "0.9.3",
+      "file": "archctx-0.9.3.tgz"
     }
   },
   "consumer": {
@@ -26,12 +26,12 @@
     "packageLocalBinary": true,
     "conflictingPathIgnored": true,
     "authoritativeNodeSchema": "archcontext.node/v2",
-    "authoritativeNodeSchemaDigest": "sha256:a2e5d43079c4d343fb3aa81779f55dc4092624fcd70fb1072cbdddd13468fe45",
+    "authoritativeNodeSchemaDigest": "sha256:38f56056476a82a2d9a543382c5e46e6e46bebf5a1c1b57db4078f38cd421131",
     "capabilities": {
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.9.1"
+        "version": "0.9.3"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
