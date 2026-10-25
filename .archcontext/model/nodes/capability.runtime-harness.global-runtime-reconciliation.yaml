@@ -52,6 +52,8 @@ source:
     - "install.sh"
     - "install.ps1"
     - "tsconfig.json"
+  exclude:
+    - src/effects/architecture/archcontext-owners.ts
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.update
       path: "src/cli/commands/global-runtime.ts"
