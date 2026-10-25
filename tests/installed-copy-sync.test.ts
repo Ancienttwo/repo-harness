@@ -21,7 +21,7 @@ const BUN_BIN_DIR = dirname(process.execPath);
  * eagerly (see scripts/sync-codex-installed-copies.sh), which imports
  * src/core/skill-surface/catalog.ts and reads
  * assets/skill-commands/manifest.json, all resolved relative to SOURCE_ROOT;
- * its managed-tree-hash subcommand also loads src/cli/installer, so the
+ * its managed-tree-hash subcommand also loads src/effects/managed-tree.ts, so the
  * whole src/ tree is seeded.
  * Every fixture `source` tree in this file is a synthetic, sparse package
  * layout (by design, to exercise sync mechanics in isolation), so each one
@@ -848,8 +848,8 @@ describe('separately installed integration ownership boundary', () => {
 
 describe('installed copy file projection', () => {
   test('installer and upgrade staging copy exactly the shared canonical and facade file lists', async () => {
-    const { hashManagedTree, installedCopyTreeOptions, managedTreeEntries } = await import('../src/cli/installer/install-profile');
-    const { hashUpgradeSource } = await import('../src/core/upgrade/legacy-inventory');
+    const { hashManagedTree, installedCopyTreeOptions, managedTreeEntries } = await import('../src/effects/managed-tree');
+    const { hashUpgradeSource } = await import('../src/effects/upgrade/legacy-inventory');
     const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
     const shippedFiles: string[] = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).files;
     expect(contract.installedCopyIncludes.filter((path: string) => path.startsWith('dist/')).sort())
@@ -918,7 +918,7 @@ describe('installed copy file projection', () => {
 });
 
 test('a missing canonical projection fails before changing existing owned copies or links', async () => {
-  const { hashManagedTree } = await import('../src/cli/installer/install-profile');
+  const { hashManagedTree } = await import('../src/effects/managed-tree');
   const tmp = mkdtempSync('/tmp/rh-copy-invalid-contract-');
   try {
     const source = join(tmp, 'source');
@@ -951,7 +951,7 @@ test('a missing canonical projection fails before changing existing owned copies
 }, 60000);
 
 test('canonical projection keeps every tracked include file and every existing declared package file', async () => {
-  const { managedTreeEntries, installedCopyTreeOptions } = await import('../src/cli/installer/install-profile');
+  const { managedTreeEntries, installedCopyTreeOptions } = await import('../src/effects/managed-tree');
   const { readdirSync } = await import('fs');
   const contract = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'));
   const includes: string[] = contract.installedCopyIncludes;

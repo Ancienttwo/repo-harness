@@ -1,11 +1,11 @@
 import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
-import { hashManagedTree, installedCopyTreeOptions } from '../../cli/installer/install-profile';
-import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../adoption/managed-hook-config';
-import { isRepoHarnessSourceCheckout } from '../adoption/source-checkout';
-import { loadWorkflowContractAsset } from '../adoption/workflow-contract-asset';
-import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../skill-surface/catalog';
+import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
+import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
+import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
+import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
 export interface LeftoverItem {
   readonly location: 'project' | 'global';
@@ -267,7 +267,7 @@ function classify(
     return { ownership: matches ? 'owned-clean' : 'owned-modified', proof: 'manifest', reason: matches ? undefined : 'Install manifest does not match current bytes.' };
   }
   if (snapshot.kind === 'directory') {
-    const markerPath = join(path, '.repo-harness-owner.json');
+    const markerPath = join(path, OWNER_MARKER);
     const markerEntry = stat(markerPath);
     const marker = markerEntry?.isFile() ? readJson(markerPath) : undefined;
     if (record(marker) && marker.owner === 'repo-harness' && ['canonical-skill', 'command-facade'].includes(String(marker.surface)) && typeof marker.content_hash === 'string') {

@@ -17,7 +17,7 @@ import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
-import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../core/upgrade/legacy-inventory";
+import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../effects/upgrade/legacy-inventory";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
   PROFILE_COMPONENTS,

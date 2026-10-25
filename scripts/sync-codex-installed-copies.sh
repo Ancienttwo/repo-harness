@@ -93,7 +93,7 @@ fi
 # Resolve copy authority beside the writer, not from an injected source tree.
 RUNTIME_ROOT="$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)"
 if ! bun -e 'const { installedCopyTreeOptions } = await import(process.argv[1]); installedCopyTreeOptions("canonical-skill", await Bun.file(process.argv[2]).json());' \
-  "$RUNTIME_ROOT/src/cli/installer/install-profile.ts" "$RUNTIME_ROOT/assets/workflow-contract.v1.json"; then
+  "$RUNTIME_ROOT/src/effects/managed-tree.ts" "$RUNTIME_ROOT/assets/workflow-contract.v1.json"; then
   echo "[sync-installed] installed copy projection is invalid." >&2
   exit 1
 fi

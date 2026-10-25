@@ -12,7 +12,7 @@ import {
   planLegacyLeftovers,
   stripLegacyHookEntries,
   type LeftoverItem,
-} from '../../core/upgrade/legacy-inventory';
+} from '../../effects/upgrade/legacy-inventory';
 import { withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
