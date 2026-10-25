@@ -1,3 +1,5 @@
+import { TASK_DIFF_SELECTOR_KEYS } from './task-diff';
+import type { OperatorTaskSession } from './task-sessions';
 import { isOperatorServiceEpoch } from './observation-identity';
 import {
   FLEET_BOARD_PROTOCOL,
@@ -51,6 +53,15 @@ export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV2, 'pro
   readonly source_snapshot_sha256: string;
 }
 
+function projectExecution(execution: OperatorTaskSession | null): OperatorTaskSession | null {
+  if (execution === null) return null;
+  const selector = Object.fromEntries(TASK_DIFF_SELECTOR_KEYS.map(key => [key, execution.selector[key]])) as unknown as OperatorTaskSession['selector'];
+  return Object.freeze({ selector: Object.freeze(selector), admission_sha256: execution.admission_sha256,
+    profile_selection: Object.freeze(execution.profile_selection.state === 'unassigned' ? { state: 'unassigned' as const }
+      : { state: 'selected' as const, engineer_id: execution.profile_selection.engineer_id, engineer_contract_revision: execution.profile_selection.engineer_contract_revision }),
+    branch: execution.branch, runtime: execution.runtime, harness_kind: execution.harness_kind });
+}
+
 function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
   const mergeReadiness = card.merge_readiness === null ? null : Object.freeze({
     protocol: card.merge_readiness.protocol,
@@ -75,7 +86,7 @@ function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
     issue_state: card.issue_state,
     issue_revision: card.issue_revision,
     execution_status: card.execution_status,
-    execution: card.execution,
+    execution: projectExecution(card.execution),
     task_id: card.task_id,
     task_label: card.task_label,
     task_index: card.task_index,

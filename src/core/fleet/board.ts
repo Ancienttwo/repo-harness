@@ -213,7 +213,14 @@ export function classifyFleetBoardPlacement(input: FleetBoardCardInputV2): Fleet
   if (input.issue_state === 'closed') return { kind: 'column', column: 'done' };
   if (input.merge_readiness !== null) return { kind: 'column', column: input.merge_readiness.ready ? 'ready_to_merge' : 'in_review' };
   if (input.execution_status === 'unavailable') return { kind: 'unclassified', reason: 'readiness_unavailable' };
-  return { kind: 'column', column: input.execution === null ? 'available' : 'working' };
+  if (input.execution !== null) return { kind: 'column', column: 'working' };
+  const blockers = input.readiness_blockers;
+  if (input.execution_readiness === null && blockers === null) return { kind: 'column', column: 'available' };
+  if (input.execution_readiness === 'execution_ready' && blockers?.length === 0) return { kind: 'column', column: 'available' };
+  if (input.execution_readiness === 'inline_ready' && blockers?.length === 0) return { kind: 'alternate_workflow', workflow: 'inline' };
+  const preparation = new Set(['repo_read_only', 'plan_missing', 'plan_not_approved', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable']);
+  if (['planning_required', 'unsupported'].includes(input.execution_readiness ?? '') && blockers && blockers.length > 0 && blockers.every(blocker => preparation.has(blocker.code))) return { kind: 'preparation' };
+  return { kind: 'unclassified', reason: blockers === null ? 'readiness_unavailable' : 'unsupported_readiness' };
 }
 
 export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCardInputV2): FleetBoardCardV2 {
@@ -255,7 +262,7 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
       repair_actions: Object.freeze([...input.feedback.repair_actions]),
     }),
     inbox: Object.freeze({
-      observation_status: input.inbox.observation_status,
+      observation_status: error === null ? input.inbox.observation_status : 'unavailable',
       delivery_evidence: error !== null || input.inbox.delivery_evidence === null ? null : Object.freeze({
         candidate_count: input.inbox.delivery_evidence.candidate_count,
         latest: input.inbox.delivery_evidence.latest === null ? null : Object.freeze({
