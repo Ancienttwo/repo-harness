@@ -45,7 +45,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.select.outputs.mode == 'affected'
         with:
-          name: affected-tests
+          name: affected-tests-${{ steps.select.outputs.sha }}
           path: .ci-affected-tests.json
           include-hidden-files: true
           if-no-files-found: error
@@ -149,7 +149,11 @@ jobs:
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - uses: actions/download-artifact@v4
         with:
-          name: affected-tests
+          name: affected-tests-${{ needs.selection.outputs.sha }}
+      - name: Verify selected checkout
+        env:
+          EXPECTED_SHA: ${{ needs.selection.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
       - run: bash scripts/check-ci.sh affected
