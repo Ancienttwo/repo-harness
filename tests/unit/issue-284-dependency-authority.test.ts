@@ -97,7 +97,7 @@ function selectorBytes(root: string) { return JSON.stringify(selector(root)) + '
 function reference(root: string) { return moduleAuthorityFor(SELECTOR_REF, selectorBytes(root)); }
 function admissionReaders(root: string, home: string): Partial<DependencyAuthorityReaders> {
   return { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => home, readIssuePolicy: () => approval(root).policy,
-    observeReviewAdmission: input => observeActiveReviewAdmission({ ...input, controlTrustHome: approval(root).source.controlTrustHome, runner: approval(root).source.runner }) };
+    observeReviewAdmission: input => observeActiveReviewAdmission({ ...input, runner: approval(root).source.runner }) };
 }
 const PRD_REF = 'plans/prds/product.md';
 const GOAL_REF = 'plans/plan-wp-a.md';

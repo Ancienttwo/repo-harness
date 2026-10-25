@@ -1,7 +1,5 @@
-import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { defaultDependencyAuthorityReaders } from '../../src/effects/engineers/dependency-authority';
 import { approveDelegatedReviewAdmission } from '../../src/effects/review/control-admission';
-import { signedHumanAdmissionFixture, signedBotAdmissionFixture } from '../helpers/control-approval-fixture';
+import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -32,15 +30,15 @@ function fixture(goal = { revision: 'goal-1', content: 'Preserve feedback and ac
     verification: { plan_sha256: hashVerificationPlan(input.verification_plan), source_sha256: hash('source'), evidence_sha256: hash('report'), tree_sha256: hash('tree') } };
   function seed() {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const content = canonicalize({ protocol: 2, kind: 'repo-harness-review-approval', repository_root: root, actor_id: input.actor_id,
+    const content = canonicalize({ protocol: 3, kind: 'repo-harness-review-approval', repository_root: root, actor_id: input.actor_id,
       activation_id: '11111111-1111-4111-8111-111111111111', admission,
-      control_approval: { envelope: signedHumanAdmissionFixture(home, root, admission, 0), expected_revision: 0 } } as unknown as JsonValue) + '\n';
+      control_approval: controlApprovalFixture(root, admission, 0) } as unknown as JsonValue) + '\n';
     const digest = hash(content);
     writeFileSync(join(directory, `${digest.slice(7)}.json`), content, { mode: 0o600 });
     writeFileSync(join(directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: digest }), { mode: 0o600 });
     return digest;
   }
-  const args = (grant: string) => ({ repoRoot: root, authorityHome: home, controlTrustHome: home, repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
+  const args = (grant: string) => ({ repoRoot: root, authorityHome: home, repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id,
     expectedGrantSha256: grant, expectedPolicySha256: input.policy.policy_sha256, expectedGoal: input.goal, expectedActor: input.actor_id, round });
   return { root, home, input, admission, directory, round, seed, args };
 }
@@ -77,9 +75,9 @@ test('protected read refuses a candidate-local authority home and linked grant f
 
 test('operator approval uses revision CAS and reapproval never resurrects an old grant identity', () => {
   const f = fixture();
-  const approve = (revision: number) => approveReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
+  const approve = (revision: number) => approveReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
     admission: f.input, expectedAdmissionSha256: f.admission.admission_sha256, expectedRevision: revision,
-    controlEnvelope: signedHumanAdmissionFixture(f.home, f.root, f.admission, revision) });
+    controlApproval: controlApprovalFixture(f.root, f.admission, revision) });
   const first = approve(0);
   expect(readReviewAdmission(f.args(first.grant_sha256)).revision).toBe(1);
   expect(() => approve(0)).toThrow('revision_changed');
@@ -118,13 +116,13 @@ test('protected read reobserves the provider goal instead of trusting a caller s
   } })).toThrow('revoked_or_replaced');
 });
 
-test('launch-time HOME and REPO_HARNESS_HOME cannot authorize a forged default admission', () => {
+test('launch-time HOME and REPO_HARNESS_HOME cannot redirect default admission state', () => {
   const f = fixture(), grant = f.seed();
-  const { authorityHome: _explicitHome, controlTrustHome: _fixtureTrust, ...args } = f.args(grant);
+  const { authorityHome: _explicitHome, ...args } = f.args(grant);
   const code = [
     `const { readReviewAdmission } = await import(${JSON.stringify(join(import.meta.dir, '../../src/effects/review/admission-store.ts'))});`,
     `const args = ${JSON.stringify(args)};`,
-    `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)}, controlTrustHome: ${JSON.stringify(f.home)} });`,
+    `const explicit = readReviewAdmission({ ...args, authorityHome: ${JSON.stringify(f.home)} });`,
     `if (explicit.context.authorization.grant_sha256 !== args.expectedGrantSha256) throw new Error('fixture is invalid');`,
     `try { readReviewAdmission(args); console.log('accepted-forged-grant'); }`,
     `catch (error) { if (error.message !== 'review_admission_missing') throw error; console.log('rejected-forged-grant'); }`,
@@ -162,23 +160,22 @@ test('protected read exposes the approved plan before execution without fabricat
 });
 
 
-test('control admission writes a signed Bot grant and later reads recheck parent revocation', () => {
+test('control admission binds upstream trace data and later reads observe normal revocation', () => {
   const f = fixture();
-  const envelope = signedBotAdmissionFixture(f.home, f.root, f.admission, 0);
-  const result = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
-    admission: f.input, envelope, expectedRevision: 0 });
-  expect(result.approved_by).toBe('fixture-bot');
+  const approval = controlApprovalFixture(f.root, f.admission, 0);
+  const result = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, approval, expectedRevision: 0 });
+  expect(result.bot_id).toBe('fixture-bot');
   expect(result.execution_actor).toBe(f.input.actor_id);
   expect(readReviewAdmission(f.args(result.grant_sha256)).admission).toEqual(f.admission);
-  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home, controlTrustHome: f.home,
-    admission: f.input, envelope, expectedRevision: 0 })).toThrow('revision_changed');
-  const trustPath = join(f.home, '.repo-harness/control-trust.json');
-  const trust = JSON.parse(readFileSync(trustPath, 'utf8'));
-  writeFileSync(trustPath, JSON.stringify({ ...trust, revoked_delegation_ids: ['fixture-delegation'] }));
-  expect(() => readReviewAdmission(f.args(result.grant_sha256))).toThrow('revoked');
+  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, approval, expectedRevision: 0 })).toThrow('revision_changed');
+  expect(result.authorization_ref).toBe(approval.authorization_ref);
+  revokeReviewAdmission({ ...f.args(result.grant_sha256), expectedRevision: 1 });
+  expect(() => readReviewAdmission(f.args(result.grant_sha256))).toThrow('revoked_or_replaced');
 });
 
-test('protected read rejects unsigned records even when the record digest matches', () => {
+test('read rejects missing upstream request bindings even when the record digest matches', () => {
   const f = fixture(), grant = f.seed();
   const raw = JSON.parse(readFileSync(join(f.directory, `${grant.slice(7)}.json`), 'utf8'));
   delete raw.control_approval;
@@ -188,11 +185,33 @@ test('protected read rejects unsigned records even when the record digest matche
   expect(() => readReviewAdmission(f.args(forged))).toThrow('grant_binding');
 });
 
-test('dependency production reader cannot choose trust from explicit storage HOME', () => {
-  const root = tmpWorkspace('dependency-control-root'), home = tmpWorkspace('dependency-control-home');
-  roots.push(root, home); initGitRepo(root);
-  const seeded = seedReviewAdmissionFixture(root, home);
-  expect(observeActiveReviewAdmission(seeded.source).grant_sha256).toBe(seeded.grant);
-  const source = { ...seeded.source, controlTrustHome: undefined };
-  expect(() => defaultDependencyAuthorityReaders().observeReviewAdmission(source)).toThrow();
+test('stored upstream bindings recheck expiry and exact parent policy even with a matching file digest', () => {
+  const f = fixture(), grant = f.seed();
+  const original = JSON.parse(readFileSync(join(f.directory, `${grant.slice(7)}.json`), 'utf8'));
+  for (const mutate of [
+    (value: typeof original) => { value.control_approval.expires_at = Date.now() - 1; },
+    (value: typeof original) => { value.control_approval.parent_scope.policy.reviewer = 'Claude'; },
+    (value: typeof original) => { value.control_approval.expected_revision = 1; },
+    (value: typeof original) => { value.control_approval.unexpected = true; },
+  ]) {
+    const next = structuredClone(original); mutate(next);
+    const content = canonicalize(next) + '\n', digest = hash(content);
+    writeFileSync(join(f.directory, `${digest.slice(7)}.json`), content, { mode: 0o600 });
+    writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 1, grant_sha256: digest }));
+    expect(() => readReviewAdmission(f.args(digest))).toThrow();
+  }
+});
+
+test('invalid upstream transition does not replace the current admission', () => {
+  const f = fixture();
+  const approval = controlApprovalFixture(f.root, f.admission, 0);
+  const first = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, approval, expectedRevision: 0 });
+  const before = readFileSync(join(f.directory, 'active.json'), 'utf8');
+  const wrong = controlApprovalFixture(f.root, f.admission, 1);
+  wrong.execution_actor = 'another-executor';
+  expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, approval: wrong, expectedRevision: 1 })).toThrow('identity');
+  expect(readFileSync(join(f.directory, 'active.json'), 'utf8')).toBe(before);
+  expect(readReviewAdmission(f.args(first.grant_sha256)).admission).toEqual(f.admission);
 });

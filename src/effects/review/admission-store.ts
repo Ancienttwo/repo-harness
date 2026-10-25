@@ -1,5 +1,4 @@
-import { verifyReviewApproval } from '../../core/review/control-delegation';
-import { readReviewControlTrust } from './control-trust';
+import { validateControlApproval, type ValidatedControlApproval } from '../../core/review/control-delegation';
 import { randomUUID, createHash } from 'node:crypto';
 import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -13,13 +12,13 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 
-interface StoreInput { repoRoot: string; authorityHome?: string; /** Trusted in-process fixture only; never inferred from state HOME. */ controlTrustHome?: string }
+interface StoreInput { repoRoot: string; authorityHome?: string }
 interface CampaignIdentity { repository_id: string; issue_id: string; campaign_id: string }
 interface ActiveGrant { protocol: 1; revision: number; grant_sha256: string | null }
 interface ApprovalRecord {
-  protocol: 2; kind: 'repo-harness-review-approval'; repository_root: string;
+  protocol: 3; kind: 'repo-harness-review-approval'; repository_root: string;
   actor_id: string; activation_id: string; admission: ReviewAdmission;
-  control_approval: { envelope: unknown; expected_revision: number };
+  control_approval: ValidatedControlApproval;
 }
 const HASH = /^sha256:[0-9a-f]{64}$/;
 function fail(reason: string): never { throw new Error(`review_admission_${reason}`); }
@@ -82,28 +81,28 @@ function publishActive(path: string, next: ActiveGrant): void {
   syncDirectoryDurably(dirname(path));
 }
 
-/** Authenticated user or delegated control approval. The exact signed digest
- * authorizes this transition; a candidate file or PR body alone cannot.
+/** Consume a trusted upstream approval and bind its exact transition with CAS.
+ * The caller owns authentication and current authorization. Files preserve normal
+ * lifecycle/history; they do not resist malicious rollback by the same OS user.
  * A new activation has a distinct identity even when its policy bytes repeat.
  */
 export function approveReviewAdmission(input: StoreInput & {
   admission: ReviewAdmissionInput; expectedAdmissionSha256: string;
-  expectedRevision: number; controlEnvelope: unknown;
+  expectedRevision: number; controlApproval: unknown;
 }): { revision: number; grant_sha256: string } {
   if (currentReadonlyObservation()) rejectObservation('Observation cannot approve a review admission');
   const admission = createReviewAdmission(input.admission);
   if (admission.admission_sha256 !== input.expectedAdmissionSha256) fail('approval_mismatch');
-  if (input.controlEnvelope === undefined) fail('control_approval_required');
-  const envelope = JSON.parse(JSON.stringify(input.controlEnvelope));
-  verifyReviewApproval(envelope, readReviewControlTrust(input.controlTrustHome),
-    Date.now(), admission, realpathSync(input.repoRoot), input.expectedRevision);
+  if (input.controlApproval === undefined) fail('control_approval_required');
+  const approval = validateControlApproval(input.controlApproval, Date.now(), admission, realpathSync(input.repoRoot), input.expectedRevision);
   const loc = location(input, admission, true);
   return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
     const previous = active(loc.active);
     if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
-    const record: ApprovalRecord = { protocol: 2, kind: 'repo-harness-review-approval', repository_root: loc.root,
+    validateControlApproval(approval, Date.now(), admission, loc.root, input.expectedRevision);
+    const record: ApprovalRecord = { protocol: 3, kind: 'repo-harness-review-approval', repository_root: loc.root,
       actor_id: admission.actor_id, activation_id: randomUUID(), admission,
-      control_approval: { envelope, expected_revision: input.expectedRevision } };
+      control_approval: approval };
     const content = bytes(record), sha = digest(content);
     createFileExclusiveDurably(join(loc.directory, `${sha.slice(7)}.json`), content);
     syncDirectoryDurably(loc.directory);
@@ -136,16 +135,14 @@ export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity &
   if (digest(content) !== input.expectedGrantSha256) fail('grant_digest');
   const value = JSON.parse(content.toString('utf8')) as ApprovalRecord;
   if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['activation_id', 'actor_id', 'admission', 'control_approval', 'kind', 'protocol', 'repository_root'])
-    || value.protocol !== 2 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
+    || value.protocol !== 3 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
     || value.actor_id !== input.expectedActor || typeof value.activation_id !== 'string'
     || !/^[0-9a-f-]{36}$/.test(value.activation_id)) fail('grant_binding');
   const admitted = validateReviewAdmission(value.admission);
   {
     const proof = value.control_approval;
-    if (!proof || JSON.stringify(Object.keys(proof).sort()) !== JSON.stringify(['envelope', 'expected_revision'])
-      || proof.expected_revision + 1 !== before.revision) fail('control_approval_binding');
-    verifyReviewApproval(proof.envelope, readReviewControlTrust(input.controlTrustHome), Date.now(), admitted,
-      loc.root, proof.expected_revision);
+    if (!proof || proof.expected_revision + 1 !== before.revision) fail('control_approval_binding');
+    validateControlApproval(proof, Date.now(), admitted, loc.root, before.revision - 1);
   }
   if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id
     || admitted.actor_id !== input.expectedActor || admitted.goal.revision !== input.expectedGoal.revision

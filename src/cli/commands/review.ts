@@ -7,18 +7,18 @@ import { recordCircuitAttempt } from '../hook/circuit-breaker';
 
 export function buildReviewCommand(): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
-  command.command('admit').description('Apply a signed, user-delegated control Bot approval')
-    .requiredOption('--request <file>', 'JSON {admission, envelope, expectedRevision}; no private keys')
+  command.command('admit').description('Apply an already-authorized upstream Bot request (trusted integration only)')
+    .requiredOption('--request <file>', 'JSON {admission, approval, expectedRevision}; approval requires upstream authorization_ref and bound scope')
     .option('--repo <path>', 'Execution repository', process.cwd())
     .action(opts => {
       try {
         const request = JSON.parse(readFileSync(opts.request, 'utf8'));
         if (!request || typeof request !== 'object' || Array.isArray(request)
-          || JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(['admission', 'envelope', 'expectedRevision'])) {
+          || JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(['admission', 'approval', 'expectedRevision'])) {
           throw new Error('review_control_request_invalid');
         }
         console.log(JSON.stringify(approveDelegatedReviewAdmission({ repoRoot: opts.repo,
-          admission: request.admission, envelope: request.envelope, expectedRevision: request.expectedRevision })));
+          admission: request.admission, approval: request.approval, expectedRevision: request.expectedRevision })));
       } catch (error) {
         console.error(`review admit: ${error instanceof Error ? error.message : String(error)}`);
         process.exitCode = 1;

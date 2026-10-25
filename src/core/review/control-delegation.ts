@@ -1,40 +1,37 @@
-import { createHash, createPublicKey, verify } from 'node:crypto';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { validateReviewAdmission, type ReviewAdmission } from './authority-context';
 
-export interface ControlDelegation {
+/** An already-authorized upstream request. These fields provide binding and
+ * traceability, not authentication. The calling Bot owns human authentication,
+ * current delegation and access to this integration entrypoint.
+ */
+export interface ControlApproval {
   protocol: 1;
-  kind: 'repo-harness-control-delegation';
-  id: string;
-  user_id: string;
+  kind: 'repo-harness-upstream-control-approval';
+  authorization_ref: string;
   bot_id: string;
-  bot_public_key: string;
+  action: 'admit' | 'admit-with-waiver-eligibility';
   repository_id: string;
-  issue_ids: string[];
-  allowed_paths: string[];
-  policy: { reviewer: 'Claude' | 'Codex'; user_waiver: 'forbidden'; policy_sha256: string };
-  benchmark: 'required' | 'not_required';
-  /** Epoch milliseconds. Expiry is exclusive. */
-  not_before: number;
-  expires_at: number;
-}
-export interface ControlApprovalDecision {
-  protocol: 1;
-  kind: 'repo-harness-control-approval';
-  delegation_sha256: string;
+  issue_id: string;
+  campaign_id: string;
+  execution_actor: string;
+  parent_scope: {
+    issue_ids: string[];
+    allowed_paths: string[];
+    policy: { reviewer: 'Claude' | 'Codex'; user_waiver: 'allowed' | 'forbidden'; policy_sha256: string };
+    benchmark: 'required' | 'not_required';
+    /** Epoch milliseconds. Expiry is exclusive. */
+    not_before: number;
+    expires_at: number;
+  };
   admission_sha256: string;
   repository_root: string;
   expected_revision: number;
   expires_at: number;
 }
-export interface ControlApprovalProvenance {
-  readonly delegation_id: string;
-  readonly delegation_sha256: string;
-  readonly bot_id: string;
-  readonly user_id: string;
-  readonly expires_at: number;
-}
+type Frozen<T> = T extends object ? { readonly [K in keyof T]: Frozen<T[K]> } : T;
+export type ValidatedControlApproval = Frozen<ControlApproval>;
 function fail(reason: string): never { throw new Error(`control_approval_invalid: ${reason}`); }
 
 /** Detach data without invoking getters, toJSON, iterators or coercion hooks. */
@@ -84,108 +81,54 @@ function strings(value: JsonValue | undefined): asserts value is string[] {
   for (const item of value) text(item);
   if (new Set(value).size !== value.length) fail('duplicate');
 }
-function publicKey(pem: string) {
-  // Reject private keys even though createPublicKey can derive their public key.
-  if (!/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+\r?\n-----END PUBLIC KEY-----\r?\n?$/.test(pem)) fail('public_key');
-  const key = createPublicKey(pem);
-  if (key.asymmetricKeyType !== 'ed25519') fail('key_algorithm');
-  return key;
-}
-function signed(value: JsonValue | undefined, pem: string): Record<string, JsonValue> {
-  const envelope = record(value, ['payload', 'signature']);
-  text(envelope.signature);
-  const signature = Buffer.from(envelope.signature, 'base64');
-  if (signature.length !== 64 || signature.toString('base64') !== envelope.signature) fail('signature_encoding');
-  if (!verify(null, Buffer.from(canonicalize(envelope.payload!)), publicKey(pem), signature)) fail('signature');
-  if (!envelope.payload || typeof envelope.payload !== 'object' || Array.isArray(envelope.payload)) fail('payload');
-  return envelope.payload as Record<string, JsonValue>;
+
+function freeze<T>(value: T): Frozen<T> {
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) freeze(child);
+    Object.freeze(value);
+  }
+  return value as Frozen<T>;
 }
 
-/** Trust must come from the protected host boundary, never from this envelope.
- * Signatures cover UTF-8 canonical JSON payload bytes. Distinct signed kinds
- * separate delegation from approval. This verifier never grants a waiver.
+/** Validate an upstream-authorized request against the exact local transition.
+ * No local key, actor string or authorization reference authenticates its source.
+ * Waiver eligibility is an explicit separate action; neither action grants a waiver.
  */
-export function verifyControlApproval(
-  envelope: unknown,
-  trust: { userPublicKey: string; revokedDelegationIds: readonly string[] },
-  now: number,
-  admission: ReviewAdmission,
-  repositoryRoot: string,
-  expectedRevision: number,
-): ControlApprovalProvenance {
+export function validateControlApproval(
+  request: unknown, now: number, admission: ReviewAdmission, repositoryRoot: string, expectedRevision: number,
+): ValidatedControlApproval {
   integer(now); integer(expectedRevision); text(repositoryRoot);
   const current = validateReviewAdmission(snapshot(admission) as unknown as ReviewAdmission);
-  const root = record(snapshot(envelope), ['delegation', 'decision']);
-  const delegation = record(signed(root.delegation, trust.userPublicKey), [
-    'protocol', 'kind', 'id', 'user_id', 'bot_id', 'bot_public_key', 'repository_id',
-    'issue_ids', 'allowed_paths', 'policy', 'benchmark', 'not_before', 'expires_at',
-  ]);
-  if (delegation.protocol !== 1 || delegation.kind !== 'repo-harness-control-delegation') fail('delegation_kind');
-  for (const key of ['id', 'user_id', 'bot_id', 'bot_public_key', 'repository_id']) text(delegation[key]);
-  strings(delegation.issue_ids); strings(delegation.allowed_paths);
-  const policy = record(delegation.policy, ['reviewer', 'user_waiver', 'policy_sha256']);
+  const approval = record(snapshot(request), ['protocol', 'kind', 'authorization_ref', 'bot_id', 'action',
+    'repository_id', 'issue_id', 'campaign_id', 'execution_actor', 'parent_scope', 'admission_sha256',
+    'repository_root', 'expected_revision', 'expires_at']);
+  if (approval.protocol !== 1 || approval.kind !== 'repo-harness-upstream-control-approval') fail('kind');
+  for (const key of ['authorization_ref', 'bot_id', 'repository_id', 'issue_id', 'campaign_id', 'execution_actor', 'repository_root']) text(approval[key]);
+  if (approval.action !== 'admit' && approval.action !== 'admit-with-waiver-eligibility') fail('action');
+  if (approval.bot_id === current.actor_id) fail('self_approval');
+  if (approval.repository_id !== current.repository_id || approval.issue_id !== current.issue_id
+    || approval.campaign_id !== current.campaign_id || approval.execution_actor !== current.actor_id) fail('identity');
+  const scope = record(approval.parent_scope, ['issue_ids', 'allowed_paths', 'policy', 'benchmark', 'not_before', 'expires_at']);
+  strings(scope.issue_ids); strings(scope.allowed_paths);
+  if (!scope.issue_ids.includes(current.issue_id)) fail('issue_scope');
+  const policy = record(scope.policy, ['reviewer', 'user_waiver', 'policy_sha256']);
   hash(policy.policy_sha256);
-  if ((policy.reviewer !== 'Codex' && policy.reviewer !== 'Claude') || policy.user_waiver !== 'forbidden') fail('policy');
-  integer(delegation.not_before); integer(delegation.expires_at);
-  if (delegation.not_before > now || delegation.expires_at <= now || delegation.expires_at <= delegation.not_before) fail('delegation_expired');
-  if (trust.revokedDelegationIds.includes(delegation.id as string)) fail('revoked');
-  if (delegation.user_id === delegation.bot_id || delegation.bot_id === current.actor_id || delegation.user_id === current.actor_id) fail('self_approval');
-  if (delegation.repository_id !== current.repository_id || !delegation.issue_ids.includes(current.issue_id)) fail('repository_or_issue');
-  if (current.policy.user_waiver !== 'forbidden') fail('waiver');
-  if (canonicalize(policy) !== canonicalize(current.policy as unknown as JsonValue) || delegation.benchmark !== current.benchmark) fail('policy');
-  for (const path of delegation.allowed_paths) {
+  if ((policy.reviewer !== 'Codex' && policy.reviewer !== 'Claude')
+    || (policy.user_waiver !== 'allowed' && policy.user_waiver !== 'forbidden')) fail('policy');
+  if (approval.action === 'admit' && current.policy.user_waiver !== 'forbidden') fail('waiver');
+  if (approval.action === 'admit-with-waiver-eligibility' && current.policy.user_waiver !== 'allowed') fail('waiver');
+  if (canonicalize(policy) !== canonicalize(current.policy as unknown as JsonValue) || scope.benchmark !== current.benchmark) fail('policy');
+  integer(scope.not_before); integer(scope.expires_at); integer(approval.expires_at); integer(approval.expected_revision);
+  if (scope.not_before > now || scope.expires_at <= now || scope.expires_at <= scope.not_before) fail('scope_expired');
+  if (approval.expires_at <= now || approval.expires_at > scope.expires_at) fail('approval_expired');
+  for (const path of scope.allowed_paths) {
     if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.includes('\\')
       || (path.endsWith('/') ? path.slice(0, -1) : path).split('/').some(part => part === '' || part === '.' || part === '..')) fail('path');
   }
-  const allowedPaths = delegation.allowed_paths;
+  const allowedPaths = scope.allowed_paths;
   if (!allowedPaths.includes('*') && current.allowed_paths.some(path => !allowedPaths.includes(path))) fail('scope');
-  const delegationSha256 = `sha256:${createHash('sha256').update(canonicalize(delegation)).digest('hex')}`;
-  const decision = record(signed(root.decision, delegation.bot_public_key as string), [
-    'protocol', 'kind', 'delegation_sha256', 'admission_sha256', 'repository_root', 'expected_revision', 'expires_at',
-  ]);
-  if (decision.protocol !== 1 || decision.kind !== 'repo-harness-control-approval') fail('decision_kind');
-  hash(decision.delegation_sha256); hash(decision.admission_sha256); text(decision.repository_root);
-  integer(decision.expected_revision); integer(decision.expires_at);
-  if (decision.expires_at <= now || decision.expires_at > delegation.expires_at) fail('decision_expired');
-  if (decision.delegation_sha256 !== delegationSha256 || decision.admission_sha256 !== current.admission_sha256
-    || decision.repository_root !== repositoryRoot || decision.expected_revision !== expectedRevision) fail('decision_subject');
-  return Object.freeze({ delegation_id: delegation.id as string, delegation_sha256: delegationSha256,
-    bot_id: delegation.bot_id as string, user_id: delegation.user_id as string, expires_at: decision.expires_at });
-}
-
-/** A separate user-signed admission can retain human-only policy eligibility.
- * This is not a Bot delegation or a waiver receipt. It never follows from an
- * execution actor string, and it does not grant Bot waiver permission.
- */
-export function verifyReviewApproval(
-  envelope: unknown, trust: { userPublicKey: string; revokedDelegationIds: readonly string[] },
-  now: number, admission: ReviewAdmission, repositoryRoot: string, expectedRevision: number,
-): { readonly bot_id: string | null; readonly user_id: string; readonly delegation_sha256: string; readonly expires_at: number } {
-  const detached = snapshot(envelope);
-  if (detached && typeof detached === 'object' && !Array.isArray(detached) && Object.hasOwn(detached, 'delegation')) {
-    return verifyControlApproval(detached, trust, now, admission, repositoryRoot, expectedRevision);
-  }
-  integer(now); integer(expectedRevision); text(repositoryRoot);
-  const current = validateReviewAdmission(snapshot(admission) as unknown as ReviewAdmission);
-  const root = record(detached, ['human_approval']);
-  const decision = record(signed(root.human_approval, trust.userPublicKey), [
-    'protocol', 'kind', 'admission_sha256', 'repository_root', 'expected_revision', 'expires_at',
-  ]);
-  if (decision.protocol !== 1 || decision.kind !== 'repo-harness-human-admission') fail('human_decision_kind');
-  hash(decision.admission_sha256); text(decision.repository_root);
-  integer(decision.expected_revision); integer(decision.expires_at);
-  if (decision.expires_at <= now) fail('human_decision_expired');
-  if (decision.admission_sha256 !== current.admission_sha256 || decision.repository_root !== repositoryRoot
-    || decision.expected_revision !== expectedRevision) fail('human_decision_subject');
-  const user = `sha256:${createHash('sha256').update(publicKey(trust.userPublicKey).export({ format: 'der', type: 'spki' })).digest('hex')}`;
-  return Object.freeze({ bot_id: null, user_id: user,
-    delegation_sha256: `sha256:${createHash('sha256').update(canonicalize(decision)).digest('hex')}`,
-    expires_at: decision.expires_at });
-}
-
-/** Shared signature primitive for a domain-specific, closed human decision.
- * The caller must validate its exact fields, kind, subject and expiry before use.
- */
-export function verifyHumanSignedPayload(envelope: unknown, publicKeyPem: string): Record<string, JsonValue> {
-  return signed(snapshot(envelope), publicKeyPem);
+  hash(approval.admission_sha256);
+  if (approval.admission_sha256 !== current.admission_sha256 || approval.repository_root !== repositoryRoot
+    || approval.expected_revision !== expectedRevision) fail('subject');
+  return freeze(approval as unknown as ControlApproval);
 }

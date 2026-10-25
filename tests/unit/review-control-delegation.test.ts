@@ -1,16 +1,10 @@
 import { expect, test } from 'bun:test';
-import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { canonicalize } from '../../src/core/evidence/canonical-json';
-import type { JsonValue } from '../../src/core/evidence/types';
 import { createReviewAdmission, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
-import { verifyControlApproval, verifyReviewApproval, type ControlDelegation, type ControlApprovalDecision } from '../../src/core/review/control-delegation';
+import { validateControlApproval, type ControlApproval } from '../../src/core/review/control-delegation';
 
 const now = 1_800_000_000_000;
 const repositoryRoot = '/work/repository';
-const hash = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(value as JsonValue)).digest('hex')}`;
-const signature = <T,>(payload: T, key: KeyObject) => ({ payload, signature: sign(null, Buffer.from(canonicalize(payload as JsonValue)), key).toString('base64') });
 function fixture() {
-  const user = generateKeyPairSync('ed25519'), bot = generateKeyPairSync('ed25519');
   const input: ReviewAdmissionInput = {
     repository_id: 'R_repo', issue_id: 'I_issue', campaign_id: 'campaign', actor_id: 'executor',
     goal: { revision: 'goal-sha', content: 'Implement the reviewed feature.' },
@@ -19,157 +13,131 @@ function fixture() {
     verification_plan: { protocol: 1, checks: [{ id: 'behavior', kind: 'command', command: 'test -f feature.txt', cwd: '.',
       phase: 'verification', cost: 'normal', evidence_policy: 'current_exact', necessity: 'Verify feature.', inputs: { env: [] } }] },
   };
-  const delegation: ControlDelegation = {
-    protocol: 1, kind: 'repo-harness-control-delegation', id: 'delegation-1', user_id: 'user', bot_id: 'bot',
-    bot_public_key: bot.publicKey.export({ type: 'spki', format: 'pem' }).toString(), repository_id: input.repository_id,
-    issue_ids: [input.issue_id], allowed_paths: [...input.allowed_paths], policy: { ...input.policy, user_waiver: 'forbidden' },
-    benchmark: input.benchmark, not_before: now - 100, expires_at: now + 1000,
-  };
-  const decision: ControlApprovalDecision = {
-    protocol: 1, kind: 'repo-harness-control-approval', delegation_sha256: hash(delegation),
+  const approval: ControlApproval = {
+    protocol: 1, kind: 'repo-harness-upstream-control-approval', authorization_ref: 'upstream-decision-1', bot_id: 'bot', action: 'admit',
+    repository_id: input.repository_id, issue_id: input.issue_id, campaign_id: input.campaign_id, execution_actor: input.actor_id,
+    parent_scope: { issue_ids: [input.issue_id], allowed_paths: [...input.allowed_paths], policy: { ...input.policy },
+      benchmark: input.benchmark, not_before: now - 100, expires_at: now + 1000 },
     admission_sha256: createReviewAdmission(input).admission_sha256, repository_root: repositoryRoot,
     expected_revision: 0, expires_at: now + 500,
   };
-  const trust = { userPublicKey: user.publicKey.export({ type: 'spki', format: 'pem' }).toString(), revokedDelegationIds: [] as string[] };
-  function envelope() {
-    decision.delegation_sha256 = hash(delegation);
-    decision.admission_sha256 = createReviewAdmission(input).admission_sha256;
-    return { delegation: signature(delegation, user.privateKey), decision: signature(decision, bot.privateKey) };
-  }
-  return { user, bot, input, delegation, decision, trust, envelope,
-    verify: (value: unknown = envelope()) => verifyControlApproval(value, trust, now, createReviewAdmission(input), repositoryRoot, 0) };
+  return { input, approval,
+    verify: (value: unknown = approval) => validateControlApproval(value, now, createReviewAdmission(input), repositoryRoot, 0) };
 }
 
-test('real user and Bot signatures approve only the bound admission and return immutable provenance', () => {
+test('an upstream request binds the exact admission and returns detached immutable trace and scope data', () => {
   const f = fixture(), result = f.verify();
-  expect(result).toEqual({ delegation_id: 'delegation-1', delegation_sha256: hash(f.delegation), bot_id: 'bot', user_id: 'user', expires_at: now + 500 });
+  expect(result).toEqual(f.approval);
   expect(Object.isFrozen(result)).toBe(true);
-  f.delegation.id = 'changed';
-  expect(result.delegation_id).toBe('delegation-1');
+  expect(Object.isFrozen(result.parent_scope)).toBe(true);
+  expect(Object.isFrozen(result.parent_scope.policy)).toBe(true);
+  expect(Object.isFrozen(result.parent_scope.allowed_paths)).toBe(true);
+  f.approval.authorization_ref = 'another-upstream-decision';
+  f.approval.parent_scope.allowed_paths.push('other/**');
+  expect(result.authorization_ref).toBe('upstream-decision-1');
+  expect(result.parent_scope.allowed_paths).toEqual(['src/**']);
 });
 
 test('exact scope inclusion and explicit whole-scope delegation work without inferred glob containment', () => {
   const f = fixture();
-  f.delegation.allowed_paths = ['src/**', 'tests/**'];
+  f.approval.parent_scope.allowed_paths = ['src/**', 'tests/**'];
   expect(f.verify().bot_id).toBe('bot');
   f.input.allowed_paths = ['src/nested/**'];
+  f.approval.admission_sha256 = createReviewAdmission(f.input).admission_sha256;
   expect(() => f.verify()).toThrow('scope');
-  f.delegation.allowed_paths = ['*'];
+  f.approval.parent_scope.allowed_paths = ['*'];
   expect(f.verify().bot_id).toBe('bot');
 });
 
-test('signed delegations still enforce identity, scope, policy, time and revocation restrictions', () => {
+test('requests enforce identity, parent scope, policy, current time and exact transition', () => {
   const mutations: Array<(f: ReturnType<typeof fixture>) => void> = [
-    f => { f.delegation.bot_id = f.input.actor_id; },
-    f => { f.delegation.user_id = f.input.actor_id; },
-    f => { f.delegation.user_id = f.delegation.bot_id; },
-    f => { f.delegation.repository_id = 'R_other'; },
-    f => { f.delegation.issue_ids = ['I_other']; },
-    f => { f.delegation.allowed_paths = ['other/**']; },
-    f => { f.delegation.allowed_paths = ['../src/**']; },
-    f => { f.delegation.policy.policy_sha256 = `sha256:${'b'.repeat(64)}`; },
-    f => { f.delegation.benchmark = 'not_required'; },
+    f => { f.approval.bot_id = f.input.actor_id; },
+    f => { f.approval.repository_id = 'R_other'; },
+    f => { f.approval.issue_id = 'I_other'; },
+    f => { f.approval.campaign_id = 'other-campaign'; },
+    f => { f.approval.execution_actor = 'other-executor'; },
+    f => { f.approval.parent_scope.issue_ids = ['I_other']; },
+    f => { f.approval.parent_scope.allowed_paths = ['other/**']; },
+    f => { f.approval.parent_scope.allowed_paths = ['../src/**']; },
+    f => { f.approval.parent_scope.policy.policy_sha256 = `sha256:${'b'.repeat(64)}`; },
+    f => { f.approval.parent_scope.benchmark = 'not_required'; },
     f => { f.input.policy.user_waiver = 'allowed'; },
-    f => { f.delegation.not_before = now + 1; },
-    f => { f.delegation.expires_at = now; },
-    f => { f.trust.revokedDelegationIds = [f.delegation.id]; },
-    f => { f.decision.repository_root = '/work/other'; },
-    f => { f.decision.expected_revision = 1; },
-    f => { f.decision.expires_at = now; },
-    f => { f.decision.expires_at = f.delegation.expires_at + 1; },
+    f => { f.approval.parent_scope.not_before = now + 1; },
+    f => { f.approval.parent_scope.expires_at = now; },
+    f => { f.approval.repository_root = '/work/other'; },
+    f => { f.approval.expected_revision = 1; },
+    f => { f.approval.expires_at = now; },
+    f => { f.approval.expires_at = f.approval.parent_scope.expires_at + 1; },
+    f => { f.approval.admission_sha256 = `sha256:${'f'.repeat(64)}`; },
+    f => { f.approval.authorization_ref = ''; },
+    f => { f.input.goal.content += ' changed'; },
   ];
   for (const mutate of mutations) { const f = fixture(); mutate(f); expect(() => f.verify()).toThrow('control_approval_invalid'); }
 });
 
-test('tampered payloads, another trusted user and signatures for another subject are rejected', () => {
-  const f = fixture(), original = f.envelope();
-  f.delegation.id = 'tampered';
-  expect(() => f.verify(original)).toThrow('signature');
-  const next = f.envelope();
-  next.decision.payload.repository_root = '/tampered';
-  expect(() => f.verify(next)).toThrow('signature');
-  const valid = f.envelope();
-  f.trust.userPublicKey = fixture().trust.userPublicKey;
-  expect(() => f.verify(valid)).toThrow('signature');
-  const other = fixture(), prior = other.envelope();
-  other.input.goal.content += ' changed';
-  expect(() => other.verify(prior)).toThrow('decision_subject');
-});
-
-test('closed schemas reject coercion, unknown fields and domain confusion even with valid signatures', () => {
-  for (const [field, value] of [ ['protocol', '1'], ['kind', 'repo-harness-control-approval'], ['extra', true],
-    ['expires_at', 1.5], ['issue_ids', ['I_issue', 'I_issue']], ['allowed_paths', []], ['benchmark', ['required']] ] as const) {
-    const f = fixture(); Object.assign(f.delegation, { [field]: value });
+test('closed schemas reject coercion, unknown fields and wrong action domains', () => {
+  for (const [field, value] of [['protocol', '1'], ['kind', 'repo-harness-control-approval'], ['extra', true],
+    ['expires_at', 1.5], ['expected_revision', '0'], ['authorization_ref', ['reference']], ['action', 'waive']] as const) {
+    const f = fixture(); Object.assign(f.approval, { [field]: value });
     expect(() => f.verify()).toThrow('control_approval_invalid');
   }
-  for (const [field, value] of [['expected_revision', '0'], ['extra', true], ['kind', 'repo-harness-control-delegation']] as const) {
-    const f = fixture(); Object.assign(f.decision, { [field]: value });
+  for (const [field, value] of [['issue_ids', ['I_issue', 'I_issue']], ['allowed_paths', []], ['benchmark', ['required']],
+    ['expires_at', '1800000001000'], ['extra', true]] as const) {
+    const f = fixture(); Object.assign(f.approval.parent_scope, { [field]: value });
+    expect(() => f.verify()).toThrow('control_approval_invalid');
+  }
+  for (const [field, value] of [['reviewer', ['Codex']], ['user_waiver', null], ['extra', true]] as const) {
+    const f = fixture(); Object.assign(f.approval.parent_scope.policy, { [field]: value });
     expect(() => f.verify()).toThrow('control_approval_invalid');
   }
 });
 
-test('signatures require canonical base64 and Ed25519 public keys', () => {
-  for (const change of [(s: string) => s + '\n', (s: string) => s.replace(/=+$/, ''), () => 'AAAA']) {
-    const f = fixture(), value = f.envelope(); value.decision.signature = change(value.decision.signature);
-    expect(() => f.verify(value)).toThrow('signature_encoding');
-  }
+test('request validation accepts key order changes but never invokes input serialization or accessor hooks', () => {
   const f = fixture();
-  f.trust.userPublicKey = f.user.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-  expect(() => f.verify()).toThrow('public_key');
-  f.trust.userPublicKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).publicKey.export({ type: 'spki', format: 'pem' }).toString();
-  expect(() => f.verify()).toThrow('key_algorithm');
-  const g = fixture(); g.delegation.bot_public_key = f.trust.userPublicKey;
-  expect(() => g.verify()).toThrow('key_algorithm');
-});
-
-test('canonical payload bytes ignore key order, but reject noncanonical signing bytes and input hooks', () => {
-  const f = fixture(), value = f.envelope();
-  value.delegation.payload = Object.fromEntries(Object.entries(f.delegation).reverse()) as unknown as ControlDelegation;
-  expect(f.verify(value).bot_id).toBe('bot');
-  value.delegation.signature = sign(null, Buffer.from(JSON.stringify(value.delegation.payload)), f.user.privateKey).toString('base64');
-  expect(() => f.verify(value)).toThrow('signature');
+  expect(f.verify(Object.fromEntries(Object.entries(f.approval).reverse()))).toEqual(f.approval);
   let called = false;
-  const hooked = f.envelope();
-  Object.defineProperty(hooked.decision.payload, 'toJSON', { value: () => { called = true; return {}; } });
-  expect(() => f.verify(hooked)).toThrow('non_data_field');
+  Object.defineProperty(f.approval, 'toJSON', { value: () => { called = true; return {}; } });
+  expect(() => f.verify()).toThrow('non_data_field');
   expect(called).toBe(false);
-  const accessor = fixture(), access = accessor.envelope();
-  Object.defineProperty(access, 'decision', { enumerable: true, get() { called = true; return {}; } });
-  expect(() => accessor.verify(access)).toThrow('non_data_field');
+  const accessor = fixture();
+  Object.defineProperty(accessor.approval, 'parent_scope', { enumerable: true, get() { called = true; return {}; } });
+  expect(() => accessor.verify()).toThrow('non_data_field');
   expect(called).toBe(false);
 });
 
-test('a valid Bot signature cannot substitute another delegation digest or an envelope trust key', () => {
-  const f = fixture(), value = f.envelope();
-  value.decision.payload.delegation_sha256 = `sha256:${'f'.repeat(64)}`;
-  value.decision = signature(value.decision.payload, f.bot.privateKey);
-  expect(() => f.verify(value)).toThrow('decision_subject');
-  const valid = f.envelope();
-  expect(() => f.verify({ ...valid, userPublicKey: f.trust.userPublicKey })).toThrow('fields');
-  expect(() => f.verify({ delegation: valid.decision, decision: valid.delegation })).toThrow();
-  expect(() => verifyControlApproval(valid, f.trust, Number.NaN, createReviewAdmission(f.input), repositoryRoot, 0)).toThrow('integer');
-  expect(() => verifyControlApproval(valid, f.trust, now, createReviewAdmission(f.input), repositoryRoot, -1)).toThrow('integer');
+test('request contract does not interpret references or actor strings as authentication', () => {
+  const f = fixture();
+  // Authentication occurs before this pure validator is called. These are trace
+  // values; a caller cannot use its successful return as a login/identity check.
+  f.approval.authorization_ref = 'another-valid-upstream-reference';
+  f.approval.bot_id = 'another-control-bot';
+  expect(f.verify().authorization_ref).toBe(f.approval.authorization_ref);
+  expect(() => f.verify({ actor: 'executor' })).toThrow('fields');
+  expect(() => f.verify({ ...f.approval, signature: 'retired-signature' })).toThrow('fields');
+  expect(() => validateControlApproval(f.approval, Number.NaN, createReviewAdmission(f.input), repositoryRoot, 0)).toThrow('integer');
+  expect(() => validateControlApproval(f.approval, now, createReviewAdmission(f.input), repositoryRoot, -1)).toThrow('integer');
 });
 
-
-test('direct user approval is signed separately and is never a Bot waiver delegation', () => {
+test('waiver eligibility requires a separate explicit upstream action and never follows from ordinary admission', () => {
   const f = fixture(); f.input.policy.user_waiver = 'allowed';
-  const admission = createReviewAdmission(f.input);
-  const payload = { protocol: 1, kind: 'repo-harness-human-admission', admission_sha256: admission.admission_sha256,
-    repository_root: repositoryRoot, expected_revision: 0, expires_at: now + 500 };
-  const envelope = { human_approval: signature(payload, f.user.privateKey) };
-  const value = verifyReviewApproval(envelope, f.trust, now, admission, repositoryRoot, 0);
-  expect(value.bot_id).toBeNull();
-  expect(value.user_id).toMatch(/^sha256:[0-9a-f]{64}$/);
-  expect(() => verifyReviewApproval({ human_approval: signature(payload, f.bot.privateKey) }, f.trust, now, admission, repositoryRoot, 0)).toThrow('signature');
-  expect(() => verifyReviewApproval(envelope, f.trust, now, admission, repositoryRoot, 1)).toThrow('subject');
-  expect(() => verifyReviewApproval(envelope, f.trust, now + 500, admission, repositoryRoot, 0)).toThrow('expired');
+  f.approval.parent_scope.policy.user_waiver = 'allowed';
+  f.approval.admission_sha256 = createReviewAdmission(f.input).admission_sha256;
+  expect(() => f.verify()).toThrow('waiver');
+  f.approval.action = 'admit-with-waiver-eligibility';
+  const value = f.verify();
+  expect(value.action).toBe('admit-with-waiver-eligibility');
+  expect(Object.hasOwn(value, 'waiver_grant')).toBe(false);
+  expect(() => validateControlApproval(value, now, createReviewAdmission(f.input), repositoryRoot, 1)).toThrow('subject');
+  expect(() => validateControlApproval(value, now + 500, createReviewAdmission(f.input), repositoryRoot, 0)).toThrow('expired');
+  f.input.policy.user_waiver = 'forbidden';
+  f.approval.parent_scope.policy.user_waiver = 'forbidden';
+  f.approval.admission_sha256 = createReviewAdmission(f.input).admission_sha256;
   expect(() => f.verify()).toThrow('waiver');
 });
 
-
-test('Bot cannot change reviewer while retaining the user-signed policy digest', () => {
+test('Bot cannot change reviewer while retaining the parent policy digest', () => {
   const f = fixture();
   f.input.policy.reviewer = 'Claude';
+  f.approval.admission_sha256 = createReviewAdmission(f.input).admission_sha256;
   expect(() => f.verify()).toThrow('policy');
 });

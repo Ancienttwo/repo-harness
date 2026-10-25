@@ -1,4 +1,4 @@
-import { signedHumanAdmissionFixture } from './control-approval-fixture';
+import { controlApprovalFixture } from './control-approval-fixture';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import { parseExternalSourcesPolicy } from '../../src/effects/external-sources/p
 import { observeReviewIssueGoal } from '../../src/effects/review/issue-goal';
 import type { ReviewAdmissionSource } from '../../src/effects/review/admission-source';
 
-/** Explicit synthetic approval fixture. This writes real protected record bytes;
+/** Explicit synthetic approval fixture. This writes real account-owned record bytes;
  * it does not exercise operator approval or a live GitHub endpoint. */
 export function seedReviewAdmissionFixture(root: string, home: string, options: {
   plan?: ReviewAdmissionInput['verification_plan']; oracles?: ReviewAdmissionInput['oracles'];
@@ -37,13 +37,14 @@ export function seedReviewAdmissionFixture(root: string, home: string, options: 
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const active = join(directory, 'active.json');
   const revision = existsSync(active) ? JSON.parse(readFileSync(active, 'utf8')).revision + 1 : 1;
-  const content = canonicalize({ protocol: 2, kind: 'repo-harness-review-approval', repository_root: root,
+  const content = canonicalize({ protocol: 3, kind: 'repo-harness-review-approval', repository_root: root,
     actor_id: admission.actor_id, activation_id: randomUUID(), admission,
-    control_approval: { envelope: signedHumanAdmissionFixture(home, root, admission, revision - 1), expected_revision: revision - 1 } } as unknown as JsonValue) + '\n';
+    control_approval: controlApprovalFixture(root, admission, revision - 1,
+      admission.policy.user_waiver === 'allowed' ? 'admit-with-waiver-eligibility' : 'admit') } as unknown as JsonValue) + '\n';
   const grant = hash(content);
   writeFileSync(join(directory, `${grant.slice(7)}.json`), content, { mode: 0o600 });
   writeFileSync(active, JSON.stringify({ protocol: 1, revision, grant_sha256: grant }), { mode: 0o600 });
-  const source: ReviewAdmissionSource = { repoRoot: root, authorityHome: home, controlTrustHome: home, repository_id: repo.id, issue_id: issue.id,
+  const source: ReviewAdmissionSource = { repoRoot: root, authorityHome: home, repository_id: repo.id, issue_id: issue.id,
     campaign_id: admission.campaign_id, expectedGrantSha256: grant, expectedPolicySha256: admission.policy.policy_sha256,
     expectedActor: admission.actor_id, issuePolicy: policy, runner };
   return { source, admission, directory, grant, issue, policy };
