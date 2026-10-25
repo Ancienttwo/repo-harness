@@ -1,3 +1,7 @@
+import { validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
+import { observeActiveReviewAdmission } from '../review/issue-goal';
+import { readExternalSourcesPolicy } from '../external-sources/policy';
+import { currentReadonlyObservation, rejectObservation } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.
  *
@@ -56,8 +60,6 @@ import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-iden
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
-  authorityFingerprint,
-  contractCarriesArchiveProjection,
   readAcceptanceVerificationObservation,
   type AcceptanceDisposition,
   type AcceptanceValidatorRuleId,
@@ -88,12 +90,14 @@ export interface DependencyAuthorityRepositoryRead {
 }
 
 export interface DependencyAuthorityReaders {
+  readonly readIssuePolicy: typeof readExternalSourcesPolicy;
+  readonly observeReviewAdmission: typeof observeActiveReviewAdmission;
   readonly readCanonicalTargetRef: (repoRoot: string) => string;
   readonly readAcceptanceObservation: (
     repoRoot: string,
     authorityHome: string,
-    contractFile: string,
-    contractSha256: string,
+    campaignSha256: string,
+    admissionSha256: string,
   ) => AcceptanceVerificationObservationV1 | null;
   readonly readLease: (repoRoot: string, taskId: string) => LeaseRead;
   readonly readIntegrationObservations: (
@@ -131,6 +135,11 @@ function defaultAuthorityHome(): string {
 
 export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders {
   const value: DependencyAuthorityReaders = {
+    readIssuePolicy: readExternalSourcesPolicy,
+    observeReviewAdmission: input => {
+      if (currentReadonlyObservation()) rejectObservation('Live dependency admission requires an external observation');
+      return observeActiveReviewAdmission(input);
+    },
     readCanonicalTargetRef,
     readAcceptanceObservation: readAcceptanceVerificationObservation,
     readLease,
@@ -281,7 +290,7 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
  *   `assertRecordedReceiptPolicy` before `writeAcceptanceWithArchiveProjection`,
  *   so an observation existing at all implies the rule held.
  * - `subject_key`: bound by the observation's subject key, which this module
- *   derives from the edge's declared contract bytes at the canonical commit.
+ *   derives from the edge's committed selector and fresh protected approval.
  * - `resolver`: this module checks the observation field itself.
  *
  * A rule with no mechanism is a bug, not a gap: `disposition_not_reject` is
@@ -292,12 +301,12 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   receipt_protocol_kind: 'record_time',
   // The observation reader requires repository_root === realpath(repo path).
   repository_root: 'resolver',
-  contract_file: 'subject_key',
-  contract_fingerprint: 'subject_key',
+  campaign_identity: 'subject_key',
+  admission_binding: 'resolver',
   reviewer_policy: 'record_time',
-  // The observation reader rejects an unsafe goal_file.
-  goal_file_shape: 'resolver',
-  // The resolver re-fingerprints the goal at the target's canonical commit.
+  // The observation reader validates the protected grant digest.
+  grant_digest_shape: 'resolver',
+  // The resolver compares the fresh provider goal against protected approval.
   goal_fingerprint: 'resolver',
   // The record path's own readRegular only rejects escaping paths; this rule
   // is what rejects a `-`-prefixed or backslash verification file.
@@ -320,7 +329,7 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   waiver_grant_present: 'record_time',
   waiver_policy_allowed: 'record_time',
   waiver_grant_repository: 'record_time',
-  waiver_grant_contract: 'record_time',
+  waiver_grant_admission: 'record_time',
   waiver_grant_goal: 'record_time',
   waiver_grant_owner: 'record_time',
   waiver_grant_fingerprint: 'record_time',
@@ -337,10 +346,9 @@ const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object
  * The module acceptance verdict is the acceptance authority's own record-time
  * observation, read the same way `publicationIntegrated` reads the publication
  * authority's integration observation and `productAccepted` reads the ME-4C
- * projection. Nothing about acceptance is re-derived here: the live review
- * subject, the verification evidence fingerprint and the archive-projection
- * seal were all proven by `verifyAcceptance` at record time and frozen into the
- * observation by the authority that proved them.
+ * projection. The acceptance authority proves the review subject and execution
+ * evidence at record time. This reader additionally authenticates the pinned
+ * approval against the current issue goal before using that observation.
  */
 function moduleAccepted(
   input: DependencyAuthorityInput,
@@ -352,72 +360,45 @@ function moduleAccepted(
   const subject = subjectBytesAtCommit(input, read, reference);
   if (subject === null) return UNAVAILABLE;
 
-  // An archive envelope normalizes away inside the acceptance fingerprint, so
-  // archive-projected subject bytes could otherwise borrow an accepted
-  // contract's digest. A dependency edge cannot name an archived contract.
-  let archived: boolean;
-  let subjectFingerprint: string;
-  try {
-    archived = contractCarriesArchiveProjection(subject);
-    subjectFingerprint = authorityFingerprint(subject);
-  } catch {
-    return UNAVAILABLE;
-  }
-  if (archived) return UNAVAILABLE;
-
-  let authorityHome: string;
+  let selector: ReturnType<typeof validateModuleAcceptanceReference>;
+  let active: ReturnType<typeof observeActiveReviewAdmission>;
+  let observation: AcceptanceVerificationObservationV1 | null;
   let targetRef: string;
   try {
-    authorityHome = reader.resolveAuthorityHome();
+    selector = validateModuleAcceptanceReference(JSON.parse(subject));
+    const authorityHome = reader.resolveAuthorityHome();
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
+    // Repository path and policy location come only from the adopted registry.
+    // The committed selector cannot supply a filesystem or provider endpoint.
+    active = reader.observeReviewAdmission({ repoRoot: read.repo.path, authorityHome,
+      repository_id: selector.provider_repository_id, issue_id: selector.issue_id,
+      campaign_id: selector.campaign_id, expectedGrantSha256: selector.grant_sha256,
+      expectedPolicySha256: selector.policy_sha256, expectedActor: selector.actor_id,
+      issuePolicy: reader.readIssuePolicy(read.repo.path) });
+    if (active.admission.admission_sha256 !== selector.admission_sha256
+      || active.grant_sha256 !== selector.grant_sha256) return UNAVAILABLE;
+    observation = reader.readAcceptanceObservation(read.repo.path, authorityHome,
+      active.admission.campaign_sha256, active.admission.admission_sha256);
   } catch {
     return UNAVAILABLE;
   }
-
-  let observation: AcceptanceVerificationObservationV1 | null;
-  try {
-    observation = reader.readAcceptanceObservation(
-      read.repo.path,
-      authorityHome,
-      reference.subject_ref,
-      subjectFingerprint,
-    );
-  } catch {
-    return UNAVAILABLE;
-  }
-  // Absent is not negative: the authority has published no verdict for this
-  // exact subject, which is an unavailable authority, never "not accepted".
-  if (observation === null) return UNAVAILABLE;
-  if (observation.archive_projection_sha256 !== null) return UNAVAILABLE;
-
+  if (observation === null || observation.archive_projection_sha256 !== null) return UNAVAILABLE;
   const refs = [
     evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
     evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
     evidence(`acceptance-disposition:${observation.disposition}`, engineerSha256(observation.disposition)),
     evidence(`acceptance-target:${observation.target_ref}`, engineerSha256(observation.target_revision)),
+    evidence(`acceptance-goal:${selector.provider_repository_id}:${selector.issue_id}`, active.admission.goal.revision),
+    evidence(`acceptance-grant:${active.grant_sha256}`, active.grant_sha256),
   ];
-  // A whitelist, not a `reject` test: a disposition this resolver does not
-  // know is a readable negative, so a future disposition fails closed until
-  // someone decides what it means for scheduling.
-  if (!PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition)) return verdict('unsatisfied', refs);
-  if (observation.target_ref !== targetRef) return verdict('unsatisfied', refs);
-
-  let goal: string | null;
-  try {
-    goal = read.commit === null ? null : input.readFileAtCommit(read.repo.path, read.commit, observation.goal_file);
-  } catch {
-    return UNAVAILABLE;
-  }
-  if (goal === null) return UNAVAILABLE;
-  refs.push(evidence(`acceptance-goal:${observation.goal_file}`, engineerSha256(goal)));
-
-  let goalFingerprint: string;
-  try {
-    goalFingerprint = authorityFingerprint(goal);
-  } catch {
-    return UNAVAILABLE;
-  }
-  return verdict(goalFingerprint === observation.goal_sha256 ? 'satisfied' : 'unsatisfied', refs);
+  // A readable observation with stale bindings is negative. Missing or revoked
+  // protected authority is unavailable, even if an old observation remains.
+  const matches = observation.campaign_sha256 === active.admission.campaign_sha256
+    && observation.admission_sha256 === active.admission.admission_sha256
+    && observation.grant_sha256 === active.grant_sha256
+    && observation.goal_sha256 === active.admission.goal.revision
+    && observation.target_ref === targetRef;
+  return verdict(matches && PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition) ? 'satisfied' : 'unsatisfied', refs);
 }
 
 function publicationIntegrated(

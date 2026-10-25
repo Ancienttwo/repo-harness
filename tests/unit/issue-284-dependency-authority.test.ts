@@ -1,7 +1,10 @@
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { observeActiveReviewAdmission } from '../../src/effects/review/issue-goal';
+import { createReviewAdmission } from '../../src/core/review/authority-context';
 import { historicalPublicationPointer } from '../helpers/publication-fixture';
 import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import { seedPublicationReceipt } from '../helpers/publication-fixture';
-import { executeVerificationContract } from '../../src/effects/evidence/verification-execution';
+import { executeAdmittedVerification } from '../../src/effects/evidence/verification-execution';
 import { prepareChangeAssessment } from '../../src/effects/review/change-assessment';
 import { recordFixtureAcceptance } from '../helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -82,6 +85,20 @@ const OTHER_REPO_ID = 'repo_fedcba9876543210';
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
 const SPRINT = 'plans/sprints/demo.sprint.md';
 const CONTRACT_REF = 'tasks/contracts/wp-a.contract.md';
+const SELECTOR_REF = 'plans/review/wp-a.admission.json';
+const approvals = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
+function approval(root: string) { const value = approvals.get(root); if (!value) throw new Error('missing test approval'); return value; }
+function selector(root: string) {
+  const { admission, source } = approval(root);
+  return { protocol: 1, provider_repository_id: source.repository_id, issue_id: source.issue_id, campaign_id: source.campaign_id,
+    admission_sha256: admission.admission_sha256, grant_sha256: source.expectedGrantSha256, policy_sha256: source.expectedPolicySha256, actor_id: source.expectedActor };
+}
+function selectorBytes(root: string) { return JSON.stringify(selector(root)) + '\n'; }
+function reference(root: string) { return moduleAuthorityFor(SELECTOR_REF, selectorBytes(root)); }
+function admissionReaders(root: string, home: string): Partial<DependencyAuthorityReaders> {
+  return { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => home, readIssuePolicy: () => approval(root).policy,
+    observeReviewAdmission: input => observeActiveReviewAdmission({ ...input, runner: approval(root).source.runner }) };
+}
 const PRD_REF = 'plans/prds/product.md';
 const GOAL_REF = 'plans/plan-wp-a.md';
 const CONTRACT_NO_WAIVER_REF = 'tasks/contracts/wp-a-sealed.contract.md';
@@ -199,6 +216,7 @@ function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', rep
 
 interface Fixture {
   readonly root: string;
+  readonly home: string;
   readonly commit: string;
   readonly graph: ProjectedWorkGraphV1;
   readonly target: ProjectedWorkPackageV1;
@@ -236,7 +254,8 @@ function projectFixtureGraph(root: string, sprintText = SPRINT_TEXT, repositoryI
 
 function fixture(): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-284-')));
-  roots.push(root);
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'dependency-approval-')));
+  roots.push(root, home);
   git(root, 'init', '-b', 'main');
   git(root, 'config', 'user.name', 'Issue 284');
   git(root, 'config', 'user.email', 'issue284@test.invalid');
@@ -250,6 +269,8 @@ function fixture(): Fixture {
   writeRepoFile(root, GOAL_REF, GOAL_TEXT);
   writeRepoFile(root, PRD_REF, PRD_TEXT);
   writeRepoFile(root, 'docs/spec.md', '# Source spec\n');
+  approvals.set(root, seedReviewAdmissionFixture(root, home, { reviewer: 'Codex', userWaiver: 'allowed', actor: OWNER }));
+  writeRepoFile(root, SELECTOR_REF, selectorBytes(root));
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'fixture');
   const commit = git(root, 'rev-parse', 'HEAD');
@@ -262,6 +283,7 @@ function fixture(): Fixture {
   };
   return {
     root,
+    home,
     commit,
     graph,
     target: graph.work_packages.find((item) => item.work_package_id === 'wp-a')!,
@@ -306,25 +328,25 @@ function input(
   overrides: Partial<DependencyAuthorityInput> = {},
 ): DependencyAuthorityInput {
   return {
-    dependency: dependency(state),
+    dependency: { ...dependency(state), ...(state === 'module_accepted' ? { acceptance_authority: reference(subject.root) } : {}) },
     target: subject.target,
     reads: subject.reads,
     registry: subject.registry,
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-    readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => subject.root },
+    readers: admissionReaders(subject.root, subject.home),
     ...overrides,
   };
 }
 
 function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceipt> = {}): AcceptanceReceipt {
   return {
-    protocol: 2,
+    protocol: 3,
     kind: 'repo-harness-acceptance-receipt',
     repository_root: subject.root,
-    contract_file: CONTRACT_REF,
-    contract_sha256: authorityFingerprint(CONTRACT_TEXT),
-    goal_file: GOAL_REF,
-    goal_sha256: authorityFingerprint(GOAL_TEXT),
+    campaign_sha256: approval(subject.root).admission.campaign_sha256,
+    admission_sha256: approval(subject.root).admission.admission_sha256,
+    grant_sha256: approval(subject.root).grant,
+    goal_sha256: approval(subject.root).admission.goal.revision,
     verification_file: '.ai/harness/runs/acceptance.report.json',
     verification_evidence_sha256: `sha256:${'c'.repeat(64)}`,
     benchmark_evidence_sha256: 'not-applicable',
@@ -348,22 +370,22 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
 }
 
 /** Writes the receipt through the real authority path so the real validator reads it. */
-function writeAcceptanceReceipt(subject: Fixture, receipt: AcceptanceReceipt, authorityHome = subject.root): void {
+function writeAcceptanceReceipt(subject: Fixture, receipt: AcceptanceReceipt, authorityHome = subject.home): void {
   const path = acceptanceReceiptPath(subject.root, authorityHome, true);
   writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
 function waiverGrant(subject: Fixture, overrides: Partial<UserWaiverGrant> = {}): UserWaiverGrant {
   return {
-    protocol: 1,
+    protocol: 2,
     kind: 'repo-harness-user-waiver-grant',
     repository_root: subject.root,
-    contract_file: CONTRACT_REF,
-    contract_sha256: authorityFingerprint(CONTRACT_TEXT),
-    goal_file: GOAL_REF,
-    goal_sha256: authorityFingerprint(GOAL_TEXT),
+    campaign_sha256: approval(subject.root).admission.campaign_sha256,
+    admission_sha256: approval(subject.root).admission.admission_sha256,
+    grant_sha256: approval(subject.root).grant,
+    goal_sha256: approval(subject.root).admission.goal.revision,
     actor: OWNER,
-    scope: 'contract-authority',
+    scope: 'admission-authority',
     summary: 'owner waived wp-a',
     issued_at: '2026-09-02T00:00:00.000Z',
     ...overrides,
@@ -391,10 +413,8 @@ function stableJson(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
 }
 
-/**
- * Records one acceptance the way the authority does: the receipt file plus the
- * authority's own verified observation, written by the production writer.
- */
+/** Synthetic record-time observation fixture. The real record-path test below
+ * independently proves that genuine execution can produce this authority. */
 function recordAcceptanceObservation(
   subject: Fixture,
   receipt: AcceptanceReceipt = acceptanceReceipt(subject),
@@ -402,7 +422,7 @@ function recordAcceptanceObservation(
   writeAcceptanceReceipt(subject, receipt);
   return writeAcceptanceVerificationObservation({
     root: subject.root,
-    authorityHome: subject.root,
+    authorityHome: subject.home,
     receipt,
   });
 }
@@ -410,9 +430,9 @@ function recordAcceptanceObservation(
 function observationPathFor(subject: Fixture, receipt: AcceptanceReceipt = acceptanceReceipt(subject)): string {
   return acceptanceVerificationObservationPath(
     subject.root,
-    subject.root,
-    receipt.contract_file,
-    receipt.contract_sha256,
+    subject.home,
+    receipt.campaign_sha256,
+    receipt.admission_sha256,
   );
 }
 
@@ -541,9 +561,9 @@ function recordContractText(): string {
 }
 
 function recordChecks(root: string): void {
-  const report = executeVerificationContract({ repoRoot: root, contractPath: RECORD_CONTRACT_REF, reportFile: '.ai/harness/runs/acceptance.report.json' });
+  const report = executeAdmittedVerification({ repoRoot: root, authority: approval(root).source, reportFile: '.ai/harness/runs/acceptance.report.json' });
   if (!report.passed) throw new Error('genuine candidate check did not pass');
-  const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: RECORD_CONTRACT_REF });
+  const prepared = prepareChangeAssessment({ repoRoot: root, authority: approval(root).source });
   const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
   writeRepoFile(root, '.ai/harness/checks/change-assessment.latest.json', JSON.stringify({ ...basis, evidence_sha256: engineerSha256(stableJson(basis)) }, null, 2) + '\n');
 }
@@ -570,6 +590,10 @@ function recordFixture(options: { readonly extraCandidateFile?: string } = {}): 
   writeRepoFile(root, RECORD_GOAL_REF, '# Plan: demo\n\n> **Status**: Executing\n');
   writeRepoFile(root, RECORD_CONTRACT_REF, recordContractText());
   writeRepoFile(root, 'tasks/reviews/demo.review.md', '# Review\n\n> **Recommendation**: pass\n');
+  approvals.set(root, seedReviewAdmissionFixture(root, home, { reviewer: 'Claude', userWaiver: 'allowed', actor: 'kito', oracles: [],
+    plan: { protocol: 1, checks: [{ id: 'feature-content', kind: 'command', command: 'grep -qx candidate feature.txt', cwd: '.', phase: 'verification',
+      cost: 'normal', evidence_policy: 'current_exact', necessity: 'Check candidate.', inputs: { env: [] } }] } }));
+  writeRepoFile(root, SELECTOR_REF, selectorBytes(root));
   git(root, 'add', '-A');
   git(root, 'commit', '-m', 'candidate');
   recordChecks(root);
@@ -583,7 +607,7 @@ function recordExternalPass(
   return recordFixtureAcceptance({
     root: fixtureValue.root,
     authorityHome: fixtureValue.home,
-    contract: RECORD_CONTRACT_REF,
+    authority: approval(fixtureValue.root).source,
     verification: overrides.verification ?? '.ai/harness/runs/acceptance.report.json',
     disposition: 'external_pass',
     reviewer: 'Claude',
@@ -598,14 +622,14 @@ function recordObservationPath(fixtureValue: RecordFixture): string {
   return acceptanceVerificationObservationPath(
     fixtureValue.root,
     fixtureValue.home,
-    RECORD_CONTRACT_REF,
-    authorityFingerprint(recordContractText()),
+    approval(fixtureValue.root).admission.campaign_sha256,
+    approval(fixtureValue.root).admission.admission_sha256,
   );
 }
 
 /** Points the resolver at the record fixture repository and its committed contract. */
 function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityInput {
-  const contractBytes = gitShow(fixtureValue.root, fixtureValue.commit, RECORD_CONTRACT_REF)!;
+  const selectorContent = gitShow(fixtureValue.root, fixtureValue.commit, SELECTOR_REF)!;
   const definition = {
     work_package_id: 'wp-demo',
     task_id: '7'.repeat(64),
@@ -651,20 +675,21 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
       required_state: 'module_accepted',
       acceptance_authority: {
         authority_kind: 'module_acceptance',
-        subject_ref: RECORD_CONTRACT_REF,
-        subject_revision: engineerSha256(contractBytes),
+        subject_ref: SELECTOR_REF,
+        subject_revision: engineerSha256(selectorContent),
       },
     },
     target: graph.work_packages[0]!,
     reads: [{ repo, commit: fixtureValue.commit, graph }],
     registry: { registryPath: join(fixtureValue.root, 'registry.json'), authorizationRevision: 3, repos: [repo] },
     readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-    readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => fixtureValue.home },
+    readers: admissionReaders(fixtureValue.root, fixtureValue.home),
   };
 }
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  approvals.clear();
 });
 
 describe('issue #284 closed dependency authority', () => {
@@ -763,7 +788,7 @@ describe('issue #284 closed dependency authority', () => {
     recordUserWaiverGrant({
       root: waived.root,
       authorityHome: waived.home,
-      contract: RECORD_CONTRACT_REF,
+      authority: approval(waived.root).source,
       actor: 'kito',
       summary: 'owner waived the candidate',
     });
@@ -771,7 +796,7 @@ describe('issue #284 closed dependency authority', () => {
     await expect(recordUserWaiverAcceptance({
       root: waived.root,
       authorityHome: waived.home,
-      contract: RECORD_CONTRACT_REF,
+      authority: approval(waived.root).source,
       verification: '-checks.json',
     })).rejects.toThrow('AcceptanceReceipt verification_file is unsafe');
     expect(existsSync(acceptanceReceiptPath(waived.root, waived.home))).toBe(false);
@@ -814,13 +839,13 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.status).toBe('satisfied');
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`acceptance-observation:${observation.observation_id}`);
-    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${GOAL_REF}`);
+    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-goal:R_provider:I_903');
 
     // Re-recording the same subject overwrites one file rather than growing a bag.
     const rerecorded = recordAcceptanceObservation(subject);
     expect(rerecorded.observation_id).toBe(observation.observation_id);
     expect(readdirSync(dirname(observationPathFor(subject)))).toEqual([
-      `${acceptanceVerificationObservationSubjectKey(CONTRACT_REF, authorityFingerprint(CONTRACT_TEXT)).slice('sha256:'.length)}.json`,
+      `${acceptanceVerificationObservationSubjectKey(approval(subject.root).admission.campaign_sha256, approval(subject.root).admission.admission_sha256).slice('sha256:'.length)}.json`,
     ]);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
 
@@ -858,7 +883,7 @@ describe('issue #284 closed dependency authority', () => {
     // observation is otherwise validly signed by the authority's own writer.
     const forged = writeAcceptanceVerificationObservation({
       root: subject.root,
-      authorityHome: subject.root,
+      authorityHome: subject.home,
       receipt: { ...acceptanceReceipt(subject), disposition: 'conditional_pass' as AcceptanceReceipt['disposition'] },
     });
     expect(forged.disposition).toBe('conditional_pass' as AcceptanceReceipt['disposition']);
@@ -866,7 +891,40 @@ describe('issue #284 closed dependency authority', () => {
     expect(unknown.status).not.toBe('satisfied');
   });
 
-  test('a moved contract semantic line changes the subject key and is unavailable, not accepted', () => {
+  test('live issue changes and revoked grants invalidate stored positive observations', () => {
+    const changedGoal = fixture();
+    recordAcceptanceObservation(changedGoal);
+    expect(resolveDependencyAuthority(input(changedGoal, 'module_accepted')).status).toBe('satisfied');
+    approval(changedGoal.root).issue.body = 'Goal changed after approval';
+    expect(resolveDependencyAuthority(input(changedGoal, 'module_accepted')).status).toBe('authority_unavailable');
+
+    const revoked = fixture();
+    recordAcceptanceObservation(revoked);
+    expect(resolveDependencyAuthority(input(revoked, 'module_accepted')).status).toBe('satisfied');
+    writeFileSync(join(approval(revoked.root).directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }), { mode: 0o600 });
+    expect(resolveDependencyAuthority(input(revoked, 'module_accepted')).status).toBe('authority_unavailable');
+    expect(existsSync(observationPathFor(revoked))).toBe(true);
+  });
+
+  test('committed selector pins exact admission and ignores working-tree selector edits', () => {
+    const subject = fixture();
+    recordAcceptanceObservation(subject);
+    const original = input(subject, 'module_accepted');
+    writeRepoFile(subject.root, SELECTOR_REF, JSON.stringify({ ...selector(subject.root), admission_sha256: engineerSha256('different admission') }));
+    expect(resolveDependencyAuthority(original).status).toBe('satisfied');
+    const changed = JSON.stringify({ ...selector(subject.root), admission_sha256: engineerSha256('different admission') });
+    const moved = resolveDependencyAuthority({ ...original,
+      dependency: { ...original.dependency, acceptance_authority: moduleAuthorityFor(SELECTOR_REF, changed) },
+      readFileAtCommit: (root, commit, path) => path === SELECTOR_REF ? changed : gitShow(root, commit, path),
+    });
+    expect(moved.status).toBe('authority_unavailable');
+    const forgedRevision = resolveDependencyAuthority({ ...original,
+      dependency: { ...original.dependency, acceptance_authority: moduleAuthorityFor(SELECTOR_REF, 'unmatched committed bytes') },
+    });
+    expect(forgedRevision.status).toBe('authority_unavailable');
+  });
+
+  test('legacy contract text cannot serve as an admission selector', () => {
     const subject = fixture();
     recordAcceptanceObservation(subject);
     const accepted = resolveDependencyAuthority(input(subject, 'module_accepted'));
@@ -915,9 +973,8 @@ describe('issue #284 closed dependency authority', () => {
     const base = {
       receipt: valid,
       repositoryRoot: subject.root,
-      expectedContractFile: CONTRACT_REF,
-      contractContent: CONTRACT_TEXT,
-      goalContent: GOAL_TEXT,
+      admission: approval(subject.root).admission,
+      grantSha256: approval(subject.root).grant,
       waiverGrant: null,
     };
     expect(validateAcceptanceReceiptAgainstPolicy(base)).toEqual({ ok: true });
@@ -936,7 +993,7 @@ describe('issue #284 closed dependency authority', () => {
     }
     expect(validateAcceptanceReceiptAgainstPolicy({
       ...base,
-      goalContent: '# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nSomething else.\n',
+      admission: { ...base.admission, goal: { ...base.admission.goal, revision: engineerSha256('other goal') } },
     }).ok).toBe(false);
 
     const grant = waiverGrant(subject);
@@ -948,20 +1005,14 @@ describe('issue #284 closed dependency authority', () => {
       waiverGrant: waiverGrant(subject, { summary: 'owner waived wp-a again' }),
     }).ok).toBe(false);
     expect(validateAcceptanceReceiptAgainstPolicy({ ...base, receipt: waived, waiverGrant: null }).ok).toBe(false);
-    const sealedGrant = waiverGrant(subject, {
-      contract_file: CONTRACT_NO_WAIVER_REF,
-      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
-    });
-    expect(validateAcceptanceReceiptAgainstPolicy({
-      ...base,
-      expectedContractFile: CONTRACT_NO_WAIVER_REF,
-      contractContent: CONTRACT_NO_WAIVER_TEXT,
-      receipt: waivedReceipt(subject, sealedGrant, {
-        contract_file: CONTRACT_NO_WAIVER_REF,
-        contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
-      }),
-      waiverGrant: sealedGrant,
-    }).ok).toBe(false);
+    const { protocol: _protocol, kind: _kind, campaign_sha256: _campaign, admission_sha256: _admission, ...sealedInput } = approval(subject.root).admission;
+    const sealedAdmission = createReviewAdmission({ ...sealedInput, allowed_paths: [...sealedInput.allowed_paths],
+      verification_plan: JSON.parse(JSON.stringify(sealedInput.verification_plan)),
+      policy: { ...approval(subject.root).admission.policy, user_waiver: 'forbidden' } });
+    const sealedGrant = waiverGrant(subject, { admission_sha256: sealedAdmission.admission_sha256 });
+    expect(validateAcceptanceReceiptAgainstPolicy({ ...base, admission: sealedAdmission,
+      receipt: waivedReceipt(subject, sealedGrant, { admission_sha256: sealedAdmission.admission_sha256 }),
+      waiverGrant: sealedGrant }).ok).toBe(false);
   });
 
   test('publication_integrated needs the immutable observation, not a merged-looking Git state', () => {
@@ -1109,7 +1160,7 @@ describe('issue #284 closed dependency authority', () => {
     git(local.root, 'commit', '-m', 'local decoy');
     const localCommit = git(local.root, 'rev-parse', 'HEAD');
     recordAcceptanceObservation(local, acceptanceReceipt(local, {
-      contract_sha256: authorityFingerprint('# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nLocal decoy.\n'),
+      admission_sha256: engineerSha256('Local decoy'),
     }));
     recordAcceptanceObservation(remote);
 
@@ -1129,12 +1180,12 @@ describe('issue #284 closed dependency authority', () => {
       { repo: remoteRepo, commit: remote.commit, graph: remoteGraph },
     ];
     const crossInput: DependencyAuthorityInput = {
-      dependency: dependency('module_accepted', OTHER_REPO_ID),
+      dependency: { ...dependency('module_accepted', OTHER_REPO_ID), acceptance_authority: reference(remote.root) },
       target: remoteTarget,
       reads,
       registry,
       readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
-      readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => remote.root },
+      readers: admissionReaders(remote.root, remote.home),
     };
     const resolved = resolveDependencyAuthority(crossInput);
     expect(resolved.status).toBe('satisfied');
@@ -1144,7 +1195,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolved.evidence_refs.map((entry) => entry.ref))
       .toContain(`acceptance-observation:${(JSON.parse(remoteObservation) as AcceptanceVerificationObservationV1).observation_id}`);
     expect(remoteObservation).not.toEqual(readFileSync(observationPathFor(local, acceptanceReceipt(local, {
-      contract_sha256: authorityFingerprint('# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nLocal decoy.\n'),
+      admission_sha256: engineerSha256('Local decoy'),
     })), 'utf-8'));
 
     // Cross-repository replay: repo A's observation bytes copied verbatim into
@@ -1247,9 +1298,8 @@ describe('issue #284 closed dependency authority', () => {
     const base = {
       receipt: valid,
       repositoryRoot: subject.root,
-      expectedContractFile: CONTRACT_REF,
-      contractContent: CONTRACT_TEXT,
-      goalContent: GOAL_TEXT,
+      admission: approval(subject.root).admission,
+      grantSha256: approval(subject.root).grant,
       waiverGrant: null,
     };
     expect(validateAcceptanceReceiptAgainstPolicy(base)).toEqual({ ok: true });
@@ -1260,9 +1310,9 @@ describe('issue #284 closed dependency authority', () => {
       protocol: 1,
       kind: 'repo-harness-other-receipt',
       repository_root: join(subject.root, 'elsewhere'),
-      contract_file: 'tasks/contracts/other.contract.md',
-      contract_sha256: authorityFingerprint('# other\n'),
-      goal_file: '../escape.md',
+      campaign_sha256: engineerSha256('other campaign'),
+      admission_sha256: engineerSha256('other admission'),
+      grant_sha256: '../escape.md',
       goal_sha256: authorityFingerprint('# other goal\n'),
       verification_file: '/etc/passwd',
       verification_evidence_sha256: 'not-a-digest',
@@ -1340,7 +1390,7 @@ describe('issue #284 closed dependency authority', () => {
         repository_id: REPO_ID,
         work_package_id: 'wp-a',
         required_state: 'module_accepted',
-        acceptance_authority: moduleAuthority(),
+        acceptance_authority: reference(subject.root),
       },
       registry: { authorization_revision: 3, access_mode: 'read_write', registered: true },
       canonical_commit: subject.commit,

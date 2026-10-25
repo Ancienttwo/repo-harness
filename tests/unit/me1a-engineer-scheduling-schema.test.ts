@@ -5,6 +5,7 @@ import {
   projectWorkGraph,
   schedulingCarrierPath,
   validateWorkGraph,
+  validateModuleAcceptanceReference,
   validateWorkGraphTopology,
   type SchedulingCanonicalTask,
   type WorkGraphV1,
@@ -17,7 +18,7 @@ const DIGEST = `sha256:${'a'.repeat(64)}`;
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
 const MODULE_AUTHORITY = {
   authority_kind: 'module_acceptance',
-  subject_ref: 'tasks/contracts/wp-b.contract.md',
+  subject_ref: 'plans/review/wp-b.admission.json',
   subject_revision: DIGEST,
 } as const;
 const PRODUCT_AUTHORITY = {
@@ -153,4 +154,25 @@ describe('ME-1A closed scheduling schema', () => {
     validateWorkGraphTopology([projectWorkGraph(graph(definitions), tasks)]);
     expect(performance.now() - started).toBeLessThan(3_000);
   });
+});
+
+
+test('module acceptance selector is a closed typed locator with exact approved digests', () => {
+  const selector = { protocol: 1, provider_repository_id: 'R_provider', issue_id: 'I_goal', campaign_id: 'campaign',
+    admission_sha256: DIGEST, grant_sha256: DIGEST, policy_sha256: DIGEST, actor_id: 'U_owner' };
+  expect(validateModuleAcceptanceReference(selector)).toEqual(selector);
+  expect(Object.isFrozen(validateModuleAcceptanceReference(selector))).toBe(true);
+  for (const field of Object.keys(selector)) {
+    const missing = { ...selector } as Record<string, unknown>; delete missing[field];
+    expect(() => validateModuleAcceptanceReference(missing)).toThrow();
+  }
+  for (const field of ['admission_sha256', 'grant_sha256', 'policy_sha256']) {
+    expect(() => validateModuleAcceptanceReference({ ...selector, [field]: 'not-a-digest' })).toThrow();
+  }
+  for (const field of ['provider_repository_id', 'issue_id', 'campaign_id', 'actor_id']) {
+    expect(() => validateModuleAcceptanceReference({ ...selector, [field]: '' })).toThrow();
+  }
+  expect(() => validateModuleAcceptanceReference({ ...selector, repoRoot: '/candidate-selected' })).toThrow();
+  expect(() => validateModuleAcceptanceReference({ ...selector, issuePolicy: {} })).toThrow();
+  expect(() => validateModuleAcceptanceReference({ ...selector, protocol: 2 })).toThrow();
 });

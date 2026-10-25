@@ -31,11 +31,42 @@ export type WorkPackageDependencyAuthorityKind = 'module_acceptance' | 'product_
  * receipt subjects, so it cannot select one AcceptanceReceipt or one ME-4C
  * product projection. This closed reference is validated against the same
  * canonical commit as the target Work Graph before any authority is read.
+ * For module acceptance, subject_ref names a JSON ModuleAcceptanceReferenceV1
+ * locator. Its committed bytes select a protected grant; they do not grant it.
  */
 export interface WorkPackageDependencyAuthorityRefV1 {
   readonly authority_kind: WorkPackageDependencyAuthorityKind;
   readonly subject_ref: string;
   readonly subject_revision: string;
+}
+
+/** A committed locator, never an approval or acceptance verdict. Effects must
+ * observe its issue and authenticate its protected grant before using it. */
+export interface ModuleAcceptanceReferenceV1 {
+  readonly protocol: 1;
+  readonly provider_repository_id: string;
+  readonly issue_id: string;
+  readonly campaign_id: string;
+  readonly admission_sha256: string;
+  readonly grant_sha256: string;
+  readonly policy_sha256: string;
+  readonly actor_id: string;
+}
+
+export function validateModuleAcceptanceReference(value: unknown): ModuleAcceptanceReferenceV1 {
+  const label = 'module acceptance reference';
+  const input = record(value, label);
+  exact(input, ['protocol', 'provider_repository_id', 'issue_id', 'campaign_id', 'admission_sha256', 'grant_sha256', 'policy_sha256', 'actor_id'], label);
+  if (input.protocol !== 1) invalid(`${label}.protocol must be 1`);
+  return Object.freeze({ protocol: 1,
+    provider_repository_id: string(input.provider_repository_id, `${label}.provider_repository_id`, OPAQUE),
+    issue_id: string(input.issue_id, `${label}.issue_id`, OPAQUE),
+    campaign_id: string(input.campaign_id, `${label}.campaign_id`, OPAQUE),
+    admission_sha256: string(input.admission_sha256, `${label}.admission_sha256`, DIGEST),
+    grant_sha256: string(input.grant_sha256, `${label}.grant_sha256`, DIGEST),
+    policy_sha256: string(input.policy_sha256, `${label}.policy_sha256`, DIGEST),
+    actor_id: string(input.actor_id, `${label}.actor_id`, OPAQUE),
+  });
 }
 
 export interface WorkPackageDependencyV1 {
