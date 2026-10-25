@@ -35,7 +35,8 @@ if (site === 'mcp' || site === 'restart-mcp') {
   void runDevActivityProcess('git', ['status'], { cwd: dir, env: { ...process.env, PATH: dir + '/bin:' + process.env.PATH }, timeout_ms: 600000, signal });
 } else if (site === 'operator' || site === 'restart-operator') {
   const { startOperatorServer } = await import(SRC + '/effects/operator/server.ts');
-  const server = await startOperatorServer({ port: 0, env: process.env });
+  const env = site === 'operator' ? { ...process.env, REPO_HARNESS_GIT_BIN: dir + '/bin/operator-git' } : process.env;
+  const server = await startOperatorServer({ port: 0, env });
   if (site === 'operator') void fetch(server.url + '/api/v1/fleet/snapshot').catch(() => undefined);
 } else {
   throw new Error('unknown site ' + site);
@@ -105,13 +106,26 @@ function registerFixture(root: string, site: string): { home: string; writer: Ch
   writeFileSync(join(root, 'bin/git'), '#!/bin/sh\nexec sleep 303\n');
   chmodSync(join(root, 'bin/git'), 0o755);
   if (site !== 'operator') return { home, writer: null, opened: null };
-  // The Fleet collector blocks while it reads this FIFO; the writer's open
-  // returns only when the collector has opened it.
+  // The real collector resolves the Git common directory before reading provider
+  // observations. Block that command on a FIFO; the writer signals its actual open.
+  const gitPath = Bun.which('git');
+  if (!gitPath) throw new Error('Git is required for the process-group fixture');
+  const realGit = realpathSync(gitPath);
   const repo = join(root, 'repo');
-  expect(spawnSync('git', ['init', '-q', repo]).status).toBe(0);
-  const marker = join(repo, '.ai/harness/sprint/active-sprint');
-  mkdirSync(join(repo, '.ai/harness/sprint'), { recursive: true });
+  expect(spawnSync(realGit, ['init', '-q', repo]).status).toBe(0);
+  const marker = join(root, 'collector-git-read');
   expect(spawnSync('mkfifo', [marker]).status).toBe(0);
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const gitWrapper = join(root, 'bin/operator-git');
+  writeFileSync(gitWrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = rev-parse ] && [ "$2" = --git-common-dir ]; then',
+    `  cat ${quote(marker)} >/dev/null`,
+    'fi',
+    `exec ${quote(realGit)} "$@"`,
+    '',
+  ].join('\n'));
+  chmodSync(gitWrapper, 0o755);
   const now = '2026-10-25T00:00:00.000Z';
   const id = `repo_${createHash('sha256').update(repo).digest('hex').slice(0, 16)}`;
   writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
