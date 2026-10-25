@@ -10,6 +10,8 @@ import { spawn } from 'node:child_process';
 import { lstatSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, sep } from 'node:path';
 
+import { terminateProcessGroup } from '../process-group-termination';
+
 import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
@@ -32,6 +34,7 @@ export const DEV_ACTIVITY_INTERVAL_MS = 60_000;
 export const DEV_ACTIVITY_SUBPROCESS_TIMEOUT_MS = 15_000;
 export const DEV_ACTIVITY_REPOSITORY_CONCURRENCY = 4;
 const DEV_ACTIVITY_STDOUT_LIMIT = 8 * 1024 * 1024;
+const DEV_ACTIVITY_TERMINATION_GRACE_MS = 1000;
 
 export const DEV_ACTIVITY_GIT_WORKTREE_LIST_ARGV = Object.freeze(['--no-optional-locks', 'worktree', 'list', '--porcelain'] as const);
 export const DEV_ACTIVITY_GIT_STATUS_ARGV = Object.freeze(['--no-optional-locks', 'status', '--porcelain=v2', '--branch'] as const);
@@ -76,12 +79,18 @@ export type DevActivityProcessRunner = (
   options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal },
 ) => Promise<DevActivityProcessResult>;
 
-/** Spawn with no shell, no stdin and no stderr capture. The deadline sends SIGTERM to the direct child. */
+/**
+ * Spawn with no shell, no stdin and no stderr capture. On POSIX the child leads
+ * its own process group; a deadline, abort or oversized stdout terminates that
+ * group (Windows: the `taskkill /T` tree) before settling.
+ */
 export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(command, [...argv], { cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    child = spawn(command, [...argv], {
+      cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], detached: process.platform !== 'win32', windowsHide: true,
+    });
   } catch {
     settle({ ok: false, code: 'failed' });
     return;
@@ -90,13 +99,10 @@ export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, o
   let size = 0;
   let settled = false;
   let failure: DevActivityProcessResult | null = null;
-  let directExited = false;
-  let escalation: ReturnType<typeof setTimeout> | undefined;
   const finish = (result: DevActivityProcessResult) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
-    clearTimeout(escalation);
     options.signal.removeEventListener('abort', onAbort);
     if (!result.ok) child.stdout!.destroy();
     settle(result);
@@ -104,14 +110,14 @@ export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, o
   const terminate = (code: DevActivityProcessFailure) => {
     if (settled || failure !== null) return;
     failure = { ok: false, code };
+    const result = failure;
     clearTimeout(timer);
-    if (directExited) { finish(failure); return; }
-    try { child.kill('SIGTERM'); } catch { /* already exited */ }
-    // Reap the direct child before the next collection cycle. A grandchild
-    // must not hold its inherited stdout open after the direct child exits.
-    escalation = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch { /* already exited */ }
-    }, 1000);
+    if (child.pid === undefined) { finish(result); return; }
+    // Reap the whole group before the next collection cycle. A grandchild
+    // must not outlive the deadline or hold its inherited stdout open.
+    void terminateProcessGroup(child.pid, DEV_ACTIVITY_TERMINATION_GRACE_MS)
+      .catch(() => { /* already exited */ })
+      .then(() => finish(result));
   };
   const onAbort = () => terminate('aborted');
   const timer = setTimeout(() => terminate('timeout'), options.timeout_ms);
@@ -123,11 +129,10 @@ export const runDevActivityProcess: DevActivityProcessRunner = (command, argv, o
     chunks.push(chunk);
   });
   child.once('error', (error: NodeJS.ErrnoException) => finish(failure ?? { ok: false, code: error.code === 'ENOENT' ? 'not_found' : 'failed' }));
-  child.once('exit', () => {
-    directExited = true;
-    if (failure !== null) finish(failure);
+  child.once('close', (code) => {
+    if (failure !== null) return;
+    finish(code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' });
   });
-  child.once('close', (code) => finish(failure ?? (code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' })));
 });
 
 export interface DevActivityCollectorOptions {

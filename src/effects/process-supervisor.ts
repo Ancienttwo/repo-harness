@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-import { spawn, spawnSync, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Writable } from 'stream';
 import { acquireExpensiveRunLock, type ExpensiveRunLockHandle } from './expensive-run-lock';
 import { PROCESS_GROUP_LAUNCHER_FLAG } from './process-group-launcher';
+import { processGroupExists, terminateProcessGroup } from './process-group-termination';
 
 export const PROCESS_SUPERVISOR_TERMINATION_GRACE_MS = 500;
 export const PROCESS_SUPERVISOR_FLAG = '--process-supervisor';
@@ -150,24 +151,16 @@ function parentIsAlive(parentPid: number): boolean {
   }
 }
 
-function processGroupExists(child: ChildProcess): boolean {
+function childProcessGroupExists(child: ChildProcess): boolean {
   if (!child.pid || process.platform === 'win32') return false;
-  try {
-    process.kill(-child.pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    throw error;
-  }
+  return processGroupExists(child.pid);
 }
 
 async function waitForProcessGroupQuiescence(
   child: ChildProcess,
   cleanupComplete: () => boolean,
 ): Promise<void> {
-  while (!cleanupComplete() && processGroupExists(child)) await Bun.sleep(10);
+  while (!cleanupComplete() && childProcessGroupExists(child)) await Bun.sleep(10);
 }
 
 function signalExitCode(signal: NodeJS.Signals): number {
@@ -177,28 +170,6 @@ function signalExitCode(signal: NodeJS.Signals): number {
     case 'SIGTERM': return 143;
     default: return 1;
   }
-}
-
-export function taskkillAttemptSucceeded(result: { readonly status: number | null; readonly error?: Error }): boolean {
-  if (result.error) throw result.error;
-  return result.status === 0;
-}
-
-function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals, taskkillBin: string | null): boolean {
-  if (!child.pid) return true;
-  if (process.platform === 'win32') {
-    const result = spawnSync(taskkillBin ?? 'taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    return taskkillAttemptSucceeded(result);
-  }
-  try {
-    process.kill(-child.pid, signal);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
-  }
-  return true;
 }
 
 function collectBounded(
@@ -287,7 +258,10 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
   } catch (error) {
     startBarrier.destroy();
     if (expensiveLock !== null) preserveExpensiveRunLock = true;
-    try { signalProcessGroup(child, 'SIGKILL', options.taskkillBin); } catch { /* Unknown remains closed. */ }
+    await terminateProcessGroup(child.pid, PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, {
+      initialSignal: 'SIGKILL',
+      taskkillBin: options.taskkillBin ?? undefined,
+    }).catch(() => { /* Unknown remains closed. */ });
     throw error;
   }
   let cleanupComplete = false;
@@ -344,12 +318,10 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
       didTimeOut = outcome === 'timeout';
       didLoseParent = outcome === 'parent-lost';
       interruptedBy = outcome === 'timeout' || outcome === 'parent-lost' ? null : outcome;
-      const gracefulCleanupConfirmed = signalProcessGroup(child, 'SIGTERM', options.taskkillBin);
-      // Always wait the complete grace period and address the original group
-      // with SIGKILL. The leader may exit before a TERM-resistant descendant.
-      await Bun.sleep(PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
-      const forcedCleanupConfirmed = signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
-      if (process.platform === 'win32' && !gracefulCleanupConfirmed && !forcedCleanupConfirmed) {
+      const termination = await terminateProcessGroup(child.pid, PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, {
+        taskkillBin: options.taskkillBin ?? undefined,
+      });
+      if (process.platform === 'win32' && !termination.confirmed) {
         throw new Error(`taskkill could not confirm termination of process tree ${child.pid}`);
       }
       await waitForProcessGroupQuiescence(child, () => false);
@@ -365,34 +337,18 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
     // best-effort sweep; if absence still cannot be proven, the caller must
     // not release the expensive-run lock, or a live group could overlap a
     // new contender's work.
-    try {
-      signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
-    } catch {
-      // Best effort only; confirmation below decides the lock's fate.
-    }
-    // processGroupExists() hardcodes `false` on win32 (required so the
-    // *normal*, non-exceptional completion wait does not deadlock: Windows
-    // has no negative-PGID existence probe to poll instead). That `false` is
-    // an absence of evidence, not evidence of absence -- trusting it here
-    // would let this exact sweep "confirm" a group Windows was never able to
-    // observe in the first place. Once cleanup has already been interrupted
-    // by an exception, Windows can never prove the group is gone, so always
-    // preserve the lock on that platform instead of polling a check that is
-    // structurally unable to say anything but false.
     let confirmedAbsent = false;
-    if (process.platform !== 'win32') {
-      const sweepDeadlineMs = Date.now() + PROCESS_SUPERVISOR_TERMINATION_GRACE_MS;
-      try {
-        while (Date.now() < sweepDeadlineMs) {
-          if (!processGroupExists(child)) {
-            confirmedAbsent = true;
-            break;
-          }
-          await Bun.sleep(10);
-        }
-      } catch {
-        confirmedAbsent = false;
-      }
+    try {
+      const sweep = await terminateProcessGroup(child.pid, PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, {
+        initialSignal: 'SIGKILL',
+        taskkillBin: options.taskkillBin ?? undefined,
+      });
+      // Once cleanup has been interrupted by an exception, Windows can never
+      // prove the whole tree is gone: it has no process-group probe. Always
+      // preserve the lock on that platform.
+      confirmedAbsent = process.platform !== 'win32' && sweep.confirmed;
+    } catch {
+      confirmedAbsent = false;
     }
     if (!confirmedAbsent) preserveExpensiveRunLock = true;
     throw error;
