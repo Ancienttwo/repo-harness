@@ -59,9 +59,9 @@ import { lookupCanonicalTask, type CanonicalTask } from '../../core/state/coordi
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import {
   readCanonicalSprint,
-  resolveRepoIdentity,
   type CanonicalSprintSource,
 } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
 import { readClaimActorReceipt } from '../engineers/claim-actor-store';
 import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
 

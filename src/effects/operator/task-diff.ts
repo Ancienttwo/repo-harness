@@ -6,7 +6,8 @@ import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
+import { resolveRepoIdentity } from '../git/repository-identity';
+import { readCanonicalSprint } from '../state/coordination-canonical-source';
 import { readLease } from '../state/coordination-lease-store';
 
 export class OperatorTaskDiffError extends Error {
