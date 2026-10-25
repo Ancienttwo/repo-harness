@@ -56,7 +56,7 @@ test('task admission binds upstream claim and actual linked runtime identity whi
     const first = observeTaskSessionAdmission(f.execution, spec, 'herdr', f.authority);
     expect(first.identity).toMatchObject({ repository_id: f.approved.admission.repository_id,
       issue_id: f.approved.admission.issue_id, campaign_id: f.approved.admission.campaign_id,
-      execution_actor: f.approved.admission.actor_id, claim, execution_root: f.execution,
+      execution_actor: f.approved.admission.actor_id, claim, source_root: f.root, execution_root: f.execution,
       branch: 'refs/heads/reviewer', runtime: 'herdr', role: spec.role });
     expect(run('git', ['commit', '--allow-empty', '-m', 'provenance only'], f.execution).status).toBe(0);
     const moved = observeTaskSessionAdmission(f.execution, spec, 'herdr', f.authority);
