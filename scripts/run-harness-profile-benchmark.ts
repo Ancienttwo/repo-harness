@@ -336,7 +336,10 @@ export async function runBoundedProviderProcess(
     const timedOut = outcome === 'timed-out';
     if (timedOut) {
       const termination = await terminateProcessGroup(processHandle.pid, BENCHMARK_TERMINATION_GRACE_MS);
-      groupDrained = termination.confirmed;
+      // Windows has no group probe. A provider root that exits as the timeout
+      // fires leaves taskkill nothing to confirm, so root absence is the drain.
+      groupDrained = termination.confirmed
+        || (process.platform === 'win32' && !processGroupExists(processHandle.pid));
       if (!groupDrained) {
         PRESERVE_EXPENSIVE_RUN_LOCK = true;
         throw new Error(`benchmark provider process group ${processHandle.pid} did not terminate`);

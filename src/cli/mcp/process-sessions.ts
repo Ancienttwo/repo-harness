@@ -143,7 +143,7 @@ interface ManagedProcess {
   readonly pid?: number;
   write(data: string): void;
   signal(signal: NodeJS.Signals): void;
-  terminate(signal: NodeJS.Signals, graceMs: number): void;
+  terminate(signal: NodeJS.Signals, graceMs: number): Promise<void>;
 }
 
 interface ProcessSession {
@@ -613,7 +613,10 @@ export class McpProcessSessionManager {
     // A termination in flight already escalates to SIGKILL; only SIGKILL overtakes it.
     if (session.terminationRequested && signal !== 'SIGKILL') return;
     session.terminationRequested = true;
-    session.process?.terminate(signal, this.terminationGraceMs);
+    void session.process?.terminate(signal, this.terminationGraceMs).catch(() => {
+      // A failed signal (for example EPERM) did not escalate; let the next request retry.
+      session.terminationRequested = false;
+    });
   }
 
   private terminateMatching(predicate: (session: ProcessSession) => boolean, reason: ProcessCompletionReason): number {
@@ -734,12 +737,10 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
   }
 }
 
-function terminateProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals, graceMs: number): void {
+async function terminateProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals, graceMs: number): Promise<void> {
   if (!child.pid) {
     signalProcessTree(child, signal);
     return;
   }
-  void terminateProcessGroup(child.pid, graceMs, { initialSignal: signal }).catch(() => {
-    // The process may have exited between the ownership check and signal delivery.
-  });
+  await terminateProcessGroup(child.pid, graceMs, { initialSignal: signal });
 }

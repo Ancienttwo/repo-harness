@@ -154,6 +154,26 @@ describe.skipIf(process.platform === "win32")("process group termination", () =>
     }
   }, 20_000);
 
+  test("does not send SIGKILL when the group exits during the beforeForce hook", async () => {
+    const { pgid } = await startOrphanedGroup(TERM_RESISTANT_GRANDCHILD);
+    try {
+      const termination = await terminateProcessGroup(pgid, 100, {
+        // A blocking identity check can outlast the group; it exits here before the hook returns.
+        beforeForce: () => {
+          process.kill(-pgid, "SIGKILL");
+          const deadline = Date.now() + 5_000;
+          while (processGroupExists(pgid) && Date.now() < deadline) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+          }
+        },
+      });
+
+      expect(termination).toEqual({ confirmed: true, forced: false });
+    } finally {
+      killGroup(pgid);
+    }
+  }, 20_000);
+
   test("does not signal a group that already exited", async () => {
     const child = spawn("true", [], { detached: true, stdio: "ignore" });
     await new Promise((resolve) => child.once("exit", resolve));

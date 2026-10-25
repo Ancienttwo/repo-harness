@@ -93,8 +93,11 @@ function* terminationSequence(
     while (present() && Date.now() < graceDeadline) yield Math.min(PROCESS_GROUP_POLL_MS, graceDeadline - Date.now());
     if (present()) {
       options.beforeForce?.();
-      forced = true;
-      delivered = signalProcessGroup(pgid, 'SIGKILL', options.taskkillBin) || delivered;
+      // The hook can block; probe again so a vanished group is not signalled.
+      if (present()) {
+        forced = true;
+        delivered = signalProcessGroup(pgid, 'SIGKILL', options.taskkillBin) || delivered;
+      }
     }
   }
   const confirmDeadline = Date.now() + (options.confirmMs ?? graceMs);
