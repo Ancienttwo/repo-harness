@@ -1,15 +1,9 @@
-import { readFileSync } from "fs";
-import { join } from "path";
+import workflowContractAsset from "../../../assets/workflow-contract.v1.json";
 import { MINIMUM_HARNESS_VERSION_FIELD } from "./minimum-harness-version";
 
-export const WORKFLOW_CONTRACT_ASSET_PATH = join(import.meta.dir, "..", "..", "..", "assets", "workflow-contract.v1.json");
-
-export function readWorkflowContractAsset(): string {
-  return readFileSync(WORKFLOW_CONTRACT_ASSET_PATH, "utf-8");
-}
-
+/** Each caller gets its own copy, so a caller's edit cannot reach another. */
 export function loadWorkflowContractAsset<T>(): T {
-  return JSON.parse(readWorkflowContractAsset()) as T;
+  return structuredClone(workflowContractAsset) as T;
 }
 
 /** A declared minimum harness version is repository data; adoption keeps it. */

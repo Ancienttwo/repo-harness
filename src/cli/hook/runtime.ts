@@ -17,11 +17,8 @@ import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
 import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
-import {
-  inspectWorkflowMarker,
-  WORKFLOW_CONTRACT_MARKER_PATH,
-  WORKFLOW_MARKER_GATE_EVENTS,
-} from '../../core/adoption/minimum-harness-version';
+import { WORKFLOW_CONTRACT_MARKER_PATH, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
+import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';

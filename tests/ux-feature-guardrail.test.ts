@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { planAdoption } from "../src/core/adoption/plan";
+import { planAdoption } from "../src/effects/adoption/plan";
 
 const ROOT = join(import.meta.dir, "..");
 

@@ -229,7 +229,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 按“先垮”排序：
 
 1. **helper 数量增长（当前 53）。** 每加一个 helper 要改 3 处：`helpers.scripts`、`helpers.descriptions`、`scripts/<name>`。包只投影 `capability-resolver.ts`，其他 helper 从包内 `scripts/` 运行。
-2. **policy 顶层域数量（当前 32）。** `deepMergeDefaults`（`src/core/adoption/standard-plan.ts:236`）是无 schema 的结构合并。域数继续涨时，“默认值改了但已装仓库拿不到”这类偏差更难发现。
+2. **policy 顶层域数量（当前 32）。** `deepMergeDefaults`（`src/effects/adoption/standard-plan.ts:236`）是无 schema 的结构合并。域数继续涨时，“默认值改了但已装仓库拿不到”这类偏差更难发现。
 3. **capability 数量（当前 29 个节点）与最长前缀匹配。** 注册表不支持 exclude，`scripts/` 这类共享目录只能逐个列文件。新脚本默认没有 owner。
 4. **`assets/templates/` 21,876 行。** 它是投影，正确性由 `--check` 保证。但每次 helper 改动都在 diff 里出现两次，review 信噪比下降。
 

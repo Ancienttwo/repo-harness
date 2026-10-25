@@ -6,7 +6,7 @@ import { join } from 'path';
 import { runHook } from '../../src/cli/hook/runtime';
 import { getRoute } from '../../src/cli/hook/route-registry';
 import { buildHookCommand } from '../../src/cli/installer/managed-entries';
-import { inspectWorkflowMarker } from '../../src/core/adoption/minimum-harness-version';
+import { inspectWorkflowMarker } from '../../src/effects/adoption/workflow-marker';
 import { HOST_RENDERERS, type HookOutcome } from '../../src/cli/hook/hook-protocol';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');

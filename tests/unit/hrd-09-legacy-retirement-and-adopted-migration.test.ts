@@ -12,7 +12,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { delimiter, join } from 'path';
-import { planAdoption } from '../../src/core/adoption/plan';
+import { planAdoption } from '../../src/effects/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../../src/cli/hook/event-telemetry';
 import { ROUTES, type HookEvent, type RouteId } from '../../src/cli/hook/route-registry';

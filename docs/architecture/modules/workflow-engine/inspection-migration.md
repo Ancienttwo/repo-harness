@@ -163,7 +163,7 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 ### 2026-07-11 Helper Authority Closeout
 
-- `src/core/source-projection.ts` is the shared filesystem projection primitive
+- `src/effects/source-projection.ts` is the shared filesystem projection primitive
   used by hook and helper projections; it preserves bytes and executable mode,
   rejects symlinks, and writes atomically.
 - `scripts/sync-helper-sources.ts` reads the helper inventory only from the

@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import type { AdoptionMode } from "../../core/adoption/modes";
-import { planAdoption } from "../../core/adoption/plan";
+import { planAdoption } from "../../effects/adoption/plan";
 import { renderAdoptionPlanJson, renderAdoptionPlanObject, renderAdoptionPlanText } from "../../core/adoption/render";
 import { applyAdoptionPlan, type ApplyAdoptionPlanResult } from "../../effects/fs-transaction";
 import { registerRepoHarnessRepo, type RepoHarnessRegisterResult } from "../../effects/repo-registry";

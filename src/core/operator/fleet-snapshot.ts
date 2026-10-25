@@ -1,5 +1,4 @@
 import { isOperatorServiceEpoch } from './observation-identity';
-import { basename } from 'path';
 import {
   FLEET_BOARD_PROTOCOL,
   fleetBoardErrorMessage,
@@ -125,11 +124,11 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
   });
 }
 
-function projectRepository(repository: FleetRepositoryBoardV1): OperatorFleetRepositoryV1 {
+function projectRepository(repository: FleetRepositoryBoardV1, displayName: (repoRoot: string) => string): OperatorFleetRepositoryV1 {
   const error = repository.error;
   return Object.freeze({
     repository_id: repository.repository_id,
-    display_name: basename(repository.repo_root),
+    display_name: displayName(repository.repo_root),
     access_mode: repository.access_mode,
     status: repository.status,
     snapshot_consistency: repository.snapshot_consistency,
@@ -152,14 +151,14 @@ function projectRepository(repository: FleetRepositoryBoardV1): OperatorFleetRep
  * model while absolute paths and diagnostic causes stay server-side.
  */
 export function projectOperatorFleetSnapshot(
-  snapshot: FleetBoardSnapshotV1, serviceEpoch: string,
+  snapshot: FleetBoardSnapshotV1, serviceEpoch: string, displayName: (repoRoot: string) => string,
 ): OperatorFleetSnapshotV1 {
   if (!isOperatorServiceEpoch(serviceEpoch)) throw new Error('invalid operator service epoch');
   if (snapshot.protocol !== FLEET_BOARD_PROTOCOL) {
     throw new Error(`unsupported Fleet snapshot protocol: ${String(snapshot.protocol)}`);
   }
 
-  const repositories = Object.freeze(snapshot.repositories.map(projectRepository));
+  const repositories = Object.freeze(snapshot.repositories.map((repository) => projectRepository(repository, displayName)));
   const sourceSnapshotSha256 = snapshot.snapshot_sha256;
   return Object.freeze({
     protocol: 7,

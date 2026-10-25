@@ -2,7 +2,7 @@
 
 > **Status**: Canonical apply authority
 > **CLI**: `repo-harness init [--dry-run] [--mode minimal|standard|self-host]`
-> **Planner**: `src/core/adoption/standard-plan.ts`
+> **Planner**: `src/effects/adoption/standard-plan.ts`
 > **Executor**: `src/effects/fs-transaction.ts`
 
 ## P1 — Boundary and authority

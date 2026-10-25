@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { planAdoption } from "../src/core/adoption/plan";
+import { planAdoption } from "../src/effects/adoption/plan";
 import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 
 describe("adoption migration cutover", () => {

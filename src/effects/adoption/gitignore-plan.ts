@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import type { AppendManagedBlockOperation, ManagedBlockMarker } from "./operations";
-import { makeOperationId } from "./operations";
+import type { AppendManagedBlockOperation, ManagedBlockMarker } from "../../core/adoption/operations";
+import { makeOperationId } from "../../core/adoption/operations";
 
 export const GITIGNORE_MANAGED_BLOCK_MARKER = "repo-harness generated-runtime";
 

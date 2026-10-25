@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { listHelperFiles, resolveHelper } from '../../src/effects/runtime/helper-runner';
 import { renderWorkflowContractMarker } from '../../src/core/adoption/workflow-contract-asset';
-import { collectProjectionFiles, readProjectionFile, writeProjectionFileAtomic } from '../../src/core/source-projection';
+import { collectProjectionFiles, readProjectionFile, writeProjectionFileAtomic } from '../../src/effects/source-projection';
 const ROOT = join(import.meta.dir, '..', '..');
 describe('single executable helper authority', () => {
   test('every packaged helper resolves the exact canonical script, including protected helpers', () => {
@@ -29,7 +29,7 @@ describe('single executable helper authority', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
       for (const dir of ['scripts', 'src/core/capabilities', 'src/core/decision', 'src/effects/capabilities', 'src/effects/git', 'src/effects/state', 'assets/templates/helpers', 'assets/herdr/webhook-notify']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/core/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/decision/pane-status.mjs', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/effects/capabilities/capability-resolver.ts', 'src/effects/git/runner.ts', 'src/effects/state/readonly-observation.ts']) {
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/effects/source-projection.ts', 'src/core/worktree-location.mjs', 'src/core/decision/pane-status.mjs', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/effects/capabilities/capability-resolver.ts', 'src/effects/git/runner.ts', 'src/effects/state/readonly-observation.ts']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
       copyFileSync(join(ROOT, 'src/core/worktree-location.mjs'), join(root, 'assets/herdr/webhook-notify/worktree-location.mjs'));
