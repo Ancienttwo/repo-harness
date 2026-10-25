@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { JsonValue } from '../evidence/types';
 import { canonicalize } from '../evidence/canonical-json';
 import type { DocsAnchorsReportV1 } from 'archctx-contracts';
-import type { ModuleDetailV1 } from '../architecture/module-view';
+import { ModuleReadError, type ModuleDetailV1 } from '../architecture/module-view';
 import { REVIEW_FINDING_RULES } from './generic-review';
 import { containsSecret } from '../security/secret-patterns';
 
@@ -20,9 +20,6 @@ export interface ModuleReviewPromptV1 {
   budget: { input_cap_bytes: number; used_bytes: number; incomplete: boolean; omitted_sections: string[] };
   shard: { index: number; count: number; bytes: number };
   full_prompt_sha256: string; prompt: string; digest: string;
-}
-export class ModuleReadError extends Error {
-  constructor(public readonly code: string, public readonly path?: string) { super(path ? `${code}: ${path}` : code); }
 }
 export interface ModulePromptInput {
   detail: ModuleDetailV1; package_version: string; repository_id: string; input_cap_bytes: number;
