@@ -5,13 +5,16 @@
 // probes with spawnSync, so it would block the server event loop for its whole
 // run (about 20 s). The collector therefore runs it in one child `bun`
 // process. The argv is a code constant (the child entry file); cwd and env are
-// the server's own. The child is the leader of a new process group, so the
-// 90 s deadline and server shutdown kill the child and every probe it spawned.
+// the server's own. On POSIX the child is the leader of a new process group, so
+// the 90 s deadline and server shutdown terminate the child and every probe it
+// spawned.
 // stderr is discarded and stdout must decode as a public setup snapshot, so no
 // raw builder text reaches the cache.
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+import { terminateProcessGroup } from '../process-group-termination';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupReason, SetupSnapshotV1 } from '../../core/setup/types';
@@ -19,6 +22,7 @@ import type { SetupReason, SetupSnapshotV1 } from '../../core/setup/types';
 export const SETUP_INTERVAL_MS = 10 * 60_000;
 export const SETUP_TIMEOUT_MS = 90_000;
 const SETUP_STDOUT_LIMIT = 4 * 1024 * 1024;
+const SETUP_TERMINATION_GRACE_MS = 500;
 
 export const SETUP_CHILD_ARGV = Object.freeze([fileURLToPath(new URL('../../cli/commands/setup-check-child.ts', import.meta.url))] as const);
 
@@ -31,7 +35,8 @@ export type SetupProcessRunner = (
 
 /**
  * Spawn `bun <argv>` with no shell, no stdin and no stderr capture. On POSIX the
- * child leads its own process group and a deadline or abort kills the group.
+ * child leads its own process group; a deadline, abort or oversized stdout
+ * terminates that group (Windows: the `taskkill /T` tree) before settling.
  */
 export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
@@ -48,12 +53,7 @@ export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promis
   const chunks: Buffer[] = [];
   let size = 0;
   let settled = false;
-  const kill = () => {
-    try {
-      if (group && child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
-      else child.kill('SIGKILL');
-    } catch { /* already exited */ }
-  };
+  let failure: SetupProcessResult | null = null;
   const finish = (result: SetupProcessResult) => {
     if (settled) return;
     settled = true;
@@ -61,16 +61,31 @@ export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promis
     options.signal.removeEventListener('abort', onAbort);
     settle(result);
   };
-  const onAbort = () => { kill(); finish({ ok: false, code: 'aborted' }); };
-  const timer = setTimeout(() => { kill(); finish({ ok: false, code: 'timeout' }); }, options.timeout_ms);
+  const terminate = (code: SetupProcessFailure) => {
+    if (settled || failure !== null) return;
+    failure = { ok: false, code };
+    const result = failure;
+    clearTimeout(timer);
+    child.stdout!.destroy();
+    if (child.pid === undefined) { finish(result); return; }
+    void terminateProcessGroup(child.pid, SETUP_TERMINATION_GRACE_MS)
+      .catch(() => { /* already exited */ })
+      .then(() => finish(result));
+  };
+  const onAbort = () => terminate('aborted');
+  const timer = setTimeout(() => terminate('timeout'), options.timeout_ms);
   options.signal.addEventListener('abort', onAbort, { once: true });
   child.stdout!.on('data', (chunk: Buffer) => {
+    if (failure !== null) return;
     size += chunk.length;
-    if (size > SETUP_STDOUT_LIMIT) { kill(); finish({ ok: false, code: 'failed' }); return; }
+    if (size > SETUP_STDOUT_LIMIT) { terminate('failed'); return; }
     chunks.push(chunk);
   });
-  child.once('error', () => finish({ ok: false, code: 'failed' }));
-  child.once('close', (code) => finish(code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' }));
+  child.once('error', () => finish(failure ?? { ok: false, code: 'failed' }));
+  child.once('close', (code) => {
+    if (failure !== null) return;
+    finish(code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' });
+  });
 });
 
 export interface SetupCollectorOptions {

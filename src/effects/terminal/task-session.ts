@@ -6,6 +6,7 @@ import { configuredGitBinary } from '../git/common-directory';
 import { taskRepository, type TaskRepository } from './task-worktree';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
+import { terminateProcessGroup } from '../process-group-termination';
 import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
@@ -144,19 +145,19 @@ export function processProofAlive(proof: ProcessProof): boolean {
   }
   return true;
 }
-export function signalCreatedProcess(process: OwnedProcess, signal: NodeJS.Signals, group = false): void {
+/** False when the created process exited; a live process must still lead its own group. */
+function createdProcessGroupAlive(process: OwnedProcess): boolean {
   assertCreated(process.ownership);
-  if (!processProofAlive(process)) return;
+  if (!processProofAlive(process)) return false;
   try {
-    if (group) {
-      const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
-      if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
-    }
-    globalThis.process.kill(group ? -process.pid : process.pid, signal);
+    const groupId = Number(execFileSync('ps', ['-p', String(process.pid), '-o', 'pgid='], { encoding: 'utf8' }).trim());
+    if (groupId !== process.pid) throw new Error('task_agent_unowned_process_group');
+    return true;
   } catch (error) {
     // The process can exit after the liveness proof above. Only a confirmed
     // exit of the same process is success; a live or reused PID still refuses.
     if (processProofAlive(process)) throw error;
+    return false;
   }
 }
 export async function waitSessionArtifact(path: string, deadline: number, check: () => void): Promise<void> {
@@ -414,7 +415,7 @@ function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBind
   const leader = processInfo?.foreground_process_group_id;
   // Herdr lists the whole foreground process group, so provider children can
   // appear beside the provider. The provider leads that group and is never the
-  // pane shell; signalCreatedProcess relies on the same leader rule. Anything
+  // pane shell; createdProcessGroupAlive relies on the same leader rule. Anything
   // else is refused, not guessed by name or list position.
   if (!Array.isArray(foreground) || !Number.isSafeInteger(leader) || leader < 1 || !Number.isSafeInteger(processInfo.shell_pid)
     || leader === processInfo.shell_pid || foreground.filter(item => item?.pid === leader).length !== 1) throw new Error('task_agent_provider_identity_unknown');
@@ -715,17 +716,16 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
 }
 async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promise<boolean> {
   assertCreated(proof.ownership);
-  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-    if (!processProofAlive(proof)) return true;
-    // Re-prove pane/process identity immediately before escalation. The guard
-    // must allow a provider exit after the check above; signalCreatedProcess
-    // makes the single alive decision before any signal.
-    guard();
-    signalCreatedProcess(proof, signal, true);
-    const deadline = Date.now() + 5000;
-    while (processProofAlive(proof) && Date.now() < deadline) await Bun.sleep(50);
-  }
-  return !processProofAlive(proof);
+  if (!processProofAlive(proof)) return true;
+  // Re-prove pane/process identity before each signal. The guard must allow a
+  // provider exit after the check above; createdProcessGroupAlive makes the
+  // single alive decision before the first signal.
+  guard();
+  if (!createdProcessGroupAlive(proof)) return true;
+  // The provider leads the group, so its children exit with it even when the
+  // provider exits on SIGTERM first.
+  const termination = await terminateProcessGroup(proof.pid, 5000, { confirmMs: 5000, beforeForce: guard });
+  return termination.confirmed && !processProofAlive(proof);
 }
 /** All task-agent cleanup paths must wait for the OAR owner's disposal. */
 async function disposeCodingApplication(dir: string, binding: TaskPaneBinding): Promise<boolean> {
@@ -788,7 +788,7 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
     const stopped = await stopCreatedProcess(proof.provider, () => {
       if (startPanePresent(intent.spec.endpoint, pane)) assertTaskBinding(proof, true);
       // Reparenting doesn't change birth/executable identity. A reused PID still
-      // throws; a confirmed exit is left to signalCreatedProcess.
+      // throws; a confirmed exit is left to createdProcessGroupAlive.
       else processProofAlive(proof.provider);
     });
     if (!stopped) return { status: 'cleanup_pending', pids: [proof.provider.pid] };

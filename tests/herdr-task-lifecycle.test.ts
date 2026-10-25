@@ -555,7 +555,7 @@ exec ${quote(real)} "$@"
     // `agent get` follows the guard's liveness read: assertTaskBinding must
     // confirm the same process exited and move to the exited checks.
     await exitAt('exit-in-live-check', 'herdr', () => '*" agent get "*', herdr);
-    // signalCreatedProcess alone reads the process group, after its liveness
+    // createdProcessGroupAlive alone reads the process group, after its liveness
     // read: the failed group read must end as a confirmed exit.
     await exitAt('exit-in-signal', 'ps', pid => `"-p ${pid} -o pgid="`, '/bin/ps');
 

@@ -5,6 +5,7 @@ import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, r
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { BrowserConsultInput, BrowserImportedArtifact, PromptBundle } from './types';
+import { terminateProcessGroup } from '../../effects/process-group-termination';
 
 export interface OracleProviderResult extends OracleSessionEvidence {
   status: 'completed' | 'recoverable' | 'failed';
@@ -426,14 +427,15 @@ function oracleProcessTreeSupportError(): { code: 'ORACLE_PROCESS_TREE_UNSUPPORT
   };
 }
 
-function signalOracleProcessGroup(pid: number | undefined, signal: NodeJS.Signals): Error | undefined {
+async function terminateOracleProcessGroup(pid: number | undefined): Promise<Error | undefined> {
   if (!pid) return new Error('oracle process did not report a PID for process-group supervision');
   try {
-    process.kill(-pid, signal);
-    return undefined;
+    const termination = await terminateProcessGroup(pid, ORACLE_TERM_GRACE_MS);
+    return termination.confirmed
+      ? undefined
+      : new Error(`oracle process-group forced termination could not confirm that group ${pid} exited`);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return undefined;
-    return error instanceof Error ? error : new Error(String(error));
+    return new Error(`oracle process-group termination failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -447,7 +449,6 @@ function runOracleProcess(
     let stderr = '';
     let spawnError: Error | undefined;
     let timedOut = false;
-    let killTimer: NodeJS.Timeout | undefined;
     let settled = false;
     const child = spawn(binary, args, {
       cwd: opts.cwd,
@@ -473,7 +474,6 @@ function runOracleProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
       child.removeListener('error', onError);
       child.removeListener('close', onClose);
       if (destroyPipes) stopCollecting();
@@ -487,7 +487,7 @@ function runOracleProcess(
     };
     const onClose = (status: number | null, signal: NodeJS.Signals | null) => {
       // A wrapper can exit from TERM before a SIGTERM-resistant descendant. Keep
-      // the group watchdog alive until the bounded SIGKILL pass has completed.
+      // the group watchdog alive until the bounded group termination has completed.
       if (timedOut) return;
       settle({
         stdout,
@@ -500,22 +500,15 @@ function runOracleProcess(
     const timeout = setTimeout(() => {
       if (settled) return;
       timedOut = true;
-      const termError = signalOracleProcessGroup(child.pid, 'SIGTERM');
-      killTimer = setTimeout(() => {
-        if (settled) return;
-        const killError = signalOracleProcessGroup(child.pid, 'SIGKILL');
+      void terminateOracleProcessGroup(child.pid).then((terminationError) => {
         settle({
           stdout,
           stderr,
           status: null,
           signal: 'SIGKILL',
-          error: killError
-            ? new Error(`oracle process-group forced termination failed: ${killError.message}`)
-            : termError
-              ? new Error(`oracle process-group termination failed: ${termError.message}`)
-              : new Error(`oracle timed out after ${opts.timeoutMs}ms`),
+          error: terminationError ?? new Error(`oracle timed out after ${opts.timeoutMs}ms`),
         }, true);
-      }, ORACLE_TERM_GRACE_MS);
+      });
     }, opts.timeoutMs);
     child.stdout?.setEncoding('utf-8');
     child.stderr?.setEncoding('utf-8');

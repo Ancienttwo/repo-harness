@@ -2,6 +2,7 @@
 import { constants, closeSync, fstatSync, ftruncateSync, openSync, writeFileSync, writeSync } from 'fs';
 import { createHash } from 'crypto';
 import { spawn } from 'child_process';
+import { processGroupExists, terminateProcessGroup } from '../src/effects/process-group-termination';
 
 type Result = {
   started: boolean;
@@ -40,6 +41,7 @@ const command = argv[separator + 1];
 const args = argv.slice(separator + 2);
 if (!Number.isFinite(deadlineMs)) usage();
 
+const TERMINATION_GRACE_MS = 500;
 // How long to keep re-polling process-group absence after a forced (deadline
 // or signal) SIGKILL before giving up. SIGKILL delivery is not synchronous:
 // the OS needs a moment to actually reap the group, so treating the instant
@@ -69,9 +71,8 @@ const startedAt = Date.now();
 let timedOut = false;
 let cancellationSignal: NodeJS.Signals | null = null;
 let terminating = false;
-let forcedTerminationSent = false;
-let forcedTerminationConfirmDeadlineMs = 0;
-let forceTermination: Promise<void> | undefined;
+let terminationSettled = false;
+let termination: Promise<void> | undefined;
 function openLog(path: string): number {
   // Nonblocking open prevents a FIFO from trapping the supervisor before its timers exist.
   const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
@@ -105,37 +106,17 @@ if (Date.now() >= deadlineMs) {
   writeFileSync(resultPath, `${JSON.stringify(result)}\n`, { flag: 'wx', mode: 0o600 });
   process.exit(124);
 }
-function terminate(signal: NodeJS.Signals): void {
-  if (!child.pid) return;
-  try {
-    if (process.platform === 'win32') child.kill(signal);
-    else process.kill(-child.pid, signal);
-  } catch {
-    // The whole group already exited.
-  }
-}
-
-function processGroupExists(): boolean {
+function groupActive(): boolean {
   if (!child.pid || process.platform === 'win32') return false;
-  try {
-    process.kill(-child.pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    throw error;
-  }
+  return processGroupExists(child.pid);
 }
 
 async function waitForProcessGroupQuiescence(): Promise<void> {
-  while (processGroupExists()) {
-    // A forced SIGKILL was already sent; give the OS a bounded confirmation
-    // window to actually reap the group instead of trusting
-    // forcedTerminationSent alone (that flag flips the instant the signal is
-    // *sent*, not once the group is actually gone). Only give up -- and
-    // proceed as though quiescent -- once that window has elapsed too.
-    if (forcedTerminationSent && Date.now() >= forcedTerminationConfirmDeadlineMs) return;
+  while (groupActive()) {
+    // A forced SIGKILL is not proof that the group is gone: the OS needs a
+    // moment to reap it. Give up -- and proceed as though quiescent -- only
+    // once termination has spent its bounded confirmation window too.
+    if (terminationSettled) return;
     await Bun.sleep(10);
   }
 }
@@ -147,19 +128,15 @@ const terminationStarted = new Promise<void>(resolve => { notifyTermination = re
 function beginTermination(): void {
   if (terminating) return;
   terminating = true;
-  cleanupDeadlineMs = Date.now() + 500 + FORCED_TERMINATION_CONFIRM_MS;
+  cleanupDeadlineMs = Date.now() + TERMINATION_GRACE_MS + FORCED_TERMINATION_CONFIRM_MS;
   notifyTermination?.();
-  terminate('SIGTERM');
-  forceTermination = new Promise((resolve) => {
-    setTimeout(() => {
-      // Address the original process group even when its leader already
-      // exited; a TERM-resistant descendant may still own the group.
-      terminate('SIGKILL');
-      forcedTerminationSent = true;
-      forcedTerminationConfirmDeadlineMs = Date.now() + FORCED_TERMINATION_CONFIRM_MS;
-      resolve();
-    }, 500);
-  });
+  const pid = child.pid;
+  termination = (pid === undefined
+    ? Promise.resolve()
+    : terminateProcessGroup(pid, TERMINATION_GRACE_MS, { confirmMs: FORCED_TERMINATION_CONFIRM_MS }).then(() => undefined, () => {
+      // The result's process_group_quiescence probe reports a group that survived.
+    }))
+    .finally(() => { terminationSettled = true; });
 }
 
 // Install cancellation handlers before the command can report readiness.
@@ -226,7 +203,7 @@ if (stderrPath !== null && !outputClosed) {
   }
 }
 clearTimeout(deadlineTimer);
-if (forceTermination) await forceTermination;
+if (termination) await termination;
 closeSync(logFd);
 if (stderrFd !== logFd) closeSync(stderrFd);
 const result: Result = {
@@ -239,7 +216,7 @@ const result: Result = {
   signal: cancellationSignal ?? completion.signal,
   process_group_quiescence: process.platform === 'win32' || !child.pid
     ? { scope: 'unsupported', state: 'unknown' }
-    : { scope: 'posix_process_group', state: processGroupExists() ? 'active' : 'quiescent' },
+    : { scope: 'posix_process_group', state: groupActive() ? 'active' : 'quiescent' },
 };
 writeFileSync(resultPath, `${JSON.stringify(result)}\n`, { flag: 'wx', mode: 0o600 });
 process.exit(result.exit_code);

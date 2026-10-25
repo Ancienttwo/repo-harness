@@ -2,10 +2,10 @@ import { spawnSync } from "child_process";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { terminateProcessGroupSync } from "./process-group-termination";
 import {
   PROCESS_SUPERVISOR_FLAG,
   PROCESS_SUPERVISOR_TERMINATION_GRACE_MS,
-  taskkillAttemptSucceeded,
 } from "./process-supervisor";
 
 export interface ProcessOutputRedaction {
@@ -85,48 +85,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? "");
 }
 
-function processGroupExists(pid: number): boolean {
-  try {
-    process.kill(process.platform === "win32" ? pid : -pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ESRCH";
-  }
-}
-
-function signalProcessGroup(pid: number, signal: NodeJS.Signals, taskkillBin?: string): boolean {
-  try {
-    if (process.platform === "win32") {
-      return taskkillAttemptSucceeded(spawnSync(taskkillBin ?? "taskkill", ["/pid", String(pid), "/T", ...(signal === "SIGKILL" ? ["/F"] : [])], {
-        stdio: "ignore",
-        windowsHide: true,
-      }));
-    } else {
-      process.kill(-pid, signal);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
-  return true;
-}
-
-function waitSynchronously(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 function terminateAbandonedProcessGroup(pid: number, taskkillBin?: string): string {
   try {
-    const gracefulCleanupConfirmed = signalProcessGroup(pid, "SIGTERM", taskkillBin);
-    waitSynchronously(PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
-    const forcedCleanupConfirmed = signalProcessGroup(pid, "SIGKILL", taskkillBin);
-    if (process.platform === "win32" && !gracefulCleanupConfirmed && !forcedCleanupConfirmed) {
-      return `supervisor backstop taskkill could not confirm termination of process tree ${pid}`;
-    }
-    const deadline = Date.now() + PROCESS_SUPERVISOR_TERMINATION_GRACE_MS;
-    while (processGroupExists(pid) && Date.now() < deadline) waitSynchronously(10);
-    return processGroupExists(pid)
-      ? `supervisor backstop could not prove process group ${pid} exited`
-      : "";
+    const termination = terminateProcessGroupSync(pid, PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, { taskkillBin });
+    return termination.confirmed ? "" : `supervisor backstop could not prove process group ${pid} exited`;
   } catch (error) {
     return `supervisor backstop failed for process group ${pid}: ${errorMessage(error)}`;
   }

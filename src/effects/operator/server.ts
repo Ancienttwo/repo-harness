@@ -19,6 +19,7 @@ import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type Ope
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -650,30 +651,14 @@ function childJsonLines(stream: NodeJS.ReadableStream, onValue: (value: unknown)
   });
 }
 
-function posixProcessGroupAbsent(pid: number | undefined): boolean {
-  if (pid === undefined) return false;
-  try {
-    process.kill(-pid, 0);
-    return false;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ESRCH';
-  }
-}
+// A collector without a PID or a signal failure cannot prove the group exited.
+const UNCONFIRMED_COLLECTOR_TERMINATION: ProcessGroupTermination = { confirmed: false, forced: true };
 
-async function waitForPosixProcessGroupAbsence(pid: number | undefined): Promise<boolean> {
-  const deadline = Date.now() + OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS;
-  while (!posixProcessGroupAbsent(pid) && Date.now() < deadline) await Bun.sleep(10);
-  return posixProcessGroupAbsent(pid);
-}
-
-function signalPosixProcessGroup(pid: number | undefined, signal: NodeJS.Signals): boolean {
-  if (pid === undefined) return false;
-  try {
-    process.kill(-pid, signal);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ESRCH';
-  }
+function terminateCollectorProcessGroup(pid: number | undefined): Promise<ProcessGroupTermination> {
+  if (pid === undefined) return Promise.resolve(UNCONFIRMED_COLLECTOR_TERMINATION);
+  return terminateProcessGroup(pid, OPERATOR_WORKER_CLEANUP_GRACE_MS, {
+    confirmMs: OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS,
+  }).catch(() => UNCONFIRMED_COLLECTOR_TERMINATION);
 }
 
 function fleetCollectorProcessPath(): string {
@@ -765,6 +750,7 @@ function readSupervisedOperatorProcess<T>(input: {
     let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
     let controllerCloseTimer: ReturnType<typeof setTimeout> | null = null;
     let posixFinalizing = false;
+    let posixCancellationPending = false;
     const finish = (
       outcome:
         | { readonly ok: true; readonly snapshot: T }
@@ -815,18 +801,11 @@ function readSupervisedOperatorProcess<T>(input: {
     const finalizePosix = (): void => {
       if (settled || collector === null || !collectorClosed || intended === null || posixFinalizing) return;
       posixFinalizing = true;
-      void (async () => {
-        if (!posixProcessGroupAbsent(collector.pid)) {
-          signalPosixProcessGroup(collector.pid, 'SIGTERM');
-          await Bun.sleep(OPERATOR_WORKER_CLEANUP_GRACE_MS);
-          signalPosixProcessGroup(collector.pid, 'SIGKILL');
-        }
-        if (!await waitForPosixProcessGroupAbsence(collector.pid)) {
-          finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
-          return;
-        }
-        finish(intended);
-      })();
+      const outcome = intended;
+      void terminateCollectorProcessGroup(collector.pid).then((termination) => {
+        if (!termination.confirmed) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+        else finish(outcome);
+      });
     };
     const finalize = (): void => {
       if (controller !== null) {
@@ -845,7 +824,7 @@ function readSupervisedOperatorProcess<T>(input: {
       }
       if (collector === null || !collectorClosed) return;
       if (intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
-      if (cancellationRequested && cleanupTimer !== null) return;
+      if (posixCancellationPending) return;
       finalizePosix();
     };
     const recordCollectorResponse = (value: unknown): void => {
@@ -874,26 +853,26 @@ function readSupervisedOperatorProcess<T>(input: {
           failWindowsController('Fleet Windows Job controller cannot accept cooperative cancellation');
           return;
         }
-      } else {
-        if (collector === null || !writeChildJsonLine(collector, { type: 'cancel' })) {
-          intended = { ok: false, error: unavailable('Fleet collector cannot accept cooperative cancellation') };
-        }
-        if (collector !== null) signalPosixProcessGroup(collector.pid, 'SIGTERM');
-      }
-      cleanupTimer = setTimeout(() => {
-        cleanupTimer = null;
-        intended = { ok: false, error: new OperatorFleetTimeoutError() };
-        if (controller !== null) {
+        cleanupTimer = setTimeout(() => {
+          cleanupTimer = null;
+          intended = { ok: false, error: new OperatorFleetTimeoutError() };
           requestWindowsCleanup(true);
-        } else {
-          if (collector === null) return;
-          signalPosixProcessGroup(collector.pid, 'SIGKILL');
-          void waitForPosixProcessGroupAbsence(collector.pid).then((absent) => {
-            if (!absent) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
-            else finalize();
-          });
-        }
-      }, OPERATOR_WORKER_CLEANUP_GRACE_MS);
+        }, OPERATOR_WORKER_CLEANUP_GRACE_MS);
+        return;
+      }
+      if (collector === null || !writeChildJsonLine(collector, { type: 'cancel' })) {
+        intended = { ok: false, error: unavailable('Fleet collector cannot accept cooperative cancellation') };
+      }
+      if (collector === null) return;
+      posixCancellationPending = true;
+      void terminateCollectorProcessGroup(collector.pid).then((termination) => {
+        posixCancellationPending = false;
+        // A collector that outlives the cooperative grace period has timed out,
+        // whatever it reported before the forced kill.
+        if (termination.forced) intended = { ok: false, error: new OperatorFleetTimeoutError() };
+        if (!termination.confirmed) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+        else finalize();
+      });
     };
     input.signal.addEventListener('abort', onAbort, { once: true });
     if (collector !== null) {
@@ -904,10 +883,6 @@ function readSupervisedOperatorProcess<T>(input: {
       });
       collector.once('close', () => {
         collectorClosed = true;
-        if (cleanupTimer !== null) {
-          clearTimeout(cleanupTimer);
-          cleanupTimer = null;
-        }
         if (collectorResponse === null && intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
         finalize();
       });
