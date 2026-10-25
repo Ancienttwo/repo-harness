@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { withTaskLock } from '../locking/task-lock';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt, readFeedbackDeliveryReceipts, readFeedbackEvent, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from './feedback-store';
 import { publicationSha256, stablePublicationJson } from '../../core/publication/publication-receipt';
-import { observeProviderReadinessIdentity, validatePullRequestSelection } from './merge-readiness';
+import { MergeReadinessError, observeProviderReadinessIdentity, validatePullRequestSelection } from './merge-readiness';
 import type { PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { observeTaskInboxContext, type TaskInboxSessionSource } from '../fleet/task-inbox';
 import { readTaskAgent } from '../terminal/task-session';
@@ -227,12 +227,18 @@ function identityBytes(identity: ProviderIdentity): string {
 }
 
 function observeIdentity(receipt: FeedbackSubject, input: FeedbackObservationInput): ProviderIdentity {
-  const selected = observeProviderReadinessIdentity({ ...receipt.selection, repo_root: input.repo_root,
+  let selected: ReturnType<typeof observeProviderReadinessIdentity>;
+  try { selected = observeProviderReadinessIdentity({ ...receipt.selection, repo_root: input.repo_root,
     gh_bin: input.gh_bin, gh_runner: input.gh_runner ? args => {
       const result = input.gh_runner!(args);
       if (result.error || result.status === null) throw providerFailure('provider identity observation failed', result.error);
       return { status: result.status, stdout: result.stdout, stderr: result.stderr };
     } : undefined });
+  } catch (error) {
+    if (!(error instanceof MergeReadinessError)) throw error;
+    if (error.code === 'provider_unavailable') throw providerFailure(error.message, error);
+    throw providerShape(error.message);
+  }
   if (selected.state !== 'OPEN' && selected.state !== 'CLOSED' && selected.state !== 'MERGED') throw providerShape('provider PR state is unknown');
   const identity: ProviderIdentity = Object.freeze({ provider_repo_id: selected.provider_repo_id,
     pr_number: selected.pr_number, provider_url: selected.pr_url, state: selected.state, is_draft: selected.is_draft,
