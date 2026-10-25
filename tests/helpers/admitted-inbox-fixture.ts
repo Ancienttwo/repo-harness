@@ -1,11 +1,9 @@
-import { spyOn } from 'bun:test';
-import * as herdr from '../../src/effects/terminal/herdr';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll } from './repo-fixture';
-import { startTaskAgent, taskSessionDirectory, type TaskClaimReference } from '../../src/effects/terminal/task-session';
-import { taskRepository } from '../../src/effects/git/task-repository';
+import { taskSessionDirectory, type TaskClaimReference } from '../../src/effects/terminal/task-session';
+import { startOfflineTaskAgent } from './engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 
 /** Offline transport injection exercises public admission and binding persistence.
@@ -20,36 +18,13 @@ export async function admittedInboxFixture(task = '1'.repeat(64), options: Param
   const spec = { task, role: 'deep-reasoner', harness_kind: 'codex' };
   const source = { authority: { source: approved.source, claim }, session: { task, role: spec.role } };
   async function bind(claim: TaskClaimReference, role = spec.role) {
-    const repository = taskRepository(root);
-    const workspace = { workspace_id: 'fixture-workspace', worktree: {
-      repo_key: repository.repository_id, checkout_path: repository.execution_root, repo_root: repository.primary_root,
-    } };
-    let agentName = '';
-    const pane = { pane_id: `fixture-${role}`, terminal_id: `terminal-${role}`, workspace_id: workspace.workspace_id };
-    const transport = spyOn(herdr, 'herdrCommand').mockImplementation((_endpoint, args) => {
-      const [kind, action] = args;
-      let result: object;
-      if (kind === 'workspace' && action === 'list') result = { workspaces: [workspace] };
-      else if (kind === 'workspace' && action === 'get') result = { workspace };
-      else if (kind === 'pane' && action === 'list') result = { panes: [pane] };
-      else if (kind === 'pane' && (action === 'get' || action === 'split')) result = { pane };
-      else if (kind === 'pane' && action === 'process-info') result = { process_info: {
-        shell_pid: process.ppid, foreground_process_group_id: process.pid, foreground_processes: [{ pid: process.pid }],
-      } };
-      else if (kind === 'agent' && action === 'get') result = { agent: { ...pane, name: agentName, agent: 'codex' } };
-      else throw new Error(`unexpected offline Herdr call: ${args.join(' ')}`);
-      return { pid: process.pid, status: 0, signal: null, stdout: Buffer.from(JSON.stringify({ id: 'fixture', result })), stderr: Buffer.alloc(0), output: [] };
-    });
-    try {
-      const authority = { source: source.authority.source, claim };
-      const binding = await startTaskAgent(root, { ...spec, role, endpoint: { session: 'fixture', home: '/tmp' },
-        parent_pane: pane.pane_id, args: [], max_requests: 3 }, {
-        taskAuthority: authority, start: async (_endpoint, name) => { agentName = name; },
-      });
-      source.authority = authority;
-      source.session = { task, role };
-      return binding;
-    } finally { transport.mockRestore(); }
+    const authority = { source: source.authority.source, claim };
+    const binding = await startOfflineTaskAgent(root, { ...spec, role,
+      endpoint: { session: 'fixture', home: '/tmp' },
+      parent_pane: `fixture-parent-${role}`, args: [], max_requests: 3 }, authority);
+    source.authority = authority;
+    source.session = { task, role };
+    return binding;
   }
   const binding = await bind(claim);
   const admission = binding.task_admission!;
