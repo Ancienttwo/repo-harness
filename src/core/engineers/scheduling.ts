@@ -1,3 +1,6 @@
+import type { OperatorTaskSession, OperatorTaskSessions } from '../operator/task-sessions';
+import type { ExternalSourceProjectionV1 } from '../external-sources/projection';
+import type { ProviderIssueObservationV1 } from '../external-sources/issue-observation';
 import { validateRequiredPullRequest, type RequiredPullRequestV2 } from '../integration/product-acceptance';
 import { canonicalEngineerJson, engineerSha256 } from './profile-binding';
 
@@ -737,4 +740,75 @@ export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1
   const revision = string(input.snapshot_revision, 'snapshot_revision', DIGEST);
   if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('Engineer offers snapshot revision is invalid');
   return Object.freeze({ ...basis, offers: Object.freeze(offers), exclusions: Object.freeze(exclusions), snapshot_revision: revision });
+}
+
+/** The scheduler selects a profile explicitly. Actor identity is never a profile selector. */
+export interface EngineerSchedulingProfile {
+  readonly engineer_id: string;
+  readonly capability_id: string;
+  readonly engineer_contract_revision: string;
+}
+export type AdmittedEngineerSelection =
+  | { readonly state: 'unassigned' }
+  | { readonly state: 'selected' | 'profile_missing' | 'profile_revision_changed'; readonly engineer_id: string; readonly engineer_contract_revision: string };
+export interface AdmittedEngineerSession {
+  readonly session: OperatorTaskSession;
+  readonly selection: AdmittedEngineerSelection;
+}
+export interface ProviderEngineerTask {
+  readonly provider_repository_id: string;
+  readonly issue_id: string;
+  readonly issue: ProviderIssueObservationV1 | null;
+  readonly sessions: readonly AdmittedEngineerSession[];
+}
+export interface ProviderEngineerSchedulingSnapshot {
+  readonly protocol: 2;
+  readonly kind: 'provider_engineer_scheduling';
+  readonly repository_id: string;
+  readonly profiles: readonly EngineerSchedulingProfile[];
+  readonly tasks: readonly ProviderEngineerTask[];
+  readonly source_revision: string;
+}
+/** Observational join only: provider status and admission evidence do not grant acquisition. */
+export function projectProviderEngineerScheduling(input: {
+  readonly repository_id: string;
+  readonly issues: ExternalSourceProjectionV1;
+  readonly sessions: OperatorTaskSessions;
+  readonly profiles: readonly EngineerSchedulingProfile[];
+}): ProviderEngineerSchedulingSnapshot {
+  if (input.issues.registered_repository_id !== input.repository_id || input.sessions.repository_id !== input.repository_id) {
+    throw new EngineerSchedulingError('work_graph_invalid', 'provider scheduling repository mismatch');
+  }
+  const profiles = [...input.profiles].sort((a, b) => a.engineer_id.localeCompare(b.engineer_id));
+  if (new Set(profiles.map(profile => profile.engineer_id)).size !== profiles.length) {
+    throw new EngineerSchedulingError('work_graph_invalid', 'duplicate engineer profile');
+  }
+  const key = (repository: string, issue: string) => JSON.stringify([repository, issue]);
+  const tasks = new Map<string, { provider_repository_id: string; issue_id: string; issue: ProviderIssueObservationV1 | null; sessions: AdmittedEngineerSession[] }>();
+  for (const entry of input.issues.issues) {
+    tasks.set(key(entry.provider_repository_id, entry.provider_issue_id), {
+      provider_repository_id: entry.provider_repository_id, issue_id: entry.provider_issue_id,
+      issue: entry.latest_observation, sessions: [],
+    });
+  }
+  for (const session of input.sessions.sessions) {
+    const selector = session.selector;
+    if (selector.repository_id !== input.repository_id) throw new EngineerSchedulingError('work_graph_invalid', 'session repository mismatch');
+    const identity = key(selector.provider_repository_id, selector.issue_id);
+    if (!tasks.has(identity)) tasks.set(identity, { provider_repository_id: selector.provider_repository_id, issue_id: selector.issue_id, issue: null, sessions: [] });
+    const task = tasks.get(identity)!;
+    const selected = session.profile_selection;
+    let selection: AdmittedEngineerSelection = { state: 'unassigned' };
+    if (selected.state === 'selected') {
+      const profile = profiles.find(item => item.engineer_id === selected.engineer_id);
+      selection = { engineer_id: selected.engineer_id, engineer_contract_revision: selected.engineer_contract_revision,
+        state: !profile ? 'profile_missing' : profile.engineer_contract_revision !== selected.engineer_contract_revision ? 'profile_revision_changed' : 'selected' };
+    }
+    task.sessions.push({ session, selection });
+    tasks.set(identity, task);
+  }
+  const rows = [...tasks.values()].sort((a, b) => key(a.provider_repository_id, a.issue_id).localeCompare(key(b.provider_repository_id, b.issue_id)))
+    .map(task => ({ ...task, sessions: task.sessions.sort((a, b) => a.session.selector.session_binding_sha256.localeCompare(b.session.selector.session_binding_sha256)) }));
+  const basis = { protocol: 2 as const, kind: 'provider_engineer_scheduling' as const, repository_id: input.repository_id, profiles, tasks: rows };
+  return Object.freeze({ ...basis, source_revision: engineerSha256(canonicalEngineerJson(basis)) });
 }

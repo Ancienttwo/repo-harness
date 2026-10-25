@@ -1,3 +1,7 @@
+import { readOperatorTaskSessions } from '../operator/task-sessions';
+import { listExternalSourceProjection } from '../external-sources/refresh';
+import { listEngineerProfiles } from './profile-store';
+import { projectProviderEngineerScheduling } from '../../core/engineers/scheduling';
 import { realpathSync } from 'fs';
 
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
@@ -184,4 +188,15 @@ export function readTrackedWorkGraphProjectionAt(
   }));
   const projected = projectWorkGraph(graph, canonicalTasks);
   return Object.freeze({ commit: sprint.commit, lane: projected.lane, graph: projected });
+}
+
+/** Read the shared admission discovery and provider cache; never consult Sprint or leases. */
+export function readProviderEngineerScheduling(repo: RepoHarnessRegisteredRepo, env?: NodeJS.ProcessEnv) {
+  return projectProviderEngineerScheduling({
+    repository_id: repo.id,
+    issues: listExternalSourceProjection(repo.path, repo.id),
+    sessions: readOperatorTaskSessions({ repository_id: repo.id, env }),
+    profiles: listEngineerProfiles(repo.path).map(profile => ({ engineer_id: profile.profile.engineer_id,
+      capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision })),
+  });
 }
