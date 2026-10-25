@@ -131,12 +131,12 @@ export function resolveCompatibleNodeRuntime(
     return result.ok ? result.stdout.trim().replace(/^v/, '') : null;
   };
   const pathValue = env.PATH ?? '';
-  const trustedCandidates = trustedCandidateSource();
+  let trustedCandidates: readonly string[] = [];
   const selected = selectCompatibleNode({
     explicit: env.REPO_HARNESS_NODE_BIN,
     pathValue,
     pathExt: env.PATHEXT,
-    candidates: trustedCandidates,
+    candidates: () => (trustedCandidates = trustedCandidateSource()),
     versionOf: version,
   });
   if (selected.status === 'selected') return selected.path;

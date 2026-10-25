@@ -1725,3 +1725,16 @@ describe('single-writer observations', () => {
     expect(() => decodeArchitectureHandEdits({ ...data, schemaVersion: 'other' })).toThrow('schema mismatch');
   });
 });
+
+test('does not scan fallback Node locations after explicit or PATH selection', () => {
+  const f = fixture();
+  const bin = join(f.root, 'node-bin');
+  mkdirSync(bin);
+  const node = join(bin, 'node');
+  writeFileSync(node, '#!/bin/sh\necho v24.18.0\n');
+  chmodSync(node, 0o755);
+  const inaccessibleFallback = () => { throw new Error('unreadable fallback directory'); };
+  expect(resolveCompatibleNodeRuntime({ PATH: '', REPO_HARNESS_NODE_BIN: node }, inaccessibleFallback)).toBe(realpathSync(node));
+  expect(resolveCompatibleNodeRuntime({ PATH: bin }, inaccessibleFallback)).toBe(realpathSync(node));
+  expect(() => resolveCompatibleNodeRuntime({ PATH: '', REPO_HARNESS_NODE_BIN: 'node' }, inaccessibleFallback)).toThrow('must be an absolute path');
+});

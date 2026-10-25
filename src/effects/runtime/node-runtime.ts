@@ -13,7 +13,7 @@ export interface NodeSelectionInput {
   /** Search PATH only when this is set. An empty string searches nothing. */
   readonly pathValue?: string;
   readonly pathExt?: string;
-  readonly candidates: readonly string[];
+  readonly candidates: readonly string[] | (() => readonly string[]);
   /** Run `--version` under the caller's process authority. Return the version without a leading `v`, or null. */
   readonly versionOf: (executable: string) => string | null;
   readonly platform?: NodeJS.Platform;
@@ -53,7 +53,8 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
       }
     }
   }
-  for (const candidate of input.candidates) {
+  const candidates = typeof input.candidates === 'function' ? input.candidates() : input.candidates;
+  for (const candidate of candidates) {
     if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
     const actual = realpathSync(candidate);
     const stat = statSync(actual);
