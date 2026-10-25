@@ -308,7 +308,8 @@ export const preparationSnapshot: OperatorFleetSnapshotV1 = {
       placement: { kind: 'preparation' }, execution_readiness: 'planning_required',
       readiness_blockers: [{ code: 'plan_not_approved', attention_owner: 'user' }], attention_owner: 'user',
     }),
-    card('repo-harness', fixtureTasks.console, 'available', {
+    // This issue belongs to repo-harness here; console's own repository issue #1 is a different fixture.
+    card('repo-harness', { ...fixtureTasks.console, task_index: 13 }, 'available', {
       placement: { kind: 'alternate_workflow', workflow: 'inline' }, execution_readiness: 'inline_ready',
     }),
   ])],
