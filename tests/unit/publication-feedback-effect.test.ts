@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync, rmSync } from 'node:fs';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent } from '../../src/core/publication/feedback';
-import { FeedbackError, observeGitHubFeedback, showGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
+import { FeedbackError, intakeGitHubFeedback, observeGitHubFeedback, showGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
 import { readFeedbackDeliveryReceipt, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
 
 const HEAD = 'a'.repeat(40);
@@ -108,7 +109,11 @@ function runner(overrides: {
 
 describe('GitHub provider feedback observation', () => {
   test('uses exact provider object IDs and complete page observations', () => {
-    const events = observeGitHubFeedback(receipt, { repo_root: '/tmp', gh_runner: runner() });
+    const read = runner();
+    const events = observeGitHubFeedback(receipt, { repo_root: '/tmp', gh_runner: args => {
+      if (args[0] === 'api') expect(args.slice(-2)).toEqual(['--hostname', 'github.com']);
+      return read(args);
+    } });
     expect(events.map((event) => event.provider_event_id)).toEqual(['CHECK_1', 'THREAD_1']);
     expect(events[0]?.failing_check_ids).toEqual(['CHECK_1']);
     expect(events[0]?.failing_checks).toEqual([{ id: 'CHECK_1', conclusion: 'FAILURE' }]);
@@ -269,4 +274,77 @@ describe('feedback repair lifecycle integration', () => {
     }
   });
 
+});
+
+
+test('intake and show-body pin the actual gh API process despite hostile GH_HOST', async () => {
+  const fixture = await admittedFeedbackFixture(12);
+  const originalHost = process.env.GH_HOST;
+  const executable = join(fixture.directory, 'offline-feedback-gh');
+  const callsPath = join(fixture.directory, 'feedback-gh-calls.jsonl');
+  const reviewUrl = 'https://github.com/acme/widgets/pull/12#pullrequestreview-1';
+  // This executable is the external process boundary, never a real provider call.
+  writeFileSync(executable, `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ args, host: process.env.GH_HOST }) + '\\n');
+const reply = value => { process.stdout.write(JSON.stringify(value)); process.exit(0); };
+if (args[0] === 'api' && (args.at(-2) !== '--hostname' || args.at(-1) !== 'github.com')) {
+  process.stderr.write('fixture refused unpinned API host'); process.exit(9);
+}
+if (args[0] === 'repo') {
+  if (args[2] !== 'github.com/acme/widgets') process.exit(8);
+  reply({ id: 'R_feedback', nameWithOwner: 'acme/widgets' });
+}
+if (args[0] === 'pr') {
+  if (args.at(-2) !== '--repo' || args.at(-1) !== 'github.com/acme/widgets') process.exit(8);
+  reply({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
+    headRefOid: ${JSON.stringify(fixture.head)}, baseRefOid: ${JSON.stringify(fixture.base)},
+    headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+}
+if (args[1] === 'repos/acme/widgets') reply({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets' });
+const query = args.find(arg => arg.startsWith('query=')) ?? '';
+const pageInfo = { hasNextPage: false, endCursor: null };
+if (query.includes('checkSuites')) reply({ data: { node: { pullRequest: { commits: { nodes: [{ commit: {
+  oid: ${JSON.stringify(fixture.head)}, checkSuites: { pageInfo, nodes: [] }
+} }] } } } } });
+if (query.includes('reviewThreads')) reply({ data: { node: { pullRequest: { reviewThreads: { pageInfo, nodes: [] } } } } });
+if (query.includes('reviews(first:100')) reply({ data: { node: { pullRequest: { reviews: { pageInfo, nodes: [{
+  id: 'REVIEW_HOST', state: 'CHANGES_REQUESTED', submittedAt: '2026-10-25T00:00:00Z'
+}] } } } } });
+if (query.includes('on PullRequestReview')) reply({ data: { node: {
+  id: 'REVIEW_HOST', state: 'CHANGES_REQUESTED', url: ${JSON.stringify(reviewUrl)},
+  submittedAt: '2026-10-25T00:00:00Z', body: 'host-pinned untrusted body'
+} } });
+process.stderr.write('unexpected fixture arguments'); process.exit(7);
+`);
+  chmodSync(executable, 0o700);
+  try {
+    process.env.GH_HOST = 'hostile.example.invalid';
+    const result = intakeGitHubFeedback({ ...fixture.input, gh_bin: executable });
+    expect(result.event_count).toBe(1);
+    expect(result.events[0]).toMatchObject({ provider_event_id: 'REVIEW_HOST',
+      publication_id: fixture.publication_id, head_sha: fixture.head,
+      changes_requested_review_ids: ['REVIEW_HOST'] });
+    const callsBeforeShow = readFileSync(callsPath, 'utf8').trim().split('\n').length;
+    const body = showGitHubFeedback({ ...fixture.input, gh_bin: executable, provider_event_id: 'REVIEW_HOST' });
+    expect(body).toMatchObject({ provider_event_id: 'REVIEW_HOST', untrusted: true,
+      body: `url: ${reviewUrl}\nsubmitted_at: 2026-10-25T00:00:00Z\nhost-pinned untrusted body` });
+    const calls = readFileSync(callsPath, 'utf8').trim().split('\n')
+      .map(line => JSON.parse(line) as { args: string[]; host: string });
+    for (const phase of [calls.slice(0, callsBeforeShow), calls.slice(callsBeforeShow)]) {
+      const graph = phase.filter(call => call.args[0] === 'api' && call.args[1] === 'graphql');
+      expect(graph.length).toBeGreaterThan(0);
+      for (const call of graph) {
+        expect(call.host).toBe('hostile.example.invalid');
+        expect(call.args.slice(-2)).toEqual(['--hostname', 'github.com']);
+      }
+      expect(phase.some(call => call.args[0] === 'repo')).toBe(true);
+      expect(phase.some(call => call.args[0] === 'pr')).toBe(true);
+    }
+  } finally {
+    if (originalHost === undefined) delete process.env.GH_HOST;
+    else process.env.GH_HOST = originalHost;
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
 });

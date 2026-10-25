@@ -205,6 +205,8 @@ function requiredBoolean(value: unknown, label: string): boolean {
 }
 
 function ghJson(input: FeedbackObservationInput, args: readonly string[]): unknown {
+  // Feedback identities and their GraphQL objects belong to the same public provider.
+  args = [...args, '--hostname', 'github.com'];
   const result = input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root,
     encoding: 'utf-8',
