@@ -94,9 +94,10 @@ function workerFixture(f: ReturnType<typeof fixture>) {
   const workerPath=fileURLToPath(new URL('../../src/effects/operator/task-read-process.ts',import.meta.url));
   const forwarding=((command:string,args?:readonly string[]|childProcess.SpawnOptions,options?:childProcess.SpawnOptions)=>{
     if(command===process.execPath&&Array.isArray(args)&&args.length===1&&args[0]===workerPath){
-      launches++;return original(command,['--preload',bootstrap,...args],options);
+      launches++;return options === undefined ? original(command,['--preload',bootstrap,...args]) : original(command,['--preload',bootstrap,...args],options);
     }
-    return Array.isArray(args) ? original(command,args,options) : original(command,args as childProcess.SpawnOptions|undefined);
+    if (Array.isArray(args)) return options === undefined ? original(command,args) : original(command,args,options);
+    return args === undefined ? original(command) : original(command,args as childProcess.SpawnOptions);
   }) as typeof childProcess.spawn;
   const spy=spyOn(childProcess,'spawn').mockImplementation(forwarding);
   restoreWorkerFixtures.push(()=>spy.mockRestore());
