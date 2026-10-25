@@ -22,7 +22,7 @@ source:
     - id: entrypoint.action-commands.primary
       path: "src/cli/commands/init.ts"
       symbols:
-        - name: "installExternalSkills"
+        - name: "syncCrossReviewSkills"
           sinks:
             - id: sink.action-commands.primary
               path: "src/cli/commands/init.ts"

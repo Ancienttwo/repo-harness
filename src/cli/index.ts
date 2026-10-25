@@ -595,7 +595,7 @@ export function buildProgram(): Command {
     .option('--repo <path>', 'Target repository path (defaults to cwd)')
     .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
     .option('--dry-run', 'Plan repo harness changes without applying them')
-    .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
+    .option('--target <target>', `Host target for readiness checks: ${TARGET_HELP}`, 'both')
     .option('--no-verify', 'Skip repo workflow verification after apply')
     .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
     .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
@@ -654,15 +654,10 @@ export function buildProgram(): Command {
         repo: rawOpts.repo,
         apply: true,
         target,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
         verify: rawOpts.verify !== false,
         codegraph: rawOpts.codegraph !== false,
-        configureCodegraphMcp: false,
         syncCodegraph: rawOpts.syncCodegraph === true,
         mode,
-        brainMode: 'skip' as const,
         env,
       };
       const result = runInit(common);

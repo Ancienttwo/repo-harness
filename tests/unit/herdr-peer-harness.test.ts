@@ -1,27 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
-import { writeGlobalContextFiles } from "../../src/cli/commands/init";
+import { mergeManagedBlock, renderGlobalRulesBlock } from "../../src/cli/installer/global-context";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const PEER_HARNESS_HEADING = "## Peer Harness Collaboration";
 
-// HOME is disposable; rendering never edits the operator's host guidance.
 function renderedManagedBlock(): string {
-  const home = mkdtempSync(join(tmpdir(), "repo-harness-herdr-"));
-  try {
-    const result = writeGlobalContextFiles(
-      ROOT,
-      "codex",
-      { reportLanguageInstruction: "Use English to report to user.", reportLanguagePreset: "en" },
-      { ...process.env, HOME: home },
-    );
-    expect(result.status).toBe("ok");
-    return readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
+  const block = renderGlobalRulesBlock(ROOT, { preset: "en", instruction: "Use English to report to user." });
+  return mergeManagedBlock("", block).content;
 }
 
 describe("required herdr peer-harness guidance", () => {

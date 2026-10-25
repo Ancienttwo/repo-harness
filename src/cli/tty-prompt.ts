@@ -1,11 +1,8 @@
 /**
- * Minimal shared readline/promises confirm prompt.
- *
- * Used by both the repo-local interactive planner
- * (`commands/init.ts` `runInteractiveInit`) and the global runtime
+ * Minimal readline/promises confirm prompt for the global runtime
  * bootstrap's optional-dependency prompts (`index.ts`
  * `runGlobalRuntimeBootstrap`). This is intentionally just the one
- * confirm shape both call sites need, not a general prompt framework.
+ * confirm shape that call site needs, not a general prompt framework.
  */
 import type { createInterface } from "readline/promises";
 

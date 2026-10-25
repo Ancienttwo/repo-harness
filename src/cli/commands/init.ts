@@ -1,66 +1,40 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
-import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 /**
- * Existing-repo harness bootstrap/update implementation.
+ * Existing-repo harness adoption implementation.
  *
  * This backs the public `repo-harness init` command and
- * `repo-harness-setup`'s init mode (SSD-06: the former standalone
- * `repo-harness-init` skill facade retired into this mode): default the
- * target repo to cwd, install/refresh the machine runtime pieces, apply the
- * repo-local workflow migration, then verify the installed harness.
+ * `repo-harness-setup`'s init mode: default the target repo to cwd, apply the
+ * repo-local workflow migration, register the repo, then verify the installed
+ * harness. Host runtime state belongs to the locked `install`/`update`
+ * transaction; init only reports what is missing there.
  */
 
-import { createInterface } from "readline/promises";
-import { stdin, stdout } from "process";
 import { homedir, userInfo } from "os";
 import { spawnSync } from "child_process";
 import {
   cpSync,
-  copyFileSync,
   existsSync,
   mkdirSync,
   lstatSync,
   readFileSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
 } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { syncWazaSharedRules } from "../installer/waza-rules";
+import type { InstallTargetSpec } from "./install";
 import {
-  GLOBAL_RULES_UNBALANCED,
-  formatGlobalContextWrite,
-  globalContextPath,
-  languageInstruction,
-  mergeManagedBlock,
-  renderGlobalRulesBlock,
-  type ReportingLanguagePreset,
-} from "../installer/global-context";
-import { runInstall, type InstallTargetSpec } from "./install";
-import { configureRequiredHerdrSkill } from "./herdr-skill";
-import { runBrain } from "./brain";
-import {
-  externalSkillInstallGroups as catalogExternalSkillInstallGroups,
   hostSkillPlacements as catalogHostSkillPlacements,
   parseSkillSurfaceCatalog,
   probeExpectations as catalogProbeExpectations,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { withRuntimeHostTransactionLock } from "../installer/runtime-host-lock";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
-import {
-  defaultBrainRootChoice,
-  discoverBrainRootChoices,
-  expandHomePath,
-  type BrainRootChoice,
-} from "./brain-root";
-import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
+import { ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
-import { askConfirm, writeLine } from "../tty-prompt";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
 import {
@@ -71,24 +45,15 @@ import {
   recordCutoverInstalled,
 } from "../../effects/state/coordination-cutover";
 import type { AdoptionMode } from "../../core/adoption/modes";
-import type { DocumentationLanguage } from "../../core/adoption/standard-plan";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
-
-export type InitBrainMode = "manifest-only" | "skip";
-
-export interface GlobalContextOptions {
-  reportLanguageInstruction: string;
-  reportLanguagePreset: ReportingLanguagePreset;
-}
 
 /**
  * Host-scoped skills bundled under `assets/skills/<skill>`. The cross-review
  * skill is host-aware; task-agent owns persistent plan consultation.
  */
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
-type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
 
 /**
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
@@ -138,15 +103,8 @@ export interface InitCommandOptions {
   sourceRoot?: string;
   apply?: boolean;
   verify?: boolean;
-  syncSkill?: boolean;
-  hostAdapters?: boolean;
-  externalSkills?: boolean;
   codegraph?: boolean;
-  configureCodegraphMcp?: boolean;
   syncCodegraph?: boolean;
-  globalContext?: GlobalContextOptions;
-  brainRoot?: string;
-  brainMode?: InitBrainMode;
   target?: InstallTargetSpec;
   mode?: AdoptionMode;
   env?: NodeJS.ProcessEnv;
@@ -173,17 +131,6 @@ export interface InitRuntimeDependencies {
   authorityHome: () => string | null;
 }
 
-export interface InteractiveInitOptions extends InitCommandOptions {
-  input?: NodeJS.ReadableStream;
-  output?: NodeJS.WritableStream;
-}
-
-interface Choice<T> {
-  label: string;
-  value: T;
-  detail?: string;
-}
-
 function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): InitStep {
   const result = runBoundedProcess(command, args, { cwd, env });
 
@@ -194,16 +141,6 @@ function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.P
     stdout: result.stdout,
     stderr: result.stderr || result.error,
   };
-}
-
-function isNpxCacheSource(sourceRoot: string): boolean {
-  return /[\\/]_npx[\\/]/.test(sourceRoot);
-}
-
-function initCommandEnv(sourceRoot: string, env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined {
-  if (!isNpxCacheSource(sourceRoot)) return env;
-  if (env?.AGENTIC_DEV_LINK_INSTALLED_COPIES !== undefined) return env;
-  return { ...(env ?? process.env), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" };
 }
 
 function withStepName(step: InitStep, name: string, detail?: string): InitStep {
@@ -218,44 +155,32 @@ function renderStep(step: InitStep): string[] {
   return lines;
 }
 
-function withProcessEnv<T>(env: NodeJS.ProcessEnv | undefined, fn: () => T): T {
-  if (!env) return fn();
-  const previous = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(env)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  try {
-    return fn();
-  } finally {
-    for (const [key, value] of previous) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
-}
-
-function hostAgents(target: InstallTargetSpec): string[] {
-  if (target === "codex") return ["codex"];
-  if (target === "claude") return ["claude-code"];
-  return ["claude-code", "codex"];
-}
-
 function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   if (target === "codex") return ["codex"];
   if (target === "claude") return ["claude"];
   return ["claude", "codex"];
 }
 
-function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
-  const first = hosts[0];
-  if (first !== 'codex' && first !== 'claude') throw new Error('No install host selected');
-  return hosts.length === 2 ? "both" : first;
-}
-
 function homeDir(env?: NodeJS.ProcessEnv): string | null {
   return env?.HOME ?? env?.USERPROFILE ?? process.env.HOME ?? process.env.USERPROFILE ?? homedir() ?? null;
+}
+
+/**
+ * Adopted repos route agent collaboration through Herdr. The skill is a host
+ * projection owned by the locked install/update transaction, so init only
+ * reads it and names the command that projects it.
+ */
+function requiredHerdrSkillReadiness(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
+  const step = "required Herdr skill";
+  const home = homeDir(env);
+  const missing = hostIds(target).filter((host) =>
+    !home || !existsSync(join(home, host === "claude" ? ".claude" : ".codex", "skills", "herdr", "SKILL.md")));
+  if (missing.length === 0) return { step, status: "ok", detail: "present" };
+  return {
+    step,
+    status: "skipped",
+    detail: `missing for ${missing.join(",")}; run: repo-harness update --target ${target}`,
+  };
 }
 
 export function resolveOsAccountHome(): string | null {
@@ -288,66 +213,15 @@ const DEFAULT_INIT_RUNTIME_DEPENDENCIES: InitRuntimeDependencies = { authorityHo
 export { validateRepoAdoptionTarget } from "../repo-adoption/target";
 
 /**
- * The single init question drives two projections: the host-level reporting
- * sentence and the repo-level human-facing document language. A custom
- * reporting sentence carries no enum value, so generated documents keep the
- * repo default instead of inventing a language from free text.
- */
-function documentationLanguageForPreset(preset: ReportingLanguagePreset): DocumentationLanguage {
-  if (preset === "follow") return "follow-user";
-  if (preset === "zh-CN") return "zh-CN";
-  return "en";
-}
-
-export function writeGlobalContextFiles(
-  sourceRoot: string,
-  target: InstallTargetSpec,
-  opts: GlobalContextOptions,
-  env?: NodeJS.ProcessEnv,
-): InitStep {
-  const home = homeDir(env);
-  if (!home) {
-    return { step: "global working rules", status: "failed", detail: "HOME is required to resolve host context files" };
-  }
-
-  const block = renderGlobalRulesBlock(sourceRoot, {
-    preset: opts.reportLanguagePreset,
-    instruction: opts.reportLanguageInstruction,
-  });
-  const targets: string[] = [];
-  if (target === "codex" || target === "both") targets.push(globalContextPath(home, "codex"));
-  if (target === "claude" || target === "both") targets.push(globalContextPath(home, "claude"));
-
-  const changes: string[] = [];
-  let blocked = false;
-  for (const filePath of targets) {
-    mkdirSync(dirname(filePath), { recursive: true });
-    const existed = existsSync(filePath);
-    const current = existed ? readFileSync(filePath, "utf-8") : "";
-    const merged = mergeManagedBlock(current, block);
-    if (merged.status === "blocked-unbalanced") {
-      blocked = true;
-      changes.push(`blocked:${filePath} (${GLOBAL_RULES_UNBALANCED})`);
-      continue;
-    }
-    if (merged.content !== current) writeFileSync(filePath, merged.content, "utf-8");
-    changes.push(formatGlobalContextWrite(filePath, existed ? current : null, merged));
-  }
-
-  return { step: "global working rules", status: blocked ? "failed" : "ok", detail: changes.join(", ") };
-}
-
-/**
  * Install each bundled skill into its one declared host. Respects `target`, is
  * idempotent (identical SKILL.md → "already present"), and treats a missing
- * bundled source as `skipped` (never fails init).
+ * bundled source as `skipped`.
  */
 function syncBundledItemsAtHome(
   sourceRoot: string,
   target: InstallTargetSpec,
   home: string | null,
   skills: ReadonlyArray<BundledHostSkill>,
-  agents: ReadonlyArray<BundledHostAgent>,
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
   const steps: InitStep[] = [];
@@ -410,31 +284,6 @@ function syncBundledItemsAtHome(
       steps.push({ step, status: 'failed', detail: `cannot update bundled skill ${dest}: ${String(error)}` });
     }
   }
-  for (const { source, agent, host, step } of agents) {
-    if (target !== "both" && target !== host) continue;
-    if (!home) {
-      steps.push({ step, status: "failed", detail: "HOME is required to resolve host agent roots" });
-      continue;
-    }
-    const src = join(sourceRoot, source);
-    if (!existsSync(src)) {
-      steps.push({ step, status: "skipped", detail: `bundled source not found at ${src}` });
-      continue;
-    }
-    const root = join(home, host === "claude" ? ".claude" : ".codex", "agents");
-    const dest = join(root, agent);
-    mkdirSync(root, { recursive: true });
-    if (existsSync(dest)) {
-      if (readFileSync(dest, "utf-8") === readFileSync(src, "utf-8")) {
-        steps.push({ step, status: "ok", detail: "already present" });
-      } else {
-        steps.push({ step, status: "failed", detail: `refusing to overwrite modified agent at ${dest}` });
-      }
-      continue;
-    }
-    copyFileSync(src, dest);
-    steps.push({ step, status: "ok", detail: `synced ${dest}` });
-  }
   return steps;
 }
 
@@ -444,49 +293,7 @@ export function syncCrossReviewSkills(
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
   const catalog = loadSkillSurfaceCatalog(sourceRoot);
-  const steps = syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), [], env);
-  return steps;
-}
-
-function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep[] {
-  const steps: InitStep[] = [];
-  const catalog = loadSkillSurfaceCatalog(sourceRoot);
-  const externalGroups = catalogExternalSkillInstallGroups(catalog, {
-    hosts: hostIds(target),
-    profileGate: "full",
-  });
-  for (const { provider, hosts, skills } of externalGroups) {
-    const groupTarget = targetFromHostIds(hosts);
-    const installed = runProcess(
-      "bunx",
-      [
-        "skills",
-        "add",
-        provider,
-        "-g",
-        "-a",
-        ...hostAgents(groupTarget),
-        "-s",
-        ...skills,
-        "-y",
-      ],
-      sourceRoot,
-      env,
-    );
-    const stepName = provider === "tw93/Waza"
-      ? "external skills Waza"
-      : provider === "BfdCampos/dotfiles"
-        ? "external skill mermaid"
-        : `external skills ${provider}`;
-    steps.push(withStepName(installed, stepName, `target=${groupTarget}`));
-    if (provider === "tw93/Waza") {
-      steps.push(installed.status === "ok"
-        ? { step: "external skills Waza shared rules", ...syncWazaSharedRules(homeDir(env), hostIds(groupTarget), env ?? process.env) }
-        : { step: "external skills Waza shared rules", status: "skipped", detail: "Waza install failed" });
-    }
-  }
-  steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
-  return steps;
+  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), env);
 }
 
 export function runInit(
@@ -495,23 +302,14 @@ export function runInit(
 ): InitCommandResult {
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const repoRoot = resolve(opts.repo ?? process.cwd());
-  let commandEnv = initCommandEnv(sourceRoot, opts.env);
+  const commandEnv = opts.env;
   const apply = opts.apply !== false;
   const verify = opts.verify !== false;
-  const syncSkill = opts.syncSkill !== false;
-  const hostAdapters = opts.hostAdapters !== false;
-  const externalSkills = opts.externalSkills !== false;
   const codegraph = opts.codegraph !== false;
-  const configureCgMcp = opts.configureCodegraphMcp === true;
   const syncCodegraph = opts.syncCodegraph === true;
-  const brainMode = opts.brainMode ?? "skip";
   const target = opts.target ?? "both";
   const mode = opts.mode ?? "standard";
   const steps: InitStep[] = [];
-
-  if (opts.brainRoot) {
-    commandEnv = { ...(commandEnv ?? process.env), REPO_HARNESS_BRAIN_ROOT: opts.brainRoot };
-  }
 
   const targetError = validateRepoAdoptionTarget(repoRoot, opts.repo !== undefined, commandEnv);
   if (targetError) {
@@ -563,59 +361,7 @@ export function runInit(
     }
   }
 
-  if (syncSkill && apply) {
-    const step = runProcess("bash", [join(sourceRoot, "scripts", "sync-codex-installed-copies.sh")], sourceRoot, commandEnv);
-    steps.push(withStepName(step, "sync repo-harness skills", `target=${target}`));
-  } else {
-    steps.push({
-      step: "sync repo-harness skills",
-      status: "skipped",
-      detail: syncSkill ? "dry-run" : "disabled",
-    });
-  }
-
-  if (hostAdapters && apply) {
-    const installed = withProcessEnv(commandEnv, () => runInstall({ target, location: "global" }));
-    steps.push({
-      step: "install host adapters",
-      status: installed.exitCode === 0 ? "ok" : "failed",
-      detail: installed.lines.join("; "),
-    });
-  } else {
-    steps.push({
-      step: "install host adapters",
-      status: "skipped",
-      detail: hostAdapters ? "dry-run" : "disabled",
-    });
-  }
-
-  if (apply) {
-    const herdrSkill = configureRequiredHerdrSkill(target, commandEnv);
-    steps.push(herdrSkill);
-    if (herdrSkill.status === "failed") {
-      return { exitCode: 1, repoRoot, steps, lines: steps.flatMap(renderStep) };
-    }
-  } else {
-    steps.push({ step: "configure required Herdr skill", status: "skipped", detail: "dry-run" });
-  }
-
-  if (opts.globalContext && apply) {
-    steps.push(writeGlobalContextFiles(sourceRoot, target, opts.globalContext, commandEnv));
-  } else {
-    steps.push({
-      step: "global working rules",
-      status: "skipped",
-      detail: opts.globalContext ? "dry-run" : "disabled",
-    });
-  }
-
-  const inspect = runProcess(
-    process.execPath,
-    [join(sourceRoot, "scripts", "inspect-project-state.ts"), "--repo", repoRoot, "--format", "text"],
-    sourceRoot,
-    commandEnv,
-  );
-  steps.push(withStepName(inspect, "inspect repo", repoRoot));
+  steps.push(requiredHerdrSkillReadiness(target, commandEnv));
 
   const adoptionApply = apply
     ? runAdoptionApply({ repo: repoRoot, mode, explicitRepo: true, env: commandEnv })
@@ -647,32 +393,6 @@ export function runInit(
       step: "register repo harness repo",
       status: "skipped",
       detail: apply ? "repo harness did not apply cleanly or registry effect was unavailable" : "dry-run",
-    });
-  }
-
-  if (apply && migrate.status === "ok") {
-    try {
-      // Install/update snapshot and roll back this same account configuration.
-      // Join their lock before either initializer reads its current values.
-      withRuntimeHostTransactionLock(commandEnv, () => {
-        steps.push(ensureGlobalArchitectureProjection(commandEnv));
-      });
-    } catch (error) {
-      steps.push({ step: "global automation defaults", status: "failed", detail: String(error) });
-    }
-  }
-
-  if (externalSkills && apply && migrate.status === "ok") {
-    steps.push(...installExternalSkills(sourceRoot, target, commandEnv));
-  } else {
-    steps.push({
-      step: "external skills",
-      status: "skipped",
-      detail: !externalSkills
-        ? "disabled"
-        : apply
-          ? "repo harness did not apply cleanly"
-          : "dry-run",
     });
   }
 
@@ -711,21 +431,12 @@ export function runInit(
         ["codex", "claude"].every((host) => mcpHosts[host]?.status === "configured");
 
       if (cg.resolution.source !== "missing" && !mcpConfigured) {
-        if (configureCgMcp) {
-          const conf = configureCodegraph({ repoRoot, target, location: "global", env: commandEnv });
-          steps.push({
-            step: "configure codegraph mcp",
-            status: conf.actions.some((entry) => entry.status === "failed") ? "failed" : "ok",
-            detail: conf.actions.map((entry) => `${entry.action}:${entry.status}`).join(", "),
-          });
-        } else {
-          steps.push({
-            step: "codegraph mcp",
-            status: "skipped",
-            detail:
-              "not registered; run: repo-harness tools configure codegraph --target both --location global",
-          });
-        }
+        steps.push({
+          step: "codegraph mcp",
+          status: "skipped",
+          detail:
+            "not registered; run: repo-harness tools configure codegraph --target both --location global",
+        });
       }
     } catch (error) {
       steps.push({
@@ -740,35 +451,6 @@ export function runInit(
       step: "ensure codegraph index",
       status: "skipped",
       detail: codegraph ? "dry-run" : "disabled",
-    });
-  }
-
-  if (brainMode !== "skip" && apply && migrate.status === "ok") {
-    const root = opts.brainRoot ?? commandEnv?.REPO_HARNESS_BRAIN_ROOT;
-    if (root) {
-      mkdirSync(root, { recursive: true });
-      steps.push({ step: "ensure brain root", status: "ok", detail: root });
-    }
-    try {
-      const result = withProcessEnv(commandEnv, () => runBrain("sync", { repo: repoRoot }));
-      const hasErrors = result.issues.some((entry) => entry.level === "error");
-      steps.push({
-        step: "sync brain docs",
-        status: hasErrors ? "failed" : "ok",
-        detail: `root=${result.brainRoot}; synced=${result.synced.length}; skipped=${result.skipped.length}; issues=${result.issues.length}`,
-      });
-    } catch (error) {
-      steps.push({
-        step: "sync brain docs",
-        status: "failed",
-        detail: (error as Error).message,
-      });
-    }
-  } else {
-    steps.push({
-      step: "sync brain docs",
-      status: "skipped",
-      detail: brainMode === "skip" ? "disabled" : apply ? "repo harness did not apply cleanly" : "dry-run",
     });
   }
 
@@ -821,225 +503,4 @@ export function runInit(
     steps,
     lines: steps.flatMap(renderStep),
   };
-}
-
-function selectedIndex(answer: string, count: number, defaultIndex: number): number | null {
-  const trimmed = answer.trim();
-  if (!trimmed) return defaultIndex;
-  const parsed = Number(trimmed);
-  if (Number.isInteger(parsed) && parsed >= 1 && parsed <= count) return parsed - 1;
-  return null;
-}
-
-async function askChoice<T>(
-  rl: ReturnType<typeof createInterface>,
-  output: NodeJS.WritableStream,
-  title: string,
-  choices: Choice<T>[],
-  defaultIndex: number,
-): Promise<T> {
-  while (true) {
-    writeLine(output, title);
-    choices.forEach((choice, index) => {
-      const defaultMarker = index === defaultIndex ? " (default)" : "";
-      const detail = choice.detail ? ` - ${choice.detail}` : "";
-      writeLine(output, `  ${index + 1}. ${choice.label}${defaultMarker}${detail}`);
-    });
-    const answer = await rl.question(`Select [${defaultIndex + 1}]: `);
-    const index = selectedIndex(answer, choices.length, defaultIndex);
-    if (index !== null) {
-      writeLine(output);
-      return choices[index].value;
-    }
-    writeLine(output, `Enter a number from 1 to ${choices.length}.`);
-  }
-}
-
-async function askText(
-  rl: ReturnType<typeof createInterface>,
-  output: NodeJS.WritableStream,
-  question: string,
-  fallback: string,
-): Promise<string> {
-  const answer = await rl.question(`${question}${fallback ? ` [${fallback}]` : ""}: `);
-  writeLine(output);
-  return answer.trim() || fallback;
-}
-
-function brainChoiceLabel(choice: BrainRootChoice): string {
-  return choice.available ? choice.label : `${choice.label} (not found)`;
-}
-
-function brainLocationChoices(env?: NodeJS.ProcessEnv, customPath?: string): Array<Choice<BrainRootChoice | "custom">> {
-  const discovered = discoverBrainRootChoices({ env, customPath });
-  const choices: Array<Choice<BrainRootChoice | "custom">> = discovered.map((choice) => ({
-    label: brainChoiceLabel(choice),
-    value: choice,
-    detail: choice.detail,
-  }));
-  if (!customPath) {
-    choices.push({ label: "Custom path", value: "custom", detail: "Use an explicit brain root path" });
-  }
-  return choices;
-}
-
-function defaultBrainChoiceIndex(
-  choices: Array<Choice<BrainRootChoice | "custom">>,
-  env?: NodeJS.ProcessEnv,
-  preferCustom = false,
-): number {
-  if (preferCustom) {
-    const customIndex = choices.findIndex((choice) => choice.value !== "custom" && choice.value.kind === "custom");
-    if (customIndex >= 0) return customIndex;
-  }
-  const fallback = defaultBrainRootChoice({ env });
-  const index = choices.findIndex((choice) => choice.value !== "custom" && choice.value.kind === fallback.kind);
-  return index >= 0 ? index : 0;
-}
-
-function renderInteractivePlan(lines: string[]): string {
-  return [
-    "Install plan:",
-    ...lines.map((line) => `  - ${line}`),
-  ].join("\n");
-}
-
-export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Promise<InitCommandResult> {
-  const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
-  const repoRoot = resolve(opts.repo ?? process.cwd());
-  const output = opts.output ?? stdout;
-  const rl = createInterface({
-    input: opts.input ?? stdin,
-    output,
-    terminal: false,
-  });
-
-  try {
-    const targetDefault = opts.target === "codex" ? 1 : opts.target === "claude" ? 2 : 0;
-    const target = await askChoice<InstallTargetSpec>(
-      rl,
-      output,
-      "Host target",
-      [
-        { label: "both", value: "both", detail: "Install Codex and Claude adapters/skills" },
-        { label: "codex", value: "codex", detail: "Install Codex only" },
-        { label: "claude", value: "claude", detail: "Install Claude only" },
-      ],
-      targetDefault,
-    );
-
-    const languagePreset = await askChoice<ReportingLanguagePreset>(
-      rl,
-      output,
-      "Human-facing language",
-      [
-        {
-          label: "Follow user's language",
-          value: "follow",
-          detail: "Chat reports and generated docs follow the user; technical terms stay English",
-        },
-        { label: "中文", value: "zh-CN", detail: "Write chat reports and generated docs in Chinese" },
-        { label: "English", value: "en", detail: "Write chat reports and generated docs in English" },
-        {
-          label: "Custom instruction",
-          value: "custom",
-          detail: "Write an exact reporting sentence; generated docs stay English",
-        },
-      ],
-      0,
-    );
-    const customInstruction =
-      languagePreset === "custom"
-        ? await askText(
-            rl,
-            output,
-            "Reporting language instruction",
-            "Use the user's language for reports; keep technical terms in English.",
-          )
-        : undefined;
-    const reportLanguageInstruction = languageInstruction(languagePreset, customInstruction);
-    const documentationLanguage = documentationLanguageForPreset(languagePreset);
-
-    let customBrainPath = opts.brainRoot;
-    let brainChoices = brainLocationChoices(opts.env, customBrainPath);
-    let brainChoice = await askChoice<BrainRootChoice | "custom">(
-      rl,
-      output,
-      "Brain location",
-      brainChoices,
-      defaultBrainChoiceIndex(brainChoices, opts.env, Boolean(customBrainPath)),
-    );
-    if (brainChoice === "custom") {
-      customBrainPath = await askText(rl, output, "Custom brain root", "~/Documents/brain");
-      brainChoices = brainLocationChoices(opts.env, customBrainPath);
-      brainChoice = brainChoices.find((choice) => choice.value !== "custom" && choice.value.kind === "custom")?.value
-        ?? {
-          kind: "custom",
-          label: "Custom",
-          root: resolve(expandHomePath(customBrainPath, opts.env)),
-          available: true,
-          detail: resolve(expandHomePath(customBrainPath, opts.env)),
-        };
-    }
-
-    const brainMode = await askChoice<InitBrainMode>(
-      rl,
-      output,
-      "Brain mode",
-      [
-        { label: "manifest only", value: "manifest-only", detail: "Use file-vault manifest/check/sync" },
-        { label: "skip brain sync", value: "skip", detail: "Do not create or sync a brain root" },
-      ],
-      0,
-    );
-
-    const externalSkills = await askConfirm(
-      rl,
-      output,
-      "Install external skills (Waza /think /hunt /check /health, Mermaid, cross-review)?",
-    );
-    const codegraph = await askConfirm(rl, output, "Install CodeGraph CLI and configure its MCP server?");
-
-    writeLine(output, renderInteractivePlan([
-      `repo=${repoRoot}`,
-      `target=${target}`,
-      `reporting=${reportLanguageInstruction}`,
-      `documentation_language=${documentationLanguage}`,
-      `brainRoot=${(brainChoice as BrainRootChoice).root}`,
-      `brainMode=${brainMode}`,
-      `externalSkills=${externalSkills}`,
-      `CodeGraph=${codegraph ? "ensure --init --sync plus global MCP configure" : "skip"}`,
-      `apply=${opts.apply === false ? "false" : "true"}`,
-      `verify=${opts.verify === false ? "false" : "true"}`,
-    ]));
-    writeLine(output);
-
-    const confirmed = await askConfirm(rl, output, "Proceed");
-    if (!confirmed) {
-      const steps: InitStep[] = [{ step: "interactive confirmation", status: "skipped", detail: "cancelled" }];
-      return {
-        exitCode: 0,
-        repoRoot,
-        steps,
-        lines: steps.flatMap(renderStep),
-      };
-    }
-
-    return runInit({
-      ...opts,
-      repo: repoRoot,
-      sourceRoot,
-      target,
-      externalSkills,
-      codegraph,
-      configureCodegraphMcp: codegraph,
-      syncCodegraph: codegraph,
-      env: { ...(opts.env ?? process.env), REPO_HARNESS_DOCUMENTATION_LANGUAGE: documentationLanguage },
-      globalContext: { reportLanguageInstruction, reportLanguagePreset: languagePreset },
-      brainRoot: (brainChoice as BrainRootChoice).root,
-      brainMode,
-    });
-  } finally {
-    rl.close();
-  }
 }
