@@ -1,8 +1,15 @@
+import { canonicalEngineerJson, engineerSha256 } from '../../../core/engineers/profile-binding';
 import { validateAgentRuntimeHostAction, type AgentRuntimeAdapterObservationV2, type AgentRuntimeHostActionV2, type AgentRuntimeOperation } from '../../../core/engineers/agent-runtime-effect';
 import { herdrCommand, herdrResult, spawnHerdr, type HerdrEndpoint, type HerdrSpawn } from '../../terminal/herdr';
 
+/** Identifies the exact named local transport configuration, not a physical host or credential. */
+export function herdrEndpointIdentity(endpoint: HerdrEndpoint): string {
+  return engineerSha256(canonicalEngineerJson({ domain: 'repo-harness-herdr-transport/v2', session: endpoint.session,
+    configPath: endpoint.configPath ?? null, home: endpoint.home ?? null }));
+}
+
 export const HERDR_CLI_AGENT_OPERATIONS: readonly AgentRuntimeOperation[] = Object.freeze(['notify_inbox', 'wake_for_offer']);
-export type HerdrEndpointResolver = (input: Readonly<{ host_id: string; endpoint_id: string }>) => HerdrEndpoint & { readonly agentName: string };
+export type HerdrEndpointResolver = (input: Readonly<{ transport_endpoint_sha256: string; endpoint_id: string }>) => HerdrEndpoint & { readonly agentName: string };
 
 export function executeHerdrCliAgentAction(
   actionValue: AgentRuntimeHostActionV2,
@@ -16,9 +23,9 @@ export function executeHerdrCliAgentAction(
   if (!HERDR_CLI_AGENT_OPERATIONS.includes(action.operation)) return observation('unsupported');
   let endpoint: ReturnType<HerdrEndpointResolver>;
   try {
-    endpoint = resolveEndpoint({ host_id: action.host_id, endpoint_id: action.endpoint_id });
+    endpoint = resolveEndpoint({ transport_endpoint_sha256: action.transport_endpoint_sha256, endpoint_id: action.endpoint_id });
     // Names are binding-owned live aliases, cleared by herdr when the occupant exits.
-    if (!endpoint || !/^[a-z][a-z0-9_-]{0,31}$/.test(endpoint.agentName)
+    if (!endpoint || herdrEndpointIdentity(endpoint) !== action.transport_endpoint_sha256 || endpoint.agentName !== action.endpoint_id || !/^[a-z][a-z0-9_-]{0,31}$/.test(endpoint.agentName)
       || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(endpoint.session)) return observation('unavailable');
   } catch { return observation('unavailable'); }
   try {
