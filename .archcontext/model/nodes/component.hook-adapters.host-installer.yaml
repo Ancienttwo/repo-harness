@@ -12,6 +12,7 @@ responsibilities:
 source:
   include:
     - "src/cli/installer/**"
+    - "src/effects/managed-tree.ts"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
     - "src/cli/commands/security.ts"

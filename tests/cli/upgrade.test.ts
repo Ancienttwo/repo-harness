@@ -4,9 +4,10 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { runUpgrade } from '../../src/cli/commands/upgrade';
-import { planLegacyLeftovers } from '../../src/core/upgrade/legacy-inventory';
+import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
-import { hashManagedTree, PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { hashManagedTree } from '../../src/effects/managed-tree';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
@@ -655,7 +656,7 @@ describe('upgrade copy projection fences', () => {
 });
 
 test('a non-root provider uses its declared surface for hashing and real staging', async () => {
-  const { hashUpgradeSource } = await import('../../src/core/upgrade/legacy-inventory');
+  const { hashUpgradeSource } = await import('../../src/effects/upgrade/legacy-inventory');
   projectionSandbox((opts) => {
     seed('upgrade-v0.19.5-home', opts.home);
     const provider = join(opts.home, '.codex/skills/repo-harness-cross-review');
@@ -688,7 +689,7 @@ test('a non-root provider uses its declared surface for hashing and real staging
 });
 
 test('directory source hashing rejects missing and invalid surfaces while file hashing needs no surface', async () => {
-  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/core/upgrade/legacy-inventory');
+  const { hashUpgradeSource, legacyPathSnapshot } = await import('../../src/effects/upgrade/legacy-inventory');
   expect(() => hashUpgradeSource(ROOT, ROOT, undefined)).toThrow('source surface is missing or invalid');
   expect(() => Reflect.apply(hashUpgradeSource, undefined, [ROOT, ROOT, 'unknown-surface']))
     .toThrow('source surface is missing or invalid');
@@ -717,7 +718,7 @@ function nonRouterSkillSandbox(
 
 for (const name of ['repo-harness-cross-review', 'repo-harness-chatgpt'] as const) {
   test(`${name} refresh keeps top-level examples and matches a whole-folder copy with plain excludes`, async () => {
-    const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/cli/installer/install-profile');
+    const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/effects/managed-tree');
     nonRouterSkillSandbox(name, (opts, source, installed) => {
       const planned = runUpgrade({ ...opts, scope: 'global' }).items.find(item => item.path === installed);
       expect(planned?.action).toBe('refresh');

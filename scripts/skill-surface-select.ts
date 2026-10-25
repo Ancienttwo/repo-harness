@@ -72,7 +72,7 @@ async function main(argv: readonly string[]): Promise<void> {
     // script's owner markers and the TS installer must hash identically.
     const [root] = rest;
     if (!root || rest.length !== 1) fail("managed-tree-hash requires exactly one <root> argument");
-    const { hashManagedTree } = await import("../src/cli/installer/install-profile");
+    const { hashManagedTree } = await import("../src/effects/managed-tree");
     console.log(hashManagedTree(root));
     return;
   }
@@ -81,7 +81,7 @@ async function main(argv: readonly string[]): Promise<void> {
     if (!root || !contractPath || rest.length !== 3 || (surface !== 'canonical-skill' && surface !== 'command-facade')) {
       fail("installed-copy-files requires <root> <canonical-skill|command-facade> <contract>");
     }
-    const { installedCopyTreeOptions, managedTreeEntries } = await import("../src/cli/installer/install-profile");
+    const { installedCopyTreeOptions, managedTreeEntries } = await import("../src/effects/managed-tree");
     const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
     for (const entry of managedTreeEntries(root, installedCopyTreeOptions(surface, contract))) {
       process.stdout.write(`${entry.path}\0`);

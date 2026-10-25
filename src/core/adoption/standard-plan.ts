@@ -10,7 +10,7 @@ import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
 import { renderWorkflowContractMarker } from "./workflow-contract-asset";
 import { minimumHarnessVersionOf } from "./minimum-harness-version";
-import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
+import { planLegacyLeftovers, stripLegacyHookEntries } from "../../effects/upgrade/legacy-inventory";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");

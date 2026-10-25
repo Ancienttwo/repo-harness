@@ -16,7 +16,7 @@ import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 import { loadWorkflowContract } from "../scripts/workflow-contract";
 import { renderWorkflowContractMarker } from "../src/core/adoption/workflow-contract-asset";
 import { captureGitVirtualTreeSnapshot } from "../src/effects/evidence/verification-execution";
-import { hashManagedTree } from "../src/cli/installer/install-profile";
+import { hashManagedTree } from "../src/effects/managed-tree";
 
 const ROOT = join(import.meta.dir, "..");
 
