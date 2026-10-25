@@ -542,7 +542,10 @@ function explicitPullRequestIdentity(input: PullRequestReadinessInput): Provider
   const identity = parseProviderPullRequestIdentity(input.pr_number,
     gh(input, ['repo', 'view', '--json', 'id,nameWithOwner']),
     gh(input, ['pr', 'view', String(input.pr_number), '--json', 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,mergeable']));
-  if (identity.provider_repo_id !== input.provider_repository_id || identity.repo_name_with_owner !== input.repository
+  const repository = object(gh(input, ['api', `repos/${input.repository}`]), 'REST repository');
+  if (!Number.isSafeInteger(repository.id) || Number(repository.id) < 1 || String(repository.id) !== input.provider_repository_id
+    || repository.node_id !== identity.provider_repo_id || repository.full_name !== input.repository
+    || identity.repo_name_with_owner !== input.repository
     || identity.base_ref !== 'main') throw new MergeReadinessError('provider_data_incomplete', 'provider repository or main target does not match selection');
   return identity;
 }
@@ -590,7 +593,7 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
   const round = stablePullRequestRound(input, identity => {
     const root = `repos/${input.repository}`;
     const issue = object(gh(input, ['api', `${root}/issues/${input.issue_number}`]), 'selected issue');
-    if (issue.node_id !== input.issue_id || issue.number !== input.issue_number || 'pull_request' in issue) {
+    if (!Number.isSafeInteger(issue.id) || Number(issue.id) < 1 || String(issue.id) !== input.issue_id || issue.number !== input.issue_number || 'pull_request' in issue) {
       throw new MergeReadinessError('provider_data_incomplete', 'selected issue identity changed');
     }
     const detail = object(gh(input, ['api', `${root}/pulls/${input.pr_number}`]), 'merged PR');
@@ -598,7 +601,8 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
     const head = object(detail.head, 'merged PR head');
     const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
     if (identity.state !== 'MERGED' || detail.merged !== true || detail.number !== input.pr_number
-      || object(base.repo, 'merged PR repository').node_id !== input.provider_repository_id
+      || String(object(base.repo, 'merged PR repository').id) !== input.provider_repository_id
+      || object(base.repo, 'merged PR repository').node_id !== identity.provider_repo_id
       || base.ref !== 'main' || base.sha !== input.expected_base_sha || head.sha !== input.expected_head_sha
       || !validSha(detail.merge_commit_sha)) throw new MergeReadinessError('provider_data_incomplete', 'exact merged PR identity is unavailable');
     const commit = object(gh(input, ['api', `${root}/git/commits/${detail.merge_commit_sha}`]), 'provider merge commit');
@@ -607,7 +611,7 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
       || commit.parents.length === 0 || !commit.parents.every(parent => validSha(object(parent, 'merge parent').sha))) {
       throw new MergeReadinessError('provider_data_incomplete', 'merge commit/tree or parents are unavailable');
     }
-    return { issue_id: issue.node_id, issue_number: issue.number, merge_commit_sha: detail.merge_commit_sha, merge_tree_sha: tree.sha };
+    return { issue_id: String(issue.id), issue_number: issue.number, merge_commit_sha: detail.merge_commit_sha, merge_tree_sha: tree.sha };
   });
   if (!round) throw new MergeReadinessError('provider_data_incomplete', 'integration selection changed during read');
   const verdict = projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha,

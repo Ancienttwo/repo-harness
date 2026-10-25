@@ -340,6 +340,16 @@ const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object
  * approval against the current issue goal before using that observation.
  * Waivers additionally require the current local grant and its live expiry.
  */
+function observeSelectedAdmission(reader: DependencyAuthorityReaders, repoRoot: string, authorityHome: string,
+  selector: ReturnType<typeof validateModuleAcceptanceReference>) {
+  const active = reader.observeReviewAdmission({ repoRoot, authorityHome,
+    repository_id: selector.provider_repository_id, issue_id: selector.issue_id, campaign_id: selector.campaign_id,
+    expectedGrantSha256: selector.grant_sha256, expectedPolicySha256: selector.policy_sha256, expectedActor: selector.actor_id,
+    issuePolicy: reader.readIssuePolicy(repoRoot) });
+  if (active.admission.admission_sha256 !== selector.admission_sha256 || active.grant_sha256 !== selector.grant_sha256) throw new Error('review approval changed');
+  return active;
+}
+
 function moduleAccepted(
   input: DependencyAuthorityInput,
   read: DependencyAuthorityRepositoryRead,
@@ -361,13 +371,7 @@ function moduleAccepted(
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
     // Repository path and policy location come only from the adopted registry.
     // The committed selector cannot supply a filesystem or provider endpoint.
-    active = reader.observeReviewAdmission({ repoRoot: read.repo.path, authorityHome,
-      repository_id: selector.provider_repository_id, issue_id: selector.issue_id,
-      campaign_id: selector.campaign_id, expectedGrantSha256: selector.grant_sha256,
-      expectedPolicySha256: selector.policy_sha256, expectedActor: selector.actor_id,
-      issuePolicy: reader.readIssuePolicy(read.repo.path) });
-    if (active.admission.admission_sha256 !== selector.admission_sha256
-      || active.grant_sha256 !== selector.grant_sha256) return UNAVAILABLE;
+    active = observeSelectedAdmission(reader, read.repo.path, authorityHome, selector);
     observation = reader.readAcceptanceObservation(read.repo.path, authorityHome,
       active.admission.campaign_sha256, active.admission.admission_sha256);
   } catch {
@@ -458,12 +462,23 @@ function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthor
       || canonicalEngineerJson(sort(contract.required_pull_requests)) !== canonicalEngineerJson(sort(selection.required_pull_requests))
       || envelope.final_head_sha !== selection.final_head_sha || envelope.final_tree_sha !== selection.final_tree_sha
       || canonicalEngineerJson(sort(envelope.selected_pull_requests)) !== canonicalEngineerJson(sort(observed))) return UNAVAILABLE;
-    const receiptBytes = reader.readAcceptanceReceiptBytes(read.repo.path, reader.resolveAuthorityHome());
+    const authorityHome = reader.resolveAuthorityHome();
+    const active = observeSelectedAdmission(reader, read.repo.path, authorityHome, product.review_authority);
+    const receiptBytes = reader.readAcceptanceReceiptBytes(read.repo.path, authorityHome);
     const receipt = JSON.parse(receiptBytes.toString('utf8'));
     if (publicationSha256(receiptBytes) !== projection.acceptance_receipt_sha256
       || receipt.subject_sha256 !== projection.acceptance_subject_sha256
       || receipt.target_revision !== projection.acceptance_target_revision || receipt.target_revision !== envelope.base_sha
       || receipt.disposition !== projection.acceptance_disposition) return UNAVAILABLE;
+    let waiverGrant = null;
+    if (receipt.disposition === 'user_waiver') {
+      const path = userWaiverGrantPath(read.repo.path, authorityHome);
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+      waiverGrant = readUserWaiverGrantFile(path);
+    }
+    if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
+      admission: active.admission, grantSha256: active.grant_sha256, waiverGrant }).ok) return UNAVAILABLE;
     return verdict('satisfied', [
       evidence(`product-requirement:${product.approved_prd_ref}`, product.approved_prd_sha256),
       evidence(`product-acceptance-projection:${projection.projection_sha256}`, projection.projection_sha256),

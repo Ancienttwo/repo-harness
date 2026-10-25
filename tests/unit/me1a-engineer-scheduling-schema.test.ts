@@ -82,7 +82,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => graph([workPackage('wp-a', 'task A', [{ ...edge, acceptance_authority: {
       authority_kind: 'provider_integration', subject_ref: 'plans/integration/selected.json', subject_revision: DIGEST,
     } }]), workPackage('wp-b', 'task B')])).not.toThrow();
-    const pr = { provider_repository_id: 'R_example', repository: 'example/product', issue_id: 'I_903', issue_number: 903,
+    const pr = { provider_repository_id: '1001', repository: 'example/product', issue_id: '2001', issue_number: 903,
       pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) };
     const selector = { protocol: 2, task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64),
       final_head_sha: 'c'.repeat(40), final_tree_sha: 'd'.repeat(40), required_pull_requests: [pr, { ...pr, pr_number: 2 }], product: null };

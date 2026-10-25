@@ -21,6 +21,7 @@ export interface IntegrationRequirementV2 {
 }
 
 export interface RequiredPullRequestV2 {
+  /** Canonical GitHub REST numeric id, serialized as decimal text. */
   readonly provider_repository_id: string;
   readonly repository: string;
   readonly issue_id: string;
@@ -159,6 +160,9 @@ const PULL_REQUEST_KEYS = ['provider_repository_id', 'repository', 'issue_id', '
 export function validateRequiredPullRequest(value: unknown): RequiredPullRequestV2 {
   const record = asRecord(value, 'required pull request');
   requireExactKeys(record, PULL_REQUEST_KEYS, 'required pull request');
+  for (const key of ['provider_repository_id', 'issue_id'] as const) {
+    if (typeof record[key] !== 'string' || !/^[1-9][0-9]*$/.test(record[key])) throw new Error(`${key} must be a canonical REST id`);
+  }
   const repository = requiredString(record.repository, 'repository', 256);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('repository must be owner/name');
   for (const key of ['issue_number', 'pr_number'] as const) {

@@ -48,6 +48,7 @@ if (${JSON.stringify(mode)} === 'failed') { console.error('fixture provider fail
 if (args[0] === 'repo') value = {id:'R_fixture', nameWithOwner:'example/repo'};
 else if (args[0] === 'pr' && args[1] === 'view') value = ${JSON.stringify(mode === 'malformed' ? { number: 'not-a-number' } : pr)};
 else if (args[0] === 'pr' && args[1] === 'checks') value = [{name:'Required / CI',bucket:${JSON.stringify(mode === 'pending' ? 'pending' : 'pass')},link:'https://github.com/example/repo/actions/runs/1/job/2'}];
+else if (args[0] === 'api' && args[1] === 'repos/example/repo') value = {id:1001,node_id:'R_fixture',full_name:'example/repo'};
 else if (args[0] === 'api' && args[1] === 'graphql') value = ${JSON.stringify(graph)};
 else if (args[0] === 'api' && args[1].includes('/actions/runs/')) value = ${JSON.stringify(run)};
 else if (args[0] === 'api' && args[1].includes('/contents/')) {value={status:'404'};status=1;}

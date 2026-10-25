@@ -83,7 +83,8 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
     const command = `${args[0]} ${args[1]}`;
     if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
     if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
-    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ node_id: 'I_product', number: 903 });
+    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product' });
+    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ id: 2001, node_id: 'I_product', number: 903 });
     const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
       ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
       : Number(args[1]?.match(/(?:pulls|runs)\/(\d+)$/)?.[1]);
@@ -100,7 +101,7 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
       state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
       baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
-    if (command === 'api graphql') return response({ data: { node: { id: selection.provider_repository_id, pullRequest: {
+    if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
       number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
       latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
       reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] },
@@ -109,7 +110,7 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
       head_sha: selection.expected_head_sha, pull_requests: [{ number, head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha } }],
       status: 'completed', conclusion: 'success' });
     if (args[1]?.includes('/pulls/')) return response({ number, merged: true, merge_commit_sha: item.merge,
-      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { node_id: selection.provider_repository_id } } });
+      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { id: 1001, node_id: 'R_me4c_fixture' } } });
     throw new Error(`unexpected provider args: ${args.join(' ')}`);
   };
 }
@@ -146,7 +147,7 @@ function fixture(): Fixture {
   const featureA = git(root, 'commit-tree', git(root, 'rev-parse', `${headA}^{tree}`), '-p', base, '-m', 'feature A before squash');
   const featureB = git(root, 'commit-tree', git(root, 'rev-parse', `${finalHead}^{tree}`), '-p', headA, '-m', 'feature B before squash');
   const selection = (pr_number: number, head: string, base: string): RequiredPullRequestV2 => ({
-    provider_repository_id: 'R_me4c_fixture', repository: 'example/product', issue_id: 'I_product', issue_number: 903,
+    provider_repository_id: '1001', repository: 'example/product', issue_id: '2001', issue_number: 903,
     pr_number, expected_head_sha: head, expected_base_sha: base,
   });
   const finalTree = git(root, 'rev-parse', `${finalHead}^{tree}`);
@@ -188,6 +189,23 @@ afterEach(() => {
 });
 
 describe('ME-4C integration product acceptance', () => {
+
+  test.each(['repository-rest', 'repository-node', 'issue-rest', 'pull-repository'])('refuses a provider identity namespace mismatch: %s', scenario => {
+    const value = fixture();
+    const environment = { ...value.environment, gh_runner: (args: readonly string[]) => {
+      const response = value.environment.gh_runner!(args);
+      const body = JSON.parse(response.stdout);
+      if (args[0] === 'api' && args[1] === 'repos/example/product') {
+        if (scenario === 'repository-rest') body.id = 9999;
+        if (scenario === 'repository-node') body.node_id = 'R_other';
+      }
+      if (args[1]?.includes('/issues/') && scenario === 'issue-rest') body.id = 9999;
+      if (args[1]?.includes('/pulls/') && scenario === 'pull-repository') body.base.repo.id = 9999;
+      return { ...response, stdout: JSON.stringify(body) };
+    } };
+    expectCode(() => createIntegrationEnvelope(environment, { contract_sha256: value.contract.contract_sha256,
+      base_sha: value.base, final_head_sha: value.finalHead, final_tree_sha: value.finalTree }), 'publication_stale');
+  });
 
   test('pins every integration provider command to github.com under hostile GH_HOST', () => {
     const value = fixture();

@@ -25,7 +25,7 @@ function fixture(): string {
     approved_prd_ref: 'plans/prds/product.md',
     source_spec_ref: 'docs.md',
     integration_group: 'cli-fixture',
-    required_pull_requests: [{ provider_repository_id: 'R_product', repository: 'example/product', issue_id: 'I_product', issue_number: 903, pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) }],
+    required_pull_requests: [{ provider_repository_id: '1001', repository: 'example/product', issue_id: '2001', issue_number: 903, pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) }],
     required_constraints: ['constraint-a'],
   }));
   execFileSync('git', ['add', '.'], { cwd: root });
@@ -67,7 +67,7 @@ describe('integration CLI', () => {
     const root = fixture();
     writeFileSync(join(root, 'inputs/invalid.json'), JSON.stringify({
       approved_prd_ref: 'plans/prds/product.md', source_spec_ref: 'docs.md', integration_group: 'fixture',
-      required_pull_requests: [{ provider_repository_id: 'R_product', repository: 'example/product', issue_id: 'I_product', issue_number: 903, pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) }],
+      required_pull_requests: [{ provider_repository_id: '1001', repository: 'example/product', issue_id: '2001', issue_number: 903, pr_number: 1, expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) }],
       required_constraints: ['constraint-a'], merge: true,
     }));
     const invalid = run(root, ['integration', 'contract', '--input', 'inputs/invalid.json']);

@@ -78,7 +78,7 @@ export interface IntegrationDependencyReferenceV2 {
   readonly final_head_sha: string;
   readonly final_tree_sha: string;
   readonly required_pull_requests: readonly RequiredPullRequestV2[];
-  readonly product: { readonly projection_sha256: string; readonly approved_prd_ref: string; readonly approved_prd_sha256: string } | null;
+  readonly product: { readonly projection_sha256: string; readonly approved_prd_ref: string; readonly approved_prd_sha256: string; readonly review_authority: ModuleAcceptanceReferenceV1 } | null;
 }
 
 export function validateIntegrationDependencyReference(value: unknown): IntegrationDependencyReferenceV2 {
@@ -92,8 +92,8 @@ export function validateIntegrationDependencyReference(value: unknown): Integrat
   let product: IntegrationDependencyReferenceV2['product'] = null;
   if (input.product !== null) {
     const item = record(input.product, `${label}.product`);
-    exact(item, ['projection_sha256', 'approved_prd_ref', 'approved_prd_sha256'], `${label}.product`);
-    product = Object.freeze({ projection_sha256: string(item.projection_sha256, 'projection_sha256', DIGEST),
+    exact(item, ['projection_sha256', 'approved_prd_ref', 'approved_prd_sha256', 'review_authority'], `${label}.product`);
+    product = Object.freeze({ review_authority: validateModuleAcceptanceReference(item.review_authority), projection_sha256: string(item.projection_sha256, 'projection_sha256', DIGEST),
       approved_prd_ref: safeRepoPath(item.approved_prd_ref, 'approved_prd_ref'), approved_prd_sha256: string(item.approved_prd_sha256, 'approved_prd_sha256', DIGEST) });
   }
   return Object.freeze({ protocol: 2, task_id: string(input.task_id, 'task_id', /^[0-9a-f]{64}$/),

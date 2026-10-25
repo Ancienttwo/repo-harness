@@ -320,7 +320,8 @@ function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2
     const command = `${args[0]} ${args[1]}`;
     if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
     if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
-    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ node_id: 'I_product', number: 903 });
+    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product' });
+    if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ id: 2001, node_id: 'I_product', number: 903 });
     const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
       ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
       : Number(args[1]?.match(/(?:pulls|runs)\/(\d+)$/)?.[1]);
@@ -337,7 +338,7 @@ function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2
       state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
       baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
-    if (command === 'api graphql') return response({ data: { node: { id: selection.provider_repository_id, pullRequest: {
+    if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
       number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
       latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
       reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] },
@@ -346,14 +347,14 @@ function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2
       head_sha: selection.expected_head_sha, pull_requests: [{ number, head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha } }],
       status: 'completed', conclusion: 'success' });
     if (args[1]?.includes('/pulls/')) return response({ number, merged: true, merge_commit_sha: item.merge,
-      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { node_id: selection.provider_repository_id } } });
+      head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { id: 1001, node_id: 'R_me4c_fixture' } } });
     throw new Error(`unexpected provider args: ${args.join(' ')}`);
   };
 }
 
 function providerFixture(subject: Fixture, head: string, base: string) {
-  const selection: RequiredPullRequestV2 = { provider_repository_id: 'R_me4c_fixture', repository: 'example/product',
-    issue_id: 'I_product', issue_number: 903, pr_number: 1, expected_head_sha: head, expected_base_sha: base };
+  const selection: RequiredPullRequestV2 = { provider_repository_id: '1001', repository: 'example/product',
+    issue_id: '2001', issue_number: 903, pr_number: 1, expected_head_sha: head, expected_base_sha: base };
   const tree = git(subject.root, 'rev-parse', `${head}^{tree}`);
   const provider = new Map([[1, { selection, merge: head, tree }]]);
   const environment = { repo_root: subject.root, gh_runner: providerRunner(provider) };
@@ -361,7 +362,7 @@ function providerFixture(subject: Fixture, head: string, base: string) {
 }
 
 function integrationInput(subject: Fixture, state: 'publication_integrated' | 'product_accepted',
-  provider: ReturnType<typeof providerFixture>, product: { projection_sha256: string; approved_prd_ref: string; approved_prd_sha256: string } | null = null): DependencyAuthorityInput {
+  provider: ReturnType<typeof providerFixture>, product: { projection_sha256: string; approved_prd_ref: string; approved_prd_sha256: string; review_authority: ReturnType<typeof selector> } | null = null): DependencyAuthorityInput {
   const selector = { protocol: 2, task_id: subject.target.task_id, task_revision: subject.target.task_revision,
     final_head_sha: provider.provider.get(1)!.merge, final_tree_sha: provider.tree, required_pull_requests: [provider.selection], product };
   const path = 'plans/integration/wp-a.json';
@@ -1038,7 +1039,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
   });
 
-  test('product_accepted needs an exact ME-4C projection and never reuses a module receipt', async () => {
+  test.each(['external_pass', 'user_waiver'] as const)('product_accepted requires current authority for an exact %s projection', async disposition => {
     const subject = fixture();
     const base = subject.commit;
     writeRepoFile(subject.root, 'module-a.txt', 'A\n');
@@ -1073,7 +1074,10 @@ describe('issue #284 closed dependency authority', () => {
       rows: [{ constraint_id: 'constraint-a', evidence_ref: 'docs/evidence/constraint-a.json', result: 'pass' }],
       verifier_receipt_ref: 'docs/evidence/verifier.json',
     });
-    const receipt = acceptanceReceipt(subject, { target_revision: base });
+    const grant = waiverGrant(subject);
+    const grantPath = userWaiverGrantPath(subject.root, subject.home, true);
+    if (disposition === 'user_waiver') writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
+    const receipt = disposition === 'user_waiver' ? waivedReceipt(subject, grant, { target_revision: base }) : acceptanceReceipt(subject, { target_revision: base });
     const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
     const projection = await createProductAcceptanceProjection(
       { ...provider.environment, authority_home: subject.root },
@@ -1088,13 +1092,35 @@ describe('issue #284 closed dependency authority', () => {
     expect(listProductAcceptanceProjections(subject.root)).toEqual([projection]);
 
     const exact = integrationInput(subject, 'product_accepted', provider, { projection_sha256: projection.projection_sha256,
-      approved_prd_ref: PRD_REF, approved_prd_sha256: engineerSha256(PRD_TEXT) });
+      approved_prd_ref: PRD_REF, approved_prd_sha256: engineerSha256(PRD_TEXT), review_authority: selector(subject.root) });
     const withReceipt = { ...exact, readers: { ...exact.readers, readAcceptanceReceiptBytes: () => receiptBytes } };
     const accepted = resolveDependencyAuthority(withReceipt);
     expect(accepted.status).toBe('satisfied');
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`product-acceptance-projection:${projection.projection_sha256}`);
     expect(accepted.authority_revision).not.toBe(withoutProduct.authority_revision);
+    if (disposition === 'user_waiver') {
+      const clock = spyOn(Date, 'now').mockReturnValue(grant.authorization.expires_at + 1);
+      try { expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable'); }
+      finally { clock.mockRestore(); }
+      expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+      rmSync(grantPath);
+      expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+      writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
+      expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+    }
+    const goal = approval(subject.root).issue.body;
+    approval(subject.root).issue.body = 'Changed product goal';
+    expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+    approval(subject.root).issue.body = goal;
+    expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+    const activePath = join(approval(subject.root).directory, 'active.json');
+    const activeBytes = readFileSync(activePath);
+    writeFileSync(activePath, JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }), { mode: 0o600 });
+    expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+    writeFileSync(activePath, activeBytes);
+    expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+
 
     const moved = retargeted(subject, { task_revision: 'b'.repeat(64) });
     const movedTarget = resolveDependencyAuthority({ ...withReceipt, ...moved, reads: moved.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });

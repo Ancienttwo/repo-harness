@@ -215,7 +215,7 @@ function requireChecks(root: string, current: Candidate): number {
   const ghBin = resolveTrustedGhExecutable();
   if (!ghBin) fail('trusted GitHub CLI executable unavailable; no merge authorized');
   const runGh = (args: readonly string[]) => spawnSync(ghBin, [...args], {
-    cwd: root, env: lockedGitEnv(), encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024,
+    cwd: root, env: { ...lockedGitEnv(), GH_HOST: 'github.com' }, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024,
   });
   const result = runGh(['pr', 'view', '--json', 'number']);
   if (result.error || result.status !== 0) fail('GitHub PR readback unavailable; no merge authorized');
@@ -228,8 +228,14 @@ function requireChecks(root: string, current: Candidate): number {
   let repo: unknown;
   try { repo = JSON.parse(repoRead.stdout); } catch { fail('invalid GitHub repository identity'); }
   if (!isRecord(repo) || typeof repo.id !== 'string' || typeof repo.nameWithOwner !== 'string') fail('invalid GitHub repository identity');
+  const repositoryRead = runGh(['api', `repos/${repo.nameWithOwner}`, '--hostname', 'github.com']);
+  if (repositoryRead.error || repositoryRead.status !== 0) fail('GitHub REST repository identity unavailable');
+  let repository: unknown;
+  try { repository = JSON.parse(repositoryRead.stdout); } catch { fail('invalid GitHub REST repository identity'); }
+  if (!isRecord(repository) || !Number.isSafeInteger(repository.id) || Number(repository.id) < 1
+    || repository.node_id !== repo.id || repository.full_name !== repo.nameWithOwner) fail('GitHub repository identities disagree');
   const readiness = collectPullRequestMergeReadiness({ repo_root: root, pr_number: number, gh_bin: ghBin,
-    provider_repository_id: repo.id, repository: repo.nameWithOwner,
+    provider_repository_id: String(repository.id), repository: repo.nameWithOwner,
     // Keep every provider query on the same binary and cleared caller environment.
     gh_runner: args => {
       const observed = runGh(args);
