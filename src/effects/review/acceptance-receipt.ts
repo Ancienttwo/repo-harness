@@ -30,6 +30,7 @@ import {
   acceptanceReviewContextDigest,
   acceptanceVerificationObservationSubjectKey,
   assertReviewFields,
+  assertUserWaiverGrant,
   authorityFingerprint,
   buildAcceptanceVerificationObservation,
   contractCarriesArchiveProjection,
@@ -41,6 +42,7 @@ import {
   validateDisposition,
   validateDomainReview,
   validateFindings,
+  validateUserWaiverAuthorization,
   waiverGrantFingerprint,
   type AcceptanceDisposition,
   type AcceptanceEvidence,
@@ -504,6 +506,7 @@ export function validateAcceptanceReceiptAgainstPolicy(
     if (receipt.disposition === 'user_waiver') {
       const grant = input.waiverGrant;
       if (grant === null) return no('waiver_grant_present', 'AcceptanceReceipt user_waiver requires a UserWaiverGrant');
+      assertUserWaiverGrant(grant);
       if (policy.user_waiver !== 'allowed') return no('waiver_policy_allowed', 'admission forbids user waiver');
       if (grant.repository_root !== input.repositoryRoot) return no('waiver_grant_repository', 'UserWaiverGrant repository root is stale');
       if (grant.campaign_sha256 !== receipt.campaign_sha256 || grant.admission_sha256 !== receipt.admission_sha256) {
@@ -514,6 +517,7 @@ export function validateAcceptanceReceiptAgainstPolicy(
       }
       if (grant.actor !== owner) return no('waiver_grant_owner', 'UserWaiverGrant owner is stale');
       if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('waiver_grant_fingerprint', 'AcceptanceReceipt waiver grant is stale');
+      validateUserWaiverAuthorization(grant.authorization, waiverAuthorizationSubject(input.repositoryRoot, input.admission, input.grantSha256, grant.summary), Date.now());
     } else if (receipt.waiver_grant_sha256 !== null || input.waiverGrant !== null) {
       return no('waiver_binding_symmetry', 'AcceptanceReceipt waiver grant binding does not match disposition');
     }
@@ -602,20 +606,8 @@ function readUserWaiverGrant(path: string): UserWaiverGrant {
   } catch (error) {
     fail(`UserWaiverGrant is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 2 || value.kind !== 'repo-harness-user-waiver-grant') {
-    fail('UserWaiverGrant kind/protocol is invalid');
-  }
-  for (const field of [
-    'repository_root', 'campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256',
-    'actor', 'scope', 'summary', 'issued_at',
-  ]) {
-    if (typeof value[field] !== 'string' || String(value[field]).trim() === '') fail(`UserWaiverGrant ${field} is required`);
-  }
-  if (value.scope !== 'admission-authority') fail('UserWaiverGrant scope is invalid');
-  for (const field of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`UserWaiverGrant ${field} is invalid`);
-  }
-  return value as UserWaiverGrant;
+  assertUserWaiverGrant(value);
+  return value;
 }
 
 function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
@@ -635,26 +627,38 @@ function currentAdmission(root: string, authority: ReviewAdmissionSource) {
   return observeActiveReviewAdmission(authority);
 }
 
+function waiverAuthorizationSubject(root: string, admission: ReturnType<typeof currentAdmission>['admission'], grant: string, summary: string) {
+  return { repository_root: root, repository_id: admission.repository_id, issue_id: admission.issue_id, campaign_id: admission.campaign_id,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: grant, goal_sha256: admission.goal.revision, actor: admission.actor_id, summary };
+}
+
+/** Trusted Bot entrypoint. The caller must obtain separate human waiver approval
+ * upstream. Policy eligibility and an execution actor name are not that action.
+ */
 export function recordUserWaiverGrant(args: {
-  root: string; authorityHome: string; authority: ReviewAdmissionSource; actor: string; summary: string; now?: () => Date;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; actor: string; summary: string; authorization?: unknown; now?: () => Date;
 }): UserWaiverGrant {
   if (!args.summary.trim()) fail('waiver grant summary is required');
   const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
   if (admission.policy.user_waiver !== 'allowed') fail('admission forbids user waiver');
   if (args.actor !== admission.actor_id) fail('UserWaiverGrant actor must equal the approved actor');
+  const now = (args.now ?? (() => new Date()))();
+  const authorization = validateUserWaiverAuthorization(args.authorization,
+    waiverAuthorizationSubject(root, admission, active.grant_sha256, args.summary), now.getTime());
   const grant: UserWaiverGrant = {
-    protocol: 2, kind: 'repo-harness-user-waiver-grant', repository_root: root,
+    protocol: 3, kind: 'repo-harness-user-waiver-grant', repository_root: root,
     campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
     grant_sha256: active.grant_sha256, goal_sha256: admission.goal.revision,
     actor: args.actor, scope: 'admission-authority', summary: args.summary,
-    issued_at: (args.now ?? (() => new Date()))().toISOString(),
+    issued_at: now.toISOString(), authorization,
   };
   writeUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome, true), grant);
   return grant;
 }
 
 export function verifyUserWaiverGrant(args: {
-  root: string; authorityHome: string; authority: ReviewAdmissionSource;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; now?: () => Date;
 }): UserWaiverGrant {
   const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
   const grant = readUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome));
@@ -662,6 +666,8 @@ export function verifyUserWaiverGrant(args: {
     || grant.admission_sha256 !== admission.admission_sha256 || grant.grant_sha256 !== active.grant_sha256
     || grant.goal_sha256 !== admission.goal.revision || grant.actor !== admission.actor_id) fail('UserWaiverGrant authority is stale');
   if (admission.policy.user_waiver !== 'allowed') fail('admission forbids user waiver');
+  validateUserWaiverAuthorization(grant.authorization, waiverAuthorizationSubject(root, admission, active.grant_sha256, grant.summary),
+    (args.now ?? (() => new Date()))().getTime());
   return grant;
 }
 
@@ -877,6 +883,7 @@ export async function recordUserWaiverAcceptance(args: {
     root: context.root,
     authorityHome: args.authorityHome,
     authority: args.authority,
+    now: args.now,
   });
   const findings: AcceptanceFinding[] = [];
   validateDisposition(context.policy, context.owner, 'user_waiver', 'User', 'user-waiver', grant.actor, findings);
@@ -1076,6 +1083,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       authority,
       actor: option(argv, '--actor')!,
       summary: option(argv, '--summary')!,
+      authorization: JSON.parse(readFileSync(resolve(root, option(argv, '--authorization')!), 'utf8')),
       now: opts.now,
     });
     console.log(JSON.stringify(grant));
@@ -1086,6 +1094,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       root,
       authorityHome,
       authority,
+      now: opts.now,
     })));
     return 0;
   }

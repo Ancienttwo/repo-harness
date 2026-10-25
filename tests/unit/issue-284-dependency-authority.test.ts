@@ -375,9 +375,18 @@ function writeAcceptanceReceipt(subject: Fixture, receipt: AcceptanceReceipt, au
   writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`);
 }
 
+function waiverAuthorization(subject: Fixture, summary: string) {
+  const active = approval(subject.root), admission = active.admission;
+  return { protocol: 1 as const, kind: 'repo-harness-upstream-waiver-authorization' as const,
+    action: 'human-approved-user-waiver' as const, authorization_ref: 'fixture-separate-user-waiver', bot_id: 'fixture-bot',
+    repository_root: subject.root, repository_id: admission.repository_id, issue_id: admission.issue_id, campaign_id: admission.campaign_id,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: active.grant, goal_sha256: admission.goal.revision, actor: admission.actor_id, summary, expires_at: Date.now() + 3_600_000 };
+}
+
 function waiverGrant(subject: Fixture, overrides: Partial<UserWaiverGrant> = {}): UserWaiverGrant {
   return {
-    protocol: 2,
+    protocol: 3,
     kind: 'repo-harness-user-waiver-grant',
     repository_root: subject.root,
     campaign_sha256: approval(subject.root).admission.campaign_sha256,
@@ -387,6 +396,7 @@ function waiverGrant(subject: Fixture, overrides: Partial<UserWaiverGrant> = {})
     actor: OWNER,
     scope: 'admission-authority',
     summary: 'owner waived wp-a',
+    authorization: waiverAuthorization(subject, 'owner waived wp-a'),
     issued_at: '2026-09-02T00:00:00.000Z',
     ...overrides,
   };
@@ -791,6 +801,7 @@ describe('issue #284 closed dependency authority', () => {
       authority: approval(waived.root).source,
       actor: 'kito',
       summary: 'owner waived the candidate',
+      authorization: waiverAuthorization(waived, 'owner waived the candidate'),
     });
     writeFileSync(join(waived.root, '-checks.json'), readFileSync(join(waived.root, '.ai/harness/runs/acceptance.report.json')));
     await expect(recordUserWaiverAcceptance({
