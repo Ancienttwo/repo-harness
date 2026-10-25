@@ -121,13 +121,15 @@ describe("create-project-dirs scaffold parity", () => {
       }
       expect(template).toContain("## Agentic Routing");
       expect(template).toContain("## Workflow Inventory");
-      expect(template).toContain("Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree");
+      expect(template).toContain("Planning selection is metadata only.");
+      expect(template).toContain("Scope authority: the active approved admission and its `allowed_paths`");
+      expect(template).toContain("do not infer execution ownership from planning files");
       expect(template).toContain("## Evidence Contract");
       expect(template).toContain("**State/progress path**");
 
       const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
       expect(contractTemplate).toContain("## Workflow Inventory");
-      expect(contractTemplate).toContain("Completion gate: execute the active admitted verification plan");
+      expect(contractTemplate).toContain("Completion gate: Execute the active admitted verification plan");
       expect(contractTemplate).toContain("they are not execution authority");
       expect(contractTemplate).toContain("## Acceptance Policy");
       expect(contractTemplate).toContain("## Delegation Contract");

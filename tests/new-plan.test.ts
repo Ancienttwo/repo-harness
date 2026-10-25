@@ -45,7 +45,9 @@ describe("new-plan helper integration", () => {
       expect(plan).not.toContain("> **Sprint Contract**:");
       expect(plan).not.toContain("> **Sprint Review**:");
       expect(plan).toContain("repo-harness run plan-to-todo --plan");
-      expect(plan).toContain(".ai/harness/active-worktree");
+      expect(plan).toContain("current admitted task/session and immutable claim");
+      expect(plan).toContain("Preserve the owning Git worktree");
+      expect(plan).toContain("Worktree creation does not replace task/session admission");
       expect(existsSync(join(cwd, "docs/plan.md"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

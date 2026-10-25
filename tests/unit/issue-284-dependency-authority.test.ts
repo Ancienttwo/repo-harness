@@ -813,7 +813,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.status).toBe('satisfied');
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`acceptance-observation:${observation.observation_id}`);
-    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-goal:R_provider:I_903');
+    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${PROVIDER_REPO_ID}:${ISSUE_A}`);
 
     // Re-recording the same subject overwrites one file rather than growing a bag.
     const rerecorded = recordAcceptanceObservation(subject);
