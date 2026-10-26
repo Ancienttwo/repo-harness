@@ -1,10 +1,10 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readNotifyStatus } from '../../src/effects/operator/notify-status';
+import { readNotifyChannelStatus, readNotifyStatus } from '../../src/effects/operator/notify-status';
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
@@ -25,8 +25,9 @@ function fixture() {
   const shim = join(bin, 'herdr');
   writeFileSync(shim, `#!${process.execPath}
 import { appendFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify(args) + '\\n');
+const argv = process.argv.slice(2);
+appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, herdr_env: Object.keys(process.env).filter(name => name.startsWith('HERDR_')).sort() }) + '\\n');
+const args = argv[0] === '--session' ? argv.slice(2) : argv;
 const id = 'aimpact.webhook-notify';
 if (args[0] === 'plugin' && args[1] === 'list') {
   const enabled = process.env.FIXTURE_ENABLED !== '0';
@@ -71,6 +72,53 @@ describe('notify plugin status', () => {
       expect(JSON.stringify(status)).not.toContain(SECRET);
       expect(JSON.stringify(status)).not.toContain(SLACK);
       expect(JSON.stringify(status)).not.toContain('bot.example');
+    } finally { f.cleanup(); }
+  });
+
+  test('every plugin read targets the install session and drops the caller pane identity', async () => {
+    const f = fixture();
+    try {
+      f.env.HERDR_SESSION = 'pane-session';
+      f.env.HERDR_SOCKET_PATH = join(f.root, 'pane.sock');
+      await readNotifyStatus({ env: f.env, session: 'notify-test', now: new Date('2026-10-04T00:00:00.000Z') });
+      const calls = readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { argv: string[]; herdr_env: string[] });
+      expect(calls.map(call => call.argv.slice(0, 3)).sort()).toEqual([
+        ['--session', 'notify-test', 'plugin'],
+        ['--session', 'notify-test', 'plugin'],
+        ['--session', 'notify-test', 'plugin'],
+      ]);
+      expect(calls.flatMap(call => call.herdr_env)).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+
+  test('without an explicit session the reader names the session Herdr itself would select', async () => {
+    for (const [session, expected] of [[undefined, 'default'], ['pane-session', 'pane-session']] as const) {
+      const f = fixture();
+      try {
+        if (session) f.env.HERDR_SESSION = session; else delete f.env.HERDR_SESSION;
+        await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
+        const calls = readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { argv: string[] });
+        expect(new Set(calls.map(call => call.argv.slice(0, 2).join(' ')))).toEqual(new Set([`--session ${expected}`]));
+      } finally { f.cleanup(); }
+    }
+  });
+
+  test('an invalid session name is refused before any Herdr call', async () => {
+    const f = fixture();
+    try {
+      await expect(readNotifyStatus({ env: f.env, session: '../other' })).rejects.toThrow('notify_status_session');
+      expect(() => readFileSync(f.env.FIXTURE_CALLS!, 'utf8')).toThrow();
+    } finally { f.cleanup(); }
+  });
+
+  test('each channel is configured only when the plugin would send to it, and no value leaves the reader', async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nSLACK_WEBHOOK_URL='${SLACK}'\nDISCORD_WEBHOOK_URL='https://discord.example/discord-secret'\nTELEGRAM_BOT_TOKEN='123:telegram-secret'\n`, { mode: 0o600 });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test', now: new Date('2026-10-04T00:00:00.000Z') });
+      expect(read.channels).toEqual({ webhook: 'missing', slack: 'configured', discord: 'configured', telegram: 'missing' });
+      expect(read.status.config).toEqual({ WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'configured' });
+      for (const value of [SLACK, 'discord-secret', 'telegram-secret', 'bot.example']) expect(JSON.stringify(read)).not.toContain(value);
     } finally { f.cleanup(); }
   });
 
