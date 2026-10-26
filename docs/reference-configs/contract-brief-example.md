@@ -37,7 +37,7 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verification-plan execute --repo . --contract <contract> --report-file .ai/harness/runs/<run-id>.report.json` records real declared checks in the selected report; `repo-harness run change-assessment prepare --contract <contract>` then writes the assessment before semantic review; one typed `AcceptanceReceipt` records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
+- Completion gate: `repo-harness run verification-plan execute --repo . --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> --report-file .ai/harness/runs/<run-id>.report.json` runs the Verification Plan of the current review admission and records the real checks in the selected report. `repo-harness run change-assessment prepare` with the same admission flags then writes the assessment before semantic review. One typed `AcceptanceReceipt` records `external_pass`, or `user_waiver` when the admission policy allows it.
 
 ## Allowed Paths
 
