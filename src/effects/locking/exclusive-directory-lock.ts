@@ -94,7 +94,8 @@ export interface ExclusiveDirectoryLockOwner {
    * OS process start time of the owner; see readProcessStartTime. It is null
    * when the record has none: records published before start times were
    * recorded (#934), such as the lock a 0.24.1 parent holds during `update`.
-   * Without it, liveness is never proven and the record is never reclaimed.
+   * Without it, a running owner is never proven live, and the record is never
+   * reclaimed.
    */
   readonly startTime: string | null;
   readonly token: string;
@@ -149,14 +150,13 @@ function ownerTokenFromFileName(entry: string): { readonly token: string; readon
 let lastLiveOwner: { readonly pid: number; readonly startTime: string; readonly checkedAt: number } | null = null;
 
 function ownerLiveness(pid: number, startTime: string | null): ExclusiveDirectoryLockOwnerLiveness {
-  // Without a start time, a live PID may be a reuse, so neither verdict is
-  // proven; this matches the reclaim rule that never treats such a record as stale.
-  if (startTime === null) return 'unverified';
   try {
     process.kill(pid, 0);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 'dead';
   }
+  // Without a start time, a live PID may be a reuse, so it is not proven live.
+  if (startTime === null) return 'unverified';
   // Waiters poll every 10 ms. Reuse of a recently verified owner's PID needs
   // that owner to exit first, so the table read runs at most once per interval.
   if (lastLiveOwner !== null

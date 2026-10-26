@@ -101,7 +101,7 @@ describe('exclusive directory lock owner identity', () => {
     expect(owner).toEqual({
       lockPath: join(root, LOCK), pid: exited.pid, startTime: null, token: expect.any(String),
     });
-    expect(exclusiveDirectoryLockOwnerLiveness(owner!)).toBe('unverified');
+    expect(exclusiveDirectoryLockOwnerLiveness(owner!)).toBe('dead');
 
     expect(() => acquireExclusiveDirectoryLock(root, LOCK, { waitTimeoutMs: 1 })).toThrow(ExclusiveLockContentionError);
     expect(existsSync(ownerPath)).toBe(true);
