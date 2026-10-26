@@ -9,7 +9,7 @@ import { taskRepository } from '../../src/effects/git/task-repository';
 import { observeAgentRuntimeEndpoint } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
-import { readActiveReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 
 /** Real public session admission and binding, with an explicit in-process transport double.
  * The test process is the observed provider; this does not start a model or service. */
@@ -88,9 +88,9 @@ export async function bindTaskRuntimeFixture(root: string, options: EngineerRunt
     },
     revoke() {
       const current = readActiveReviewAdmission({ ...approved.source, expectedGoal: approved.admission.goal });
-      revokeReviewAdmission({ repoRoot: root, authorityHome: options.authorityHome,
+      revokeActiveReviewAdmission({ repoRoot: root, authorityHome: options.authorityHome,
         repository_id: approved.admission.repository_id, issue_id: approved.admission.issue_id,
-        campaign_id: approved.admission.campaign_id, expectedRevision: current.revision });
+        campaign_id: approved.admission.campaign_id, expectedRevision: current.revision, expectedGrantSha256: current.grant_sha256 });
     } };
 }
 

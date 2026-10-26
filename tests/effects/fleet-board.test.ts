@@ -1,7 +1,7 @@
 import { observeReviewIssueGoal } from '../../src/effects/admission/issue-goal';
 import { readReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
 import { writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../../src/effects/external-sources/store';
 import type { FleetBoardPullRequestSelection } from '../../src/effects/fleet/board';
@@ -308,8 +308,8 @@ describe('fleet board collector', () => {
     const association = { repository_id: entry.id, provider_repository_id: '1001', provider_issue_id: '2001',
       admission: { campaign_id: approved.admission.campaign_id, grant_sha256: approved.grant,
         policy_sha256: approved.admission.policy.policy_sha256, actor_id: approved.admission.actor_id } };
-    if (failure === 'revoked') revokeReviewAdmission({ repoRoot: root, authorityHome, repository_id: '1001', issue_id: '2001',
-      campaign_id: approved.admission.campaign_id, expectedRevision: 1 });
+    if (failure === 'revoked') revokeActiveReviewAdmission({ repoRoot: root, authorityHome, repository_id: '1001', issue_id: '2001',
+      campaign_id: approved.admission.campaign_id, expectedRevision: 1, expectedGrantSha256: approved.grant });
     if (failure === 'stale') seedReviewAdmissionFixture(root, authorityHome, { repositoryId: '1001', issueId: '2001', executionMode: 'contract' });
     if (failure === 'goal_changed') approved.issue.body = 'different provider goal';
     let issueReads = 0;

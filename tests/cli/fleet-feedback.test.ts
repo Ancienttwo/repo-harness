@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
 import { buildProgram } from '../../src/cli/index';
 import * as admissionSource from '../../src/effects/admission/admission-source';
-import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { seedReactionReceipt } from '../helpers/publication-fixture';
 import { buildReactionAttemptReceipt, deriveReactionToken } from '../../src/core/publication/feedback';
 import { feedbackEventPath, readFeedbackDeliveryReceipts, readFeedbackEvents } from '../../src/effects/publication/feedback-store';
@@ -139,7 +139,7 @@ describe('fleet feedback CLI', () => {
 
   test('intake rejects revoked admission before persistence', async () => {
     const subject = await fixture();
-    revokeReviewAdmission({ repoRoot: subject.root, authorityHome: subject.home, repository_id: subject.admission.identity.repository_id, issue_id: subject.admission.identity.issue_id, campaign_id: subject.admission.identity.campaign_id, expectedRevision: 1 });
+    revokeActiveReviewAdmission({ repoRoot: subject.root, authorityHome: subject.home, repository_id: subject.admission.identity.repository_id, issue_id: subject.admission.identity.issue_id, campaign_id: subject.admission.identity.campaign_id, expectedRevision: 1, expectedGrantSha256: subject.approved.grant });
     const result = await runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stderr)).toMatchObject({

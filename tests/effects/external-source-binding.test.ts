@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { buildExternalSourceRefreshReceipt, buildProviderIssueObservation, type ExternalSourceRefreshReceiptV1 } from '../../src/core/external-sources/issue-observation';
 import { rmSync } from 'node:fs';
 import { externalSourceBindingFixture } from '../helpers/external-source-binding-fixture';
-import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { bindExternalSource, listExternalSourceBindings, type ExternalSourceBindingDependencies } from '../../src/effects/external-sources/binding';
 
 
@@ -98,8 +98,8 @@ describe('external source binding effect', () => {
     expect(() => bindExternalSource({ ...input, source_revision: different.source_revision },
       { ...item.deps, observations: () => [different] })).toThrow('source provider identity differs');
     const f = item.fixture;
-    revokeReviewAdmission({ repoRoot: f.root, authorityHome: f.home, repository_id: '101', issue_id: '202',
-      campaign_id: f.admission.identity.campaign_id, expectedRevision: 1 });
+    revokeActiveReviewAdmission({ repoRoot: f.root, authorityHome: f.home, repository_id: '101', issue_id: '202',
+      campaign_id: f.admission.identity.campaign_id, expectedRevision: 1, expectedGrantSha256: f.approved.grant });
     expect(() => bindExternalSource(input, item.deps)).toThrow('revoked_or_replaced');
     expect(item.written).toHaveLength(0);
   });

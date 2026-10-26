@@ -11,7 +11,7 @@ import { hashVerificationPlan } from '../../src/core/evidence/verification-plan'
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { approveReviewAdmission, readActiveReviewAdmission, readCurrentReviewAdmissionSelection, readReviewAdmission, revokeActiveReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { approveReviewAdmission, readActiveReviewAdmission, readCurrentReviewAdmissionSelection, readReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -81,7 +81,7 @@ test('operator approval uses revision CAS and reapproval never resurrects an old
   const first = approve(0);
   expect(readReviewAdmission(f.args(first.grant_sha256)).revision).toBe(1);
   expect(() => approve(0)).toThrow('revision_changed');
-  revokeReviewAdmission({ ...f.args(first.grant_sha256), expectedRevision: 1 });
+  revokeActiveReviewAdmission({ ...f.args(first.grant_sha256), expectedRevision: 1 });
   expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
   const next = approve(2);
   expect(next.grant_sha256).not.toBe(first.grant_sha256);
@@ -171,7 +171,7 @@ test('control admission binds upstream trace data and later reads observe normal
   expect(() => approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
     admission: f.input, approval, expectedRevision: 0 })).toThrow('revision_changed');
   expect(result.authorization_ref).toBe(approval.authorization_ref);
-  revokeReviewAdmission({ ...f.args(result.grant_sha256), expectedRevision: 1 });
+  revokeActiveReviewAdmission({ ...f.args(result.grant_sha256), expectedRevision: 1 });
   expect(() => readReviewAdmission(f.args(result.grant_sha256))).toThrow('revoked_or_replaced');
 });
 

@@ -112,16 +112,6 @@ export function approveReviewAdmission(input: StoreInput & {
   }, { reclaimStaleOwner: true });
 }
 
-export function revokeReviewAdmission(input: StoreInput & CampaignIdentity & { expectedRevision: number }): void {
-  if (currentReadonlyObservation()) rejectObservation('Observation cannot revoke a review admission');
-  const loc = location(input, input, false);
-  withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
-    const previous = active(loc.active);
-    if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
-    publishActive(loc.active, { protocol: 1, revision: previous.revision + 1, grant_sha256: null });
-  }, { reclaimStaleOwner: true });
-}
-
 /** Revoke one exact active grant for a trusted upstream request. Revision and
  * grant digest together form the CAS. An unknown campaign, an absent or
  * replaced grant, or a stale revision fails without a state change. */
