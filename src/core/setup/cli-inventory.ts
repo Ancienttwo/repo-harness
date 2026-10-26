@@ -260,16 +260,22 @@ function uninstallCommand(record: CliPackageRecord): string | null {
 
 /**
  * `rm` of every binary of a go module: go install has no uninstall, the files
- * are the whole install. Only `~/` paths make a usable command; a path with
- * text outside a plain set keeps tilde expansion and single-quotes the rest.
+ * are the whole install. Arguments come from the raw path under HOME, never
+ * from the redacted display text, so a command cannot name another file. A
+ * path with text outside a plain set keeps tilde expansion and single-quotes
+ * the rest. A path outside HOME, or one the public-text filter would rewrite,
+ * gives no command.
  */
 function removeFiles(paths: readonly string[], home: string): string | null {
+  const root = home.replace(/\/+$/u, '');
+  if (root === '') return null;
   const args: string[] = [];
   for (const path of paths) {
-    const shown = displayPath(path, home);
-    if (!shown.startsWith('~/')) return null;
-    const rest = shown.slice(2);
-    args.push(/^[A-Za-z0-9._/+-]+$/u.test(rest) ? shown : `~/'${rest.replaceAll("'", "'\\''")}'`);
+    if (!path.startsWith(`${root}/`)) return null;
+    const rest = path.slice(root.length + 1);
+    const arg = /^[A-Za-z0-9._/+-]+$/u.test(rest) ? `~/${rest}` : `~/'${rest.replaceAll("'", "'\\''")}'`;
+    if (publicAgentConfigText(arg) !== arg) return null;
+    args.push(arg);
   }
   return `rm ${args.join(' ')}`;
 }

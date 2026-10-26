@@ -129,6 +129,9 @@ describe('cli inventory projection', () => {
     expect(go([`${HOME}/my tools/bin/toolone`])).toEqual([`rm ~/'my tools/bin/toolone'`]);
     expect(go([`${HOME}/a;touch x'b/bin/toolone`])).toEqual([`rm ~/'a;touch x'\\''b/bin/toolone'`]);
     expect(go(['/opt/go/bin/toolone'])).toBeUndefined();
+    // A path the public-text filter would rewrite gets no command, never a command for another file.
+    expect(go([`${HOME}/x=/bin/toolone`])).toBeUndefined();
+    expect(go([`${HOME}/a (/bin/toolone`])).toBeUndefined();
   });
 
   test('shows local paths only as ~ paths or [private path]', () => {
