@@ -5,7 +5,7 @@ import { validateControlApproval, type ControlApproval } from '../../src/core/re
 const now = 1_800_000_000_000;
 const repositoryRoot = '/work/repository';
 function fixture() {
-  const input: ReviewAdmissionInput = { execution_mode: 'contract',
+  const input: ReviewAdmissionInput = { issue_number: 1, execution_mode: 'contract',
     repository_id: 'R_repo', issue_id: 'I_issue', campaign_id: 'campaign', actor_id: 'executor',
     goal: { revision: 'goal-sha', content: 'Implement the reviewed feature.' },
     policy: { reviewer: 'Codex', user_waiver: 'forbidden', policy_sha256: `sha256:${'a'.repeat(64)}` },

@@ -101,7 +101,7 @@ const plan: VerificationPlan = { protocol: 1, checks: [{
 }] };
 function admissionInput() {
   const { authorization, subject: _subject, verification: _verification, ...scope } = input();
-  return { ...scope, execution_mode: 'contract' as const, actor_id: authorization.actor_id, oracles: [], verification_plan: structuredClone(plan) };
+  return { ...scope, issue_number: 903, execution_mode: 'contract' as const, actor_id: authorization.actor_id, oracles: [], verification_plan: structuredClone(plan) };
 }
 
 test('admission binds the actual verification plan and a fixed goal while allowing later subject rounds', () => {
@@ -197,4 +197,21 @@ test('admission requires an explicit closed execution mode and binds it without 
     expect(() => createReviewAdmission({ ...spec, execution_mode } as never)).toThrow('execution mode');
   }
   expect(() => bindReviewAdmission({ ...contract, execution_mode: 'inline' }, input(), digest('5'))).toThrow('admission digest');
+});
+
+
+test('admission requires and hashes an exact safe issue number without changing campaign identity', () => {
+  const spec = admissionInput();
+  const approved = createReviewAdmission(spec);
+  const relocated = createReviewAdmission({ ...spec, issue_number: 904 });
+  expect(approved.issue_number).toBe(903);
+  expect(relocated.issue_number).toBe(904);
+  expect(relocated.admission_sha256).not.toBe(approved.admission_sha256);
+  expect(relocated.campaign_sha256).toBe(approved.campaign_sha256);
+  const { issue_number: _number, ...missing } = spec;
+  expect(() => createReviewAdmission(missing as never)).toThrow('admission fields');
+  for (const issue_number of [undefined, null, '903', 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, {}]) {
+    expect(() => createReviewAdmission({ ...spec, issue_number } as never)).toThrow('issue number');
+  }
+  expect(() => bindReviewAdmission({ ...approved, issue_number: 904 }, input(), digest('5'))).toThrow('admission digest');
 });

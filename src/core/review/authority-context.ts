@@ -134,6 +134,8 @@ export function assertReviewAuthorityContext(value: unknown, current: ReviewAuth
  * stored here. Its digest is an approval subject, not proof that approval occurred.
  */
 export interface ReviewAdmissionInput extends ReviewScope {
+  /** Approved provider lookup locator; distinct from the global issue identity. */
+  issue_number: number;
   execution_mode: 'inline' | 'contract';
   actor_id: string;
   verification_plan: VerificationPlan;
@@ -147,8 +149,9 @@ export type ReviewAdmission = Frozen<ReviewAdmissionInput & {
 }>;
 
 export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmission {
-  record(input, ['repository_id', 'issue_id', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'execution_mode', 'verification_plan', 'oracles'], 'admission fields');
+  record(input, ['repository_id', 'issue_id', 'issue_number', 'campaign_id', 'goal', 'policy', 'allowed_paths', 'benchmark', 'actor_id', 'execution_mode', 'verification_plan', 'oracles'], 'admission fields');
   validateScope(input); text(input.actor_id, 'actor');
+  if (!Number.isSafeInteger(input.issue_number) || input.issue_number < 1) fail('issue number');
   if (input.execution_mode !== 'inline' && input.execution_mode !== 'contract') fail('execution mode');
   const plan = validateVerificationPlan(input.verification_plan);
   if (!plan.checks.length) fail('empty verification plan');
@@ -165,7 +168,7 @@ export function createReviewAdmission(input: ReviewAdmissionInput): ReviewAdmiss
     goal: { revision: input.goal.revision, content: input.goal.content },
     policy: { reviewer: input.policy.reviewer, user_waiver: input.policy.user_waiver, policy_sha256: input.policy.policy_sha256 },
     allowed_paths: [...input.allowed_paths].sort(), benchmark: input.benchmark,
-    actor_id: input.actor_id, execution_mode: input.execution_mode, verification_plan: detachedPlan, oracles, campaign_sha256: reviewCampaignKey(input),
+    issue_number: input.issue_number, actor_id: input.actor_id, execution_mode: input.execution_mode, verification_plan: detachedPlan, oracles, campaign_sha256: reviewCampaignKey(input),
   };
   return freeze({ ...basis, admission_sha256: digest(basis) });
 }
