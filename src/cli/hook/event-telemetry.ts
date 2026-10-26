@@ -44,8 +44,8 @@ export interface HookEventTelemetryResult {
   readonly exitCode: number;
   readonly blocked: boolean;
   readonly reason: string;
-  /** `commandNames` of the tool call's shell command; omit for other events. */
-  readonly commandNames?: readonly string[];
+  /** The tool call's raw shell command; omit for other events. Only names on the hook PATH are recorded. */
+  readonly command?: string;
 }
 
 export interface HookEventTelemetry {
@@ -56,6 +56,8 @@ export interface CreateHookEventTelemetryInput {
   readonly repoRoot: string;
   readonly event: HookEvent;
   readonly routeId: RouteId;
+  /** The hook process PATH; without it no command name is recorded. */
+  readonly pathValue?: string;
 }
 
 const COMMAND_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u;
@@ -70,6 +72,8 @@ const QUOTED = '\u0000';
 const HEREDOC_TOKEN = /^(?:'([A-Za-z0-9_.-]+)'|"([A-Za-z0-9_.-]+)"|\\([A-Za-z0-9_.-]+)|([A-Za-z0-9_.-]+))(?=[\s;|&()<>]|$)/u;
 /** Command words whose syntax the scanner does not model. */
 const UNMODELED_COMMANDS = new Set(['case', '[[']);
+/** A word that `(` may follow: `$(`, `NAME=$(`, `<(` and `>(`. */
+const SUBSTITUTION_OPENERS = /^(?:[$<>]|[A-Za-z_][A-Za-z0-9_]*=\$)$/u;
 /** A word before the program: an assignment or a runner prefix. */
 const isPrefixWord = (word: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*=/u.test(word) || COMMAND_PREFIXES.has(word);
 
@@ -83,7 +87,7 @@ const isPrefixWord = (word: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*=/u.test
  * quote or heredoc; `$(`, `${` or a backtick inside double quotes; `${`, `$((`
  * and `$'` outside them; a heredoc delimiter other than `NAME`, `'NAME'`,
  * `"NAME"` or `\NAME`; `case` or `[[` as the command; `(` after a word other
- * than `$`, `<` or `>` (`NAME=(`, extglob `@(`), or after the first word of a
+ * than `$`, `NAME=$`, `<` or `>` (`NAME=(`, extglob `@(`), or after the first word of a
  * command (zsh `ls (a|b)`, `f () {`).
  */
 function shellSegments(command: string): string[][] {
@@ -117,7 +121,7 @@ function shellSegments(command: string): string[][] {
     } else if (c === '#' && word === '' && !quoted) {
       const lineEnd = command.indexOf('\n', i);
       i = lineEnd === -1 ? command.length : lineEnd;
-    } else if (c === '(' && (quoted || (word !== '' && !['$', '<', '>'].includes(word)) || (word === '' && words.length > 0))) {
+    } else if (c === '(' && (quoted || (word !== '' && !SUBSTITUTION_OPENERS.test(word)) || (word === '' && words.length > 0))) {
       stop();
       break;
     } else if (c === '\\') {
@@ -214,13 +218,14 @@ function isExecutableFile(path: string): boolean {
 
 /**
  * `commandNames` reduced to executables found in an absolute directory of
- * `pathValue` (the hook process PATH). This is the privacy boundary: the
- * scanner cannot model all shell syntax, but a data word such as a token is
- * not an executable on PATH, so it never reaches the log. The CLI inventory
- * matches the names only against installed CLIs, so it loses nothing it reads.
- * The check stats each candidate name; it never lists a directory.
+ * `pathValue` (the hook process PATH). This is the privacy boundary, and only
+ * `finalize` calls it: the scanner cannot model all shell syntax, but a data
+ * word such as a token is not an executable on PATH, so it never reaches the
+ * log. The CLI inventory matches the names only against installed CLIs, so it
+ * loses nothing it reads. The check stats each candidate name; it never lists
+ * a directory.
  */
-export function commandNamesOnPath(command: string, pathValue: string | undefined): string[] {
+function commandNamesOnPath(command: string, pathValue: string | undefined): string[] {
   const dirs = (pathValue ?? '').split(delimiter).filter(dir => isAbsolute(dir));
   return commandNames(command).filter(name => dirs.some(dir => isExecutableFile(join(dir, name))));
 }
@@ -249,7 +254,7 @@ export function createHookEventTelemetry(options: CreateHookEventTelemetryInput)
         blocked: result.blocked,
         reason: result.reason,
         elapsed_ms: roundMs(performance.now() - startedMonotonic),
-        command_names: [...(result.commandNames ?? [])],
+        command_names: commandNamesOnPath(result.command ?? '', options.pathValue),
       };
       const semanticFingerprint = {
         event: options.event,
