@@ -10,7 +10,7 @@ import {
   type ExclusiveDirectoryLockHandle,
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
-import { gitSpawnSync } from "./git/runner";
+import { gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from "./git/runner";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
@@ -141,8 +141,15 @@ export interface RepoHarnessCheckoutRejection {
 
 type GitLines = { readonly ok: true; readonly lines: string[] } | { readonly ok: false; readonly detail: string };
 
+// The probe must read the checkout at repoRoot, not the repository an outer git hook selected.
+function probeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  const probe = { ...(env ?? process.env) };
+  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, "GIT_COMMON_DIR"]) delete probe[key];
+  return probe;
+}
+
 function gitLines(repoRoot: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined): GitLines {
-  const result = gitSpawnSync(args, { cwd: repoRoot, env, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = gitSpawnSync(args, { cwd: repoRoot, env: probeEnv(env), encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error) return { ok: false, detail: result.error.message };
   if (result.status !== 0) return { ok: false, detail: result.stderr.trim() || `git exited with status ${result.status}` };
   return { ok: true, lines: result.stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0) };

@@ -17,6 +17,7 @@ import {
   readRepoHarnessRegistryStrictSnapshot,
   RepoHarnessRegistryStrictError,
   repoHarnessAuthorizationRevision,
+  repoHarnessCheckoutRejection,
   repoHarnessRepoIdFor,
   registerRepoHarnessRepo,
 } from '../../src/effects/repo-registry';
@@ -501,6 +502,23 @@ describe('registry writes accept only primary checkouts', () => {
       const primary = registerRepoHarnessRepo(f.primary, 'init', { env: f.env });
       expect(primary.registered).toBe(true);
       expect(readRegisteredRepoHarnessRepos({ env: f.env }).map((repo) => repo.path)).toEqual([f.primary]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('the checkout probe ignores an inherited GIT_DIR', () => {
+    const f = checkoutFixture('repo-harness-registry-git-env-');
+    try {
+      const plain = join(f.root, 'plain');
+      mkdirSync(plain);
+      const linkedGitDir = join(f.primary, '.git', 'worktrees', 'linked');
+      const inherited = { ...f.env, GIT_DIR: linkedGitDir, GIT_WORK_TREE: f.linked, GIT_COMMON_DIR: join(f.primary, '.git') };
+      expect(repoHarnessCheckoutRejection(f.primary, inherited)).toBeNull();
+      expect(repoHarnessCheckoutRejection(plain, inherited)).toBeNull();
+      expect(repoHarnessCheckoutRejection(f.linked, inherited)).toEqual(
+        expect.objectContaining({ reason: 'not_primary_checkout' }),
+      );
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
