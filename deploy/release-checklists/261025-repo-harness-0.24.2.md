@@ -55,8 +55,8 @@ Result:
 - The owner accepts the observed major architecture change from #959. The
   rolling writer published #895 with `--accept-observed-major-change`, and
   #895 merged after its checks passed.
-- The owner accepts all 7 readiness yellow flags for 0.24.2 as proposed.
-  See "Readiness check".
+- The owner accepts all 7 readiness yellow flags for 0.24.2 for this
+  release. The repairs stay the owner's actions. See "Readiness check".
 
 ### Hold dispositions
 
@@ -234,7 +234,7 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
 ### Yellow flags
 
 The 0.24.1 acceptances do not carry over. On 2026-10-26 the owner accepted
-all 7 flags for 0.24.2 as proposed. The repairs stay the owner's actions.
+all 7 flags for 0.24.2. The repairs stay the owner's actions.
 
 1. Global rules managed blocks are stale. Repair after publication:
    `repo-harness update --report-language <follow|zh-CN|en>`. It writes the
