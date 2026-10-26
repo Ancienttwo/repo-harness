@@ -441,9 +441,8 @@ function decodeReadinessBlockers(value: unknown): OperatorFleetCardV1['readiness
     }
     requireExactKeys(blocker, ['code', 'attention_owner']);
     return Object.freeze({ code: requireOneOf(blocker.code, [
-      'repo_read_only', 'repo_unavailable', 'canonical_unavailable', 'canonical_target_mismatch', 'row_not_pending',
-      'lease_unavailable', 'lease_unknown', 'snapshot_changed_during_read', 'mode_unsupported', 'plan_missing',
-      'plan_ambiguous', 'plan_not_approved', 'plan_source_mismatch', 'plan_not_projectable', 'contract_missing', 'contract_not_projectable',
+      'repo_read_only', 'plan_missing', 'plan_ambiguous', 'plan_not_approved', 'plan_source_mismatch', 'plan_not_projectable',
+      'contract_missing', 'contract_not_projectable',
     ] as const), attention_owner: requireOneOf(blocker.attention_owner, ['agent', 'user', 'external'] as const) });
   }));
 }

@@ -163,7 +163,7 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
       repositories: [{
         repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
         snapshot_consistency: 'stable',
-        cards: [card({ execution_readiness: 'unsupported', readiness_blockers: [{ code: 'lease_unknown', attention_owner: 'user' }], snapshot_consistency: 'changed_during_read' })],
+        cards: [card({ execution_readiness: 'unsupported', readiness_blockers: [{ code: 'plan_ambiguous', attention_owner: 'user' }], snapshot_consistency: 'changed_during_read' })],
         error: null,
       }],
     });
@@ -339,7 +339,7 @@ describe('exhaustive canonical placement', () => {
       expect(result.counts).toMatchObject({ known_tasks: 1, preparation: 1, unclassified: 0 });
     }
   });
-  test.each(['plan_ambiguous', 'plan_source_mismatch', 'lease_unknown', 'mode_unsupported', 'canonical_unavailable'] as const)('does not turn %s or mixed blockers into preparation', code => {
+  test.each(['plan_ambiguous', 'plan_source_mismatch'] as const)('does not turn %s or mixed blockers into preparation', code => {
     expect(classifyFleetBoardPlacement(card({ execution_readiness: 'unsupported', readiness_blockers: [preparationBlockers[0], { code, attention_owner: 'user' }] }))).toEqual({ kind: 'unclassified', reason: 'unsupported_readiness' });
   });
   test('requires complete readiness authority and refuses contradictory ready states', () => {
@@ -355,7 +355,7 @@ describe('exhaustive canonical placement', () => {
   });
   test('keeps claimed and completed work independent of reacquisition blockers', () => {
     for (const role of ['worker', 'reviewer', 'planner'] as const) {
-      const result = project([card({ execution: { ...session(), selector: { ...session().selector, role } }, task_id: taskId, execution_readiness: 'unsupported', readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }, { code: 'lease_unavailable', attention_owner: 'external' }] })]);
+      const result = project([card({ execution: { ...session(), selector: { ...session().selector, role } }, task_id: taskId, execution_readiness: 'unsupported', readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }, { code: 'plan_ambiguous', attention_owner: 'external' }] })]);
       expect(result.repositories[0]!.cards[0]).toMatchObject({ placement: { kind: 'column', column: 'working' }, attention_owner: 'none' });
     }
     expect(classifyFleetBoardPlacement(card({ issue_state: 'closed', execution_readiness: null, readiness_blockers: null }))).toEqual({ kind: 'column', column: 'done' });
