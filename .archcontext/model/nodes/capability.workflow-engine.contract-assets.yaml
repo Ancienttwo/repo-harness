@@ -31,6 +31,7 @@
       "assets/AGENTS.md",
       "assets/CLAUDE.md",
       ".archcontext/**",
+      "docs/adr/**",
       "src/core/capabilities/**",
       "src/effects/source-projection.ts",
       "src/cli/commands/run.ts",
