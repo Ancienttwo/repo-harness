@@ -17,8 +17,34 @@ export function herdrObject(value: unknown): HerdrJson {
 export function validateObservationEndpoint(endpoint: HerdrObservationEndpoint): void {
   if (!isAbsolute(endpoint.socket_path) || endpoint.socket_path.includes('\0') || Buffer.byteLength(endpoint.socket_path) > (process.platform === 'darwin' ? 103 : 107) || !Number.isSafeInteger(endpoint.deadline_ms) || endpoint.deadline_ms < 1 || endpoint.deadline_ms > 10_000 || !['linux','darwin'].includes(process.platform)) throw new Error('herdr_observation_endpoint');
 }
+export interface HerdrVersionCheck {
+  readonly state: 'aligned' | 'mismatch';
+  readonly expected: { readonly version: string; readonly protocol: number; readonly revision: string };
+  /** The server reports no fork revision, so only version and protocol are observable. */
+  readonly actual: { readonly version: string | null; readonly protocol: number | null };
+}
+const HERDR_VERSION_TEXT = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
+/** Compare a ping or snapshot against the pin. Reported values outside the version grammar become null. */
+export function herdrVersionCheck(value: HerdrJson): HerdrVersionCheck {
+  const version = typeof value.version === 'string' && HERDR_VERSION_TEXT.test(value.version) ? value.version : null;
+  const protocol = typeof value.protocol === 'number' && Number.isSafeInteger(value.protocol) && value.protocol >= 0 ? value.protocol : null;
+  return {
+    state: version === HERDR_OBSERVATION_VERSION && protocol === HERDR_OBSERVATION_PROTOCOL ? 'aligned' : 'mismatch',
+    expected: { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION },
+    actual: { version, protocol },
+  };
+}
+export class HerdrVersionMismatchError extends Error {
+  constructor(readonly check: HerdrVersionCheck) {
+    const { expected, actual } = check;
+    super(`herdr_observation_version: expected ${expected.version} protocol ${expected.protocol} (revision ${expected.revision.slice(0, 8)}); `
+      + `actual ${actual.version ?? 'unknown'} protocol ${actual.protocol ?? 'unknown'}`);
+    this.name = 'HerdrVersionMismatchError';
+  }
+}
 export function verifyHerdrVersion(value: HerdrJson): void {
-  if (value.version !== HERDR_OBSERVATION_VERSION || value.protocol !== HERDR_OBSERVATION_PROTOCOL) throw new Error('herdr_observation_version');
+  const check = herdrVersionCheck(value);
+  if (check.state !== 'aligned') throw new HerdrVersionMismatchError(check);
 }
 /** Terminal facts only. OSC has no dispatch identity or cancellation state. */
 export type HerdrProgramStatus = Omit<ProgramStatusV1, 'identity'> & { source_epoch: number };
