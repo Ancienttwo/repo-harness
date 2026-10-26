@@ -108,7 +108,7 @@ for (const selection of [
     expect(session.approval.grant_sha256).toBe(f.admissionFixture.grant);
     let ownerCalls = 0;
     await expect(runReviewRound({ repoRoot: f.root, authority, verification: f.verification, reviewerRepo, authorityHome: f.home,
-      endpoint: { session: 'offline-selected-issue', home: f.home }, parentPane: 'fixture-owner', taskClaim,
+      endpoint: { session: 'selected', home: f.home }, parentPane: 'fixture-owner', taskClaim,
       admitSession: () => { throw new Error('must not launch'); } }, {
       owner: () => { ownerCalls++; throw new Error('offline-runtime-boundary-reached'); },
     })).rejects.toThrow('offline-runtime-boundary-reached');
