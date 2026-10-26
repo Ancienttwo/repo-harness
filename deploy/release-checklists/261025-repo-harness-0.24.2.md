@@ -109,7 +109,26 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
 
 ## Hosted daily CI
 
-PENDING. The orchestrator records the daily CI run on the release base.
+- `.github/workflows/ci.yml` runs on `workflow_dispatch` in `daily` mode,
+  which requires `refs/heads/main`.
+- Run 40285900137 on `f7f502792` failed `Daily MCP path matrix
+  (windows-latest)` (#967). Run 40290119507 on `f3a240492` passed it after
+  #968; its `Native OAR acceptance (macOS)` timed out on attempt 1 (#970)
+  and passed on attempt 2.
+- Final run: `gh workflow run ci.yml --repo Ancienttwo/repo-harness --ref
+  main` at 2026-10-26T08:38:27Z. Run 40293671392, head
+  `65d34c20ed1caa3e1151fc86dfe27c6cb4776321` (#971), attempt 1:
+  conclusion `success`. Read with `gh run watch` and `gh run view`.
+- Daily jobs, each `success`: Select test coverage, Daily full tests and
+  package, Daily architecture freshness, Daily governance, Daily MCP path
+  matrix (macos-latest), Daily MCP path matrix (windows-latest), Native OAR
+  acceptance (macOS), Test HOME isolation (ubuntu-latest), Test HOME
+  isolation (macos-latest) and Test HOME isolation (windows-latest).
+- Skipped by design in daily mode: PR architecture freshness (advisory),
+  Affected tests and Required / CI.
+- The CI subject is the release base. The release branch adds only the
+  version bump and release documentation. The PR CI covers the release
+  branch head.
 
 ## Acceptance environment
 
@@ -125,12 +144,12 @@ PENDING. The orchestrator records the daily CI run on the release base.
 
 ## Acceptance status
 
-- Subject: commit `2ff03c8dc4c4839bde60c1a2680dc1c2351ccf14`, tree
-  `26bea82a346e490fc5b967dd5c5f49944e1b4900`. It is the final base plus the
+- Subject: commit `275f39512b867308c79836d343f1fbe07e69e608`, tree
+  `627b88bc67e2e8fc97af92f7a8aad900c5a7d266`. It is the final base plus the
   release preparation commits. After the gates, only this record changed.
   The changelog, the shipped files and the test inputs did not change.
 - Changelog SHA-256 at verification:
-  `6d3a7b901893bac82f9d304243d356978352c518a723dcad990a5d40c7ed347f`.
+  `1daad61b02a77352b0ca23aced111be7eae387ec2cf6c53234a685ba5a892615`.
 - `bun run check:type`: exit 0.
 - `bun run check:helpers`: exit 0; helper projection matches.
 - `bun run check:reference-configs`: exit 0; 25 documents match.
@@ -139,11 +158,11 @@ PENDING. The orchestrator records the daily CI run on the release base.
   tests/effective-state.test.ts tests/hook-runtime.test.ts
   tests/action-command-skills.test.ts
   tests/reference-configs-projection.test.ts --timeout 60000
-  --max-concurrency 1`: exit 0 in 67 seconds; 134 pass, 0 fail across seven
+  --max-concurrency 1`: exit 0 in 69 seconds; 134 pass, 0 fail across seven
   files (29, 4, 10, 46, 19, 24 and 2).
 - `bash scripts/check-npm-release.sh --prepublish`: exit 0; repo-harness
   0.24.2 is unpublished.
-- `bun run check:release`: exit 0 in 220 seconds. Benchmark matrix:
+- `bun run check:release`: exit 0 in 156 seconds. Benchmark matrix:
   31 pass, 0 fail. `check-tarball-install-smoke.sh` installs
   `repo-harness-0.24.2.tgz`, serves the packaged Operator and starts the
   packaged CLI bins. Coding OAuth E2E: 1 pass, 0 fail, 15 filtered out.
@@ -176,8 +195,10 @@ PENDING. The orchestrator records the daily CI run on the release base.
 
 ### Subject and commands
 
-- Candidate: the release worktree at `2ff03c8dc`, after
-  `bun install --frozen-lockfile`.
+- Candidate: the release worktree at `2ff03c8dc` (base `f3a240492`), after
+  `bun install --frozen-lockfile`. The final candidate `275f39512` adds only
+  #971, a test-only change, and release text. The host probes read host
+  state, so they were not repeated.
 - Real HOME, read-only by contract, with `CLAUDECODE`, `AI_AGENT`, `AGENT`,
   `REPL_ID` and `REPO_HARNESS_SOURCE_ROOT` removed and `TMPDIR=/tmp`:
   - `bun src/cli/index.ts setup check --target both --check-updates --json`:
