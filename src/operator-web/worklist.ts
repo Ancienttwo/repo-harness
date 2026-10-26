@@ -6,13 +6,13 @@ import { allCards, type OperatorFleetCardV1, type OperatorFleetRepositoryV1, typ
  * the operator's place on the board.
  */
 export function taskKey(card: OperatorFleetCardV1): string {
-  return `${card.repository_id}:${card.task_id}`;
+  return `${card.repository_id}:${card.provider_repository_id}:${card.provider_issue_id}:${card.execution?.selector.session_binding_sha256 ?? 'unassigned'}`;
 }
 
 /** The human label is authority; the id prefix is the fallback, never a guess. */
 export function taskDisplayLabel(card: OperatorFleetCardV1): { readonly text: string; readonly isLabel: boolean } {
   if (card.task_label) return { text: card.task_label, isLabel: true };
-  return { text: card.task_id.slice(0, 12), isLabel: false };
+  return { text: card.provider_issue_id, isLabel: false };
 }
 
 export type MergeBlocker = NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number];
@@ -35,7 +35,7 @@ export type WorklistCause =
  * else, which outranks an unread message.
  */
 export function primaryCause(card: OperatorFleetCardV1): WorklistCause | null {
-  const preExecution = card.task_state === 'pending' && (card.placement.kind !== 'column' || card.placement.column === 'available');
+  const preExecution = card.issue_state === 'open' && (card.placement.kind !== 'column' || card.placement.column === 'available');
   if (preExecution && card.readiness_blockers?.length) {
     const blocker = card.readiness_blockers.find(blocker => blocker.attention_owner === 'user')
       ?? card.readiness_blockers.find(blocker => blocker.attention_owner === 'external')
@@ -99,7 +99,8 @@ function compareCards(left: OperatorFleetCardV1, right: OperatorFleetCardV1): nu
   const leftIndex = left.task_index ?? Number.MAX_SAFE_INTEGER;
   const rightIndex = right.task_index ?? Number.MAX_SAFE_INTEGER;
   if (leftIndex !== rightIndex) return leftIndex - rightIndex;
-  return left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0;
+  const leftKey = taskKey(left), rightKey = taskKey(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
 export interface WorklistGroup {

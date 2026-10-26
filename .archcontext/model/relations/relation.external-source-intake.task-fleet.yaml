@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.external-source-intake.task-fleet"
+kind: "calls"
+source: "capability.runtime-harness.external-source-intake"
+target: "capability.organization.task-fleet"
+intent: "Reobserve exact admitted inbox context to bind source evidence to the same current provider issue"

@@ -1,35 +1,35 @@
 # Architecture Domain: Organization
 
 > **Source**: `repo-harness run capability-resolver`
-> **Owner**: Cross-repository task offers, task acquisition, the Task Inbox, and PR publication.
+> **Owner**: Provider issue fleet boards, the admitted Task Inbox, provider PR readiness and manual provider feedback.
 
 ## Purpose
 
-The organization domain owns the cross-repository delivery layer for tasks.
-Task fleet projects task offers. It acquires one execution-ready task and
-delivers task-addressed messages through the Task Inbox. Publication binds one
-claim generation to one pull request. It manages the review lifecycle and
-derives merge readiness at read time. Neither capability adds a new authority
-class. Task authority stays in the canonical Sprint row. Execution authority
-stays in the lease. The provider and the user perform the merge.
+The organization domain observes delivery across registered repositories.
+Task fleet joins provider issue observations to exact admitted sessions. It
+stores admitted task messages in the Task Inbox. Publication observes provider
+PR readiness and integration evidence. It records manual feedback against an
+admitted claim and provider PR evidence. Neither capability adds a new
+authority class. GitHub issues and pull requests own task identity, claim and
+status. Review admission owns execution approval. The provider and the user
+perform the merge.
 
 ## Capabilities
 
-- `organization-task-fleet` -> `docs/architecture/modules/organization/task-fleet.md`: projects task offers across registered repositories, acquires one execution-ready task into a work envelope, delivers Task Inbox messages and projects the read-only fleet board.
-- `organization-publication` -> `docs/architecture/modules/organization/publication.md`: binds one claim generation to one pull request through an immutable receipt, moves it through the review lifecycle, derives fenced merge readiness at read time and stores provider feedback.
+- `organization-task-fleet` -> `docs/architecture/modules/organization/task-fleet.md`: joins registered repositories to provider issue observations and exact admitted sessions, stores admitted task messages and projects the read-only fleet board.
+- `organization-publication` -> `docs/architecture/modules/organization/publication.md`: derives provider PR readiness from explicit canonical identity at read time, provides merge commit evidence for integration and records manual provider feedback.
 
 ## Stable Rules
 
-- An offer is a read-time projection. Acquire reads the Sprint row, the lease and the registry again before any side effect.
-- Only an `execution_ready` offer can be acquired.
-- A task message is a communication fact only. Send, delivery, acknowledgement and supersede never change a lease. Message bodies are untrusted peer data.
+- A fleet card joins a provider issue to zero or more exact admitted sessions. A local task label never establishes provider identity.
+- A task message is a communication fact only. Send, delivery and acknowledgement never change a provider claim. Message bodies are untrusted peer data.
 - The fleet board is a separate read-only model. It persists no column and no `ready` flag.
-- A publication receipt is an immutable identity fact. The `current_publication` pointer is the only current authority.
 - Merge readiness is derived at read time. The system never persists `ready=true`.
+- Historical records stay explicit history. They never become current readiness or dependency authority.
 - Publication never merges a pull request.
 
 ## Verification Surface
 
-- `bun run test:files tests/fleet-acquire-concurrency.test.ts tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-offer-acquire.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1`
-- `bun run test:files tests/unit/publication-receipt.test.ts tests/unit/publication-lifecycle.test.ts tests/unit/publication-recovery-reconcile.test.ts tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1`
-- `bun run check:type`
+Each capability node lists its verification commands in `extensions.verification`:
+`.archcontext/model/nodes/capability.organization.task-fleet.yaml` and
+`.archcontext/model/nodes/capability.organization.publication.yaml`.

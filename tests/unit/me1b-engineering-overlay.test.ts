@@ -1,383 +1,162 @@
-import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'fs';
-import { tmpdir } from 'os';
-import { join, relative } from 'path';
-
-import {
-  validateEngineeringOverlaySnapshot,
-  validateOrganizationAttentionSnapshot,
-} from '../../src/core/engineers/engineering-overlay';
-import { engineerSha256 } from '../../src/core/engineers/profile-binding';
-import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
-import {
-  collectEngineeringBoard,
-  type EngineeringOverlayDependencies,
-} from '../../src/effects/engineers/engineering-overlay';
-import { readProjectedWorkGraphAt } from '../../src/effects/engineers/scheduling';
-import { collectFleetBoard } from '../../src/effects/fleet/board';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { initGitRepo, commitAll, run, tmpWorkspace } from '../helpers/repo-fixture';
+import { bindEngineerRuntimeSession } from '../helpers/engineer-runtime-fixture';
+import { collectEngineeringBoard, type EngineeringOverlayDependencies } from '../../src/effects/engineers/engineering-overlay';
+import { readProviderEngineerScheduling, readProviderWorkGraph } from '../../src/effects/engineers/scheduling';
+import { readAdmittedTaskSessions } from '../../src/effects/sessions/task-sessions';
+import { decodeOperatorOrganizationSnapshot } from '../../src/core/operator/organization-snapshot';
+import { buildProviderEngineerOffers } from '../../src/core/engineers/scheduling';
+import { recordAgentRuntimeCapability, recordEngineerOfferSnapshot, AGENT_RUNTIME_EFFECT_RELATIVE_ROOT } from '../../src/effects/engineers/agent-runtime-effect-store';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { repoHarnessRepoIdFor, readRepoHarnessRegistryStrictSnapshot } from '../../src/effects/repo-registry';
 import { OPERATOR_REPOSITORY_SNAPSHOT_ROUTE, OPERATOR_ROUTES } from '../../src/effects/operator/server';
-import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
-const sourceRoot = process.cwd();
-const roots: string[] = [];
+const roots: string[] = [], sourceRoot = process.cwd();
 const engineerId = 'engineer:capability.verification.evals-checks';
-const capabilityId = 'capability.verification.evals-checks';
-const bindingOne = '11111111-1111-4111-8111-111111111111';
-const bindingTwo = '22222222-2222-4222-8222-222222222222';
-const sprintPath = 'plans/sprints/demo.sprint.md';
-const policyBytes = '{"policy":1}\n';
-const rollbackBytes = '{"rollback":"wp-a"}\n';
+const digest = `sha256:${'a'.repeat(64)}`;
+const now = '2026-10-25T15:02:00.000Z';
+const temporary = (prefix: string) => { const path = tmpWorkspace(prefix); roots.push(path); return path; };
+afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
-/** Read the real Fleet projection of this exact fixture repository. The
- * observed_at/sequence inputs are pinned so any difference in the returned
- * bytes comes from repository state, not from the clock. */
-async function fleetBytes(home: string): Promise<string> {
-  return JSON.stringify(await collectFleetBoard({
-    env: { ...process.env, REPO_HARNESS_HOME: home },
-    sequence: 1,
-    observed_at: '2026-08-25T15:02:00.000Z',
-    timeout_ms: 10_000,
-  }));
-}
-
-function registeredRepo(root: string): RepoHarnessRegisteredRepo {
-  return {
-    id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_write', source: 'manual',
-    registeredAt: '2026-08-25T15:00:00.000Z', lastSeenAt: '2026-08-25T15:00:00.000Z',
-  };
-}
-
-/** A private registry home naming exactly this fixture as a read_write repo. */
-function fleetHome(root: string): string {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1b-home-')));
-  roots.push(home);
-  writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
-    version: 1, authorizationRevision: 1, repos: [registeredRepo(root)],
-  })}\n`);
-  return home;
-}
-
-function fixture(): string {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1b-overlay-')));
-  roots.push(root);
-  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
-  execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: root });
-  execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: root });
+async function fixture(expandedRoster = false) {
+  const root = temporary('provider-engineering-overlay'), home = temporary('provider-engineering-registry');
+  const authorityHome = temporary('provider-engineering-authority');
+  initGitRepo(root);
   mkdirSync(join(root, '.archcontext/model'), { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
-  mkdirSync(join(root, 'tasks'), { recursive: true });
-  mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
-  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
-  mkdirSync(join(root, 'plans/policies'), { recursive: true });
-  mkdirSync(join(root, 'plans/rollback'), { recursive: true });
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(root, 'tasks/current.md'), 'task authority\n');
-  writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
-  writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
-  writeFileSync(join(root, sprintPath), [
-    '# Sprint: demo', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-    '|---|----|---|---|---|---|---|',
-    `| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |`, '',
-    '## Execution Log', '',
-  ].join('\n'));
-  writeFileSync(join(root, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
-    protocol: 1,
-    kind: 'repo-harness-work-graph',
-    repository_id: repoHarnessRepoIdFor(root),
-    sprint_path: sprintPath,
-    lane: 'engineering-v2',
-    work_packages: [{
-      work_package_id: 'wp-a',
-      task_id: fixtureTaskId('task A'),
-      primary_capability: capabilityId,
-      depends_on: [],
-      priority: 50,
-      concurrency: { scope: 'repo', key: 'release' },
-      execution_surface: 'contract',
-      integration_group: null,
-      required_acceptance: [{
-        gate: 'module', policy_id: 'module-default',
-        policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
-      }],
-      retry_policy: { max_automated_attempts: 3, retryable_failure_classes: ['transient_failure'], backoff: { kind: 'exponential', initial_seconds: 30, maximum_seconds: 300 }, attention_after_seconds: 3600, revision_reset: 'reset_on_work_package_revision' } as const,
-    rollback_boundary: {
-        kind: 'work_package', boundary_id: `${repoHarnessRepoIdFor(root)}:wp-a`,
-        boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollbackBytes),
-      },
-    }],
-  })}\n`);
-  writeFileSync(join(root, 'plans/policies/module.json'), policyBytes);
-  writeFileSync(join(root, 'plans/rollback/wp-a.json'), rollbackBytes);
-  execFileSync('git', ['add', '.'], { cwd: root });
-  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
-  return root;
-}
-
-function bind(root: string, bindingId: string, previous?: ReturnType<typeof readEngineerBindingStatus>['current']) {
-  const profile = loadEngineerProfile(root, engineerId);
-  return seedEngineerBinding(root, {
-    engineer_id: engineerId,
-    idempotency_key: `bind-${bindingId}`,
-    provider: 'codex',
-    provider_thread_id: `thread-${bindingId.slice(0, 4)}`,
-    host_id: 'local',
-    engineer_contract_revision: profile.engineer_contract_revision,
-    expected_current_digest: previous?.current_digest ?? null,
-    expected_binding_generation: previous?.binding_generation ?? 0,
-    expected_binding_id: previous?.current_binding_id ?? null,
-    expected_engineer_contract_revision: profile.engineer_contract_revision,
-    binding_id: () => bindingId,
-    now: () => previous ? '2026-08-25T15:01:00.000Z' : '2026-08-25T15:00:00.000Z',
+  if (expandedRoster) {
+    // The product roster is intentionally small. Seed eight additional tracked
+    // profiles against real capabilities so this case still measures ten profiles.
+    const template = JSON.parse(readFileSync(join(root, 'agents/engineers/profiles/verification-evals-checks.json'), 'utf8'));
+    for (const capability of [
+      'organization.publication', 'organization.task-fleet',
+      'public-surface.action-commands', 'public-surface.adoption',
+      'runtime-harness.agent-runtime-effects', 'runtime-harness.engineer-bindings',
+      'runtime-harness.engineer-scheduling', 'runtime-harness.engineering-overlay',
+    ]) {
+      const id = `capability.${capability}`;
+      writeFileSync(join(root, `agents/engineers/profiles/fixture-${capability}.json`), JSON.stringify({
+        ...template, engineer_id: `engineer:${id}`, capability_id: id,
+      }));
+    }
+  }
+  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
+    worktree_strategy: { review_base: 'main', merge_back: { target: 'main' } },
+    agent_runtime: { mode: 'active', adapters: { 'herdr-cli-agent': { enabled: true } } },
+  }));
+  const id = repoHarnessRepoIdFor(root);
+  const graph = JSON.parse(readFileSync(join(sourceRoot, 'tests/fixtures/provider-work-graph-v2/graph.json'), 'utf8'));
+  graph.repository_id = id;
+  graph.work_packages[0].primary_capability = 'capability.verification.evals-checks';
+  mkdirSync(join(root, 'tests/fixtures'), { recursive: true });
+  cpSync(join(sourceRoot, 'tests/fixtures/provider-work-graph-v2'), join(root, 'tests/fixtures/provider-work-graph-v2'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/work-graph.v2.json'), JSON.stringify(graph));
+  commitAll(root, 'provider graph fixture');
+  writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
+    id, path: root, accessMode: 'read_write', source: 'manual', registeredAt: now, lastSeenAt: now,
+  }] }));
+  const env = { ...process.env, REPO_HARNESS_HOME: home };
+  const session = await bindEngineerRuntimeSession(root, engineerId, { authorityHome,
+    repositoryId: '123456', issueId: '987654' });
+  // Inject only the private fixture approval/provider runner. The shared reader still
+  // discovers and validates the actual public-lifecycle binding and current admission.
+  const readScheduling: EngineeringOverlayDependencies['readScheduling'] = (repo, observedEnv) => readProviderEngineerScheduling(repo, observedEnv, {
+    readSessions: input => readAdmittedTaskSessions(input, { currentSource: () => session.source.authority.source }),
   });
+  return { root, env, id, session, readScheduling };
+}
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+function board(fx: Fixture, overrides: Partial<EngineeringOverlayDependencies> = {}, between_reads?: () => void) {
+  return collectEngineeringBoard({ repo_root: fx.root, env: fx.env, observed_at: now,
+    dependencies: { readScheduling: fx.readScheduling, ...overrides }, between_reads });
+}
+function prepareWake(fx: Fixture) {
+  const capability = recordAgentRuntimeCapability(fx.root, { adapter_kind: 'herdr-cli-agent',
+    transport_endpoint_sha256: fx.session.endpoint.transport_endpoint_sha256,
+    operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
+    evidence_refs: [{ ref: 'offline-fixture', sha256: digest }], observed_at: now });
+  return recordEngineerOfferSnapshot({ repo_root: fx.root, source: fx.session.source,
+    offers: buildProviderEngineerOffers({ repository_id: fx.id, engineer_id: engineerId,
+      engineer_contract_revision: fx.session.endpoint.engineer_contract_revision,
+      session_binding_sha256: fx.session.endpoint.session_binding_sha256, authorization_revision: 1, planning_revision: digest,
+      offers: [{ provider_repository_id: '123456', issue_id: '987654', source_revision: digest, eligible: true, blockers: [] }] }),
+    observed_at: now, expected_capability_sha256: capability.capability_sha256,
+    wake_policy: { debounce_ms: 0, polling_fallback_enabled: false }, env: fx.env });
 }
 
-function deps(root: string, overrides: Partial<EngineeringOverlayDependencies> = {}): Partial<EngineeringOverlayDependencies> {
-  return {
-    readRegistry: () => ({
-      registryPath: '/fixture/registered-repos.json',
-      authorizationRevision: 1,
-      registryRevision: `sha256:${'2'.repeat(64)}`,
-      repos: [{
-        id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_write', source: 'manual',
-        registeredAt: '2026-08-25T15:00:00.000Z', lastSeenAt: '2026-08-25T15:00:00.000Z',
-      }],
-    }),
-    listProfiles: listEngineerProfiles,
-    readBinding: readEngineerBindingStatus,
-    listClaims: () => Object.freeze([]),
-    listRuntimeEffects: () => Object.freeze([]),
-    ...overrides,
-  };
-}
-
-afterEach(() => {
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
-});
-
-describe('ME-1B Engineering Overlay', () => {
-  test('projects stable bindings without mutating tracked task authority', () => {
-    const root = fixture();
-    bind(root, bindingOne);
-    const before = execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' });
-    const board = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root),
+describe('admitted engineering overlay', () => {
+  test('observes explicit profiles and real sessions without mutating tracked files', async () => {
+    const fx = await fixture();
+    const before = run('git', ['status', '--porcelain=v1'], fx.root).stdout;
+    const result = board(fx);
+    expect(result.overlay.snapshot_consistency).toBe('stable');
+    expect(result.overlay.scheduling!.tasks.flatMap(task => task.sessions).map(item => item.selection)).toContainEqual({
+      state: 'selected', engineer_id: engineerId, engineer_contract_revision: fx.session.endpoint.engineer_contract_revision,
     });
-    expect(board.overlay.registry_revision).toBe(`sha256:${'2'.repeat(64)}`);
-    expect(board.overlay.snapshot_consistency).toBe('stable');
-    expect(board.overlay.engineers.find((item) => item.engineer_id === engineerId)).toMatchObject({
-      binding: { support: 'available', state: 'active', value: { observation: 'unknown' } },
-      active_claim: { support: 'available', value: null },
-      delegations: { support: 'unsupported', value: null },
-      memory: { support: 'unsupported', value: null },
-    });
-    expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' })).toBe(before);
+    expect(result.overlay.runtime_effects.engineers.find(item => item.engineer_id === engineerId)!.effects.wake!.pending).toBe(0);
+    expect(decodeOperatorOrganizationSnapshot(result, fx.id)).toEqual(result);
+    const forged = { ...result, overlay: { ...result.overlay, scheduling: { ...result.overlay.scheduling!, profiles: result.overlay.scheduling!.profiles.map((profile, index) => index === 0 ? { ...profile, capability_id: 'capability.overlay.mismatch' } : profile) } } };
+    expect(() => decodeOperatorOrganizationSnapshot(forged, fx.id)).toThrow();
+    expect(() => decodeOperatorOrganizationSnapshot({ ...result, overlay: { ...result.overlay, components: [...result.overlay.components].reverse() } }, fx.id)).toThrow();
+    expect(run('git', ['status', '--porcelain=v1'], fx.root).stdout).toEqual(before);
   });
-
-  test('never labels a mixed binding generation stable', async () => {
-    const root = fixture();
-    const home = fleetHome(root);
-    const first = bind(root, bindingOne);
-    const fleetBefore = await fleetBytes(home);
-    const board = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root),
-      between_reads: () => { bind(root, bindingTwo, first); },
-    });
-    expect(board.overlay.snapshot_consistency).toBe('changed_during_read');
-    const component = board.overlay.components.find((item) => item.component === 'bindings')!;
+  test('does not call a mixed runtime read stable and leaves the provider graph unchanged', async () => {
+    const fx = await fixture();
+    const repo = readRepoHarnessRegistryStrictSnapshot({ env: fx.env }).repos[0]!;
+    const graphBefore = readProviderWorkGraph(repo);
+    expect(graphBefore.graph.work_packages).toHaveLength(1);
+    const result = board(fx, {}, () => { prepareWake(fx); });
+    expect(result.overlay.snapshot_consistency).toBe('changed_during_read');
+    const component = result.overlay.components.find(item => item.component === 'runtime_effects')!;
     expect(component.observation_before).not.toBe(component.observation_after);
-    expect(board.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
-      .toMatchObject({ state: 'active', value: { binding_id: bindingTwo, binding_generation: 2 } });
-    expect(await fleetBytes(home)).toBe(fleetBefore);
-  }, 30_000);
-
-  test('one fixture serves the sprint graph, the Fleet projection, and the Engineer board as independent views', async () => {
-    const root = fixture();
-    const home = fleetHome(root);
-    const first = bind(root, bindingOne);
-
-    const graphBefore = readProjectedWorkGraphAt(registeredRepo(root), sprintPath);
-    const fleetBefore = await fleetBytes(home);
-    const boardBefore = collectEngineeringBoard({
-      repo_root: root, observed_at: '2026-08-25T15:02:00.000Z', dependencies: deps(root),
-    });
-    // A vacuous projection would make the invariance below meaningless.
-    expect(graphBefore.graph?.work_packages.map((item) => item.work_package_id)).toEqual(['wp-a']);
-    expect(JSON.parse(fleetBefore).repositories[0]).toMatchObject({ status: 'ok' });
-    expect(JSON.parse(fleetBefore).repositories[0].cards.length).toBeGreaterThan(0);
-    expect(boardBefore.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
-      .toMatchObject({ state: 'active', value: { binding_id: bindingOne, binding_generation: 1 } });
-
-    bind(root, bindingTwo, first);
-
-    const graphAfter = readProjectedWorkGraphAt(registeredRepo(root), sprintPath);
-    const boardAfter = collectEngineeringBoard({
-      repo_root: root, observed_at: '2026-08-25T15:02:00.000Z', dependencies: deps(root),
-    });
-    expect(graphAfter.graph?.work_graph_revision).toBe(graphBefore.graph!.work_graph_revision);
-    expect(await fleetBytes(home)).toBe(fleetBefore);
-    expect(boardAfter.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
-      .toMatchObject({ state: 'active', value: { binding_id: bindingTwo, binding_generation: 2 } });
-    expect(boardAfter.overlay.snapshot_sha256).not.toBe(boardBefore.overlay.snapshot_sha256);
-  }, 30_000);
-
-  test('the overlay adds no operator route and reaches operator code only through the read-only repository GET', () => {
-    const sources = readdirSync(join(sourceRoot, 'src'), { recursive: true })
-      .map((entry) => String(entry))
-      .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
-      .map((entry) => join('src', entry));
-    const importers = sources.filter((entry) => {
-      const text = readFileSync(join(sourceRoot, entry), 'utf8');
-      return /engineers\/engineering-overlay|collectEngineeringBoard/u.test(text);
-    }).map((entry) => relative('src', entry).split('\\').join('/')).sort();
-
-    // The AKN Organization view projects the overlay through the existing
-    // repository snapshot; the overlay itself still owns no web surface.
-    expect(importers).toEqual([
-      'core/operator/organization-snapshot.ts',
-      'effects/engineers/engineering-overlay.ts',
-      'effects/operator/repository-snapshot.ts',
-    ]);
-    expect(importers.some((entry) => entry.startsWith('operator-web/'))).toBeFalse();
-    const organizationImports = readFileSync(join(sourceRoot, 'src/core/operator/organization-snapshot.ts'), 'utf8')
-      .split('\n').filter((line) => /engineers\/engineering-overlay/u.test(line));
-    expect(organizationImports.length).toBeGreaterThan(0);
-    expect(organizationImports.every((line) => line.startsWith('import type '))).toBeTrue();
-
-    expect(OPERATOR_ROUTES.filter((route) => /engineer|overlay|organization/iu.test(`${route.id} ${route.pattern}`))).toEqual([]);
-    expect(OPERATOR_ROUTES.filter((route) => route.id === 'repository_snapshot'))
-      .toEqual([{ id: 'repository_snapshot', method: 'GET', pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source, write: false }]);
+    expect(result.overlay.runtime_effects.engineers.find(item => item.engineer_id === engineerId)!.effects.wake!.pending).toBe(1);
+    expect(readProviderWorkGraph(repo).graph).toEqual(graphBefore.graph);
   });
-
-  test('keeps unreadable distinct from healthy empty and rejects illegal binding combinations', () => {
-    const root = fixture();
-    const board = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, { listRuntimeEffects: () => { throw new Error('unreadable'); } }),
-    });
-    expect(board.overlay.snapshot_consistency).toBe('degraded');
-    expect(board.overlay.engineers.every((item) => item.runtime_effects.support === 'unreadable')).toBeTrue();
-    const active = board.overlay.engineers.find((item) => item.binding.state === 'unbound')!;
-    expect(() => validateEngineeringOverlaySnapshot({
-      ...board.overlay,
-      engineers: board.overlay.engineers.map((item) => item.engineer_id === active.engineer_id
-        ? { ...item, binding: { ...item.binding, value: { binding_id: bindingOne } } }
-        : item),
-    })).toThrow('unbound binding must have null value');
-    expect(() => validateEngineeringOverlaySnapshot({
-      ...board.overlay,
-      snapshot_consistency: 'stable',
-    })).toThrow('snapshot_consistency does not match component observations');
-    expect(() => validateEngineeringOverlaySnapshot({
-      ...board.overlay,
-      components: [...board.overlay.components].reverse(),
-    })).toThrow('components are not in canonical order');
-    expect(() => validateEngineeringOverlaySnapshot({
-      ...board.overlay,
-      engineers: board.overlay.engineers.map((item, index) => index === 0
-        ? { ...item, capability_id: 'capability.overlay.mismatch' }
-        : item),
-    })).toThrow('engineer_id does not match capability_id');
-    expect(() => validateOrganizationAttentionSnapshot({
-      ...board.organization_attention,
-      attention: board.organization_attention.attention.map((item, index) => index === 0
-        ? { ...item, owner: 'runtime_operator' }
-        : item),
-    })).toThrow('attention owner does not match reason');
+  test('malformed runtime evidence stays unavailable and cannot be decoded as stable', async () => {
+    const fx = await fixture();
+    const result = prepareWake(fx);
+    const effect = result.status!.intent.effect_id.slice(7);
+    const intentPath = join(resolveGitCommonDirectory(fx.root), AGENT_RUNTIME_EFFECT_RELATIVE_ROOT, 'effects', effect, 'intent.json');
+    writeFileSync(intentPath, '{broken');
+    const observed = board(fx);
+    expect(observed.overlay.snapshot_consistency).toBe('degraded');
+    expect(observed.overlay.runtime_effects).toEqual({ support: 'unreadable', engineers: [] });
+    expect(observed.overlay.scheduling).not.toBeNull();
+    expect(decodeOperatorOrganizationSnapshot(observed, fx.id)).toEqual(observed);
+    expect(() => decodeOperatorOrganizationSnapshot({ ...observed, overlay: { ...observed.overlay, snapshot_consistency: 'stable' } }, fx.id)).toThrow();
   });
-
-  test('converges on the same degraded projection whichever read pass loses the Profile authority', () => {
-    const root = fixture();
-    bind(root, bindingOne);
-    let firstReads = 0;
-    const firstReadFailure = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, {
-        listProfiles: (cwd) => {
-          firstReads += 1;
-          if (firstReads === 1) throw new Error('profile authority unreadable');
-          return listEngineerProfiles(cwd);
-        },
-      }),
-    });
-    expect(firstReads).toBe(2);
-    expect(firstReadFailure.overlay.snapshot_consistency).toBe('degraded');
-    expect(firstReadFailure.overlay.engineers).toEqual([]);
-    expect(firstReadFailure.overlay.components.every((item) => item.support === 'unreadable')).toBeTrue();
-
-    let secondReads = 0;
-    const secondReadFailure = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, {
-        listProfiles: (cwd) => {
-          secondReads += 1;
-          if (secondReads === 2) throw new Error('profile authority unreadable');
-          return listEngineerProfiles(cwd);
-        },
-      }),
-    });
-    expect(secondReads).toBe(2);
-    expect(secondReadFailure.overlay.snapshot_consistency).toBe('degraded');
-    expect(secondReadFailure.overlay.engineers).toEqual([]);
-    expect(secondReadFailure.overlay.snapshot_sha256).toBe(firstReadFailure.overlay.snapshot_sha256);
-    expect(firstReadFailure.organization_attention.attention).toEqual(secondReadFailure.organization_attention.attention);
+  test('source failure in either read produces the same degraded result', async () => {
+    const fx = await fixture();
+    const losing = (failure: number) => { let calls = 0; return board(fx, { readScheduling: (...args) => {
+      if (++calls === failure) throw new Error('profile/session source unavailable');
+      return fx.readScheduling(...args);
+    } }); };
+    const before = losing(1), after = losing(2);
+    expect(before.overlay.scheduling).toBeNull();
+    expect(before.overlay.components.every(item => item.support === 'unreadable')).toBeTrue();
+    expect(after.overlay.snapshot_sha256).toBe(before.overlay.snapshot_sha256);
+    expect(after.organization_attention).toEqual(before.organization_attention);
   });
-
-  test('fails closed when the repository registry authority is unreadable', () => {
-    const root = fixture();
-    expect(() => collectEngineeringBoard({
-      repo_root: root,
-      dependencies: deps(root, { readRegistry: () => { throw new Error('malformed registry'); } }),
-    })).toThrow('repository registry authority is unreadable');
+  test('registry failure refuses the whole observation', async () => {
+    const fx = await fixture();
+    expect(() => board(fx, { readRegistry: () => { throw new Error('unreadable registry'); } })).toThrow('unreadable registry');
   });
-
-  test('projects ten Engineers within the local three-second budget', () => {
-    const root = fixture();
-    const template = listEngineerProfiles(root)[0];
-    const profiles = Array.from({ length: 10 }, (_, index) => ({
-      ...template,
-      profile: {
-        ...template.profile,
-        engineer_id: `engineer:capability.overlay.engineer-${index}`,
-        capability_id: `capability.overlay.engineer-${index}`,
-      },
-      engineer_contract_revision: `sha256:${String(index).padStart(64, '0')}`,
-    })) as any;
-    const started = performance.now();
-    const board = collectEngineeringBoard({
-      repo_root: root,
-      observed_at: '2026-08-25T15:02:00.000Z',
-      dependencies: deps(root, {
-        listProfiles: () => profiles,
-        readBinding: (_cwd, id, revision) => ({
-          current: { state: 'unbound', current_digest: `sha256:${'6'.repeat(64)}`, engineer_contract_revision: revision },
-          binding: null, event: null, genesis: true,
-        } as any),
-      }),
-    });
-    expect(board.overlay.engineers).toHaveLength(10);
-    expect(performance.now() - started).toBeLessThan(3_000);
+  test('organization stays on the read-only repository route', () => {
+    expect(OPERATOR_ROUTES.filter(route => route.id === 'repository_snapshot')).toEqual([{
+      id: 'repository_snapshot', method: 'GET', pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source, write: false,
+    }]);
+    expect(OPERATOR_ROUTES.filter(route => /engineer|overlay|organization/iu.test(`${route.id} ${route.pattern}`))).toEqual([]);
+  });
+  test('profile roster projection stays within the local observation budget', async () => {
+    const fx = await fixture(true);
+    const started = performance.now(), observed = board(fx);
+    expect(observed.overlay.scheduling!.profiles.length).toBeGreaterThanOrEqual(10);
+    expect(performance.now() - started).toBeLessThan(3000);
   });
 });

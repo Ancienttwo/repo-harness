@@ -488,12 +488,12 @@ export function OperatorApp({
   // warning as clicked cards; later snapshots never move a stored baseline.
   useEffect(() => {
     if (!selection || selection.historical || selection.revision !== null || !selectedCard) return;
-    const baseline = selectedCard.task_revision;
+    const baseline = selectedCard.issue_revision;
     setSelection((current) => current !== null && !current.historical && current.revision === null && current.key === selection.key
       ? { ...current, revision: baseline }
       : current);
   }, [selection, selectedCard]);
-  const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision ? selection.revision : null;
+  const revisionChangedFrom = selectedCard && selection && selectedCard.issue_revision !== selection.revision ? selection.revision : null;
   const snapshotRepositoryId = activeRepository?.repository_id ?? null;
 
   // One observation belongs to the selected repository; task selection shares it.
@@ -514,7 +514,7 @@ export function OperatorApp({
   useObservationRefresh(readRepositorySnapshot, JSON.stringify([snapshotRepositoryId, refreshGeneration]), {
     enabled: !initialRepositorySnapshot && snapshotRepositoryId !== null && workspace === 'repository',
   });
-  const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), taskId: card.task_id, revision: card.task_revision, historical: false });
+  const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), providerRepositoryId: card.provider_repository_id, issueId: card.provider_issue_id, sessionBinding: card.execution?.selector.session_binding_sha256 ?? null, revision: card.issue_revision, historical: false });
   const setBoardRepository = (id: string | null) => {
     writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
     setFilters(current => ({ ...current, repositoryId: id }));

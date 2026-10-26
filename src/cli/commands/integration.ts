@@ -1,8 +1,10 @@
+import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
 import { Command } from 'commander';
 import { lstatSync, readFileSync, realpathSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';
 
 import {
+  validateRequiredPullRequest,
   canonicalAcceptanceMatrixBytes,
   canonicalIntegrationContractBytes,
   canonicalIntegrationEnvelopeBytes,
@@ -25,9 +27,9 @@ import {
 
 type Format = 'json' | 'text';
 type BuildInputOptions = { input: string; format: Format };
-type EnvelopeOptions = { contract: string; base: string; head: string; format: Format };
+type EnvelopeOptions = { contract: string; base: string; head: string; tree: string; format: Format };
 type MatrixOptions = { contract: string; envelope: string; input: string; format: Format };
-type AcceptOptions = { contract: string; envelope: string; matrix: string; workflowContract?: string; verification?: string; format: Format };
+type AcceptOptions = { contract: string; envelope: string; matrix: string; repositoryId: string; issueId: string; campaignId: string; grantSha256: string; policySha256: string; actor: string; verification?: string; format: Format };
 type ReadOptions = { kind: string; digest: string; format: Format };
 
 function requireExactKeys(record: Record<string, unknown>, expected: readonly string[], label: string): void {
@@ -59,20 +61,13 @@ function repoRelativeJson(path: string): unknown {
 
 function parseContractInput(path: string): CreateIntegrationContractInput {
   const record = asRecord(repoRelativeJson(path), 'contract input');
-  requireExactKeys(record, ['approved_prd_ref', 'source_spec_ref', 'integration_group', 'required_work_packages', 'required_constraints'], 'contract input');
-  if (!Array.isArray(record.required_work_packages) || !Array.isArray(record.required_constraints)) throw new Error('contract input arrays are invalid');
+  requireExactKeys(record, ['approved_prd_ref', 'source_spec_ref', 'integration_group', 'required_pull_requests', 'required_constraints'], 'contract input');
+  if (!Array.isArray(record.required_pull_requests) || !Array.isArray(record.required_constraints)) throw new Error('contract input arrays are invalid');
   return {
     approved_prd_ref: record.approved_prd_ref as string,
     source_spec_ref: record.source_spec_ref as string,
     integration_group: record.integration_group as string,
-    required_work_packages: record.required_work_packages.map((item) => {
-      const workPackage = asRecord(item, 'required work package');
-      requireExactKeys(workPackage, ['work_package_id', 'work_package_revision'], 'required work package');
-      return {
-        work_package_id: workPackage.work_package_id as string,
-        work_package_revision: workPackage.work_package_revision as string,
-      };
-    }),
+    required_pull_requests: record.required_pull_requests.map(validateRequiredPullRequest),
     required_constraints: record.required_constraints as string[],
   };
 }
@@ -123,24 +118,26 @@ export function buildIntegrationCommand(): Command {
     .action((options: BuildInputOptions) => {
       try {
         const value = createIntegrationContract({ repo_root: process.cwd() }, parseContractInput(options.input));
-        process.stdout.write(`${formatValue('IntegrationContractV1', value.contract_sha256, canonicalIntegrationContractBytes(value), options.format)}\n`);
+        process.stdout.write(`${formatValue('IntegrationContractV2', value.contract_sha256, canonicalIntegrationContractBytes(value), options.format)}\n`);
       } catch (error) {
         outputError(error);
       }
     });
 
-  addFormat(integration.command('envelope').description('Freeze current publications into one exact existing Git candidate')
+  addFormat(integration.command('envelope').description('Freeze explicit PR integration evidence for one exact existing Git candidate')
     .requiredOption('--contract <sha256>', 'IntegrationContract digest')
     .requiredOption('--base <sha>', 'Exact candidate base commit')
-    .requiredOption('--head <sha>', 'Exact current candidate head commit'))
+    .requiredOption('--head <sha>', 'Exact current candidate head commit')
+    .requiredOption('--tree <sha>', 'Exact candidate tree'))
     .action((options: EnvelopeOptions) => {
       try {
         const value = createIntegrationEnvelope({ repo_root: process.cwd() }, {
           contract_sha256: options.contract,
           base_sha: options.base,
           final_head_sha: options.head,
+          final_tree_sha: options.tree,
         });
-        process.stdout.write(`${formatValue('IntegrationEnvelopeV1', value.envelope_sha256, canonicalIntegrationEnvelopeBytes(value), options.format)}\n`);
+        process.stdout.write(`${formatValue('IntegrationEnvelopeV2', value.envelope_sha256, canonicalIntegrationEnvelopeBytes(value), options.format)}\n`);
       } catch (error) {
         outputError(error);
       }
@@ -153,7 +150,7 @@ export function buildIntegrationCommand(): Command {
     .action((options: MatrixOptions) => {
       try {
         const value = createAcceptanceMatrix({ repo_root: process.cwd() }, parseMatrixInput(options.input, options.contract, options.envelope));
-        process.stdout.write(`${formatValue('AcceptanceMatrixV1', value.matrix_sha256, canonicalAcceptanceMatrixBytes(value), options.format)}\n`);
+        process.stdout.write(`${formatValue('AcceptanceMatrixV2', value.matrix_sha256, canonicalAcceptanceMatrixBytes(value), options.format)}\n`);
       } catch (error) {
         outputError(error);
       }
@@ -163,7 +160,12 @@ export function buildIntegrationCommand(): Command {
     .requiredOption('--contract <sha256>', 'IntegrationContract digest')
     .requiredOption('--envelope <sha256>', 'IntegrationEnvelope digest')
     .requiredOption('--matrix <sha256>', 'AcceptanceMatrix digest')
-    .option('--workflow-contract <path>', 'Exact workflow contract passed to AcceptanceReceipt verification')
+    .requiredOption('--repository-id <id>', 'Provider repository ID')
+    .requiredOption('--issue-id <id>', 'Provider issue ID')
+    .requiredOption('--campaign-id <id>', 'Approved review campaign')
+    .requiredOption('--grant-sha256 <digest>', 'Active protected approval')
+    .requiredOption('--policy-sha256 <digest>', 'Approved policy identity')
+    .requiredOption('--actor <id>', 'Approved actor identity')
     .option('--verification <path>', 'Exact verification evidence passed to AcceptanceReceipt verification'))
     .action(async (options: AcceptOptions) => {
       try {
@@ -171,10 +173,11 @@ export function buildIntegrationCommand(): Command {
           contract_sha256: options.contract,
           envelope_sha256: options.envelope,
           matrix_sha256: options.matrix,
-          workflow_contract_ref: options.workflowContract,
+          review_authority: readReviewAdmissionSource(process.cwd(), { 'repository-id': options.repositoryId, 'issue-id': options.issueId,
+            'campaign-id': options.campaignId, 'grant-sha256': options.grantSha256, 'policy-sha256': options.policySha256, actor: options.actor }),
           verification_ref: options.verification,
         });
-        process.stdout.write(`${formatValue('ProductAcceptanceProjectionV1', value.projection_sha256, canonicalProductAcceptanceProjectionBytes(value), options.format)}\n`);
+        process.stdout.write(`${formatValue('ProductAcceptanceProjectionV2', value.projection_sha256, canonicalProductAcceptanceProjectionBytes(value), options.format)}\n`);
       } catch (error) {
         outputError(error);
       }
@@ -187,22 +190,22 @@ export function buildIntegrationCommand(): Command {
       try {
         if (options.kind === 'contract') {
           const value = readIntegrationContract(process.cwd(), options.digest);
-          process.stdout.write(`${formatValue('IntegrationContractV1', value.contract_sha256, canonicalIntegrationContractBytes(value), options.format)}\n`);
+          process.stdout.write(`${formatValue('IntegrationContractV2', value.contract_sha256, canonicalIntegrationContractBytes(value), options.format)}\n`);
           return;
         }
         if (options.kind === 'envelope') {
           const value = readIntegrationEnvelope(process.cwd(), options.digest);
-          process.stdout.write(`${formatValue('IntegrationEnvelopeV1', value.envelope_sha256, canonicalIntegrationEnvelopeBytes(value), options.format)}\n`);
+          process.stdout.write(`${formatValue('IntegrationEnvelopeV2', value.envelope_sha256, canonicalIntegrationEnvelopeBytes(value), options.format)}\n`);
           return;
         }
         if (options.kind === 'matrix') {
           const value = readAcceptanceMatrix(process.cwd(), options.digest);
-          process.stdout.write(`${formatValue('AcceptanceMatrixV1', value.matrix_sha256, canonicalAcceptanceMatrixBytes(value), options.format)}\n`);
+          process.stdout.write(`${formatValue('AcceptanceMatrixV2', value.matrix_sha256, canonicalAcceptanceMatrixBytes(value), options.format)}\n`);
           return;
         }
         if (options.kind === 'product') {
           const value = readProductAcceptanceProjection(process.cwd(), options.digest);
-          process.stdout.write(`${formatValue('ProductAcceptanceProjectionV1', value.projection_sha256, canonicalProductAcceptanceProjectionBytes(value), options.format)}\n`);
+          process.stdout.write(`${formatValue('ProductAcceptanceProjectionV2', value.projection_sha256, canonicalProductAcceptanceProjectionBytes(value), options.format)}\n`);
           return;
         }
         throw new Error(`unknown integration evidence kind: ${options.kind}`);

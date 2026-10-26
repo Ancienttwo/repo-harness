@@ -1,8 +1,5 @@
-import { serializeHistoricalLease } from './helpers/sprint-fixture';
-import { seedLeaseDirectory, writeHistoricalLease, leaseOwnerPath, fixtureTaskId } from './helpers/sprint-fixture';
 /**
- * Coordination plane primitives over a real git repository: lease election,
- * durable owner writes, per-task locking, and the `unknown` classification.
+ * Shared task locks and worktree cleanup over a real Git repository.
  *
  * Real filesystem, real `git rev-parse --git-common-dir`, real linked
  * worktree. Every hazard here is a filesystem-ordering hazard, so a mocked fs
@@ -26,14 +23,13 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { buildLeaseOwnerRecord, deriveTaskRevision, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
-import { COORDINATION_ROOT_RELATIVE_PATH, coordinationRoot, leaseDirectory, readLease, taskLockRelativePath, withTaskLock } from '../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from './helpers/sprint-fixture';
+import { taskLockRelativePath, withTaskLock } from '../src/effects/locking/task-lock';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 
 const FIXTURES = new Set<string>();
 const REPO_ROOT = join(import.meta.dir, '..');
-const SPRINT_PATH = 'plans/sprints/lease-store.sprint.md';
 
 function run(cwd: string, args: readonly string[]): void {
   const result = spawnSync('git', [...args], { cwd, encoding: 'utf-8' });
@@ -59,173 +55,35 @@ function taskIdFor(taskCell: string): string {
   return fixtureTaskId(taskCell);
 }
 
-function recordFor(taskCell: string, claimId: string): LeaseOwnerRecordV1 {
-  const taskId = taskIdFor(taskCell);
-  return buildLeaseOwnerRecord({
-    claimId,
-    taskId,
-    taskRevision: deriveTaskRevision({ taskId, taskCell, modeCell: 'contract', acceptanceCell: 'green' }),
-    sprintPath: SPRINT_PATH,
-    targetRef: 'main',
-    generation: 1,
-    sessionId: 'session-1',
-    sourceWorktree: '/tmp/lease-store-fixture',
-  });
-}
-
-/** Claim a lease the way the verb does: elect, then publish durably. */
-function claim(repo: string, taskCell: string, claimId: string): LeaseOwnerRecordV1 {
-  const record = recordFor(taskCell, claimId);
-  expect(seedLeaseDirectory(repo, record.task_id)).toBe(true);
-  writeHistoricalLease(repo, record.task_id, record);
-  return record;
-}
-
 afterAll(() => {
   for (const root of FIXTURES) rmSync(root, { recursive: true, force: true });
 });
 
-describe('coordination plane layout', () => {
-  test('roots under the git common dir, not the worktree', () => {
-    const repo = createRepo();
-    const commonDir = resolveGitCommonDirectory(repo);
-    expect(coordinationRoot(repo)).toBe(join(commonDir, COORDINATION_ROOT_RELATIVE_PATH));
-    expect(COORDINATION_ROOT_RELATIVE_PATH).toBe('repo-harness/coordination/v1');
-  });
-
-  test('a linked worktree resolves to the same coordination root', () => {
-    const repo = createRepo();
-    const linked = join(repo, '..', `${repo.split('/').pop()}-linked`);
-    run(repo, ['worktree', 'add', '--quiet', '-b', 'linked', linked]);
-    FIXTURES.add(realpathSync(linked));
-    expect(coordinationRoot(realpathSync(linked))).toBe(coordinationRoot(repo));
-    expect(leaseDirectory(realpathSync(linked), taskIdFor('shared')))
-      .toBe(leaseDirectory(repo, taskIdFor('shared')));
-  });
-
-  test('lease and lock paths refuse anything that is not a bare digest', () => {
-    const repo = createRepo();
-    for (const bad of ['../escape', 'not-a-digest', '', 'a'.repeat(63), `${'a'.repeat(64)}/x`]) {
-      expect(() => leaseDirectory(repo, bad)).toThrow('unsafe coordination task id');
+describe('per-task lock', () => {
+  test('lock paths refuse anything that is not a bare digest', () => {
+    for (const bad of ['', '../escape', 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), 'a/b']) {
       expect(() => taskLockRelativePath(bad)).toThrow('unsafe coordination task id');
     }
   });
-});
 
-describe('unknown classification: never silently deleted', () => {
-  test('a crash after the lease mkdir and before the owner write is unknown', () => {
+  test('an empty task lock refuses entry without blocking a different task', () => {
     const repo = createRepo();
-    const taskId = taskIdFor('crash window');
-    expect(seedLeaseDirectory(repo, taskId)).toBe(true);
+    const commonDir = resolveGitCommonDirectory(repo);
+    const task = taskIdFor('wedged task');
+    const other = taskIdFor('independent task');
+    const lockPath = join(commonDir, taskLockRelativePath(task));
+    mkdirSync(lockPath, { recursive: true });
+    expect(() => withExclusiveDirectoryLock(commonDir, taskLockRelativePath(task),
+      () => 'never runs', { waitTimeoutMs: 200 })).toThrow(/timed out waiting/);
+    expect(withExclusiveDirectoryLock(commonDir, taskLockRelativePath(other),
+      () => 'still works', { waitTimeoutMs: 200 })).toBe('still works');
+    expect(existsSync(lockPath)).toBe(true);
+  }, 120_000);
 
-    const read = readLease(repo, taskId);
-    expect(read.classification).toBe('unknown');
-    expect(read.unknown_reason).toBe('owner_record_missing');
-    expect(read.record).toBeNull();
-    expect(existsSync(leaseDirectory(repo, taskId))).toBe(true);
-  });
-
-  test('malformed, empty, and non-record owner files are unknown and survive', () => {
-    const repo = createRepo();
-    const cases: ReadonlyArray<readonly [string, string, string]> = [
-      ['malformed json', '{ not json', 'owner_record_malformed'],
-      ['wrong protocol', JSON.stringify({ protocol: 2, kind: 'repo-harness-lease-owner' }), 'owner_record_malformed'],
-      ['wrong kind', JSON.stringify({ protocol: 1, kind: 'something-else' }), 'owner_record_malformed'],
-      ['empty file', '', 'owner_record_empty'],
-      ['whitespace only', '   \n', 'owner_record_empty'],
-    ];
-    for (const [name, content, reason] of cases) {
-      const taskId = taskIdFor(name);
-      seedLeaseDirectory(repo, taskId);
-      writeFileSync(leaseOwnerPath(repo, taskId), content);
-      const read = readLease(repo, taskId);
-      expect(read.classification).toBe('unknown');
-      expect(read.unknown_reason).toBe(reason as never);
-      expect(read.record).toBeNull();
-      expect(existsSync(leaseOwnerPath(repo, taskId))).toBe(true);
-    }
-  });
-
-  test('a truncated but syntactically valid record is unknown, not partly trusted', () => {
-    const repo = createRepo();
-    const record = recordFor('truncated record', 'claim-1');
-    const taskId = record.task_id;
-    seedLeaseDirectory(repo, taskId);
-    const { claimed_by: _dropped, ...withoutClaimedBy } = record;
-    writeFileSync(leaseOwnerPath(repo, taskId), `${JSON.stringify(withoutClaimedBy)}\n`);
-    expect(readLease(repo, taskId).unknown_reason).toBe('owner_record_malformed');
-  });
-
-  test('duplicate claim_id fields stay unknown even when both values agree', () => {
-    for (const duplicated of ['claim-1', 'claim-forged']) {
-      const repo = createRepo();
-      const record = recordFor(`duplicate-${duplicated}`, 'claim-1');
-      seedLeaseDirectory(repo, record.task_id);
-      const raw = JSON.stringify(record).replace('"claim_id":', `"claim_id":"${duplicated}","claim_id":`);
-      writeFileSync(leaseOwnerPath(repo, record.task_id), raw);
-      const read = readLease(repo, record.task_id);
-      expect(read.classification).toBe('unknown');
-      expect(read.unknown_reason).toBe('owner_record_malformed');
-      expect(read.record).toBeNull();
-      expect(read.raw).toBe(raw);
-      expect(readFileSync(leaseOwnerPath(repo, record.task_id), 'utf8')).toBe(raw);
-    }
-  });
-
-  test('a record naming a different task is unknown', () => {
-    const repo = createRepo();
-    const foreign = recordFor('foreign record', 'claim-1');
-    const taskId = taskIdFor('host lease');
-    seedLeaseDirectory(repo, taskId);
-    writeFileSync(leaseOwnerPath(repo, taskId), serializeHistoricalLease(foreign));
-    expect(readLease(repo, taskId).unknown_reason).toBe('owner_record_task_id_mismatch');
-  });
-
-  test('a symlinked owner record is unknown and is not followed', () => {
-    const repo = createRepo();
-    const genuine = claim(repo, 'symlink target', 'claim-real');
-    const taskId = taskIdFor('symlinked owner');
-    seedLeaseDirectory(repo, taskId);
-    symlinkSync(leaseOwnerPath(repo, genuine.task_id), leaseOwnerPath(repo, taskId));
-
-    const read = readLease(repo, taskId);
-    expect(read.classification).toBe('unknown');
-    expect(read.unknown_reason).toBe('owner_record_symlink');
-    expect(read.record).toBeNull();
-    expect(existsSync(leaseOwnerPath(repo, taskId))).toBe(true);
-    // The genuine lease it pointed at is untouched.
-    expect(readLease(repo, genuine.task_id).classification).toBe('reserving');
-  });
-
-  test('a symlinked lease directory is unknown and is not followed', () => {
-    const repo = createRepo();
-    const genuine = claim(repo, 'directory symlink target', 'claim-real');
-    const taskId = taskIdFor('symlinked lease dir');
-    const target = leaseDirectory(repo, taskId);
-    mkdirSync(join(coordinationRoot(repo), 'leases'), { recursive: true });
-    symlinkSync(leaseDirectory(repo, genuine.task_id), target);
-
-    const read = readLease(repo, taskId);
-    expect(read.classification).toBe('unknown');
-    expect(read.unknown_reason).toBe('lease_path_not_directory');
-    expect(existsSync(target)).toBe(true);
-  });
-
-  test('an absent lease is available, and reads never create anything', () => {
-    const repo = createRepo();
-    const taskId = taskIdFor('never claimed');
-    const read = readLease(repo, taskId);
-    expect(read.classification).toBe('available');
-    expect(read.record).toBeNull();
-    expect(existsSync(leaseDirectory(repo, taskId))).toBe(false);
-  });
-
-});
-
-describe('per-task lock', () => {
   test('the lock directory lives on the shared plane and is released after use', () => {
     const repo = createRepo();
     const taskId = taskIdFor('lock path');
+    expect(taskLockRelativePath(taskId)).toBe(`repo-harness/coordination/v1/locks/tasks/${taskId}.lock`);
     const lockPath = join(resolveGitCommonDirectory(repo), taskLockRelativePath(taskId));
     const observed = withTaskLock(repo, taskId, () => {
       expect(existsSync(lockPath)).toBe(true);
@@ -241,13 +99,13 @@ describe('per-task lock', () => {
     const taskId = taskIdFor('terminated lock owner');
     const lockPath = join(resolveGitCommonDirectory(repo), taskLockRelativePath(taskId));
     const readyPath = join(repo, '.task-lock-owner-ready');
-    const leaseStoreModule = new URL('../src/effects/state/coordination-lease-store.ts', import.meta.url).href;
+    const taskLockModule = new URL('../src/effects/locking/task-lock.ts', import.meta.url).href;
     const child = Bun.spawn([
       process.execPath,
       '-e',
       [
         "const { writeFileSync, renameSync } = await import('node:fs');",
-        'const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);',
+        'const { withTaskLock } = await import(process.env.TASK_LOCK_MODULE);',
         'withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {',
         "  writeFileSync(process.env.READY_PATH + '.tmp', 'ready\\n'); renameSync(process.env.READY_PATH + '.tmp', process.env.READY_PATH);",
         '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
@@ -257,7 +115,7 @@ describe('per-task lock', () => {
       cwd: repo,
       env: {
         ...process.env,
-        LEASE_STORE_MODULE: leaseStoreModule,
+        TASK_LOCK_MODULE: taskLockModule,
         REPO_ROOT: repo,
         TASK_ID: taskId,
         READY_PATH: readyPath,
@@ -315,7 +173,7 @@ describe('per-task lock', () => {
             '  console.log(error.name);',
             '}',
           ].join('\n'),
-          join(import.meta.dir, '../src/effects/state/coordination-lease-store.ts'),
+          join(import.meta.dir, '../src/effects/locking/task-lock.ts'),
           repo,
           taskId,
         ],
@@ -350,86 +208,6 @@ describe('per-task lock', () => {
     expect(reclaimed).toEqual([lockPath]);
     expect(existsSync(lockPath)).toBe(false);
   }, 60_000);
-
-});
-
-describe('historical lease bytes', () => {
-  const SPRINT = 'plans/sprints/verbs.sprint.md';
-  const ROW_A = `| 1 | ${fixtureTaskId('build the lease store')} | [ ] | build the lease store | contract | store tests pass | (pending) |`;
-  const ROW_B = `| 2 | ${fixtureTaskId('wire the claim verbs')} | [ ] | wire the claim verbs | contract | claim tests pass | (pending) |`;
-
-  function sprintText(rows: readonly string[]): string {
-    return [
-      '# Sprint: Verb Fixture',
-      '',
-      '> **Status**: Executing',
-      '> **Backlog Schema**: 2',
-      '',
-      '## Backlog',
-      '',
-      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-      '|---|----|--------|------|------|------------|------|',
-      ...rows,
-      '',
-      '## Execution Log',
-      '',
-    ].join('\n');
-  }
-
-  function commitSprint(repo: string, rows: readonly string[]): void {
-    mkdirSync(join(repo, 'plans/sprints'), { recursive: true });
-    writeFileSync(join(repo, SPRINT), sprintText(rows));
-    run(repo, ['add', SPRINT]);
-    run(repo, ['commit', '--quiet', '-m', 'sprint']);
-  }
-
-  function seedClaim(repo: string, claimId = 'claim-1') {
-    const task = canonicalTask(repo, 'wire the claim verbs');
-    const record = buildLeaseOwnerRecord({ claimId, taskId: task.task_id,
-      taskRevision: task.task_revision, sprintPath: SPRINT, targetRef: 'main',
-      generation: 1, sessionId: 'session-1', sourceWorktree: repo });
-    seedLeaseDirectory(repo, task.task_id);
-    writeHistoricalLease(repo, task.task_id, record);
-    return record;
-  }
-
-  function canonicalTask(repo: string, taskCell: string) {
-    const found = projectCanonicalTasks({
-      repoIdentity: resolveGitCommonDirectory(repo),
-      sprintPath: SPRINT,
-      sprintText: readFileSync(join(repo, SPRINT), 'utf-8'),
-    }).find((task) => task.row.task === taskCell);
-    if (!found) throw new Error(`no row with Task cell ${taskCell}`);
-    return found;
-  }
-
-  function repoWithSprint(rows: readonly string[] = [ROW_A, ROW_B]): string {
-    const repo = createRepo();
-    commitSprint(repo, rows);
-    return repo;
-  }
-
-  test('readLease publishes the owner record bytes verbatim, or null', () => {
-    const repo = repoWithSprint();
-    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
-
-    // No lease directory at all: nothing was read, so there are no bytes.
-    expect(readLease(repo, taskId).raw).toBeNull();
-
-    seedClaim(repo);
-    const live = readLease(repo, taskId);
-    expect(live.raw).toBe(readFileSync(leaseOwnerPath(repo, taskId), 'utf-8'));
-    // Bytes, not a re-serialization of the parse: the digest that consumes
-    // this must be able to see two records that parse the same but differ.
-    expect(live.raw).toBe(serializeHistoricalLease(live.record!));
-
-    // A malformed record is still bytes, and classification is unchanged.
-    writeFileSync(leaseOwnerPath(repo, taskId), '{ not json');
-    const malformed = readLease(repo, taskId);
-    expect(malformed.classification).toBe('unknown');
-    expect(malformed.unknown_reason).toBe('owner_record_malformed');
-    expect(malformed.raw).toBe('{ not json');
-  });
 
 });
 

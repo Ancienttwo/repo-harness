@@ -21,24 +21,22 @@ const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
 
-test('Planning transport binds canonical task observations and requires independent source isolation',()=>{
+test('Planning transport binds provider tasks, explicit admitted sessions and independent graph observations',()=>{
   const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(repositorySnapshot.repository_id,repository.cards);
   const envelope={...repositorySnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
   expect(decodeOperatorRepositorySnapshot(envelope).planning).toEqual(envelope.planning);
   const {planning:_,...missing}=envelope;
   expect(()=>decodeOperatorRepositorySnapshot(missing)).toThrow();
-  expect(()=>decodeOperatorRepositorySnapshot({...envelope,protocol:3})).toThrow();
-  const canonical=snapshot.canonical!,task=snapshot.tasks[0]!;
+  const task=snapshot.scheduling.tasks[0]!;
   for(const bad of [
     {...snapshot,repository_id:'another-repo'},
-    {...snapshot,canonical:{...canonical,commit:'d'.repeat(40)}},
-    {...snapshot,tasks:[task,task]},
-    {...snapshot,tasks:Array.from({length:201},()=>task)},
-    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'engineering-v2',work_graph_revision:snapshotDigest,packages:[],sources:Array.from({length:9},(_,index)=>({repository_id:`repo_${index.toString(16).padStart(16,'0')}`,commit:canonical.commit,work_graph_revision:snapshotDigest}))}}},
-    {...snapshot,tasks:[{...task,observation:{...task.observation,authorization_revision:2}}]},
-    {...snapshot,tasks:[{...task,canonical:{...canonical,sprint_path:'../secret'}}]},
-    {...snapshot,graph:{...snapshot.graph,observed_at:'2025-01-01T00:00:00Z'}},
-    {...snapshot,graph:{status:'observed',observed_at:snapshot.observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:snapshotDigest,packages:[],sources:[]}}},
+    {...snapshot,protocol:1},
+    {...snapshot,scheduling:{...snapshot.scheduling,tasks:[task,task]}},
+    {...snapshot,scheduling:{...snapshot.scheduling,tasks:Array.from({length:201},()=>task)}},
+    {...snapshot,scheduling:{...snapshot.scheduling,repository_id:'another-repo'}},
+    {...snapshot,graph:{status:'unavailable',code:'unclassified'}},
+    {...snapshot,graph:{status:'observed',snapshot:{packages:[],sources:[]}}},
+    {...snapshot,observation:{...snapshot.observation,authorization_revision:-1}},
   ])expect(()=>decodeOperatorPlanningSnapshot(bad,repositorySnapshot.repository_id)).toThrow();
   const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
   expect(decodeOperatorRepositorySnapshot({...envelope,planning:unavailable}).organization.status).toBe('unavailable');
@@ -46,7 +44,7 @@ test('Planning transport binds canonical task observations and requires independ
 
 function validFleetPayload(): Record<string, unknown> {
   return {
-    protocol: 7,
+    protocol: 8,
     service_epoch: '00000000-0000-4000-8000-000000000001',
     kind: 'operator_fleet_snapshot',
     registry_revision: `sha256:${'d'.repeat(64)}`,
@@ -62,22 +60,22 @@ function validFleetPayload(): Record<string, unknown> {
       cards: [{
         repository_id: 'repo-1',
         task_id: taskId,
-        task_revision: taskRevision,
+        provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${taskRevision}`,
+        execution_status: 'observed', execution: {
+          admission_sha256: snapshotDigest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex',
+          selector: { repository_id: 'repo-1', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker',
+            claim_ref: claimId, claim_revision: snapshotDigest, grant_sha256: snapshotDigest, policy_sha256: snapshotDigest, actor_id: 'owner', session_binding_sha256: snapshotDigest },
+        },
         task_label: 'validate operator identity',
         task_index: 1,
-        claim_id: claimId,
-        generation: 1,
-        task_state: 'pending',
         placement: { kind: 'column', column: 'working' },
         attention_owner: 'agent',
         execution_readiness: 'execution_ready', readiness_blockers: [],
-        lease_state: 'bound',
-        publication_id: null,
-        head_sha: null,
         merge_readiness: null,
         blocker_codes: [],
-        feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
+        feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
         inbox: {
+          observation_status: 'observed',
           unread_count: 0,
           addressed_to_current_claim: false,
           delivery_state: 'pending',
@@ -117,13 +115,17 @@ describe('operator browser payload contracts', () => {
     const decoded = decodeOperatorFleetSnapshot(validFleetPayload());
     const card = decoded.repositories[0]?.cards[0];
 
-    expect(card).toMatchObject({ task_id: taskId, task_revision: taskRevision, claim_id: claimId, generation: 1 });
+    expect(card).toMatchObject({ task_id: taskId, provider_repository_id: '1001', provider_issue_id: '2001', execution: { admission_sha256: snapshotDigest, selector: { claim_ref: claimId, claim_revision: snapshotDigest } } });
     expect(card?.task_id).toMatch(/^[0-9a-f]{64}$/u);
-    expect(card?.task_revision).toMatch(/^[0-9a-f]{64}$/u);
-    expect(card?.claim_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
+    expect(card?.issue_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(card?.execution?.selector.claim_ref).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   });
 
   test.each([
+    ['GraphQL ID in canonical REST field', { provider_repository_id: 'R_node' }],
+    ['zero issue ID', { provider_issue_id: '0' }],
+    ['malformed issue revision', { issue_revision: 'revision-1' }],
+    ['execution missing with task ID', { execution: null }],
     ['malformed task digest', { task_id: 'task-1' }],
     ['uppercase task digest', { task_id: 'A'.repeat(64) }],
     ['malformed task revision digest', { task_revision: 'revision-1' }],
@@ -134,6 +136,17 @@ describe('operator browser payload contracts', () => {
     ['generation without claim', { claim_id: null }],
   ])('rejects %s before rendering a write affordance', (_name, changes) => {
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard(changes))).toThrow(OperatorPayloadError);
+  });
+
+  test('binds execution to its exact provider issue and task rather than a matching display row', () => {
+    expect(decodeOperatorFleetSnapshot(validFleetPayload()).repositories[0]!.cards[0]!.execution).not.toBeNull();
+    for (const delta of [{ provider_repository_id: '1002' }, { issue_id: '2002' }, { task: 'other-runtime-task' }, { repository_id: 'repo-2' }]) {
+      const payload = validFleetPayload();
+      const card = (payload.repositories as { cards: Record<string, unknown>[] }[])[0]!.cards[0]!;
+      const execution = card.execution as { selector: Record<string, unknown> };
+      execution.selector = { ...execution.selector, ...delta };
+      expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+    }
   });
 
   // `effect_sha256` is rendered as a copyable identifier, so a value that is
@@ -313,6 +326,7 @@ describe('notification delivery evidence protocol', () => {
     }
     const { value, card } = payload(null);
     card.error = { code: 'repo_runtime_effect_unreadable', message: 'unavailable' };
+    (card.inbox as Record<string, unknown>).observation_status = 'unavailable';
     card.placement = { kind: 'unclassified', reason: 'observation_failed' };
     value.snapshot_consistency = 'degraded';
     (value.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
@@ -335,7 +349,7 @@ describe('notification delivery evidence protocol', () => {
 
 describe('placement protocol and count conservation', () => {
   test.each([
-    { placement: undefined }, { task_state: undefined }, { readiness_blockers: undefined },
+    { placement: undefined }, { issue_state: undefined }, { readiness_blockers: undefined },
     { column: 'working' }, { placement: { kind: 'preparation', column: 'working' } },
     { placement: { kind: 'alternate_workflow', workflow: 'unknown' } },
     { placement: { kind: 'unclassified', reason: 'unknown' } },
@@ -361,14 +375,14 @@ describe('placement protocol and count conservation', () => {
   });
   test('preserves exact preparation ownership without degrading health', () => {
     const blockers = [{ code: 'plan_not_approved', attention_owner: 'user' }, { code: 'contract_missing', attention_owner: 'agent' }] as const;
-    const payload = fleetPayloadWithCard({ placement: { kind: 'preparation' }, execution_readiness: 'planning_required', readiness_blockers: blockers, lease_state: 'available', claim_id: null, generation: null });
+    const payload = fleetPayloadWithCard({ placement: { kind: 'preparation' }, execution_readiness: 'planning_required', readiness_blockers: blockers, execution: null, task_id: null });
     payload.counts = { ...(payload.counts as object), working: 0, preparation: 1 };
     const result = decodeOperatorFleetSnapshot(payload);
     expect(result.snapshot_consistency).toBe('stable');
     expect(result.repositories[0]!.cards[0]!.readiness_blockers).toEqual(blockers);
   });
   test('counts a missing canonical row only as isolated execution', () => {
-    const payload = fleetPayloadWithCard({ task_state: 'missing', task_label: null, task_index: null, placement: { kind: 'unclassified', reason: 'canonical_missing' } });
+    const payload = fleetPayloadWithCard({ issue_state: null, task_label: null, task_index: null, placement: { kind: 'unclassified', reason: 'canonical_missing' } });
     payload.snapshot_consistency = 'degraded';
     (payload.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
     payload.counts = { ...(payload.counts as object), working: 0, known_tasks: 0, isolated_execution: 1 };
@@ -385,35 +399,32 @@ describe('historical activity browser transport', () => {
     try {
       globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(snapshot);}) as typeof fetch;
       expect(await fetchTaskActivity(request,controller.signal)).toEqual(snapshot);
-      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/history/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
       globalThis.fetch=(async()=>Response.json({...snapshot,repository_id:'repo-b'})) as unknown as typeof fetch;
       await expect(fetchTaskActivity(request,controller.signal)).rejects.toThrow('Invalid task activity response');
     } finally {globalThis.fetch=original;}
   });
 });
 
-test('current context transport preserves expected revision, abort and uncached read semantics',async()=>{
+test('current context transport preserves selected approval, abort and uncached read semantics',async()=>{
   const {fetchTaskContext}=await import('../../src/operator-web/task-context');
-  const request={repository_id:'repo-a',task_id:taskId,expected_task_revision:taskRevision};
-  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
-    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:taskId,task_revision:taskRevision,
-    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},task:{title:'Task',mode:'contract',acceptance:'read only',state:'pending'},
-    execution:{lease_state:'available',claim:null},offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:snapshotDigest,plan:null},
-    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:snapshotDigest,authorization_revision:1,consistency:'observed'},
-  };
+  const {admittedTaskContextFixture}=await import('../../src/operator-web/fixture');
+  const request={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:taskId,role:'worker',claim_ref:'claim:1',claim_revision:snapshotDigest,grant_sha256:snapshotDigest,policy_sha256:snapshotDigest,actor_id:'owner',session_binding_sha256:snapshotDigest};
+  const context=admittedTaskContextFixture(request);
   const original=globalThis.fetch,controller=new AbortController();let url='';let observed:RequestInit|undefined;
   try {
     globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(context);}) as typeof fetch;
     expect(await fetchTaskContext(request,controller.signal)).toEqual(context);
-    expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/context?task_revision=${taskRevision}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
-    globalThis.fetch=(async()=>Response.json({...context,task_revision:'f'.repeat(64)})) as unknown as typeof fetch;
-    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid task context response');
+    const query=new URLSearchParams(Object.entries(request).filter(([key])=>key!=='repository_id'));
+    expect(url).toBe(`/api/v1/fleet/task-sessions/repo-a/context?${query}`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
+    globalThis.fetch=(async()=>Response.json({...context,selector:{...request,grant_sha256:'sha256:'+'f'.repeat(64)}})) as unknown as typeof fetch;
+    await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('Invalid admitted task context');
     globalThis.fetch=(async()=>Response.json({code:'stale'},{status:409})) as unknown as typeof fetch;
     await expect(fetchTaskContext(request,controller.signal)).rejects.toThrow('stale');
   } finally {globalThis.fetch=original;}
 });
 
-test('Fleet protocol7 requires a valid service epoch and rejects protocol6', () => {
+test('Fleet protocol8 requires a valid service epoch and rejects protocol6', () => {
   const payload = validFleetPayload();
   expect(() => decodeOperatorFleetSnapshot({ ...payload, protocol: 6 })).toThrow();
   for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {
@@ -443,4 +454,30 @@ test('history transport uses only the explicit context mode, uncached signal and
     }) as typeof fetch;
     await expect(fetchTaskHistory({repository_id:'repo-1',task_id:'a'.repeat(64),expected_task_revision:null},controller.signal)).rejects.toThrow('history_unavailable');
   } finally {globalThis.fetch=original;}
+});
+
+test('admitted activity requires a closed selected session and unique pagination keys', async () => {
+  const {parseAdmittedTaskActivityRequest,decodeAdmittedTaskActivity} = await import('../../src/core/operator/admitted-task-activity');
+  const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:'a'.repeat(64),role:'deep-reasoner',claim_ref:'claim:1',claim_revision:snapshotDigest,grant_sha256:snapshotDigest,policy_sha256:snapshotDigest,actor_id:'owner',session_binding_sha256:snapshotDigest};
+  const query=new URLSearchParams(Object.entries(selector).filter(([key])=>key!=='repository_id'));
+  const request=parseAdmittedTaskActivityRequest('repo-a',query);
+  expect(request).toEqual({selector,limit:50,after:null,message_id:null});
+  const duplicate=new URLSearchParams(query);duplicate.append('issue_id','789');expect(()=>parseAdmittedTaskActivityRequest('repo-a',duplicate)).toThrow();
+  const extra=new URLSearchParams(query);extra.set('source_root','/tmp/foreign');expect(()=>parseAdmittedTaskActivityRequest('repo-a',extra)).toThrow();
+  const value: import('../../src/core/operator/admitted-task-activity').AdmittedTaskActivity={...request,protocol:2,kind:'operator_admitted_task_activity',admission_sha256:snapshotDigest,observed_at:'2026-10-25T00:00:00Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null};
+  expect(decodeAdmittedTaskActivity(value,request)).toEqual(value);
+  expect(()=>decodeAdmittedTaskActivity({...value,selector:{...selector,grant_sha256:'sha256:'+'9'.repeat(64)}},request)).toThrow();
+  expect(()=>decodeAdmittedTaskActivity({...value,source_root:'/tmp/private'},request)).toThrow();
+  expect(()=>decodeAdmittedTaskActivity({...value,protocol:1,kind:'operator_task_activity'},request)).toThrow();
+});
+
+
+test('current provider links select an exact session without falling back to task history', async () => {
+  const {parseTaskLocation,taskLocationSearch}=await import('../../src/operator-web/task-location');
+  const current=parseTaskLocation(`?repository=repo-a&provider_repository_id=123&issue_id=456&session_binding_sha256=${snapshotDigest}`);
+  expect(current.invalid).toBe(false);expect(current.selection?.historical).toBe(false);
+  expect(parseTaskLocation(taskLocationSearch(current.repositoryId,current.selection))).toEqual(current);
+  const unassigned=parseTaskLocation('?repository=repo-a&provider_repository_id=123&issue_id=456');
+  expect(unassigned.selection).toMatchObject({historical:false,sessionBinding:null,key:'repo-a:123:456:unassigned'});
+  for(const query of [`?repository=repo-a&task=${taskId}`, '?repository=repo-a&provider_repository_id=123&issue_id=456&issue_id=789', '?repository=repo-a&provider_repository_id=123&issue_id=456&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
 });

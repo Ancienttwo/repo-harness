@@ -5,15 +5,17 @@ import type {
   OperatorFleetSnapshotV1,
 } from './types';
 
-import type { MergeReadinessV1 } from '../core/publication/merge-readiness';
+import type { PullRequestReadinessV2 } from '../core/publication/merge-readiness';
 
 const baseFeedback = {
+  observation_status: 'observed',
   pending_count: 0,
   no_progress: false,
   repair_actions: [],
 } as const;
 
 const baseInbox = {
+  observation_status: 'observed',
   unread_count: 0,
   addressed_to_current_claim: false,
   delivery_state: 'pending',
@@ -23,14 +25,14 @@ const baseInbox = {
 } as const;
 
 function mergeReadiness(
-  publicationId: string,
+  _publicationId: string,
   ready: boolean,
-  blockers: MergeReadinessV1['blockers'] = [],
-): MergeReadinessV1 {
+  blockers: PullRequestReadinessV2['blockers'] = [],
+): PullRequestReadinessV2 {
   return {
-    protocol: 1,
-    kind: 'repo-harness-merge-readiness',
-    publication_id: publicationId,
+    protocol: 2,
+    kind: 'repo-harness-pull-request-readiness',
+    repository: 'example/fixture', provider_repository_id: '1001', pr_number: 1,
     ready,
     expected_head_sha: '0123456789abcdef0123456789abcdef01234567',
     expected_base_sha: 'fedcba9876543210fedcba9876543210fedcba98',
@@ -101,22 +103,21 @@ function card(
   column: OperatorFleetColumn | null,
   overrides: Partial<OperatorFleetCardV1> = {},
 ): OperatorFleetCardV1 {
+  const digest = `sha256:${task.task_revision}`;
+  const execution: OperatorFleetCardV1['execution'] = column === 'available' || column === 'done' ? null : {
+    profile_selection: { state: 'unassigned' }, admission_sha256: digest, branch: `codex/${task.slug}`, runtime: 'terminal', harness_kind: 'codex',
+    selector: { repository_id: repositoryId, provider_repository_id: '1001', issue_id: String(2000 + task.task_index), campaign_id: 'fixture',
+      task: task.task_id, role: 'worker', claim_ref: task.claim_id, claim_revision: digest, grant_sha256: digest, policy_sha256: digest,
+      actor_id: 'fixture-user', session_binding_sha256: `sha256:${task.task_id}` },
+  };
   return {
-    repository_id: repositoryId,
-    task_id: task.task_id,
-    task_revision: task.task_revision,
-    task_label: task.task_label,
-    task_index: task.task_index,
-    claim_id: column === 'available' || column === 'done' ? null : task.claim_id,
-    generation: column === 'available' || column === 'done' ? null : 3,
-    task_state: column === 'done' ? 'done' : 'pending',
+    repository_id: repositoryId, provider_repository_id: '1001', provider_issue_id: String(2000 + task.task_index),
+    issue_state: column === 'done' ? 'closed' : 'open', issue_revision: digest, execution_status: 'observed', execution,
+    task_id: execution?.selector.task ?? null, task_label: task.task_label, task_index: task.task_index,
     placement: column === null ? { kind: 'unclassified', reason: 'state_unmapped' } : { kind: 'column', column },
     attention_owner: 'none',
     execution_readiness: column === 'available' ? 'execution_ready' : null,
     readiness_blockers: column === 'available' ? [] : null,
-    lease_state: column === 'available' ? 'available' : column === 'done' ? 'released' : 'bound',
-    publication_id: column === 'in_review' || column === 'ready_to_merge' ? `pub-${task.slug}` : null,
-    head_sha: column === 'in_review' || column === 'ready_to_merge' ? '0123456789abcdef0123456789abcdef01234567' : null,
     merge_readiness: column === 'ready_to_merge' ? mergeReadiness(`pub-${task.slug}`, true) : null,
     blocker_codes: [],
     feedback: baseFeedback,
@@ -152,7 +153,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
     }),
     card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
-      feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
+      feedback: { observation_status: 'observed', pending_count: 1, no_progress: false, repair_actions: [] },
       inbox: {
         ...baseInbox,
         delivery_state: 'reconciliation_required',
@@ -190,14 +191,14 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
   repository('repo-console', [
     card('repo-console', fixtureTasks.console, 'working', {
       attention_owner: 'user',
-      feedback: { pending_count: 2, no_progress: true, repair_actions: [] },
+      feedback: { observation_status: 'observed', pending_count: 2, no_progress: true, repair_actions: [] },
       inbox: { ...baseInbox, unread_count: 2, addressed_to_current_claim: true },
     }),
   ], { access_mode: 'read_only' }),
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 7,
+  protocol: 8,
   service_epoch: '00000000-0000-4000-8000-000000000001',
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
@@ -276,11 +277,11 @@ export const degradedSnapshot: OperatorFleetSnapshotV1 = {
  */
 const leaseStateRepositories: readonly OperatorFleetRepositoryV1[] = [
   repository('repo-harness', [
-    card('repo-harness', fixtureTasks.reserving, 'working', { lease_state: 'reserving' }),
-    card('repo-harness', fixtureTasks.completing, 'working', { lease_state: 'completing' }),
-    card('repo-harness', fixtureTasks.reviewing, 'in_review', { lease_state: 'reviewing' }),
-    card('repo-harness', fixtureTasks.reviewingUnpublished, null, { lease_state: 'reviewing' }),
-    card('repo-harness', fixtureTasks.leaseUnknown, null, { lease_state: 'unknown' }),
+    card('repo-harness', fixtureTasks.reserving, 'working', {}),
+    card('repo-harness', fixtureTasks.completing, 'working', {}),
+    card('repo-harness', fixtureTasks.reviewing, 'in_review', {}),
+    card('repo-harness', fixtureTasks.reviewingUnpublished, null, {}),
+    card('repo-harness', fixtureTasks.leaseUnknown, null, { execution_status: 'unavailable', execution: null, task_id: null }),
   ], { snapshot_consistency: 'degraded' }),
 ];
 
@@ -307,7 +308,8 @@ export const preparationSnapshot: OperatorFleetSnapshotV1 = {
       placement: { kind: 'preparation' }, execution_readiness: 'planning_required',
       readiness_blockers: [{ code: 'plan_not_approved', attention_owner: 'user' }], attention_owner: 'user',
     }),
-    card('repo-harness', fixtureTasks.console, 'available', {
+    // This issue belongs to repo-harness here; console's own repository issue #1 is a different fixture.
+    card('repo-harness', { ...fixtureTasks.console, task_index: 13 }, 'available', {
       placement: { kind: 'alternate_workflow', workflow: 'inline' }, execution_readiness: 'inline_ready',
     }),
   ])],
@@ -332,42 +334,50 @@ export function repositoryObservationFixture(repositoryId = 'repo_a5b76eee64af71
 export const repositorySnapshot = repositoryObservationFixture();
 
 export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
-  const tasks = cards.filter(card => card.task_state !== 'missing').map(card => ({
-    ...taskContextFixture({repository_id:repositoryId,task_id:card.task_id,expected_task_revision:card.task_revision}),
-    task: {title:card.task_label ?? card.task_id,mode:'contract',acceptance:'Read the canonical requirements and preserve the exact Task identity.',state:card.task_state},
-  }));
-  const canonical = tasks[0]?.canonical ?? null;
-  const observation = {observed_at:'2026-09-22T07:00:00+08:00',authorization_revision:1,board_revision:canonical ? `sha256:${'b'.repeat(64)}` : null};
-  return {protocol:1,kind:'operator_planning_snapshot',repository_id:repositoryId,canonical,tasks,observation,
-    graph:{status:'observed',observed_at:observation.observed_at,snapshot:{lane:'unclassified',work_graph_revision:null,packages:[],sources:[]}}};
+  const hash = `sha256:${'b'.repeat(64)}`, at = '2026-09-22T07:00:00+08:00';
+  const tasks: import('../core/engineers/scheduling').ProviderEngineerSchedulingSnapshot['tasks'][number][] = [];
+  for (const card of cards) {
+    let row = tasks.find(task => task.provider_repository_id === card.provider_repository_id && task.issue_id === card.provider_issue_id);
+    const issue: import('../core/external-sources/issue-observation').ProviderIssueObservationV1 | null = card.issue_state === null ? null : {
+      protocol:1,kind:'repo-harness-provider-issue-observation',registered_repository_id:repositoryId,provider:'github',provider_host:'github.com',
+      provider_repository_id:card.provider_repository_id,provider_issue_id:card.provider_issue_id,display_ref:'example/fixture',url:`https://github.com/example/fixture/issues/${card.task_index}`,
+      observed_at:at,provider_created_at:at,provider_updated_at:at,state:card.issue_state,title:card.task_label ?? card.provider_issue_id,
+      body:'Read the provider issue and preserve its admitted execution identity.',labels:[],assignees:[],comments_policy:'omitted',policy_revision:hash,eligible:true,eligibility_reasons:[],source_revision:card.issue_revision ?? hash,observation_sha256:hash,
+    };
+    if (!row) { row={provider_repository_id:card.provider_repository_id,issue_id:card.provider_issue_id,issue,sessions:[]};tasks.push(row); }
+    if (card.execution) {
+      const selection = card.execution.profile_selection.state === 'unassigned' ? {state:'unassigned' as const} : {state:'profile_missing' as const,engineer_id:card.execution.profile_selection.engineer_id,engineer_contract_revision:card.execution.profile_selection.engineer_contract_revision};
+      tasks[tasks.indexOf(row)]={...row,sessions:[...row.sessions,{session:{...card.execution,selector:{...card.execution.selector,repository_id:repositoryId}},selection}]};
+    }
+  }
+  return {protocol:2,kind:'operator_planning_snapshot',repository_id:repositoryId,
+    scheduling:{protocol:2,kind:'provider_engineer_scheduling',repository_id:repositoryId,profiles:[],tasks,source_revision:hash},
+    observation:{observed_at:at,authorization_revision:1},graph:{status:'unavailable',code:'needs_provider_graph'}};
 }
 /** Stored-fact-shaped fixtures for the read-only detail preview and decoder tests. */
-export function taskContextFixture(request: import('../core/operator/task-context').OperatorTaskContextRequest): import('../core/operator/task-context').OperatorTaskContext {
-  const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
-  return {
-    protocol: 1, kind: 'operator_task_context', repository_id: request.repository_id, task_id: request.task_id,
-    task_revision: request.expected_task_revision ?? task.task_revision,
-    canonical: { target_ref: 'origin/main', commit: 'a'.repeat(40), sprint_path: 'plans/sprints/fixture.sprint.md' },
-    task: { title: task.task_label, mode: 'contract', acceptance: 'The exact candidate passes independent verification.', state: 'pending' },
-    execution: { lease_state: 'bound', claim: { claim_id: task.claim_id, generation: 1, state: 'bound', branch: 'codex/fixture', target_ref: 'origin/main' } },
-    offer: { execution_readiness: 'planning_required', blockers: [{ code: 'plan_missing', attention_owner: 'agent' }], offer_revision: `sha256:${'a'.repeat(64)}`, plan: null },
-    observation: { observed_at: '2026-09-22T07:00:00+08:00', board_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 1, consistency: 'observed' },
-  };
-}
 export function taskActivityFixture(request: import('../core/operator/task-activity').OperatorTaskActivityRequest): import('../core/operator/task-activity').OperatorTaskActivity {
   const parentId = '11111111-1111-4111-8111-111111111111';
   const replyId = '22222222-2222-4222-8222-222222222222';
   const task = Object.values(fixtureTasks).find(value => value.task_id === request.task_id) ?? fixtureTasks.working;
   const sha = `sha256:${'a'.repeat(64)}`;
   const at = '2026-09-22T07:00:00+08:00';
-  const actor = { engineer_id: 'engineer:capability.fixture.reader', binding_id: task.claim_id, binding_generation: 2, engineer_contract_revision: sha, claim_id: task.claim_id, lease_generation: 1, receipt_sha256: sha };
-  const reply = { claim_id: task.claim_id, generation: 1, reply_message_id: replyId, state: 'complete' as const, reason: null, actor };
+  const reply = { claim_id: task.claim_id, generation: 1, reply_message_id: replyId, state: 'complete' as const, reason: null };
   const parent: import('../core/operator/task-activity').ActivityEntry = {
     event: { message_id: parentId, task_revision: task.task_revision, scope: 'task', target_claim_id: null, target_generation: null, sender_kind: 'user', sender_id: 'local_operator', sender_trust: 'local_operator', audience: 'owner', body: 'Please preserve the existing evidence boundary.', body_sha256: sha, created_at: at, in_reply_to: null, event_digest: sha },
     receipts: [{ message_id: parentId, recipient_kind: 'claim', recipient_id: task.claim_id, recipient_task_revision: task.task_revision, recipient_claim_id: task.claim_id, recipient_generation: 1, delivery_state: 'acknowledged', delivery_channel: 'agent_runtime_effect', delivery_ref: 'fixture-effect', delivered_at: at, acknowledged_at: at }],
     replies: [reply], provenance: 'not_reply',
   };
-  const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'recorded_claim_actor' };
+  const response: import('../core/operator/task-activity').ActivityEntry = { event: { ...parent.event, message_id: replyId, sender_kind: 'agent', sender_id: sha, sender_trust: 'lease_owner', audience: 'user', body: 'The boundary is preserved; inspect the candidate evidence.', in_reply_to: parentId }, receipts: [], replies: [reply], provenance: 'unverified' };
   const entries = [parent, response].filter(value => request.message_id !== null ? value.event.message_id === request.message_id : request.after === null || value.event.message_id > request.after);
   return { ...request, protocol: 1, kind: 'operator_task_activity', observed_at: at, consistency: 'observed', entries, coverage: { scope: request.message_id === null ? 'task' : 'message', complete: true, reason: null, scanned: 2, bytes: 2048 }, next_cursor: null };
+}
+
+/** Browser fixture for the current admitted context transport, not approval evidence. */
+export function admittedTaskContextFixture(selector: import('../core/sessions/session-selector').AdmittedSessionSelector): import('../core/operator/admitted-task-context').AdmittedTaskContext {
+  const hash=`sha256:${'a'.repeat(64)}`;
+  const task=Object.values(fixtureTasks).find(task=>task.task_id===selector.task);
+  return {protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:`${task?.task_label ?? 'Provider task'}: The exact candidate passes independent verification.`},
+    verification:{plan_sha256:hash,plan_json:'{"protocol":1,"checks":[]}'},scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},
+    approval:{admission_sha256:hash,grant_sha256:selector.grant_sha256,revision:1,goal_revision:hash,scope_sha256:hash},profile_selection:{state:'unassigned'},
+    execution:{branch:'codex/fixture',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z'};
 }

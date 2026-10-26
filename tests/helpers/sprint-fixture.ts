@@ -1,5 +1,13 @@
-import type { LeaseOwnerRecord, CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
-import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/coordination-lease-store';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { TASK_DIGEST_PATTERN } from '../../src/core/state/coordination-identity';
+
+export function coordinationRoot(cwd: string): string {
+  return join(resolveGitCommonDirectory(cwd), 'repo-harness/coordination/v1');
+}
+export function leaseDirectory(cwd: string, taskId: string): string {
+  if (!TASK_DIGEST_PATTERN.test(taskId)) throw new Error('invalid historical fixture task id');
+  return join(coordinationRoot(cwd), 'leases', taskId);
+}
 /**
  * Fixture helpers for backlog schema 2 sprints.
  *
@@ -14,7 +22,7 @@ import { leaseDirectory, LEASE_OWNER_FILE_NAME } from '../../src/effects/state/c
  * product code may do it.
  */
 import { createHash } from 'crypto';
-import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const FIXTURE_ID_DOMAIN = 'repo-harness-fixture-task-id';
@@ -52,56 +60,10 @@ export function fixtureBacklogTable(rows: readonly FixtureRow[]): string[] {
   ];
 }
 
-/** Seed a historical token for completion and publication tests. */
-export function writeClaimTokenFixture(input: {
-  readonly worktree: string; readonly task_id: string; readonly claim_id: string;
-  readonly sprint: string; readonly task: string; readonly unit_ref: string;
-}): void {
-  const dir = join(input.worktree, '.ai/harness/sprint/claims');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${input.task_id}.claim`),
-    `claim_id=${input.claim_id}\ntask_id=${input.task_id}\nsprint=${input.sprint}\ntask=${input.task}\nunit_ref=${input.unit_ref}\n`);
-}
-
-/** Address the owner record in a real lease fixture. */
-export function leaseOwnerPath(cwd: string, taskId: string): string {
-  return join(leaseDirectory(cwd, taskId), LEASE_OWNER_FILE_NAME);
-}
-
-/** A historical bound row for tests of completion, publication and observation. */
-export function boundLeaseFixture(record: LeaseOwnerRecord, input: {
-  executionWorktree: string; branch: string; unitRef: string;
-}): LeaseOwnerRecord {
-  return { ...record, state: 'bound', execution_worktree: input.executionWorktree,
-    branch: input.branch, unit_ref: input.unitRef };
-}
-
 /** Seed historical owner bytes. This helper does not implement lease transitions. */
 export function seedLeaseDirectory(cwd: string, taskId: string): boolean {
   const path = leaseDirectory(cwd, taskId);
   if (existsSync(path)) return false;
   mkdirSync(path, { recursive: true });
   return true;
-}
-export function writeHistoricalLease(cwd: string, taskId: string, record: LeaseOwnerRecord): void {
-  writeFileSync(leaseOwnerPath(cwd, taskId), serializeHistoricalLease(record));
-}
-type HistoricalLeaseResult = { ok: true; record: LeaseOwnerRecord } | { ok: false; error: string };
-export function completingLeaseFixture(record: LeaseOwnerRecord, input: {
-  claimId: string; executionWorktree: string; finishTransactionKey?: string | null;
-}): HistoricalLeaseResult {
-  return { ok: true, record: { ...record, state: 'completing', finish_transaction_key: input.finishTransactionKey ?? null,
-    ...('record_schema' in record ? { current_publication: null } : {}),
-  } as LeaseOwnerRecord };
-}
-export function reviewingLeaseFixture(record: LeaseOwnerRecord, input: {
-  claimId: string; publication: CurrentPublicationPointerV1;
-}): HistoricalLeaseResult {
-  return { ok: true, record: { ...record, record_schema: 2, state: 'reviewing',
-    finish_transaction_key: null, current_publication: input.publication } };
-}
-
-/** Canonical historical bytes for tests of the production owner reader. */
-export function serializeHistoricalLease(record: LeaseOwnerRecord): string {
-  return `${JSON.stringify(record, null, 2)}\n`;
 }

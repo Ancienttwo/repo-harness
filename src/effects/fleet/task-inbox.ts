@@ -1,4 +1,6 @@
-import { TASK_INBOX_V2_RELATIVE_PATH, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
+import { TaskMessageError } from '../../core/messages/task-message-error';
+import { sameTaskMessageClaim, type TaskMessageClaim } from '../../core/messages/task-message-claim';
+import { TASK_INBOX_V2_RELATIVE_PATH, admittedTaskInboxRecipientStorageKey as taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import {
   inspectTaskInboxLayout,
   assertTaskInboxLayoutUnchanged,
@@ -29,7 +31,6 @@ import {
   TASK_MESSAGE_BODY_MAX_BYTES,
   TASK_MESSAGE_HOOK_MAX_BYTES,
   TASK_MESSAGE_HOOK_MAX_MESSAGES,
-  TaskMessageError,
   buildTaskMessageEvent,
   buildTaskMessageDeliveryReceipt,
   canonicalTaskMessageDeliveryReceiptBytes,
@@ -39,11 +40,12 @@ import {
   transitionTaskMessageDeliveryReceipt,
   validateTaskMessageDeliveryReceipt,
   validateTaskMessageEvent,
+  recipientFromTaskMessageReceipt,
   type TaskMessageDeliveryChannel,
-  type TaskMessageDeliveryReceiptV1,
-  type TaskMessageEventV1,
+  type TaskMessageDeliveryReceiptV2,
+  type TaskMessageEventV2,
   type TaskMessageRecipient,
-} from '../../core/fleet/task-message';
+} from '../../core/fleet/admitted-task-message';
 import {
   TASK_REPLY_RECORD_MAX_BYTES,
   canonicalTaskReplyIntentBytes,
@@ -52,18 +54,16 @@ import {
   validateTaskReplyCommit,
   inspectTaskReplyChain,
 } from '../../core/fleet/task-reply';
-import type {
-  ClaimActorReceiptV1,
-} from '../../core/engineers/principal-claim';
-import { lookupCanonicalTask, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import {
-  readCanonicalSprint,
-  type CanonicalSprintSource,
-} from '../state/coordination-canonical-source';
-import { resolveRepoIdentity } from '../git/repository-identity';
-import { readClaimActorReceipt } from '../engineers/claim-actor-store';
-import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
+import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { readActiveReviewAdmission } from '../admission/admission-store';
+import { canonicalize } from '../../core/evidence/canonical-json';
+import type { JsonValue } from '../../core/evidence/types';
+import * as historicalMessage from '../../core/fleet/task-message';
+import { taskInboxRecipientStorageKey as historicalRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
+import { withTaskLock } from '../locking/task-lock';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 
@@ -86,18 +86,21 @@ export class TaskInboxError extends Error {
   }
 }
 
-export interface TaskInboxCanonicalSource extends CanonicalSprintSource {}
+export interface TaskInboxSessionSource {
+  readonly authority: TaskSessionAuthority;
+  readonly session: { readonly task: string; readonly role: string };
+}
 
 export interface SendTaskMessageInput {
   readonly repo_root: string;
-  readonly canonical_source: TaskInboxCanonicalSource;
-  readonly event: TaskMessageEventV1;
+  readonly source: TaskInboxSessionSource;
+  readonly event: TaskMessageEventV2;
 }
 
 export interface TaskInboxListInput {
   readonly repo_root: string;
   readonly task_id: string;
-  readonly canonical_source: TaskInboxCanonicalSource;
+  readonly source: TaskInboxSessionSource;
   readonly recipient: TaskMessageRecipient;
   /** Required only for owner delivery/listing. It must be the bound worktree. */
   readonly execution_worktree?: string;
@@ -105,7 +108,7 @@ export interface TaskInboxListInput {
 
 export interface DeliverTaskInboxInput extends TaskInboxListInput {
   readonly delivery_channel: TaskMessageDeliveryChannel;
-  /** Required exactly when the delivery channel is one Agent Runtime effect's
+  /** Required exactly when the delivery channel is one controlled request or Agent Runtime effect's
    * Host action; it is the bounded control reference that later proves this
    * effect's delivery. Forbidden for human-facing channels. An effect
    * delivery marks exactly its own message and never the whole hook lane. */
@@ -120,8 +123,8 @@ export interface AcknowledgeTaskInboxInput extends TaskInboxListInput {
 }
 
 export interface TaskInboxEventEntry {
-  readonly event: TaskMessageEventV1;
-  readonly receipt: TaskMessageDeliveryReceiptV1 | null;
+  readonly event: TaskMessageEventV2;
+  readonly receipt: TaskMessageDeliveryReceiptV2 | null;
   readonly globally_satisfied: boolean;
 }
 
@@ -133,8 +136,8 @@ export interface TaskInboxListResult {
 }
 
 export interface TaskInboxDelivery {
-  readonly event: TaskMessageEventV1;
-  readonly receipt: TaskMessageDeliveryReceiptV1;
+  readonly event: TaskMessageEventV2;
+  readonly receipt: TaskMessageDeliveryReceiptV2;
 }
 
 export interface TaskInboxDeliveryResult {
@@ -147,7 +150,7 @@ export interface TaskInboxDeliveryResult {
 }
 
 export interface TaskInboxSendResult {
-  readonly event: TaskMessageEventV1;
+  readonly event: TaskMessageEventV2;
   readonly event_path: string;
   readonly created: boolean;
 }
@@ -160,8 +163,8 @@ export interface TaskInboxSendResult {
 export interface TaskInboxFleetSummaryInput {
   readonly repo_root: string;
   readonly task_id: string;
-  readonly task_revision: string;
-  readonly current_claim: { readonly claim_id: string; readonly generation: number } | null;
+  readonly admission_sha256: string;
+  readonly current_claim: TaskMessageClaim | null;
 }
 
 export interface TaskInboxFleetSummaryV1 {
@@ -183,13 +186,17 @@ function fail(code: TaskInboxErrorCode, message: string, cause?: unknown): never
 
 function withInboxTaskLock<T>(repoRoot: string, taskId: string, action: () => T): T {
   try {
-    return withTaskLock(repoRoot, taskId, () => {
-      const common = resolveGitCommonDirectory(repoRoot);
-      inspectTaskInboxLayout(common);
-      const result = action();
-      inspectTaskInboxLayout(common);
-      return result;
-    });
+    const common = resolveGitCommonDirectory(repoRoot);
+    // Share the offline migration mutex, including writers for task directories
+    // that were not present when its inventory was captured. Always acquire it
+    // before the unchanged physical task lock, as the migration does.
+    return withExclusiveDirectoryLock(common, 'repo-harness/task-inbox-migration.lock', () =>
+      withTaskLock(repoRoot, taskId, () => {
+        inspectTaskInboxLayout(common);
+        const result = action();
+        inspectTaskInboxLayout(common);
+        return result;
+      }));
   } catch (error) {
     throw asInboxError(error, 'task_message_unreadable', `cannot operate task inbox under the task lock for ${taskId}`);
   }
@@ -225,7 +232,7 @@ function taskInboxTaskScope(repoRoot: string, taskId: string): TaskInboxTaskScop
   assertTaskId(taskId);
   const common = resolveGitCommonDirectory(repoRoot);
   inspectTaskInboxLayout(common);
-  return { common, task_id: taskId, directory: join(common, TASK_INBOX_RELATIVE_PATH, taskId) };
+  return { common, task_id: taskId, directory: join(common, TASK_INBOX_RELATIVE_PATH, taskId, 'admitted') };
 }
 
 export function taskInboxEventPath(repoRoot: string, taskId: string, messageId: string): string {
@@ -312,8 +319,8 @@ function readCanonicalFile(path: string, context: string): string {
   return raw.slice(0, -1);
 }
 
-function readEventAt(path: string): TaskMessageEventV1 {
-  let event: TaskMessageEventV1;
+function readEventAt(path: string): TaskMessageEventV2 {
+  let event: TaskMessageEventV2;
   try {
     event = validateTaskMessageEvent(JSON.parse(readCanonicalFile(path, 'task message event')));
   } catch (error) {
@@ -325,8 +332,8 @@ function readEventAt(path: string): TaskMessageEventV1 {
   return event;
 }
 
-function readReceiptAt(path: string): TaskMessageDeliveryReceiptV1 {
-  let receipt: TaskMessageDeliveryReceiptV1;
+function readReceiptAt(path: string): TaskMessageDeliveryReceiptV2 {
+  let receipt: TaskMessageDeliveryReceiptV2;
   try {
     receipt = validateTaskMessageDeliveryReceipt(JSON.parse(readCanonicalFile(path, 'task message delivery receipt')));
   } catch (error) {
@@ -343,7 +350,7 @@ function readOptionalReceipt(
   taskId: string,
   messageId: string,
   recipient: TaskMessageRecipient,
-): TaskMessageDeliveryReceiptV1 | null {
+): TaskMessageDeliveryReceiptV2 | null {
   const path = taskInboxDeliveryPath(repoRoot, taskId, messageId, recipient);
   if (!existsSync(path)) return null;
   const receipt = readReceiptAt(path);
@@ -353,17 +360,11 @@ function readOptionalReceipt(
   return receipt;
 }
 
-function recipientFromReceipt(receipt: TaskMessageDeliveryReceiptV1): TaskMessageRecipient {
-  if (receipt.recipient_kind === 'claim') {
-    if (receipt.recipient_claim_id === null || receipt.recipient_generation === null) {
-      fail('task_message_unreadable', 'claim receipt has no claim identity');
-    }
-    return { kind: 'claim', claim_id: receipt.recipient_claim_id, generation: receipt.recipient_generation };
-  }
-  return { kind: receipt.recipient_kind, id: receipt.recipient_id };
+function recipientFromReceipt(receipt: TaskMessageDeliveryReceiptV2): TaskMessageRecipient {
+  return recipientFromTaskMessageReceipt(receipt);
 }
 
-function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV1[] {
+function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV2[] {
   const taskId = scope.task_id;
   const directory = join(scope.directory, 'events');
   if (!inspectSafeDirectoryChain(scope.common, directory, false, 'task message event directory')) return [];
@@ -380,7 +381,7 @@ function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV1[] {
   } catch (error) {
     throw asInboxError(error, 'task_message_unreadable', `cannot list task message events: ${directory}`);
   }
-  const events: TaskMessageEventV1[] = [];
+  const events: TaskMessageEventV2[] = [];
   for (const name of names) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/iu.test(name)) {
       fail('task_message_unreadable', `task message event filename is invalid: ${name}`);
@@ -395,7 +396,7 @@ function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV1[] {
     : left.message_id < right.message_id ? -1 : left.message_id > right.message_id ? 1 : 0));
 }
 
-function listReceipts(scope: TaskInboxTaskScope, messageId: string): TaskMessageDeliveryReceiptV1[] {
+function listReceipts(scope: TaskInboxTaskScope, messageId: string): TaskMessageDeliveryReceiptV2[] {
   const directory = join(scope.directory, 'delivery', messageId);
   if (!inspectSafeDirectoryChain(scope.common, directory, false, 'task message delivery directory')) return [];
   let stat;
@@ -421,86 +422,45 @@ function listReceipts(scope: TaskInboxTaskScope, messageId: string): TaskMessage
   });
 }
 
-function canonicalTask(
-  repoRoot: string,
-  source: TaskInboxCanonicalSource,
-  taskId: string,
-  expectedRevision: string,
-): CanonicalTask {
-  const canonical = readCanonicalSprint(repoRoot, source);
-  if (!canonical.ok) fail('task_message_invalid', canonical.error);
-  const task = lookupCanonicalTask({
-    repoIdentity: resolveRepoIdentity(repoRoot),
-    sprintPath: source.sprintPath,
-    sprintText: canonical.text,
-  }, taskId);
-  if (!task.ok) fail('task_message_invalid', task.error);
-  if (task.task.task_revision !== expectedRevision) {
-    fail('task_revision_mismatch', `canonical task revision does not match task inbox event for ${taskId}`);
-  }
-  return task.task;
+function sameData(left: unknown, right: unknown): boolean {
+  return canonicalize(left as JsonValue) === canonicalize(right as JsonValue);
 }
-
-function assertLeaseCanonicalSource(lease: LeaseRead, source: TaskInboxCanonicalSource, taskId: string, expectedRevision: string): NonNullable<LeaseRead['record']> {
-  if (lease.record === null) fail('task_unowned', `task ${taskId} has no owner`);
-  if (lease.record.task_revision !== expectedRevision) fail('task_revision_mismatch', `lease revision does not match task inbox event for ${taskId}`);
-  if (lease.record.target_ref !== source.targetRef || lease.record.sprint_path !== source.sprintPath) {
-    fail('claim_mismatch', `lease canonical source does not match task inbox source for ${taskId}`);
-  }
-  return lease.record;
+interface InboxAdmission { admission: TaskSessionAdmission; assertLocalCurrent: () => void }
+/** Provider observation happens outside the inbox mutex. Inside it, only the
+ * exact local approval and immutable session binding are reread. */
+function observeInboxAdmission(input: { repo_root: string; source: TaskInboxSessionSource; task_id: string }): InboxAdmission {
+  assertTaskId(input.task_id);
+  if (!input.source || input.source.session.task !== input.task_id) fail('claim_mismatch', 'explicit session task does not match inbox');
+  const { binding, dir } = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
+  if (!binding.task_admission || existsSync(join(dir, 'closed.json'))) fail('recipient_unavailable', 'admitted session is unavailable');
+  const admission = observeTaskSessionAdmission(binding.execution_root, binding, binding.runtime, input.source.authority);
+  if (!sameData(binding.task_admission.identity, admission.identity)) fail('claim_mismatch', 'session admission identity changed');
+  const source = input.source.authority.source;
+  const active = observeActiveReviewAdmission(source);
+  if (active.grant_sha256 !== admission.approval.grant_sha256 || active.admission.admission_sha256 !== admission.approval.admission_sha256) fail('canonical_source_stale', 'admission changed during inbox observation');
+  const expectedGoal = active.admission.goal;
+  const assertLocalCurrent = () => {
+    const current = readActiveReviewAdmission({ ...source, expectedGoal });
+    if (current.grant_sha256 !== admission.approval.grant_sha256 || current.admission.admission_sha256 !== admission.approval.admission_sha256) fail('canonical_source_stale', 'admission changed during inbox operation');
+    const latest = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
+    if (!sameData(latest.binding, binding) || existsSync(join(latest.dir, 'closed.json'))) fail('recipient_unavailable', 'session changed during inbox operation');
+  };
+  assertLocalCurrent();
+  return { admission, assertLocalCurrent };
 }
-
-function assertCurrentOwner(
-  repoRoot: string,
-  source: TaskInboxCanonicalSource,
-  taskId: string,
-  recipient: Extract<TaskMessageRecipient, { readonly kind: 'claim' }>,
-  executionWorktree: string | undefined,
-): NonNullable<LeaseRead['record']> {
-  const lease = readLease(repoRoot, taskId);
-  if (lease.record === null) fail('task_unowned', `task ${taskId} has no owner`);
-  canonicalTask(repoRoot, source, taskId, lease.record.task_revision);
-  const record = assertLeaseCanonicalSource(lease, source, taskId, lease.record.task_revision);
-  if (record.state !== 'bound') fail('recipient_unavailable', `task ${taskId} owner is ${record.state}, not bound`);
-  if (record.claim_id !== recipient.claim_id || record.generation !== recipient.generation) {
-    fail('claim_mismatch', `task ${taskId} owner does not match recipient claim`);
-  }
-  if (!executionWorktree || record.execution_worktree === null) fail('recipient_unavailable', `task ${taskId} has no execution worktree`);
-  let resolvedWorktree: string;
-  try {
-    resolvedWorktree = realpathSync(executionWorktree);
-  } catch (error) {
-    throw asInboxError(error, 'recipient_unavailable', `cannot resolve recipient execution worktree: ${executionWorktree}`);
-  }
-  if (record.execution_worktree !== resolvedWorktree) {
-    fail('recipient_unavailable', `task ${taskId} is not bound to recipient execution worktree`);
-  }
-  return record;
+/** Read-only request preparation for trusted control clients. */
+export function observeTaskInboxContext(input: { repo_root: string; source: TaskInboxSessionSource; task_id: string }): TaskSessionAdmission {
+  return observeInboxAdmission(input).admission;
 }
-
-function audienceMatches(event: TaskMessageEventV1, recipient: TaskMessageRecipient): boolean {
+function audienceMatches(event: TaskMessageEventV2, recipient: TaskMessageRecipient): boolean {
   return event.audience === (recipient.kind === 'claim' ? 'owner' : recipient.kind);
 }
-
-function recipientTaskRevision(input: TaskInboxListInput): string {
+function assertInboxRecipient(input: TaskInboxListInput, admission: TaskSessionAdmission): string {
   if (input.recipient.kind === 'claim') {
-    return assertCurrentOwner(
-      input.repo_root,
-      input.canonical_source,
-      input.task_id,
-      input.recipient,
-      input.execution_worktree,
-    ).task_revision;
+    if (!sameTaskMessageClaim(input.recipient.claim, admission.identity.claim)) fail('claim_mismatch', 'recipient does not match admitted claim reference');
+    if (!input.execution_worktree || realpathSync(input.execution_worktree) !== admission.identity.execution_root) fail('recipient_unavailable', 'recipient worktree does not match admitted session');
   }
-  const canonical = readCanonicalSprint(input.repo_root, input.canonical_source);
-  if (!canonical.ok) fail('task_message_invalid', canonical.error);
-  const task = lookupCanonicalTask({
-    repoIdentity: resolveRepoIdentity(input.repo_root),
-    sprintPath: input.canonical_source.sprintPath,
-    sprintText: canonical.text,
-  }, input.task_id);
-  if (!task.ok) fail('task_message_invalid', task.error);
-  return task.task.task_revision;
+  return admission.approval.admission_sha256;
 }
 
 function writeAll(fd: number, bytes: Buffer): void {
@@ -525,7 +485,7 @@ function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: st
   }
 }
 
-function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskInboxSendResult {
+function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV2): TaskInboxSendResult {
   ensureInboxDirectories(repoRoot, event.task_id);
   const target = taskInboxEventPath(repoRoot, event.task_id, event.message_id);
   const canonical = canonicalTaskMessageEventBytes(event);
@@ -582,14 +542,14 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskI
  * crash. It is therefore the sole immutable field sourced from the incumbent;
  * every other field, including both byte digests, must still agree exactly.
  */
-function sameEventRetry(existing: TaskMessageEventV1, candidate: TaskMessageEventV1): boolean {
+function sameEventRetry(existing: TaskMessageEventV2, candidate: TaskMessageEventV2): boolean {
   const rebased = buildTaskMessageEvent({
     message_id: candidate.message_id,
     task_id: candidate.task_id,
-    task_revision: candidate.task_revision,
+    admission_sha256: candidate.admission_sha256,
     scope: candidate.scope,
-    target_claim_id: candidate.target_claim_id,
-    target_generation: candidate.target_generation,
+    target_claim: candidate.target_claim,
+    task_identity: candidate.task_identity,
     sender_kind: candidate.sender_kind,
     sender_id: candidate.sender_id,
     sender_trust: candidate.sender_trust,
@@ -601,7 +561,7 @@ function sameEventRetry(existing: TaskMessageEventV1, candidate: TaskMessageEven
   return canonicalTaskMessageEventBytes(existing) === canonicalTaskMessageEventBytes(rebased);
 }
 
-function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV1): TaskMessageDeliveryReceiptV1 {
+function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeliveryReceiptV2): TaskMessageDeliveryReceiptV2 {
   const recipient = recipientFromReceipt(receipt);
   ensureInboxDirectories(repoRoot, taskId, receipt.message_id);
   const target = taskInboxDeliveryPath(repoRoot, taskId, receipt.message_id, recipient);
@@ -642,31 +602,30 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   return receipt;
 }
 
-function assertEventStored(event: TaskMessageEventV1, taskId: string): void {
+function assertEventStored(event: { task_id: string; message_id: string; body: string }, taskId: string): void {
   if (event.task_id !== taskId) fail('task_message_unreadable', `task message event ${event.message_id} is in the wrong task directory`);
   if (Buffer.byteLength(event.body, 'utf-8') > TASK_MESSAGE_BODY_MAX_BYTES) fail('task_message_unreadable', `task message event ${event.message_id} body exceeds its limit`);
 }
 
 /** Fails closed where the caller names one exact event and revision. */
-function assertEventCanonical(event: TaskMessageEventV1, taskId: string, revision: string): void {
+function assertEventCanonical(event: TaskMessageEventV2, taskId: string, revision: string): void {
   assertEventStored(event, taskId);
-  if (event.task_revision !== revision) fail('task_revision_mismatch', `task message event ${event.message_id} revision is stale`);
+  if (event.admission_sha256 !== revision) fail('task_revision_mismatch', `task message event ${event.message_id} revision is stale`);
 }
 
 /**
- * A scan reads every stored event of one task. Editing the sprint row's Task,
- * Mode, or Acceptance cell drifts `task_revision`, so an event written before
- * that edit is no longer addressed to the canonical task: it is skipped, and
+ * A scan reads every admitted event of one task. A replaced admission makes
+ * earlier events no longer addressed to the current task context: they are skipped, and
  * is neither listed, delivered, nor counted. Aborting the whole scan instead
  * let one superseded event hide the entire inbox permanently -- and, through
  * the fleet card's inbox observation, the entire repository.
  */
-function isCurrentRevisionEvent(event: TaskMessageEventV1, taskId: string, revision: string): boolean {
+function isCurrentRevisionEvent(event: TaskMessageEventV2, taskId: string, revision: string): boolean {
   assertEventStored(event, taskId);
-  return event.task_revision === revision;
+  return event.admission_sha256 === revision;
 }
 
-function isGloballySatisfied(repoRoot: string, taskId: string, event: TaskMessageEventV1): boolean {
+function isGloballySatisfied(repoRoot: string, taskId: string, event: TaskMessageEventV2): boolean {
   if (event.scope !== 'task') return false;
   return listReceipts(taskInboxTaskScope(repoRoot, taskId), event.message_id).some((receipt) => receipt.delivery_state === 'acknowledged');
 }
@@ -674,15 +633,15 @@ function isGloballySatisfied(repoRoot: string, taskId: string, event: TaskMessag
 function receiptFor(
   repoRoot: string,
   taskId: string,
-  event: TaskMessageEventV1,
+  event: TaskMessageEventV2,
   recipient: TaskMessageRecipient,
   channel: TaskMessageDeliveryChannel,
-): TaskMessageDeliveryReceiptV1 {
+): TaskMessageDeliveryReceiptV2 {
   return readOptionalReceipt(repoRoot, taskId, event.message_id, recipient)
     ?? buildTaskMessageDeliveryReceipt({
       message_id: event.message_id,
       recipient,
-      task_revision: event.task_revision,
+      admission_sha256: event.admission_sha256,
       delivery_channel: channel,
     });
 }
@@ -702,7 +661,7 @@ interface TaskInboxFleetObservation {
  */
 function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskInboxFleetObservation {
   assertTaskId(input.task_id);
-  if (!/^[0-9a-f]{64}$/u.test(input.task_revision)) {
+  if (!/^sha256:[0-9a-f]{64}$/u.test(input.admission_sha256)) {
     fail('task_revision_mismatch', `task revision is invalid for ${input.task_id}`);
   }
   const scope = taskInboxTaskScope(input.repo_root, input.task_id);
@@ -710,16 +669,15 @@ function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskIn
   const revisionParts: string[] = [];
   let unreadCount = 0;
   for (const event of events) {
-    if (!isCurrentRevisionEvent(event, input.task_id, input.task_revision)) continue;
+    if (!isCurrentRevisionEvent(event, input.task_id, input.admission_sha256)) continue;
     revisionParts.push(canonicalTaskMessageEventBytes(event));
     const receipts = listReceipts(scope, event.message_id);
     for (const receipt of receipts) revisionParts.push(canonicalTaskMessageDeliveryReceiptBytes(receipt));
     if (event.audience !== 'owner' || input.current_claim === null) continue;
-    if (event.scope === 'claim' && (event.target_claim_id !== input.current_claim.claim_id
-      || event.target_generation !== input.current_claim.generation)) continue;
+    if (event.scope === 'claim' && (!sameTaskMessageClaim(event.target_claim, input.current_claim))) continue;
     if (event.scope === 'task' && receipts.some((receipt) => receipt.delivery_state === 'acknowledged')) continue;
     const recipient: TaskMessageRecipient = {
-      kind: 'claim', claim_id: input.current_claim.claim_id, generation: input.current_claim.generation,
+      kind: 'claim', claim: input.current_claim,
     };
     // listReceipts already read and identity-checked this recipient's receipt.
     const recipientKey = deriveTaskMessageRecipientKey(recipient);
@@ -766,30 +724,32 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
 
 /** Persist a producer-authorized event after canonical task and claim checks. */
 export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
-  let event: TaskMessageEventV1;
+  let event: TaskMessageEventV2;
   try {
     event = validateTaskMessageEvent(input.event);
   } catch (error) {
     throw asInboxError(error, 'task_message_invalid', 'task message event is invalid');
   }
+  const observed = observeInboxAdmission({ ...input, task_id: event.task_id });
   return withInboxTaskLock(input.repo_root, event.task_id, () => {
-    canonicalTask(input.repo_root, input.canonical_source, event.task_id, event.task_revision);
-    if (event.scope === 'claim') {
-      const record = assertLeaseCanonicalSource(readLease(input.repo_root, event.task_id), input.canonical_source, event.task_id, event.task_revision);
-      if (record.state !== 'bound') fail('recipient_unavailable', `task ${event.task_id} owner is ${record.state}, not bound`);
-      if (record.claim_id !== event.target_claim_id || record.generation !== event.target_generation) {
-        fail('claim_mismatch', `task ${event.task_id} claim scope does not match current owner`);
-      }
-    }
-    return writeImmutableEvent(input.repo_root, event);
+    observed.assertLocalCurrent();
+    const current = observed.admission;
+    if (event.admission_sha256 !== current.approval.admission_sha256
+      || !sameData(event.task_identity, { repository_id: current.identity.repository_id, issue_id: current.identity.issue_id, campaign_id: current.identity.campaign_id })) fail('task_revision_mismatch', 'message does not match current admitted task');
+    if (event.scope === 'claim' && !sameTaskMessageClaim(event.target_claim, current.identity.claim)) fail('claim_mismatch', 'message does not match current immutable claim');
+    const result = writeImmutableEvent(input.repo_root, event);
+    observed.assertLocalCurrent();
+    return result;
   });
 }
 
 /** Read-only projection for a canonical recipient. It never marks delivery. */
 export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
   assertTaskId(input.task_id);
+  const observed = observeInboxAdmission(input);
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
-    const expectedRevision = recipientTaskRevision(input);
+    observed.assertLocalCurrent();
+    const expectedRevision = assertInboxRecipient(input, observed.admission);
     let supersededRevisionCount = 0;
     const entries = listEvents(taskInboxTaskScope(input.repo_root, input.task_id))
       .filter((event) => audienceMatches(event, input.recipient))
@@ -799,8 +759,7 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
           return null;
         }
         if (event.scope === 'claim' && (input.recipient.kind !== 'claim'
-          || event.target_claim_id !== input.recipient.claim_id
-          || event.target_generation !== input.recipient.generation)) return null;
+          || !sameTaskMessageClaim(event.target_claim, input.recipient.claim))) return null;
         return {
           event,
           receipt: readOptionalReceipt(input.repo_root, input.task_id, event.message_id, input.recipient),
@@ -808,26 +767,27 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
         } satisfies TaskInboxEventEntry;
       })
       .filter((entry): entry is TaskInboxEventEntry => entry !== null);
+    observed.assertLocalCurrent();
     return { task_id: input.task_id, entries, superseded_revision_count: supersededRevisionCount };
   });
 }
 
 /** Read one exact Task message/recipient receipt pair for runtime correlation.
  * This adds no delivery transition and preserves Task Inbox as the authority. */
-export function readTaskMessageDelivery(input: {
-  readonly repo_root: string;
-  readonly task_id: string;
-  readonly message_id: string;
-  readonly recipient: TaskMessageRecipient;
-}): TaskInboxEventEntry {
+export function readTaskMessageDelivery(input: TaskInboxListInput & { readonly message_id: string }): TaskInboxEventEntry {
+  const observed = observeInboxAdmission(input);
+  const revision = assertInboxRecipient(input, observed.admission);
   const layoutCommon = resolveGitCommonDirectory(input.repo_root);
   const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
   const result = (() => {
+  observed.assertLocalCurrent();
   const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
   if (event.task_id !== input.task_id || event.message_id !== input.message_id) {
     fail('task_message_invalid', 'message does not belong to the requested Task inbox');
   }
+  assertEventCanonical(event, input.task_id, revision);
   const receipt = readOptionalReceipt(input.repo_root, input.task_id, input.message_id, input.recipient);
+  observed.assertLocalCurrent();
   return Object.freeze({
     event,
     receipt,
@@ -846,21 +806,23 @@ export function readTaskMessageDelivery(input: {
 export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliveryResult {
   const recipient = input.recipient;
   assertTaskId(input.task_id);
-  if (input.delivery_channel === 'agent_runtime_effect') {
+  if ((input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request')) {
     if (input.delivery_ref === undefined || input.delivery_ref.length === 0) {
-      fail('task_message_invalid', 'agent_runtime_effect delivery requires its bounded control reference');
+      fail('task_message_invalid', 'controlled delivery requires its bounded control reference');
     }
     if (input.message_id === undefined) {
-      fail('task_message_invalid', 'agent_runtime_effect delivery requires its exact message_id');
+      fail('task_message_invalid', 'controlled delivery requires its exact message_id');
     }
   } else if (input.delivery_ref !== undefined || input.message_id !== undefined) {
-    fail('task_message_invalid', 'only agent_runtime_effect delivery carries a bounded control reference');
+    fail('task_message_invalid', 'only controlled delivery carries a bounded control reference');
   }
-  if (input.delivery_channel !== 'agent_runtime_effect' && input.delivery_ref !== undefined) {
-    fail('task_message_invalid', 'only agent_runtime_effect delivery carries a bounded control reference');
+  if (input.delivery_channel !== 'agent_runtime_effect' && input.delivery_channel !== 'controlled_request' && input.delivery_ref !== undefined) {
+    fail('task_message_invalid', 'only controlled delivery carries a bounded control reference');
   }
+  const observed = observeInboxAdmission(input);
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
-    const expectedRevision = recipientTaskRevision(input);
+    observed.assertLocalCurrent();
+    const expectedRevision = assertInboxRecipient(input, observed.admission);
     const deliveries: TaskInboxDelivery[] = [];
     let supersededCount = 0;
     let pendingCount = 0;
@@ -869,9 +831,9 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
       if (!isCurrentRevisionEvent(event, input.task_id, expectedRevision)) continue;
       if (!audienceMatches(event, recipient)) continue;
       if (event.scope === 'claim' && recipient.kind === 'claim'
-        && (event.target_claim_id !== recipient.claim_id || event.target_generation !== recipient.generation)) {
+        && (!sameTaskMessageClaim(event.target_claim, recipient.claim))) {
         const frozenRecipient: TaskMessageRecipient = {
-          kind: 'claim', claim_id: event.target_claim_id!, generation: event.target_generation!,
+          kind: 'claim', claim: event.target_claim!,
         };
         const prior = receiptFor(input.repo_root, input.task_id, event, frozenRecipient, input.delivery_channel);
         if (prior.delivery_state === 'acknowledged') continue;
@@ -883,7 +845,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         continue;
       }
       if (isGloballySatisfied(input.repo_root, input.task_id, event)) continue;
-      if (input.delivery_channel === 'agent_runtime_effect' && event.message_id !== input.message_id) continue;
+      if ((input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request') && event.message_id !== input.message_id) continue;
       const prior = receiptFor(input.repo_root, input.task_id, event, recipient, input.delivery_channel);
       if (prior.delivery_state === 'acknowledged' || prior.delivery_state === 'superseded' || prior.delivery_state === 'delivered') continue;
       const bodyBytes = Buffer.byteLength(event.body, 'utf-8');
@@ -894,13 +856,14 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         pendingCount += 1;
         continue;
       }
-      const delivered = transitionTaskMessageDeliveryReceipt(prior, input.delivery_channel === 'agent_runtime_effect'
-        ? { state: 'delivered', at: input.delivered_at, delivery_ref: input.delivery_ref }
+      const delivered = transitionTaskMessageDeliveryReceipt(prior, (input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request')
+        ? { state: 'delivered', at: input.delivered_at, delivery_ref: input.delivery_ref, ...(input.delivery_channel === 'controlled_request' ? { delivery_channel: input.delivery_channel } : {}) }
         : { state: 'delivered', at: input.delivered_at, delivery_channel: input.delivery_channel });
       writeReceipt(input.repo_root, input.task_id, delivered);
       deliveries.push({ event, receipt: delivered });
       renderedBodyBytes += bodyBytes;
     }
+    observed.assertLocalCurrent();
     return {
       task_id: input.task_id,
       deliveries,
@@ -912,17 +875,18 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
 }
 
 /** Acknowledge a delivered message; a task-scoped acknowledgement globally satisfies it. */
-export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMessageDeliveryReceiptV1 {
+export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMessageDeliveryReceiptV2 {
   assertTaskId(input.task_id);
   assertMessageId(input.message_id);
+  const observed = observeInboxAdmission(input);
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
-    const expectedRevision = recipientTaskRevision(input);
+    observed.assertLocalCurrent();
+    const expectedRevision = assertInboxRecipient(input, observed.admission);
     const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
     assertEventCanonical(event, input.task_id, expectedRevision);
     if (!audienceMatches(event, input.recipient)) fail('recipient_unavailable', 'message audience does not match recipient');
     if (event.scope === 'claim' && (input.recipient.kind !== 'claim'
-      || event.target_claim_id !== input.recipient.claim_id
-      || event.target_generation !== input.recipient.generation)) {
+      || !sameTaskMessageClaim(event.target_claim, input.recipient.claim))) {
       fail('claim_mismatch', 'claim-scoped message does not match recipient');
     }
     const receipt = readOptionalReceipt(input.repo_root, input.task_id, input.message_id, input.recipient);
@@ -931,6 +895,7 @@ export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMess
     if (canonicalTaskMessageDeliveryReceiptBytes(receipt) !== canonicalTaskMessageDeliveryReceiptBytes(acknowledged)) {
       writeReceipt(input.repo_root, input.task_id, acknowledged);
     }
+    observed.assertLocalCurrent();
     return acknowledged;
   });
 }
@@ -943,7 +908,7 @@ export class TaskReplyStoreError extends Error {
 }
 function replyInconsistent(message: string): never { throw new TaskReplyStoreError(message); }
 
-function isOriginalSteer(event: TaskMessageEventV1): boolean {
+function isOriginalSteer(event: historicalMessage.TaskMessageEventV1): boolean {
   return event.audience === 'owner' && event.in_reply_to === null && event.sender_trust === 'local_operator'
     && (event.sender_kind === 'user' || event.sender_kind === 'operator');
 }
@@ -960,19 +925,26 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
   return value;
 }
 
-function readReplyChain(input: { repo_root: string; task_id: string; recipient: TaskMessageRecipient }, parent: TaskMessageEventV1, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
+function readReplyChain(input: { repo_root: string; task_id: string; recipient: historicalMessage.TaskMessageRecipient }, parent: historicalMessage.TaskMessageEventV1, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
   assertTaskId(input.task_id); assertMessageId(parent.message_id);
   const taskDirectory = join(commonDirectory, TASK_INBOX_RELATIVE_PATH, input.task_id);
-  const recipientKey = taskInboxRecipientStorageKey(input.recipient);
+  const recipientKey = historicalRecipientStorageKey(input.recipient);
   const directory = join(taskDirectory, 'reply-effects', parent.message_id, recipientKey);
   const intent = optionalReplyRecord(commonDirectory, join(directory, 'intent.json'), validateTaskReplyIntent, canonicalTaskReplyIntentBytes, charge);
   const commit = optionalReplyRecord(commonDirectory, join(directory, 'commit.json'), validateTaskReplyCommit, canonicalTaskReplyCommitBytes, charge);
   const effectId = intent?.effect_id ?? commit?.effect_id;
-  const event = effectId ? optionalReplyRecord(commonDirectory, join(taskDirectory, 'events', `${effectId}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge) : null;
-  const acknowledgement = optionalReplyRecord(commonDirectory, join(taskDirectory, 'delivery', parent.message_id, `${recipientKey}.json`), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
+  const event = effectId ? optionalReplyRecord(commonDirectory, join(taskDirectory, 'events', `${effectId}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes, charge) : null;
+  const acknowledgement = optionalReplyRecord(commonDirectory, join(taskDirectory, 'delivery', parent.message_id, `${recipientKey}.json`), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes, charge);
   if (intent && (intent.parent.message_id !== parent.message_id || intent.claim_actor.claim_id !== (input.recipient.kind === 'claim' ? input.recipient.claim_id : null)
     || intent.claim_actor.lease_generation !== (input.recipient.kind === 'claim' ? input.recipient.generation : null))) replyInconsistent('reply record is in a different parent/recipient slot');
   return { intent, event, commit, acknowledgement, observation: inspectTaskReplyChain({ parent, acknowledgement, intent, event, commit }) };
+}
+
+export interface TaskActivityCoverage {
+  readonly complete: boolean;
+  readonly reason: 'scan' | 'bytes' | 'deadline' | 'page' | null;
+  readonly scanned: number;
+  readonly bytes: number;
 }
 
 /** Historical observations never acquire a Lease/Binding lock or perform delivery. */
@@ -1010,44 +982,37 @@ export function readHistoricalTaskActivity(input: {
   };
   const eventAt = (id: string) => {
     assertMessageId(id);
-    const event = optionalReplyRecord(common, join(directory, `${id}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge);
+    const event = optionalReplyRecord(common, join(directory, `${id}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes, charge);
     if (!event) return null;
     assertEventStored(event, input.task_id);
     if (event.message_id !== id) fail('task_message_unreadable', 'historical event path identity is mismatched');
     return event;
   };
-  const receiptsAt = (event: TaskMessageEventV1) => {
-    const receipts: TaskMessageDeliveryReceiptV1[] = [];
+  const receiptsAt = (event: historicalMessage.TaskMessageEventV1) => {
+    const receipts: historicalMessage.TaskMessageDeliveryReceiptV1[] = [];
     const path = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'delivery', event.message_id);
     each(path, name => {
-      const receipt = optionalReplyRecord(common, join(path, name), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
+      const receipt = optionalReplyRecord(common, join(path, name), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes, charge);
       if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
-        || `${taskInboxRecipientStorageKey(recipientFromReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
+        || `${historicalRecipientStorageKey(historicalMessage.recipientFromTaskMessageReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
       receipts.push(receipt);
     });
-    return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromReceipt(b))));
+    return receipts.sort((a,b) => historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(a)).localeCompare(historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(b))));
   };
-  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain>; actor: ClaimActorReceiptV1 | null };
-  const repliesAt = (parent: TaskMessageEventV1, receipts: TaskMessageDeliveryReceiptV1[]): Reply[] => {
+  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain> };
+  const repliesAt = (parent: historicalMessage.TaskMessageEventV1, receipts: historicalMessage.TaskMessageDeliveryReceiptV1[]): Reply[] => {
     const replies: Reply[] = [];
     if (!isOriginalSteer(parent)) return replies;
     for (const receipt of receipts) {
-      const recipient = recipientFromReceipt(receipt);
+      const recipient = historicalMessage.recipientFromTaskMessageReceipt(receipt);
       if (recipient.kind !== 'claim') continue;
       const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
-      let actor: ClaimActorReceiptV1 | null = null;
-      if (chain.intent && chain.observation.state !== 'inconsistent') {
-        const recorded = readClaimActorReceipt(input.repo_root, input.task_id, recipient.claim_id, { max_bytes: TASK_REPLY_RECORD_MAX_BYTES, charge });
-        if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
-          && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
-          && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
-      }
-      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation, actor });
+      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation });
     }
     return replies;
   };
-  const events: TaskMessageEventV1[] = [];
-  const entries: { event: TaskMessageEventV1; receipts: TaskMessageDeliveryReceiptV1[]; replies: Reply[] }[] = [];
+  const events: historicalMessage.TaskMessageEventV1[] = [];
+  const entries: { event: historicalMessage.TaskMessageEventV1; receipts: historicalMessage.TaskMessageDeliveryReceiptV1[]; replies: Reply[] }[] = [];
   let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
   try {
     if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
@@ -1063,10 +1028,109 @@ export function readHistoricalTaskActivity(input: {
   } catch (error) { if (!exhausted) throw error; }
   const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
   const reason = exhausted ?? (more ? 'page' as const : null);
-  return { history_exists: historyExists, entries,
-    coverage: { complete: reason === null, reason, scanned, bytes },
+  const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
+  return { history_exists: historyExists, entries, coverage,
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
   })();
   assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
   return result;
 }
+
+/** Historical correlation only; never used to authorize active delivery. */
+export function readHistoricalTaskMessageDelivery(input: { repo_root: string; task_id: string; message_id: string; recipient: historicalMessage.TaskMessageRecipient }) {
+  assertTaskId(input.task_id); assertMessageId(input.message_id);
+  const common = resolveGitCommonDirectory(input.repo_root), layout = inspectTaskInboxLayout(common);
+  const directory = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id);
+  const event = optionalReplyRecord(common, join(directory, 'events', `${input.message_id}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes);
+  if (!event || event.task_id !== input.task_id || event.message_id !== input.message_id) fail('task_message_unreadable', 'historical event unavailable');
+  const receipt = optionalReplyRecord(common, join(directory, 'delivery', input.message_id, `${historicalRecipientStorageKey(input.recipient)}.json`), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes);
+  if (receipt && (receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
+    || historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(receipt)) !== historicalMessage.deriveTaskMessageRecipientKey(input.recipient))) fail('task_message_unreadable', 'historical receipt identity is mismatched');
+  let globallySatisfied = false;
+  const deliveryDirectory = join(directory, 'delivery', input.message_id);
+  if (event.scope === 'task' && inspectSafeDirectoryChain(common, deliveryDirectory, false, 'historical deliveries')) {
+    for (const name of readdirSync(deliveryDirectory)) {
+      if (!name.endsWith('.json')) fail('task_message_unreadable', 'historical receipt filename is invalid');
+      const other = optionalReplyRecord(common, join(deliveryDirectory, name), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes);
+      if (!other || other.message_id !== event.message_id || other.recipient_task_revision !== event.task_revision
+        || `${historicalRecipientStorageKey(historicalMessage.recipientFromTaskMessageReceipt(other))}.json` !== name) fail('task_message_unreadable', 'historical receipt path is mismatched');
+      if (other.delivery_state === 'acknowledged') globallySatisfied = true;
+    }
+  }
+  assertTaskInboxLayoutUnchanged(common, layout);
+  return { event, receipt, globally_satisfied: globallySatisfied };
+}
+
+/** Read-only admitted-wire activity; recorded provenance is not current authorization. */
+export function readAdmittedTaskActivity(input: {
+  repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
+  budget: { max_scan: number; max_bytes: number; deadline_ms: number };
+}) {
+  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
+  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
+  const result = (() => {
+  assertTaskId(input.task_id);
+  if (input.message_id !== null) assertMessageId(input.message_id);
+  if (input.after !== null) assertMessageId(input.after);
+  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) fail('task_message_invalid', 'invalid activity limit');
+  const common = resolveGitCommonDirectory(input.repo_root);
+  const directory = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'admitted', 'events');
+  const started = Date.now();
+  let scanned = 0, bytes = 0;
+  let exhausted: 'scan' | 'bytes' | 'deadline' | null = null;
+  const stop = (reason: NonNullable<typeof exhausted>): never => { exhausted = reason; throw new Error('activity read budget exhausted'); };
+  const charge = (size: number) => {
+    if (Date.now() - started >= input.budget.deadline_ms) stop('deadline');
+    if (bytes + size > input.budget.max_bytes) stop('bytes');
+    bytes += size;
+  };
+  const count = () => { charge(0); if (scanned >= input.budget.max_scan) stop('scan'); scanned++; };
+  const each = (path: string, visit: (name: string) => void) => {
+    if (!inspectSafeDirectoryChain(common, path, false, 'historical activity directory')) return;
+    const stream = opendirSync(path);
+    try { for (let entry = stream.readSync(); entry; entry = stream.readSync()) {
+      count();
+      if (!entry.isFile() || !entry.name.endsWith('.json')) fail('task_message_unreadable', 'invalid historical activity entry');
+      visit(entry.name);
+    } } finally { stream.closeSync(); }
+  };
+  const eventAt = (id: string) => {
+    assertMessageId(id);
+    const event = optionalReplyRecord(common, join(directory, `${id}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge);
+    if (!event) return null;
+    assertEventStored(event, input.task_id);
+    if (event.message_id !== id) fail('task_message_unreadable', 'historical event path identity is mismatched');
+    return event;
+  };
+  const receiptsAt = (event: TaskMessageEventV2) => {
+    const receipts: TaskMessageDeliveryReceiptV2[] = [];
+    const path = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'admitted', 'delivery', event.message_id);
+    each(path, name => {
+      const receipt = optionalReplyRecord(common, join(path, name), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
+      if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_admission_sha256 !== event.admission_sha256
+        || `${taskInboxRecipientStorageKey(recipientFromTaskMessageReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
+      receipts.push(receipt);
+    });
+    return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(b))));
+  };
+  const events: TaskMessageEventV2[] = [];
+  const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
+  let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
+  try {
+    if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
+    else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); events.push(event); });
+    events.sort((a,b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0);
+    for (const event of events.filter(e => input.after === null || e.message_id > input.after).slice(0,input.limit)) {
+      entries.push({ event, receipts: receiptsAt(event) });
+    }
+  } catch (error) { if (!exhausted) throw error; }
+  const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
+  const reason = exhausted ?? (more ? 'page' as const : null);
+  const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
+  return { history_exists: historyExists, entries, coverage,
+    next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
+  })();
+  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
+  return result;
+}
+

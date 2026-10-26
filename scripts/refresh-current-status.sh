@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/refresh-current-status.sh [--write] [--clear] [--reason <reason>] [--target <branch>]
+Usage: scripts/refresh-current-status.sh [--write] [--clear] [--reason <reason>] [--target <branch>] [--repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <digest> --policy-sha256 <digest> --actor <id>]
 
 Refresh the ignored local tasks/current.md read model from repo-local workflow
 artifacts. By default this prints a preview. Use --write to update the file.
@@ -16,6 +16,7 @@ reason="manual"
 target_override=""
 current_status_file="tasks/current.md"
 stale_after="24h"
+review_selection=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +36,11 @@ while [[ $# -gt 0 ]]; do
     --target)
       [[ -n "${2:-}" ]] || { echo "refresh-current-status: --target requires a value" >&2; exit 2; }
       target_override="$2"
+      shift 2
+      ;;
+    --repository-id|--issue-id|--campaign-id|--grant-sha256|--policy-sha256|--actor)
+      [[ -n "${2:-}" ]] || { echo "refresh-current-status: $1 requires a value" >&2; exit 2; }
+      review_selection+=("$1" "$2")
       shift 2
       ;;
     --help|-h)
@@ -311,11 +317,9 @@ handoff_next_step() {
 }
 
 checks_summary() {
-  local contract result plan
-  plan="$(read_current_active_plan || true)"
-  contract="$(file_metadata_value "$plan" "Task Contract" || true)"
-  [[ -n "$contract" && -f "$contract" ]] || { printf 'verification=missing (no active contract)'; return 0; }
-  if result="$(repo-harness run verification-plan evaluate --repo "$PWD" --contract "$contract" 2>&1)"; then
+  local result
+  [[ ${#review_selection[@]} -gt 0 ]] || { printf 'verification=unavailable (select an approved review campaign)'; return 0; }
+  if result="$(repo-harness run verification-plan evaluate --repo "$PWD" "${review_selection[@]}" 2>&1)"; then
     printf '%s' "$result"
   else
     printf 'verification=unavailable or failed; %s' "$result"

@@ -555,3 +555,23 @@ test("declared extensionless path arrays still redact unknown token segments in 
     });
   }
 });
+
+test('admitted review ledger identity binds grant and plan without borrowing contract identity', async () => {
+  const { parseLogLine } = await import('../src/core/evidence/fold');
+  const { contract_hash: _retired, ...basis } = subjectIdentity() as import('../src/core/evidence/types').ContractSubjectIdentity;
+  const identity: import('../src/core/evidence/types').AdmittedReviewSubjectIdentity = { ...basis,
+    authority_kind: 'review-admission', campaign_sha256: 'sha256:' + '1'.repeat(64),
+    admission_sha256: 'sha256:' + '2'.repeat(64), grant_sha256: 'sha256:' + '3'.repeat(64), plan_hash: 'sha256:' + '4'.repeat(64) };
+  const input = { subjectIdentity: identity, eventType: 'verification_execution.result', trustClass: 'authoritative_machine' as const,
+    payloadHash: 'sha256:' + '5'.repeat(64), producer: 'verification-execution' };
+  const key = computeIdempotencyKey(input);
+  expect(computeIdempotencyKey({ ...input, subjectIdentity: { ...identity, grant_sha256: 'sha256:' + '6'.repeat(64) } })).not.toBe(key);
+  expect(computeIdempotencyKey({ ...input, subjectIdentity: { ...identity, plan_hash: 'sha256:' + '7'.repeat(64) } })).not.toBe(key);
+  const event = { kind: 'evidence_event', schema_version: 1, worktree_id: 'fixture', event_id: 'fixture-event', correlation_run_id: 'fixture-run',
+    event_type: input.eventType, trust_class: input.trustClass, producer: input.producer, subject_identity: identity,
+    idempotency_key: key, payload_hash: input.payloadHash, payload: { protocol: 2 }, created_at: '2026-10-25T00:00:00Z' };
+  expect(parseLogLine(JSON.stringify(event)).ok).toBe(true);
+  expect(parseLogLine(JSON.stringify({ ...event, subject_identity: { ...identity, contract_hash: 'retired' } })).ok).toBe(false);
+  const { grant_sha256: _missing, ...incomplete } = identity;
+  expect(parseLogLine(JSON.stringify({ ...event, subject_identity: incomplete })).ok).toBe(false);
+});

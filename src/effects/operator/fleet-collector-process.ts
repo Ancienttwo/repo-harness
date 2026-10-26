@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline';
 
-import type { FleetBoardSnapshotV1 } from '../../core/fleet/board';
+import type { FleetBoardSnapshotV2 } from '../../core/fleet/board';
 import {
   collectFleetBoard,
   FleetBoardError,
@@ -24,7 +24,7 @@ export interface FleetCollectorCancelRequest {
 export type FleetCollectorRequest = FleetCollectorStartRequest | FleetCollectorCancelRequest;
 
 export type FleetCollectorResponse =
-  | { readonly ok: true; readonly protocol: 2; readonly snapshot: FleetBoardSnapshotV1 }
+  | { readonly ok: true; readonly protocol: 2; readonly snapshot: FleetBoardSnapshotV2 }
   | { readonly ok: false; readonly code: FleetBoardFatalErrorCode | 'fleet_snapshot_unavailable' }
   | { readonly ok: false; readonly cancelled: true };
 

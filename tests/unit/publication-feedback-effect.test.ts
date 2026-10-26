@@ -1,37 +1,20 @@
-import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
-import { seedPublicationReceipt } from '../helpers/publication-fixture';
-import { candidate } from '../../scripts/merge-gate';
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-
-import {
-  buildPublicationReceipt,
-  publicationReceiptDigest,
-  publicationSha256,
-  replacePublicationMarker,
-} from '../../src/core/publication/publication-receipt';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent } from '../../src/core/publication/feedback';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
-import { FeedbackError, observeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, type FeedbackObservationInput } from '../../src/effects/publication/feedback';
+import { FeedbackError, intakeGitHubFeedback, observeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
+import { commitAll } from '../helpers/repo-fixture';
 import { readFeedbackDeliveryReceipt, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
-import { readLease } from '../../src/effects/state/coordination-lease-store';
-import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
-const receipt = buildPublicationReceipt({
-  repo_id: `sha256:${'0'.repeat(64)}`,
-  task_id: '1'.repeat(64),
-  task_revision: '2'.repeat(64),
-  claim_id: 'claim-feedback', generation: 1,
-  target_ref: 'main', base_sha: BASE, branch: 'codex/feedback', head_sha: HEAD, tree_sha: 'c'.repeat(40),
-  candidate_diff_fingerprint: `sha256:${'3'.repeat(64)}`,
-  provider: 'github', provider_repo_id: 'R_feedback', pr_number: 7,
-  pr_url: 'https://example.invalid/pr/7', created_at: '2026-08-23T00:00:00Z',
-});
+const receipt: FeedbackSubject = {
+  publication_id: `sha256:${'1'.repeat(64)}`, task_id: '1'.repeat(64), repository_id: '123',
+  issue_id: '903', campaign_id: 'review', claim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: `sha256:${'2'.repeat(64)}` },
+  admission_sha256: `sha256:${'3'.repeat(64)}`, head_sha: HEAD, base_sha: BASE, pr_number: 7,
+  selection: { repository: 'acme/widgets', provider_repository_id: '123', pr_number: 7, expected_head_sha: HEAD, expected_base_sha: BASE },
+};
 
 function runner(overrides: {
   readonly truncated_reviews?: boolean;
@@ -50,17 +33,18 @@ function runner(overrides: {
   let checkSuitePages = 0;
   return (args) => {
     const query = args.find((entry) => entry.startsWith('query='));
-    if (args[0] === 'repo' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id }) };
+    if (args[0] === 'repo' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ id: 'R_feedback', nameWithOwner: 'acme/widgets' }) };
+    if (args[0] === 'api' && args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' }) };
     if (args[0] === 'pr' && args[1] === 'view') {
       prReads += 1;
       const mergeStateStatus = overrides.mergeability === undefined ? 'MERGEABLE' : overrides.mergeability;
       return {
         status: 0,
         stdout: JSON.stringify({
-          number: receipt.pr_number, url: receipt.pr_url, state: 'OPEN', isDraft: false,
+          number: receipt.pr_number, url: 'https://example.invalid/pr/7', state: 'OPEN', isDraft: false,
           headRefOid: overrides.changed_head && prReads > 1 ? 'd'.repeat(40) : HEAD,
-          headRefName: receipt.branch, baseRefOid: BASE, baseRefName: receipt.target_ref,
-          ...(mergeStateStatus === null ? {} : { mergeStateStatus }),
+          headRefName: 'codex/feedback', baseRefOid: BASE, baseRefName: 'main', reviewDecision: null,
+          ...(mergeStateStatus === null ? {} : { mergeable: mergeStateStatus }),
         }),
       };
     }
@@ -126,7 +110,11 @@ function runner(overrides: {
 
 describe('GitHub provider feedback observation', () => {
   test('uses exact provider object IDs and complete page observations', () => {
-    const events = observeGitHubFeedback(receipt, { repo_root: '/tmp', gh_runner: runner() });
+    const read = runner();
+    const events = observeGitHubFeedback(receipt, { repo_root: '/tmp', gh_runner: args => {
+      if (args[0] === 'api') expect(args.slice(-2)).toEqual(['--hostname', 'github.com']);
+      return read(args);
+    } });
     expect(events.map((event) => event.provider_event_id)).toEqual(['CHECK_1', 'THREAD_1']);
     expect(events[0]?.failing_check_ids).toEqual(['CHECK_1']);
     expect(events[0]?.failing_checks).toEqual([{ id: 'CHECK_1', conclusion: 'FAILURE' }]);
@@ -190,124 +178,34 @@ describe('GitHub provider feedback observation', () => {
   });
 });
 
-const REPAIR_SPRINT = 'plans/sprints/feedback-repair.sprint.md';
-const REPAIR_TASK = 'repair publication feedback';
-const FOREIGN_REPAIR_TASK = 'foreign task feedback sentinel';
-
-function git(root: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf-8' }).trim();
-}
-
-interface RepairFixture {
-  readonly root: string;
-  readonly receipt: ReturnType<typeof buildPublicationReceipt>;
-  readonly task_id: string;
-  readonly foreign_task_id: string;
-  readonly foreign_task_revision: string;
-  readonly gh: string;
-}
-
-function installRepairFixture(): RepairFixture {
-  const root = mkdtempSync(join(tmpdir(), 'repo-harness-feedback-repair-'));
-  git(root, 'init', '-b', 'main');
-  git(root, 'config', 'user.name', 'Feedback Repair Test');
-  git(root, 'config', 'user.email', 'feedback-repair@test.invalid');
-  mkdirSync(join(root, 'plans', 'sprints'), { recursive: true });
-  writeFileSync(join(root, REPAIR_SPRINT), [
-    '# Sprint: feedback repair', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-    '|---|----|--------|------|------|------------|------|',
-    `| 1 | ${fixtureTaskId(`${REPAIR_TASK}`)} | [ ] | ${REPAIR_TASK} | contract | feedback repair tests | (pending) |`,
-    `| 2 | ${fixtureTaskId(`${FOREIGN_REPAIR_TASK}`)} | [ ] | ${FOREIGN_REPAIR_TASK} | contract | foreign repair sentinel tests | (pending) |`, '',
-  ].join('\n'));
-  writeFileSync(join(root, 'README.md'), 'base\n');
-  git(root, 'add', '.');
-  git(root, 'commit', '-m', 'base');
-  const base = git(root, 'rev-parse', 'HEAD');
-  const taskId = fixtureTaskId(REPAIR_TASK);
-  const revision = deriveTaskRevision({ taskCell: REPAIR_TASK, taskId, modeCell: 'contract', acceptanceCell: 'feedback repair tests' });
-  const foreignTaskId = fixtureTaskId(FOREIGN_REPAIR_TASK);
-  const foreignTaskRevision = deriveTaskRevision({ taskCell: FOREIGN_REPAIR_TASK, taskId: foreignTaskId, modeCell: 'contract', acceptanceCell: 'foreign repair sentinel tests' });
-  git(root, 'switch', '-c', 'codex/feedback-repair');
-  writeFileSync(join(root, 'repair.txt'), 'candidate\n');
-  git(root, 'add', 'repair.txt');
-  git(root, 'commit', '-m', 'candidate');
-  const head = git(root, 'rev-parse', 'HEAD');
-  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
-
-  const receipt = buildPublicationReceipt({
-    repo_id: publicationSha256(resolveGitCommonDirectory(root)), task_id: taskId, task_revision: revision,
-    claim_id: 'claim-feedback-repair', generation: 1, target_ref: 'main', base_sha: base,
-    branch: 'codex/feedback-repair', head_sha: head, tree_sha: tree,
-    candidate_diff_fingerprint: candidate(root, 'main').diffFingerprint,
-    provider: 'github',
-    provider_repo_id: 'R_feedback_repair', pr_number: 12, pr_url: 'https://example.invalid/pr/12', created_at: '2026-08-23T06:30:00Z',
-  });
-  seedPublicationReceipt(root, receipt);
-  const owner = buildLeaseOwnerRecord({
-    claimId: receipt.claim_id, taskId, taskRevision: revision, sprintPath: REPAIR_SPRINT, targetRef: 'main', generation: 1,
-    sessionId: 'feedback-repair-session', sourceWorktree: root,
-  });
-  const bound = boundLeaseFixture(owner, { executionWorktree: root, branch: receipt.branch, unitRef: 'plans/plan-feedback-repair.md' });
-  const completing = completingLeaseFixture(bound, { claimId: receipt.claim_id, executionWorktree: root, finishTransactionKey: 'finish-feedback-repair' });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = reviewingLeaseFixture(completing.record, {
-    claimId: receipt.claim_id,
-    publication: {
-      publication_id: receipt.publication_id,
-      receipt_sha256: publicationReceiptDigest(receipt),
-      head_sha: receipt.head_sha,
-      ship_transaction_key: 'ship-feedback-repair',
-    },
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!seedLeaseDirectory(root, taskId)) throw new Error('lease creation failed');
-  writeHistoricalLease(root, taskId, reviewing.record);
-
-  const body = join(root, 'pr.md');
-  writeFileSync(body, replacePublicationMarker('feedback repair\n', receipt));
-  const gh = join(root, 'fake-gh.sh');
-  writeFileSync(gh, [
-    '#!/bin/bash', 'set -euo pipefail',
-    'body="$(jq -Rs . < "$GH_BODY")"',
-    `pr="{\\"number\\":12,\\"url\\":\\"https://example.invalid/pr/12\\",\\"headRefOid\\":\\"${head}\\",\\"headRefName\\":\\"codex/feedback-repair\\",\\"baseRefName\\":\\"main\\",\\"baseRefOid\\":\\"${base}\\",\\"mergeStateStatus\\":\\"MERGEABLE\\",\\"body\\":$body,\\"createdAt\\":\\"2026-08-23T06:30:00Z\\"}"`,
-    'if [[ "$1 $2" == "repo view" ]]; then printf \'{"id":"R_feedback_repair"}\\n\'; exit 0; fi',
-    'if [[ "$1 $2" == "pr view" ]]; then printf \'%s\\n\' "$pr"; exit 0; fi',
-    'echo "unexpected gh invocation: $*" >&2; exit 2',
-  ].join('\n'));
-  chmodSync(gh, 0o755);
-  process.env.GH_BODY = body;
-
+async function installRepairFixture() {
+  const fixture = await admittedFeedbackFixture(12);
+  const receipt = { ...fixture.subject, pr_url: 'https://example.invalid/pr/12' };
   const event = buildFeedbackEvent({
     provider: 'github', provider_event_id: 'CHECK_REPAIR_12', publication_id: receipt.publication_id, head_sha: receipt.head_sha,
     failing_check_ids: ['CHECK_REPAIR_12'], failing_checks: [{ id: 'CHECK_REPAIR_12', conclusion: 'FAILURE' }],
     unresolved_review_thread_ids: [], changes_requested_review_ids: [], mergeability: 'MERGEABLE', summary: 'check failed',
     provider_url: receipt.pr_url, observed_at: '2026-08-23T06:31:00Z',
   });
-  writeFeedbackEvent(root, event);
-  writeFeedbackDeliveryReceipt(root, receipt.publication_id, buildFeedbackDeliveryReceipt({
+  writeFeedbackEvent(fixture.root, event);
+  writeFeedbackDeliveryReceipt(fixture.root, receipt.publication_id, buildFeedbackDeliveryReceipt({
     provider_event_id: event.provider_event_id, delivery_state: 'pending', delivery_channel: 'none',
     delivered_at: null, acknowledged_at: null, superseded_at: null,
   }));
-  return {
-    root,
-    receipt,
-    task_id: taskId,
-    foreign_task_id: foreignTaskId,
-    foreign_task_revision: foreignTaskRevision,
-    gh,
+  const identityRunner: NonNullable<FeedbackObservationInput['gh_runner']> = args => {
+    if (args[0] === 'repo') return { status: 0, stdout: JSON.stringify({ id: 'R_feedback', nameWithOwner: 'acme/widgets' }) };
+    if (args[0] === 'pr') return { status: 0, stdout: JSON.stringify({ number: 12, url: receipt.pr_url,
+      state: 'OPEN', isDraft: false, headRefOid: receipt.head_sha, baseRefOid: receipt.base_sha,
+      headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null }) };
+    if (args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' }) };
+    return { status: 2, stdout: '' };
   };
-}
-
-function repairOffer(fixture: RepairFixture) {
-  const projected = projectPendingFeedbackOffer({ repo_root: fixture.root, publication_id: fixture.receipt.publication_id });
-  if (projected.state !== 'offered') throw new Error('expected a repair offer');
-  return projected.offer;
+  return { ...fixture, receipt, identityRunner };
 }
 
 describe('feedback repair lifecycle integration', () => {
-  test('fetches a selected provider object on demand without persisting its untrusted body', () => {
-    const fixture = installRepairFixture();
+  test('fetches a selected provider object on demand without persisting its untrusted body', async () => {
+    const fixture = await installRepairFixture();
     try {
       const threadEvent = buildFeedbackEvent({
         provider: 'github', provider_event_id: 'THREAD_REPAIR_12', publication_id: fixture.receipt.publication_id,
@@ -316,13 +214,15 @@ describe('feedback repair lifecycle integration', () => {
         summary: 'unresolved thread', provider_url: fixture.receipt.pr_url, observed_at: '2026-08-23T06:31:01Z',
       });
       writeFeedbackEvent(fixture.root, threadEvent);
-      const beforeLease = readLease(fixture.root, fixture.task_id).raw;
+      const beforeBinding = readFileSync(fixture.bindingPath, 'utf8');
       const beforeDelivery = readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12');
       const result = showGitHubFeedback({
-        repo_root: fixture.root,
+        ...fixture.input,
         publication_id: fixture.receipt.publication_id,
         provider_event_id: 'CHECK_REPAIR_12',
         gh_runner: (args) => {
+          const identity = fixture.identityRunner(args);
+          if (identity.status === 0) return identity;
           const query = args.find((entry) => entry.startsWith('query='));
           if (query?.includes('on CheckRun')) {
             return {
@@ -342,20 +242,20 @@ describe('feedback repair lifecycle integration', () => {
         body: 'name: unit\nstatus: COMPLETED\nconclusion: FAILURE\ndetails_url: https://example.invalid/check/12\ntitle: unit failed\nsummary: assertion failed\ntext: private-looking provider output',
         untrusted: true,
       });
-      expect(readLease(fixture.root, fixture.task_id).raw).toBe(beforeLease);
+      expect(readFileSync(fixture.bindingPath, 'utf8')).toBe(beforeBinding);
       expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toEqual(beforeDelivery);
       expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([]);
       expect(() => showGitHubFeedback({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id, provider_event_id: 'CHECK_REPAIR_12',
-        gh_runner: () => ({ status: 0, stdout: JSON.stringify({ data: { node: { name: 'not an ID' } } }) }),
+        ...fixture.input, publication_id: fixture.receipt.publication_id, provider_event_id: 'CHECK_REPAIR_12',
+        gh_runner: (args) => fixture.identityRunner(args).status === 0 ? fixture.identityRunner(args) : ({ status: 0, stdout: JSON.stringify({ data: { node: { name: 'not an ID' } } }) }),
       })).toThrow(FeedbackError);
       expect(() => showGitHubFeedback({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id, provider_event_id: 'CHECK_REPAIR_12',
-        gh_runner: () => ({ status: 0, stdout: JSON.stringify({ data: { node: { id: 'CHECK_REPAIR_12', state: 'CHANGES_REQUESTED' } } }) }),
+        ...fixture.input, publication_id: fixture.receipt.publication_id, provider_event_id: 'CHECK_REPAIR_12',
+        gh_runner: (args) => fixture.identityRunner(args).status === 0 ? fixture.identityRunner(args) : ({ status: 0, stdout: JSON.stringify({ data: { node: { id: 'CHECK_REPAIR_12', state: 'CHANGES_REQUESTED' } } }) }),
       })).toThrow(FeedbackError);
       expect(() => showGitHubFeedback({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id, provider_event_id: 'THREAD_REPAIR_12',
-        gh_runner: () => ({
+        ...fixture.input, publication_id: fixture.receipt.publication_id, provider_event_id: 'THREAD_REPAIR_12',
+        gh_runner: (args) => fixture.identityRunner(args).status === 0 ? fixture.identityRunner(args) : ({
           status: 0,
           stdout: JSON.stringify({ data: { node: {
             id: 'THREAD_REPAIR_12', isResolved: false,
@@ -364,15 +264,127 @@ describe('feedback repair lifecycle integration', () => {
         }),
       })).toThrow(FeedbackError);
       expect(() => showGitHubFeedback({
-        repo_root: fixture.root, publication_id: fixture.receipt.publication_id, provider_event_id: 'missing',
-        gh_runner: () => ({ status: 2, stdout: '', stderr: 'must not run' }),
+        ...fixture.input, publication_id: fixture.receipt.publication_id, provider_event_id: 'missing',
+        gh_runner: (args) => fixture.identityRunner(args).status === 0 ? fixture.identityRunner(args) : ({ status: 2, stdout: '', stderr: 'must not run' }),
       })).toThrow('provider feedback event is unavailable');
-      expect(readLease(fixture.root, fixture.task_id).raw).toBe(beforeLease);
+      expect(readFileSync(fixture.bindingPath, 'utf8')).toBe(beforeBinding);
       expect(readReactionAttemptReceipts(fixture.root, fixture.receipt.publication_id)).toEqual([]);
       expect(readFeedbackDeliveryReceipt(fixture.root, fixture.receipt.publication_id, 'CHECK_REPAIR_12')).toEqual(beforeDelivery);
     } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
+      rmSync(fixture.directory, { recursive: true, force: true });
     }
   });
 
+});
+
+
+test('intake and show-body pin the actual gh API process despite hostile GH_HOST', async () => {
+  const fixture = await admittedFeedbackFixture(12);
+  const originalHost = process.env.GH_HOST;
+  const executable = join(fixture.directory, 'offline-feedback-gh');
+  const callsPath = join(fixture.directory, 'feedback-gh-calls.jsonl');
+  const reviewUrl = 'https://github.com/acme/widgets/pull/12#pullrequestreview-1';
+  // This executable is the external process boundary, never a real provider call.
+  writeFileSync(executable, `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ args, host: process.env.GH_HOST }) + '\\n');
+const reply = value => { process.stdout.write(JSON.stringify(value)); process.exit(0); };
+if (args[0] === 'api' && (args.at(-2) !== '--hostname' || args.at(-1) !== 'github.com')) {
+  process.stderr.write('fixture refused unpinned API host'); process.exit(9);
+}
+if (args[0] === 'repo') {
+  if (args[2] !== 'github.com/acme/widgets') process.exit(8);
+  reply({ id: 'R_feedback', nameWithOwner: 'acme/widgets' });
+}
+if (args[0] === 'pr') {
+  if (args.at(-2) !== '--repo' || args.at(-1) !== 'github.com/acme/widgets') process.exit(8);
+  reply({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
+    headRefOid: ${JSON.stringify(fixture.head)}, baseRefOid: ${JSON.stringify(fixture.base)},
+    headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+}
+if (args[1] === 'repos/acme/widgets') reply({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
+const query = args.find(arg => arg.startsWith('query=')) ?? '';
+const pageInfo = { hasNextPage: false, endCursor: null };
+if (query.includes('checkSuites')) reply({ data: { node: { pullRequest: { commits: { nodes: [{ commit: {
+  oid: ${JSON.stringify(fixture.head)}, checkSuites: { pageInfo, nodes: [] }
+} }] } } } } });
+if (query.includes('reviewThreads')) reply({ data: { node: { pullRequest: { reviewThreads: { pageInfo, nodes: [] } } } } });
+if (query.includes('reviews(first:100')) reply({ data: { node: { pullRequest: { reviews: { pageInfo, nodes: [{
+  id: 'REVIEW_HOST', state: 'CHANGES_REQUESTED', submittedAt: '2026-10-25T00:00:00Z'
+}] } } } } });
+if (query.includes('on PullRequestReview')) reply({ data: { node: {
+  id: 'REVIEW_HOST', state: 'CHANGES_REQUESTED', url: ${JSON.stringify(reviewUrl)},
+  submittedAt: '2026-10-25T00:00:00Z', body: 'host-pinned untrusted body'
+} } });
+process.stderr.write('unexpected fixture arguments'); process.exit(7);
+`);
+  chmodSync(executable, 0o700);
+  try {
+    process.env.GH_HOST = 'hostile.example.invalid';
+    const result = intakeGitHubFeedback({ ...fixture.input, gh_bin: executable });
+    expect(result.event_count).toBe(1);
+    expect(result.events[0]).toMatchObject({ provider_event_id: 'REVIEW_HOST',
+      publication_id: fixture.publication_id, head_sha: fixture.head,
+      changes_requested_review_ids: ['REVIEW_HOST'] });
+    const callsBeforeShow = readFileSync(callsPath, 'utf8').trim().split('\n').length;
+    const body = showGitHubFeedback({ ...fixture.input, gh_bin: executable, provider_event_id: 'REVIEW_HOST' });
+    expect(body).toMatchObject({ provider_event_id: 'REVIEW_HOST', untrusted: true,
+      body: `url: ${reviewUrl}\nsubmitted_at: 2026-10-25T00:00:00Z\nhost-pinned untrusted body` });
+    const calls = readFileSync(callsPath, 'utf8').trim().split('\n')
+      .map(line => JSON.parse(line) as { args: string[]; host: string });
+    for (const phase of [calls.slice(0, callsBeforeShow), calls.slice(callsBeforeShow)]) {
+      const graph = phase.filter(call => call.args[0] === 'api' && call.args[1] === 'graphql');
+      expect(graph.length).toBeGreaterThan(0);
+      for (const call of graph) {
+        expect(call.host).toBe('hostile.example.invalid');
+        expect(call.args.slice(-2)).toEqual(['--hostname', 'github.com']);
+      }
+      expect(phase.some(call => call.args[0] === 'repo')).toBe(true);
+      expect(phase.some(call => call.args[0] === 'pr')).toBe(true);
+    }
+  } finally {
+    if (originalHost === undefined) delete process.env.GH_HOST;
+    else process.env.GH_HOST = originalHost;
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test('a local commit before push blocks only intake, not show, offers or ack', async () => {
+  const fixture = await admittedFeedbackFixture(12);
+  const reviewUrl = 'https://github.com/acme/widgets/pull/12#pullrequestreview-2';
+  const gh_runner: NonNullable<FeedbackObservationInput['gh_runner']> = args => {
+    const json = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
+    if (args[0] === 'repo') return json({ id: 'R_feedback', nameWithOwner: 'acme/widgets' });
+    if (args[0] === 'pr') return json({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
+      headRefOid: fixture.head, baseRefOid: fixture.base, headRefName: 'work', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+    if (args[1] === 'repos/acme/widgets') return json({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
+    const query = args.find(arg => arg.startsWith('query=')) ?? '';
+    const pageInfo = { hasNextPage: false, endCursor: null };
+    if (query.includes('checkSuites')) return json({ data: { node: { pullRequest: { commits: { nodes: [{ commit: { oid: fixture.head, checkSuites: { pageInfo, nodes: [] } } }] } } } } });
+    if (query.includes('reviewThreads')) return json({ data: { node: { pullRequest: { reviewThreads: { pageInfo, nodes: [] } } } } });
+    if (query.includes('reviews(first:100')) return json({ data: { node: { pullRequest: { reviews: { pageInfo, nodes: [
+      { id: 'REVIEW_LOCAL', state: 'CHANGES_REQUESTED', submittedAt: '2026-10-25T00:00:00Z' }] } } } } });
+    if (query.includes('on PullRequestReview')) return json({ data: { node: { id: 'REVIEW_LOCAL', state: 'CHANGES_REQUESTED',
+      url: reviewUrl, submittedAt: '2026-10-25T00:00:00Z', body: 'please fix' } } });
+    return { status: 2, stdout: '', stderr: `unexpected gh arguments: ${args.join(' ')}` };
+  };
+  const input = { ...fixture.input, gh_runner };
+  try {
+    expect(intakeGitHubFeedback(input).event_count).toBe(1);
+    writeFileSync(join(fixture.root, 'local-fix.txt'), 'fix\n');
+    commitAll(fixture.root, 'local fix before push');
+
+    expect(showGitHubFeedback({ ...input, provider_event_id: 'REVIEW_LOCAL' }).body).toContain('please fix');
+    expect(projectPendingFeedbackOffer(input)).toMatchObject({ state: 'offered', offer: { publication_id: fixture.publication_id, expected_head_sha: fixture.head } });
+    const acknowledged = transitionFeedbackDelivery({ ...input, provider_event_id: 'REVIEW_LOCAL',
+      transition: { delivery_state: 'acknowledged', delivery_channel: 'manual', transitioned_at: '2026-10-25T00:01:00Z' } });
+    expect(acknowledged.delivery_state).toBe('acknowledged');
+
+    expect(() => intakeGitHubFeedback(input)).toThrow('feedback intake requires the execution HEAD to equal the selected PR head');
+    try { intakeGitHubFeedback(input); throw new Error('expected intake to refuse a local-only HEAD'); }
+    catch (error) { expect((error as FeedbackError).code).toBe('head_moved'); }
+  } finally {
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
 });

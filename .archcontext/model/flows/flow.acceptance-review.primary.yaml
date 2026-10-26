@@ -14,7 +14,7 @@ steps:
   - id: start-round
     from: capability
     to: round
-    label: The review command starts one round for the contract and verification evidence
+    label: The review command starts one round for the admitted review campaign and verification evidence
     evidence:
       entrypointId: entrypoint.acceptance-review.primary
       sourceSymbol: buildReviewCommand
@@ -51,6 +51,21 @@ outcomes:
     terminal:
       participant: capability
       label: Return accepted or rejected with the receipt
+  - id: refused
+    kind: error
+    label: Review admission or issue goal is not current
+    steps:
+      - id: observe-admission
+        from: capability
+        to: round
+        label: Read the protected admission and reobserve the provider issue goal before the packet and again before the request is sent
+        evidence:
+          entrypointId: entrypoint.acceptance-review.round
+          sourceSymbol: runReviewRound
+          sinkId: sink.acceptance-review.observe-admission
+    terminal:
+      participant: capability
+      label: Refuse the round without a review request or a receipt when the admission is missing, expired, revoked or replaced, or the goal changed
   - id: error
     kind: error
     label: Reviewer output is malformed or inconsistent

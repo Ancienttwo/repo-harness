@@ -110,13 +110,13 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个选中的 publication head 都是该候选的祖先。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，PRD `plans/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
+1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个必需 PR 的 provider merge commit 都是该候选的祖先（`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`）。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，PRD `plans/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
 2. **`AcceptanceReceipt` 是唯一的产品裁决。** `ProductAcceptanceProjectionV1` 只验证并引用现有的 protocol-2 receipt。它不能签发、豁免、合并或改变验收状态（notes，PRD `:21`）。
-3. **每个可变读取都绑定确切的字节与摘要。** 范围包括 Approved PRD 与 spec、仓库身份、当前 publication 指针、reviewing lease 观察、缓存的不可变 PublicationReceipt、Git refs 与 tree、matrix 证据与 target revision（notes）。
-4. **只冻结当前 reviewing 的 publication。** 它们的不可变 receipt 必须包含在同一个确切的 commit 与 tree 中（capability responsibilities）。
+3. **每个可变读取都绑定确切的字节与摘要。** 范围包括 Approved PRD 与 spec、仓库身份、每个必需 PR 的 provider integration 观察、Git refs 与 tree、matrix 证据与 target revision（notes）。
+4. **必需 PR 观察两次。** Envelope 对 contract 中的每个 `required_pull_requests` 读两次 provider merge commit 与 tree。两次不同时以 `publication_stale` 失败。provider merge tree 必须等于本地 commit 的 tree（`src/effects/integration/product-acceptance.ts:402-457`）。
 5. **记录不可变且按内容寻址。** IntegrationContract、IntegrationEnvelope、AcceptanceMatrix 与 ProductAcceptanceProjection 存在 git common dir 下，没有可变的当前指针（notes，`src/effects/integration/product-acceptance.ts:340-345`）。
 6. **拒绝 symlink 证据。** CLI 输入边界与仓库证据边界都拒绝词法与解析后的 symlink，防止之后重定向改变已冻结的主体（notes）。
-7. **本能力不改任何权威。** CLI 只做 build、read 与 accept。它不构造合并，也不改 Task、Lease、Publication 或 Acceptance 状态（capability responsibilities）。
+7. **本能力不改任何权威。** CLI 只做 build、read 与 accept。它不构造合并，也不改 GitHub issue、PR、review admission 或 Acceptance 状态（capability responsibilities）。
 
 ### 3.2 关键权衡
 
@@ -149,7 +149,7 @@ sequenceDiagram
 
 ## Selector evidence (2026-10-18)
 
-The envelope entry delegates to `buildCurrentEnvelope`. That helper calls the schema builder. `observeSelectedPublication` reads the lease and publication receipt. The model now locates these calls in their actual functions (`src/effects/integration/product-acceptance.ts:399-460`).
+The envelope entry delegates to `buildCurrentEnvelope`. That helper calls the schema builder. `observeSelectedPullRequest` reads provider integration evidence for each required PR (`src/effects/integration/product-acceptance.ts:402-426`). The provider read is `collectPullRequestIntegration` in `src/effects/publication/merge-readiness.ts`.
 
 The product command selector covers the accept action registered by `buildIntegrationCommand`.
 `src/cli/commands/integration.ts:168-177` contains the callback's call to `createProductAcceptanceProjection`.

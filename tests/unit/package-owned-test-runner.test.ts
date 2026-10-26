@@ -4,6 +4,9 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 
+import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { parseVerificationPlanFromContractText } from '../../src/core/evidence/verification-plan';
+
 const ROOT = join(import.meta.dir, '..', '..');
 const temporaryRoots: string[] = [];
 
@@ -114,9 +117,23 @@ function runVerifier(root: string, contract: string): VerificationResult {
     expect(spawnSync('git', ['commit', '-m', 'fixture'], { cwd: root, encoding: 'utf-8' }).status).toBe(0);
   }
   const reportPath = join(root, 'report.json');
+  const approval = seedReviewAdmissionFixture(root, workspace('package-runner-authority'), {
+    plan: parseVerificationPlanFromContractText(readFileSync(contract, 'utf8')),
+  });
+  const args = ['execute', '--repo', root,
+    '--repository-id', approval.source.repository_id, '--issue-id', approval.source.issue_id,
+    '--campaign-id', approval.source.campaign_id, '--grant-sha256', approval.source.expectedGrantSha256,
+    '--policy-sha256', approval.source.expectedPolicySha256, '--actor', approval.source.expectedActor,
+    '--report-file', reportPath];
   const result = spawnSync(
     process.execPath,
-    [join(ROOT, 'scripts/verification-plan.ts'), 'execute', '--repo', root, '--contract', 'task.contract.md', '--report-file', reportPath],
+    ["-e", `
+    const { main } = await import(${JSON.stringify(join(ROOT, 'scripts/verification-plan.ts'))});
+    const source = ${JSON.stringify(approval.source)};
+    source.runner = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903')
+      ? ${JSON.stringify(approval.issue)} : { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) });
+    process.exit(await main(${JSON.stringify(args)}, () => source));
+  `],
     {
       cwd: root,
       encoding: 'utf-8',
@@ -142,7 +159,7 @@ function packageTestId(path: string): string {
   return `package-test-${path.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 }
 
-describe('package-owned contract test runner', () => {
+describe('package-owned admitted test runner', () => {
   test('runs a workspace test through its package script so package-local Bun configuration is preserved', () => {
     const cwd = workspace('package-owned-workspace');
     const path = 'packages/client/tests/requires-package-config.test.ts';

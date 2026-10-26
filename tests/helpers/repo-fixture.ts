@@ -204,21 +204,4 @@ export function writeShellExecutableFixture(filePath: string, content: string): 
   linkSync(join(shellFixtureRoot, "launcher"), filePath);
 }
 
-/** Explicit synthetic fixture opinion; never converts a real provider claim into PASS. */
-export async function fixtureReviewResult(args: {
-  root: string; contract: string; verification: string; reviewer: string;
-  disposition: string; summary: string; findings: import('../../scripts/acceptance-receipt').AcceptanceFinding[];
-}): Promise<import('../../scripts/acceptance-receipt').AcceptanceReviewResult> {
-  const { acceptanceContext, acceptanceReviewContextDigest } = await import('../../scripts/acceptance-receipt');
-  const context = await acceptanceContext(args);
-  return { request_id: 'fixture-review-request', context_sha256: acceptanceReviewContextDigest(context),
-    subject_sha256: context.subject.review_subject_sha256, actual_harness: args.reviewer === 'Codex' ? 'codex' : 'claude',
-    actual_role: 'deep-reasoner', actual_model: 'fixture-model', verdict: args.disposition === 'external_pass' ? 'PASS' : 'FAIL',
-    summary: args.summary, findings: args.findings };
-}
-
-export async function recordFixtureAcceptance(args: Parameters<typeof import('../../scripts/acceptance-receipt').recordAcceptance>[0]) {
-  const { recordAcceptance } = await import('../../scripts/acceptance-receipt');
-  if (args.disposition === 'user_waiver') return recordAcceptance(args);
-  return recordAcceptance({ ...args, reviewResult: args.reviewResult ?? await fixtureReviewResult(args) });
-}
+export { fixtureReviewResult, recordFixtureAcceptance } from './acceptance-fixture';

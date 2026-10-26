@@ -1,65 +1,40 @@
-{
-  "schemaVersion": "archcontext.node/v2",
-  "id": "capability.runtime-harness.engineer-scheduling",
-  "kind": "capability",
-  "name": "Engineer Scheduling",
-  "status": "active",
-  "summary": "Projects retained Work Package graphs and dependency observations for operator reads.",
-  "responsibilities": [
-    "Validate closed generic-v1 and engineering-v2 Work Package graph carriers without changing canonical Sprint task identity.",
-    "Join same-commit graph data to canonical task rows and resolve each declared capability.",
-    "Resolve each declared Work Package dependency state from its existing receipt authority, read-only and revision-bound."
-  ],
-  "source": {
-    "include": [
-      "src/core/engineers/scheduling.ts",
-      "src/effects/engineers/dependency-authority.ts",
-      "src/effects/engineers/scheduling.ts"
-    ],
-    "entrypoints": [
-      {
-        "id": "entrypoint.engineer-scheduling.graph",
-        "path": "src/effects/engineers/scheduling.ts",
-        "symbols": [
-          {
-            "name": "readTrackedWorkGraphProjectionAt",
-            "sinks": [
-              {
-                "id": "sink.engineer-scheduling.graph",
-                "path": "src/core/engineers/scheduling.ts",
-                "symbol": "projectWorkGraph"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "id": "entrypoint.engineer-scheduling.dependency-readers",
-        "path": "src/effects/engineers/dependency-authority.ts",
-        "symbols": [
-          {
-            "name": "defaultDependencyAuthorityReaders",
-            "sinks": [
-              {
-                "id": "sink.engineer-scheduling.product-acceptance",
-                "path": "src/effects/integration/product-acceptance.ts",
-                "symbol": "listProductAcceptanceProjections"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "extensions": {
-    "contractFiles": {
-      "agents": "AGENTS.md",
-      "claude": "CLAUDE.md"
-    },
-    "lspProfile": "typescript-lsp",
-    "verification": [
-      "bun test tests/unit/issue-284-dependency-authority.test.ts tests/unit/me1a-engineer-scheduling-schema.test.ts tests/cli/mcp-http.test.ts --timeout 60000",
-      "bun run check:type"
-    ]
-  }
-}
+schemaVersion: "archcontext.node/v2"
+id: "capability.runtime-harness.engineer-scheduling"
+kind: "capability"
+name: "Engineer Scheduling"
+status: "active"
+summary: "Projects explicitly selected immutable provider WorkGraph V2 and exact dependency evidence for operator observations."
+responsibilities:
+  - "Validate the provider graph at an explicit commit and graph path, including exact referenced policy and rollback bytes."
+  - "Join canonical REST repository and issue identities to all admitted sessions and independently selected exact engineer profile revisions; absent association is unassigned."
+  - "Observe module and product acceptance with exact receipts, current admission and waiver validation, and provider integration commit/tree proof; never acquire a task or substitute a latest record."
+source:
+  include:
+    - "src/core/engineers/scheduling.ts"
+    - "src/effects/engineers/dependency-authority.ts"
+    - "src/effects/engineers/scheduling.ts"
+  entrypoints:
+    - id: "entrypoint.engineer-scheduling.graph"
+      path: "src/effects/engineers/scheduling.ts"
+      symbols:
+        - name: "readProviderWorkGraph"
+          sinks:
+            - id: "sink.engineer-scheduling.graph"
+              path: "src/core/engineers/scheduling.ts"
+              symbol: "projectProviderWorkGraph"
+    - id: "entrypoint.engineer-scheduling.dependency-readers"
+      path: "src/effects/engineers/dependency-authority.ts"
+      symbols:
+        - name: "defaultDependencyAuthorityReaders"
+          sinks:
+            - id: "sink.engineer-scheduling.product-acceptance"
+              path: "src/effects/integration/product-acceptance.ts"
+              symbol: "observeSelectedPullRequest"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/issue-284-dependency-authority.test.ts tests/unit/me1a-engineer-scheduling-schema.test.ts tests/cli/mcp-http.test.ts --timeout 60000"
+    - "bun run check:type"

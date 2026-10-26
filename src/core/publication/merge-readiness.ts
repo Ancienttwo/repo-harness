@@ -1,9 +1,3 @@
-import type { PublicationReceiptV3 } from './publication-receipt';
-
-/** Read-time protocol only. It is deliberately independent of lease/task digest domains. */
-export const MERGE_READINESS_PROTOCOL = 1 as const;
-export const MERGE_READINESS_KIND = 'repo-harness-merge-readiness' as const;
-
 export type MergeReadinessAttentionOwner = 'agent' | 'user' | 'external';
 export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner | 'none';
 
@@ -12,10 +6,6 @@ export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner |
  * non-ready result without interpreting an untrusted provider error string.
  */
 export type MergeReadinessBlockerCode =
-  | 'receipt_unavailable'
-  | 'publication_claim_mismatch'
-  | 'publication_pointer_mismatch'
-  | 'lease_not_reviewing'
   | 'provider_unavailable'
   | 'provider_data_incomplete'
   | 'changed_during_read'
@@ -23,16 +13,11 @@ export type MergeReadinessBlockerCode =
   | 'draft'
   | 'head_moved'
   | 'base_moved_since_verification'
-  | 'review_subject_mismatch'
-  | 'verification_evidence_stale'
   | 'checks_failed'
   | 'checks_pending'
-  | 'acceptance_missing'
-  | 'required_reviews_missing'
   | 'changes_requested'
   | 'unresolved_threads'
   | 'not_mergeable'
-  | 'task_revision_mismatch'
   | 'already_integrated';
 
 export interface MergeReadinessBlockerV1 {
@@ -41,7 +26,6 @@ export interface MergeReadinessBlockerV1 {
 }
 
 export type MergeReadinessIntegrationMode = 'unmerged' | 'ancestor' | 'absorbed' | 'unavailable';
-export type MergeReadinessAcceptance = 'pass' | 'not_required' | 'waived' | 'missing';
 export type MergeReadinessObservation = 'stable' | 'changed_during_read' | 'provider_unavailable' | 'provider_data_incomplete';
 
 export type MergeReadinessRollbackBoundary =
@@ -60,7 +44,7 @@ export interface ProviderMergeReadinessFactsV1 {
     readonly name: string;
     readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
   }[];
-  readonly mergeable: 'MERGEABLE' | 'CONFLICTING';
+  readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
 export interface PullRequestMergeReadinessInput {
@@ -71,16 +55,9 @@ export interface PullRequestMergeReadinessInput {
   readonly provider: ProviderMergeReadinessFactsV1 | null;
 }
 
-export interface MergeReadinessInputV1 extends Omit<PullRequestMergeReadinessInput, 'expected_head_sha' | 'expected_base_sha'> {
-  readonly receipt: PublicationReceiptV3;
-}
-
-export interface MergeReadinessV1 {
-  readonly protocol: typeof MERGE_READINESS_PROTOCOL;
-  readonly kind: typeof MERGE_READINESS_KIND;
-  readonly publication_id: string;
+export interface MergeReadinessVerdict {
   readonly ready: boolean;
-  /** Immutable receipt fences, emitted whether the verdict is ready or blocked. */
+  /** Expected fences, emitted whether the verdict is ready or blocked. */
   readonly expected_head_sha: string;
   readonly expected_base_sha: string;
   readonly integration_mode: MergeReadinessIntegrationMode;
@@ -88,11 +65,20 @@ export interface MergeReadinessV1 {
   readonly blockers: readonly MergeReadinessBlockerV1[];
 }
 
+export interface PullRequestSelectionV2 {
+  readonly provider_repository_id: string;
+  readonly repository: string;
+  readonly pr_number: number;
+  readonly expected_head_sha: string;
+  readonly expected_base_sha: string;
+}
+
+export interface PullRequestReadinessV2 extends PullRequestSelectionV2, MergeReadinessVerdict {
+  readonly protocol: 2;
+  readonly kind: 'repo-harness-pull-request-readiness';
+}
+
 const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttentionOwner>> = {
-  receipt_unavailable: 'agent',
-  publication_claim_mismatch: 'agent',
-  publication_pointer_mismatch: 'agent',
-  lease_not_reviewing: 'agent',
   provider_unavailable: 'external',
   provider_data_incomplete: 'external',
   changed_during_read: 'external',
@@ -100,16 +86,11 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   draft: 'agent',
   head_moved: 'agent',
   base_moved_since_verification: 'agent',
-  review_subject_mismatch: 'agent',
-  verification_evidence_stale: 'agent',
   checks_failed: 'agent',
   checks_pending: 'external',
-  acceptance_missing: 'agent',
-  required_reviews_missing: 'external',
   changes_requested: 'agent',
   unresolved_threads: 'agent',
   not_mergeable: 'agent',
-  task_revision_mismatch: 'agent',
   already_integrated: 'agent',
 };
 
@@ -130,7 +111,7 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  * performs no I/O and intentionally emits all applicable blockers in a stable
  * order so output remains usable for routing and tests.
  */
-export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
+export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
   const validSha = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
@@ -171,14 +152,5 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     integration_mode: input.integration_mode,
     attention_owner: verdictAttentionOwner(blockers),
     blockers: Object.freeze(blockers),
-  });
-}
-
-export function projectMergeReadiness(input: MergeReadinessInputV1): MergeReadinessV1 {
-  return Object.freeze({
-    protocol: MERGE_READINESS_PROTOCOL,
-    kind: MERGE_READINESS_KIND,
-    publication_id: input.receipt.publication_id,
-    ...projectPullRequestMergeReadiness({ ...input, expected_head_sha: input.receipt.head_sha, expected_base_sha: input.receipt.base_sha }),
   });
 }

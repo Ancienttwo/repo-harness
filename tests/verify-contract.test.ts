@@ -45,6 +45,10 @@ test('task metadata preflight validates canonical task inputs without executing 
     expect(valid.stdout).toContain('task input metadata validated');
     expect(readFileSync(join(root,'task.md'),'utf8')).toBe(contract);
     expect(()=>readFileSync(join(root,'commands.log'),'utf8')).toThrow();
+    writeFileSync(join(root,'task.md'),contract.replace(JSON.stringify(plan),'{bad}'));
+    const invalidPlan=invoke(); expect(invalidPlan.status).not.toBe(0);
+    expect(invalidPlan.stderr).toContain('invalid JSON');
+    expect(()=>readFileSync(join(root,'commands.log'),'utf8')).toThrow();
     writeFileSync(join(root,'task.md'),contract.replace('code-change','docs-only'));
     expect(invoke().status).not.toBe(0);
     writeFileSync(join(root,'task.md'),contract.replace('  - src/','  - ../outside/'));

@@ -1,12 +1,12 @@
-import { readExternalSourcesPolicy } from '../../src/effects/external-sources/policy';
+import { readExternalSourcesPolicy } from '../../src/effects/github/policy';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { fetchGithubIssues, GithubAdapterError, type GithubCommandRunner } from '../../src/effects/external-sources/github';
-import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/external-sources/policy';
+import { fetchGithubIssues, GithubAdapterError, type GithubCommandRunner } from '../../src/effects/github/issues';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 import { ExternalSourceRefreshError, refreshExternalSource } from '../../src/effects/external-sources/refresh';
 
 const policy = requireManualGithubPolicy(parseExternalSourcesPolicy({
@@ -124,6 +124,23 @@ describe('GitHub external-source adapter', () => {
     expect(result.issues_seen).toBe(2);
     expect(result.issues.every((issue) => issue.labels.length === 0 && issue.assignees.length === 0)).toBe(true);
     expect(calls.map((args) => args[3])).toEqual(['repos/Ancienttwo/byok-sdk', 'repos/Ancienttwo/byok-sdk/issues/102', 'repos/Ancienttwo/byok-sdk/issues/103']);
+  });
+
+  test('rejects an exact Issue that a transfer redirected to another repository', () => {
+    const batchPolicy = requireManualGithubPolicy(parseExternalSourcesPolicy({
+      version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [7] },
+        limits: { max_pages: 1, max_issues: 1, max_body_bytes: 1024, max_total_bytes: 8192, deadline_ms: 1000 } },
+    }));
+    const transferred = runner([
+      { id: 101, full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' },
+      { id: 901, number: 7, html_url: 'https://github.com/other/place/issues/7', state: 'open', title: 'moved', body: '', labels: [], assignees: [] },
+    ]);
+    try { fetchGithubIssues(batchPolicy, transferred); throw new Error('expected a repository identity failure'); }
+    catch (error) {
+      expect(error).toBeInstanceOf(GithubAdapterError);
+      expect((error as GithubAdapterError).failure_class).toBe('repository_identity');
+      expect((error as GithubAdapterError).message).toContain('GitHub issue #7 is not in acme/widgets');
+    }
   });
 
   test('enforces one deadline across repository identity and every exact Issue request', () => {

@@ -1,53 +1,101 @@
-schemaVersion: archcontext.node/v2
-id: capability.verification.acceptance-review
-kind: capability
-name: Acceptance Review
-status: active
-summary: Runs the generic acceptance review through a persistent reviewer task agent and records one structured acceptance receipt.
+schemaVersion: "archcontext.node/v2"
+id: "capability.verification.acceptance-review"
+kind: "capability"
+name: "Acceptance Review"
+status: "active"
+summary: "Runs the generic acceptance review through a persistent reviewer task agent and records one structured acceptance receipt."
 responsibilities:
-  - Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host.
-  - Isolate the reviewer process and its credentials and fail closed when isolation is unavailable.
-  - Prepare the deterministic final-subject change assessment and review selection packet.
-  - Record and verify the structured AcceptanceReceipt against the exact live contract. Reject archived contracts and do not search archives for receipt authority.
-  - Build bounded module review prompts for the module CLI and the operator architecture view.
+  - "Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host."
+  - "Isolate the reviewer process and its credentials and fail closed when isolation is unavailable."
+  - "Prepare the deterministic final-subject change assessment and review selection packet."
+  - "Record and verify the structured AcceptanceReceipt against the current protected review admission, a fresh provider issue-goal observation and the exact task-session admission binding. Refuse a round when the admission is missing, expired, revoked or replaced, or when the issue goal changed."
+  - "Build bounded module review prompts for the module CLI and the operator architecture view."
+  - "Provide shared protected admission storage, exact current source selection and provider goal reobservation to task sessions, evidence and external bindings independently of review execution."
+  - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
 source:
   include:
-    - src/core/review/**
-    - src/effects/review/**
-    - src/cli/commands/review.ts
-    - scripts/acceptance-receipt.ts
-    - scripts/change-assessment.ts
+    - "src/core/review/**"
+    - "src/effects/review/**"
+    - "src/cli/commands/review.ts"
+    - "scripts/acceptance-receipt.ts"
+    - "scripts/change-assessment.ts"
+    - "src/effects/admission/admission-store.ts"
+    - "src/effects/admission/admission-source.ts"
+    - "src/effects/admission/issue-goal.ts"
+    - "src/effects/admission/control-admission.ts"
   entrypoints:
-    - id: entrypoint.acceptance-review.primary
-      path: src/cli/commands/review.ts
+    - id: "entrypoint.acceptance-review.primary"
+      path: "src/cli/commands/review.ts"
       symbols:
-        - name: buildReviewCommand
+        - name: "buildReviewCommand"
           sinks:
-            - id: sink.acceptance-review.primary
-              path: src/effects/review/generic-review.ts
-              symbol: runReviewRound
-            - id: sink.acceptance-review.circuit-admission
-              path: src/cli/hook/circuit-breaker.ts
-              symbol: recordCircuitAttempt
-    - id: entrypoint.acceptance-review.round
-      path: src/effects/review/generic-review.ts
+            - id: "sink.acceptance-review.primary"
+              path: "src/effects/review/generic-review.ts"
+              symbol: "runReviewRound"
+            - id: "sink.acceptance-review.circuit-admission"
+              path: "src/cli/hook/circuit-breaker.ts"
+              symbol: "recordCircuitAttempt"
+    - id: "entrypoint.acceptance-review.round"
+      path: "src/effects/review/generic-review.ts"
       symbols:
-        - name: runReviewRound
+        - name: "runReviewRound"
           sinks:
-            - id: sink.acceptance-review.packet
-              path: src/core/review/review-packet.ts
-              symbol: composeReviewPacket
-            - id: sink.acceptance-review.validate-output
-              path: src/core/review/generic-review.ts
-              symbol: validateReviewOutput
-            - id: sink.acceptance-review.record-receipt
-              path: src/effects/review/acceptance-receipt.ts
-              symbol: recordAcceptance
+            - id: "sink.acceptance-review.observe-admission"
+              path: "src/effects/review/acceptance-receipt.ts"
+              symbol: "acceptanceContext"
+            - id: "sink.acceptance-review.packet"
+              path: "src/core/review/review-packet.ts"
+              symbol: "composeReviewPacket"
+            - id: "sink.acceptance-review.validate-output"
+              path: "src/core/review/generic-review.ts"
+              symbol: "validateReviewOutput"
+            - id: "sink.acceptance-review.record-receipt"
+              path: "src/effects/review/acceptance-receipt.ts"
+              symbol: "recordAcceptance"
+            - id: "sink.acceptance-review.reserve-inbox"
+              path: "src/effects/review/pre-prompt-inbox.ts"
+              symbol: "preparePrePromptInbox"
+            - id: "sink.acceptance-review.commit-inbox"
+              path: "src/effects/review/pre-prompt-inbox.ts"
+              symbol: "commitPrePromptInbox"
+    - id: "entrypoint.acceptance-review.inbox-host"
+      path: "src/effects/review/oar-review-host.ts"
+      symbols:
+        - name: "runHostFileRequest"
+          sinks:
+            - id: "sink.acceptance-review.consume-inbox"
+              path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+              symbol: "consumePrePromptInbox"
+            - id: "sink.acceptance-review.accepted-inbox"
+              path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+              symbol: "recordPrePromptInboxAccepted"
+    - id: "entrypoint.acceptance-review.inbox-proof"
+      path: "src/effects/review/pre-prompt-inbox-consumer.ts"
+      symbols:
+        - name: "recordPrePromptInboxAccepted"
+          sinks:
+            - id: "sink.acceptance-review.persist-inbox-proof"
+              path: "src/effects/terminal/task-session-io.ts"
+              symbol: "writeSessionArtifact"
+    - id: "entrypoint.acceptance-review.inbox-commit"
+      path: "src/effects/review/pre-prompt-inbox.ts"
+      symbols:
+        - name: "commitPrePromptInbox"
+          sinks:
+            - id: "sink.acceptance-review.inbox-session"
+              path: "src/effects/terminal/task-session-reader.ts"
+              symbol: "readTaskAgent"
+            - id: "sink.acceptance-review.inbox-oar-proof"
+              path: "src/effects/terminal/task-runtime-observation.ts"
+              symbol: "readOarObservation"
+            - id: "sink.acceptance-review.deliver-inbox"
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "deliverTaskInbox"
 extensions:
   contractFiles:
-    agents: AGENTS.md
-    claude: CLAUDE.md
-  lspProfile: typescript-lsp
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
   verification:
-    - bun run check:type
-    - bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/change-assessment.test.ts tests/cli/cross-review.test.ts tests/unit/module-review-prompt.test.ts --timeout 60000 --max-concurrency 1
+    - "bun run check:type"
+    - "bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/change-assessment.test.ts tests/cli/cross-review.test.ts tests/unit/module-review-prompt.test.ts --timeout 60000 --max-concurrency 1"

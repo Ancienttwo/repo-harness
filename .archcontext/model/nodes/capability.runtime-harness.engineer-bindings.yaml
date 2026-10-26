@@ -1,60 +1,46 @@
-{
-  "schemaVersion": "archcontext.node/v2",
-  "id": "capability.runtime-harness.engineer-bindings",
-  "kind": "capability",
-  "name": "Engineer Bindings",
-  "status": "active",
-  "summary": "Retains Engineer contract, binding and claim actor records for operator observations and runtime reads.",
-  "responsibilities": [
-    "Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.",
-    "Read existing Engineer binding events and current records below the Git common directory without repair writes.",
-    "Read historical Claim Actor receipts and check their exact current Lease owner for operator observations."
-  ],
-  "source": {
-    "include": [
-      "agents/engineers/**",
-      "src/core/engineers/**",
-      "src/effects/engineers/**"
-    ],
-    "exclude": [
-      "src/core/engineers/agent-runtime-effect.ts",
-      "src/effects/engineers/agent-runtime-adapters/**",
-      "src/effects/engineers/agent-runtime-effect-store.ts",
-      "src/effects/engineers/agent-runtime-feature.ts",
-      "src/core/engineers/engineering-overlay.ts",
-      "src/core/engineers/scheduling.ts",
-      "src/effects/engineers/dependency-authority.ts",
-      "src/effects/engineers/engineering-overlay.ts",
-      "src/effects/engineers/scheduling.ts"
-    ],
-    "entrypoints": [
-      {
-        "id": "entrypoint.engineer-bindings.read",
-        "path": "src/effects/engineers/binding-store.ts",
-        "symbols": [
-          {
-            "name": "readEngineerBindingStatus",
-            "sinks": [
-              {
-                "id": "sink.engineer-bindings.read",
-                "path": "src/effects/engineers/binding-store.ts",
-                "symbol": "readCurrent"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "extensions": {
-    "contractFiles": {
-      "agents": "AGENTS.md",
-      "claude": "CLAUDE.md"
-    },
-    "lspProfile": "typescript-lsp",
-    "verification": [
-      "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts --timeout 60000",
-      "bun run check:type"
-    ]
-  }
-}
+schemaVersion: "archcontext.node/v2"
+id: "capability.runtime-harness.engineer-bindings"
+kind: "capability"
+name: "Engineer Bindings"
+status: "active"
+summary: "Resolves tracked capability-backed Engineer Profile and SOP contracts and retains historical principal mapping and Claim Actor codecs."
+responsibilities:
+  - "Validate capability-backed Engineer Profile and SOP contracts without copying capability authority."
+  - "Derive the exact engineer contract revision from the tracked profile, its SOP bytes and the capability revision."
+  - "Retain historical principal mapping and Claim Actor codecs without a store reader; current session profile selection comes from explicit admitted metadata."
+source:
+  include:
+    - "agents/engineers/**"
+    - "src/core/engineers/**"
+    - "src/effects/engineers/**"
+    - "src/effects/profiles/profile-store.ts"
+  exclude:
+    - "src/core/engineers/agent-runtime-effect.ts"
+    - "src/effects/engineers/agent-runtime-adapters/**"
+    - "src/effects/engineers/agent-runtime-effect-store.ts"
+    - "src/effects/engineers/agent-runtime-feature.ts"
+    - "src/core/engineers/engineering-overlay.ts"
+    - "src/core/engineers/scheduling.ts"
+    - "src/effects/engineers/dependency-authority.ts"
+    - "src/effects/engineers/engineering-overlay.ts"
+    - "src/effects/engineers/scheduling.ts"
+  entrypoints:
+    - id: "entrypoint.engineer-bindings.profile"
+      path: "src/effects/profiles/profile-store.ts"
+      symbols:
+        - name: "readProfileFile"
+          sinks:
+            - id: "sink.engineer-bindings.validate-profile"
+              path: "src/core/engineers/profile-binding.ts"
+              symbol: "validateModuleEngineerProfile"
+            - id: "sink.engineer-bindings.contract-revision"
+              path: "src/core/engineers/profile-binding.ts"
+              symbol: "engineerContractRevision"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/unit/engineer-profile-binding-v1.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

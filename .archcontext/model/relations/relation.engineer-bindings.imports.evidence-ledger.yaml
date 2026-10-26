@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.runtime-harness.engineer-bindings",
   "target": "capability.runtime-harness.evidence-ledger",
-  "intent": "Use canonical evidence JSON and evidence types for bindings."
+  "intent": "Use canonical evidence JSON and evidence types for profiles and historical principal records."
 }

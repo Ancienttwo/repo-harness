@@ -25,14 +25,14 @@ describe('AcceptanceReceipt native verification fingerprint', () => {
     const f = fixture();
     const path = join(f.root, f.verification);
     const report = JSON.parse(readFileSync(path, 'utf8'));
-    const receipt = await recordFixtureAcceptance({ root: f.root, authorityHome: f.home, contract: f.contract,
+    const receipt = await recordFixtureAcceptance({ root: f.root, authorityHome: f.home, authority: f.authority,
       verification: f.verification, disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'fixture acceptance', findings: [] });
     const sorted = deepSortKeys(report);
     expect(sorted).toEqual(report);
     expect(JSON.stringify(sorted)).not.toBe(JSON.stringify(report));
     writeFileSync(path, JSON.stringify(sorted, null, 2) + '\n');
-    const verified = await verifyAcceptance({ root: f.root, authorityHome: f.home });
+    const verified = await verifyAcceptance({ root: f.root, authorityHome: f.home, authority: f.authority });
     expect(verified.verification_evidence_sha256).toBe(receipt.verification_evidence_sha256);
     expect(verified.disposition).toBe('external_pass');
   }, 30000);
@@ -41,11 +41,11 @@ describe('AcceptanceReceipt native verification fingerprint', () => {
     const f = fixture();
     const path = join(f.root, f.verification);
     const report = JSON.parse(readFileSync(path, 'utf8'));
-    await recordFixtureAcceptance({ root: f.root, authorityHome: f.home, contract: f.contract,
+    await recordFixtureAcceptance({ root: f.root, authorityHome: f.home, authority: f.authority,
       verification: f.verification, disposition: 'external_pass', reviewer: 'Claude', source: 'generic-review',
       actor: null, summary: 'fixture acceptance', findings: [] });
     report.results[0].command = 'forged different command';
     writeFileSync(path, JSON.stringify(report, null, 2) + '\n');
-    await expect(verifyAcceptance({ root: f.root, authorityHome: f.home })).rejects.toThrow('immutable evidence');
+    await expect(verifyAcceptance({ root: f.root, authorityHome: f.home, authority: f.authority })).rejects.toThrow('immutable evidence');
   }, 30000);
 });

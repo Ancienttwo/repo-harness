@@ -48,7 +48,12 @@ source:
     - id: entrypoint.evals-checks.primary
       path: "src/effects/evidence/verification-execution.ts"
       symbols:
-        - name: "executeVerificationContract"
+        - name: "executeAdmittedVerification"
+          sinks:
+            - id: sink.evals-checks.prepare
+              path: "src/effects/evidence/verification-execution.ts"
+              symbol: "executePrepared"
+        - name: "executePrepared"
           sinks:
             - id: sink.evals-checks.primary
               path: "src/effects/evidence/verification-execution.ts"

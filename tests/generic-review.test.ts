@@ -1,3 +1,5 @@
+import { readReviewAdmissionSource } from '../src/effects/admission/admission-source';
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
@@ -7,14 +9,20 @@ import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
 import { composeReviewPacket, type ReviewPacketInput } from '../src/core/review/review-packet';
 import { closeReview, reviewLocation, reviewSessionOptions, reviewStatus, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
-import { acceptanceReceiptPath } from '../scripts/acceptance-receipt';
+import { acceptanceContext, acceptanceReviewContextDigest, acceptanceReceiptPath } from '../scripts/acceptance-receipt';
 import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
-import { executeVerificationContract } from '../src/effects/evidence/verification-execution';
-import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
+import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
+import { observeTaskSessionAdmission, ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact, sendTaskRequest, taskSessionDirectory, type TaskAgentSpec, type TaskPaneBinding, type TaskRequest, type TaskSessionAuthority } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
+import { randomUUID } from 'crypto';
+import { mockOfflineHerdr, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
+import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
+import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
+import { recordPrePromptInboxAccepted } from '../src/effects/review/pre-prompt-inbox-consumer';
+import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -31,44 +39,112 @@ function resolveNode24(): string {
   return node;
 }
 
-test('generic review refuses empty and missing plans before any provider starts on every platform', async () => {
+test('generic review refuses tampered empty and missing approved plans before any provider starts on every platform', async () => {
   for (const reason of ['empty_plan', 'missing_plan']) {
-    const { root, home, contract, verification } = seedAcceptanceFixture('gp');
+    const { root, home, authority, admissionFixture, verification } = seedAcceptanceFixture('gp');
     roots.push(root, home);
     const reviewerRepo = join(home, 'reviewer');
     execFileSync('git', ['-C', root, 'worktree', 'add', '-qb', 'incomplete-plan-reviewer', reviewerRepo]);
-    const file = join(root, contract), source = readFileSync(file, 'utf8');
-    const beforePlan = source.slice(0, source.indexOf('## Verification Plan'));
-    const fence = String.fromCharCode(96).repeat(3);
-    writeFileSync(file, reason === 'empty_plan' ? beforePlan + `## Verification Plan\n\n${fence}json\n{"protocol":1,"checks":[]}\n${fence}\n` : beforePlan);
+    const file = join(admissionFixture.directory, admissionFixture.grant.slice(7) + '.json');
+    const record = JSON.parse(readFileSync(file, 'utf8'));
+    if (reason === 'empty_plan') record.admission.verification_plan.checks = [];
+    else delete record.admission.verification_plan;
+    writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
     const calls: string[] = [];
     const effects: ReviewEffects = {
       owner: () => { calls.push('owner'); throw new Error('provider lookup must not run'); },
       installation: async () => { calls.push('installation'); throw new Error('provider probe must not run'); },
       start: async () => { calls.push('start'); throw new Error('provider start must not run'); },
     };
-    await expect(runReviewRound({ repoRoot: root, contract, verification, reviewerRepo, authorityHome: home,
+    await expect(runReviewRound({ repoRoot: root, authority, verification, reviewerRepo, authorityHome: home,
       endpoint: { session: 'private-gp', home }, parentPane: 'fixture-owner-pane',
-      admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow(reason);
+      taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow('grant_digest');
     expect(calls).toEqual([]);
     expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
   }
 }, 60_000);
+// The shared fixture supplies explicit synthetic upstream approval. These cases
+// retain the production CLI source loader; only account-home/provider transport
+// are offline boundaries. A runtime sentinel stops before any agent is launched.
+for (const selection of [
+  { kind: 'labels' as const, labels_all: ['review'], assignees_any: [] },
+  { kind: 'issue_numbers' as const, issue_numbers: [903, 904] },
+]) {
+  test(`review, verification and linked session admission resolve the approved issue under ${selection.kind} discovery`, async () => {
+    const f = seedAcceptanceFixture('selected-issue'); roots.push(f.root, f.home);
+    const policyPath = join(f.root, '.ai/harness/policy.json');
+    const existing = JSON.parse(readFileSync(policyPath, 'utf8'));
+    const policy = f.admissionFixture.policy;
+    if (policy.mode !== 'manual') throw new Error('expected manual fixture policy');
+    writeFileSync(policyPath, JSON.stringify({ ...existing, external_sources: { version: 1, mode: 'manual',
+      github: { ...policy.github, selection, limits: { ...policy.github.limits, max_issues: 2 } } } }));
+    const admission = f.admissionFixture.admission;
+    const loaded = readReviewAdmissionSource(f.root, { 'repository-id': admission.repository_id, 'issue-id': admission.issue_id,
+      'campaign-id': admission.campaign_id, 'grant-sha256': f.admissionFixture.grant,
+      'policy-sha256': admission.policy.policy_sha256, actor: admission.actor_id });
+    expect(loaded.issuePolicy.mode).toBe('manual');
+    if (loaded.issuePolicy.mode !== 'manual') throw new Error('expected loaded manual policy');
+    // The loader must not rewrite discovery policy to manufacture an admission.
+    expect(loaded.issuePolicy.github.selection).toEqual(selection);
+    const endpoints: string[] = [];
+    const runner: NonNullable<typeof loaded.runner> = (args, options) => {
+      const endpoint = args.find(arg => arg.startsWith('repos/'))!;
+      endpoints.push(endpoint);
+      expect(['repos/acme/widgets', 'repos/acme/widgets/issues/903']).toContain(endpoint);
+      return f.authority.runner!(args, options);
+    };
+    const authority = { ...loaded, authorityHome: f.home, runner };
+    const verification = executeAdmittedVerification({ repoRoot: f.root, authority, reportFile: f.verification });
+    expect(verification.passed).toBe(true);
+    expect(verification.results[0]!.execution).toBe('executed');
+    const evaluated = evaluateAdmittedVerification({ repoRoot: f.root, authority });
+    expect(evaluated.passed).toBe(true);
+    expect(evaluated.results[0]!.execution).toBe('reused');
+    expect(evaluated.results[0]!.execution_id).toBe(verification.results[0]!.execution_id);
+    const prepared = prepareChangeAssessment({ repoRoot: f.root, authority });
+    const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
+    writeFileSync(join(f.root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
+      evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex') }));
+    const reviewerRepo = join(f.home, 'reviewer');
+    execFileSync('git', ['-C', f.root, 'worktree', 'add', '-qb', 'selected-issue-reviewer', reviewerRepo]);
+    const taskClaim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) };
+    const session = observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: authority, claim: taskClaim });
+    expect(session.identity.issue_id).toBe(admission.issue_id);
+    expect(session.identity.execution_root).toBe(reviewerRepo);
+    expect(session.approval.grant_sha256).toBe(f.admissionFixture.grant);
+    let ownerCalls = 0;
+    await expect(runReviewRound({ repoRoot: f.root, authority, verification: f.verification, reviewerRepo, authorityHome: f.home,
+      endpoint: { session: 's', home: f.home }, parentPane: 'fixture-owner', taskClaim,
+      admitSession: () => { throw new Error('must not launch'); } }, {
+      owner: () => { ownerCalls++; throw new Error('offline-runtime-boundary-reached'); },
+    })).rejects.toThrow('offline-runtime-boundary-reached');
+    expect(ownerCalls).toBe(1);
+    expect(endpoints.filter(endpoint => endpoint.endsWith('/issues/903')).length).toBeGreaterThan(1);
+    for (const patch of [{ id: 'replacement-issue' }, { body: 'unapproved goal change' }]) {
+      const changed = { ...authority, runner: ((args, options) => args.includes('repos/acme/widgets/issues/903')
+        ? { stdout: JSON.stringify({ ...f.admissionFixture.issue, ...patch }) } : runner(args, options)) as typeof runner };
+      const refusal = 'id' in patch ? 'review_goal_identity_changed' : 'review_admission_goal_or_actor_changed';
+      expect(() => evaluateAdmittedVerification({ repoRoot: f.root, authority: changed })).toThrow(refusal);
+      expect(() => observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: changed, claim: taskClaim })).toThrow(refusal);
+    }
+  }, 60_000);
+}
+
 const identity = { request_id: 'r', context_sha256: 'domain-context', subject_sha256: 'subject', actual_harness: 'claude' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-model' };
 const finding = { id: 'f', severity: 'P1' as const, status: 'new' as const, message: '[fixture opinion] fix the fence' };
 const fail = { ...identity, verdict: 'FAIL', summary: '[fixture opinion] revise', findings: [finding] };
 const packetInput: ReviewPacketInput = Object.freeze({ context_sha256: 'domain-context', subject_sha256: 'subject',
   actual_harness: 'claude', actual_role: 'deep-reasoner', prior_findings: Object.freeze([Object.freeze(finding)]),
-  contract: 'contract\n', goal: 'goal\n', verification: 'verification\n', source: 'source\n' });
+  admission: 'admission\n', goal: 'goal\n', verification: 'verification\n', source: 'source\n' });
 test('review packet preserves the exact transport text, domain identity and prior findings', () => {
   // Frozen pre-extraction bytes. Do not derive this expectation from the builder or shared rule.
   const expected = [
-    'Review the complete current subject against its goal, contract and prepared verification evidence. Do not edit production code or invoke other reviewers. Only author one final JSON file to the exact request.result_ref; no temp/rename or alternate submission. Terminal output and idle are observation only.',
+    'Review the complete current subject against its goal, approved admission and prepared verification evidence. Do not edit production code or invoke other reviewers. Only author one final JSON file to the exact request.result_ref; no temp/rename or alternate submission. Terminal output and idle are observation only.',
     'Outer transport JSON is {request_id: request.request_id, context_sha256: request.context_sha256, value: domain output}. Provider value has EXACTLY request_id, context_sha256, subject_sha256, verdict, summary, findings. Domain request_id is request.request_id; domain context_sha256 is the prepared domain hash below (distinct from transport packet hash). The owner adds actual harness/role/model from the bound task-agent and OAR Session observation, not your self-description.',
     'PASS requires no unresolved P0/P1. FAIL requires at least one unresolved finding. Each finding has EXACTLY id, severity:P0|P1|P2|P3, status:new|open|resolved, message. Keep stable IDs: every prior finding must remain resolved/open with current evidence. A previous verdict is not evidence for current code.',
     'DOMAIN IDENTITY: {"context_sha256":"domain-context","subject_sha256":"subject","actual_harness":"claude","actual_role":"deep-reasoner"}',
     'PRIOR FINDINGS: [{"id":"f","severity":"P1","status":"new","message":"[fixture opinion] fix the fence"}]',
-    'CONTRACT:\ncontract\n', 'GOAL:\ngoal\n', 'PREPARED VERIFICATION:\nverification\n', 'CURRENT SOURCE:\nsource\n',
+    'APPROVED ADMISSION:\nadmission\n', 'GOAL:\ngoal\n', 'PREPARED VERIFICATION:\nverification\n', 'CURRENT SOURCE:\nsource\n',
   ].join('\n\n');
   expect(Buffer.from(composeReviewPacket(packetInput))).toEqual(Buffer.from(expected));
   expect(composeReviewPacket(packetInput)).toBe(composeReviewPacket(packetInput));
@@ -101,12 +177,14 @@ function packetRoundFixture() {
   }
   const reviewerRepo = join(fixture.home, 'reviewer');
   execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
-  const location = reviewLocation(fixture.root, fixture.contract);
+  const location = reviewLocation(fixture.root, fixture.authority);
   const packetPath = (round = 1) => join(reviewerRepo, '.ai/harness/runs/generic-review-input', location.key, `packet-${round}.txt`);
   const calls: string[] = [];
   const effects: ReviewEffects = {
     installation: async (_kind, executable) => { calls.push('installation'); return { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }; },
-    start: async () => {
+    start: async (_repo, _spec, _command, _ready, _guard, taskAuthority) => {
+      expect(taskAuthority?.source).toBe(fixture.authority);
+      expect(taskAuthority?.claim).toEqual(options.taskClaim);
       calls.push('start');
       expect(readFileSync(packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
       expect(lstatSync(packetPath()).mode & 0o777).toBe(0o600);
@@ -115,17 +193,17 @@ function packetRoundFixture() {
     send: async () => { calls.push('send'); throw new Error('must not send'); },
   };
   const refresh = () => {
-    const report = executeVerificationContract({ repoRoot: fixture.root, contractPath: fixture.contract, reportFile: fixture.verification });
+    const report = executeAdmittedVerification({ repoRoot: fixture.root, authority: fixture.authority, reportFile: fixture.verification });
     expect(report.passed).toBe(true);
-    const prepared = prepareChangeAssessment({ repoRoot: fixture.root, contractPath: fixture.contract });
+    const prepared = prepareChangeAssessment({ repoRoot: fixture.root, authority: fixture.authority });
     const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
     writeFileSync(join(fixture.root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
       evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex'),
     }, null, 2) + '\n');
   };
-  const options = { repoRoot: fixture.root, contract: fixture.contract, verification: fixture.verification, reviewerRepo,
+  const options = { repoRoot: fixture.root, authority: fixture.authority, verification: fixture.verification, reviewerRepo,
     authorityHome: fixture.home, endpoint, parentPane: 'fixture-owner-pane',
-    harness: 'claude' as const, admitSession: () => { calls.push('admit'); } };
+    harness: 'claude' as const, taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } };
   return { ...fixture, ...location, options, effects, calls, packetPath, refresh };
 }
 
@@ -181,6 +259,8 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   expect(first.cwd).toBe(realpathSync(f.options.reviewerRepo));
   const session = readSessionArtifact<Record<string, unknown>>(join(f.dir, 'session.json'));
   expect([session.endpoint, session.parent_pane, session.actual_harness]).toEqual([null, null, 'claude']);
+  expect(session.task_claim).toEqual(options.taskClaim);
+  await expect(runReviewRound({ ...options, taskClaim: { ...options.taskClaim, revision: 'sha256:' + 'b'.repeat(64) } }, f.effects)).rejects.toThrow('review_session_spec_changed');
   expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);
   expect(readFileSync(f.packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
   // Repeating the round before any host claims the directory returns the same command and admits no new session.
@@ -192,15 +272,15 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   const exited = spawnSync('/usr/bin/true');
   writeSessionArtifact(join(f.dir, 'host-claim.json'), { pid: exited.pid });
   await expect(runReviewRound(options, f.effects)).rejects.toThrow('review_host_start_failed');
-  expect((reviewStatus(f.root, f.options.contract) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
+  expect((reviewStatus(f.root, f.options.authority) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
   // After Session opening began, a host exit without a disposal receipt is not cleanup proof.
   writeSessionArtifact(join(f.dir, 'session-opening.json'), { pid: exited.pid });
-  await expect(closeReview(f.root, f.options.contract, true, f.home)).rejects.toThrow('review_host_cleanup_pending');
-  expect(reviewStatus(f.root, f.options.contract).status).toBe('open');
+  await expect(closeReview(f.root, f.options.authority, true, f.home)).rejects.toThrow('review_host_cleanup_pending');
+  expect(reviewStatus(f.root, f.options.authority).status).toBe('open');
   writeSessionArtifact(join(f.dir, 'disposed.json'), { disposed: true, fixture: false });
-  expect((await closeReview(f.root, f.options.contract, true, f.home)).status).toBe('closed');
+  expect((await closeReview(f.root, f.options.authority, true, f.home)).status).toBe('closed');
   expect(existsSync(join(f.dir, 'close.request'))).toBe(true);
-  expect(reviewStatus(f.root, f.options.contract).status).toBe('closed');
+  expect(reviewStatus(f.root, f.options.authority).status).toBe('closed');
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 }, 60_000);
 
@@ -209,7 +289,7 @@ darwinTest('app-terminal cancel before any claim leaves a tombstone, so a late l
   const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
   const launch = await runReviewRound({ ...base, launch: 'app-terminal' }, f.effects);
   if (launch.status !== 'launch_required') throw new Error('fixture_launch_required_expected');
-  expect((await closeReview(f.root, f.options.contract, true, f.home)).status).toBe('closed');
+  expect((await closeReview(f.root, f.options.authority, true, f.home)).status).toBe('closed');
   const claim = join(f.dir, 'host-claim.json');
   expect(JSON.parse(readFileSync(claim, 'utf8'))).toEqual({ pid: null, closed: true });
   const late = spawnSync(launch.argv[0]!, launch.argv.slice(1), { encoding: 'utf8', timeout: 30_000 });
@@ -628,3 +708,88 @@ try{for(let round=1;round<=2;round++){
   expect(readFileSync(policyFile, 'utf8')).toBe(reviewIsolationPolicy(paths));
   expect(prepareReviewLauncher(owner, policyFile, fixture)).toBe(launcher);
 });
+
+
+test('same content with a new approved context consumes the next campaign round', async () => {
+  const f = packetRoundFixture();
+  const context = await acceptanceContext({ root: f.root, authority: f.authority, verification: f.verification });
+  // The prior round reviewed identical code under a different approved context.
+  // Retain its findings and charge the next attempt to the same session budget.
+  writeSessionArtifact(join(f.dir, 'request-1.json'), {
+    subject_sha256: context.subject.review_subject_sha256, context_sha256: acceptanceReviewContextDigest(context),
+  });
+  writeSessionArtifact(join(f.dir, 'accepted-1.json'), { output: { findings: [] } });
+  const previousAdmission = f.admissionFixture.admission;
+  const renewed = seedReviewAdmissionFixture(f.root, f.home, {
+    reviewer: previousAdmission.policy.reviewer, userWaiver: 'forbidden', actor: previousAdmission.actor_id,
+    allowedPaths: [...previousAdmission.allowed_paths], oracles: [...previousAdmission.oracles],
+    plan: JSON.parse(JSON.stringify(previousAdmission.verification_plan)),
+  });
+  Object.assign(f.authority, renewed.source);
+  f.refresh();
+  const current = await acceptanceContext({ root: f.root, authority: f.authority, verification: f.verification });
+  expect(current.subject.review_subject_sha256).toBe(context.subject.review_subject_sha256);
+  expect(current.authorityContext.campaign_sha256).toBe(context.authorityContext.campaign_sha256);
+  expect(acceptanceReviewContextDigest(current)).not.toBe(acceptanceReviewContextDigest(context));
+  const launchError = process.platform === 'darwin' ? 'fixture_second_round' : 'OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM';
+  const effects = { ...f.effects, start: async () => { throw new Error('fixture_second_round'); } };
+  await expect(runReviewRound(f.options, effects)).rejects.toThrow(launchError);
+  expect(readFileSync(f.packetPath(2), 'utf8')).toContain(acceptanceReviewContextDigest(current));
+  expect(existsSync(join(f.dir, 'request-1.json'))).toBe(true);
+});
+
+darwinTest('a round records acceptance only after its accepted inbox delivery is committed', async () => {
+  const f = packetRoundFixture();
+  let binding: TaskPaneBinding | undefined, authority: TaskSessionAuthority | undefined, agentSpec: TaskAgentSpec | undefined, messageId = '';
+  const nativeSessionId = 'fixture-native-session';
+  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, model: () => 'fixture-model',
+    start: async (repo, spec, _command, _ready, _guard, taskAuthority) => {
+      if (!taskAuthority) throw new Error('fixture_task_authority_missing');
+      authority = taskAuthority; agentSpec = spec;
+      binding = await startOfflineTaskAgent(repo, spec, taskAuthority);
+      // The test process is the observed provider; the real native binding reads this ready file.
+      writeFileSync(join(f.dir, 'ready.json'), JSON.stringify({ pid: binding.provider.pid, session_id: nativeSessionId, fixture: false }));
+      const admission = binding.task_admission!;
+      messageId = randomUUID();
+      sendTaskMessage({ repo_root: f.root, source: { authority: taskAuthority, session: { task: spec.task, role: spec.role } },
+        event: buildTaskMessageEvent({ message_id: messageId, task_id: spec.task,
+          task_identity: { repository_id: admission.identity.repository_id, issue_id: admission.identity.issue_id, campaign_id: admission.identity.campaign_id },
+          admission_sha256: admission.approval.admission_sha256, scope: 'claim', target_claim: admission.identity.claim,
+          sender_kind: 'operator', sender_id: 'fixture-owner', sender_trust: 'local_operator', audience: 'owner',
+          body: 'Untrusted message: recheck the fence.', created_at: new Date().toISOString(), in_reply_to: null }) });
+      return binding;
+    },
+    // The real send publishes the request and reserves the inbox companion.
+    send: async (...args) => {
+      const offline = mockOfflineHerdr(args[0], agentSpec!);
+      try { return await sendTaskRequest(...args); } finally { offline.transport.mockRestore(); }
+    },
+    // Transport ACK: the host turn already ended, so the loop's first observed check succeeds.
+    ready: async path => { const ack = /ack-(\d+)\.json$/.exec(path); if (ack) writeFileSync(join(f.dir, `observed-${ack[1]}.json`), '{}'); },
+    // The host writes inbox-accepted after the loop's commit check and before its observed check.
+    collect: async (_repo, task, role, round) => {
+      const taskDir = taskSessionDirectory(f.root, task, role);
+      const request = readSessionArtifact<TaskRequest>(join(taskDir, `request-${round}.json`));
+      const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id: request.request_id, round,
+        host: { pid: binding!.provider.pid, identity: binding!.provider.identity }, session_id: nativeSessionId, input_id: request.request_id,
+        seq: 2, status: 'idle', phase: null, since_seq: null, last_event_at: null, outcome: null, failure: null, control: 'accepted', rejection: null };
+      writeFileSync(join(taskDir, oarObservationFile(round)), JSON.stringify(observation));
+      recordPrePromptInboxAccepted({ request, requestDirectory: taskDir, native_session_id: nativeSessionId, host: 'claude',
+        consumed_at: Date.now(), observation });
+      expect(existsSync(join(taskDir, `inbox-accepted-${round}.json`))).toBe(true);
+      const domain = JSON.parse(readFileSync(f.packetPath(round), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      return { request_id: request.request_id, context_sha256: request.context_sha256,
+        value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
+          verdict: 'FAIL', summary: '[fixture opinion] recheck the fence', findings: [finding] } };
+    } };
+  const result = await runReviewRound(f.options, effects);
+  expect(result.round).toBe(1);
+  expect(existsSync(join(f.dir, 'accepted-1.json'))).toBe(true);
+  // runReviewRound commits nothing after it records acceptance, so a receipt
+  // here was committed before accepted-1.json.
+  const receipt = readTaskMessageDelivery({ repo_root: f.root, execution_worktree: binding!.execution_root,
+    source: { authority: authority!, session: { task: binding!.task, role: binding!.role } }, task_id: binding!.task,
+    recipient: { kind: 'claim', claim: authority!.claim }, message_id: messageId }).receipt;
+  expect(receipt?.delivery_channel).toBe('controlled_request');
+  expect(receipt?.delivery_ref).toContain('controlled-request:');
+}, 60_000);

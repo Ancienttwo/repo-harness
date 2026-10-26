@@ -10,7 +10,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   deriveTaskRevision,
   projectCanonicalTasks,
-  lookupCanonicalTask,
   unmigratedSprintRefusal,
 } from '../../src/core/state/coordination-identity';
 import {
@@ -202,12 +201,6 @@ describe('malformed identity fails closed', () => {
   test('a copied ID appearing twice is refused for the whole sprint', () => {
     const text = sprint([ROW_A, row({ index: 2, id: ID_A, task: 'a different row that copied the id' })]);
     expect(() => tasks(text)).toThrow(/repeats task id/);
-    const lookup = lookupCanonicalTask(
-      { repoIdentity: REPO_IDENTITY, sprintPath: SPRINT_PATH, sprintText: text },
-      ID_A,
-    );
-    expect(lookup.ok).toBe(false);
-    if (!lookup.ok) expect(lookup.error).toContain('repeats task id');
   });
 
   test('two rows may share Task text once identity is persisted', () => {

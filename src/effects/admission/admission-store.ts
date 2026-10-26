@@ -1,0 +1,196 @@
+import { validateControlApproval, type ValidatedControlApproval } from '../../core/review/control-delegation';
+import { randomUUID, createHash } from 'node:crypto';
+import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { osAccountHome } from '../runtime/os-account-home';
+import { canonicalize } from '../../core/evidence/canonical-json';
+import type { JsonValue } from '../../core/evidence/types';
+import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
+import { taskRepository } from '../git/task-repository';
+import { gatesDirectoryName, resolveRepositoryIdentity } from '../git/repository-identity';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
+
+interface StoreInput { repoRoot: string; authorityHome?: string }
+interface CampaignIdentity { repository_id: string; issue_id: string; campaign_id: string }
+interface ActiveGrant { protocol: 1; revision: number; grant_sha256: string | null }
+interface ApprovalRecord {
+  protocol: 3; kind: 'repo-harness-review-approval'; repository_root: string;
+  actor_id: string; activation_id: string; admission: ReviewAdmission;
+  control_approval: ValidatedControlApproval;
+}
+const HASH = /^sha256:[0-9a-f]{64}$/;
+function fail(reason: string): never { throw new Error(`review_admission_${reason}`); }
+function bytes(value: unknown): Buffer { return Buffer.from(canonicalize(value as JsonValue) + '\n'); }
+function digest(value: Buffer): string { return `sha256:${createHash('sha256').update(value).digest('hex')}`; }
+function inside(root: string, path: string): boolean { const r = relative(root, path); return r === '' || !isAbsolute(r) && r !== '..' && !r.startsWith(`..${sep}`); }
+function safeStat(path: string, directory: boolean): void {
+  assertObservationPath(path);
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())
+    || typeof process.getuid === 'function' && stat.uid !== process.getuid()
+    || (stat.mode & 0o022) !== 0 || !directory && stat.nlink !== 1) fail('unsafe_authority');
+}
+function location(input: StoreInput, identity: CampaignIdentity, create: boolean) {
+  const repository = resolveRepositoryIdentity(input.repoRoot);
+  const home = realpathSync(input.authorityHome ?? osAccountHome());
+  const state = join(home, '.repo-harness');
+  safeStat(home, true);
+  if (inside(repository.worktreeId, state) || inside(repository.repositoryId, state) || inside(taskRepository(input.repoRoot).primary_root, state)) fail('authority_inside_candidate');
+  const parts = ['.repo-harness', 'gates', gatesDirectoryName(repository.worktreeId), 'review-admissions', reviewCampaignKey(identity).slice(7)];
+  let path = home;
+  for (const part of parts) {
+    path = join(path, part);
+    assertObservationPath(path);
+    if (!existsSync(path)) {
+      if (!create) fail('missing');
+      mkdirSync(path, { mode: 0o700 });
+    }
+    safeStat(path, true);
+  }
+  return { root: repository.worktreeId, directory: path, active: join(path, 'active.json') };
+}
+function readProtected(path: string): Buffer {
+  safeStat(path, false);
+  if (currentReadonlyObservation()) {
+    const content = observationReadFileSync(path);
+    if (content.length > 1024 * 1024) fail('unsafe_authority');
+    return content;
+  }
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 1024 * 1024
+      || typeof process.getuid === 'function' && stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) fail('unsafe_authority');
+    return readFileSync(fd);
+  } finally { closeSync(fd); }
+}
+function active(path: string): ActiveGrant {
+  if (!existsSync(path)) return { protocol: 1, revision: 0, grant_sha256: null };
+  const value = JSON.parse(readProtected(path).toString('utf8'));
+  if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['grant_sha256', 'protocol', 'revision'])
+    || value.protocol !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1
+    || value.grant_sha256 !== null && (typeof value.grant_sha256 !== 'string' || !HASH.test(value.grant_sha256))) fail('invalid_active_grant');
+  return value;
+}
+function publishActive(path: string, next: ActiveGrant): void {
+  const temporary = join(dirname(path), `activation-${randomUUID()}.tmp`);
+  createFileExclusiveDurably(temporary, bytes(next));
+  renameSync(temporary, path);
+  syncDirectoryDurably(dirname(path));
+}
+
+/** Consume a trusted upstream approval and bind its exact transition with CAS.
+ * The caller owns authentication and current authorization. Files preserve normal
+ * lifecycle/history; they do not resist malicious rollback by the same OS user.
+ * A new activation has a distinct identity even when its policy bytes repeat.
+ */
+export function approveReviewAdmission(input: StoreInput & {
+  admission: ReviewAdmissionInput; expectedAdmissionSha256: string;
+  expectedRevision: number; controlApproval: unknown;
+}): { revision: number; grant_sha256: string } {
+  if (currentReadonlyObservation()) rejectObservation('Observation cannot approve a review admission');
+  const admission = createReviewAdmission(input.admission);
+  if (admission.admission_sha256 !== input.expectedAdmissionSha256) fail('approval_mismatch');
+  if (input.controlApproval === undefined) fail('control_approval_required');
+  const approval = validateControlApproval(input.controlApproval, Date.now(), admission, realpathSync(input.repoRoot), input.expectedRevision);
+  const loc = location(input, admission, true);
+  return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
+    const previous = active(loc.active);
+    if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
+    validateControlApproval(approval, Date.now(), admission, loc.root, input.expectedRevision);
+    const record: ApprovalRecord = { protocol: 3, kind: 'repo-harness-review-approval', repository_root: loc.root,
+      actor_id: admission.actor_id, activation_id: randomUUID(), admission,
+      control_approval: approval };
+    const content = bytes(record), sha = digest(content);
+    createFileExclusiveDurably(join(loc.directory, `${sha.slice(7)}.json`), content);
+    syncDirectoryDurably(loc.directory);
+    const next = { protocol: 1 as const, revision: previous.revision + 1, grant_sha256: sha };
+    publishActive(loc.active, next);
+    return { revision: next.revision, grant_sha256: sha };
+  }, { reclaimStaleOwner: true });
+}
+
+/** Revoke one exact active grant for a trusted upstream request. Revision and
+ * grant digest together form the CAS. An unknown campaign, an absent or
+ * replaced grant, or a stale revision fails without a state change. */
+export function revokeActiveReviewAdmission(input: StoreInput & CampaignIdentity & {
+  expectedRevision: number; expectedGrantSha256: string;
+}): { revision: number; revoked_grant_sha256: string } {
+  if (currentReadonlyObservation()) rejectObservation('Observation cannot revoke a review admission');
+  if (typeof input.expectedGrantSha256 !== 'string' || !HASH.test(input.expectedGrantSha256)) fail('revocation_request_invalid');
+  const loc = location(input, input, false);
+  return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
+    const previous = active(loc.active);
+    if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
+    if (previous.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
+    const next = { protocol: 1 as const, revision: previous.revision + 1, grant_sha256: null };
+    publishActive(loc.active, next);
+    return { revision: next.revision, revoked_grant_sha256: input.expectedGrantSha256 };
+  }, { reclaimStaleOwner: true });
+}
+
+/** Read a bound current record for provider observation. Its stored goal is not
+ * fresh provider evidence; execution consumers must use observeActiveReviewAdmission. */
+export function readReviewAdmissionForObservation(input: StoreInput & CampaignIdentity & {
+  expectedGrantSha256: string; expectedPolicySha256: string; expectedActor: string;
+}) {
+  const loc = location(input, input, false), before = active(loc.active);
+  if (!HASH.test(input.expectedGrantSha256) || before.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
+  const content = readProtected(join(loc.directory, `${input.expectedGrantSha256.slice(7)}.json`));
+  if (digest(content) !== input.expectedGrantSha256) fail('grant_digest');
+  const value = JSON.parse(content.toString('utf8')) as ApprovalRecord;
+  if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['activation_id', 'actor_id', 'admission', 'control_approval', 'kind', 'protocol', 'repository_root'])
+    || value.protocol !== 3 || value.kind !== 'repo-harness-review-approval' || value.repository_root !== loc.root
+    || value.actor_id !== input.expectedActor || typeof value.activation_id !== 'string'
+    || !/^[0-9a-f-]{36}$/.test(value.activation_id)) fail('grant_binding');
+  const admitted = validateReviewAdmission(value.admission);
+  {
+    const proof = value.control_approval;
+    if (!proof || proof.expected_revision + 1 !== before.revision) fail('control_approval_binding');
+    validateControlApproval(proof, Date.now(), admitted, loc.root, before.revision - 1);
+  }
+  if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id
+    || admitted.actor_id !== input.expectedActor) fail('goal_or_actor_changed');
+  if (admitted.policy.policy_sha256 !== input.expectedPolicySha256) fail('policy_changed');
+  if (!bytes(before).equals(bytes(active(loc.active)))) fail('changed_during_read');
+  return { admission: admitted, grant_sha256: input.expectedGrantSha256, revision: before.revision };
+}
+
+export function assertReviewAdmissionGoal(admission: ReviewAdmission, expectedGoal: ReviewAdmissionInput['goal']): void {
+  if (admission.goal.revision !== expectedGoal.revision || admission.goal.content !== expectedGoal.content) fail('goal_or_actor_changed');
+}
+
+export function readActiveReviewAdmission(input: Parameters<typeof readReviewAdmissionForObservation>[0] & {
+  expectedGoal: ReviewAdmissionInput['goal'];
+}) {
+  const current = readReviewAdmissionForObservation(input);
+  assertReviewAdmissionGoal(current.admission, input.expectedGoal);
+  return current;
+}
+
+/** Discover only the protected current selection. The caller must freshly
+ * observe the provider goal before using this selection for execution or UI. */
+export function readCurrentReviewAdmissionSelection(input: StoreInput & CampaignIdentity) {
+  const loc = location(input, input, false), selected = active(loc.active);
+  if (selected.grant_sha256 === null) return null;
+  const content = readProtected(join(loc.directory, `${selected.grant_sha256.slice(7)}.json`));
+  if (digest(content) !== selected.grant_sha256) fail('grant_digest');
+  const record = JSON.parse(content.toString('utf8')) as ApprovalRecord;
+  const admission = validateReviewAdmission(record.admission);
+  const checked = readActiveReviewAdmission({ ...input, expectedGrantSha256: selected.grant_sha256,
+    expectedActor: admission.actor_id, expectedPolicySha256: admission.policy.policy_sha256, expectedGoal: admission.goal });
+  return { issue_number: checked.admission.issue_number, expectedGrantSha256: checked.grant_sha256, expectedActor: checked.admission.actor_id,
+    expectedPolicySha256: checked.admission.policy.policy_sha256 };
+}
+
+/** Verification first consumes the approved plan above. Only after execution
+ * can a round bind its actual subject and evidence to that same active grant. */
+export function readReviewAdmission(input: Parameters<typeof readActiveReviewAdmission>[0] & {
+  round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>;
+}) {
+  const active = readActiveReviewAdmission(input);
+  const context = bindReviewAdmission(active.admission, input.round, active.grant_sha256);
+  return { admission: active.admission, context, revision: active.revision };
+}

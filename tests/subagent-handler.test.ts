@@ -691,7 +691,7 @@ describe('typed subagent hook handlers', () => {
     }
   });
 
-  // Board slice coverage also checks the arming predicate and lease identity in tests/board-slice.test.ts.
+  // tests/board-slice.test.ts covers the armed case: both mounts render one slice from the provider issue store.
   test('a repository with no coordination state receives no slice on either mount', () => {
     const repoRoot = tempRepo();
     try {

@@ -1,45 +1,120 @@
-import { seedLeaseDirectory } from './sprint-fixture';
-import { writeHistoricalLease } from './sprint-fixture';
-import { boundLeaseFixture } from './sprint-fixture';
-import { claimActorReceiptFixture, seedClaimActorReceipt } from './engineer-state-fixture';
-import { execFileSync } from 'child_process';
-import { mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
-import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
-import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
+import { spyOn } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import * as herdr from '../../src/effects/terminal/herdr';
+import { seedReviewAdmissionFixture } from './review-admission-fixture';
+import { loadEngineerProfile } from '../../src/effects/profiles/profile-store';
+import { startTaskAgent, readSessionArtifact, taskSessionDirectory, type TaskClaimReference, type TaskAgentSpec, type TaskSessionAuthority, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
+import { taskRepository } from '../../src/effects/git/task-repository';
+import { observeAgentRuntimeEndpoint } from '../../src/effects/engineers/agent-runtime-effect-store';
+import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
-import { readLease } from '../../src/effects/state/coordination-lease-store';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { fixtureTaskId } from './sprint-fixture';
+import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 
-export function seedEngineerTaskMessage(repoRoot: string, engineerId: string, messageId: string, body = 'secret-message-body') {
-  const sprintPath = 'plans/sprints/runtime.sprint.md';
-  const taskCell = 'wake exact task owner';
-  mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-  writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '', '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|', `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
-  execFileSync('git', ['add', sprintPath], { cwd: repoRoot });
-  execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
-  const taskId = fixtureTaskId(taskCell);
-  const taskRevision = deriveTaskRevision({ taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' });
-  const claimId = '44444444-4444-4444-8444-444444444444';
-  const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
-  const bound = boundLeaseFixture(claimed, { executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' });
-  seedLeaseDirectory(repoRoot, taskId);
-  writeHistoricalLease(repoRoot, taskId, bound);
-  const profile = loadEngineerProfile(repoRoot, engineerId);
-  const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
-
-  const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };
-  seedClaimActorReceipt(repoRoot, claimActorReceiptFixture({ envelope, binding, session_id: 'runtime-session', bound_at: '2026-08-30T10:00:00.000Z' }));
-  sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: messageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body, created_at: '2026-08-30T10:01:00.000Z', in_reply_to: null }) });
-  return { message_kind: 'task_message' as const, task_id: taskId, message_id: messageId,
-    expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1 };
+/** In-process Herdr transport double for one task agent. The test process is the
+ * observed provider. The caller restores the returned spy. */
+export function mockOfflineHerdr(root: string, spec: TaskAgentSpec) {
+  const repository = taskRepository(root);
+  const primary = { workspace_id: 'fixture-primary-workspace', worktree: {
+    repo_key: repository.repository_id, checkout_path: repository.primary_root, repo_root: repository.primary_root,
+  } };
+  const workspace = repository.execution_root === repository.primary_root ? primary : {
+    workspace_id: 'fixture-workspace', worktree: {
+      repo_key: repository.repository_id, checkout_path: repository.execution_root, repo_root: repository.primary_root,
+    },
+  };
+  const spaces = workspace === primary ? [primary] : [primary, workspace];
+  const parent = { pane_id: spec.parent_pane, terminal_id: `parent-terminal-${spec.role}`,
+    workspace_id: workspace.workspace_id, cwd: repository.execution_root };
+  const pane = { pane_id: `fixture-${spec.role}`, terminal_id: `terminal-${spec.role}`,
+    workspace_id: workspace.workspace_id, cwd: repository.execution_root };
+  const bindingPath = join(taskSessionDirectory(root, spec.task, spec.role), 'binding.json');
+  let agentName = existsSync(bindingPath) ? readSessionArtifact<HerdrTaskBinding>(bindingPath).agent_name : '';
+  const transport = spyOn(herdr, 'herdrCommand').mockImplementation((_endpoint, args) => {
+    const [kind, action] = args;
+    let result: object;
+    if (kind === 'workspace' && action === 'list') result = { workspaces: spaces };
+    else if (kind === 'workspace' && action === 'get') {
+      const selected = spaces.find(space => space.workspace_id === args[2]);
+      if (!selected) throw new Error(`unknown offline workspace: ${args[2]}`);
+      result = { workspace: selected };
+    } else if (kind === 'worktree' && action === 'open') {
+      const path = args[args.indexOf('--path') + 1];
+      const selected = spaces.find(space => space.worktree.checkout_path === path);
+      if (!selected) throw new Error(`unknown offline checkout: ${path}`);
+      result = { workspace: selected, root_pane: parent, already_open: true };
+    } else if (kind === 'pane' && action === 'list') result = { panes: [parent, pane] };
+    else if (kind === 'pane' && action === 'get') result = { pane: args[2] === parent.pane_id ? parent : pane };
+    else if (kind === 'pane' && action === 'split') result = { pane };
+    else if (kind === 'pane' && action === 'process-info') result = { process_info: {
+      shell_pid: process.ppid, foreground_process_group_id: process.pid, foreground_processes: [{ pid: process.pid }],
+    } };
+    else if (kind === 'agent' && action === 'get') {
+      if (!agentName || args[2] !== agentName) throw new Error(`unknown offline agent: ${args[2]}`);
+      result = { agent: { ...pane, name: agentName, agent: spec.harness_kind } };
+    }
+    else throw new Error(`unexpected offline Herdr call: ${args.join(' ')}`);
+    return { pid: process.pid, status: 0, signal: null, stdout: Buffer.from(JSON.stringify({ id: 'fixture', result })), stderr: Buffer.alloc(0), output: [] };
+  });
+  return { transport, nameAgent: (name: string) => { agentName = name; } };
 }
 
-export function releaseEngineerTaskMessage(repoRoot: string, taskId: string): void {
-  const lease = readLease(repoRoot, taskId).record;
-  if (!lease) throw new Error('Task fixture lease is missing');
-  writeHistoricalLease(repoRoot, taskId, { ...lease, state: 'released', ...('record_schema' in lease ? { current_publication: null } : {}) } as typeof lease);
+/** Real public session admission and binding, with an explicit in-process transport double.
+ * The test process is the observed provider; this does not start a model or service. */
+export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, taskAuthority: TaskSessionAuthority) {
+  const offline = mockOfflineHerdr(root, spec);
+  try {
+    return await startTaskAgent(root, spec, { taskAuthority, start: async (_endpoint, name) => { offline.nameAgent(name); } });
+  } finally { offline.transport.mockRestore(); }
+}
+
+export interface EngineerRuntimeFixtureOptions {
+  authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
+  repositoryId?: string; issueId?: string;
+}
+/** Public binding lifecycle with injected offline transport; no live service is claimed. */
+export async function bindTaskRuntimeFixture(root: string, options: EngineerRuntimeFixtureOptions, engineerId?: string) {
+  const task = options.task ?? '1'.repeat(64), role = options.role ?? 'deep-reasoner';
+  const spec = { task, role, harness_kind: 'codex' };
+  const approved = seedReviewAdmissionFixture(root, options.authorityHome, { repositoryId: options.repositoryId, issueId: options.issueId });
+  const selected = engineerId === undefined ? undefined : loadEngineerProfile(root, engineerId);
+  const profile = selected === undefined ? undefined : { engineer_id: selected.profile.engineer_id, engineer_contract_revision: selected.engineer_contract_revision };
+  const claim = options.claim ?? { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-runtime', revision: `sha256:${'c'.repeat(64)}` };
+  async function bind(role = spec.role) {
+    return startOfflineTaskAgent(root, { ...spec, role, endpoint: { session: 'fixture', home: '/tmp' },
+      parent_pane: `fixture-parent-${role}`, args: [], max_requests: 3 },
+    { source: approved.source, claim, engineer_profile: profile });
+  }
+  const binding = await bind();
+  const source = { authority: { source: approved.source, claim, engineer_profile: profile }, session: { task, role } };
+  const admission = binding.task_admission!;
+  return { source, binding, admission, approved, dir: taskSessionDirectory(root, task, role),
+    async rebind(nextRole: string) {
+      const replacement = await bind(nextRole);
+      return { binding: replacement, source: { ...source, session: { task, role: nextRole } } };
+    },
+    revoke() {
+      const current = readActiveReviewAdmission({ ...approved.source, expectedGoal: approved.admission.goal });
+      revokeActiveReviewAdmission({ repoRoot: root, authorityHome: options.authorityHome,
+        repository_id: approved.admission.repository_id, issue_id: approved.admission.issue_id,
+        campaign_id: approved.admission.campaign_id, expectedRevision: current.revision, expectedGrantSha256: current.grant_sha256 });
+    } };
+}
+
+export async function bindEngineerRuntimeSession(root: string, engineerId: string, options: EngineerRuntimeFixtureOptions) {
+  const bound = await bindTaskRuntimeFixture(root, options, engineerId);
+  return { ...bound, endpoint: observeAgentRuntimeEndpoint(root, bound.source) };
+}
+
+export async function seedEngineerTaskMessage(repoRoot: string, engineerId: string, messageId: string, body: string, options: EngineerRuntimeFixtureOptions) {
+  const bound = await bindEngineerRuntimeSession(repoRoot, engineerId, options);
+  const { admission, source } = bound;
+  const event = buildTaskMessageEvent({ message_id: messageId, task_id: source.session.task,
+    task_identity: { repository_id: admission.identity.repository_id, issue_id: admission.identity.issue_id, campaign_id: admission.identity.campaign_id },
+    admission_sha256: admission.approval.admission_sha256, scope: 'claim', target_claim: admission.identity.claim,
+    sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body,
+    created_at: '2026-08-30T10:01:00.000Z', in_reply_to: null });
+  sendTaskMessage({ repo_root: repoRoot, source, event });
+  return { ...bound, event, message_kind: 'task_message' as const, task_id: event.task_id,
+    message_id: messageId, expected_admission_sha256: event.admission_sha256 };
 }

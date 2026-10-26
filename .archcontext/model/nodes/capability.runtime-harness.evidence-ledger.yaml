@@ -11,7 +11,7 @@ responsibilities:
   - Publish validated checkpoints atomically and resolve them only through the last-published marker.
   - Import attested receipts only through the closed trust mapping.
   - Render handoff and resume views from validated checkpoints and live context without review or notes directory lookups.
-  - Execute contract verification plans and record execution facts until the verification-plan split after arch-context#296.
+  - Execute the Verification Plan of the current review admission and catalog evals, and record execution facts until the verification-plan split after arch-context#296.
 source:
   include:
     - "src/core/evidence/**"

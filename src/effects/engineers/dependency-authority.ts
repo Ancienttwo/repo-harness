@@ -1,13 +1,18 @@
+import { validateProviderIntegrationDependencyReference, validateModuleAcceptanceReference } from '../../core/engineers/scheduling';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { readExternalSourcesPolicy, requireManualGithubPolicy } from '../github/policy';
+import { fetchGithubIssues } from '../github/issues';
+import { currentReadonlyObservation, rejectObservation } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.
  *
- * Every `WorkPackageDependencyState` is answered by the one authority that
- * already owns that verdict: the canonical Sprint row, the exact-subject
- * AcceptanceReceipt, the immutable Publication receipt plus its integration
- * observation, and the ME-4C product acceptance projection. This module reads
+ * Every `ProviderDependencyState` is answered by the one authority that
+ * already owns that verdict: the current GitHub issue, the exact-subject
+ * AcceptanceReceipt, exact provider merge evidence and local commit/tree proof,
+ * and the selected ME-4C product acceptance projection. This module reads
  * those authorities; it never records, completes, publishes or accepts, and it
  * never reconstructs a verdict from prose, filenames, branch names, Git
- * topology or provider state.
+ * names or cached publication state.
  *
  * Status contract:
  * - `satisfied`            the authority was readable and proves the state;
@@ -17,47 +22,36 @@
  *
  * There is deliberately no "unknown means ready" path.
  */
-import { realpathSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 
 import {
   canonicalEngineerJson,
   engineerSha256,
 } from '../../core/engineers/profile-binding';
 import type {
-  ProjectedWorkGraphV1,
-  ProjectedWorkPackageV1,
+  ProjectedProviderWorkGraph,
+  ProjectedProviderWorkPackage,
   WorkPackageDependencyAuthorityRefV1,
-  WorkPackageDependencyObservationV1,
-  WorkPackageDependencyState,
-  WorkPackageDependencyV1,
+  ProviderDependencyObservation,
+  ProviderDependencyState,
+  ProviderWorkPackageDependency,
 } from '../../core/engineers/scheduling';
+import { assertCompletePassingMatrix } from '../../core/integration/product-acceptance';
 import type {
-  IntegrationContractV1,
-  IntegrationEnvelopeV1,
-  ProductAcceptanceProjectionV1,
+  IntegrationContractV2,
+  IntegrationEnvelopeV2,
+  SelectedPullRequestV2,
 } from '../../core/integration/product-acceptance';
-import type { PublicationIntegrationObservationV1 } from '../../core/publication/publication-lifecycle';
-import {
-  publicationReceiptDigest,
-  publicationSha256,
-  type PublicationReceiptV3,
-} from '../../core/publication/publication-receipt';
-import {
-  listProductAcceptanceProjections,
-  readIntegrationContract,
-  readIntegrationEnvelope,
-} from '../integration/product-acceptance';
+import { publicationSha256 } from '../../core/publication/publication-receipt';
+import { readAcceptanceMatrix, readProductAcceptanceProjection, readIntegrationContract, readIntegrationEnvelope,
+  observeSelectedPullRequest, observeSelectedPullRequestState } from '../integration/product-acceptance';
+import { gitExecFileSync } from '../git/runner';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { readPublicationIntegrationObservations } from '../publication/publication-lifecycle';
-import { readPublicationReceiptCache } from '../publication/publication-receipt';
-import { readCanonicalTargetRef } from '../state/collect-board-inputs';
-import { readLease, type LeaseRead } from '../state/coordination-lease-store';
-import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-identity';
+import { readCanonicalTargetRef } from '../state/canonical-target';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
-  authorityFingerprint,
-  contractCarriesArchiveProjection,
+  userWaiverGrantPath, readAcceptanceReceiptRecord, readUserWaiverGrantFile, validateAcceptanceReceiptAgainstPolicy,
   readAcceptanceVerificationObservation,
   type AcceptanceDisposition,
   type AcceptanceValidatorRuleId,
@@ -84,34 +78,33 @@ export interface DependencyAuthorityResolutionV1 {
 export interface DependencyAuthorityRepositoryRead {
   readonly repo: RepoHarnessRegisteredRepo;
   readonly commit: string | null;
-  readonly graph: ProjectedWorkGraphV1 | null;
+  readonly graph: ProjectedProviderWorkGraph | null;
 }
 
 export interface DependencyAuthorityReaders {
+  readonly readIssuePolicy: typeof readExternalSourcesPolicy;
+  readonly observeProviderIssues: (repoRoot: string) => ReturnType<typeof fetchGithubIssues>;
+  readonly observeReviewAdmission: typeof observeActiveReviewAdmission;
   readonly readCanonicalTargetRef: (repoRoot: string) => string;
   readonly readAcceptanceObservation: (
     repoRoot: string,
     authorityHome: string,
-    contractFile: string,
-    contractSha256: string,
+    campaignSha256: string,
+    admissionSha256: string,
   ) => AcceptanceVerificationObservationV1 | null;
-  readonly readLease: (repoRoot: string, taskId: string) => LeaseRead;
-  readonly readIntegrationObservations: (
-    repoRoot: string,
-    taskId: string,
-    taskRevision: string,
-  ) => readonly PublicationIntegrationObservationV1[];
-  readonly readPublicationReceipt: (repoRoot: string, publicationId: string) => PublicationReceiptV3 | null;
-  readonly readProductAcceptanceProjections: (repoRoot: string) => readonly ProductAcceptanceProjectionV1[];
-  readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV1;
-  readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV1;
+  readonly readAcceptanceMatrix: typeof readAcceptanceMatrix;
+  readonly observeIntegrationState: typeof observeSelectedPullRequestState;
+  readonly observeIntegration: typeof observeSelectedPullRequest;
+  readonly readProductAcceptanceProjection: typeof readProductAcceptanceProjection;
+  readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV2;
+  readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV2;
   readonly repositoryIdentity: (repoRoot: string) => string;
   readonly resolveAuthorityHome: () => string;
 }
 
 export interface DependencyAuthorityInput {
-  readonly dependency: WorkPackageDependencyV1;
-  readonly target: ProjectedWorkPackageV1;
+  readonly dependency: ProviderWorkPackageDependency;
+  readonly target: ProjectedProviderWorkPackage;
   readonly reads: readonly DependencyAuthorityRepositoryRead[];
   readonly registry: RepoHarnessRegistrySnapshot;
   /**
@@ -131,12 +124,27 @@ function defaultAuthorityHome(): string {
 
 export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders {
   const value: DependencyAuthorityReaders = {
+    readIssuePolicy: readExternalSourcesPolicy,
+    observeProviderIssues: repoRoot => {
+      if (currentReadonlyObservation()) rejectObservation('Live provider dependency requires an external observation');
+      return fetchGithubIssues(requireManualGithubPolicy(readExternalSourcesPolicy(repoRoot)));
+    },
+    observeReviewAdmission: input => {
+      if (currentReadonlyObservation()) rejectObservation('Live dependency admission requires an external observation');
+      return observeActiveReviewAdmission(input);
+    },
     readCanonicalTargetRef,
     readAcceptanceObservation: readAcceptanceVerificationObservation,
-    readLease,
-    readIntegrationObservations: readPublicationIntegrationObservations,
-    readPublicationReceipt: (repoRoot, publicationId) => readPublicationReceiptCache(repoRoot, publicationId),
-    readProductAcceptanceProjections: (repoRoot) => listProductAcceptanceProjections(repoRoot),
+    readAcceptanceMatrix,
+    observeIntegrationState: (...args) => {
+      if (currentReadonlyObservation()) rejectObservation('Live provider integration requires an external observation');
+      return observeSelectedPullRequestState(...args);
+    },
+    observeIntegration: (...args) => {
+      if (currentReadonlyObservation()) rejectObservation('Live provider integration requires an external observation');
+      return observeSelectedPullRequest(...args);
+    },
+    readProductAcceptanceProjection,
     readIntegrationEnvelope: (repoRoot, digest) => readIntegrationEnvelope(repoRoot, digest),
     readIntegrationContract: (repoRoot, digest) => readIntegrationContract(repoRoot, digest),
     repositoryIdentity: (repoRoot) => publicationSha256(realpathSync(resolveGitCommonDirectory(repoRoot))),
@@ -198,12 +206,11 @@ function authorityRevision(
     canonical_commit: commit,
     target: {
       repository_id: input.target.repository_id,
-      sprint_path: input.target.sprint_path,
+
       work_package_id: input.target.work_package_id,
       work_package_revision: input.target.work_package_revision,
-      task_id: input.target.task_id,
-      task_revision: input.target.task_revision,
-      task_status: input.target.task_status,
+      task: input.target.task,
+      issue: input.target.issue,
     },
     status: result.status,
     evidence_refs: result.evidence_refs,
@@ -260,17 +267,17 @@ function subjectBytesAtCommit(
   return bytes;
 }
 
-function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
-  const satisfied = COMPLETED_ROW_STATUS_PATTERN.test(input.target.task_status);
-  return verdict(satisfied ? 'satisfied' : 'unsatisfied', [
-    evidence(
-      `canonical-task:${input.target.repository_id}:${input.target.task_id}`,
-      engineerSha256(canonicalEngineerJson({
-        task_revision: input.target.task_revision,
-        task_status: input.target.task_status,
-      })),
-    ),
-  ]);
+function providerClosed(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
+  try {
+    const before = reader.observeProviderIssues(read.repo.path), after = reader.observeProviderIssues(read.repo.path);
+    if (canonicalEngineerJson(before) !== canonicalEngineerJson(after)
+      || after.repository.provider_repository_id !== input.target.task.provider_repository_id) return UNAVAILABLE;
+    const issues = after.issues.filter(issue => issue.provider_issue_id === input.target.task.issue_id);
+    if (issues.length !== 1) return UNAVAILABLE;
+    return verdict(issues[0]!.state === 'closed' ? 'satisfied' : 'unsatisfied', [evidence(
+      `github-issue:${input.target.task.provider_repository_id}:${input.target.task.issue_id}`, engineerSha256(canonicalEngineerJson(issues[0])),
+    )]);
+  } catch { return UNAVAILABLE; }
 }
 
 /**
@@ -281,7 +288,7 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
  *   `assertRecordedReceiptPolicy` before `writeAcceptanceWithArchiveProjection`,
  *   so an observation existing at all implies the rule held.
  * - `subject_key`: bound by the observation's subject key, which this module
- *   derives from the edge's declared contract bytes at the canonical commit.
+ *   derives from the edge's committed selector and fresh protected approval.
  * - `resolver`: this module checks the observation field itself.
  *
  * A rule with no mechanism is a bug, not a gap: `disposition_not_reject` is
@@ -292,12 +299,12 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   receipt_protocol_kind: 'record_time',
   // The observation reader requires repository_root === realpath(repo path).
   repository_root: 'resolver',
-  contract_file: 'subject_key',
-  contract_fingerprint: 'subject_key',
+  campaign_identity: 'subject_key',
+  admission_binding: 'resolver',
   reviewer_policy: 'record_time',
-  // The observation reader rejects an unsafe goal_file.
-  goal_file_shape: 'resolver',
-  // The resolver re-fingerprints the goal at the target's canonical commit.
+  // The observation reader validates the protected grant digest.
+  grant_digest_shape: 'resolver',
+  // The resolver compares the fresh provider goal against protected approval.
   goal_fingerprint: 'resolver',
   // The record path's own readRegular only rejects escaping paths; this rule
   // is what rejects a `-`-prefixed or backslash verification file.
@@ -317,14 +324,14 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   // legitimate, so only the passing-disposition whitelist below keeps a
   // recorded rejection out of scheduling.
   disposition_not_reject: 'resolver',
-  waiver_grant_present: 'record_time',
-  waiver_policy_allowed: 'record_time',
-  waiver_grant_repository: 'record_time',
-  waiver_grant_contract: 'record_time',
-  waiver_grant_goal: 'record_time',
-  waiver_grant_owner: 'record_time',
-  waiver_grant_fingerprint: 'record_time',
-  waiver_binding_symmetry: 'record_time',
+  waiver_grant_present: 'resolver',
+  waiver_policy_allowed: 'resolver',
+  waiver_grant_repository: 'resolver',
+  waiver_grant_admission: 'resolver',
+  waiver_grant_goal: 'resolver',
+  waiver_grant_owner: 'resolver',
+  waiver_grant_fingerprint: 'resolver',
+  waiver_binding_symmetry: 'resolver',
   disposition_policy: 'record_time',
   // A thrown rule propagates as a fail() from assertRecordedReceiptPolicy, so
   // no receipt and no observation are written.
@@ -335,13 +342,22 @@ const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object
 
 /**
  * The module acceptance verdict is the acceptance authority's own record-time
- * observation, read the same way `publicationIntegrated` reads the publication
- * authority's integration observation and `productAccepted` reads the ME-4C
- * projection. Nothing about acceptance is re-derived here: the live review
- * subject, the verification evidence fingerprint and the archive-projection
- * seal were all proven by `verifyAcceptance` at record time and frozen into the
- * observation by the authority that proved them.
+ * observation. Provider integrations use live provider proof; products read
+ * the exact selected ME-4C projection. The acceptance authority proves the review subject and execution
+ * evidence at record time. This reader additionally authenticates the pinned
+ * approval against the current issue goal before using that observation.
+ * Waivers additionally require the current local grant and its live expiry.
  */
+function observeSelectedAdmission(reader: DependencyAuthorityReaders, repoRoot: string, authorityHome: string,
+  selector: ReturnType<typeof validateModuleAcceptanceReference>) {
+  const active = reader.observeReviewAdmission({ repoRoot, authorityHome,
+    repository_id: selector.provider_repository_id, issue_id: selector.issue_id, campaign_id: selector.campaign_id,
+    expectedGrantSha256: selector.grant_sha256, expectedPolicySha256: selector.policy_sha256, expectedActor: selector.actor_id,
+    issuePolicy: reader.readIssuePolicy(repoRoot) });
+  if (active.admission.admission_sha256 !== selector.admission_sha256 || active.grant_sha256 !== selector.grant_sha256) throw new Error('review approval changed');
+  return active;
+}
+
 function moduleAccepted(
   input: DependencyAuthorityInput,
   read: DependencyAuthorityRepositoryRead,
@@ -352,192 +368,178 @@ function moduleAccepted(
   const subject = subjectBytesAtCommit(input, read, reference);
   if (subject === null) return UNAVAILABLE;
 
-  // An archive envelope normalizes away inside the acceptance fingerprint, so
-  // archive-projected subject bytes could otherwise borrow an accepted
-  // contract's digest. A dependency edge cannot name an archived contract.
-  let archived: boolean;
-  let subjectFingerprint: string;
-  try {
-    archived = contractCarriesArchiveProjection(subject);
-    subjectFingerprint = authorityFingerprint(subject);
-  } catch {
-    return UNAVAILABLE;
-  }
-  if (archived) return UNAVAILABLE;
-
-  let authorityHome: string;
+  const selected = evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision);
+  let selector: ReturnType<typeof validateModuleAcceptanceReference>;
+  let active: ReturnType<typeof observeActiveReviewAdmission>;
+  let observation: AcceptanceVerificationObservationV1 | null;
   let targetRef: string;
+  let authorityHome: string;
   try {
+    selector = validateModuleAcceptanceReference(JSON.parse(subject));
     authorityHome = reader.resolveAuthorityHome();
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
+    // Repository path and policy location come only from the adopted registry.
+    // The committed selector cannot supply a filesystem or provider endpoint.
+    // A readable selector for another task does not cover this target.
+    if (selector.provider_repository_id !== input.target.task.provider_repository_id || selector.issue_id !== input.target.task.issue_id) return verdict('unsatisfied', [selected]);
+    active = observeSelectedAdmission(reader, read.repo.path, authorityHome, selector);
+    observation = reader.readAcceptanceObservation(read.repo.path, authorityHome,
+      active.admission.campaign_sha256, active.admission.admission_sha256);
   } catch {
     return UNAVAILABLE;
   }
-
-  let observation: AcceptanceVerificationObservationV1 | null;
-  try {
-    observation = reader.readAcceptanceObservation(
-      read.repo.path,
-      authorityHome,
-      reference.subject_ref,
-      subjectFingerprint,
-    );
-  } catch {
-    return UNAVAILABLE;
-  }
-  // Absent is not negative: the authority has published no verdict for this
-  // exact subject, which is an unavailable authority, never "not accepted".
-  if (observation === null) return UNAVAILABLE;
+  const admitted = [
+    selected,
+    evidence(`acceptance-goal:${selector.provider_repository_id}:${selector.issue_id}`, active.admission.goal.revision),
+    evidence(`acceptance-grant:${active.grant_sha256}`, active.grant_sha256),
+  ];
+  // The admission is current but its authority has recorded no acceptance yet.
+  if (observation === null) return verdict('unsatisfied', admitted);
   if (observation.archive_projection_sha256 !== null) return UNAVAILABLE;
+  if (observation.disposition === 'user_waiver') {
+    try {
+      const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
+      // A local protected authority file, never a new provider read.
+      const stat = lstatSync(grantPath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+      // The observation pins its receipt by digest; a later review replaces only the latest file.
+      const { receipt } = readAcceptanceReceiptRecord(read.repo.path, authorityHome, observation.acceptance_receipt_sha256);
+      const grant = readUserWaiverGrantFile(grantPath);
+      if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
+        admission: active.admission, grantSha256: active.grant_sha256, waiverGrant: grant }).ok) return UNAVAILABLE;
+    } catch { return UNAVAILABLE; }
+  }
 
   const refs = [
+    ...admitted,
     evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
-    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
     evidence(`acceptance-disposition:${observation.disposition}`, engineerSha256(observation.disposition)),
     evidence(`acceptance-target:${observation.target_ref}`, engineerSha256(observation.target_revision)),
   ];
-  // A whitelist, not a `reject` test: a disposition this resolver does not
-  // know is a readable negative, so a future disposition fails closed until
-  // someone decides what it means for scheduling.
-  if (!PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition)) return verdict('unsatisfied', refs);
-  if (observation.target_ref !== targetRef) return verdict('unsatisfied', refs);
-
-  let goal: string | null;
-  try {
-    goal = read.commit === null ? null : input.readFileAtCommit(read.repo.path, read.commit, observation.goal_file);
-  } catch {
-    return UNAVAILABLE;
-  }
-  if (goal === null) return UNAVAILABLE;
-  refs.push(evidence(`acceptance-goal:${observation.goal_file}`, engineerSha256(goal)));
-
-  let goalFingerprint: string;
-  try {
-    goalFingerprint = authorityFingerprint(goal);
-  } catch {
-    return UNAVAILABLE;
-  }
-  return verdict(goalFingerprint === observation.goal_sha256 ? 'satisfied' : 'unsatisfied', refs);
+  // A readable observation with stale bindings is negative. Missing or revoked
+  // protected authority is unavailable, even if an old observation remains.
+  const matches = observation.campaign_sha256 === active.admission.campaign_sha256
+    && observation.admission_sha256 === active.admission.admission_sha256
+    && observation.grant_sha256 === active.grant_sha256
+    && observation.goal_sha256 === active.admission.goal.revision
+    && observation.target_ref === targetRef;
+  return verdict(matches && PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition) ? 'satisfied' : 'unsatisfied', refs);
 }
 
-function publicationIntegrated(
-  input: DependencyAuthorityInput,
-  read: DependencyAuthorityRepositoryRead,
-  reader: DependencyAuthorityReaders,
-): AdapterVerdict {
-  if (input.dependency.acceptance_authority !== null) return UNAVAILABLE;
-
-  let repositoryIdentity: string;
-  let lease: LeaseRead;
-  let observations: readonly PublicationIntegrationObservationV1[];
-  try {
-    repositoryIdentity = reader.repositoryIdentity(read.repo.path);
-    lease = reader.readLease(read.repo.path, input.target.task_id);
-    observations = reader.readIntegrationObservations(read.repo.path, input.target.task_id, input.target.task_revision);
-  } catch {
-    return UNAVAILABLE;
-  }
-  if (lease.classification === 'unknown') return UNAVAILABLE;
-
-  const leaseEvidence = evidence(
-    `publication-lease:${input.target.task_id}`,
-    engineerSha256(canonicalEngineerJson({
-      classification: lease.classification,
-      publication_id: lease.record !== null && 'current_publication' in lease.record && lease.record.current_publication !== null
-        ? lease.record.current_publication.publication_id
-        : null,
-    })),
-  );
-
-  // A live reviewing publication is a readable negative: the publication
-  // exists and is not integrated yet. Integration is proven only by the
-  // immutable observation this repository's publication authority persisted.
-  for (const observation of observations) {
-    let receipt: PublicationReceiptV3 | null;
-    try {
-      receipt = reader.readPublicationReceipt(read.repo.path, observation.publication_id);
-    } catch {
-      return UNAVAILABLE;
-    }
-    if (receipt === null) continue;
-    if (receipt.repo_id !== repositoryIdentity
-      || receipt.task_id !== input.target.task_id
-      || receipt.task_revision !== input.target.task_revision
-      || receipt.publication_id !== observation.publication_id
-      || receipt.head_sha !== observation.head_sha
-      || publicationReceiptDigest(receipt) !== observation.receipt_sha256) continue;
-    return verdict('satisfied', [
-      leaseEvidence,
-      evidence(`publication-integration-observation:${observation.observation_id}`, observation.observation_id),
-      evidence(`publication-receipt:${observation.publication_id}`, observation.receipt_sha256),
-    ]);
-  }
-  return verdict('unsatisfied', [leaseEvidence]);
-}
-
-function productAccepted(
-  input: DependencyAuthorityInput,
-  read: DependencyAuthorityRepositoryRead,
-  reader: DependencyAuthorityReaders,
-): AdapterVerdict {
+function integrationSelection(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead) {
   const reference = input.dependency.acceptance_authority;
-  if (reference === null || reference.authority_kind !== 'product_acceptance') return UNAVAILABLE;
-  if (subjectBytesAtCommit(input, read, reference) === null) return UNAVAILABLE;
+  if (!reference) throw new Error('explicit integration selector is required');
+  const bytes = subjectBytesAtCommit(input, read, reference);
+  if (bytes === null) throw new Error('committed integration selector unavailable');
+  return { reference, selection: validateProviderIntegrationDependencyReference(JSON.parse(bytes)) };
+}
 
-  let repositoryIdentity: string;
-  let projections: readonly ProductAcceptanceProjectionV1[];
-  try {
-    repositoryIdentity = reader.repositoryIdentity(read.repo.path);
-    projections = reader.readProductAcceptanceProjections(read.repo.path);
-  } catch {
-    return UNAVAILABLE;
+type IntegrationObservation =
+  | { readonly kind: 'unmet'; readonly verdict: AdapterVerdict }
+  | {
+    readonly kind: 'integrated';
+    readonly selection: ReturnType<typeof validateProviderIntegrationDependencyReference>;
+    readonly observed: readonly SelectedPullRequestV2[];
+    readonly refs: readonly DependencyAuthorityResolutionV1['evidence_refs'][number][];
+  };
+
+/**
+ * Reads the committed selection, then the provider state of every selected
+ * PR. A selection for another task and a selected PR that is still unmerged at
+ * its exact head are readable negatives. An unreadable, malformed or moved
+ * authority throws, and the adapters map that to `authority_unavailable`.
+ */
+function observeIntegrationSelection(
+  input: DependencyAuthorityInput,
+  read: DependencyAuthorityRepositoryRead,
+  reader: DependencyAuthorityReaders,
+  product: boolean,
+): IntegrationObservation {
+  const { reference, selection } = integrationSelection(input, read);
+  if ((selection.product !== null) !== product) throw new Error('integration selector kind does not match the dependency state');
+  const selected = evidence(`integration-selection:${reference.subject_ref}`, reference.subject_revision);
+  if (selection.provider_repository_id !== input.target.task.provider_repository_id || selection.issue_id !== input.target.task.issue_id) {
+    return { kind: 'unmet', verdict: verdict('unsatisfied', [selected]) };
   }
+  const environment = { repo_root: read.repo.path };
+  const states = () => selection.required_pull_requests.map(pr => ({
+    repository: pr.repository, pr_number: pr.pr_number, state: reader.observeIntegrationState(environment, pr),
+  }));
+  const pending = states();
+  if (canonicalEngineerJson(pending) !== canonicalEngineerJson(states())) throw new Error('provider PR state moved');
+  if (pending.some(entry => entry.state !== 'MERGED')) {
+    return { kind: 'unmet', verdict: verdict('unsatisfied', [selected,
+      evidence(`provider-pull-requests:${reference.subject_ref}`, engineerSha256(canonicalEngineerJson(pending)))]) };
+  }
+  const tree = gitExecFileSync(['rev-parse', `${selection.final_head_sha}^{tree}`], { cwd: read.repo.path, encoding: 'utf8' }).trim();
+  if (tree !== selection.final_tree_sha) throw new Error('integration candidate tree changed');
+  const observe = () => selection.required_pull_requests.map(pr => reader.observeIntegration(
+    environment, read.repo.path, 'git', pr, selection.final_head_sha));
+  const observed = observe();
+  if (canonicalEngineerJson(observed) !== canonicalEngineerJson(observe())) throw new Error('provider integration moved');
+  return { kind: 'integrated', selection, observed, refs: [selected,
+    evidence(`provider-integration:${selection.final_head_sha}`, engineerSha256(canonicalEngineerJson({ selection, observed })))] };
+}
 
-  const requirement = evidence(`product-requirement:${reference.subject_ref}`, reference.subject_revision);
-  for (const projection of projections) {
-    let envelope: IntegrationEnvelopeV1;
-    let contract: IntegrationContractV1;
-    try {
-      envelope = reader.readIntegrationEnvelope(read.repo.path, projection.envelope_sha256);
-      contract = reader.readIntegrationContract(read.repo.path, envelope.integration_contract_sha256);
-    } catch {
-      return UNAVAILABLE;
+function publicationIntegrated(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
+  if (input.dependency.acceptance_authority?.authority_kind !== 'provider_integration') return UNAVAILABLE;
+  try {
+    const integration = observeIntegrationSelection(input, read, reader, false);
+    return integration.kind === 'unmet' ? integration.verdict : verdict('satisfied', integration.refs);
+  } catch { return UNAVAILABLE; }
+}
+
+function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
+  if (input.dependency.acceptance_authority?.authority_kind !== 'product_acceptance') return UNAVAILABLE;
+  try {
+    const integration = observeIntegrationSelection(input, read, reader, true);
+    if (integration.kind === 'unmet') return integration.verdict;
+    const { selection, observed, refs } = integration;
+    const product = selection.product!;
+    const prd = input.readFileAtCommit(read.repo.path, read.commit!, product.approved_prd_ref);
+    if (prd === null || engineerSha256(prd) !== product.approved_prd_sha256) return UNAVAILABLE;
+    // The selector can only name a digest that was already persisted, so an
+    // absent projection is lost local evidence and throws to unavailable.
+    const projection = reader.readProductAcceptanceProjection(read.repo.path, product.projection_sha256);
+    const envelope = reader.readIntegrationEnvelope(read.repo.path, projection.envelope_sha256);
+    const contract = reader.readIntegrationContract(read.repo.path, envelope.integration_contract_sha256);
+    const matrix = reader.readAcceptanceMatrix(read.repo.path, projection.matrix_sha256);
+    assertCompletePassingMatrix(contract, envelope, matrix);
+    if (contract.repository_id !== reader.repositoryIdentity(read.repo.path)) return UNAVAILABLE;
+    const projected = [...refs, evidence(`product-acceptance-projection:${projection.projection_sha256}`, projection.projection_sha256)];
+    const sort = (values: readonly { provider_repository_id: string; pr_number: number }[]) => [...values].sort((a,b) => `${a.provider_repository_id}:${a.pr_number}`.localeCompare(`${b.provider_repository_id}:${b.pr_number}`));
+    // A valid projection for another requirement, PR set or candidate is readable and does not prove this selection.
+    if (contract.requirement.approved_prd_ref !== product.approved_prd_ref || contract.requirement.approved_prd_sha256 !== product.approved_prd_sha256
+      || canonicalEngineerJson(sort(contract.required_pull_requests)) !== canonicalEngineerJson(sort(selection.required_pull_requests))
+      || envelope.final_head_sha !== selection.final_head_sha || envelope.final_tree_sha !== selection.final_tree_sha
+      || canonicalEngineerJson(sort(envelope.selected_pull_requests)) !== canonicalEngineerJson(sort(observed))) return verdict('unsatisfied', projected);
+    const authorityHome = reader.resolveAuthorityHome();
+    if (product.review_authority.provider_repository_id !== input.target.task.provider_repository_id || product.review_authority.issue_id !== input.target.task.issue_id) return UNAVAILABLE;
+    const active = observeSelectedAdmission(reader, read.repo.path, authorityHome, product.review_authority);
+    // The projection pins its receipt by digest; a later review replaces only the latest file.
+    const { receipt } = readAcceptanceReceiptRecord(read.repo.path, authorityHome, projection.acceptance_receipt_sha256);
+    if (receipt.subject_sha256 !== projection.acceptance_subject_sha256
+      || receipt.target_revision !== projection.acceptance_target_revision || receipt.target_revision !== envelope.base_sha
+      || receipt.disposition !== projection.acceptance_disposition) return UNAVAILABLE;
+    let waiverGrant = null;
+    if (receipt.disposition === 'user_waiver') {
+      const path = userWaiverGrantPath(read.repo.path, authorityHome);
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+      waiverGrant = readUserWaiverGrantFile(path);
     }
-    if (contract.repository_id !== repositoryIdentity) continue;
-    if (contract.requirement.approved_prd_ref !== reference.subject_ref
-      || contract.requirement.approved_prd_sha256 !== reference.subject_revision) continue;
-    const selected = envelope.selected_publications.find((entry) => entry.work_package_id === input.target.task_id
-      && entry.work_package_revision === input.target.task_revision) ?? null;
-    if (selected === null) continue;
-    let receipt: PublicationReceiptV3 | null;
-    try {
-      receipt = reader.readPublicationReceipt(read.repo.path, selected.publication_id);
-    } catch {
-      return UNAVAILABLE;
-    }
-    if (receipt === null
-      || receipt.repo_id !== repositoryIdentity
-      || receipt.task_id !== input.target.task_id
-      || receipt.task_revision !== input.target.task_revision
-      || receipt.head_sha !== selected.head_sha
-      || receipt.tree_sha !== selected.tree_sha
-      || publicationReceiptDigest(receipt) !== selected.receipt_sha256) continue;
+    if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
+      admission: active.admission, grantSha256: active.grant_sha256, waiverGrant }).ok) return UNAVAILABLE;
     return verdict('satisfied', [
-      requirement,
-      evidence(`product-acceptance-projection:${projection.projection_sha256}`, projection.projection_sha256),
+      ...projected,
+      evidence(`product-requirement:${product.approved_prd_ref}`, product.approved_prd_sha256),
       evidence(`integration-envelope:${envelope.envelope_sha256}`, envelope.envelope_sha256),
       evidence(`integration-contract:${contract.contract_sha256}`, contract.contract_sha256),
-      evidence(`publication-receipt:${selected.publication_id}`, selected.receipt_sha256),
+      evidence(`acceptance-receipt:${projection.acceptance_receipt_sha256}`, projection.acceptance_receipt_sha256),
     ]);
-  }
-  return verdict('unsatisfied', [
-    requirement,
-    evidence(
-      `product-acceptance-store:${repositoryIdentity}`,
-      engineerSha256(canonicalEngineerJson(projections.map((entry) => entry.projection_sha256))),
-    ),
-  ]);
+  } catch { return UNAVAILABLE; }
 }
+
 
 type DependencyTargetMismatch = 'repository_mismatch' | 'work_package_mismatch' | 'not_a_graph_member';
 
@@ -557,8 +559,7 @@ function pairingRefusal(input: DependencyAuthorityInput, reason: DependencyTarge
           repository_id: input.target.repository_id,
           work_package_id: input.target.work_package_id,
           work_package_revision: input.target.work_package_revision,
-          task_id: input.target.task_id,
-          task_revision: input.target.task_revision,
+          task: input.target.task,
         },
       })),
     )]),
@@ -568,7 +569,7 @@ function pairingRefusal(input: DependencyAuthorityInput, reason: DependencyTarge
 /**
  * The declared edge and the observed target arrive as two separate inputs, and
  * every adapter reads the target rather than the edge: `canonicalDone` decides
- * from `target.task_status` alone. This module is the closed authority for the
+ * from `target.issue.state` alone. This module is the closed authority for the
  * verdict and is injectable, so the pairing is proven here instead of being
  * trusted from the caller. An unpaired or stale target is
  * `authority_unavailable`, never a verdict about some other Work Package.
@@ -602,10 +603,10 @@ export function resolveDependencyAuthority(input: DependencyAuthorityInput): Dep
   if (read === null) return resolution(input, repo, UNAVAILABLE);
   const unpaired = targetPairingRefusal(input, read);
   if (unpaired !== null) return resolution(input, repo, unpaired);
-  const state: WorkPackageDependencyState = input.dependency.required_state;
+  const state: ProviderDependencyState = input.dependency.required_state;
   switch (state) {
-    case 'canonical_done':
-      return resolution(input, repo, input.dependency.acceptance_authority === null ? canonicalDone(input) : UNAVAILABLE);
+    case 'provider_closed':
+      return resolution(input, repo, input.dependency.acceptance_authority === null ? providerClosed(input, read, reader) : UNAVAILABLE);
     case 'module_accepted':
       return resolution(input, repo, moduleAccepted(input, read, reader));
     case 'publication_integrated':
@@ -618,7 +619,7 @@ export function resolveDependencyAuthority(input: DependencyAuthorityInput): Dep
 }
 
 /** The scheduling-facing projection: one observation per declared edge. */
-export function resolveDependencyObservation(input: DependencyAuthorityInput): WorkPackageDependencyObservationV1 {
+export function resolveDependencyObservation(input: DependencyAuthorityInput): ProviderDependencyObservation {
   const resolved = resolveDependencyAuthority(input);
   return Object.freeze({
     ...input.dependency,

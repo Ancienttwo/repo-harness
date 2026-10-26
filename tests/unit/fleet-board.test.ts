@@ -1,29 +1,31 @@
+import type { AdmittedTaskSession } from '../../src/core/sessions/task-sessions';
 import { describe, expect, test } from 'bun:test';
 
 import {
   classifyFleetBoardPlacement,
   projectFleetBoardSnapshot,
-  type FleetBoardCardInputV1,
+  type FleetBoardCardInputV2,
 } from '../../src/core/fleet/board';
 
 const taskId = 'a'.repeat(64);
 const taskRevision = 'b'.repeat(64);
 
-function card(overrides: Partial<FleetBoardCardInputV1> = {}): FleetBoardCardInputV1 {
+function session(): AdmittedTaskSession {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  return { admission_sha256: digest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex', selector: {
+    repository_id: 'repo-a', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker', claim_ref: 'claim',
+    claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: digest } };
+}
+function card(overrides: Partial<FleetBoardCardInputV2> = {}): FleetBoardCardInputV2 {
   return {
-    task_id: taskId,
-    task_revision: taskRevision,
+    provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${taskRevision}`,
+    execution_status: 'observed', execution: null, task_id: null,
     task_label: 'inspect one registered repository',
     task_index: 1,
-    task_state: 'pending',
-    lease_state: 'available',
-    claim_id: null,
-    generation: null,
-    current_publication: null,
     merge_readiness: null,
     execution_readiness: 'execution_ready', readiness_blockers: [],
-    feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+    feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
+    inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
     snapshot_consistency: 'stable',
     error: null,
     ...overrides,
@@ -38,7 +40,7 @@ function snapshot(observedAt: string, sequence: number) {
     repositories: [
       {
         repository_id: 'repo-z', repo_root: '/fixtures/z', access_mode: 'read_only', status: 'ok',
-        snapshot_consistency: 'stable', cards: [card({ task_id: 'z'.repeat(64) })], error: null,
+        snapshot_consistency: 'stable', cards: [card({ provider_issue_id: '2002' })], error: null,
       },
       {
         repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
@@ -48,7 +50,7 @@ function snapshot(observedAt: string, sequence: number) {
   });
 }
 
-describe('FleetBoardSnapshotV1 pure projection', () => {
+describe('FleetBoardSnapshotV2 pure projection', () => {
   test('normal missing-plan preparation preserves a healthy repository', () => {
     const result = projectFleetBoardSnapshot({ registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-09-22T00:00:00.000Z',
       repositories: [{ repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable',
@@ -60,8 +62,18 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
   test('maps only exact execution-ready pending work to available', () => {
     expect(classifyFleetBoardPlacement(card())).toEqual({ kind: 'column', column: 'available' });
     expect(classifyFleetBoardPlacement(card({ execution_readiness: 'planning_required', readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }))).toEqual({ kind: 'preparation' });
-    expect(classifyFleetBoardPlacement(card({ lease_state: 'bound', execution_readiness: 'planning_required', readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }))).toEqual({ kind: 'column', column: 'working' });
-    expect(classifyFleetBoardPlacement(card({ task_state: 'done', lease_state: 'reviewing' }))).toEqual({ kind: 'column', column: 'done' });
+    expect(classifyFleetBoardPlacement(card({ execution: session(), task_id: taskId, execution_readiness: 'planning_required', readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }))).toEqual({ kind: 'column', column: 'working' });
+    expect(classifyFleetBoardPlacement(card({ issue_state: 'closed' }))).toEqual({ kind: 'column', column: 'done' });
+  });
+
+  test('does not infer admission readiness from an observed issue without a session', () => {
+    expect(classifyFleetBoardPlacement(card({ execution_readiness: null, readiness_blockers: null })))
+      .toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
+    const blocked = card({ execution_readiness: 'unsupported', readiness_blockers: [
+      { code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: ['missing_label:ready'] },
+    ] });
+    expect(classifyFleetBoardPlacement(blocked)).toEqual({ kind: 'preparation' });
+    expect(classifyFleetBoardPlacement({ ...blocked, execution: session() })).toEqual({ kind: 'column', column: 'working' });
   });
 
   test('keeps runtime delivery facts out of Fleet column and execution readiness authority', () => {
@@ -84,16 +96,12 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(projected.inbox.delivery_state).toBe('reconciliation_required');
   });
 
-  test('uses review readiness only with the lease pointer and preserves attention precedence', () => {
+  test('uses explicit provider readiness without a legacy pointer and preserves attention precedence', () => {
     const reviewing = card({
-      lease_state: 'reviewing',
-      claim_id: '123e4567-e89b-42d3-a456-426614174001',
-      generation: 2,
-      current_publication: { publication_id: `sha256:${'c'.repeat(64)}`, head_sha: 'd'.repeat(40) },
       merge_readiness: {
-        protocol: 1,
-        kind: 'repo-harness-merge-readiness',
-        publication_id: `sha256:${'c'.repeat(64)}`,
+        protocol: 2,
+        kind: 'repo-harness-pull-request-readiness',
+        provider_repository_id: '1001', repository: 'example/repo', pr_number: 1,
         ready: false,
         expected_head_sha: 'd'.repeat(40),
         expected_base_sha: 'e'.repeat(40),
@@ -101,9 +109,11 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
         attention_owner: 'external',
         blockers: [{ code: 'checks_pending', attention_owner: 'external' }],
       },
-      feedback: { pending_count: 2, no_progress: true, repair_actions: [] },
-      inbox: { unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+      feedback: { observation_status: 'observed', pending_count: 2, no_progress: true, repair_actions: [] },
+      inbox: { observation_status: 'observed', unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
     });
+    expect(classifyFleetBoardPlacement({ ...reviewing, execution: null })).toEqual({ kind: 'column', column: 'in_review' });
+    expect(classifyFleetBoardPlacement({ ...reviewing, merge_readiness: null, execution_status: 'unavailable' })).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
     const result = projectFleetBoardSnapshot({
       registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
       repositories: [{
@@ -113,8 +123,8 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     });
     expect(result.repositories[0]?.cards[0]).toMatchObject({
       placement: { kind: 'column', column: 'in_review' }, attention_owner: 'user',
-      head_sha: 'd'.repeat(40), blocker_codes: ['checks_pending'],
-      feedback: { pending_count: 2, no_progress: true },
+      merge_readiness: { expected_head_sha: 'd'.repeat(40) }, blocker_codes: ['checks_pending'],
+      feedback: { observation_status: 'observed', pending_count: 2, no_progress: true },
     });
   });
 
@@ -153,7 +163,7 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
       repositories: [{
         repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
         snapshot_consistency: 'stable',
-        cards: [card({ execution_readiness: 'unsupported', readiness_blockers: [{ code: 'lease_unknown', attention_owner: 'user' }], snapshot_consistency: 'changed_during_read' })],
+        cards: [card({ execution_readiness: 'unsupported', readiness_blockers: [{ code: 'plan_ambiguous', attention_owner: 'user' }], snapshot_consistency: 'changed_during_read' })],
         error: null,
       }],
     });
@@ -162,7 +172,7 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(result.snapshot_consistency).toBe('degraded');
   });
 
-  test('carries the sprint row label and index as snapshot facts inside the digest basis', () => {
+  test('carries the provider issue label and index as snapshot facts inside the digest basis', () => {
     const labelled = snapshot('2026-08-23T00:00:00.000Z', 1);
     expect(labelled.repositories[0]?.cards[0]).toMatchObject({
       task_label: 'inspect one registered repository',
@@ -221,8 +231,8 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
         repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
         snapshot_consistency: 'stable',
         cards: [
-          card({ task_id: '1'.repeat(64) }),
-          card({ task_id: '2'.repeat(64), execution_readiness: 'planning_required', readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }),
+          card({ provider_issue_id: '2001' }),
+          card({ provider_issue_id: '2002', execution_readiness: 'planning_required', readiness_blockers: [{ code: 'plan_missing', attention_owner: 'agent' }] }),
         ],
         error: null,
       }],
@@ -241,9 +251,9 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
         repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
         snapshot_consistency: 'stable',
         cards: [
-          card({ task_id: '1'.repeat(64) }),
+          card({ provider_issue_id: '2001' }),
           card({
-            task_id: '2'.repeat(64),
+            provider_issue_id: '2002',
             error: { code: 'repo_inbox_unreadable', message: 'inbox stderr /private/agent-root token=super-secret' },
           }),
         ],
@@ -317,7 +327,7 @@ describe('exhaustive canonical placement', () => {
     { code: 'contract_missing', attention_owner: 'agent' },
     { code: 'contract_not_projectable', attention_owner: 'agent' },
   ] as const;
-  const project = (cards: readonly FleetBoardCardInputV1[]) => projectFleetBoardSnapshot({
+  const project = (cards: readonly FleetBoardCardInputV2[]) => projectFleetBoardSnapshot({
     registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-09-22T00:00:00.000Z',
     repositories: [{ repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable', cards, error: null }],
   });
@@ -329,7 +339,7 @@ describe('exhaustive canonical placement', () => {
       expect(result.counts).toMatchObject({ known_tasks: 1, preparation: 1, unclassified: 0 });
     }
   });
-  test.each(['plan_ambiguous', 'plan_source_mismatch', 'lease_unknown', 'mode_unsupported', 'canonical_unavailable'] as const)('does not turn %s or mixed blockers into preparation', code => {
+  test.each(['plan_ambiguous', 'plan_source_mismatch'] as const)('does not turn %s or mixed blockers into preparation', code => {
     expect(classifyFleetBoardPlacement(card({ execution_readiness: 'unsupported', readiness_blockers: [preparationBlockers[0], { code, attention_owner: 'user' }] }))).toEqual({ kind: 'unclassified', reason: 'unsupported_readiness' });
   });
   test('requires complete readiness authority and refuses contradictory ready states', () => {
@@ -340,23 +350,23 @@ describe('exhaustive canonical placement', () => {
     for (const execution_readiness of ['execution_ready', 'inline_ready'] as const) {
       expect(classifyFleetBoardPlacement(card({ execution_readiness, readiness_blockers: [preparationBlockers[0]] }))).toEqual({ kind: 'unclassified', reason: 'unsupported_readiness' });
     }
-    expect(classifyFleetBoardPlacement(card({ lease_state: 'unknown' }))).toEqual({ kind: 'unclassified', reason: 'state_unmapped' });
-    expect(classifyFleetBoardPlacement(card({ task_state: 'drifted', lease_state: 'bound' }))).toEqual({ kind: 'unclassified', reason: 'task_drifted' });
+    expect(classifyFleetBoardPlacement(card({ execution_status: 'unavailable' }))).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
+    expect(classifyFleetBoardPlacement(card({ issue_state: null, execution: session(), task_id: taskId }))).toEqual({ kind: 'unclassified', reason: 'canonical_missing' });
   });
   test('keeps claimed and completed work independent of reacquisition blockers', () => {
-    for (const lease_state of ['reserving', 'bound', 'completing'] as const) {
-      const result = project([card({ lease_state, execution_readiness: 'unsupported', readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }, { code: 'lease_unavailable', attention_owner: 'external' }] })]);
+    for (const role of ['worker', 'reviewer', 'planner'] as const) {
+      const result = project([card({ execution: { ...session(), selector: { ...session().selector, role } }, task_id: taskId, execution_readiness: 'unsupported', readiness_blockers: [{ code: 'repo_read_only', attention_owner: 'user' }, { code: 'plan_ambiguous', attention_owner: 'external' }] })]);
       expect(result.repositories[0]!.cards[0]).toMatchObject({ placement: { kind: 'column', column: 'working' }, attention_owner: 'none' });
     }
-    expect(classifyFleetBoardPlacement(card({ task_state: 'done', execution_readiness: null, readiness_blockers: null }))).toEqual({ kind: 'column', column: 'done' });
+    expect(classifyFleetBoardPlacement(card({ issue_state: 'closed', execution_readiness: null, readiness_blockers: null }))).toEqual({ kind: 'column', column: 'done' });
   });
   test('conserves known canonical tasks, counting orphan execution separately', () => {
     const result = project([
-      card({ task_id: '1'.repeat(64) }),
-      card({ task_id: '2'.repeat(64), execution_readiness: 'planning_required', readiness_blockers: [preparationBlockers[0]] }),
-      card({ task_id: '3'.repeat(64), execution_readiness: 'inline_ready' }),
-      card({ task_id: '4'.repeat(64), task_state: 'missing', task_label: null, task_index: null, lease_state: 'bound', claim_id: 'orphan', generation: 1 }),
-      card({ task_id: '5'.repeat(64), task_state: 'drifted' }),
+      card({ provider_issue_id: '2001' }),
+      card({ provider_issue_id: '2002', execution_readiness: 'planning_required', readiness_blockers: [preparationBlockers[0]] }),
+      card({ provider_issue_id: '2003', execution_readiness: 'inline_ready' }),
+      card({ provider_issue_id: '2004', issue_state: null, task_label: null, task_index: null, execution: { ...session(), selector: { ...session().selector, issue_id: '2004' } }, task_id: taskId }),
+      card({ provider_issue_id: '2005', execution_status: 'unavailable' }),
     ]);
     expect(result.counts).toEqual({ available: 1, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0, unclassified: 1, preparation: 1, alternate_workflow: 1, isolated_execution: 1, known_tasks: 4 });
     expect(result.repositories[0]!.cards[2]!.placement).toEqual({ kind: 'alternate_workflow', workflow: 'inline' });

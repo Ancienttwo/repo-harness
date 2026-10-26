@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { herdrCommand, herdrEnvironment, herdrResult, validateHerdrEndpoint } from '../src/effects/terminal/herdr';
 import { buildAgentRuntimeEffectIntent, buildAgentRuntimeHostAction } from '../src/core/engineers/agent-runtime-effect';
 import { startTaskAgent } from '../src/effects/terminal/task-session';
-import { executeHerdrCliAgentAction } from '../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
+import { executeHerdrCliAgentAction, herdrEndpointIdentity } from '../src/effects/engineers/agent-runtime-adapters/herdr-cli-agent';
 
 const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
 async function until(check: () => boolean) {
@@ -37,10 +37,12 @@ test('real herdr submits busy and multiline input, rejects blocked or exited pee
     expect(herdrCommand(endpoint, ['pane', 'report-agent', pane, '--source', 'fixture', '--agent', 'codex', '--state', 'working', '--seq', '1']).status).toBe(0);
     expect(herdrCommand(endpoint, ['agent', 'rename', pane, endpoint.agentName]).status).toBe(0);
     const digest = `sha256:${'a'.repeat(64)}`;
+    // Synthetic admission references exercise only the real transport adapter;
+    // admission authorization is covered by the public runtime-effect fixture.
     const action = buildAgentRuntimeHostAction(buildAgentRuntimeEffectIntent({
       idempotency_key: 'live-herdr-input', operation: 'notify_inbox', capability_sha256: digest, created_at: '2026-09-09T00:00:00.000Z',
-      message_ref: { kind: 'task_message', message_id: randomUUID(), message_event_digest: digest, task_id: 'a'.repeat(64), task_revision: 'b'.repeat(64), claim_id: '11111111-1111-4111-8111-111111111111', lease_generation: 1, delivery_attempt: 1 },
-      endpoint_fence: { engineer_id: 'engineer:capability.verification.evals-checks', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1, engineer_contract_revision: digest, adapter_kind: 'herdr-cli-agent', host_id: 'local', endpoint_id: 'fixture' },
+      message_ref: { kind: 'task_message', message_id: randomUUID(), message_event_digest: digest, task_id: 'a'.repeat(64), admission_sha256: digest, claim: { reference: 'live-transport-fixture', revision: digest }, delivery_attempt: 1 },
+      endpoint_fence: { engineer_id: 'engineer:capability.verification.evals-checks', task: 'a'.repeat(64), role: 'deep-reasoner', session_binding_sha256: digest, admission_sha256: digest, grant_sha256: digest, engineer_contract_revision: digest, adapter_kind: 'herdr-cli-agent', transport_endpoint_sha256: herdrEndpointIdentity(endpoint), endpoint_id: endpoint.agentName },
     }));
     expect(executeHerdrCliAgentAction(action, () => endpoint).outcome).toBe('accepted');
     await until(() => existsSync(received) && readFileSync(received, 'utf8').includes(action.control_ref));

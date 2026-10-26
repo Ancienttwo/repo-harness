@@ -1,3 +1,5 @@
+import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
+import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -12,10 +14,11 @@ import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/not
 import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';
 import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { createHash, randomUUID } from 'node:crypto';
-import { decodeOperatorTaskContext, parseTaskContextRequest, TASK_CONTEXT_FAILURES, type OperatorTaskContextRequest, type OperatorTaskContext } from '../../core/operator/task-context';
+import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
-import { decodeOperatorTaskDiff, isTaskDiffRequest, TASK_DIFF_FAILURES, type OperatorTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -40,7 +43,7 @@ import {
   type FleetBoardFatalErrorCode,
   type FleetBoardCollectorOptions,
 } from '../fleet/board';
-import type { FleetBoardSnapshotV1 } from '../../core/fleet/board';
+import type { FleetBoardSnapshotV2 } from '../../core/fleet/board';
 
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
@@ -67,9 +70,12 @@ export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
 export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
-export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/context$/u;
-export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/activity$/u;
-export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/diff$/u;
+export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/context$/u;
+export const OPERATOR_TASK_HISTORY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/context$/u;
+export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/activity$/u;
+export const OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/history\/activity$/u;
+export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
+export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
  * The repository id is matched loosely and resolved strictly, the same split the
  * repository snapshot route uses: the registry is the authority on which ids
@@ -106,8 +112,11 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
     pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source,
     write: false,
   }),
+  Object.freeze({ id: 'task_history', method: 'GET', pattern: OPERATOR_TASK_HISTORY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
+  Object.freeze({ id: 'historical_task_activity', method: 'GET', pattern: OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
+  Object.freeze({ id: 'task_sessions', method: 'GET', pattern: OPERATOR_TASK_SESSIONS_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'runtime_status', method: 'GET', pattern: OPERATOR_RUNTIME_STATUS_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
@@ -131,9 +140,11 @@ export interface OperatorServerOptions {
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
   readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
-  readonly read_task_context?: (input: OperatorTaskContextRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskContext>;
+  readonly read_task_context?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
+  readonly read_admitted_task_activity?: (input: AdmittedTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskActivity>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
-  readonly read_task_diff?: (input: OperatorTaskDiffRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
+  readonly read_task_sessions?: (input: AdmittedTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskSessions>;
+  readonly read_task_diff?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
   /** Dev Activity cache reader. GET serves only this cache; it never collects. */
   readonly read_dev_activity?: () => DevActivitySnapshotV2;
@@ -152,7 +163,7 @@ export interface OperatorServerOptions {
   readonly timeout_ms?: number;
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
-  ) => Promise<FleetBoardSnapshotV1>;
+  ) => Promise<FleetBoardSnapshotV2>;
   readonly read_repository_snapshot?: (
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
@@ -580,7 +591,7 @@ function readDefaultRepositorySnapshot(
 type OperatorFleetCollectorResponse =
   | {
       readonly ok: true;
-      readonly snapshot: FleetBoardSnapshotV1;
+      readonly snapshot: FleetBoardSnapshotV2;
     }
   | {
       readonly ok: false;
@@ -594,7 +605,7 @@ type OperatorFleetCollectorResponse =
 function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
   if (value.ok === true && 'protocol' in value && value.protocol === 2 && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1 };
+    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV2 };
   }
   if (
     value.ok === false
@@ -682,7 +693,7 @@ function readDefaultFleetSnapshot(
     readonly env?: NodeJS.ProcessEnv;
     readonly signal: AbortSignal;
   },
-): Promise<FleetBoardSnapshotV1> {
+): Promise<FleetBoardSnapshotV2> {
   return readSupervisedOperatorProcess({
     process_path: fleetCollectorProcessPath(), env: input.env, signal: input.signal,
     start: { type:'start', protocol:2,
@@ -1346,7 +1357,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'diff' | 'history' | 'architecture',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1538,23 +1549,31 @@ export async function startOperatorServer(
     }
 
     const contextRoute = OPERATOR_TASK_CONTEXT_ROUTE.exec(pathname);
-    if (contextRoute !== null) {
-      if (url.searchParams.get('view') === 'history') {
-        let input: OperatorTaskHistoryRequest;
-        try { input = parseTaskHistoryRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
-        catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid history selector.'),headOnly); return; }
-        handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskHistory,TASK_HISTORY_FAILURES,
-          'history',options.read_task_history);
-        return;
-      }
-      let input: OperatorTaskContextRequest;
-      try { input = parseTaskContextRequest(contextRoute[1]!, contextRoute[2]!, url.searchParams); }
-      catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid context selector.'),headOnly); return; }
-      handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskContext,TASK_CONTEXT_FAILURES,
-        'context',options.read_task_context);
+    if(contextRoute!==null){
+      let input:AdmittedSessionSelector;
+      try{input=parseTaskDiffRequest(contextRoute[1]!,url.searchParams);}
+      catch{sendRefusal(request,response,400,errorBody('invalid_request','Context requires an explicit admitted session selector.'),headOnly);return;}
+      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskContext,SESSION_OBSERVATION_FAILURES,'context',options.read_task_context);
       return;
     }
-    const activityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);
+    const historyRoute=OPERATOR_TASK_HISTORY_ROUTE.exec(pathname);
+    if(historyRoute!==null){
+      let input:OperatorTaskHistoryRequest;
+      try{input=parseTaskHistoryRequest(historyRoute[1]!,historyRoute[2]!,url.searchParams);}
+      catch{sendRefusal(request,response,400,errorBody('invalid_request','History requires an explicit historical selector.'),headOnly);return;}
+      handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskHistory,TASK_HISTORY_FAILURES,'history',options.read_task_history);
+      return;
+    }
+    const admittedActivityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);
+    if (admittedActivityRoute !== null) {
+      let input: AdmittedTaskActivityRequest;
+      try { input = parseAdmittedTaskActivityRequest(admittedActivityRoute[1]!, url.searchParams); }
+      catch { sendRefusal(request,response,400,errorBody('invalid_request','Activity requires an explicit admitted session selector.'),headOnly); return; }
+      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskActivity,[...TASK_ACTIVITY_FAILURES,...SESSION_OBSERVATION_FAILURES],
+        'admitted_activity',options.read_admitted_task_activity);
+      return;
+    }
+    const activityRoute = OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.exec(pathname);
     if (activityRoute !== null) {
       let input: OperatorTaskActivityRequest;
       try { input = parseTaskActivityRequest(activityRoute[1]!,activityRoute[2]!,url.searchParams); }
@@ -1564,25 +1583,31 @@ export async function startOperatorServer(
       return;
     }
 
+    const sessionsRoute = OPERATOR_TASK_SESSIONS_ROUTE.exec(pathname);
+    if (sessionsRoute !== null) {
+      const input = { repository_id: sessionsRoute[1]! };
+      if (url.searchParams.size || !isTaskSessionsRequest(input)) {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Session discovery accepts only a registered repository.'), headOnly);
+        return;
+      }
+      handleBoundedTaskRead(response, headOnly, input, decodeAdmittedTaskSessions, SESSION_OBSERVATION_FAILURES,
+        'sessions', options.read_task_sessions);
+      return;
+    }
+
     const diffRoute = OPERATOR_TASK_DIFF_ROUTE.exec(pathname);
     if (diffRoute !== null) {
       if (closed) {
         sendJson(response, 503, { code: 'unavailable' }, headOnly);
         return;
       }
-      const params = url.searchParams;
-      const input = {
-        repository_id: diffRoute[1]!, task_id: diffRoute[2]!,
-        task_revision: params.get('task_revision'), claim_id: params.get('claim_id'),
-        generation: Number(params.get('generation')),
-      };
-      const keys = [...params.keys()];
-      if (keys.length !== 3 || new Set(keys).size !== 3
-        || keys.some(key => !['task_revision', 'claim_id', 'generation'].includes(key)) || !isTaskDiffRequest(input)) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires the current task and claim fence.'), headOnly);
+      let input: AdmittedSessionSelector;
+      try { input = parseTaskDiffRequest(diffRoute[1]!, url.searchParams); }
+      catch {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires an explicit admitted session selector.'), headOnly);
         return;
       }
-      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, TASK_DIFF_FAILURES,
+      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, SESSION_OBSERVATION_FAILURES,
         'diff', options.read_task_diff,
         failure => failure === 'stale' ? 409 : 503);
       return;

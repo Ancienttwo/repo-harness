@@ -2,7 +2,7 @@
   "schemaVersion": "archcontext.flow/v1",
   "id": "flow.engineer-bindings.primary",
   "capabilityId": "capability.runtime-harness.engineer-bindings",
-  "name": "Read the retained Engineer binding",
+  "name": "Resolve one tracked Engineer profile",
   "applicability": "required",
   "participants": [
     {
@@ -16,14 +16,14 @@
   ],
   "steps": [
     {
-      "id": "read",
+      "id": "validate",
       "from": "engineer",
       "to": "store",
-      "label": "Read the current binding for an operator observation",
+      "label": "Validate the tracked profile JSON against the closed profile schema",
       "evidence": {
-        "entrypointId": "entrypoint.engineer-bindings.read",
-        "sourceSymbol": "readEngineerBindingStatus",
-        "sinkId": "sink.engineer-bindings.read"
+        "entrypointId": "entrypoint.engineer-bindings.profile",
+        "sourceSymbol": "readProfileFile",
+        "sinkId": "sink.engineer-bindings.validate-profile"
       }
     }
   ],
@@ -31,45 +31,45 @@
     {
       "id": "success",
       "kind": "success",
-      "label": "Return the retained observation",
+      "label": "The profile, SOP and capability resolve",
       "steps": [
         {
-          "id": "success-read",
+          "id": "contract-revision",
           "from": "engineer",
           "to": "store",
-          "label": "Read the exact current record",
+          "label": "Derive the exact engineer contract revision from the profile, SOP bytes and capability revision",
           "evidence": {
-            "entrypointId": "entrypoint.engineer-bindings.read",
-            "sourceSymbol": "readEngineerBindingStatus",
-            "sinkId": "sink.engineer-bindings.read"
+            "entrypointId": "entrypoint.engineer-bindings.profile",
+            "sourceSymbol": "readProfileFile",
+            "sinkId": "sink.engineer-bindings.contract-revision"
           }
         }
       ],
       "terminal": {
         "participant": "engineer",
-        "label": "Return the read result"
+        "label": "Return the resolved profile with its contract revision"
       }
     },
     {
       "id": "error",
       "kind": "error",
-      "label": "Refuse an unavailable or invalid observation",
+      "label": "Refuse an invalid profile",
       "steps": [
         {
-          "id": "error-read",
+          "id": "reject-profile",
           "from": "engineer",
           "to": "store",
-          "label": "Keep a failed read unavailable",
+          "label": "Reject a profile that breaks the closed schema with a typed error",
           "evidence": {
-            "entrypointId": "entrypoint.engineer-bindings.read",
-            "sourceSymbol": "readEngineerBindingStatus",
-            "sinkId": "sink.engineer-bindings.read"
+            "entrypointId": "entrypoint.engineer-bindings.profile",
+            "sourceSymbol": "readProfileFile",
+            "sinkId": "sink.engineer-bindings.validate-profile"
           }
         }
       ],
       "terminal": {
         "participant": "engineer",
-        "label": "Report the read failure without task mutation"
+        "label": "Report the profile error without a write"
       }
     }
   ]

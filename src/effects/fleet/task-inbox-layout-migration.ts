@@ -9,7 +9,7 @@ import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateT
 import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
-import { readLease, taskLockRelativePath } from '../state/coordination-lease-store';
+import { taskLockRelativePath } from '../locking/task-lock';
 import { assertInboxDirectory, inboxLayoutPaths, inboxPathStat, syncInboxDirectory } from './task-inbox-layout';
 
 type Entry = { path: string; kind: 'directory' } | { path: string; kind: 'file'; size: number; sha256: string };
@@ -343,13 +343,14 @@ function finishRollback(common: string, manifest: Manifest, input: InboxMigratio
   removeMetadata(p.receipt); removeMetadata(p.journal); removeMetadata(p.rollback);
   return receipt;
 }
-function withTasks<T>(input: InboxMigrationInput, manifest: Manifest, run: () => T): T {
+function withTasks<T>(manifest: Manifest, run: () => T): T {
   const tasks = manifest.source.filter(entry => entry.kind === 'directory' && !entry.path.includes('/')).map(entry => entry.path);
   const locks: ExclusiveDirectoryLockHandle[] = [];
   try {
+    // Quiescence is the explicit operator precondition, not a lease inference.
+    // Keep each existing task ID and mutex path while exact history bytes move.
     for (const task of tasks) {
       locks.push(acquireExclusiveDirectoryLock(manifest.common, taskLockRelativePath(task)));
-      if (readLease(input.repo_root, task).classification !== 'available') refuse('Task execution must be quiescent before migration');
     }
     checkedManifest(manifest.common, manifest);
     locks.forEach(lock => lock.assertOwned());
@@ -408,7 +409,7 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
     const journal = rollback ? p.rollback : p.journal;
     publishMetadata(journal, manifest, () => input.on_boundary?.('journal-prepared'));
     input.on_boundary?.(rollback ? 'rollback-journal' : 'journal');
-    return withTasks(input, manifest, () => {
+    return withTasks(manifest, () => {
       archiveRollback(common, input);
       const receipt = rollback ? finishRollback(common, manifest, input) : finishForward(common, manifest, input);
       return { ok: true, state: rollback ? 'rolled_back' : 'committed', ...receipt };

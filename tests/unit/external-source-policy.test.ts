@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/external-sources/policy';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 
 describe('external source policy', () => {
   test('only absent or exact off policy disables refresh', () => {

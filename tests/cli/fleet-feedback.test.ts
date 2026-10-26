@@ -1,42 +1,19 @@
-import { historicalRepairProof } from '../helpers/publication-fixture';
-import { dispatchedRepairFixture } from '../helpers/publication-fixture';
-import { seedReactionReceipt, seedPublicationReceipt } from '../helpers/publication-fixture';
-import { buildReactionAttemptReceipt } from '../../src/core/publication/feedback';
-import { seedLeaseDirectory, writeHistoricalLease, completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from '../helpers/sprint-fixture';
-import { candidate } from '../../scripts/merge-gate';
-import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync, spawnSync } from 'child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join, resolve } from 'path';
-
-import {
-  buildPublicationReceipt,
-  encodePublicationMarker,
-  publicationSha256,
-  publicationReceiptDigest,
-} from '../../src/core/publication/publication-receipt';
-import { deriveReactionToken } from '../../src/core/publication/feedback';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { afterEach, describe, expect, test, spyOn } from 'bun:test';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
+import { buildProgram } from '../../src/cli/index';
+import * as admissionSource from '../../src/effects/admission/admission-source';
+import { revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
+import { seedReactionReceipt } from '../helpers/publication-fixture';
+import { buildReactionAttemptReceipt, deriveReactionToken } from '../../src/core/publication/feedback';
 import { feedbackEventPath, readFeedbackDeliveryReceipts, readFeedbackEvents } from '../../src/effects/publication/feedback-store';
-import { readPublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
-import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { leaseDirectory } from '../../src/effects/state/coordination-lease-store';
-
-const CLI = resolve(import.meta.dir, '../../src/cli/index.ts');
-const CLAIM = 'claim-feedback-cli';
-const SPRINT = 'plans/sprints/feedback-cli.sprint.md';
-const TASK = 'repair provider feedback from CLI';
 
 const roots: string[] = [];
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
-
-function git(root: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-}
 
 function fakeGh(root: string, head: string, base: string): string {
   const path = join(root, 'fake-gh.ts');
@@ -47,7 +24,9 @@ const body = process.env.GH_BODY_FILE ? await Bun.file(process.env.GH_BODY_FILE)
 const observedHead = process.env.GH_HEAD_OVERRIDE ?? '${head}';
 let value;
 if (args[0] === 'repo' && args[1] === 'view') {
-  value = { id: 'R_feedback_cli' };
+  value = { id: 'R_feedback_cli', nameWithOwner: 'acme/widgets' };
+} else if (args[0] === 'api' && args[1] === 'repos/acme/widgets') {
+  value = { id: 123, node_id: 'R_feedback_cli', full_name: 'acme/widgets', default_branch: 'main' };
 } else if (args[0] === 'pr' && args[1] === 'view') {
   value = {
     number: 7,
@@ -58,7 +37,7 @@ if (args[0] === 'repo' && args[1] === 'view') {
     headRefName: 'codex/feedback-cli',
     baseRefOid: '${base}',
     baseRefName: 'main',
-    mergeStateStatus: 'CONFLICTING',
+    mergeable: 'CONFLICTING', reviewDecision: null,
     body,
     createdAt: '2026-08-23T00:00:00Z',
     mergedAt: null,
@@ -98,253 +77,58 @@ process.stdout.write(JSON.stringify(value));
   return path;
 }
 
-interface Fixture {
-  readonly root: string;
-  readonly publicationId: string;
-  readonly fakeGh: string;
-  readonly taskId: string;
-  readonly taskRevision: string;
-  readonly claimId: string;
-  readonly generation: number;
-  readonly headSha: string;
-  readonly baseSha: string;
+async function fixture() {
+  const inbox = await admittedFeedbackFixture(7);
+  roots.push(inbox.directory);
+  const contextPath = join(inbox.root, 'feedback-context.json');
+  const admission = inbox.approved.admission;
+  writeFileSync(contextPath, JSON.stringify({ admission: { repository_id: admission.repository_id,
+    issue_id: admission.issue_id, campaign_id: admission.campaign_id, grant_sha256: inbox.approved.grant,
+    policy_sha256: admission.policy.policy_sha256, actor_id: admission.actor_id },
+    claim: inbox.source.authority.claim, session: inbox.source.session, selection: inbox.selection }));
+  return { ...inbox, contextPath, publicationId: inbox.publication_id, headSha: inbox.head,
+    fakeGh: fakeGh(inbox.root, inbox.head, inbox.base) };
+}
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+async function runCli(fixture: Fixture, args: readonly string[]) {
+  // Inject only the authority location and offline issue transport. The effect still
+  // reads the real active approval, immutable admission, binding and HEAD fences.
+  const source = spyOn(admissionSource, 'readReviewAdmissionSource').mockReturnValue(fixture.source.authority.source);
+  const cwd = process.cwd(), exitCode = process.exitCode;
+  const gh = process.env.REPO_HARNESS_GH_BIN, git = process.env.REPO_HARNESS_GIT_BIN;
+  let stdout = '', stderr = '';
+  const out = spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { stdout += String(chunk); return true; });
+  const err = spyOn(process.stderr, 'write').mockImplementation((chunk: any) => { stderr += String(chunk); return true; });
+  try {
+    process.chdir(fixture.root); process.exitCode = 0;
+    process.env.REPO_HARNESS_GH_BIN = fixture.fakeGh; process.env.REPO_HARNESS_GIT_BIN = 'git';
+    // These feedback actions are synchronous: parseAsync completion is the barrier.
+    const program = buildProgram();
+    await program.parseAsync(['bun', 'repo-harness', ...args, '--context', fixture.contextPath]);
+    return { status: Number(process.exitCode ?? 0), stdout, stderr };
+  } finally {
+    out.mockRestore(); err.mockRestore(); source.mockRestore(); process.chdir(cwd); process.exitCode = exitCode;
+    if (gh === undefined) delete process.env.REPO_HARNESS_GH_BIN; else process.env.REPO_HARNESS_GH_BIN = gh;
+    if (git === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = git;
+  }
 }
 
-function fixture(): Fixture {
-  const root = mkdtempSync(join(tmpdir(), 'fleet-feedback-cli-'));
-  roots.push(root);
-  git(root, 'init', '-b', 'main');
-  git(root, 'config', 'user.name', 'Fleet Feedback CLI Test');
-  git(root, 'config', 'user.email', 'fleet-feedback-cli@test.invalid');
-  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
-  writeFileSync(join(root, SPRINT), [
-    '# Sprint: feedback CLI', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-    '|---|----|--------|------|------|------------|------|',
-    `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
-  ].join('\n'));
-  writeFileSync(join(root, 'README.md'), 'feedback cli fixture\n');
-  git(root, 'add', '.');
-  git(root, 'commit', '-m', 'seed feedback CLI fixture');
-
-  const taskId = fixtureTaskId(TASK);
-  const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
-  git(root, 'switch', '-c', 'codex/feedback-cli');
-  writeFileSync(join(root, 'feature.txt'), 'feedback\n');
-  git(root, 'add', '.');
-  git(root, 'commit', '-m', 'add feedback fixture change');
-
-  const headSha = git(root, 'rev-parse', 'HEAD');
-  const baseSha = git(root, 'rev-parse', 'main');
-  const treeSha = git(root, 'rev-parse', 'HEAD^{tree}');
-
-  const receipt = buildPublicationReceipt({
-    repo_id: publicationSha256(resolveGitCommonDirectory(root)),
-    task_id: taskId,
-    task_revision: taskRevision,
-    claim_id: CLAIM,
-    generation: 1,
-    target_ref: 'main',
-    base_sha: baseSha,
-    branch: 'codex/feedback-cli',
-    head_sha: headSha,
-    tree_sha: treeSha,
-    candidate_diff_fingerprint: candidate(root, 'main').diffFingerprint,
-    provider: 'github',
-    provider_repo_id: 'R_feedback_cli',
-    pr_number: 7,
-    pr_url: 'https://example.invalid/pr/7',
-    created_at: '2026-08-23T00:00:00Z',
-  });
-  seedPublicationReceipt(root, receipt);
-  const bodyPath = join(root, 'pr-body.md');
-  writeFileSync(bodyPath, `PR body\n\n${encodePublicationMarker(receipt)}\n`);
-
-  const owner = buildLeaseOwnerRecord({
-    claimId: CLAIM,
-    taskId,
-    taskRevision,
-    sprintPath: SPRINT,
-    targetRef: 'main',
-    generation: 1,
-    sessionId: 'feedback-cli-session',
-    sourceWorktree: root,
-  });
-  const bound = boundLeaseFixture(owner, {
-    executionWorktree: root,
-    branch: 'codex/feedback-cli',
-    unitRef: 'plans/plan-feedback-cli.md',
-  });
-  const completing = completingLeaseFixture(bound, {
-    claimId: CLAIM,
-    executionWorktree: root,
-    finishTransactionKey: null,
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = reviewingLeaseFixture(completing.record, {
-    claimId: CLAIM,
-    publication: {
-      publication_id: receipt.publication_id,
-      receipt_sha256: publicationReceiptDigest(receipt),
-      head_sha: headSha,
-      ship_transaction_key: 'ship-feedback-cli',
-    },
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!seedLeaseDirectory(root, taskId)) throw new Error('feedback CLI lease creation failed');
-  writeHistoricalLease(root, taskId, reviewing.record);
-
-  return {
-    root,
-    publicationId: receipt.publication_id,
-    fakeGh: fakeGh(root, headSha, baseSha),
-    taskId,
-    taskRevision,
-    claimId: CLAIM,
-    generation: 1,
-    headSha,
-    baseSha,
-  };
-}
-
-function addAmbiguousReviewingPublication(subject: Fixture): void {
-  const source = readPublicationReceiptCache(subject.root, subject.publicationId);
-  if (source === null) throw new Error('fixture source receipt is unavailable');
-  const sprintPath = 'plans/sprints/feedback-cli-ambiguous.sprint.md';
-  const taskCell = 'second current reviewing publication';
-  const task = 'second current reviewing publication';
-  writeFileSync(join(subject.root, sprintPath), [
-    '# Sprint: feedback CLI ambiguity', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-    '|---|----|--------|------|------|------------|------|',
-    `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | provider feedback passes | (pending) |`, '',
-  ].join('\n'));
-  const taskId = fixtureTaskId(taskCell);
-  const taskRevision = deriveTaskRevision({ taskCell,
-    taskId,
-    modeCell: 'contract',
-    acceptanceCell: 'provider feedback passes',
-  });
-  const claimId = 'claim-feedback-cli-ambiguous';
-  const receipt = buildPublicationReceipt({
-    repo_id: source.repo_id,
-    task_id: taskId,
-    task_revision: taskRevision,
-    claim_id: claimId,
-    generation: 1,
-    target_ref: source.target_ref,
-    base_sha: source.base_sha,
-    branch: 'codex/feedback-cli-ambiguous',
-    head_sha: source.head_sha,
-    tree_sha: source.tree_sha,
-    candidate_diff_fingerprint: source.candidate_diff_fingerprint,
-    provider: source.provider,
-    provider_repo_id: source.provider_repo_id,
-    pr_number: source.pr_number + 1,
-    pr_url: 'https://example.invalid/pr/8',
-    created_at: '2026-08-23T00:00:01Z',
-  });
-  seedPublicationReceipt(subject.root, receipt);
-  const owner = buildLeaseOwnerRecord({
-    claimId,
-    taskId,
-    taskRevision,
-    sprintPath,
-    targetRef: source.target_ref,
-    generation: 1,
-    sessionId: 'feedback-cli-ambiguous-session',
-    sourceWorktree: subject.root,
-  });
-  const bound = boundLeaseFixture(owner, {
-    executionWorktree: subject.root,
-    branch: receipt.branch,
-    unitRef: 'plans/plan-feedback-cli-ambiguous.md',
-  });
-  const completing = completingLeaseFixture(bound, {
-    claimId,
-    executionWorktree: subject.root,
-    finishTransactionKey: null,
-  });
-  if (!completing.ok) throw new Error(completing.error);
-  const reviewing = reviewingLeaseFixture(completing.record, {
-    claimId,
-    publication: {
-      publication_id: receipt.publication_id,
-      receipt_sha256: publicationReceiptDigest(receipt),
-      head_sha: receipt.head_sha,
-      ship_transaction_key: 'ship-feedback-cli-ambiguous',
-    },
-  });
-  if (!reviewing.ok) throw new Error(reviewing.error);
-  if (!seedLeaseDirectory(subject.root, taskId)) throw new Error('ambiguous lease creation failed');
-  writeHistoricalLease(subject.root, taskId, reviewing.record);
-}
-
-function runCli(fixture: Fixture, args: readonly string[], envOverrides: Record<string, string> = {}) {
-  return spawnSync('bun', [CLI, ...args], {
-    cwd: fixture.root,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      REPO_HARNESS_GH_BIN: fixture.fakeGh,
-      REPO_HARNESS_GIT_BIN: 'git',
-      GH_BODY_FILE: join(fixture.root, 'pr-body.md'),
-      ...envOverrides,
-    },
-  });
-}
-
-function dispatchedProofForOffer(subject: Fixture, offer: Record<string, unknown>, reactionToken: string) {
-  const receipt = readPublicationReceiptCache(subject.root, subject.publicationId);
-  if (receipt === null) throw new Error('fixture publication receipt is unavailable');
-  const prepared = historicalRepairProof({
-    publication_id: receipt.publication_id,
-    receipt_sha256: publicationReceiptDigest(receipt),
-    task_id: receipt.task_id,
-    task_revision: receipt.task_revision,
-    claim_id: receipt.claim_id,
-    generation: receipt.generation,
-    head_sha: receipt.head_sha,
-    ship_transaction_key: 'ship-feedback-cli',
-    feedback_revision: String(offer.feedback_revision),
-    before_reaction_token: reactionToken,
-    action: 'resume_same_owner',
-    phase: 'prepared',
-    successor_claim_id: null,
-    successor_generation: null,
-    successor_state: null,
-  });
-  const dispatched = dispatchedRepairFixture(prepared, {
-    successor_claim_id: subject.claimId,
-    successor_generation: subject.generation,
-    successor_state: 'bound',
-  });
-  return dispatched;
-}
-
-function appendCompletedReaction(subject: Fixture, proof: ReturnType<typeof dispatchedProofForOffer>, token: string, recordedAt: string): void {
-  const receipt = readPublicationReceiptCache(subject.root, subject.publicationId);
-  if (receipt === null) throw new Error('fixture publication receipt is unavailable');
+// Historical reaction wire records remain inputs to the no-progress read model.
+function appendCompletedReaction(subject: Fixture, token: string, recordedAt: string): void {
   seedReactionReceipt(subject.root, subject.publicationId, buildReactionAttemptReceipt({
-    publication_id: subject.publicationId,
-    repair_id: proof.repair_id,
-    successor_claim_id: proof.successor_claim_id!,
-    successor_generation: proof.successor_generation!,
-    completion_publication_id: receipt.publication_id,
-    completion_receipt_sha256: publicationReceiptDigest(receipt),
-    completion_head_sha: receipt.head_sha,
-    completion_ship_transaction_key: `completion-${recordedAt}`,
-    before_reaction_token: token,
-    after_reaction_token: token,
-    outcome: 'completed',
-    recorded_at: recordedAt,
+    publication_id: subject.publicationId, repair_id: `sha256:${'8'.repeat(64)}`,
+    successor_claim_id: 'historical-feedback-claim', successor_generation: 1,
+    completion_publication_id: subject.publicationId, completion_receipt_sha256: `sha256:${'3'.repeat(64)}`,
+    completion_head_sha: subject.headSha, completion_ship_transaction_key: `completion-${recordedAt}`,
+    before_reaction_token: token, after_reaction_token: token, outcome: 'completed', recorded_at: recordedAt,
   }));
 }
 
 describe('fleet feedback CLI', () => {
-  test('intake resolves the sole current reviewing publication when omitted', () => {
-    const subject = fixture();
-    const result = runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
+  test('intake derives its subject from explicit admitted context when publication ID is omitted', async () => {
+    const subject = await fixture();
+    const result = await runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       ok: true,
@@ -353,51 +137,52 @@ describe('fleet feedback CLI', () => {
     });
   });
 
-  test('intake without a publication id rejects an empty current-publication set', () => {
-    const subject = fixture();
-    rmSync(leaseDirectory(subject.root, subject.taskId), { recursive: true, force: true });
-    const result = runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
+  test('intake rejects revoked admission before persistence', async () => {
+    const subject = await fixture();
+    revokeActiveReviewAdmission({ repoRoot: subject.root, authorityHome: subject.home, repository_id: subject.admission.identity.repository_id, issue_id: subject.admission.identity.issue_id, campaign_id: subject.admission.identity.campaign_id, expectedRevision: 1, expectedGrantSha256: subject.approved.grant });
+    const result = await runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stderr)).toMatchObject({
       ok: false,
-      error: 'publication_not_found',
+      error: 'provider_unavailable',
+      message: expect.stringContaining('review_admission_revoked_or_replaced'),
     });
     expect(readFeedbackEvents(subject.root, subject.publicationId)).toEqual([]);
   });
 
-  test('intake without a publication id rejects multiple current-publication pointers', () => {
-    const subject = fixture();
-    addAmbiguousReviewingPublication(subject);
-    const result = runCli(subject, ['fleet', 'feedback', 'intake', '--json']);
+  test('intake rejects a publication ID from a different explicit subject', async () => {
+    const subject = await fixture();
+
+    const result = await runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', `sha256:${'9'.repeat(64)}`]);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stderr)).toMatchObject({
       ok: false,
-      error: 'publication_claim_mismatch',
-      message: expect.stringContaining('ambiguous'),
+      error: 'provider_unavailable',
+      message: expect.stringContaining('publication-id differs'),
     });
     expect(readFeedbackEvents(subject.root, subject.publicationId)).toEqual([]);
   });
 
-  test('intake emits JSON and retries the same provider snapshot idempotently', () => {
-    const subject = fixture();
+  test('intake emits JSON and retries the same provider snapshot idempotently', async () => {
+    const subject = await fixture();
     const args = ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId];
-    const first = runCli(subject, args);
+    const first = await runCli(subject, args);
     expect(first.status, first.stderr).toBe(0);
     expect(first.stderr).toBe('');
     expect(JSON.parse(first.stdout)).toMatchObject({ ok: true, publication_id: subject.publicationId, event_count: 2 });
 
-    const second = runCli(subject, args);
+    const second = await runCli(subject, args);
     expect(second.status, second.stderr).toBe(0);
     expect(JSON.parse(second.stdout)).toMatchObject({ ok: true, event_count: 2 });
     expect(readFeedbackEvents(subject.root, subject.publicationId)).toHaveLength(2);
     expect(readFeedbackDeliveryReceipts(subject.root, subject.publicationId)).toHaveLength(2);
   });
 
-  test('offers projects a repair and reports user attention after two completed same-token attempts', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
+  test('offers projects a repair and reports user attention after two completed same-token attempts', async () => {
+    const subject = await fixture();
+    const intake = await runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
     expect(intake.status, intake.stderr).toBe(0);
-    const offered = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
+    const offered = await runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
     expect(offered.status, offered.stderr).toBe(0);
     expect(JSON.parse(offered.stdout)).toMatchObject({ state: 'offered', attention_owner: 'agent' });
 
@@ -409,11 +194,10 @@ describe('fleet feedback CLI', () => {
       unresolved_review_thread_ids: events.flatMap((event) => event.unresolved_review_thread_ids),
       mergeability: events[0]?.mergeability ?? 'CONFLICTING',
     });
-    const proof = dispatchedProofForOffer(subject, JSON.parse(offered.stdout).offer as Record<string, unknown>, token);
     for (const recordedAt of ['2026-08-23T00:03:00Z', '2026-08-23T00:04:00Z']) {
-      appendCompletedReaction(subject, proof, token, recordedAt);
+      appendCompletedReaction(subject, token, recordedAt);
     }
-    const halted = runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
+    const halted = await runCli(subject, ['fleet', 'feedback', 'offers', '--json', '--publication-id', subject.publicationId]);
     expect(halted.status, halted.stderr).toBe(0);
     expect(JSON.parse(halted.stdout)).toMatchObject({
       state: 'no_progress',
@@ -423,11 +207,11 @@ describe('fleet feedback CLI', () => {
     });
   });
 
-  test('acknowledges a pending delivery through the manual channel', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
+  test('acknowledges a pending delivery through the manual channel', async () => {
+    const subject = await fixture();
+    const intake = await runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
     expect(intake.status, intake.stderr).toBe(0);
-    const ack = runCli(subject, [
+    const ack = await runCli(subject, [
       'fleet', 'feedback', 'ack', '--json', '--publication-id', subject.publicationId, '--provider-event-id', 'CHECK_1',
     ]);
     expect(ack.status, ack.stderr).toBe(0);
@@ -437,13 +221,13 @@ describe('fleet feedback CLI', () => {
     });
   });
 
-  test('shows provider body as untrusted without persisting it', () => {
-    const subject = fixture();
-    const intake = runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
+  test('shows provider body as untrusted without persisting it', async () => {
+    const subject = await fixture();
+    const intake = await runCli(subject, ['fleet', 'feedback', 'intake', '--json', '--publication-id', subject.publicationId]);
     expect(intake.status, intake.stderr).toBe(0);
     const eventPath = feedbackEventPath(subject.root, subject.publicationId, 'CHECK_1');
     const before = readFileSync(eventPath, 'utf8');
-    const shown = runCli(subject, [
+    const shown = await runCli(subject, [
       'fleet', 'feedback', 'show', '--json',
       '--publication-id', subject.publicationId,
       '--provider-event-id', 'CHECK_1',
@@ -460,9 +244,9 @@ describe('fleet feedback CLI', () => {
     expect(after).not.toContain('UNTRUSTED-CHECK-BODY');
   });
 
-  test('returns argument errors as exit 2 before invoking the effect', () => {
-    const subject = fixture();
-    const result = runCli(subject, ['fleet', 'feedback', 'ack', '--json', '--publication-id', subject.publicationId]);
+  test('returns argument errors as exit 2 before invoking the effect', async () => {
+    const subject = await fixture();
+    const result = await runCli(subject, ['fleet', 'feedback', 'ack', '--json', '--publication-id', subject.publicationId]);
     expect(result.status).toBe(2);
     expect(result.stdout).toBe('');
     expect(JSON.parse(result.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });

@@ -1,56 +1,59 @@
-schemaVersion: archcontext.node/v2
-id: capability.runtime-harness.external-source-intake
-kind: capability
-name: External Source Intake
-status: active
-summary: Owns immutable external Issue evidence and authorization-fenced provenance bindings to exact canonical tasks without scheduler authority.
+schemaVersion: "archcontext.node/v2"
+id: "capability.runtime-harness.external-source-intake"
+kind: "capability"
+name: "External Source Intake"
+status: "active"
+summary: "Owns immutable provider issue evidence and exact admitted-session provenance bindings without scheduling authority."
 responsibilities:
-  - Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence.
-  - Read only explicitly enabled, bounded manual GitHub policy and persist provider observations under the Git common directory.
-  - Bind one exact eligible observation revision to one exact pending canonical task and approved plan/contract proof through an append-only authorization-fenced receipt.
-  - Derive read-only evidence and binding projections; never create Task, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime facts.
-  - Fail closed on unavailable or incomplete provider reads and persist the typed attempt receipt when storage is available.
-  - Render provider content only through the explicit untrusted-source context boundary.
-  - Exclude provider writeback, task generation, comments, polling, UI, MCP, and non-GitHub adapters.
+  - "Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence."
+  - "Read only explicitly enabled, bounded manual GitHub policy and persist provider observations under the Git common directory."
+  - "Bind one exact eligible provider observation revision to the same provider repository and issue in an explicit admitted session, after repeated registry and current admission validation."
+  - "Project admitted binding source, session and authorization drift; expose old V1 bindings only through explicit history without current-authority fallback."
+  - "Fail closed on unavailable or incomplete provider reads and persist the typed attempt receipt when storage is available."
+  - "Render provider content only through the explicit untrusted-source context boundary."
+  - "Exclude provider writeback, task generation, comments, polling, UI, MCP, and non-GitHub adapters."
+  - "Share the canonical GitHub issue adapter and manual-source policy reader through neutral GitHub effects; admission and intake reuse the same provider identity and policy implementation."
 source:
   include:
     - "src/core/external-sources/**"
     - "src/effects/external-sources/**"
     - "src/cli/commands/external-source.ts"
+    - "src/effects/github/issues.ts"
+    - "src/effects/github/policy.ts"
   entrypoints:
-    - id: entrypoint.external-source-intake.refresh
+    - id: "entrypoint.external-source-intake.refresh"
       path: "src/effects/external-sources/refresh.ts"
       symbols:
         - name: "refreshExternalSource"
           sinks:
-            - id: sink.external-source-intake.immutable-observation-store
+            - id: "sink.external-source-intake.immutable-observation-store"
               path: "src/effects/external-sources/store.ts"
               symbol: "writeProviderIssueObservation"
-            - id: sink.external-source-intake.immutable-attempt-receipt
+            - id: "sink.external-source-intake.immutable-attempt-receipt"
               path: "src/effects/external-sources/store.ts"
               symbol: "writeExternalSourceRefreshReceipt"
-    - id: entrypoint.external-source-intake.list
+    - id: "entrypoint.external-source-intake.list"
       path: "src/cli/commands/external-source.ts"
       symbols:
         - name: "list"
           sinks:
-            - id: sink.external-source-intake.list-operation
+            - id: "sink.external-source-intake.list-operation"
               path: "src/effects/external-sources/refresh.ts"
               symbol: "listExternalSourceProjection"
-    - id: entrypoint.external-source-intake.bind
+    - id: "entrypoint.external-source-intake.bind"
       path: "src/cli/commands/external-source.ts"
       symbols:
         - name: "bind"
           sinks:
-            - id: sink.external-source-intake.bind-operation
+            - id: "sink.external-source-intake.bind-operation"
               path: "src/effects/external-sources/binding.ts"
               symbol: "bindExternalSource"
-    - id: entrypoint.external-source-intake.bindings
+    - id: "entrypoint.external-source-intake.bindings"
       path: "src/effects/external-sources/binding.ts"
       symbols:
         - name: "listExternalSourceBindings"
           sinks:
-            - id: sink.external-source-intake.binding-projection
+            - id: "sink.external-source-intake.binding-projection"
               path: "src/core/external-sources/projection.ts"
               symbol: "buildExternalSourceProjection"
 extensions:

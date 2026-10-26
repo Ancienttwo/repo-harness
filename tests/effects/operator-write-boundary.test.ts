@@ -23,9 +23,12 @@ import {
   OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
+  OPERATOR_TASK_SESSIONS_ROUTE,
   OPERATOR_TASK_DIFF_ROUTE,
   OPERATOR_TASK_ACTIVITY_ROUTE,
+  OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE,
   OPERATOR_TASK_CONTEXT_ROUTE,
+  OPERATOR_TASK_HISTORY_ROUTE,
   type OperatorRouteV1,
 } from '../../src/effects/operator/server';
 
@@ -77,8 +80,11 @@ describe('operator structural write boundary', () => {
       'health',
       'fleet_snapshot',
       'repository_snapshot',
+      'task_history',
       'task_context',
+      'historical_task_activity',
       'task_activity',
+      'task_sessions',
       'task_diff',
       'runtime_status',
       'notify_status',
@@ -92,8 +98,11 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
     expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
     expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
+    expect(patterns.get('task_history')).toBe(OPERATOR_TASK_HISTORY_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
+    expect(patterns.get('historical_task_activity')).toBe(OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
+    expect(patterns.get('task_sessions')).toBe(OPERATOR_TASK_SESSIONS_ROUTE.source);
     expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);

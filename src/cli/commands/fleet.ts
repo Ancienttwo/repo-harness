@@ -1,29 +1,21 @@
+import { TaskMessageError } from '../../core/messages/task-message-error';
+import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
 import { Command } from 'commander';
 import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
 import { pruneRepoHarnessRegistry } from '../../effects/repo-registry';
 import { randomUUID } from 'crypto';
-import { lstatSync, readdirSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from 'fs';
 
-import { MergeReadinessError, resolveFleetReadiness } from '../../effects/publication/merge-readiness';
-import { FleetOffersError } from '../../effects/fleet/acquire';
-import { collectFleetBoard, FleetBoardError, watchFleetBoard } from '../../effects/fleet/board';
-import { ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
-import { buildTaskMessageEvent, TaskMessageError, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/task-message';
-import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
-import { readCanonicalSprint } from '../../effects/state/coordination-canonical-source';
-import { resolveRepoIdentity } from '../../effects/git/repository-identity';
-import { lookupCanonicalTask } from '../../core/state/coordination-identity';
-import { FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/publication/feedback';
+import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
+import { collectFleetBoard, parseFleetBoardAdmissionAssociations, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
+import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
+import { buildTaskMessageEvent, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
+import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/fleet/provider-feedback';
 import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/publication/feedback-store';
-import { publicationReceiptDigest } from '../../core/publication/publication-receipt';
-import { readPublicationReceiptCache } from '../../effects/publication/publication-receipt';
-import { coordinationRoot, readLease } from '../../effects/state/coordination-lease-store';
 
 function outputError(error: unknown): void {
   const code = error instanceof MergeReadinessError
-    || error instanceof FleetOffersError
     || error instanceof FleetBoardError
     || error instanceof FeedbackError
     || error instanceof FeedbackStoreError
@@ -72,37 +64,23 @@ function outputTaskInboxError(error: unknown): void {
 type TaskMessageScope = 'task' | 'claim';
 type TaskMessageAudience = 'owner' | 'orchestrator' | 'user';
 
-interface CanonicalInboxContext {
-  readonly source: { readonly targetRef: string; readonly sprintPath: string };
-  readonly taskId: string;
-  readonly taskRevision: string;
+function admittedInboxContext(repoRoot: string, taskId: string, contextFile: string) {
+  return parseAdmittedInboxContext(repoRoot, taskId, JSON.parse(readFileSync(contextFile, 'utf8')));
 }
-
-function canonicalInboxContext(repoRoot: string, taskId: string): CanonicalInboxContext {
-  const sprintPath = readActiveSprintPath(repoRoot);
-  if (!sprintPath) throw new Error('no active canonical sprint');
-  const targetRef = readCanonicalTargetRef(repoRoot);
-  const source = { targetRef, sprintPath };
-  const canonical = readCanonicalSprint(repoRoot, source);
-  if (!canonical.ok) throw new Error(canonical.error);
-  const task = lookupCanonicalTask({
-    repoIdentity: resolveRepoIdentity(repoRoot),
-    sprintPath,
-    sprintText: canonical.text,
-  }, taskId);
-  if (!task.ok) throw new Error(task.error);
-  return { source, taskId, taskRevision: task.task.task_revision };
-}
-
-function taskLease(repoRoot: string, taskId: string): NonNullable<ReturnType<typeof readLease>['record']> {
-  const lease = readLease(repoRoot, taskId);
-  if (!lease.record) throw new Error(`task ${taskId} has no current owner lease`);
-  return lease.record;
-}
-
-function resolveOwnerRecipient(repoRoot: string, taskId: string): Extract<TaskMessageRecipient, { readonly kind: 'claim' }> {
-  const lease = taskLease(repoRoot, taskId);
-  return { kind: 'claim', claim_id: lease.claim_id, generation: lease.generation };
+function parseAdmittedInboxContext(repoRoot: string, taskId: string, value: any) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['admission', 'claim', 'session'])) throw new Error('inbox context fields are invalid');
+  const selector = value.admission;
+  if (!selector || typeof selector !== 'object' || Array.isArray(selector)
+    || JSON.stringify(Object.keys(selector).sort()) !== JSON.stringify(['actor_id', 'campaign_id', 'grant_sha256', 'issue_id', 'policy_sha256', 'repository_id'])) throw new Error('inbox admission selector fields are invalid');
+  if (!value.session || typeof value.session !== 'object' || Array.isArray(value.session)
+    || JSON.stringify(Object.keys(value.session).sort()) !== JSON.stringify(['role', 'task'])
+    || typeof value.session.task !== 'string' || typeof value.session.role !== 'string') throw new Error('inbox session fields are invalid');
+  const source: TaskInboxSessionSource = { session: value.session, authority: { claim: value.claim,
+    source: readReviewAdmissionSource(repoRoot, { 'repository-id': selector.repository_id, 'issue-id': selector.issue_id,
+      'campaign-id': selector.campaign_id, 'grant-sha256': selector.grant_sha256, 'policy-sha256': selector.policy_sha256, actor: selector.actor_id }) } };
+  const admission = observeTaskInboxContext({ repo_root: repoRoot, source, task_id: taskId });
+  return { source, taskId, admission };
 }
 
 function readMessageBody(bodyFile: string): string {
@@ -118,17 +96,15 @@ function messageInput(
     readonly messageId?: string;
     readonly inReplyTo?: string;
   },
-  context: CanonicalInboxContext,
-  lease: NonNullable<ReturnType<typeof readLease>['record']> | null,
+  context: ReturnType<typeof admittedInboxContext>,
 ): TaskMessageEventInput {
-  if (options.scope === 'claim' && lease === null) throw new Error('claim-scoped message requires a current owner lease');
   return {
     message_id: options.messageId ?? randomUUID(),
     task_id: context.taskId,
-    task_revision: context.taskRevision,
+    admission_sha256: context.admission.approval.admission_sha256,
+    task_identity: { repository_id: context.admission.identity.repository_id, issue_id: context.admission.identity.issue_id, campaign_id: context.admission.identity.campaign_id },
     scope: options.scope,
-    target_claim_id: options.scope === 'claim' ? lease?.claim_id ?? null : null,
-    target_generation: options.scope === 'claim' ? lease?.generation ?? null : null,
+    target_claim: options.scope === 'claim' ? context.admission.identity.claim : null,
     sender_kind: 'user',
     sender_id: null,
     sender_trust: 'local_operator',
@@ -136,7 +112,7 @@ function messageInput(
     body: options.body,
     created_at: new Date().toISOString(),
     in_reply_to: options.inReplyTo ?? null,
-  } as TaskMessageEventInput;
+  };
 }
 
 function optionalStringOption(value: string | undefined, name: string): string | undefined {
@@ -147,74 +123,16 @@ function optionalStringOption(value: string | undefined, name: string): string |
 }
 
 
-function resolveCurrentFeedbackPublication(): string {
-  const repoRoot = process.cwd();
-  const leasesRoot = join(coordinationRoot(repoRoot), 'leases');
-  let leaseEntries: string[];
-  try {
-    const stat = lstatSync(leasesRoot);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new FeedbackError('feedback_unreadable', 'coordination lease root is not a real directory');
-    }
-    leaseEntries = readdirSync(leasesRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return failCurrentFeedbackPublication('none');
-    if (error instanceof FeedbackError) throw error;
-    throw new FeedbackError('feedback_unreadable', 'coordination lease root is unreadable', error);
-  }
-
-  const candidates: string[] = [];
-  for (const taskId of leaseEntries.sort()) {
-    if (!/^[0-9a-f]{64}$/u.test(taskId)) {
-      throw new FeedbackError('feedback_unreadable', `coordination lease entry is invalid: ${taskId}`);
-    }
-    const lease = readLease(repoRoot, taskId);
-    if (lease.classification === 'unknown') {
-      throw new FeedbackError('feedback_unreadable', `coordination lease ${taskId} is unreadable`);
-    }
-    const record = lease.record;
-    if (record === null || record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
-      continue;
-    }
-    const pointer = record.current_publication;
-    let receipt;
-    try {
-      receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id, process.env.REPO_HARNESS_GIT_BIN);
-    } catch (error) {
-      throw new FeedbackError('publication_claim_mismatch', `current publication receipt is unreadable for task ${taskId}`, error);
-    }
-    if (receipt === null) {
-      throw new FeedbackError('publication_not_found', `current publication receipt is unavailable for task ${taskId}`);
-    }
-    if (
-      receipt.task_id !== record.task_id
-      || receipt.task_revision !== record.task_revision
-      || receipt.claim_id !== record.claim_id
-      || receipt.generation !== record.generation
-      || pointer.publication_id !== receipt.publication_id
-      || pointer.receipt_sha256 !== publicationReceiptDigest(receipt)
-      || pointer.head_sha !== receipt.head_sha
-    ) {
-      throw new FeedbackError('publication_claim_mismatch', `current publication pointer is inconsistent for task ${taskId}`);
-    }
-    candidates.push(pointer.publication_id);
-  }
-
-  if (candidates.length === 1) return candidates[0];
-  return failCurrentFeedbackPublication(candidates.length === 0 ? 'none' : 'multiple', candidates);
-}
-
-function failCurrentFeedbackPublication(
-  state: 'none' | 'multiple',
-  candidates: readonly string[] = [],
-): never {
-  if (state === 'none') {
-    throw new FeedbackError('publication_not_found', 'no unique current reviewing publication is available');
-  }
-  throw new FeedbackError(
-    'publication_claim_mismatch',
-    `current reviewing publication is ambiguous: ${candidates.join(', ')}`,
-  );
+function feedbackContext(contextFile: string, publicationId?: string) {
+  const value = JSON.parse(readFileSync(contextFile, 'utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).sort().join(',') !== 'admission,claim,selection,session') throw new Error('feedback context fields are invalid');
+  const context = parseAdmittedInboxContext(process.cwd(), value.session?.task,
+    { admission: value.admission, claim: value.claim, session: value.session });
+  const input = { ...feedbackEnvironment(), source: context.source, selection: value.selection };
+  const subject = prepareFeedbackSubject(input);
+  if (publicationId !== undefined && subject.publication_id !== publicationId) throw new Error('publication-id differs from explicit feedback context');
+  return { ...input, publication_id: subject.publication_id };
 }
 
 function integerOption(
@@ -251,15 +169,15 @@ export function buildFleetCommand(): Command {
     });
   fleet
     .command('ready')
-    .description('Aggregate current reviewing publications in canonical sprint row order')
-    .requiredOption('--json', 'Output the FleetReadinessV1 document as JSON')
-    .action(() => {
+    .description('Observe an explicit ordered array of provider PR selections')
+    .requiredOption('--selections <path>', 'JSON array of canonical provider PR selections')
+    .requiredOption('--json', 'Output FleetReadinessV2')
+    .action((options: { selections: string }) => {
       try {
-        const result = resolveFleetReadiness({
-          repo_root: process.cwd(),
-          gh_bin: process.env.REPO_HARNESS_GH_BIN,
-          git_bin: process.env.REPO_HARNESS_GIT_BIN,
-        });
+        const selections: unknown = JSON.parse(readFileSync(options.selections, 'utf8'));
+        if (!Array.isArray(selections)) throw new Error('selections must be an array');
+        const result = resolveFleetReadiness({ repo_root: process.cwd(), pull_requests: selections.map(validatePullRequestSelection),
+          gh_bin: process.env.REPO_HARNESS_GH_BIN });
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
         outputError(error);
@@ -268,11 +186,13 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('board')
+    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
+    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Project every authorized repository as one deterministic fleet board snapshot')
-    .requiredOption('--json', 'Output the FleetBoardSnapshotV1 document as JSON')
+    .requiredOption('--json', 'Output the FleetBoardSnapshotV2 document as JSON')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
-    .action(async (options: { readonly json?: boolean; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
+    .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly admissionAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
       let maxConcurrency: number | undefined;
       let timeoutMs: number | undefined;
       try {
@@ -287,6 +207,9 @@ export function buildFleetCommand(): Command {
       }
       try {
         const snapshot = await collectFleetBoard({
+          pull_requests: readPrAssociations(options.prAssociations),
+          admission_associations: options.admissionAssociations === undefined ? []
+            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
           env: process.env,
           max_concurrency: maxConcurrency,
           timeout_ms: timeoutMs,
@@ -299,12 +222,15 @@ export function buildFleetCommand(): Command {
 
   fleet
     .command('watch')
+    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
+    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
     .description('Emit immediate, non-overlapping fleet board snapshots as JSONL')
     .requiredOption('--format <format>', 'Output format (jsonl)')
     .option('--interval-ms <milliseconds>', 'Delay after each completed round (1000-300000)', '30000')
     .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
     .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
     .action(async (options: {
+      readonly prAssociations?: string; readonly admissionAssociations?: string;
       readonly format?: string;
       readonly intervalMs?: string;
       readonly maxConcurrency?: string;
@@ -331,6 +257,9 @@ export function buildFleetCommand(): Command {
       let emitted = 0;
       try {
         for await (const snapshot of watchFleetBoard({
+          pull_requests: readPrAssociations(options.prAssociations),
+          admission_associations: options.admissionAssociations === undefined ? []
+            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
           env: process.env,
           interval_ms: intervalMs,
           max_concurrency: maxConcurrency,
@@ -356,8 +285,9 @@ export function buildFleetCommand(): Command {
     .command('intake')
     .description('Observe GitHub checks and review threads and persist immutable feedback events')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to observe')
-    .action((options: { readonly json?: boolean; readonly publicationId?: string }) => {
+    .action((options: { readonly context: string; readonly json?: boolean; readonly publicationId?: string }) => {
       let publicationId: string | undefined;
       try {
         requireJson(options.json);
@@ -366,12 +296,9 @@ export function buildFleetCommand(): Command {
         return;
       }
       try {
-        publicationId = options.publicationId === undefined
-          ? resolveCurrentFeedbackPublication()
-          : requiredStringOption(options.publicationId, 'publication-id');
+        publicationId = options.publicationId === undefined ? undefined : requiredStringOption(options.publicationId, 'publication-id');
         const result = intakeGitHubFeedback({
-          ...feedbackEnvironment(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {
@@ -383,8 +310,9 @@ export function buildFleetCommand(): Command {
     .command('offers')
     .description('Project the pending provider feedback repair offer')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to inspect')
-    .action((options: { readonly json?: boolean; readonly publicationId?: string }) => {
+    .action((options: { readonly context: string; readonly json?: boolean; readonly publicationId?: string }) => {
       let publicationId: string;
       try {
         requireJson(options.json);
@@ -395,9 +323,7 @@ export function buildFleetCommand(): Command {
       }
       try {
         const result = projectPendingFeedbackOffer({
-          repo_root: process.cwd(),
-          publication_id: publicationId,
-          git_bin: process.env.REPO_HARNESS_GIT_BIN,
+          ...feedbackContext(options.context, publicationId),
         });
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
@@ -409,10 +335,11 @@ export function buildFleetCommand(): Command {
     .command('ack')
     .description('Acknowledge one durable provider feedback delivery receipt')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to acknowledge')
     .option('--provider-event-id <providerEventId>', 'Opaque provider event identity')
     .action((options: {
-      readonly json?: boolean;
+      readonly context: string; readonly json?: boolean;
       readonly publicationId?: string;
       readonly providerEventId?: string;
     }) => {
@@ -430,8 +357,7 @@ export function buildFleetCommand(): Command {
         const gitBin = process.env.REPO_HARNESS_GIT_BIN;
         const current = readFeedbackDeliveryReceipt(process.cwd(), publicationId, providerEventId, gitBin);
         const receipt = transitionFeedbackDelivery({
-          repo_root: process.cwd(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
           provider_event_id: providerEventId,
           git_bin: gitBin,
           transition: {
@@ -450,10 +376,11 @@ export function buildFleetCommand(): Command {
     .command('show')
     .description('Display one provider feedback body as untrusted text')
     .option('--json', 'Output JSON')
+    .requiredOption('--context <file>', 'JSON {admission,claim,session,selection}; explicit provider and admitted session context')
     .option('--publication-id <publicationId>', 'Publication identity to inspect')
     .option('--provider-event-id <providerEventId>', 'Opaque provider event identity')
     .action((options: {
-      readonly json?: boolean;
+      readonly context: string; readonly json?: boolean;
       readonly publicationId?: string;
       readonly providerEventId?: string;
     }) => {
@@ -469,8 +396,7 @@ export function buildFleetCommand(): Command {
       }
       try {
         const result = showGitHubFeedback({
-          ...feedbackEnvironment(),
-          publication_id: publicationId,
+          ...feedbackContext(options.context, publicationId),
           provider_event_id: providerEventId,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
@@ -486,7 +412,8 @@ export function buildFleetCommand(): Command {
     .command('send')
     .description('Create one immutable task message event')
     .requiredOption('--json', 'Output the task message result as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .requiredOption('--scope <scope>', 'Message scope: task or claim')
     .requiredOption('--audience <audience>', 'Message audience: owner, orchestrator, or user')
     .requiredOption('--body-file <path>', 'UTF-8 file containing the untrusted message body')
@@ -494,6 +421,7 @@ export function buildFleetCommand(): Command {
     .option('--in-reply-to <messageId>', 'Prior message UUID')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
       readonly scope: string;
       readonly audience: string;
       readonly bodyFile: string;
@@ -508,8 +436,7 @@ export function buildFleetCommand(): Command {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         const bodyFile = optionalStringOption(options.bodyFile, 'body-file');
         if (!taskId || !bodyFile) throw new Error('--task-id and --body-file must be non-empty strings');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const lease = options.scope === 'claim' ? taskLease(process.cwd(), taskId) : null;
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
         const event = buildTaskMessageEvent(messageInput({
           taskId,
           scope: options.scope,
@@ -517,10 +444,10 @@ export function buildFleetCommand(): Command {
           body: readMessageBody(bodyFile),
           messageId: optionalStringOption(options.messageId, 'message-id'),
           inReplyTo: optionalStringOption(options.inReplyTo, 'in-reply-to'),
-        }, context, lease));
+        }, context));
         const result = sendTaskMessage({
           repo_root: process.cwd(),
-          canonical_source: context.source,
+          source: context.source,
           event,
         });
         process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -557,19 +484,21 @@ export function buildFleetCommand(): Command {
     .command('list')
     .description('Deliver and list messages for the current bound owner')
     .requiredOption('--json', 'Output inbox state as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
     }) => {
       try {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         if (!taskId) throw new Error('--task-id must be a non-empty string');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
+        const recipient: TaskMessageRecipient = { kind: 'claim', claim: context.admission.identity.claim };
         deliverTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           recipient,
           execution_worktree: process.cwd(),
           delivery_channel: 'manual',
@@ -578,7 +507,7 @@ export function buildFleetCommand(): Command {
         const result = listTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           recipient,
           execution_worktree: process.cwd(),
         });
@@ -592,22 +521,24 @@ export function buildFleetCommand(): Command {
     .command('ack')
     .description('Acknowledge one message for the current bound owner')
     .requiredOption('--json', 'Output the acknowledgement result as JSON')
-    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--task-id <taskId>', 'Existing admitted session task id')
+    .requiredOption('--context <file>', 'JSON {admission, claim, session}; explicit current admission and immutable claim reference')
     .requiredOption('--message-id <messageId>', 'Message UUID to acknowledge')
     .action((options: {
       readonly taskId: string;
+      readonly context: string;
       readonly messageId: string;
     }) => {
       try {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         const messageId = optionalStringOption(options.messageId, 'message-id');
         if (!taskId || !messageId) throw new Error('--task-id and --message-id must be non-empty strings');
-        const context = canonicalInboxContext(process.cwd(), taskId);
-        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        const context = admittedInboxContext(process.cwd(), taskId, options.context);
+        const recipient: TaskMessageRecipient = { kind: 'claim', claim: context.admission.identity.claim };
         const result = ackTaskInbox({
           repo_root: process.cwd(),
           task_id: taskId,
-          canonical_source: context.source,
+          source: context.source,
           message_id: messageId,
           recipient,
           execution_worktree: process.cwd(),
@@ -619,4 +550,17 @@ export function buildFleetCommand(): Command {
       }
     });
   return fleet;
+}
+
+function readPrAssociations(path?: string): readonly FleetBoardPullRequestSelection[] {
+  if (path === undefined) return [];
+  const values: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!Array.isArray(values)) throw new Error('PR associations must be an array');
+  return values.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.repository_id !== 'string'
+      || typeof value.provider_issue_id !== 'string' || !/^[1-9][0-9]*$/u.test(value.provider_issue_id)
+      || (value.task_id !== undefined && typeof value.task_id !== 'string')
+      || Object.keys(value).some(key => !['repository_id','provider_issue_id','task_id','pull_request'].includes(key))) throw new Error('invalid PR association');
+    return { repository_id: value.repository_id, provider_issue_id: value.provider_issue_id, ...(value.task_id === undefined ? {} : { task_id: value.task_id }), pull_request: validatePullRequestSelection(value.pull_request) };
+  });
 }

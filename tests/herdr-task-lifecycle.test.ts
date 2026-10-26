@@ -4,6 +4,7 @@ import { execFileSync, spawn, spawnSync, type ChildProcess } from 'child_process
 import { randomUUID } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
 import { processIdentity, processProofAlive, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
@@ -761,7 +762,7 @@ darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes bef
   }
 }, 60000);
 
-darwinTest('operator-terminal OAR host binds by exact command and process identity without Herdr', async () => {
+for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host binds by exact command and process identity without Herdr (${admitted ? 'approved task' : 'generic runtime'})`, async () => {
   const api = await import('../src/effects/terminal/task-session');
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/ot-'));
@@ -770,6 +771,10 @@ darwinTest('operator-terminal OAR host binds by exact command and process identi
   const env = { ...process.env, REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   run('git', ['init', '-qb', 'main'], repo, env);
   run('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'], repo, env);
+  const home = join(fixture, 'authority');
+  mkdirSync(home, { mode: 0o700 });
+  const claim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: `sha256:${'c'.repeat(64)}` };
+  let taskAuthority = admitted ? { source: seedReviewAdmissionFixture(repo, home).source, claim } : undefined;
   const closeRequest = join(output, 'close.request'), readyFile = join(output, 'ready.json'), disposedFile = join(output, 'disposed.json');
   const specFile = join(fixture, 'fixture.json'), profile = join(fixture, 'profile.sb');
   const paths = { subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output };
@@ -782,20 +787,57 @@ darwinTest('operator-terminal OAR host binds by exact command and process identi
   let host: ChildProcess | undefined;
   try {
     // Nothing launched: the owner returns without a binding and never starts a process.
-    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => null)).toBeNull();
+    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => null, taskAuthority)).toBeNull();
     expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('launch_pending');
-    await expect(api.bindTerminalApplicationHost(repo, spec, [...command.slice(0, 3), join(fixture, 'other.json')], async () => null)).rejects.toThrow('task_agent_spec_changed');
+    await expect(api.bindTerminalApplicationHost(repo, spec, [...command.slice(0, 3), join(fixture, 'other.json')], async () => null, taskAuthority)).rejects.toThrow('task_agent_spec_changed');
     // A process with other argv is refused even when it is live and owned by this user.
-    await expect(api.bindTerminalApplicationHost(repo, { ...spec, task: 'oar-terminal-other' }, command, async () => proof(process.pid))).rejects.toThrow('task_agent_terminal_host_command_mismatch');
+    await expect(api.bindTerminalApplicationHost(repo, { ...spec, task: 'oar-terminal-other' }, command, async () => proof(process.pid), taskAuthority)).rejects.toThrow('task_agent_terminal_host_command_mismatch');
 
     host = spawn(command[0]!, command.slice(1), { env, stdio: 'ignore' });
-    const binding = await api.bindTerminalApplicationHost(repo, spec, command, readyPid);
+    const binding = await api.bindTerminalApplicationHost(repo, spec, command, readyPid, taskAuthority);
     if (binding?.runtime !== 'terminal') throw new Error('fixture_terminal_binding_missing');
     expect(binding.provider.pid).toBe(host.pid!);
     expect(binding.command).toEqual([...command]);
-    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not observe again'); })).toEqual(binding);
+    expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not observe again'); }, taskAuthority)).toEqual(binding);
     expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
     expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('idle');
+    if (taskAuthority) {
+      // The native host supplies real argv/process ownership. Deterministic
+      // application delivery supplies only result bytes, never bindings or requests.
+      writeFileSync(join(repo, 'context.txt'), 'offline admitted context\n');
+      const delivered: number[] = [];
+      const deliver = async (request: import('../src/effects/terminal/task-session').TaskRequest) => {
+        expect(readFileSync(request.context_ref, 'utf8')).toBe('offline admitted context\n');
+        delivered.push(request.round);
+        api.writeSessionArtifact(request.result_ref, { request_id: request.request_id,
+          context_sha256: request.context_sha256, value: { fixture: 'offline-application-delivery', round: request.round } });
+      };
+      const send = () => api.sendTaskRequest(repo, spec.task, spec.role, 'context.txt', 'repeatable', deliver, undefined, undefined, taskAuthority);
+      const first = await send();
+      expect(first.round).toBe(1);
+      expect((await api.collectTaskResult(repo, spec.task, spec.role, first.round, undefined, taskAuthority))?.value)
+        .toEqual({ fixture: 'offline-application-delivery', round: 1 });
+      const pending = await send();
+      expect(pending.round).toBe(2);
+      const previous = taskAuthority;
+      taskAuthority = { source: seedReviewAdmissionFixture(repo, home).source, claim };
+      expect(taskAuthority.source.expectedGrantSha256).not.toBe(previous.source.expectedGrantSha256);
+      await expect(api.collectTaskResult(repo, spec.task, spec.role, pending.round, undefined, previous)).rejects.toThrow('revoked_or_replaced');
+      await expect(api.collectTaskResult(repo, spec.task, spec.role, pending.round, undefined, taskAuthority)).rejects.toThrow('request_context_changed');
+      await expect(api.sendTaskRequest(repo, spec.task, spec.role, 'context.txt', 'repeatable', deliver, undefined, undefined, previous)).rejects.toThrow('revoked_or_replaced');
+      expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not relaunch'); }, taskAuthority)).toEqual(binding);
+      const next = await send();
+      expect(next.round).toBe(3);
+      expect(next.task_admission!.identity).toEqual(first.task_admission!.identity);
+      expect(next.session_binding_sha256).toBe(first.session_binding_sha256);
+      expect(next.task_admission!.approval.admission_sha256).toBe(first.task_admission!.approval.admission_sha256);
+      expect(next.task_admission!.approval.grant_sha256).not.toBe(first.task_admission!.approval.grant_sha256);
+      expect((await api.collectTaskResult(repo, spec.task, spec.role, next.round, undefined, taskAuthority))?.value)
+        .toEqual({ fixture: 'offline-application-delivery', round: 3 });
+      await expect(send()).rejects.toThrow('round_budget_exhausted');
+      expect(delivered).toEqual([1, 2, 3]);
+      expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
+    }
     // Cleanup never signals the operator's process; it waits for the host's own disposal and exit.
     expect(await api.cancelTaskAgent(repo, spec.task, spec.role)).toEqual({ status: 'cleanup_pending', pids: [host.pid!], reason: 'terminal_host_alive' });
     // Closing the operator's tab sends SIGHUP; the host still disposes before it exits.
@@ -803,7 +845,7 @@ darwinTest('operator-terminal OAR host binds by exact command and process identi
     await until(() => existsSync(disposedFile));
     await until(() => !live(host!.pid!));
     expect((await api.cancelTaskAgent(repo, spec.task, spec.role)).status).toBe('closed');
-    await expect(api.bindTerminalApplicationHost(repo, spec, command, readyPid)).rejects.toThrow('task_agent_session_closed');
+    await expect(api.bindTerminalApplicationHost(repo, spec, command, readyPid, taskAuthority)).rejects.toThrow('task_agent_session_closed');
   } finally {
     writeFileSync(closeRequest, 'close');
     if (host?.pid && live(host.pid)) await until(() => !live(host!.pid!));

@@ -1,6 +1,5 @@
 import type { TaskMessageEventV1, TaskMessageDeliveryReceiptV1 } from '../fleet/task-message';
 import type { TaskReplyChainObservation } from '../fleet/task-reply';
-import type { ClaimActorReceiptV1 } from '../engineers/principal-claim';
 
 export const TASK_ACTIVITY_MAX_SCAN = 1000;
 export const TASK_ACTIVITY_MAX_BYTES = 2 * 1024 * 1024;
@@ -17,20 +16,18 @@ export interface OperatorTaskActivityRequest {
 }
 export type ActivityEvent = Omit<TaskMessageEventV1, 'protocol' | 'kind' | 'task_id'>;
 export type ActivityReceipt = Omit<TaskMessageDeliveryReceiptV1, 'protocol' | 'kind'>;
-export type ActivityActor = Pick<ClaimActorReceiptV1, 'engineer_id' | 'binding_id' | 'binding_generation' | 'engineer_contract_revision' | 'claim_id' | 'lease_generation' | 'receipt_sha256'>;
 export interface ActivityReply {
   readonly claim_id: string;
   readonly generation: number;
   readonly reply_message_id: string | null;
   readonly state: TaskReplyChainObservation['state'];
   readonly reason: string | null;
-  readonly actor: ActivityActor | null;
 }
 export interface ActivityEntry {
   readonly event: ActivityEvent;
   readonly receipts: readonly ActivityReceipt[];
   readonly replies: readonly ActivityReply[];
-  readonly provenance: 'not_reply' | 'unverified' | 'recorded_claim_actor';
+  readonly provenance: 'not_reply' | 'unverified';
 }
 export interface OperatorTaskActivity extends OperatorTaskActivityRequest {
   readonly protocol: 1;
@@ -92,18 +89,11 @@ function validReceipt(v: unknown, event: ActivityEvent): v is ActivityReceipt {
     && nullable(v.delivery_ref, text) && nullable(v.delivered_at, timestamp) && nullable(v.acknowledged_at, timestamp);
 }
 function validReply(v: unknown): v is ActivityReply {
-  if (!exact(v, ['claim_id','generation','reply_message_id','state','reason','actor']) || !isUuid(v.claim_id) || !integer(v.generation, 1) || !nullable(v.reply_message_id, isUuid)
+  if (!exact(v, ['claim_id','generation','reply_message_id','state','reason']) || !isUuid(v.claim_id) || !integer(v.generation, 1) || !nullable(v.reply_message_id, isUuid)
     || !one(v.state, ['absent','intent_only','event_uncommitted','orphan_event','complete','inconsistent'])) return false;
   if (v.state === 'inconsistent' ? !one(v.reason, ['commit_missing_records','source_mismatch','event_mismatch','commit_mismatch']) : v.reason !== null) return false;
-  const hasIntent = one(v.state, ['intent_only','event_uncommitted','complete']);
-  if (hasIntent && !isUuid(v.reply_message_id)) return false;
-  if (v.state === 'absent' && v.reply_message_id !== null) return false;
-  if (v.actor === null) return true;
-  if (!hasIntent) return false;
-  const a = v.actor;
-  return exact(a, ['engineer_id','binding_id','binding_generation','engineer_contract_revision','claim_id','lease_generation','receipt_sha256'])
-    && text(a.engineer_id) && isUuid(a.binding_id) && integer(a.binding_generation, 1) && hash(a.engineer_contract_revision)
-    && a.claim_id === v.claim_id && a.lease_generation === v.generation && hash(a.receipt_sha256) && v.state !== 'inconsistent';
+  if (one(v.state, ['intent_only','event_uncommitted','complete']) && !isUuid(v.reply_message_id)) return false;
+  return v.state !== 'absent' || v.reply_message_id === null;
 }
 export function decodeOperatorTaskActivity(value: unknown, request: OperatorTaskActivityRequest): OperatorTaskActivity {
   const invalid = (): never => { throw new Error('Invalid task activity response'); };
@@ -125,9 +115,7 @@ export function decodeOperatorTaskActivity(value: unknown, request: OperatorTask
     if (!entry.receipts.every(v => validReceipt(v, event))) return invalid();
     if ((previous !== null && entry.event.message_id <= previous) || (r.message_id !== null && entry.event.message_id !== r.message_id)) return invalid();
     previous = entry.event.message_id;
-    const expected = entry.event.in_reply_to === null ? 'not_reply' : entry.replies.some(reply => reply.actor && reply.reply_message_id === event.message_id && reply.actor.receipt_sha256 === event.sender_id) ? 'recorded_claim_actor' : 'unverified';
-    if (entry.provenance !== expected) return invalid();
-    if (expected === 'recorded_claim_actor' && (event.sender_kind !== 'agent' || event.sender_trust !== 'lease_owner' || event.audience !== 'user' || event.scope !== 'task')) return invalid();
+    if (entry.provenance !== (entry.event.in_reply_to === null ? 'not_reply' : 'unverified')) return invalid();
   }
   if (c.reason === 'page' ? (r.message_id !== null || r.entries.length !== r.limit || r.next_cursor !== previous) : r.next_cursor !== null) return invalid();
   if (new TextEncoder().encode(JSON.stringify(r)).length > TASK_ACTIVITY_MAX_OUTPUT_BYTES) return invalid();

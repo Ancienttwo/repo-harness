@@ -1,9 +1,12 @@
-{
-  "schemaVersion": "archcontext.node/v2",
-  "id": "component.engineer-scheduling.primary",
-  "kind": "component",
-  "name": "Work Package Graph Reader",
-  "status": "active",
-  "parent": "capability.runtime-harness.engineer-scheduling",
-  "summary": "Validates one tracked Work Package graph against its canonical task rows and capability authority."
-}
+schemaVersion: "archcontext.node/v2"
+id: "component.engineer-scheduling.primary"
+kind: "component"
+name: "Provider Work Graph Reader"
+status: "active"
+parent: "capability.runtime-harness.engineer-scheduling"
+summary: "Validates one provider WorkGraph V2 at its selected commit and path, then joins provider issue observations and exact dependency evidence without acquisition authority."
+source:
+  include:
+    - "src/core/engineers/scheduling.ts"
+    - "src/effects/engineers/scheduling.ts"
+    - "src/effects/engineers/dependency-authority.ts"

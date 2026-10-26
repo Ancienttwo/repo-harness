@@ -54,11 +54,20 @@ Authoritative surfaces:
   State carries no contract, review, acceptance, checks, readiness or sprint
   projection. The CLI, SessionStart and MCP read the same projection.
   `tests/state/adapter-parity.test.ts` checks these readers.
+- Provider board: `src/core/state/provider-board.ts` and
+  `src/effects/state/collect-provider-board-inputs.ts` join canonical GitHub issue
+  observations to exact admitted sessions. `core/sessions/` owns shared selector
+  contracts; `effects/sessions/` observes their current admission and discovers
+  bounded session lists. Operator HTTP consumes these shared observations.
+- Shared admission and profiles: `src/effects/admission/` reads protected approval
+  and current issue goals; `src/effects/github/` provides the common provider
+  adapter and policy reader; `src/effects/profiles/profile-store.ts` resolves
+  tracked engineer contracts. These services do not require review execution.
 - Historical coordination and worktree safety: `src/core/state/coordination-identity.ts`
-  and `src/effects/state/coordination-lease-store.ts` read historical owners.
-  The board and hook slice are read-only. Worktree start, cleanup and sweep keep
-  their exact deletion guards. Sprint completion and publication ownership
-  writers are removed. See [Historical Coordination](shared-coordination-plane.md).
+  derives canonical task identity and revision from Sprint rows for explicit history. The active
+  lease reader and Sprint board are removed. Worktree cleanup keeps its exact
+  deletion guards. `src/effects/locking/task-lock.ts` keeps the shared physical
+  task mutex. See [Provider Observations and Worktree Safety](shared-coordination-plane.md).
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
@@ -86,7 +95,7 @@ move directories. `cli`, `core`, `effects` and `scripts` are implementation laye
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
 | runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and retains historical Engineer readers. | [Runtime Harness](domains/runtime-harness.md) |
-| organization | 2 | Reads historical tasks and publication records. Keeps manual Task Inbox and provider feedback operations. | [Organization](domains/organization.md) |
+| organization | 2 | Projects provider fleet and PR readiness observations. Owns admitted Task Inbox, manual provider feedback and explicit history readers. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
 
@@ -121,8 +130,8 @@ flowchart LR
   Console["operator web console"]:::cap
   OpServer["operator HTTP reader"]:::cap
   Closure["archctx closure<br/>global-runtime-reconciliation"]:::cap
-  Fleet["task-fleet<br/>inbox and historical readers"]:::ext
-  Pub["publication<br/>historical readers and provider feedback"]:::ext
+  Fleet["task-fleet<br/>provider board and admitted inbox"]:::ext
+  Pub["publication<br/>PR observations and provider feedback"]:::ext
   TAH["task-agent-host"]:::cap
   Review["acceptance-review"]:::cap
   WS["workflow-state"]:::store
@@ -166,10 +175,10 @@ flowchart LR
 | --- | --- |
 | Bot -> CLI root | External. `README.md` "Two Layers": the Bot drives programs through the repo-harness CLI and Herdr. |
 | CLI root -> task-fleet, task-agent-host, workflow-state, publication | `relation.global-runtime-reconciliation.cli-root.task-fleet`, `.task-agent-host`, `.workflow-state`, `.publication` (`buildProgram` registers the fleet, herdr, state and publication commands). |
-| task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read retained historical Sprint and lease records for observation; these do not dispatch current tasks. |
-| task-fleet -> publication | `relation.task-fleet.publication`: read publication receipts, readiness and provider feedback. |
+| task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read provider issue and admitted session board observations without dispatching tasks. |
+| task-fleet -> publication | `relation.task-fleet.publication`: read explicit provider PR readiness and admitted provider feedback. |
 | task-agent-host -> Herdr | External. The capability hosts persistent task agents in Herdr panes (capability summary). |
-| publication -> GitHub provider | External. Current task/PR authority stays in GitHub. Publication retains receipt readers and provider feedback operations; it does not restore lease publication writers. |
+| publication -> GitHub provider | External. Current task/PR authority stays in GitHub. Publication observes provider PR readiness and keeps provider feedback operations; it has no publication receipt store reader or writer. |
 | Host -> hook-adapters | External. User-level host hooks call the `repo-harness-hook` binary (`package.json` `bin`, [Global Hook Runtime](global-hook-runtime.md)). |
 | hook-adapters -> workflow-state, evidence-ledger, task-fleet | `relation.hook-adapters.primary.workflow-state`, `relation.hook-adapters.session-lifecycle.evidence-ledger`, `relation.hook-adapters.session-lifecycle.task-fleet`. |
 | MCP client -> mcp-sidecar | External. `README.md` "MCP Connector". |
@@ -195,14 +204,16 @@ Each datum has one authority. Every other representation is a projection.
 | Planning context | Repository Markdown under `plans/` and `tasks/` | workflow-state reads retained plan context | Effective State projects local facts. It has no persisted JSON cache. `tasks/current.md` is an orientation snapshot, not task authority. |
 | Current task identity, claim, status and dependency | GitHub issue and PR | Human/Bot decisions | Local boards and retained Sprint readers do not dispatch tasks. |
 | State content and published version | `state_revision` identifies resolved content; `state resolve` alone allocates shared `state_version` | workflow-state | Read-only hooks and MCP can return a version allocated for a different revision. |
-| Task execution (lease), historical | `<git-common-dir>/repo-harness/coordination/v1/`; claim tokens under `.ai/harness/sprint/claims`. Readers only since #834. `init` writes no cutover marker since #917. | workflow-state | State board and fleet board read them. Worktree safety does not. |
-| Task messages | `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Session context renders them as untrusted data. They hold no authority. |
-| Publication, historical | Immutable receipts in `<git-common-dir>/repo-harness/publications/v1`. Readers only since #834. | publication | Merge readiness is derived at read time and never stored. |
-| Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json` | acceptance-review | Acceptance review validates exact subject and verification evidence; Effective State has no acceptance projection. |
+| Historical coordination | Persisted Sprint rows, owner records and claim tokens | workflow-state | Retained codecs read Sprint rows for explicit history. No reader parses owner records or claim tokens. Current boards do not read leases. Retirement does not delete historical bytes. |
+| Current execution admission | Protected approval under the OS account gates root, current provider goal and exact session/claim selection | acceptance-review; task-agent-host binds execution | `effects/admission/` and `effects/sessions/` reobserve authority. A board or native host attribution record cannot grant it. |
+| Task mutex | `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock` | execution-primitives | Inbox and feedback retain the same physical lock path through `effects/locking/task-lock.ts`. |
+| Task messages | Admitted records below `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Exact admission SHA and claim reference/revision fence delivery. Session context renders messages as untrusted data; historical records remain separate. |
+| Publication | Provider PR state on GitHub. Stored bytes under `<git-common-dir>/repo-harness/publications/v1` have no reader or writer. | publication | No code reads publication receipts. Current PR readiness observes canonical provider identity, expected head/base, checks and reviews, then reobserves identity. |
+| Acceptance | `~/.repo-harness/gates/<sha256(worktree root realpath)>/acceptance.latest.json`, and immutable receipt records at `acceptance-receipts/<digest>.json` in the same directory | acceptance-review | Acceptance review validates exact subject and verification evidence; Effective State has no acceptance projection. Each later review replaces `acceptance.latest.json`. A record keeps one receipt's exact bytes under its digest. Dependency authority and product acceptance read the record by digest. |
 | Harness evidence | `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/evidence/blobs` | evidence-ledger | Handoff and resume recovery views. |
-| Engineer contracts and bindings | Tracked `agents/engineers/**`; bindings in `<git-common-dir>/repo-harness/engineers/v1` have readers only | engineer-bindings | Engineer offers and the engineering overlay. |
-| Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Pipeline ledger and acceptance review read the session records. |
-| Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Fleet offers and the operator read it. |
+| Engineer contracts | Tracked `agents/engineers/**`. Stored bindings under `<git-common-dir>/repo-harness/engineers/v1` have no reader or writer. | engineer-bindings | Current scheduling joins explicitly selected profile revisions to admitted sessions. It does not infer engineers from actors or historical bindings. |
+| Task agent sessions | Herdr panes; records under `.ai/harness/runs/task-agents` and task worktrees under `.ai/harness/runs/task-workspaces` | task-agent-host | Shared session discovery and current context revalidate exact bindings. Native host attribution grants no authority; runtime state does not set issue status. |
+| Repository registry | `~/.repo-harness/registered-repos.json` | mcp-sidecar | Provider fleet and operator observations use its exact repository scope. |
 | Global configuration | `~/.repo-harness/config.json` | global-runtime-reconciliation | Projection policy (`src/effects/architecture/projection-config.ts`). |
 | Merge | The provider and the user | none | repo-harness never merges. |
 

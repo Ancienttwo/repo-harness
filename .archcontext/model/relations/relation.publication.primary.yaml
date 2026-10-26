@@ -3,4 +3,4 @@ id: relation.publication.primary
 kind: calls
 source: capability.organization.publication
 target: component.publication.primary
-intent: "Read historical publication records and derive fenced PR readiness without task ownership mutation"
+intent: "Derive fenced PR readiness, collect provider integration evidence and share the digest helpers without task ownership mutation"

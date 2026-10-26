@@ -140,7 +140,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(second.status).toBe(200);
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 7, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(payload).toMatchObject({ protocol: 8, kind: 'operator_fleet_snapshot', sequence: 1 });
       expect(await second.json()).toMatchObject({ sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
 
@@ -548,8 +548,12 @@ describe('operator serve command and HTTP boundary', () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-repo-')));
     expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
-    const markerPath = join(repoRoot, '.ai/harness/sprint/active-sprint');
-    mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+    // Block a real Git read used by provider observation, not the retired Sprint marker.
+    const markerPath = join(repoRoot, 'git-read-gate'), bin = join(repoRoot, 'bin');
+    mkdirSync(bin);
+    const realGit = Bun.which('git')!, originalPath = process.env.PATH;
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\ncat < '${markerPath}' > /dev/null\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}:${originalPath}`;
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
     const server = await startOperatorServer({
@@ -588,6 +592,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(Date.now() - closeStartedAt).toBeLessThan(2_500);
       await active;
     } finally {
+      process.env.PATH = originalPath;
       writer.kill('SIGTERM');
       if (!closed) await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
@@ -596,42 +601,35 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('default Fleet reads never lazy-fetch a missing promisor Sprint blob', async () => {
+  test('default Repository reads never lazy-fetch a missing promisor provider graph blob', async () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-promisor-')));
     const remote = join(parent, 'remote.git');
-    const source = join(parent, 'source');
+    const source = moduleRepository();
     const clone = join(parent, 'clone');
-    const sprint = 'plans/sprints/promisor.sprint.md';
+    const graph = '.ai/harness/work-graph.v2.json';
     const git = (cwd: string, ...args: string[]) => {
       const result = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8' });
       expect(result.status, result.stderr).toBe(0);
       return result.stdout.trim();
     };
-    const sprintText = (state: string) => `# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${TASK_ID} | [ ] | ${state} | contract | read only | (pending) |\n`;
-    // Pin the remote HEAD. Without a host `init.defaultBranch` a bare init
-    // keeps `refs/heads/master`; the clone then finds no checkout and the
-    // Fleet read would report an empty-but-ok board instead of the missing
-    // promisor blob this test exists for.
+    // Keep an immutable provider graph on the policy-selected branch.
     git(parent, 'init', '-q', '--bare', '-b', 'main', remote);
     git(remote, 'config', 'uploadpack.allowFilter', 'true');
-    git(parent, 'init', '-q', '-b', 'main', source);
-    mkdirSync(join(source, 'plans/sprints'), { recursive: true });
-    mkdirSync(join(source, '.ai/harness/sprint'), { recursive: true });
-    writeFileSync(join(source, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
-    writeFileSync(join(source, sprint), sprintText('base'));
+    git(source, 'branch', '-M', 'main');
+    fixtureWrite(source, 'agents/engineers/profiles/.gitkeep', '');
+    fixtureWrite(source, graph, JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: repoHarnessRepoIdFor(clone), work_packages: [] }));
     git(source, 'add', '.');
     git(source, 'commit', '-qm', 'base');
     git(source, 'push', '-q', `file://${remote}`, 'main');
     git(parent, 'clone', '-q', '--filter=blob:none', `file://${remote}`, clone);
     git(clone, 'switch', '-qc', 'work');
-    // The board path starts at this worktree marker. Its absence would end the
-    // read before the promisor blob is touched, so pin the fixture to it.
-    expect(existsSync(join(clone, '.ai/harness/sprint/active-sprint'))).toBe(true);
-    writeFileSync(join(source, sprint), sprintText('moved'));
+    expect(existsSync(join(clone, graph))).toBe(true);
+    // Whitespace produces a distinct missing blob while preserving valid graph semantics.
+    writeFileSync(join(source, graph), readFileSync(join(source, graph), 'utf8') + '\n');
     git(source, 'commit', '-qam', 'moved');
     git(source, 'push', '-q', `file://${remote}`, 'main');
     git(clone, 'fetch', '-q', 'origin', 'main:main');
-    const blob = git(clone, 'rev-parse', `main:${sprint}`);
+    const blob = git(clone, 'rev-parse', `main:${graph}`);
     const blobPresent = () => spawnSync('git', ['cat-file', '-e', blob], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).status === 0;
     expect(blobPresent()).toBe(false);
     const fetchMarker = join(parent, 'fetch-ran');
@@ -645,11 +643,12 @@ describe('operator serve command and HTTP boundary', () => {
       env: { ...registry.env, GIT_NO_LAZY_FETCH: '0' },
     });
     try {
-      for (const route of ['/api/v1/fleet/snapshot']) {
+      for (const route of [`/api/v1/repositories/${registry.ids[0]}/snapshot`]) {
         const response = await fetch(`${server.url}${route}`);
         expect(response.status).toBe(200);
-        const body = JSON.stringify(await response.json());
-        expect(body).toContain('"status":"unreadable"');
+        const payload = await response.json();
+        expect(payload.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'needs_provider_graph' } } });
+        const body = JSON.stringify(payload);
         expect(body).not.toContain('moved');
         expect(existsSync(fetchMarker)).toBe(false);
         expect(blobPresent()).toBe(false);
@@ -658,6 +657,7 @@ describe('operator serve command and HTTP boundary', () => {
     } finally {
       await server.close();
       rmSync(parent, { recursive: true, force: true });
+      rmSync(source, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
@@ -849,11 +849,22 @@ describe('operator serve command and HTTP boundary', () => {
   });
 });
 
+const admittedDiffSelector = {
+  repository_id: 'repo-a', provider_repository_id: '123', issue_id: '456', campaign_id: 'campaign',
+  task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2',
+  claim_revision: 'sha256:' + 'a'.repeat(64), grant_sha256: 'sha256:' + 'b'.repeat(64),
+  policy_sha256: 'sha256:' + 'c'.repeat(64), actor_id: 'owner', session_binding_sha256: 'sha256:' + 'd'.repeat(64),
+};
+const admittedDiffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
+  Object.fromEntries(Object.entries(admittedDiffSelector).filter(([key]) => key !== 'repository_id')));
+
 describe('reader retirement', () => {
-  const diffPath = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  // Activity shares this slot but requires an inbox-compatible stable task ID.
+  const selector = { ...admittedDiffSelector, task: TASK_ID };
+  const diffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
+    Object.fromEntries(Object.entries(selector).filter(([key]) => key !== 'repository_id')));
   const diff = {
-    protocol: 1 as const, kind: 'operator_task_diff' as const, repository_id: 'repo-a', task_id: TASK_ID,
-    task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+    ...selector, protocol: 2 as const, kind: 'operator_task_diff' as const,
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
   };
@@ -861,7 +872,7 @@ describe('reader retirement', () => {
     const path = kind === 'diff' ? diffPath : '/api/v1/repositories/repo-a/snapshot';
     for (const ending of ['timeout', 'disconnect'] as const) {
       test(`${kind} ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
-        let calls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
+        let calls = 0, secondaryCalls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
         const hold = (signal: AbortSignal) => {
           calls++; if (calls > 1) return Promise.resolve();
           firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
@@ -869,6 +880,8 @@ describe('reader retirement', () => {
         const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
           read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
           read_task_diff: async input => { await hold(input.signal); return diff; },
+          read_admitted_task_activity: async () => { secondaryCalls++; throw new Error('retired slot must block activity'); },
+          read_task_context: async () => { secondaryCalls++; throw new Error('retired slot must block context'); },
         });
         const abort = new AbortController();
         const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
@@ -883,11 +896,13 @@ describe('reader retirement', () => {
           expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'repository_snapshot_busy' } });
           expect(calls).toBe(1);
           if (kind === 'diff') {
-            for (const route of ['activity', 'context?task_revision=' + TASK_REVISION]) {
-              const blocked = await fetch(`${server.url}/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`);
+            for (const route of ['activity', 'context']) {
+              const blocked = await fetch(server.url + diffPath.replace('/diff?', `/${route}?`));
+              expect(blocked.status).toBe(503);
               expect(await blocked.json()).toEqual({ code: 'busy' });
             }
           }
+          expect(secondaryCalls).toBe(0);
           retire(); await Bun.sleep(0);
           const fresh = await fetch(server.url + path);
           expect(fresh.status).toBe(200);
@@ -944,10 +959,9 @@ describe('reader retirement', () => {
 });
 
 describe('read-only task diff route', () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const path = admittedDiffPath;
   const result = {
-    protocol: 1 as const, kind: 'operator_task_diff' as const, repository_id: 'repo-a', task_id: TASK_ID,
-    task_revision: TASK_REVISION, claim_id: CLAIM_ID, generation: 1,
+    ...admittedDiffSelector, protocol: 2 as const, kind: 'operator_task_diff' as const,
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-10T00:00:00.000Z', patch: '', untracked_paths: [],
   };
@@ -958,7 +972,7 @@ describe('read-only task diff route', () => {
       const response = await fetch(server.url+path); expect(response.status).toBe(200); expect(await response.json()).toEqual(result);
       const head = await fetch(server.url+path, { method: 'HEAD' }); expect(head.status).toBe(200); expect(await head.text()).toBe('');
       expect((await fetch(server.url+path+'&root=/tmp')).status).toBe(400);
-      expect((await fetch(server.url+path+'&generation=2')).status).toBe(400);
+      expect((await fetch(server.url+path+'&actor_id=other')).status).toBe(400);
       expect((await fetch(server.url+path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
       expect((await fetch(server.url+path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
       expect(calls).toBe(2);
@@ -977,14 +991,14 @@ describe('read-only task diff route', () => {
     } finally { await server.close(); }
   });
   test('rejects mismatched reader payload', async () => {
-    const server = await startOperatorServer({ port: 0, read_task_diff: async () => ({ ...result, generation: 2 }) });
+    const server = await startOperatorServer({ port: 0, read_task_diff: async () => ({ ...result, actor_id: 'other' }) });
     try { expect(await (await fetch(server.url+path)).json()).toEqual({ code: 'unavailable' }); }
     finally { await server.close(); }
   });
 });
 
 test('task diff disconnect and shutdown cancel active reads', async () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/diff?task_revision=${TASK_REVISION}&claim_id=${CLAIM_ID}&generation=1`;
+  const path = admittedDiffPath;
   let entered!: () => void;
   let stopped!: () => void;
   let started = new Promise<void>(resolve => { entered = resolve; });
@@ -1004,7 +1018,7 @@ test('task diff disconnect and shutdown cancel active reads', async () => {
 });
 
 describe('historical task activity route', () => {
-  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/activity`;
+  const path = `/api/v1/fleet/tasks/repo-a/${TASK_ID}/history/activity`;
   const activity = {
     repository_id:'repo-a', task_id:TASK_ID, limit:50, after:null, message_id:null,
     protocol:1 as const, kind:'operator_task_activity' as const, observed_at:'2026-09-22T00:00:00.000Z', consistency:'observed' as const,
@@ -1061,24 +1075,25 @@ describe('historical task activity route', () => {
 });
 
 describe('current Task context route',()=>{
-  const path=`/api/v1/fleet/tasks/repo-a/${TASK_ID}/context`;
-  const context:import('../../src/core/operator/task-context').OperatorTaskContext={
-    protocol:1,kind:'operator_task_context',repository_id:'repo-a',task_id:TASK_ID,task_revision:'b'.repeat(64),
-    canonical:{target_ref:'main',commit:'c'.repeat(40),sprint_path:'plans/sprints/current.md'},
-    task:{title:'Current task',mode:'contract',acceptance:'read only',state:'pending'},
-    execution:{lease_state:'available',claim:null},
-    offer:{execution_readiness:'planning_required',blockers:[{code:'plan_missing',attention_owner:'agent'}],offer_revision:`sha256:${'d'.repeat(64)}`,plan:null},
-    observation:{observed_at:'2026-09-22T00:00:00.000Z',board_revision:`sha256:${'e'.repeat(64)}`,authorization_revision:1,consistency:'observed'},
+  const hash='sha256:'+'a'.repeat(64);
+  const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:TASK_ID,role:'worker',claim_ref:'claim:1',claim_revision:hash,grant_sha256:hash,policy_sha256:hash,actor_id:'owner',session_binding_sha256:hash};
+  const query=new URLSearchParams(Object.entries(selector).filter(([key])=>key!=='repository_id'));
+  const path=`/api/v1/fleet/task-sessions/repo-a/context?${query}`;
+  const context:import('../../src/core/operator/admitted-task-context').AdmittedTaskContext={
+    protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:'Current goal'},verification:{plan_sha256:hash,plan_json:'{}'},
+    scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},approval:{admission_sha256:hash,grant_sha256:hash,revision:1,goal_revision:hash,scope_sha256:hash},
+    profile_selection:{state:'unassigned'},execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
   };
   test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
     let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});
     try {
       expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
       expect((await fetch(server.url+path,{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
-      expect((await fetch(server.url+path+'?source_ref=private')).status).toBe(400);
+      expect((await fetch(server.url+path+'&source_ref=private')).status).toBe(400);
       expect(calls).toBe(0);
-      expect((await fetch(server.url+path+'?task_revision='+context.task_revision)).status).toBe(200);
-      expect(await(await fetch(server.url+path+'?task_revision='+'a'.repeat(64))).json()).toEqual({code:'unavailable'});
+      expect((await fetch(server.url+path)).status).toBe(200);
+      const changedQuery=new URLSearchParams(query);changedQuery.set('grant_sha256','sha256:'+'b'.repeat(64));
+      expect(await(await fetch(server.url+'/api/v1/fleet/task-sessions/repo-a/context?'+changedQuery)).json()).toEqual({code:'unavailable'});
     } finally {await server.close();}
   });
   test('context timeout holds shared activity capacity until the original reader settles',async()=>{
@@ -1086,7 +1101,7 @@ describe('current Task context route',()=>{
     let signal:AbortSignal|undefined,activityCalls=0;
     const server=await startOperatorServer({port:0,timeout_ms:1000,max_concurrency:1,
       read_task_context:input=>{signal=input.signal;entered();return new Promise(resolve=>{settle=()=>resolve(context);});},
-      read_task_activity:async()=>{activityCalls++;throw new Error('unused');},
+      read_admitted_task_activity:async()=>{activityCalls++;throw new Error('unused');},
     });
     try {
       const pending=fetch(server.url+path);await started;
@@ -1119,7 +1134,7 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
       });
       try {
         const fleet = await (await fetch(server.url + '/api/v1/fleet/snapshot')).json() as {service_epoch: string; protocol: number};
-        expect(fleet.protocol).toBe(7); epochs.push(fleet.service_epoch);
+        expect(fleet.protocol).toBe(8); epochs.push(fleet.service_epoch);
       } finally { await server.close(); }
     }
     expect(epochs[0]).not.toBe(epochs[1]);
@@ -1128,8 +1143,9 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
 
 describe('repository source collection', () => {
   test('a corrupt Planning source does not hide Organization data, write files or leak paths', () => {
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'operator-source-read-')));
-    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
+    const repoRoot = realpathSync(moduleRepository());
+    fixtureWrite(repoRoot, 'agents/engineers/profiles/.gitkeep', '');
+    fixtureCommit(repoRoot);
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
     const policy = join(repoRoot, '.ai/harness/policy.json');
     mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
@@ -1138,19 +1154,22 @@ describe('repository source collection', () => {
       return entry.isDirectory() ? tree(path) : [`${path}:${readFileSync(path).toString('base64')}`];
     }).sort();
     try {
-      writeFileSync(policy, JSON.stringify({}));
+      writeFileSync(policy, JSON.stringify({ worktree_strategy: { merge_back: { target: 'HEAD' } } }));
+      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: registry.ids[0], work_packages: [] }));
+      fixtureCommit(repoRoot);
       const before = tree(repoRoot);
       const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
       expect(observed.protocol).toBe(1);
       expect(observed.organization.status).toBe('observed');
-      expect(observed.planning.status).toBe('observed');
+      expect(observed.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'observed', snapshot: { packages: [] } } } });
       expect(JSON.stringify(observed)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(before);
-      mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), '../invalid.sprint.md\n');
+      // The graph source is independent of Organization's provider/session observation.
+      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', '{invalid graph');
+      fixtureCommit(repoRoot);
       const corruptBefore = tree(repoRoot);
       const corrupt = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(corrupt.planning).toMatchObject({ status: 'unavailable', code: 'source_unavailable' });
+      expect(corrupt.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'source_unavailable' } } });
       expect(corrupt.organization.status).toBe('observed');
       expect(JSON.stringify(corrupt)).not.toContain(repoRoot);
       expect(tree(repoRoot)).toEqual(corruptBefore);
@@ -1207,7 +1226,7 @@ test('history context inherits pre-reader guards and holds shared capacity until
     expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
     expect((await fetch(server.url+path+'&path=/private')).status).toBe(400);expect(calls).toBe(0);
     const pending=fetch(server.url+path);await entered;
-    expect(await(await fetch(server.url+path.replace('?view=history',''))).json()).toEqual({code:'busy'});
+    expect(await(await fetch(server.url+path+'&task_revision='+TASK_REVISION)).json()).toEqual({code:'busy'});
     expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBe(true);
     expect(await(await fetch(server.url+path)).json()).toEqual({code:'busy'});expect(calls).toBe(1);
     retire();await new Promise(resolve=>setTimeout(resolve,0));
@@ -1463,4 +1482,19 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
   } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } rmSync(root, { recursive: true, force: true }); }
+});
+
+test('session discovery is bounded read-only transport with a closed repository selector', async () => {
+  const value = { protocol: 1 as const, kind: 'operator_task_sessions' as const, repository_id: 'repo-a',
+    observed_at: '2026-10-25T00:00:00Z', sessions: [] };
+  let calls = 0;
+  const server = await startOperatorServer({ port: 0, read_task_sessions: async () => { calls++; return value; } });
+  try {
+    const path = server.url + '/api/v1/fleet/task-sessions/repo-a';
+    const response = await fetch(path); expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
+    expect((await fetch(path + '?root=/tmp')).status).toBe(400);
+    expect((await fetch(path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
+    expect((await fetch(path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
+    expect(calls).toBe(1);
+  } finally { await server.close(); }
 });

@@ -374,52 +374,50 @@ EXCLUDE_EOF
 git -C "$TARGET_REPO" add .
 git -C "$TARGET_REPO" commit -qm "initialize smoke repository"
 
-mkdir -p "$TARGET_REPO/tasks/contracts" "$TARGET_REPO/.smoke"
-cat >"$TARGET_REPO/tasks/contracts/tarball-verification.contract.md" <<'CONTRACT_EOF'
-# Tarball Verification Contract
-
-## Verification Plan
-
-```json
-{
-  "protocol": 1,
-  "checks": [
-    {
-      "id": "single-count",
-      "kind": "command",
-      "command": "mkdir -p .smoke && printf 'executed\\n' >> .smoke/execution-count",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "prove packaged verification execution and exact-context reuse",
-      "inputs": { "env": [] }
-    }
-  ]
+# Only the external account-home and provider endpoints are synthetic. The
+# installed CLI validates the upstream request and writes the real protected
+# approval; installed verification then reobserves it through its default loader.
+INSTALLED_ROOT="$APP_DIR/node_modules/$PACKAGE_NAME"
+ADMISSION_FIXTURE="$TMP_DIR/admission-fixture"
+mkdir -p "$TARGET_REPO/.smoke" "$ADMISSION_FIXTURE"
+bun "$ROOT/tests/fixtures/tarball-review-admission.ts" "$INSTALLED_ROOT" "$TARGET_REPO" "$SMOKE_HOME" "$ADMISSION_FIXTURE"
+export PATH="$ADMISSION_FIXTURE/bin:$PATH"
+bun --preload "$ADMISSION_FIXTURE/bootstrap.ts" "$INSTALLED_ROOT/src/cli/index.ts" \
+  review admit --repo "$TARGET_REPO" --request "$ADMISSION_FIXTURE/request.json" >"$ADMISSION_FIXTURE/grant.json"
+bun - "$ADMISSION_FIXTURE/request.json" "$ADMISSION_FIXTURE/grant.json" >"$ADMISSION_FIXTURE/args.txt" <<'JS_EOF'
+const [, , requestPath, grantPath] = process.argv;
+const {admission} = await Bun.file(requestPath).json();
+const grant = await Bun.file(grantPath).json();
+if (grant.revision !== 1 || !/^sha256:[0-9a-f]{64}$/.test(grant.grant_sha256)
+  || grant.bot_id !== 'synthetic-smoke-bot' || grant.execution_actor !== admission.actor_id) throw new Error('invalid installed approval result');
+for (const [flag, value] of Object.entries({'repository-id':admission.repository_id,'issue-id':admission.issue_id,
+  'campaign-id':admission.campaign_id,'grant-sha256':grant.grant_sha256,'policy-sha256':admission.policy.policy_sha256,actor:admission.actor_id})) {
+  console.log('--'+flag); console.log(value);
 }
-```
-CONTRACT_EOF
-git -C "$TARGET_REPO" add tasks/contracts/tarball-verification.contract.md
-git -C "$TARGET_REPO" commit -qm "add verification smoke contract"
-
-VERIFICATION_CONTRACT="tasks/contracts/tarball-verification.contract.md"
-"$CLI" run verification-plan validate --repo "$TARGET_REPO" --contract "$VERIFICATION_CONTRACT" \
-  >"$TARGET_REPO/.smoke/validate.json"
-if "$CLI" run verification-plan evaluate --repo "$TARGET_REPO" --contract "$VERIFICATION_CONTRACT" \
-  --report-file .smoke/evaluate-missing-report.json >"$TARGET_REPO/.smoke/evaluate-missing.json"; then
-  echo "[tarball-smoke] ERROR: packaged verification evaluate passed without execution evidence" >&2
+JS_EOF
+ADMISSION_ARGS=()
+while IFS= read -r arg; do ADMISSION_ARGS+=("$arg"); done <"$ADMISSION_FIXTURE/args.txt"
+# Invoke the installed helper entrypoint with an explicit test preload so its
+# protected store cannot touch the real OS account. Run-dispatcher startup is
+# independently checked below; the verification parser and all effects are real.
+verification_smoke() {
+  bun --preload "$ADMISSION_FIXTURE/bootstrap.ts" "$INSTALLED_ROOT/scripts/verification-plan.ts" \
+    "$1" --repo "$TARGET_REPO" "${ADMISSION_ARGS[@]}" "${@:2}"
+}
+verification_smoke validate >"$TARGET_REPO/.smoke/validate.json"
+missing_status=0
+verification_smoke evaluate --report-file .smoke/evaluate-missing-report.json >"$TARGET_REPO/.smoke/evaluate-missing.json" || missing_status=$?
+if [[ "$missing_status" -ne 1 ]]; then
+  echo "[tarball-smoke] ERROR: packaged verification missing evidence returned $missing_status, expected 1" >&2
   exit 1
 fi
 if [[ -e "$TARGET_REPO/.smoke/execution-count" ]]; then
   echo "[tarball-smoke] ERROR: packaged verification evaluate spawned the declared command" >&2
   exit 1
 fi
-"$CLI" run verification-plan execute --repo "$TARGET_REPO" --contract "$VERIFICATION_CONTRACT" \
-  --report-file .smoke/execute-first-report.json >"$TARGET_REPO/.smoke/execute-first.json"
-"$CLI" run verification-plan execute --repo "$TARGET_REPO" --contract "$VERIFICATION_CONTRACT" \
-  --report-file .smoke/execute-reuse-report.json >"$TARGET_REPO/.smoke/execute-reuse.json"
-"$CLI" run verification-plan evaluate --repo "$TARGET_REPO" --contract "$VERIFICATION_CONTRACT" \
-  --report-file .smoke/evaluate-final-report.json >"$TARGET_REPO/.smoke/evaluate-final.json"
+verification_smoke execute --report-file .smoke/execute-first-report.json >"$TARGET_REPO/.smoke/execute-first.json"
+verification_smoke execute --report-file .smoke/execute-reuse-report.json >"$TARGET_REPO/.smoke/execute-reuse.json"
+verification_smoke evaluate --report-file .smoke/evaluate-final-report.json >"$TARGET_REPO/.smoke/evaluate-final.json"
 bun - "$TARGET_REPO" <<'JS_EOF'
 const [, , repo] = process.argv;
 const readJson = async (name) => await Bun.file(`${repo}/.smoke/${name}`).json();
@@ -435,6 +433,13 @@ const finalEvaluation = await readJson("evaluate-final.json");
 const counter = (await Bun.file(`${repo}/.smoke/execution-count`).text()).trim().split("\n");
 if (validation?.kind !== "verification_plan_validation" || validation?.valid !== true
   || validation?.plan?.checks?.[0]?.id !== "single-count") fail("packaged verification validate returned the wrong plan");
+for (const report of [missing, first, reuse, finalEvaluation]) {
+  if (report.protocol !== 2 || report.kind !== 'verification_execution_report') fail('installed verification report protocol mismatch');
+  for (const key of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'plan_hash']) {
+    if (report.target[key] !== validation[key]) fail(`verification report lost approved ${key}`);
+  }
+  if ('contract_hash' in report.target) fail('verification report retained retired contract authority');
+}
 if (missing?.passed !== false || missing?.status !== "missing" || missing?.results?.[0]?.execution !== "missing") {
   fail("packaged verification evaluate did not report missing evidence");
 }

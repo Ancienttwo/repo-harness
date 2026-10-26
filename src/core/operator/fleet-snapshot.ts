@@ -1,16 +1,18 @@
+import { SESSION_SELECTOR_KEYS } from '../sessions/session-selector';
+import type { AdmittedTaskSession } from '../sessions/task-sessions';
 import { isOperatorServiceEpoch } from './observation-identity';
 import {
   FLEET_BOARD_PROTOCOL,
   fleetBoardErrorMessage,
-  type FleetBoardCardV1,
+  type FleetBoardCardV2,
   type FleetBoardColumn,
   type FleetBoardCountsV1,
   type FleetBoardErrorCode,
   type FleetBoardFeedbackSummaryV1,
   type FleetBoardInboxSummaryV1,
-  type FleetBoardSnapshotV1,
+  type FleetBoardSnapshotV2,
   type FleetBoardSnapshotConsistency,
-  type FleetRepositoryBoardV1,
+  type FleetRepositoryBoardV2,
   type FleetRepositoryStatus,
 } from '../fleet/board';
 
@@ -30,7 +32,7 @@ export type OperatorFleetErrorV1 = Readonly<{
 }>;
 export type OperatorFleetFeedbackSummaryV1 = FleetBoardFeedbackSummaryV1;
 export type OperatorFleetInboxSummaryV1 = FleetBoardInboxSummaryV1;
-export type OperatorFleetCardV1 = FleetBoardCardV1;
+export type OperatorFleetCardV1 = FleetBoardCardV2;
 
 export interface OperatorFleetRepositoryV1 {
   readonly repository_id: string;
@@ -42,8 +44,8 @@ export interface OperatorFleetRepositoryV1 {
   readonly error: OperatorFleetErrorV1 | null;
 }
 
-export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV1, 'protocol' | 'kind' | 'repositories' | 'snapshot_sha256'> {
-  readonly protocol: 7;
+export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV2, 'protocol' | 'kind' | 'repositories' | 'snapshot_sha256'> {
+  readonly protocol: 8;
   readonly service_epoch: string;
   readonly kind: 'operator_fleet_snapshot';
   readonly repositories: readonly OperatorFleetRepositoryV1[];
@@ -51,11 +53,22 @@ export interface OperatorFleetSnapshotV1 extends Omit<FleetBoardSnapshotV1, 'pro
   readonly source_snapshot_sha256: string;
 }
 
-function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
+function projectExecution(execution: AdmittedTaskSession | null): AdmittedTaskSession | null {
+  if (execution === null) return null;
+  const selector = Object.fromEntries(SESSION_SELECTOR_KEYS.map(key => [key, execution.selector[key]])) as unknown as AdmittedTaskSession['selector'];
+  return Object.freeze({ selector: Object.freeze(selector), admission_sha256: execution.admission_sha256,
+    profile_selection: Object.freeze(execution.profile_selection.state === 'unassigned' ? { state: 'unassigned' as const }
+      : { state: 'selected' as const, engineer_id: execution.profile_selection.engineer_id, engineer_contract_revision: execution.profile_selection.engineer_contract_revision }),
+    branch: execution.branch, runtime: execution.runtime, harness_kind: execution.harness_kind });
+}
+
+function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
   const mergeReadiness = card.merge_readiness === null ? null : Object.freeze({
     protocol: card.merge_readiness.protocol,
     kind: card.merge_readiness.kind,
-    publication_id: card.merge_readiness.publication_id,
+    provider_repository_id: card.merge_readiness.provider_repository_id,
+    repository: card.merge_readiness.repository,
+    pr_number: card.merge_readiness.pr_number,
     ready: card.merge_readiness.ready,
     expected_head_sha: card.merge_readiness.expected_head_sha,
     expected_base_sha: card.merge_readiness.expected_base_sha,
@@ -68,13 +81,15 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
   });
   return Object.freeze({
     repository_id: card.repository_id,
+    provider_repository_id: card.provider_repository_id,
+    provider_issue_id: card.provider_issue_id,
+    issue_state: card.issue_state,
+    issue_revision: card.issue_revision,
+    execution_status: card.execution_status,
+    execution: projectExecution(card.execution),
     task_id: card.task_id,
-    task_revision: card.task_revision,
     task_label: card.task_label,
     task_index: card.task_index,
-    claim_id: card.claim_id,
-    generation: card.generation,
-    task_state: card.task_state,
     placement: Object.freeze(card.placement.kind === 'column'
       ? { kind: 'column' as const, column: card.placement.column }
       : card.placement.kind === 'alternate_workflow'
@@ -84,18 +99,19 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
           : { kind: 'preparation' as const }),
     attention_owner: card.attention_owner,
     execution_readiness: card.execution_readiness,
-    readiness_blockers: card.readiness_blockers === null ? null : Object.freeze(card.readiness_blockers.map(blocker => Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }))),
-    lease_state: card.lease_state,
-    publication_id: card.publication_id,
-    head_sha: card.head_sha,
+    readiness_blockers: card.readiness_blockers === null ? null : Object.freeze(card.readiness_blockers.map(blocker => Object.freeze(blocker.code === 'provider_ineligible'
+      ? { code: blocker.code, attention_owner: blocker.attention_owner, eligibility_reasons: Object.freeze([...blocker.eligibility_reasons]) }
+      : { code: blocker.code, attention_owner: blocker.attention_owner }))),
     merge_readiness: mergeReadiness,
     blocker_codes: Object.freeze(card.blocker_codes.map((code) => code)),
     feedback: Object.freeze({
+      observation_status: card.feedback.observation_status,
       pending_count: card.feedback.pending_count,
       no_progress: card.feedback.no_progress,
       repair_actions: Object.freeze(card.feedback.repair_actions.map((action) => action)),
     }),
     inbox: Object.freeze({
+      observation_status: card.inbox.observation_status,
       delivery_evidence: card.inbox.delivery_evidence === null ? null : Object.freeze({
         candidate_count: card.inbox.delivery_evidence.candidate_count,
         latest: card.inbox.delivery_evidence.latest === null ? null : Object.freeze({
@@ -124,7 +140,7 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
   });
 }
 
-function projectRepository(repository: FleetRepositoryBoardV1, displayName: (repoRoot: string) => string): OperatorFleetRepositoryV1 {
+function projectRepository(repository: FleetRepositoryBoardV2, displayName: (repoRoot: string) => string): OperatorFleetRepositoryV1 {
   const error = repository.error;
   return Object.freeze({
     repository_id: repository.repository_id,
@@ -151,7 +167,7 @@ function projectRepository(repository: FleetRepositoryBoardV1, displayName: (rep
  * model while absolute paths and diagnostic causes stay server-side.
  */
 export function projectOperatorFleetSnapshot(
-  snapshot: FleetBoardSnapshotV1, serviceEpoch: string, displayName: (repoRoot: string) => string,
+  snapshot: FleetBoardSnapshotV2, serviceEpoch: string, displayName: (repoRoot: string) => string,
 ): OperatorFleetSnapshotV1 {
   if (!isOperatorServiceEpoch(serviceEpoch)) throw new Error('invalid operator service epoch');
   if (snapshot.protocol !== FLEET_BOARD_PROTOCOL) {
@@ -161,7 +177,7 @@ export function projectOperatorFleetSnapshot(
   const repositories = Object.freeze(snapshot.repositories.map((repository) => projectRepository(repository, displayName)));
   const sourceSnapshotSha256 = snapshot.snapshot_sha256;
   return Object.freeze({
-    protocol: 7,
+    protocol: 8,
     service_epoch: serviceEpoch,
     kind: 'operator_fleet_snapshot',
     registry_revision: snapshot.registry_revision,

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-fleet.task-inbox.task-agent-host"
+kind: "calls"
+source: "component.task-fleet.task-inbox"
+target: "capability.runtime-harness.task-agent-host"
+intent: "Reobserve the exact task session and live admission before current inbox operations"

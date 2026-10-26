@@ -1,14 +1,13 @@
-import { serializeHistoricalLease } from './helpers/sprint-fixture';
-import { completingLeaseFixture, reviewingLeaseFixture, boundLeaseFixture, fixtureTaskId } from './helpers/sprint-fixture';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 /**
- * Identity and revision determinism for the shared lease protocol.
+ * Identity and revision determinism for canonical tasks.
  *
  * The first suite is the contract's Falsifier, run before anything downstream
  * exists: if a claim cannot survive an unrelated row completing, the revision
  * granularity is wrong and every verb built on it inherits the defect.
  */
 import { describe, expect, test } from 'bun:test';
-import { COORDINATION_PROTOCOL, FIRST_LEASE_GENERATION, LEASE_OWNER_RECORD_SCHEMA_V2, TASK_DIGEST_PATTERN, buildLeaseOwnerRecord, deriveTaskRevision, lookupCanonicalTask, parseLeaseOwnerRecord, projectCanonicalTasks, type LeaseOwnerRecordV1 } from '../src/core/state/coordination-identity';
+import { TASK_DIGEST_PATTERN, deriveTaskRevision, projectCanonicalTasks } from '../src/core/state/coordination-identity';
 import { SprintSchemaError } from '../src/core/state/sprint-backlog-rows';
 
 const REPO_IDENTITY = '/tmp/example-clone/.git';
@@ -136,14 +135,6 @@ describe('task identity', () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[0].task_id).not.toBe(tasks[1].task_id);
     expect(tasks[0].task_revision).not.toBe(tasks[1].task_revision);
-
-    // Both are individually resolvable, so neither shadows the other.
-    const input = { repoIdentity: REPO_IDENTITY, sprintPath: SPRINT_PATH, sprintText: text };
-    for (const task of tasks) {
-      const lookup = lookupCanonicalTask(input, task.task_id);
-      expect(lookup.ok).toBe(true);
-      if (lookup.ok) expect(lookup.task.row.task).toBe(task.row.task);
-    }
   });
 
   test('identity no longer depends on the sprint path or the clone', () => {
@@ -171,12 +162,6 @@ describe('task identity', () => {
 });
 
 describe('task revision granularity', () => {
-  const input = (text: string) => ({
-    repoIdentity: REPO_IDENTITY,
-    sprintPath: SPRINT_PATH,
-    sprintText: text,
-  });
-
   test("editing an unrelated row's Mode or Acceptance leaves this row untouched", () => {
     const before = sprint([ROW_A, ROW_B]);
     const editedSibling = sprint([
@@ -222,142 +207,11 @@ describe('task revision granularity', () => {
       .not.toBe(deriveTaskRevision({ ...shared, taskCell: 'wire the claim verbs (fencing)' }));
   });
 
-  test('lookup fails closed on an unknown, malformed, or ambiguous task id', () => {
-    const text = sprint([ROW_A, ROW_B]);
-    const unknown = lookupCanonicalTask(input(text), 'f'.repeat(64));
-    expect(unknown.ok).toBe(false);
-    if (!unknown.ok) expect(unknown.error).toContain('no backlog row');
-
-    const malformed = lookupCanonicalTask(input(text), 'not-a-digest');
-    expect(malformed.ok).toBe(false);
-    if (!malformed.ok) expect(malformed.error).toContain('malformed task id');
-
+  test('projection fails closed on a duplicated task id', () => {
     // Two rows carrying one copied id is the fail-closed case: the whole
     // projection is refused rather than one of the two rows being picked.
     const duplicated = sprint([ROW_B, `| 3 | ${ID_B} | [ ] | wire the claim verbs again | inline | other | (pending) |`]);
-    const ambiguous = lookupCanonicalTask(input(duplicated), ID_B);
-    expect(ambiguous.ok).toBe(false);
-    if (!ambiguous.ok) expect(ambiguous.error).toContain('repeats task id');
     expect(() => tasksOf(duplicated)).toThrow(SprintSchemaError);
+    expect(() => tasksOf(duplicated)).toThrow('repeats task id');
   });
-
-  test('the protocol version is part of the preimage', () => {
-    expect(COORDINATION_PROTOCOL).toBe(1);
-  });
-});
-
-/**
- * The owner record's three fencing/authority fields, falsified where they are
- * cheapest to falsify: no filesystem, no git, no clock. Every case here is a
- * shape the store must classify `unknown` rather than partly trust.
- */
-describe('owner record schema', () => {
-  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'wire the claim verbs');
-
-  function owner(): LeaseOwnerRecordV1 {
-    return buildLeaseOwnerRecord({
-      claimId: 'claim-1',
-      taskId: TASK.task_id,
-      taskRevision: TASK.task_revision,
-      sprintPath: SPRINT_PATH,
-      targetRef: 'refs/heads/main',
-      generation: FIRST_LEASE_GENERATION,
-      sessionId: 'session-1',
-      sourceWorktree: '/tmp/example-clone',
-    });
-  }
-
-  test('a fresh claim mints generation 1, records its ref, and has no finish key', () => {
-    const record = owner();
-    expect(record.generation).toBe(1);
-    expect(record.target_ref).toBe('refs/heads/main');
-    expect(record.finish_transaction_key).toBeNull();
-    expect(parseLeaseOwnerRecord(serializeHistoricalLease(record))).toEqual(record);
-  });
-
-  test('parse rejects a record missing generation, target_ref, or finish_transaction_key', () => {
-    for (const field of ['generation', 'target_ref', 'finish_transaction_key'] as const) {
-      const { [field]: _dropped, ...withoutField } = owner();
-      expect(parseLeaseOwnerRecord(`${JSON.stringify(withoutField)}\n`)).toBeNull();
-    }
-  });
-
-  test('parse rejects a generation that is not a whole number at or above 1', () => {
-    for (const generation of [0, -1, 1.5, '2', null]) {
-      expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), generation })}\n`)).toBeNull();
-    }
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), generation: 7 })}\n`)?.generation)
-      .toBe(7);
-  });
-
-  test('parse rejects an empty target_ref and a non-null non-string finish key', () => {
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), target_ref: '' })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), finish_transaction_key: 7 })}\n`))
-      .toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), finish_transaction_key: '' })}\n`))
-      .toBeNull();
-  });
-
-  test('schema-1 retains its existing field-level compatibility while rejecting schema-2 carriers', () => {
-    const legacy = {
-      ...owner(),
-      state: 'reserving' as const,
-      execution_worktree: null,
-      branch: null,
-      // Schema 1 historically validates fields, not cross-state execution tuples.
-      unit_ref: 'plans/legacy-boundary.md',
-    };
-    expect(parseLeaseOwnerRecord(serializeHistoricalLease(legacy))).toEqual(legacy);
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, current_publication: null })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, unknown_outer_field: true })}\n`)).toBeNull();
-  });
-
-});
-
-describe('lease owner record schema 2 publication lifecycle', () => {
-  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'build the lease store');
-  const pointer = {
-    publication_id: `sha256:${'a'.repeat(64)}`,
-    receipt_sha256: `sha256:${'b'.repeat(64)}`,
-    head_sha: 'c'.repeat(40),
-    ship_transaction_key: 'ship/fixture-key',
-  } as const;
-
-  function completing() {
-    const reserved = buildLeaseOwnerRecord({
-      claimId: 'claim-1', taskId: TASK.task_id, taskRevision: TASK.task_revision,
-      sprintPath: SPRINT_PATH, targetRef: 'main', generation: 1,
-      sessionId: 'session-1', sourceWorktree: '/tmp/source',
-    });
-    const bound = boundLeaseFixture(reserved, {
-      executionWorktree: '/tmp/review-wt', branch: 'codex/review', unitRef: 'plans/review.md',
-    });
-    const complete = completingLeaseFixture(bound, {
-      claimId: 'claim-1', executionWorktree: '/tmp/review-wt', finishTransactionKey: 'finish/fixture-key',
-    });
-    if (!complete.ok) throw new Error(complete.error);
-    return complete.record;
-  }
-
-  test('writes a strict schema-2 reviewing pointer without touching coordination digests', () => {
-    const entered = reviewingLeaseFixture(completing(), { claimId: 'claim-1', publication: pointer });
-    expect(entered.ok).toBe(true);
-    if (!entered.ok) return;
-    expect(entered.record).toMatchObject({
-      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
-      state: 'reviewing',
-      current_publication: pointer,
-      finish_transaction_key: null,
-    });
-    expect(parseLeaseOwnerRecord(serializeHistoricalLease(entered.record))).toEqual(entered.record);
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, current_publication: { ...pointer, extra: true } })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: 3 })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: undefined })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, unexpected: true })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, finish_transaction_key: 'finish/mixed-domains' })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, execution_worktree: null, branch: null, unit_ref: null })}\n`)).toBeNull();
-    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, state: 'bound', current_publication: pointer })}\n`)).toBeNull();
-    expect(COORDINATION_PROTOCOL).toBe(1);
-  });
-
 });

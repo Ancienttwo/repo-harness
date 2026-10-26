@@ -1,38 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  projectMergeReadiness,
   projectPullRequestMergeReadiness,
-  type MergeReadinessInputV1,
   type ProviderMergeReadinessFactsV1,
+  type PullRequestMergeReadinessInput,
 } from '../../src/core/publication/merge-readiness';
-import { buildPublicationReceipt } from '../../src/core/publication/publication-receipt';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
 
-const receipt = buildPublicationReceipt({
-  repo_id: `sha256:${'1'.repeat(64)}`,
-  task_id: '2'.repeat(64),
-  task_revision: '3'.repeat(64),
-  claim_id: 'claim-readiness',
-  generation: 1,
-  target_ref: 'main',
-  base_sha: BASE,
-  branch: 'codex/readiness',
-  head_sha: HEAD,
-  tree_sha: 'c'.repeat(40),
-  candidate_diff_fingerprint: `sha256:${'4'.repeat(64)}`,
-  provider: 'github',
-  provider_repo_id: 'R_readiness',
-  pr_number: 42,
-  pr_url: 'https://example.invalid/pr/42',
-  created_at: '2026-08-22T22:40:00Z',
-});
-
-function readyInput(): MergeReadinessInputV1 {
+function readyInput(): PullRequestMergeReadinessInput {
   return {
-    receipt,
+    expected_head_sha: HEAD,
+    expected_base_sha: BASE,
     integration_mode: 'unmerged',
     observation: 'stable',
     provider: {
@@ -49,12 +29,9 @@ function readyInput(): MergeReadinessInputV1 {
   };
 }
 
-describe('MergeReadinessV1', () => {
+describe('projectPullRequestMergeReadiness', () => {
   test('projects a ready verdict only from fully fenced inputs', () => {
-    expect(projectMergeReadiness(readyInput())).toEqual({
-      protocol: 1,
-      kind: 'repo-harness-merge-readiness',
-      publication_id: receipt.publication_id,
+    expect(projectPullRequestMergeReadiness(readyInput())).toEqual({
       ready: true,
       expected_head_sha: HEAD,
       expected_base_sha: BASE,
@@ -64,8 +41,8 @@ describe('MergeReadinessV1', () => {
     });
   });
 
-  test('always preserves receipt fences and deterministically routes aggregate blockers', () => {
-    const verdict = projectMergeReadiness({
+  test('always preserves expected fences and deterministically routes aggregate blockers', () => {
+    const verdict = projectPullRequestMergeReadiness({
       ...readyInput(),
       integration_mode: 'absorbed',
       provider: {
@@ -100,12 +77,12 @@ describe('MergeReadinessV1', () => {
   });
 
   test('fails closed for provider data churn and unavailable provider facts', () => {
-    const changed = projectMergeReadiness({
+    const changed = projectPullRequestMergeReadiness({
       ...readyInput(),
       observation: 'changed_during_read',
       provider: null,
     });
-    const unavailable = projectMergeReadiness({
+    const unavailable = projectPullRequestMergeReadiness({
       ...readyInput(),
       observation: 'provider_data_incomplete',
       provider: null,
@@ -120,7 +97,7 @@ describe('MergeReadinessV1', () => {
   });
 
   test('treats only passing required-CI buckets as green and review null as no review requirement', () => {
-    const verdict = projectMergeReadiness({
+    const verdict = projectPullRequestMergeReadiness({
       ...readyInput(),
       provider: {
         ...readyInput().provider!,
@@ -137,9 +114,9 @@ describe('MergeReadinessV1', () => {
   });
 });
 
-test.each(['head_sha','base_sha'] as const)('an otherwise green Publication loses readiness when provider %s moves', field => {
+test.each(['head_sha','base_sha'] as const)('an otherwise green pull request loses readiness when provider %s moves', field => {
   const input=readyInput();
-  const verdict=projectMergeReadiness({...input,provider:{...input.provider!,[field]:'9'.repeat(40)}});
+  const verdict=projectPullRequestMergeReadiness({...input,provider:{...input.provider!,[field]:'9'.repeat(40)}});
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(b=>b.code)).toEqual([field==='head_sha'?'head_moved':'base_moved_since_verification']);
 });
@@ -154,13 +131,13 @@ test('ordinary PR readiness needs no receipt, lease or acceptance artifact', () 
 
 test.each([null, -1, 0.5, Number.NaN])('missing or invalid thread count %s fails closed', count => {
   const input = readyInput();
-  const verdict = projectMergeReadiness({ ...input, provider: { ...input.provider!, unresolved_thread_count: count } });
+  const verdict = projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider!, unresolved_thread_count: count } });
   expect(verdict.blockers.map(blocker => blocker.code)).toEqual(['provider_data_incomplete']);
 });
 
 test.each(['APPROVED', 'REVIEW_REQUIRED', null])('review decision %s needs no local approval artifact', decision => {
   const input = readyInput();
-  expect(projectMergeReadiness({ ...input, provider: { ...input.provider!, review_decision: decision } }).ready).toBe(true);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider!, review_decision: decision } }).ready).toBe(true);
 });
 
 
@@ -168,8 +145,8 @@ test('a ready rollback boundary binds both provider and expected base', () => {
   const input = readyInput();
   const boundary = { status: 'ready' as const, pr_number: 17, before_sha: 'c'.repeat(40), after_sha: BASE };
   const provider = { ...input.provider!, rollback_boundary: boundary };
-  expect(projectMergeReadiness({ ...input, provider }).ready).toBe(true);
-  expect(projectMergeReadiness({ ...input, provider: { ...provider, base_sha: 'd'.repeat(40) } }).blockers.map(b => b.code))
+  expect(projectPullRequestMergeReadiness({ ...input, provider }).ready).toBe(true);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...provider, base_sha: 'd'.repeat(40) } }).blockers.map(b => b.code))
     .toEqual(['base_moved_since_verification', 'provider_data_incomplete']);
   expect(projectPullRequestMergeReadiness({ provider, integration_mode: 'unmerged', observation: 'stable',
     expected_head_sha: HEAD, expected_base_sha: 'd'.repeat(40) }).blockers.map(b => b.code))
@@ -183,12 +160,12 @@ test.each([undefined, null, 'ready', [], { status: 'pending' }, { status: 'ready
 ].map(rollback_boundary => ({ rollback_boundary })))('invalid rollback boundary fails closed: %j', ({ rollback_boundary }) => {
   const input = readyInput();
   const provider = { ...input.provider!, rollback_boundary } as unknown as ProviderMergeReadinessFactsV1;
-  expect(projectMergeReadiness({ ...input, provider }).blockers.map(b => b.code)).toEqual(['provider_data_incomplete']);
+  expect(projectPullRequestMergeReadiness({ ...input, provider }).blockers.map(b => b.code)).toEqual(['provider_data_incomplete']);
 });
 
 test('retired rollback facts do not supply the new boundary', () => {
   const input = readyInput();
   const { rollback_boundary: _boundary, ...facts } = input.provider!;
   const provider = { ...facts, rollback_tags: 'ready' } as unknown as ProviderMergeReadinessFactsV1;
-  expect(projectMergeReadiness({ ...input, provider }).blockers.map(b => b.code)).toEqual(['provider_data_incomplete']);
+  expect(projectPullRequestMergeReadiness({ ...input, provider }).blockers.map(b => b.code)).toEqual(['provider_data_incomplete']);
 });

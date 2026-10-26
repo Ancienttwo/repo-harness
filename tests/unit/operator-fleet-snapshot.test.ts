@@ -1,9 +1,10 @@
+import { decodeOperatorFleetSnapshot } from '../../src/operator-web/types';
 import { describe, expect, test } from 'bun:test';
 import { basename } from 'path';
 
 import {
   projectFleetBoardSnapshot,
-  type FleetBoardSnapshotV1,
+  type FleetBoardSnapshotV2,
 } from '../../src/core/fleet/board';
 import {
   projectOperatorFleetSnapshot,
@@ -12,7 +13,7 @@ import {
 
 const serviceEpoch = '00000000-0000-4000-8000-000000000001';
 
-function sourceSnapshot(): FleetBoardSnapshotV1 {
+function sourceSnapshot(): FleetBoardSnapshotV2 {
   return projectFleetBoardSnapshot({
     registry_revision: 'sha256:registry',
     sequence: 7,
@@ -26,19 +27,13 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
         snapshot_consistency: 'stable',
         cards: [
           {
-            task_id: 'a'.repeat(64),
-            task_revision: 'b'.repeat(64),
+            task_id: null, provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${'b'.repeat(64)}`, execution_status: 'observed', execution: null,
             task_label: 'observe one registered repository',
             task_index: 1,
-            task_state: 'pending',
-            lease_state: 'available',
-            claim_id: null,
-            generation: null,
-            current_publication: null,
             merge_readiness: null,
             execution_readiness: 'execution_ready', readiness_blockers: [],
-            feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
-            inbox: { unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+            feedback: { observation_status: 'observed', pending_count: 1, no_progress: false, repair_actions: [] },
+            inbox: { observation_status: 'observed', unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
             snapshot_consistency: 'changed_during_read',
             error: null,
           },
@@ -67,7 +62,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
 
     expect(projected).toMatchObject({
-      protocol: 7,
+      protocol: 8,
       service_epoch: serviceEpoch,
       kind: 'operator_fleet_snapshot',
       registry_revision: source.registry_revision,
@@ -120,7 +115,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
             },
           }
         : repository),
-    } as FleetBoardSnapshotV1;
+    } as FleetBoardSnapshotV2;
 
     const projected = projectOperatorFleetSnapshot(withRuntimeError, serviceEpoch, basename);
     expect(projected.repositories[1]?.error).toEqual({
@@ -144,36 +139,24 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
         snapshot_consistency: 'stable',
         cards: [
           {
-            task_id: 'a'.repeat(64),
-            task_revision: 'b'.repeat(64),
+            task_id: null, provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${'b'.repeat(64)}`, execution_status: 'observed', execution: null,
             task_label: 'observe one registered repository',
             task_index: 1,
-            task_state: 'pending',
-            lease_state: 'available',
-            claim_id: null,
-            generation: null,
-            current_publication: null,
             merge_readiness: null,
             execution_readiness: 'execution_ready', readiness_blockers: [],
-            feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-            inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+            feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
+            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
             snapshot_consistency: 'stable',
             error: null,
           },
           {
-            task_id: 'c'.repeat(64),
-            task_revision: 'b'.repeat(64),
+            task_id: null, provider_repository_id: '1001', provider_issue_id: '2002', issue_state: 'open', issue_revision: `sha256:${'b'.repeat(64)}`, execution_status: 'observed', execution: null,
             task_label: 'observe a damaged card',
             task_index: 2,
-            task_state: 'pending',
-            lease_state: 'available',
-            claim_id: null,
-            generation: null,
-            current_publication: null,
             merge_readiness: null,
             execution_readiness: null, readiness_blockers: null,
-            feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-            inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
+            feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
+            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
             snapshot_consistency: 'stable',
             error: { code: 'repo_inbox_unreadable', message: 'inbox stderr /private/agent-root' },
           },
@@ -193,14 +176,14 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
   });
 
   test('rejects an unsupported Fleet protocol before crossing the browser boundary', () => {
-    const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV1;
+    const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV2;
     expect(() => projectOperatorFleetSnapshot(invalid, serviceEpoch, basename)).toThrow('unsupported Fleet snapshot protocol');
   });
 
   test('UX-local-human-control-board-v1-N1 allowlists every DTO level against hostile identity-shaped extras', () => {
-    const source = JSON.parse(JSON.stringify(sourceSnapshot())) as FleetBoardSnapshotV1 & Record<string, unknown>;
-    const repository = source.repositories[0] as FleetBoardSnapshotV1['repositories'][number] & Record<string, unknown>;
-    const card = repository.cards[0] as FleetBoardSnapshotV1['repositories'][number]['cards'][number] & Record<string, unknown>;
+    const source = JSON.parse(JSON.stringify(sourceSnapshot())) as FleetBoardSnapshotV2 & Record<string, unknown>;
+    const repository = source.repositories[0] as FleetBoardSnapshotV2['repositories'][number] & Record<string, unknown>;
+    const card = repository.cards[0] as FleetBoardSnapshotV2['repositories'][number]['cards'][number] & Record<string, unknown>;
     Object.defineProperty(source, 'future_env', { value: 'REPO_HARNESS_TOKEN=secret', enumerable: true });
     Object.defineProperty(repository, 'repo_root', { value: 'C:\\Users\\operator\\private', enumerable: true });
     Object.defineProperty(repository, 'future_unix_path', { value: '/Users/operator/.ssh/id_rsa', enumerable: true });
@@ -226,10 +209,9 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
       'access_mode', 'cards', 'display_name', 'error', 'repository_id', 'snapshot_consistency', 'status',
     ]);
     expect(Object.keys(projected.repositories[0]?.cards[0] ?? {}).sort()).toEqual([
-      'attention_owner', 'blocker_codes', 'claim_id', 'error', 'execution_readiness',
-      'feedback', 'generation', 'head_sha', 'inbox', 'lease_state', 'merge_readiness',
-      'placement', 'publication_id', 'readiness_blockers', 'repository_id', 'snapshot_consistency', 'task_id', 'task_index',
-      'task_label', 'task_revision', 'task_state',
+      'attention_owner', 'blocker_codes', 'error', 'execution', 'execution_readiness', 'execution_status',
+      'feedback', 'inbox', 'issue_revision', 'issue_state', 'merge_readiness', 'placement', 'provider_issue_id', 'provider_repository_id',
+      'readiness_blockers', 'repository_id', 'snapshot_consistency', 'task_id', 'task_index', 'task_label',
     ]);
   });
 });
@@ -255,4 +237,34 @@ test('notification evidence is copied by allowlist without exposing raw runtime 
     expect(() => projectOperatorFleetSnapshot(sourceSnapshot(), epoch as string, basename)).toThrow('invalid operator service epoch');
   }
   expect(projectOperatorFleetSnapshot(sourceSnapshot(), serviceEpoch, basename).service_epoch).toBe(serviceEpoch);
+});
+
+test('provider eligibility reasons survive the public projection and strict browser decoder', () => {
+  const source = sourceSnapshot();
+  const reasons = ['assignee_not_allowed', 'missing_label:ready'];
+  const first = source.repositories[0]!;
+  const input = { ...source, registry_revision: `sha256:${'a'.repeat(64)}`,
+    counts: { ...source.counts, available: 0, unreadable: 0, preparation: 1 },
+    repositories: [{ ...first, cards: [{ ...first.cards[0]!, execution_readiness: 'unsupported' as const,
+      placement: { kind: 'preparation' as const },
+      readiness_blockers: [{ code: 'provider_ineligible' as const, attention_owner: 'user' as const, eligibility_reasons: reasons }],
+    }] }] };
+  const wire = projectOperatorFleetSnapshot(input, serviceEpoch, basename);
+  const blocker = wire.repositories[0]!.cards[0]!.readiness_blockers![0]!;
+  expect(blocker).toEqual({ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: reasons });
+  const decoded = decodeOperatorFleetSnapshot(JSON.parse(JSON.stringify(wire)));
+  expect(decoded.repositories[0]!.cards[0]!.readiness_blockers).toEqual([blocker]);
+  reasons.push('later_mutation');
+  expect(blocker).toEqual({ code: 'provider_ineligible', attention_owner: 'user', eligibility_reasons: ['assignee_not_allowed', 'missing_label:ready'] });
+  for (const bad of [
+    { ...blocker, extra: true }, { ...blocker, code: 'unknown_provider_blocker' }, { code: 'provider_ineligible', attention_owner: 'user' },
+    { ...blocker, attention_owner: 'agent' },
+    ...[null, [1], [''], [' trailing '], ['bad\u0000reason'], ['x'.repeat(1025)], Array.from({ length: 101 }, (_, i) => String(i).padStart(3, '0')), ['a', 'a'], ['z', 'a']]
+      .map(eligibility_reasons => ({ ...blocker, eligibility_reasons })),
+    { code: 'repo_read_only', attention_owner: 'user', eligibility_reasons: [] },
+  ]) {
+    const malformed = JSON.parse(JSON.stringify(wire));
+    malformed.repositories[0].cards[0].readiness_blockers = [bad];
+    expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow();
+  }
 });

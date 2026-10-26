@@ -1,4 +1,3 @@
-import { seedEngineerBinding } from '../helpers/engineer-state-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -6,27 +5,15 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
-  ENGINEER_BINDING_KIND,
   ENGINEER_PROFILE_KIND,
   ENGINEER_PROFILE_PROTOCOL,
-  buildEngineerBindingCurrent,
-  buildEngineerBindingEvent,
-  canonicalEngineerBindingCurrentBytes,
   canonicalModuleEngineerProfileBytes,
-  deriveEngineerTransitionId,
   engineerContractRevision,
-  engineerCurrentPayloadSha256,
-  engineerOperationFingerprint,
   engineerSha256,
-  validateEngineerBinding,
-  validateEngineerBindingCurrent,
-  validateEngineerBindingEvent,
   validateModuleEngineerProfile,
-  type EngineerBindingV1,
-  type EngineerTransitionRequest,
   type ModuleEngineerProfileV1,
 } from '../../src/core/engineers/profile-binding';
-import { listEngineerProfiles } from '../../src/effects/engineers/profile-store';
+import { listEngineerProfiles } from '../../src/effects/profiles/profile-store';
 
 const profile: ModuleEngineerProfileV1 = {
   protocol: ENGINEER_PROFILE_PROTOCOL,
@@ -119,18 +106,6 @@ describe('ModuleEngineerProfileV1', () => {
     const root = profileRepository();
     execFileSync('git', ['add', 'agents/engineers'], { cwd: root });
     const baseline = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
-    seedEngineerBinding(root, {
-      engineer_id: profile.engineer_id,
-      idempotency_key: 'capability-revision-baseline',
-      provider: 'codex',
-      provider_thread_id: 'thread-baseline',
-      host_id: 'local',
-      engineer_contract_revision: baseline.engineer_contract_revision,
-      expected_current_digest: null,
-      expected_binding_generation: 0,
-      expected_binding_id: null,
-      expected_engineer_contract_revision: baseline.engineer_contract_revision,
-    });
 
     const nodePath = join(root, '.archcontext/model/nodes/capability.verification.evals-checks.yaml');
     writeFileSync(nodePath, readFileSync(nodePath, 'utf8').replace(
@@ -152,79 +127,5 @@ describe('ModuleEngineerProfileV1', () => {
     const sopChanged = listEngineerProfiles(root).find((item) => item.profile.engineer_id === profile.engineer_id)!;
     expect(sopChanged.sop_bytes.startsWith('\ufeff')).toBe(true);
     expect(sopChanged.engineer_contract_revision).not.toBe(capabilityChanged.engineer_contract_revision);
-  });
-});
-
-describe('Engineer binding protocol', () => {
-  test('binds event payload and current digests without a cycle', () => {
-    const revision = engineerSha256('contract');
-    const request: EngineerTransitionRequest = {
-      engineer_id: profile.engineer_id,
-      idempotency_key: 'bind-1',
-      transition: 'initialize',
-      expected_current_digest: null,
-      expected_binding_generation: 0,
-      expected_binding_id: null,
-      expected_engineer_contract_revision: revision,
-      engineer_contract_revision: revision,
-      provider: 'codex',
-      provider_thread_id: 'thread-1',
-      host_id: 'local',
-    };
-    const binding: EngineerBindingV1 = {
-      protocol: ENGINEER_PROFILE_PROTOCOL,
-      kind: ENGINEER_BINDING_KIND,
-      binding_id: '11111111-1111-4111-8111-111111111111',
-      engineer_id: profile.engineer_id,
-      binding_generation: 1,
-      provider: 'codex',
-      provider_thread_id: 'thread-1',
-      host_id: 'local',
-      engineer_contract_revision: revision,
-      state: 'active',
-      previous_binding_id: null,
-      bound_at: '2026-08-24T12:00:00.000Z',
-      retired_at: null,
-    };
-    expect(engineerOperationFingerprint({
-      ...request,
-      engineer_contract_revision: engineerSha256('server-derived-contract-v2'),
-    })).toBe(engineerOperationFingerprint(request));
-    const payload = {
-      protocol: ENGINEER_PROFILE_PROTOCOL,
-      kind: 'repo-harness-engineer-binding-current' as const,
-      engineer_id: profile.engineer_id,
-      binding_generation: 1,
-      state: 'active' as const,
-      current_binding_id: binding.binding_id,
-      engineer_contract_revision: revision,
-    };
-    const event = buildEngineerBindingEvent({
-      transition_id: deriveEngineerTransitionId(profile.engineer_id, 'bind-1'),
-      idempotency_key: 'bind-1',
-      operation_fingerprint: engineerOperationFingerprint(request),
-      engineer_id: profile.engineer_id,
-      transition: 'initialize',
-      expected_current_digest: null,
-      expected_binding_generation: 0,
-      previous_binding_id: null,
-      next_binding: binding,
-      next_current_payload_sha256: engineerCurrentPayloadSha256(payload),
-      created_at: '2026-08-24T12:00:00.000Z',
-    });
-    const current = buildEngineerBindingCurrent(event);
-    expect(validateEngineerBindingEvent(event)).toEqual(event);
-    expect(validateEngineerBindingCurrent(current)).toEqual(current);
-    expect(JSON.parse(canonicalEngineerBindingCurrentBytes(current))).toEqual(current);
-    expect(() => validateEngineerBindingEvent({ ...event, event_digest: engineerSha256('stale') })).toThrow('event_digest is stale');
-    expect(() => validateEngineerBindingCurrent({ ...current, extra: true })).toThrow('fields are invalid');
-    expect(() => validateEngineerBinding({ ...binding, bound_at: '2026-02-30T00:00:00Z' })).toThrow('bound_at is invalid');
-    expect(() => validateEngineerBinding({ ...binding, bound_at: '2026-01-01T24:00:00Z' })).toThrow('bound_at is invalid');
-    expect(() => validateEngineerBinding({
-      ...binding,
-      state: 'retired',
-      bound_at: '2026-08-24T12:00:00.0001Z',
-      retired_at: '2026-08-24T12:00:00.00009Z',
-    })).toThrow('retired_at precedes bound_at');
   });
 });

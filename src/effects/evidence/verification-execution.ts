@@ -3,20 +3,20 @@ import { currentReadonlyObservation, observationReadFileSync as readFileSync, ob
 import { createHash, randomUUID } from "crypto";
 import { accessSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
-import { basename, delimiter, isAbsolute, join, relative, resolve } from "path";
+import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
-import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
+import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
-  VerificationPlanValidationError,
   fingerprintVerificationCheck,
   fingerprintVerificationCheckExecution,
   hashVerificationPlan,
-  parseVerificationPlanFromContractText,
   type VerificationCheck,
   type VerificationPlan,
 } from "../../core/evidence/verification-plan";
+import { readEvalCatalogPlan, type EvalCatalogSource } from "./eval-catalog";
+import { observeActiveReviewAdmission } from "../admission/issue-goal";
 import { resolveGitCommonDirectory } from "../git/common-directory";
 import {
   acquireExclusiveDirectoryLock,
@@ -74,10 +74,12 @@ export interface VerificationEvaluation {
 }
 
 export interface VerificationExecutionReport {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly kind: "verification_execution_report";
   readonly target: {
-    readonly contract: string;
+    readonly campaign_sha256: string;
+    readonly admission_sha256: string;
+    readonly grant_sha256: string;
     readonly plan_hash: string;
     readonly snapshot_hash: string;
     readonly tree_hash: string;
@@ -89,34 +91,46 @@ export interface VerificationExecutionReport {
   readonly results: readonly VerificationExecutionResult[];
 }
 
-export interface VerificationUnavailable {
-  readonly kind: "verification_unavailable";
-  readonly status: "missing";
-  readonly passed: false;
-  readonly reason: "missing_plan" | "empty_plan";
-  readonly contract: string;
-  readonly results: readonly [];
+export interface EvalExecutionReport extends Omit<VerificationExecutionReport, "kind" | "target"> {
+  readonly kind: "eval_execution_report";
+  readonly target: {
+    readonly catalog_sha256: string;
+    readonly eval_id: string;
+    readonly eval_sha256: string;
+    readonly plan_hash: string;
+    readonly snapshot_hash: string;
+    readonly tree_hash: string;
+    readonly head_commit: string;
+  };
 }
+type ExecutionReport = VerificationExecutionReport | EvalExecutionReport;
+type ReviewBinding = Pick<AdmittedReviewSubjectIdentity, "authority_kind" | "campaign_sha256" | "admission_sha256" | "grant_sha256">;
+type EvalBinding = Pick<EvalCatalogSubjectIdentity, "authority_kind" | "catalog_sha256" | "eval_id" | "eval_sha256">;
+type AuthorityBinding = ReviewBinding | EvalBinding;
 
-export type VerificationContractOutcome = VerificationExecutionReport | VerificationUnavailable;
+export type VerificationOutcome = VerificationExecutionReport;
 
-export interface VerificationContractInput {
+export type ReviewAdmissionSource = Parameters<typeof observeActiveReviewAdmission>[0];
+
+export interface VerificationInput {
   readonly repoRoot: string;
-  readonly contractPath: string;
+  readonly authority: ReviewAdmissionSource;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
 }
 
-export interface ExecuteVerificationContractInput extends VerificationContractInput {
+export interface ExecuteAdmittedVerificationInput extends VerificationInput {
   readonly reportFile?: string;
   readonly forceReason?: string;
 }
 
-export interface VerificationContractValidation {
-  readonly protocol: 1;
+export interface AdmittedVerificationValidation {
+  readonly protocol: 2;
   readonly kind: "verification_plan_validation";
   readonly valid: true;
-  readonly contract: string;
+  readonly campaign_sha256: string;
+  readonly admission_sha256: string;
+  readonly grant_sha256: string;
   readonly plan_hash: string;
   readonly plan: VerificationPlan;
 }
@@ -126,10 +140,8 @@ export interface VerificationExecutionReportValidation {
   readonly report: VerificationExecutionReport;
 }
 
-interface ExecutionPayload {
-  readonly protocol: 1;
-  readonly contract_path: string;
-  readonly contract_hash: string;
+type ExecutionPayload = AuthorityBinding & {
+  readonly protocol: 2;
   readonly plan_hash: string;
   readonly check_id: string;
   readonly check_fingerprint: string;
@@ -144,12 +156,11 @@ interface ExecutionPayload {
   readonly passed: boolean;
 }
 
-/** Ledger and contract facts. Historical validation needs no live toolchain. */
+/** Ledger and admitted plan facts. Historical validation needs no live toolchain. */
 interface EvidenceContext {
   readonly repoRoot: string;
-  readonly contractPath: string;
-  readonly contractText: string;
-  readonly contractHash: string;
+  readonly binding: AuthorityBinding;
+  readonly assertCurrent: () => void;
   readonly plan: VerificationPlan;
   readonly planHash: string;
   readonly snapshot: GitVirtualTreeSnapshot;
@@ -221,11 +232,40 @@ export function captureGitVirtualTreeSnapshot(repoRoot: string): GitVirtualTreeS
   };
 }
 
-function resolveContract(repoRoot: string, contractPath: string): { readonly absolute: string; readonly text: string } {
-  const resolved = resolveInsideRepo(repoRoot, contractPath);
-  if (!resolved.ok || !resolved.path) throw new Error(resolved.error ?? `invalid contract path: ${contractPath}`);
-  if (!existsSync(resolved.path)) throw new Error(`verification contract does not exist: ${contractPath}`);
-  return { absolute: resolved.path, text: readFileSync(resolved.path, "utf8") };
+function readAdmission(input: Pick<VerificationInput, "repoRoot" | "authority">) {
+  if (realpathSync(input.repoRoot) !== realpathSync(input.authority.repoRoot)) {
+    throw new Error("verification admission repository does not match execution repository");
+  }
+  return observeActiveReviewAdmission(input.authority);
+}
+
+function admittedIdentity(active: ReturnType<typeof observeActiveReviewAdmission>) {
+  return { campaign_sha256: active.admission.campaign_sha256,
+    admission_sha256: active.admission.admission_sha256, grant_sha256: active.grant_sha256 };
+}
+
+function reviewAuthority(input: Pick<VerificationInput, "repoRoot" | "authority">) {
+  const active = readAdmission(input);
+  const binding: ReviewBinding = { authority_kind: "review-admission", ...admittedIdentity(active) };
+  return { binding, plan: active.admission.verification_plan, assertCurrent: () => {
+    const current = readAdmission(input);
+    if (current.revision !== active.revision
+      || canonicalize(admittedIdentity(current)) !== canonicalize(admittedIdentity(active))) {
+      throw new Error("verification admission changed during evaluation");
+    }
+  } };
+}
+
+function authorityBinding(identity: AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity | ExecutionPayload): AuthorityBinding {
+  return identity.authority_kind === "review-admission"
+    ? { authority_kind: identity.authority_kind, campaign_sha256: identity.campaign_sha256,
+        admission_sha256: identity.admission_sha256, grant_sha256: identity.grant_sha256 }
+    : { authority_kind: identity.authority_kind, catalog_sha256: identity.catalog_sha256,
+        eval_id: identity.eval_id, eval_sha256: identity.eval_sha256 };
+}
+
+function sameAuthority(left: AuthorityBinding, right: AuthorityBinding): boolean {
+  return canonicalize(left) === canonicalize(right);
 }
 
 function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string {
@@ -293,6 +333,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   const runnerSources = [
     ["verification-execution", join(packageRoot, "src/effects/evidence/verification-execution.ts")],
     ["verification-plan", join(packageRoot, "src/core/evidence/verification-plan.ts")],
+    ["eval-catalog", join(packageRoot, "src/effects/evidence/eval-catalog.ts")],
     ["evidence-redaction", join(packageRoot, "src/core/evidence/redaction.ts")],
     ["evidence-secret-env", join(packageRoot, "src/effects/evidence/secret-env.ts")],
     ["process-runner", join(packageRoot, "src/effects/process-runner.ts")],
@@ -327,49 +368,27 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   return { hash, providerId: `verification-execution/${hash}` };
 }
 
-function prepare(input: VerificationContractInput): PreparedContext | VerificationUnavailable {
+function prepareContext(input: Pick<VerificationInput, "repoRoot" | "env">,
+  authority: Pick<EvidenceContext, "binding" | "plan" | "assertCurrent">): PreparedContext {
   const repoRoot = resolve(input.repoRoot);
-  const contract = resolveContract(repoRoot, input.contractPath);
-  let plan: VerificationPlan;
-  try {
-    plan = parseVerificationPlanFromContractText(contract.text);
-  } catch (error) {
-    if (!(error instanceof VerificationPlanValidationError) || error.reason !== "missing_plan") throw error;
-    return { kind: "verification_unavailable", status: "missing", passed: false,
-      reason: "missing_plan", contract: input.contractPath, results: [] };
-  }
-  if (plan.checks.length === 0) return { kind: "verification_unavailable", status: "missing", passed: false,
-    reason: "empty_plan", contract: input.contractPath, results: [] };
   const env = input.env ?? process.env;
   const toolchain = resolveToolchain(env);
-  return {
-    repoRoot,
-    contractPath: input.contractPath,
-    contractText: contract.text,
-    contractHash: sha256(contract.text),
-    plan,
-    planHash: hashVerificationPlan(plan),
-    snapshot: captureGitVirtualTreeSnapshot(repoRoot),
-    env,
-    toolchainHash: toolchain.hash,
-    envProviderId: toolchain.providerId,
-  };
+  return { repoRoot, ...authority, planHash: hashVerificationPlan(authority.plan),
+    snapshot: captureGitVirtualTreeSnapshot(repoRoot), env,
+    toolchainHash: toolchain.hash, envProviderId: toolchain.providerId };
 }
 
-export function validateVerificationContract(
-  input: Pick<VerificationContractInput, "repoRoot" | "contractPath">,
-): VerificationContractValidation {
-  const repoRoot = resolve(input.repoRoot);
-  const contract = resolveContract(repoRoot, input.contractPath);
-  const plan = parseVerificationPlanFromContractText(contract.text);
-  return {
-    protocol: 1,
-    kind: "verification_plan_validation",
-    valid: true,
-    contract: input.contractPath,
-    plan_hash: hashVerificationPlan(plan),
-    plan,
-  };
+function prepare(input: VerificationInput): PreparedContext {
+  return prepareContext(input, reviewAuthority(input));
+}
+
+export function validateAdmittedVerification(
+  input: Pick<VerificationInput, "repoRoot" | "authority">,
+): AdmittedVerificationValidation {
+  const admission = readAdmission(input);
+  const plan = admission.admission.verification_plan;
+  return { protocol: 2, kind: "verification_plan_validation", valid: true,
+    ...admittedIdentity(admission), plan_hash: hashVerificationPlan(plan), plan };
 }
 
 function declaredEnvironment(check: VerificationCheck, env: NodeJS.ProcessEnv): JsonValue {
@@ -527,7 +546,13 @@ function payloadOf(repoRoot: string, event: EvidenceEventRecord): ExecutionPaylo
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.protocol !== 1 || typeof record.contract_path !== "string" || typeof record.check_id !== "string") return null;
+  const authorityHashes = record.authority_kind === "review-admission"
+    ? [record.campaign_sha256, record.admission_sha256, record.grant_sha256]
+    : record.authority_kind === "eval-catalog" && typeof record.eval_id === "string" && record.eval_id.length > 0
+      ? [record.catalog_sha256, record.eval_sha256] : [];
+  if (record.protocol !== 2 || !authorityHashes.length
+    || ![...authorityHashes, record.plan_hash].every(value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value))
+    || typeof record.check_id !== "string") return null;
   if (typeof record.cache_key !== "string" || typeof record.execution_id !== "string" || typeof record.run_file !== "string") return null;
   if (typeof record.run_record_hash !== "string" || typeof record.passed !== "boolean") return null;
   if (typeof record.inputs_hash !== "string" || typeof record.toolchain_hash !== "string") return null;
@@ -538,7 +563,22 @@ function executionEvents(context: EvidenceContext): readonly { event: EvidenceEv
   return readAcceptedEvents(context.repoRoot).accepted.flatMap((event) => {
     if (event.event_type !== EVENT_TYPE || event.producer !== PRODUCER || event.trust_class !== "authoritative_machine") return [];
     const payload = payloadOf(context.repoRoot, event);
-    if (!payload || payload.contract_path !== context.contractPath) return [];
+    if (!payload || payload.authority_kind !== context.binding.authority_kind) return [];
+    // Review history is campaign-scoped only for explicit baseline references.
+    // Exact matching below still requires the current admission and grant.
+    if (payload.authority_kind === "review-admission" && context.binding.authority_kind === "review-admission") {
+      if (payload.campaign_sha256 !== context.binding.campaign_sha256) return [];
+    } else if (!sameAuthority(authorityBinding(payload), context.binding)) return [];
+    const identity = event.subject_identity;
+    if (!("authority_kind" in identity)
+      || !sameAuthority(authorityBinding(identity), authorityBinding(payload))
+      || identity.plan_hash !== payload.plan_hash
+      || identity.scope_hash !== payload.plan_hash
+      || identity.subject_hash !== payload.snapshot_hash
+      || identity.command_hash !== payload.check_fingerprint
+      || identity.env_provider_id !== `verification-execution/${payload.toolchain_hash}`
+      || identity.authority_commit !== identity.base_commit
+      || sha256(canonicalize({ tree_hash: identity.target_commit })) !== payload.snapshot_hash) return [];
     return [{ event, payload }];
   });
 }
@@ -700,12 +740,10 @@ function buildReport(
   results: readonly VerificationExecutionResult[],
   status: VerificationReportStatus,
   snapshotChanged = false,
-): VerificationExecutionReport {
-  return {
-    protocol: 1,
-    kind: "verification_execution_report",
+): ExecutionReport {
+  const shared = {
+    protocol: 2 as const,
     target: {
-      contract: context.contractPath,
       plan_hash: context.planHash,
       snapshot_hash: context.snapshot.snapshot_hash,
       tree_hash: context.snapshot.tree_hash,
@@ -723,9 +761,17 @@ function buildReport(
     },
     results,
   };
+  if (context.binding.authority_kind === "review-admission") {
+    const review = context.binding;
+    return { ...shared, kind: "verification_execution_report", target: { ...shared.target,
+      campaign_sha256: review.campaign_sha256, admission_sha256: review.admission_sha256, grant_sha256: review.grant_sha256 } };
+  }
+  const evaluation = context.binding;
+  return { ...shared, kind: "eval_execution_report", target: { ...shared.target,
+    catalog_sha256: evaluation.catalog_sha256, eval_id: evaluation.eval_id, eval_sha256: evaluation.eval_sha256 } };
 }
 
-function evaluatePrepared(context: PreparedContext): VerificationExecutionReport {
+function evaluatePrepared(context: PreparedContext): ExecutionReport {
   const ledger = ledgerView(context);
   const current = new Map<string, VerificationExecutionResult>();
   for (const check of context.plan.checks) {
@@ -740,9 +786,12 @@ function evaluatePrepared(context: PreparedContext): VerificationExecutionReport
 }
 
 /** Read-only evidence evaluation. This function never invokes a check command. */
-export function evaluateVerificationContract(input: VerificationContractInput): VerificationContractOutcome {
+export function evaluateAdmittedVerification(input: VerificationInput): VerificationOutcome {
   const context = prepare(input);
-  return "kind" in context ? context : evaluatePrepared(context);
+  const report = evaluatePrepared(context);
+  if (report.kind !== "verification_execution_report") throw new Error("review authority required");
+  if (report.passed) context.assertCurrent();
+  return report;
 }
 
 function objectValue(value: unknown, field: string): Record<string, unknown> {
@@ -764,14 +813,6 @@ function materializedVerificationCheckId(id: string): string {
   return projected.execution_evaluation.results[0].id;
 }
 
-function matchesLedgerCheckId(storedId: string, declaredId: string): boolean {
-  if (storedId === declaredId) return true;
-  // Older writers treated check_id as an untyped string. Compare that exact
-  // projection; the immutable run must still contain the declared ID.
-  const legacy = redactPayloadStrings({ id: declaredId }, []) as { readonly id: string };
-  return storedId === legacy.id;
-}
-
 /** `currentToolchainHash` is null for historical proof, which uses the event's self-bound toolchain identity. */
 function matchingImmutableExecution(
   context: EvidenceContext,
@@ -782,11 +823,10 @@ function matchingImmutableExecution(
   ledger: LedgerView,
 ): boolean {
   return ledger.events.some(({ event, payload }) => {
-    if (currentToolchainHash !== null && (payload.contract_hash !== context.contractHash
-      || payload.toolchain_hash !== currentToolchainHash
+    if (currentToolchainHash !== null && (payload.toolchain_hash !== currentToolchainHash
       || payload.inputs_hash !== declaredEnvironmentHash(check, context.env))) return false;
-    if (payload.contract_hash !== context.contractHash) return false;
-    if (!matchesLedgerCheckId(payload.check_id, check.id)
+    if (!sameAuthority(authorityBinding(payload), context.binding)) return false;
+    if (payload.check_id !== check.id
       || payload.plan_hash !== context.planHash
       || payload.check_fingerprint !== fingerprintVerificationCheck(check)
       || payload.execution_spec_hash !== fingerprintVerificationCheckExecution(check)
@@ -798,11 +838,13 @@ function matchingImmutableExecution(
     const genesis = ledger.genesis;
     if (!genesis || event.worktree_id !== genesis.worktree_id) return false;
     const identity = event.subject_identity;
-    if (identity.authority_commit !== identity.base_commit
+    if (!("authority_kind" in identity)
+      || !sameAuthority(authorityBinding(identity), authorityBinding(payload))
+      || identity.authority_commit !== identity.base_commit
       || identity.target_commit !== context.snapshot.tree_hash
       || identity.scope_hash !== payload.plan_hash
       || identity.subject_hash !== payload.snapshot_hash
-      || identity.contract_hash !== payload.contract_hash
+      || identity.plan_hash !== payload.plan_hash
       || identity.command_hash !== payload.check_fingerprint
       || identity.env_provider_id !== `verification-execution/${payload.toolchain_hash}`) return false;
     const selfBoundCacheKey = cacheKeyFromIdentity({
@@ -833,9 +875,7 @@ function matchingImmutableExecution(
  */
 interface MaterializedVerificationInput {
   readonly repoRoot: string;
-  readonly contractPath: string;
-  /** Caller-verified archived contract bytes for a retired declared path. */
-  readonly contractText?: string;
+  readonly authority: ReviewAdmissionSource;
   readonly report: unknown;
   readonly env?: NodeJS.ProcessEnv;
   readonly current?: boolean;
@@ -852,33 +892,35 @@ export function validateMaterializedVerificationExecutionOutcome(input: Material
 
 function validateMaterializedOutcome(input: MaterializedVerificationInput, requirePass: boolean): VerificationExecutionReportValidation {
   const reportObject = objectValue(input.report, "verification report");
-  if (reportObject.protocol !== 1 || reportObject.kind !== "verification_execution_report") {
+  if (reportObject.protocol !== 2 || reportObject.kind !== "verification_execution_report") {
     throw new Error("verification report protocol or kind is invalid");
   }
   if (requirePass && (reportObject.status !== "passed" || reportObject.passed !== true)) {
     throw new Error("verification report is not a passing evaluation");
   }
   const target = objectValue(reportObject.target, "verification report target");
-  if (target.contract !== input.contractPath) throw new Error("verification report contract does not match the requested contract");
   const treeHash = stringValue(target.tree_hash, "verification report target.tree_hash");
   const snapshotHash = stringValue(target.snapshot_hash, "verification report target.snapshot_hash");
   if (snapshotHash !== sha256(canonicalize({ tree_hash: treeHash }))) throw new Error("verification report snapshot hash is invalid");
 
   const repoRoot = resolve(input.repoRoot);
-  const contractText = input.contractText ?? resolveContract(repoRoot, input.contractPath).text;
-  const plan = parseVerificationPlanFromContractText(contractText);
-  if (plan.checks.length === 0) throw new Error("verification evidence is unavailable: empty_plan");
+  const admission = readAdmission(input);
+  for (const [key, value] of Object.entries(admittedIdentity(admission))) {
+    if (target[key] !== value) throw new Error(`verification report ${key} does not match admitted authority`);
+  }
+  const plan = admission.admission.verification_plan;
   const planHash = hashVerificationPlan(plan);
-  if (target.plan_hash !== planHash) throw new Error("verification report plan hash does not match current contract authority");
+  if (target.plan_hash !== planHash) throw new Error("verification report plan hash does not match admitted authority");
   const env = input.env ?? process.env;
   const currentToolchainHash = input.current ? resolveToolchain(env).hash : null;
   const context: EvidenceContext = {
-    repoRoot,
-    contractPath: input.contractPath,
-    contractText,
-    contractHash: sha256(contractText),
-    plan,
-    planHash,
+    repoRoot, binding: { authority_kind: "review-admission", ...admittedIdentity(admission) },
+    assertCurrent: () => {
+      const current = readAdmission(input);
+      if (current.revision !== admission.revision || !sameAuthority(
+        { authority_kind: "review-admission", ...admittedIdentity(current) },
+        { authority_kind: "review-admission", ...admittedIdentity(admission) })) throw new Error("verification admission changed during evaluation");
+    }, plan, planHash,
     snapshot: {
       head_commit: stringValue(target.head_commit, "verification report target.head_commit"),
       tree_hash: treeHash,
@@ -951,47 +993,56 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   if (canonicalize(evaluation as JsonValue) !== canonicalize(projectedEvaluation)) {
     throw new Error("verification report evaluation metadata is inconsistent");
   }
+  context.assertCurrent();
   return { valid: true, report: input.report as VerificationExecutionReport };
 }
 
 export function verificationOutcomeProvenance(input: MaterializedVerificationInput, checkId: string) {
   const { report } = validateMaterializedVerificationExecutionOutcome(input);
-  const plan = parseVerificationPlanFromContractText(input.contractText ?? resolveContract(input.repoRoot, input.contractPath).text);
+  const plan = readAdmission(input).admission.verification_plan;
   const result = report.results.find(item => item.id === materializedVerificationCheckId(checkId));
   if (!result) throw new Error("verification check is absent");
   const events = readAcceptedEvents(input.repoRoot).accepted;
   const offset = events.slice().reverse().findIndex(event => {
     const payload = payloadOf(input.repoRoot, event);
-    return payload?.execution_id === result.execution_id
-      && matchesLedgerCheckId(payload.check_id, checkId)
+    return event.event_type === EVENT_TYPE && event.producer === PRODUCER
+      && payload?.authority_kind === "review-admission"
+      && payload.campaign_sha256 === report.target.campaign_sha256
+      && payload?.execution_id === result.execution_id
+      && payload.check_id === checkId
       && payload.cache_key === result.cache_key;
   });
   if (offset < 0) throw new Error("verification sequence is unavailable");
   const index = events.length - 1 - offset;
   const payload = payloadOf(input.repoRoot, events[index]!)!;
+  if (payload.authority_kind !== "review-admission") throw new Error("review authority required");
   return { report, result, execution_order: index + 1,
     environment: `verification-execution/${payload.toolchain_hash}`,
-    contract_identity: payload.contract_hash,
+    admission_identity: payload.admission_sha256,
+    grant_identity: payload.grant_sha256,
+    campaign_identity: payload.campaign_sha256,
     check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
   };
 }
 
-export function verificationContractProvenance(repoRoot: string, contractPath: string, env: NodeJS.ProcessEnv = process.env) {
-  const contractText = resolveContract(repoRoot, contractPath).text;
-  const plan = parseVerificationPlanFromContractText(contractText);
-  return { contract_identity: sha256(contractText),
+export function admittedVerificationProvenance(input: VerificationInput) {
+  const active = readAdmission(input);
+  const plan = active.admission.verification_plan;
+  return { admission_identity: active.admission.admission_sha256, grant_identity: active.grant_sha256,
+    campaign_identity: active.admission.campaign_sha256,
     check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
-    environment: resolveToolchain(env).providerId, check_ids: plan.checks.map(check => check.id) };
+    environment: resolveToolchain(input.env ?? process.env).providerId, check_ids: plan.checks.map(check => check.id) };
 }
 
-function subjectIdentity(context: PreparedContext, check: VerificationCheck, key: string): SubjectIdentity {
+function subjectIdentity(context: PreparedContext, check: VerificationCheck): AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity {
   return {
     authority_commit: context.snapshot.head_commit,
     base_commit: context.snapshot.head_commit,
     target_commit: context.snapshot.tree_hash,
     scope_hash: context.planHash,
     subject_hash: context.snapshot.snapshot_hash,
-    contract_hash: context.contractHash,
+    ...context.binding,
+    plan_hash: context.planHash,
     command_hash: fingerprintVerificationCheck(check),
     env_provider_id: context.envProviderId,
   };
@@ -999,7 +1050,7 @@ function subjectIdentity(context: PreparedContext, check: VerificationCheck, key
 
 function ensureGenesis(context: PreparedContext): void {
   if (readGenesisRecord(context.repoRoot)) return;
-  const worktreeId = basename(context.contractPath).replace(/\.contract\.md$/, "");
+  const worktreeId = `verification-${sha256(canonicalize(context.binding)).slice(7, 27)}`;
   appendGenesisRecord(context.repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });
 }
 
@@ -1011,7 +1062,7 @@ interface ExecutedCheckOutcome {
 function executeCheck(
   context: PreparedContext,
   check: VerificationCheck,
-  input: ExecuteVerificationContractInput,
+  input: ExecutionOptions,
   deadlineMs: number,
 ): ExecutedCheckOutcome | "waiting" {
   const key = cacheKey(context, check);
@@ -1032,6 +1083,7 @@ function executeCheck(
     // Another writer can append before this lock is held, so read a new view.
     const afterLock = input.forceReason ? null : reusableResult(context, check, ledgerView(context));
     if (afterLock) return { result: afterLock, snapshotStable: true };
+    context.assertCurrent();
     const invocation = check.kind === "command"
       ? {
           command: context.env.REPO_HARNESS_BASH_BIN || "/bin/bash",
@@ -1063,6 +1115,7 @@ function executeCheck(
     } catch {
       snapshotDiagnostic = "repository snapshot could not be captured after execution";
     }
+    context.assertCurrent();
     const passed = run.ok && snapshotStable;
     const executionId = `vx-${randomUUID().replace(/-/g, "").slice(0, 20)}`;
     const runFile = `.ai/harness/runs/verification-${executionId}.json`;
@@ -1117,9 +1170,8 @@ function executeCheck(
     ensureGenesis(context);
     const genesis = readGenesisRecord(context.repoRoot)!;
     const payload: ExecutionPayload = {
-      protocol: 1,
-      contract_path: context.contractPath,
-      contract_hash: context.contractHash,
+      protocol: 2,
+      ...context.binding,
       plan_hash: context.planHash,
       check_id: check.id,
       check_fingerprint: fingerprintVerificationCheck(check),
@@ -1134,13 +1186,14 @@ function executeCheck(
       passed: result.passed,
     };
     requestLock.assertOwned();
+    if (result.passed) context.assertCurrent();
     appendEvidenceEvent(context.repoRoot, {
       worktreeId: genesis.worktree_id,
       eventType: EVENT_TYPE,
       trustClass: "authoritative_machine",
       producer: PRODUCER,
       correlationRunId: executionId,
-      subjectIdentity: subjectIdentity(context, check, key),
+      subjectIdentity: subjectIdentity(context, check),
       payload: { kind: "json", value: payload as unknown as JsonValue },
     });
     return { result, snapshotStable };
@@ -1157,23 +1210,55 @@ export function materializeVerificationExecutionReport(report: VerificationExecu
 export function writeVerificationExecutionReport(
   repoRoot: string,
   relativePath: string,
-  report: VerificationContractOutcome,
+  report: VerificationOutcome,
 ): void {
-  if (report.kind !== "verification_execution_report") throw new Error(`verification evidence is unavailable: ${report.reason}`);
   const outputPath = isAbsolute(relativePath) ? relativePath : resolve(repoRoot, relativePath);
   writeFileDurably(outputPath, `${JSON.stringify(materializeVerificationExecutionReport(report), null, 2)}\n`);
 }
 
-/** The only command-spawning Verification Plan effect. */
-export function executeVerificationContract(input: ExecuteVerificationContractInput): VerificationContractOutcome {
+interface ExecutionOptions {
+  readonly reportFile?: string;
+  readonly forceReason?: string;
+  readonly timeoutMs?: number;
+}
+
+/** Review callers cannot supply plans or alternate authority callbacks. */
+export function executeAdmittedVerification(input: ExecuteAdmittedVerificationInput): VerificationOutcome {
+  const report = executePrepared(input, () => prepare(input));
+  if (report.kind !== "verification_execution_report") throw new Error("review authority required");
+  return report;
+}
+
+/** Catalog grading has its own identity and cannot create review evidence. */
+export function executeCatalogEval(input: {
+  readonly repoRoot: string;
+  readonly catalog: EvalCatalogSource;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly timeoutMs?: number;
+  readonly reportFile?: string;
+}): EvalExecutionReport {
+  const report = executePrepared(input, () => {
+    const plan = readEvalCatalogPlan(input.repoRoot, input.catalog);
+    const binding: EvalBinding = { authority_kind: "eval-catalog", catalog_sha256: input.catalog.catalog_sha256,
+      eval_id: input.catalog.eval_id, eval_sha256: input.catalog.eval_sha256 };
+    return prepareContext(input, { plan, binding, assertCurrent: () => {
+      const current = readEvalCatalogPlan(input.repoRoot, input.catalog);
+      if (hashVerificationPlan(current) !== hashVerificationPlan(plan)) throw new Error("eval catalog plan changed");
+    } });
+  });
+  if (report.kind !== "eval_execution_report") throw new Error("eval catalog authority required");
+  return report;
+}
+
+/** Shared command machinery; authority construction stays in the adapters. */
+function executePrepared(input: ExecutionOptions, prepare: () => PreparedContext): ExecutionReport {
   if (input.forceReason !== undefined && input.forceReason.trim().length === 0) {
     throw new Error("forceReason must be non-empty when provided");
   }
   const budgetMs = input.timeoutMs ?? 3_600_000;
   if (!Number.isSafeInteger(budgetMs) || budgetMs < 1) throw new Error("timeoutMs must be a positive integer");
   const deadlineMs = Date.now() + budgetMs;
-  const context = prepare(input);
-  if ("kind" in context) return context;
+  const context = prepare();
   const results = new Map<string, VerificationExecutionResult>();
   let waiting = false;
   let needsPlan = false;
@@ -1249,6 +1334,11 @@ export function executeVerificationContract(input: ExecuteVerificationContractIn
   else if (planOrder.every((result) => result.passed)) status = "passed";
   else status = "missing";
   const report = buildReport(context, planOrder, status, snapshotChanged);
-  if (input.reportFile) writeVerificationExecutionReport(context.repoRoot, input.reportFile, report);
+  if (report.passed) context.assertCurrent();
+  if (input.reportFile) {
+    const outputPath = isAbsolute(input.reportFile) ? input.reportFile : resolve(context.repoRoot, input.reportFile);
+    const materialized = redactPayloadStrings(report as unknown as JsonValue, collectDenylistSecretValues());
+    writeFileDurably(outputPath, `${JSON.stringify(materialized, null, 2)}\n`);
+  }
   return report;
 }

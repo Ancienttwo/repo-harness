@@ -1,42 +1,20 @@
-/**
- * Manual/external attested import (Sprint C backlog row 8). Imports one
- * recorded AcceptanceReceipt into the EPC-01 ledger as ONE attested
- * EvidenceEvent, binding a closed two-entry trust mapping by construction
- * (D4): `external_pass` -> `external_attested`; `user_waiver` ->
- * `human_acceptance`. Any other disposition fails closed -- there is no API
- * path in this module that emits `authoritative_machine` or `observed`.
- *
- * EPC-01/EPC-02 read-only imports only: `../../core/evidence/types`,
- * `./event-log`, `./epoch`. No EPC-01/EPC-02 file is modified by this
- * package.
- *
- * D3 subject identity: `subject_sha256`/`target_revision` come straight from
- * the receipt's own binding -- the receipt already froze these at record
- * time, so recomputing them fresh here could silently diverge from what the
- * reviewer actually accepted (plan P3). The remaining identity fields
- * (`target_commit`, `contract_hash`, `scope_hash`, `authority_commit`,
- * `env_provider_id`) are not carried by the receipt at all, so they are
- * computed from current repo state the same way
- * the retired verify producer computes them (read-only
- * pattern reference). That module's equivalent helpers are private and
- * unexported and the file itself is read-only, so the small git/parsing
- * helpers below are necessarily local, independent copies -- see
- * tasks/notes/20260722-1810-epc-04-manual-external-attested-import.notes.md.
- */
 import { createHash } from "crypto";
-import { existsSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import type {
   EvidenceEventRecord,
   GenesisRecord,
   JsonValue,
-  SubjectIdentity,
+  AdmittedReviewSubjectIdentity,
   TrustClass,
 } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord, CorruptEvidenceLogError, UnterminatedEvidenceLogError } from "./event-log";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
-import { stripYamlInlineComment } from "../../core/state/artifact-parsers";
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
+import type { AcceptanceReceipt } from '../../core/review/acceptance-receipt';
+import { hashVerificationPlan } from '../../core/evidence/verification-plan';
 import { gitExecFileSync } from '../git/runner';
 
 const PRODUCER_ID = "acceptance-receipt";
@@ -87,25 +65,16 @@ export type AttestedImportResult = AttestedImportSuccess | AttestedImportFailure
  * must not depend on `scripts/`. Any object with this shape, including a
  * real `AcceptanceReceipt`, satisfies it structurally.
  */
-export interface AttestedReceiptInput {
-  readonly disposition: string;
-  readonly reviewer: string;
-  readonly source: string;
-  readonly actor: string | null;
-  readonly summary: string;
-  readonly findings: readonly { readonly severity: string; readonly message: string }[];
-  readonly subject_sha256: string;
-  readonly target_revision: string;
-  readonly contract_file: string;
-  readonly issued_at: string;
-}
+export type AttestedReceiptInput = Pick<AcceptanceReceipt, 'actor' | 'summary' | 'findings'
+  | 'subject_sha256' | 'target_revision' | 'issued_at' | 'campaign_sha256' | 'admission_sha256' | 'grant_sha256'> & { readonly disposition: string; readonly reviewer: string; readonly source: string };
+
 
 export interface AttestedImportInput {
   /** Repo root the receipt was recorded against. */
   readonly repoRoot: string;
   readonly receipt: AttestedReceiptInput;
-  /** Exact contract artifact selected and validated by the recording command. */
-  readonly authorityContractFile: string;
+  /** Exact protected admission selected and validated by the recording command. */
+  readonly authority: ReviewAdmissionSource;
   readonly correlationRunId?: string;
 }
 
@@ -131,13 +100,6 @@ function resolveHead(repoRoot: string): string | null {
   return result.ok && sha.length > 0 ? sha : null;
 }
 
-function lastCommitTouching(repoRoot: string, relativePath: string): string | null {
-  const result = gitOutput(repoRoot, ["log", "-1", "--format=%H", "--", relativePath]);
-  if (!result.ok) return null;
-  const sha = result.text.trim();
-  return sha.length > 0 ? sha : null;
-}
-
 /**
  * This module's own `package.json` version -- the repo-harness tool's own
  * version, independent of whichever `repoRoot` is being imported into
@@ -158,43 +120,6 @@ function workspaceId(repoRoot: string): string {
   const result = gitOutput(repoRoot, ["rev-parse", "--show-toplevel"]);
   const real = result.ok && result.text.trim() ? result.text.trim() : repoRoot;
   return `ws-${sha256Hex(real).slice(0, 12)}`;
-}
-
-/**
- * Extract the `allowed_paths:` list from the contract's fenced ```yaml block
- * (pattern reference: the retired verify producer's private `parseContractAllowedPaths`;
- * necessarily duplicated -- see module doc).
- */
-function parseContractAllowedPaths(contractText: string): readonly string[] {
-  const yamlBlockPattern = /```yaml\r?\n([\s\S]*?)\r?\n```/g;
-  let match: RegExpExecArray | null;
-  while ((match = yamlBlockPattern.exec(contractText)) !== null) {
-    const block = match[1] ?? "";
-    if (!/(^|\s)allowed_paths:/m.test(block)) continue;
-    const lines = block.split(/\r?\n/);
-    const startIndex = lines.findIndex((line) => /^\s*allowed_paths:\s*$/.test(line));
-    if (startIndex === -1) continue;
-    const paths: string[] = [];
-    for (let i = startIndex + 1; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      if (/^\S/.test(line)) break;
-      const itemMatch = line.match(/^\s*-\s*(.+?)\s*$/);
-      if (!itemMatch) continue;
-      const value = stripYamlInlineComment(itemMatch[1] ?? "").replace(/^["'`]+|["'`]+$/g, "");
-      if (value.length > 0) paths.push(value);
-    }
-    return paths;
-  }
-  return [];
-}
-
-function uniqueSortedPaths(values: readonly string[]): string[] {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
-}
-
-function worktreeIdFor(contractRelative: string): string {
-  const base = contractRelative.split("/").pop() ?? contractRelative;
-  return base.replace(/\.contract\.md$/, "");
 }
 
 /**
@@ -248,47 +173,36 @@ export function importAttestedEvidence(input: AttestedImportInput): AttestedImpo
     };
   }
 
-  const contractRelative = input.authorityContractFile.trim();
-  if (!contractRelative || !existsSync(join(repoRoot, contractRelative))) {
-    return {
-      ok: false,
-      reason: "missing_subject",
-      message: `selected authority contract is missing or unreadable: ${input.authorityContractFile}`,
-    };
+  let active: ReturnType<typeof observeActiveReviewAdmission>;
+  try { active = observeActiveReviewAdmission(input.authority); } catch (error) {
+    return { ok: false, reason: 'missing_subject', message: error instanceof Error ? error.message : String(error) };
   }
-
+  if (input.authority.repoRoot !== repoRoot || receipt.campaign_sha256 !== active.admission.campaign_sha256
+    || receipt.admission_sha256 !== active.admission.admission_sha256 || receipt.grant_sha256 !== active.grant_sha256) {
+    return { ok: false, reason: 'missing_subject', message: 'receipt admission is not the active protected authority' };
+  }
   const targetCommit = resolveHead(repoRoot);
   if (!targetCommit) {
     return { ok: false, reason: "missing_subject", message: "worktree HEAD could not be resolved" };
   }
 
-  const authorityCommit = lastCommitTouching(repoRoot, contractRelative);
-  if (!authorityCommit) {
-    return {
-      ok: false,
-      reason: "missing_subject",
-      message: `no commit touches ${contractRelative}; authority commit is unavailable`,
-    };
-  }
-
-  const contractBytes = readFileSync(join(repoRoot, contractRelative));
-  const contractHash = `sha256:${sha256Hex(contractBytes)}`;
-  const allowedPaths = parseContractAllowedPaths(contractBytes.toString("utf-8"));
-  const scopeHash = `sha256:${sha256Hex(JSON.stringify(uniqueSortedPaths(allowedPaths)))}`;
+  const scopeHash = `sha256:${sha256Hex(JSON.stringify(active.admission.allowed_paths))}`;
   const envProviderId = `repo-harness/${providerCliVersion()}/${workspaceId(repoRoot)}`;
 
-  const subjectIdentity: SubjectIdentity = {
-    authority_commit: authorityCommit,
+  const subjectIdentity: AdmittedReviewSubjectIdentity = {
+    authority_commit: targetCommit,
     base_commit: targetRevision,
     target_commit: targetCommit,
     scope_hash: scopeHash,
     subject_hash: subjectSha256,
-    contract_hash: contractHash,
+    authority_kind: 'review-admission', campaign_sha256: active.admission.campaign_sha256,
+    admission_sha256: active.admission.admission_sha256, grant_sha256: active.grant_sha256,
+    plan_hash: hashVerificationPlan(active.admission.verification_plan),
     command_hash: `sha256:${sha256Hex(IMPORT_COMMAND_LABEL)}`,
     env_provider_id: envProviderId,
   };
 
-  const worktreeId = worktreeIdFor(contractRelative);
+  const worktreeId = workspaceId(repoRoot);
   let genesis: GenesisRecord;
   try {
     genesis = appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });

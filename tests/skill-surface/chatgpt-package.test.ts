@@ -186,7 +186,9 @@ describe("repo-harness-chatgpt canonical package: orchestrate mode is advisory a
 
   test("orchestrate.md keeps GPT Pro outside local control-plane authority", () => {
     for (const marker of [
-      "claim/release/steal a lease",
+      "change task/session admission or claim provenance",
+      "The upstream Bot owns human authentication and scope authorization.",
+      "Plans and contracts remain optional planning records.",
       "authorize commit/push/PR/merge/deploy",
       "Do not automatically spawn",
       "it cannot approve the",

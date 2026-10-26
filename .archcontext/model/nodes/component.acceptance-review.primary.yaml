@@ -1,19 +1,25 @@
-schemaVersion: archcontext.node/v2
-id: component.acceptance-review.primary
-kind: component
-name: Generic Review Round
-status: active
-parent: capability.verification.acceptance-review
-summary: Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt.
+schemaVersion: "archcontext.node/v2"
+id: "component.acceptance-review.primary"
+kind: "component"
+name: "Generic Review Round"
+status: "active"
+parent: "capability.verification.acceptance-review"
+summary: "Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt."
 responsibilities:
-  - Save the complete review packet before any reviewer pane starts.
-  - Validate reviewer output against the closed review schema and prior findings.
-  - Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists.
-  - Record acceptance only for the exact live contract. Leave archives as historical documents.
+  - "Save the complete review packet before any reviewer pane starts."
+  - "Validate reviewer output against the closed review schema and prior findings."
+  - "Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists."
+  - "Record acceptance only under the current review admission and the reobserved issue goal. Fail the round without a receipt when either changed during evidence observation."
+  - "Own the shared neutral admission service and trusted delegated approval binding; preserve the OS-account authority root and every exact approval and goal fence."
+  - "Reserve bounded pre-prompt inbox context in the owner without delivery; consume it read-only in the host, record exact input-scoped accepted OAR proof, then commit delivery in the owner. Missing or unknown acceptance stays pending; recovery repeats the ledger commit without resending the prompt."
 source:
   include:
-    - src/core/review/**
-    - src/effects/review/**
-    - src/cli/commands/review.ts
-    - scripts/acceptance-receipt.ts
-    - scripts/change-assessment.ts
+    - "src/core/review/**"
+    - "src/effects/review/**"
+    - "src/cli/commands/review.ts"
+    - "scripts/acceptance-receipt.ts"
+    - "scripts/change-assessment.ts"
+    - "src/effects/admission/admission-store.ts"
+    - "src/effects/admission/admission-source.ts"
+    - "src/effects/admission/issue-goal.ts"
+    - "src/effects/admission/control-admission.ts"

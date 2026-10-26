@@ -1,30 +1,25 @@
-{
-  "schemaVersion": "archcontext.node/v2",
-  "id": "component.workflow-state.coordination-plane",
-  "kind": "component",
-  "name": "Historical Coordination and Worktree Safety",
-  "status": "active",
-  "parent": "capability.workflow-engine.workflow-state",
-  "summary": "Reads historical Sprint and lease records across linked worktrees and guards exact worktree cleanup.",
-  "responsibilities": [
-    "Read persisted Sprint task identity and historical lease ownership without creating or completing task claims.",
-    "Project the board from canonical Sprint rows, historical leases, worktree topology and attempt ledgers without a task lock.",
-    "Read historical claim tokens without token deletion or lease cleanup writers.",
-    "Keep shared task locks for manual inbox and feedback operations. Keep worktree topology, sweep and deletion guards."
-  ],
-  "source": {
-    "include": [
-      "src/core/state/coordination-identity.ts",
-      "src/core/state/sprint-*.ts",
-      "src/core/state/project-board*.ts",
-      "src/core/state/command-outcome.ts",
-      "src/effects/state/coordination-*.ts",
-      "src/effects/state/collect-board-inputs.ts",
-      "src/effects/state/collect-slice-inputs.ts",
-      "src/effects/state/resolve-board.ts",
-      "src/effects/state/pruned-worktree-intents.ts",
-      "src/effects/state/worktree-trash.ts",
-      "src/core/worktree-*"
-    ]
-  }
-}
+schemaVersion: "archcontext.node/v2"
+id: "component.workflow-state.coordination-plane"
+kind: "component"
+name: "Provider Board Observations and Historical Worktree Safety"
+status: "active"
+parent: "capability.workflow-engine.workflow-state"
+summary: "Joins provider issue observations and exact admitted sessions, retains historical canonical task parsers and guards exact worktree cleanup."
+responsibilities:
+  - "Project provider boards by exact canonical REST repository and issue identities; preserve all admitted session bindings and typed unavailable rows."
+  - "Compare complete board revisions with bounded rereads without task locks or mutation."
+  - "Supply hooks with the newest bounded provider observation snapshot named by the receipt head, without network or session discovery; a missing or stale head yields no slice."
+  - "Retain historical canonical task parsing, worktree topology, sweep and exact deletion guards. Historical leases and claim tokens are not current authority."
+source:
+  include:
+    - "src/core/state/coordination-identity.ts"
+    - "src/core/state/sprint-*.ts"
+    - "src/core/state/command-outcome.ts"
+    - "src/effects/state/coordination-*.ts"
+    - "src/effects/state/collect-slice-inputs.ts"
+    - "src/effects/state/pruned-worktree-intents.ts"
+    - "src/effects/state/worktree-trash.ts"
+    - "src/core/worktree-*"
+    - "src/core/state/provider-board.ts"
+    - "src/effects/state/collect-provider-board-inputs.ts"
+    - "src/effects/state/canonical-target.ts"

@@ -45,7 +45,9 @@ describe("new-plan helper integration", () => {
       expect(plan).not.toContain("> **Sprint Contract**:");
       expect(plan).not.toContain("> **Sprint Review**:");
       expect(plan).toContain("repo-harness run plan-to-todo --plan");
-      expect(plan).toContain(".ai/harness/active-worktree");
+      expect(plan).toContain("current admitted task/session and immutable claim");
+      expect(plan).toContain("Preserve the owning Git worktree");
+      expect(plan).toContain("Worktree creation does not replace task/session admission");
       expect(existsSync(join(cwd, "docs/plan.md"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -89,7 +91,7 @@ describe("new-plan helper integration", () => {
         const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
         expect(plan).not.toContain("run verify-contract --contract");
         const artifactStem = plans[0].replace(/^plan-/, "").replace(/\.md$/, "");
-        expect(plan).toContain(`repo-harness run verification-plan execute --repo . --contract tasks/contracts/${artifactStem}.contract.md --report-file .ai/harness/runs/${artifactStem}.report.json`);
+        expect(plan).toContain(`repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/${artifactStem}.report.json`);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }

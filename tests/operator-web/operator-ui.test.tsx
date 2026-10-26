@@ -51,7 +51,7 @@ describe('operator web control board', () => {
       'External',
       'Done',
     )).toBe(true);
-    expect(markup).toContain('protocol 7');
+    expect(markup).toContain('protocol 8');
     expect(markup).toContain('read-only');
   });
 
@@ -95,7 +95,9 @@ describe('operator web control board', () => {
 
     const availableCard = stableSnapshot.repositories
       .flatMap((repository) => repository.cards)
-      .find((entry) => entry.task_id === fixtureTasks.available.task_id);
+      .find((entry) => entry.provider_repository_id === '1001'
+        && entry.provider_issue_id === String(2000 + fixtureTasks.available.task_index));
+    expect(availableCard).toBeDefined();
     expect(primaryCause(availableCard!)?.kind).toBe('unread');
     expect((markup.match(/1 unread(?!able)/gu) ?? []).length).toBe(1);
   });
@@ -168,7 +170,7 @@ describe('operator web control board', () => {
     );
 
     expect(markup).toContain('protocol — · sequence —');
-    expect(markup).not.toContain('protocol 7');
+    expect(markup).not.toContain('protocol 8');
   });
 
   test('keeps empty, changed-during-read, and repo-degraded semantics explicit', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
 import {
   chmodSync,
@@ -17,27 +17,71 @@ import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 import { run as scriptRun, tmpWorkspace, withTempRepo } from "./helpers/repo-fixture";
 
 import { hashVerificationPlan, parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
-import { evaluateVerificationContract, executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { evaluateAdmittedVerification, executeAdmittedVerification } from "../src/effects/evidence/verification-execution";
+import { createHash } from 'crypto';
+import { canonicalize } from '../src/core/evidence/canonical-json';
+import type { JsonValue } from '../src/core/evidence/types';
+import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { seedAcceptanceFixture } from "./helpers/verification-plan-fixture";
-import { recordFixtureAcceptance } from "./helpers/repo-fixture";
+import { recordFixtureAcceptance } from "./helpers/acceptance-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 const ARCHIVE_REPORT = ".ai/harness/runs/archive.report.json";
+const MISSING_REPORT = "verification report validation failed";
 
-test("native Completed archive validates real execution and acceptance before mutation", async () => {
+type AdmissionFixture = ReturnType<typeof seedReviewAdmissionFixture>;
+const authorities = new Map<string, AdmissionFixture>();
+afterEach(() => {
+  for (const fixture of new Set(authorities.values())) rmSync(fixture.source.authorityHome!, { recursive: true, force: true });
+  authorities.clear();
+});
+function selectionArgs(fixture: AdmissionFixture): string[] {
+  const s = fixture.source;
+  return ['--repository-id', s.repository_id, '--issue-id', s.issue_id, '--campaign-id', s.campaign_id,
+    '--grant-sha256', s.expectedGrantSha256!, '--policy-sha256', s.expectedPolicySha256!, '--actor', s.expectedActor!];
+}
+function adapterSource(fixture: AdmissionFixture): string {
+  return `
+    const source = ${JSON.stringify(fixture.source)};
+    source.runner = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903')
+      ? ${JSON.stringify(fixture.issue)} : { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) });
+  `;
+}
+function installAcceptanceAdapter(path: string, fixture: AdmissionFixture): void {
+  writeFileSync(path, `
+    import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, 'scripts/acceptance-receipt.ts'))};
+    ${adapterSource(fixture)}
+    try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), {
+      authorityHome: source.authorityHome,
+      admissionSource: (root, values) => ({ ...source, repoRoot: root,
+        repository_id: values['repository-id'], issue_id: values['issue-id'], campaign_id: values['campaign-id'],
+        expectedGrantSha256: values['grant-sha256'], expectedPolicySha256: values['policy-sha256'], expectedActor: values.actor }),
+    })); } catch (error) { console.error(error.message); process.exit(1); }
+  `);
+}
+function prepareAssessment(root: string, authority: AdmissionFixture['source']): void {
+  const prepared = prepareChangeAssessment({ repoRoot: root, authority });
+  const basis = { schema: 'repo-harness-change-assessment-evidence.v1',
+    status: prepared.assessment.status === 'ready' && prepared.packet?.status === 'ready' ? 'pass' : 'fail', assessment: prepared.assessment, selection_packet: prepared.packet };
+  writeFileSync(join(root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
+    evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex'),
+  }) + '\n');
+}
+
+test.each(["current", "sealed-terminal"])("native Completed archive validates real execution and acceptance before mutation (%s)", async (evidenceMode) => {
   const fixture = seedAcceptanceFixture("archive-native");
-  const { root, home, contract, verification } = fixture;
+  const { root, home, contract, verification, authority, admissionFixture } = fixture;
   try {
     writeFileSync(join(root, "tasks/todos.md"), "# Deferred Goal Ledger\n");
     writeFileSync(join(root, "plans/plan-demo.md"), readFileSync(join(root, "plans/plan-demo.md"), "utf8")
       + `\n> **Task Contract**: ${contract}\n`);
     writeFileSync(join(root, contract), readFileSync(join(root, contract), "utf8")
       .replace("> **Status**: Active", "> **Status**: Active\n> **Review File**: tasks/reviews/demo.review.md"));
-    const execution = executeVerificationContract({ repoRoot: root, contractPath: contract, reportFile: verification });
+    const execution = executeAdmittedVerification({ repoRoot: root, authority, reportFile: verification });
     expect(execution.passed).toBe(true);
-    const assessment = runProcess(process.execPath, [join(ROOT, "scripts/change-assessment.ts"), "prepare", "--contract", contract], root);
-    expect(assessment.status, assessment.stderr).toBe(0);
-    const receipt = await recordFixtureAcceptance({ root, authorityHome: home, contract, verification,
+    prepareAssessment(root, authority);
+    const receipt = await recordFixtureAcceptance({ root, authorityHome: home, authority, verification,
       disposition: "external_pass", reviewer: "Claude", source: "generic-review", actor: null,
       summary: "Fixture review opinion for a real executed candidate.", findings: [] });
     expect(receipt.disposition).toBe("external_pass");
@@ -48,22 +92,24 @@ test("native Completed archive validates real execution and acceptance before mu
     }
     // Forward to the actual owner CLI with an isolated host authority home.
     // This adapter grants no result and does not parse verification evidence.
-    writeFileSync(join(runtime, "acceptance-receipt.ts"), [
-      `import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, "scripts/acceptance-receipt.ts"))};`,
-      `try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), { authorityHome: ${JSON.stringify(home)} })); }`,
-      "catch (error) { console.error(error.message); process.exit(1); }",
-    ].join("\n"));
+    installAcceptanceAdapter(join(runtime, "acceptance-receipt.ts"), admissionFixture);
     const cli = join(runtime, "repo-harness-cli.sh");
     const quotedCli = [process.execPath, join(ROOT, "src/cli/index.ts")]
       .map(value => "'" + value.replaceAll("'", "'\\''") + "'").join(" ");
     writeFileSync(cli, `#!/bin/bash\nprintf '%s\\n' "$*" >> "$0.calls"\nexec ${quotedCli} "$@"\n`);
     chmodSync(cli, 0o755);
-    const args = ["--plan", "plans/plan-demo.md", "--outcome", "Completed"];
+    const args = ["--plan", "plans/plan-demo.md", "--outcome", "Completed", "--evidence-mode", evidenceMode, ...selectionArgs(admissionFixture)];
     const env = { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath, REPO_HARNESS_CLI_BIN: cli };
     const missing = run(join(runtime, "archive-workflow.sh"), args, root, env);
     expect(missing.status, missing.stdout + missing.stderr).toBe(1);
     expect(missing.stderr).toContain("explicit native report");
     expect(existsSync(join(root, contract))).toBe(true);
+    const wrongGrant = args.map((value, index) => args[index - 1] === '--grant-sha256' ? `sha256:${'0'.repeat(64)}` : value);
+    const rejected = run(join(runtime, 'archive-workflow.sh'), [...wrongGrant, '--verification', verification], root, env);
+    expect(rejected.status).toBe(1);
+    expect(rejected.stderr).toContain('AcceptanceReceipt gate failed');
+    expect(existsSync(join(root, contract))).toBe(true);
+    expect(existsSync(join(root, 'plans/archive/plan-demo.md'))).toBe(false);
     const archived = run(join(runtime, "archive-workflow.sh"), [...args, "--verification", verification], root, env);
     expect(archived.status, archived.stdout + archived.stderr).toBe(0);
     expect(existsSync(join(root, "plans/archive/plan-demo.md"))).toBe(true);
@@ -76,39 +122,32 @@ test("native Completed archive validates real execution and acceptance before mu
   }
 }, 60_000);
 
-test("empty Verification Plan refuses Completed admission before archive mutation", async () => {
-  const { root, home, contract, verification } = seedAcceptanceFixture("archive-empty-plan");
+test("removed protected grant refuses Completed admission despite historical contract evidence", async () => {
+  const { root, home, contract, verification, authority, admissionFixture } = seedAcceptanceFixture("archive-empty-plan");
   try {
     const plan = "plans/plan-demo.md";
     writeFileSync(join(root, "tasks/todos.md"), "# Deferred Goal Ledger\n");
     writeFileSync(join(root, plan), readFileSync(join(root, plan), "utf8") + `\n> **Task Contract**: ${contract}\n`);
     writeFileSync(join(root, contract), readFileSync(join(root, contract), "utf8")
       .replace("> **Status**: Active", "> **Status**: Active\n> **Review File**: tasks/reviews/demo.review.md"));
-    expect(executeVerificationContract({ repoRoot: root, contractPath: contract, reportFile: verification }).passed).toBe(true);
-    const assessment = runProcess(process.execPath, [join(ROOT, "scripts/change-assessment.ts"), "prepare", "--contract", contract], root);
-    expect(assessment.status, assessment.stderr).toBe(0);
-    await recordFixtureAcceptance({ root, authorityHome: home, contract, verification,
+    expect(executeAdmittedVerification({ repoRoot: root, authority, reportFile: verification }).passed).toBe(true);
+    prepareAssessment(root, authority);
+    await recordFixtureAcceptance({ root, authorityHome: home, authority, verification,
       disposition: "external_pass", reviewer: "Claude", source: "generic-review", actor: null,
       summary: "Fixture opinion on the nonempty executed plan.", findings: [] });
     const { acceptanceReceiptPath } = await import("../scripts/acceptance-receipt");
     const receiptPath = acceptanceReceiptPath(root, home);
     const receiptBytes = readFileSync(receiptPath, "utf8");
-    const source = readFileSync(join(root, contract), "utf8");
-    const fence = String.fromCharCode(96).repeat(3);
-    const empty = source.slice(0, source.indexOf("## Verification Plan"))
-      + `## Verification Plan\n\n${fence}json\n{"protocol":1,"checks":[]}\n${fence}\n`;
-    writeFileSync(join(root, contract), empty);
-    expect(evaluateVerificationContract({ repoRoot: root, contractPath: contract })).toMatchObject({ reason: "empty_plan", passed: false, status: "missing", results: [] });
+    expect(() => seedReviewAdmissionFixture(root, home, { plan: { protocol: 1, checks: [] } })).toThrow('empty verification plan');
+    // Historical Markdown cannot replace a removed protected approval.
+    rmSync(join(admissionFixture.directory, 'active.json'));
+    expect(() => evaluateAdmittedVerification({ repoRoot: root, authority })).toThrow();
     const runtime = join(root, ".ai/harness/runs/archive-test-helpers");
     mkdirSync(runtime, { recursive: true });
     copyFileSync(join(ROOT, "scripts/archive-workflow.sh"), join(runtime, "archive-workflow.sh"));
-    writeFileSync(join(runtime, "acceptance-receipt.ts"), [
-      `import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, "scripts/acceptance-receipt.ts"))};`,
-      `try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2), { authorityHome: ${JSON.stringify(home)} })); }`,
-      "catch (error) { console.error(error.message); process.exit(1); }",
-    ].join("\n"));
+    installAcceptanceAdapter(join(runtime, "acceptance-receipt.ts"), admissionFixture);
     const before = Object.fromEntries([plan, contract, "tasks/reviews/demo.review.md", "tasks/todos.md"].map(path => [path, readFileSync(join(root, path), "utf8")]));
-    const result = run(join(runtime, "archive-workflow.sh"), ["--plan", plan, "--outcome", "Completed", "--verification", verification], root,
+    const result = run(join(runtime, "archive-workflow.sh"), ["--plan", plan, "--outcome", "Completed", "--verification", verification, ...selectionArgs(admissionFixture)], root,
       { HOME: home, REPO_HARNESS_TARGET_REPO_ROOT: root, REPO_HARNESS_BUN_BIN: process.execPath });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("AcceptanceReceipt gate failed");
@@ -141,7 +180,9 @@ function fixtureEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   const explicit = script === "scripts/archive-workflow.sh" && !args.includes("--verification")
     ? [...args, "--verification", ARCHIVE_REPORT] : args;
-  return spawnSync("bash", [script, ...explicit], {
+  const authority = authorities.get(cwd);
+  const selected = authority && !explicit.includes('--repository-id') ? [...explicit, ...selectionArgs(authority)] : explicit;
+  return spawnSync("bash", [script, ...selected], {
     cwd,
     encoding: "utf-8",
     env: fixtureEnv({
@@ -180,24 +221,12 @@ function installWorkflowArchiveFixture(cwd: string): void {
       },
     }, null, 2)}\n`,
   );
-  writeFileSync(
-    join(cwd, "scripts/acceptance-receipt.ts"),
-    [
-      "import { existsSync, realpathSync } from 'fs';",
-      "export function parseAcceptancePolicy(text: string) {",
-      "  const body = text.match(/^## Acceptance Policy[ \\t]*\\r?\\n+```json[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n```[ \\t]*$/m)?.[1];",
-      "  if (!body) throw new Error('contract Acceptance Policy JSON block is missing');",
-      "  return JSON.parse(body);",
-      "}",
-      "export function acceptancePolicySource() {",
-      "  return 'generic-review';",
-      "}",
-      "const expected = process.env.EXPECT_ACCEPTANCE_CWD;",
-      "const cwdMatches = !expected || realpathSync(process.cwd()) === realpathSync(expected);",
-      "if (import.meta.main) process.exit(existsSync('.acceptance-pass') && cwdMatches ? 0 : 1);",
-      "",
-    ].join("\n"),
-  );
+  // Until an explicit approval is seeded, the real CLI fails closed.
+  writeFileSync(join(cwd, "scripts/acceptance-receipt.ts"), `
+    import { runAcceptanceReceiptCli } from ${JSON.stringify(join(ROOT, 'scripts/acceptance-receipt.ts'))};
+    try { process.exit(await runAcceptanceReceiptCli(process.argv.slice(2))); }
+    catch (error) { console.error(error.message); process.exit(1); }
+  `);
   writeFileSync(
     join(cwd, "scripts/refresh-current-status.sh"),
     [
@@ -223,10 +252,8 @@ function installWorkflowArchiveFixture(cwd: string): void {
 function writeWorkflowContract(cwd: string, status: string): void {
   writeFileSync(
     join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"),
-    // writeWorkflowChecks below records benchmark_evidence.status as
-    // not_applicable, so the contract's own declaration must match or the new
-    // contract-scoped evidence_requirements gate fails closed before any of
-    // this file's injected-failure scenarios are ever reached.
+    // Historical fields remain document data. The fixture explicitly seeds
+    // its protected verification plan from this source in writeWorkflowChecks.
     [
       "# Task Contract: demo",
       "",
@@ -308,7 +335,7 @@ function writeWorkflowReview(cwd: string, recommendation: string, external = "un
       "",
     ].join("\n"),
   );
-  if (external === "pass") writeFileSync(join(cwd, ".acceptance-pass"), "fixture typed receipt\n");
+  if (external === "pass" && authorities.has(cwd)) writeWorkflowChecks(cwd);
 }
 
 function writeWorkflowChecks(cwd: string): void {
@@ -322,8 +349,28 @@ function writeWorkflowChecks(cwd: string): void {
     }] }) + "\n```\n");
   }
   ensureReviewBaseline(cwd);
-  const report = executeVerificationContract({ repoRoot: cwd, contractPath, reportFile: ARCHIVE_REPORT });
+  let fixture = authorities.get(cwd);
+  if (!fixture) {
+    const home = tmpWorkspace('archive-authority');
+    fixture = seedReviewAdmissionFixture(cwd, home, {
+      plan: parseVerificationPlanFromContractText(readFileSync(path, 'utf8')), reviewer: 'Codex', oracles: [],
+    });
+    authorities.set(cwd, fixture);
+    installAcceptanceAdapter(join(cwd, 'scripts/acceptance-receipt.ts'), fixture);
+  }
+  const report = executeAdmittedVerification({ repoRoot: cwd, authority: fixture.source, reportFile: ARCHIVE_REPORT });
   expect(report.passed).toBe(true);
+  prepareAssessment(cwd, fixture.source);
+  if (readFileSync(join(cwd, 'tasks/reviews/20260711-1200-demo.review.md'), 'utf8').includes('> **External Acceptance**: pass')) {
+    const result = runProcess(process.execPath, ['-e', `
+      import { recordFixtureAcceptance } from ${JSON.stringify(join(ROOT, 'tests/helpers/acceptance-fixture.ts'))};
+      ${adapterSource(fixture)}
+      await recordFixtureAcceptance({ root: source.repoRoot, authorityHome: source.authorityHome, authority: source,
+        verification: ${JSON.stringify(ARCHIVE_REPORT)}, disposition: 'external_pass', reviewer: 'Codex', source: 'generic-review',
+        actor: null, summary: 'Synthetic fixture reviewer opinion.', findings: [] });
+    `], cwd);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+  }
 }
 
 test.each(["report-symlink", "parent-symlink", "verify-swap"])("Completed archive refuses %s before mutation", (mode) => {
@@ -344,8 +391,10 @@ test.each(["report-symlink", "parent-symlink", "verify-swap"])("Completed archiv
     } else {
       const helper = join(cwd, "scripts/acceptance-receipt.ts");
       writeFileSync(helper, readFileSync(helper, "utf8")
-        .replace("import { existsSync, realpathSync }", "import { appendFileSync, existsSync, realpathSync }")
-        .replace("if (import.meta.main) process.exit", `if (process.argv[2] === 'verify') appendFileSync(${JSON.stringify(ARCHIVE_REPORT)}, ' ');\nif (import.meta.main) process.exit`));
+        .replace("try { process.exit(await runAcceptanceReceiptCli", "import { appendFileSync } from 'fs';\ntry { const status = await runAcceptanceReceiptCli")
+        .replace("})); } catch", `}); if (status === 0) appendFileSync(${JSON.stringify(ARCHIVE_REPORT)}, ' '); process.exit(status); } catch`));
+      // Bind execution and receipt to the injected transport before the fault runs.
+      writeWorkflowChecks(cwd);
     }
     const report = mode === "parent-symlink" ? ".ai/harness/runs/runs-link/report.json" : ARCHIVE_REPORT;
     // A parent link inside the allowed namespace must also fail closed.
@@ -405,23 +454,23 @@ describe("archive evidence gates", () => {
 
       let result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("requires an active contract");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowContract(cwd, "Partial");
       writeWorkflowReview(cwd, "fail");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verified Active or Fulfilled contract");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowContract(cwd, "Fulfilled");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowReview(cwd, "pass");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowChecks(cwd);
       result = archiveWorkflow(cwd);
@@ -437,49 +486,29 @@ describe("archive evidence gates", () => {
     });
   }, 30_000);
 
-  test("sealed-terminal mode accepts only a Fulfilled contract, pass review, and typed receipt projection", () => {
+  // Historical contract status and review projections are archived as data;
+  // only the native report and live protected admission gate Completed.
+  test("sealed-terminal mode requires a native report and live admission even with a Fulfilled historical projection", () => {
     withTempRepo("sealed-terminal-archive", (cwd) => {
       installWorkflowArchiveFixture(cwd);
       writeWorkflowContract(cwd, "Fulfilled");
       writeSealedWorkflowReview(cwd);
+      const args = ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"];
 
-      const archived = run(
-        "scripts/archive-workflow.sh",
-        ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
-        cwd,
-      );
-      expect(archived.status, archived.stderr).toBe(0);
-      expect(existsSync(join(cwd, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
-      expect(readdirSync(join(cwd, "tasks/archive")).some((name) => name.startsWith("contract-") && name.endsWith("-demo.md"))).toBe(true);
+      const missingReport = run(args[0]!, args.slice(1), cwd);
+      expect(missingReport.status, missingReport.stderr).toBe(1);
+      expect(missingReport.stderr).toContain(MISSING_REPORT);
+
+      // No selection arguments: the empty admission list must reach the gate,
+      // not abort on nounset expansion (bash 3.2).
+      writeWorkflowChecks(cwd);
+      const unselected = runProcess("bash", [...args, "--verification", ARCHIVE_REPORT], cwd, { REPO_HARNESS_BUN_BIN: process.execPath });
+      expect(unselected.status, unselected.stderr).toBe(1);
+      expect(unselected.stderr).toContain("Completed AcceptanceReceipt gate failed");
+      expect(unselected.stderr).not.toContain("unbound variable");
+      expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"))).toBe(true);
     });
-
-    for (const [name, contractStatus, reviewText, expected] of [
-      ["active-contract", "Active", null, "contract status is Active, not Fulfilled"],
-      ["missing-receipt", "Fulfilled", "# Review\n\n> **Recommendation**: pass\n", "typed Acceptance Receipt Projection missing or incomplete"],
-      ["failed-review", "Fulfilled", writeSealedWorkflowReview, "review recommendation is fail, not pass"],
-    ] as const) {
-      withTempRepo(`sealed-terminal-${name}`, (cwd) => {
-        installWorkflowArchiveFixture(cwd);
-        writeWorkflowContract(cwd, contractStatus);
-        if (typeof reviewText === "function") {
-          reviewText(cwd);
-          const file = join(cwd, "tasks/reviews/20260711-1200-demo.review.md");
-          writeFileSync(file, readFileSync(file, "utf8").replace("> **Recommendation**: pass", "> **Recommendation**: fail"));
-        } else if (reviewText === null) {
-          writeSealedWorkflowReview(cwd);
-        } else {
-          writeFileSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"), reviewText);
-        }
-        const rejected = run(
-          "scripts/archive-workflow.sh",
-          ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
-          cwd,
-        );
-        expect(rejected.status).toBe(1);
-        expect(rejected.stderr).toContain(expected);
-        expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
-      });
-    }
   }, 30_000);
 
   test.each(["main", "origin/main"])("predict-manifest preserves live evidence and exact review base %s", (reviewBase) => {
@@ -492,7 +521,7 @@ describe("archive evidence gates", () => {
       // tracked .gitkeep, before the live evidence is compensated in.
       writeFileSync(
         join(cwd, ".gitignore"),
-        ["node_modules/", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
+        ["node_modules/", ".ai/harness/checks/*.json", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
       );
       mkdirSync(join(cwd, "node_modules"), { recursive: true });
       writeFileSync(join(cwd, ".ai/harness/checks/.gitkeep"), "");
@@ -515,6 +544,9 @@ describe("archive evidence gates", () => {
         expect(runProcess("git", ["commit", "-m", "candidate with newer remote target"], cwd).status).toBe(0);
         expect(runProcess("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], cwd).status).toBe(0);
       }
+      expect(runProcess('git', ['add', '.'], cwd).status).toBe(0);
+      expect(runProcess('git', ['commit', '--allow-empty', '-m', 'bind admission adapter'], cwd).status).toBe(0);
+      writeWorkflowChecks(cwd);
       const originalMain = runProcess("git", ["rev-parse", "main"], cwd).stdout;
       const output = join(cwd, "predicted-manifest.txt");
       const result = run(
@@ -528,7 +560,6 @@ describe("archive evidence gates", () => {
           "--predict-manifest", output,
         ],
         cwd,
-        { EXPECT_ACCEPTANCE_CWD: cwd },
       );
       expect(result.status, result.stderr).toBe(0);
       expect(runProcess("git", ["rev-parse", "main"], cwd).stdout).toBe(originalMain);
@@ -548,7 +579,7 @@ describe("archive evidence gates", () => {
       installWorkflowArchiveFixture(source);
       writeFileSync(
         join(source, ".gitignore"),
-        [".acceptance-pass", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
+        [".ai/harness/checks/*.json", ".ai/harness/runs/", ".ai/harness/evidence/", ""].join("\n"),
       );
       writeWorkflowContract(source, "Fulfilled");
       writeWorkflowReview(source, "pass", "pass");
@@ -556,6 +587,7 @@ describe("archive evidence gates", () => {
       expect(runProcess("git", ["add", "."], source).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "root-bound receipt fixture"], source).status).toBe(0);
       expect(runProcess("git", ["clone", "--quiet", source, clone], container).status).toBe(0);
+      authorities.set(clone, authorities.get(source)!);
       mkdirSync(join(clone, ".ai/harness/runs"), { recursive: true });
       copyFileSync(
         join(source, ARCHIVE_REPORT),

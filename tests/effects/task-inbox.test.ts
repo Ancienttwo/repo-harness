@@ -1,21 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
-import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
-import { deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
+import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import {
   TaskInboxError,
   deliverTaskInbox,
@@ -25,15 +20,11 @@ import {
   taskInboxDeliveryPath,
   taskInboxTaskDirectory,
 } from '../../src/effects/fleet/task-inbox';
-import { resolveRepoIdentity } from '../../src/effects/git/repository-identity';
-import { taskLockRelativePath } from '../../src/effects/state/coordination-lease-store';
+import { taskLockRelativePath } from '../../src/effects/locking/task-lock';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const PROJECT_ROOT = resolve(import.meta.dir, '../..');
 const TASK_INBOX_MODULE = resolve(import.meta.dir, '../../src/effects/fleet/task-inbox.ts');
-const SPRINT_PATH = 'plans/sprints/task-inbox-staging.sprint.md';
-const TASK_CELL = 'keep staging outside canonical scans';
 const MESSAGE_ONE = '123e4567-e89b-42d3-a456-426614174010';
 const MESSAGE_TWO = '123e4567-e89b-42d3-a456-426614174011';
 const RECIPIENT = { kind: 'user' as const, id: 'alice' };
@@ -41,7 +32,7 @@ const RECIPIENT = { kind: 'user' as const, id: 'alice' };
 test('delivery paths use portable bounded components without folding recipient identity', async () => {
   await withFixtureAsync(async value => {
     const recipients = [
-      { kind: 'claim' as const, claim_id: MESSAGE_ONE, generation: 1 },
+      { kind: 'claim' as const, claim: value.source.authority.claim },
       { kind: 'user' as const, id: 'Alice' },
       { kind: 'user' as const, id: 'alice' },
       { kind: 'orchestrator' as const, id: 'CON.' },
@@ -58,8 +49,8 @@ test('delivery paths use portable bounded components without folding recipient i
 
 test('case-distinct recipients persist independently through delivery and ACK on the native filesystem', async () => {
   await withFixtureAsync(async value => {
-    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: event(value, MESSAGE_ONE) });
-    const inputs = ['Alice', 'alice'].map(id => ({ repo_root: value.root, canonical_source: value.source,
+    sendTaskMessage({ repo_root: value.root, source: value.source, event: event(value, MESSAGE_ONE) });
+    const inputs = ['Alice', 'alice'].map(id => ({ repo_root: value.root, source: value.source,
       task_id: value.taskId, recipient: { kind: 'user' as const, id } }));
     for (const input of inputs) deliverTaskInbox({ ...input, delivery_channel: 'manual', delivered_at: '2026-09-22T00:00:00Z' });
     acknowledgeTaskInbox({ ...inputs[0]!, message_id: MESSAGE_ONE, acknowledged_at: '2026-09-22T00:01:00Z' });
@@ -69,49 +60,21 @@ test('case-distinct recipients persist independently through delivery and ACK on
   });
 });
 
-interface Fixture {
-  readonly root: string;
-  readonly taskId: string;
-  readonly taskRevision: string;
-  readonly source: { readonly targetRef: string; readonly sprintPath: string };
-}
+type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
-}
-
-function fixture(): Fixture {
-  const root = mkdtempSync(join(tmpdir(), 'repo-harness-task-inbox-staging-'));
-  git(root, 'init', '-b', 'main');
-  git(root, 'config', 'user.name', 'Task Inbox Staging Test');
-  git(root, 'config', 'user.email', 'task-inbox-staging@test.invalid');
-  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
-  writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: task inbox staging', '', '> **Status**: Executing', '> **Backlog Schema**: 2', '', '## Backlog', '',
-    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
-    '|---|----|--------|------|------|------------|------|',
-    `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves staging isolation | (pending) |`, '',
-  ].join('\n'));
-  writeFileSync(join(root, 'README.md'), 'fixture\n');
-  git(root, 'add', '.');
-  git(root, 'commit', '-m', 'fixture');
-  const taskId = fixtureTaskId(TASK_CELL);
-  const taskRevision = deriveTaskRevision({ taskCell: TASK_CELL,
-    taskId,
-    modeCell: 'contract',
-    acceptanceCell: 'proves staging isolation',
-  });
-  return { root, taskId, taskRevision, source: { targetRef: 'main', sprintPath: SPRINT_PATH } };
+async function fixture() {
+  const admitted = await admittedInboxFixture();
+  return { ...admitted, taskId: admitted.task };
 }
 
 function event(value: Fixture, messageId: string) {
   return buildTaskMessageEvent({
     message_id: messageId,
     task_id: value.taskId,
-    task_revision: value.taskRevision,
+    task_identity: value.event.task_identity,
+    admission_sha256: value.event.admission_sha256,
     scope: 'task',
-    target_claim_id: null,
-    target_generation: null,
+    target_claim: null,
     sender_kind: 'operator',
     sender_id: 'task-inbox-staging-test',
     sender_trust: 'local_operator',
@@ -122,9 +85,9 @@ function event(value: Fixture, messageId: string) {
   });
 }
 
-function withFixtureAsync(run: (value: Fixture) => Promise<void>): Promise<void> {
-  const value = fixture();
-  return run(value).finally(() => rmSync(value.root, { recursive: true, force: true }));
+async function withFixtureAsync(run: (value: Fixture) => Promise<void>): Promise<void> {
+  const value = await fixture();
+  return run(value).finally(() => rmSync(value.directory, { recursive: true, force: true }));
 }
 
 function interruptedWriter(
@@ -151,15 +114,19 @@ function interruptedWriter(
     }));
     const inbox = await import(process.env.TASK_INBOX_MODULE);
     const input = JSON.parse(process.env.STAGING_INPUT);
+    // The provider fixture is explicit input; functions do not survive JSON transport.
+    const provider = JSON.parse(process.env.STAGING_PROVIDER);
+    input.source.authority.source.runner = args => ({ stdout: JSON.stringify(
+      args.includes('repos/acme/widgets/issues/903') ? provider.issue : provider.repository) });
     if (operation === 'event') inbox.sendTaskMessage(input);
     else inbox.deliverTaskInbox(input);
   `;
   const input = operation === 'event'
-    ? { repo_root: value.root, canonical_source: value.source, event: event(value, MESSAGE_ONE) }
+    ? { repo_root: value.root, source: value.source, event: event(value, MESSAGE_ONE) }
     : {
       repo_root: value.root,
       task_id: value.taskId,
-      canonical_source: value.source,
+      source: value.source,
       recipient: RECIPIENT,
       delivery_channel: 'manual',
       delivered_at: '2026-09-01T01:01:00.000Z',
@@ -171,6 +138,7 @@ function interruptedWriter(
       STAGING_OPERATION: operation,
       STAGING_MARKER: markerPath,
       STAGING_INPUT: JSON.stringify(input),
+      STAGING_PROVIDER: JSON.stringify({ issue: value.approved.issue, repository: { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' } }),
       TASK_INBOX_MODULE,
     },
     stdout: 'pipe',
@@ -230,24 +198,24 @@ describe('Task Inbox staging isolation', () => {
       expect(listTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
       }).entries).toEqual([]);
 
       expect(sendTaskMessage({
         repo_root: value.root,
-        canonical_source: value.source,
+        source: value.source,
         event: event(value, MESSAGE_ONE),
       }).created).toBe(true);
       expect(sendTaskMessage({
         repo_root: value.root,
-        canonical_source: value.source,
+        source: value.source,
         event: event(value, MESSAGE_TWO),
       }).created).toBe(true);
       expect(listTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
       }).entries.map((entry) => entry.event.message_id)).toEqual([MESSAGE_ONE, MESSAGE_TWO]);
 
@@ -256,7 +224,7 @@ describe('Task Inbox staging isolation', () => {
       expectUnreadable(() => listTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
       }));
       unlinkSync(unknownCanonical);
@@ -265,7 +233,7 @@ describe('Task Inbox staging isolation', () => {
 
   test('a receipt writer terminated before publication leaves only non-canonical staging and delivery can resume', async () => {
     await withFixtureAsync(async (value) => {
-      sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event: event(value, MESSAGE_ONE) });
+      sendTaskMessage({ repo_root: value.root, source: value.source, event: event(value, MESSAGE_ONE) });
       const markerPath = join(value.root, 'receipt-publication-ready');
       const writer = interruptedWriter(value, 'receipt', markerPath);
       const [temporary, target] = await terminateAtPublication(writer, markerPath, value);
@@ -281,13 +249,13 @@ describe('Task Inbox staging isolation', () => {
       expect(listTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
       }).entries[0]?.receipt).toBeNull();
       expect(deliverTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
         delivery_channel: 'manual',
         delivered_at: '2026-09-01T01:02:00.000Z',
@@ -298,7 +266,7 @@ describe('Task Inbox staging isolation', () => {
       expectUnreadable(() => listTaskInbox({
         repo_root: value.root,
         task_id: value.taskId,
-        canonical_source: value.source,
+        source: value.source,
         recipient: RECIPIENT,
       }));
       unlinkSync(unknownCanonical);

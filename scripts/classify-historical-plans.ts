@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { isAbsolute, join, relative, resolve } from 'path';
-import { acceptancePolicySource, parseAcceptancePolicy } from './acceptance-receipt.ts';
+import { acceptancePolicySource, parseAcceptancePolicy } from '../src/core/review/acceptance-receipt.ts';
 
 export type HistoricalPlanDecision = 'AUTO' | 'HOLD' | 'EXCLUDE';
 

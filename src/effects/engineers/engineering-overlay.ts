@@ -1,271 +1,80 @@
-import {
-  buildEngineeringOverlaySnapshot,
-  projectOrganizationAttention,
-  type EngineeringOverlayEngineerV1,
-  type EngineeringOverlaySnapshotV1,
-  type OrganizationAttentionSnapshotV1,
-  type OverlayActiveClaimProjectionV1,
-  type OverlayBindingProjectionV1,
-  type OverlayComponentName,
-  type OverlayComponentObservationV1,
-  type OverlayRuntimeEffectProjectionV1,
-} from '../../core/engineers/engineering-overlay';
+import { buildAdmittedEngineeringOverlay, projectAdmittedOrganizationAttention, type EngineeringOverlaySnapshotV2, type OverlayRuntimeEffectProjectionV1 } from '../../core/engineers/engineering-overlay';
 import { canonicalEngineerJson, engineerSha256 } from '../../core/engineers/profile-binding';
-import type { ClaimActorReceiptV1 } from '../../core/engineers/principal-claim';
-import type { AgentRuntimeEffectStatus } from './agent-runtime-effect-store';
-import {
-  readRepoHarnessRegistryStrictSnapshot,
-} from '../repo-registry';
-import { readEngineerBindingStatus, type EngineerBindingStatus } from './binding-store';
-import { listLiveClaimActorReceiptsForEngineer } from './claim-actor-store';
-import { listEngineerProfiles, type ResolvedEngineerProfile } from './profile-store';
-import { observeAgentRuntimeEffects } from './agent-runtime-effect-store';
-import { resolveRegisteredRepoForWorktree } from './scheduling';
-
-export type EngineeringOverlayProjectionErrorCode =
-  | 'engineering_overlay_repository_unregistered'
-  | 'engineering_overlay_unreadable';
-
-export class EngineeringOverlayProjectionError extends Error {
-  constructor(readonly code: EngineeringOverlayProjectionErrorCode, message: string, readonly cause?: unknown) {
-    super(message);
-    this.name = 'EngineeringOverlayProjectionError';
-  }
-}
-
+import { readProviderEngineerScheduling, resolveRegisteredRepoForWorktree } from './scheduling';
+import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { observeAgentRuntimeEffects, type AgentRuntimeEffectStatus } from './agent-runtime-effect-store';
 export interface EngineeringOverlayDependencies {
   readonly readRegistry: typeof readRepoHarnessRegistryStrictSnapshot;
-  readonly listProfiles: typeof listEngineerProfiles;
-  readonly readBinding: typeof readEngineerBindingStatus;
-  readonly listClaims: typeof listLiveClaimActorReceiptsForEngineer;
+  readonly readScheduling: typeof readProviderEngineerScheduling;
   readonly listRuntimeEffects: typeof observeAgentRuntimeEffects;
 }
-
 export interface CollectEngineeringOverlayOptions {
   readonly repo_root: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly observed_at?: string;
-  readonly dependencies?: Partial<EngineeringOverlayDependencies>;
   readonly between_reads?: () => void;
+  readonly dependencies?: Partial<EngineeringOverlayDependencies>;
 }
-
-export interface EngineeringBoardReadV1 {
-  readonly overlay: EngineeringOverlaySnapshotV1;
-  readonly organization_attention: OrganizationAttentionSnapshotV1;
+const digest = (value: unknown): string => engineerSha256(canonicalEngineerJson(value));
+function runtimeProjection(statuses: readonly AgentRuntimeEffectStatus[]): OverlayRuntimeEffectProjectionV1 {
+  const current = statuses.map(({ intent, current }) => ({ effect_id: intent.effect_id, operation: intent.operation,
+    state: current.state, current_sha256: current.current_sha256 })).sort((a, b) => a.effect_id.localeCompare(b.effect_id));
+  const pending = (state: string) => state === 'intent_persisted' || state === 'effect_started';
+  const wakes = current.filter(item => item.operation === 'wake_for_offer');
+  return { support: 'available', active: current.filter(item => pending(item.state)).length,
+    reconciliation_required: current.filter(item => item.state === 'reconciliation_required').length,
+    failed: current.filter(item => item.state === 'observed_failure').length,
+    wake: { pending: wakes.filter(item => pending(item.state)).length,
+      delivered: wakes.filter(item => item.state === 'observed_success').length,
+      failed: wakes.filter(item => item.state === 'observed_failure').length,
+      reconciliation_required: wakes.filter(item => item.state === 'reconciliation_required').length }, revision: digest(current) };
 }
-
-interface ComponentRead<T> {
-  readonly support: 'available' | 'unreadable';
-  readonly value: T | null;
-  readonly revision: string | null;
-}
-
-interface EngineerRead {
-  readonly profile: ResolvedEngineerProfile;
-  readonly binding: ComponentRead<OverlayBindingProjectionV1>;
-  readonly claim: ComponentRead<OverlayActiveClaimProjectionV1>;
-  readonly runtime_effects: ComponentRead<OverlayRuntimeEffectProjectionV1>;
-}
-
-interface ReadPass {
-  readonly profiles: ComponentRead<readonly ResolvedEngineerProfile[]>;
-  readonly engineers: readonly EngineerRead[];
-  readonly revisions: Readonly<Record<OverlayComponentName, string | null>>;
-  readonly support: Readonly<Record<OverlayComponentName, 'available' | 'unreadable'>>;
-}
-
-function dependencies(overrides: Partial<EngineeringOverlayDependencies> = {}): EngineeringOverlayDependencies {
-  return {
-    readRegistry: readRepoHarnessRegistryStrictSnapshot,
-    listProfiles: listEngineerProfiles,
-    readBinding: readEngineerBindingStatus,
-    listClaims: listLiveClaimActorReceiptsForEngineer,
-    listRuntimeEffects: observeAgentRuntimeEffects,
-    ...overrides,
+/** Read observations only. Every effect belongs to an exact current admitted session and profile. */
+export function collectEngineeringBoard(options: CollectEngineeringOverlayOptions) {
+  const deps: EngineeringOverlayDependencies = { readRegistry: readRepoHarnessRegistryStrictSnapshot,
+    readScheduling: readProviderEngineerScheduling, listRuntimeEffects: observeAgentRuntimeEffects, ...options.dependencies };
+  const registry = deps.readRegistry({ env: options.env });
+  const repo = resolveRegisteredRepoForWorktree(options.repo_root, registry);
+  const read = () => {
+    let scheduling: ReturnType<typeof readProviderEngineerScheduling> | null = null;
+    let runtime: EngineeringOverlaySnapshotV2['runtime_effects'] | null = null;
+    try { scheduling = deps.readScheduling(repo, options.env); } catch { /* Explicit unavailable observation. */ }
+    if (scheduling) {
+      try {
+        const statuses = deps.listRuntimeEffects(options.repo_root);
+        const sessions = scheduling.tasks.flatMap(task => task.sessions).filter(execution => execution.selection.state === 'selected');
+        const current = statuses.filter(status => sessions.some(execution => {
+          const selection = execution.selection, session = execution.session, fence = status.intent.endpoint_fence;
+          return selection.state === 'selected' && fence.engineer_id === selection.engineer_id
+            && fence.engineer_contract_revision === selection.engineer_contract_revision
+            && fence.session_binding_sha256 === session.selector.session_binding_sha256
+            && fence.task === session.selector.task && fence.role === session.selector.role
+            && fence.admission_sha256 === session.admission_sha256 && fence.grant_sha256 === session.selector.grant_sha256;
+        }));
+        runtime = { support: 'available', engineers: scheduling.profiles.map(profile => ({ engineer_id: profile.engineer_id,
+          effects: runtimeProjection(current.filter(status => status.intent.endpoint_fence.engineer_id === profile.engineer_id)) })) };
+      } catch { /* A malformed journal is unavailable, never an empty successful read. */ }
+    }
+    return { scheduling, runtime };
   };
-}
-
-function digest(value: unknown): string {
-  return engineerSha256(canonicalEngineerJson(value));
-}
-
-function unreadable<T>(): ComponentRead<T> {
-  return Object.freeze({ support: 'unreadable', value: null, revision: null });
-}
-
-function available<T>(value: T, revision: string): ComponentRead<T> {
-  return Object.freeze({ support: 'available', value, revision });
-}
-
-function observe<T>(reader: () => { readonly value: T; readonly revision: string }): ComponentRead<T> {
-  try {
-    const observed = reader();
-    return available(observed.value, observed.revision);
-  } catch {
-    return unreadable();
-  }
-}
-
-function bindingProjection(status: EngineerBindingStatus): OverlayBindingProjectionV1 {
-  const binding = status.binding;
-  if (!binding || status.current.state === 'unbound') {
-    return Object.freeze({ support: 'available', state: 'unbound', value: null, revision: status.current.current_digest });
-  }
-  return Object.freeze({
-    support: 'available',
-    state: binding.state,
-    value: Object.freeze({
-      binding_id: binding.binding_id,
-      binding_generation: binding.binding_generation,
-      engineer_contract_revision: binding.engineer_contract_revision,
-      provider: binding.provider,
-      provider_thread_id: binding.provider_thread_id,
-      host_id: binding.host_id,
-      observation: 'unknown' as const,
-    }),
-    revision: status.current.current_digest,
-  });
-}
-
-function claimProjection(receipts: readonly ClaimActorReceiptV1[]): OverlayActiveClaimProjectionV1 {
-  if (receipts.length > 1) throw new EngineeringOverlayProjectionError('engineering_overlay_unreadable', 'Engineer has more than one live ClaimActorReceipt');
-  const receipt = receipts[0];
-  if (!receipt) return Object.freeze({ support: 'available', value: null, revision: digest([]) });
-  return Object.freeze({
-    support: 'available',
-    value: Object.freeze({
-      task_id: receipt.task_id,
-      task_revision: receipt.task_revision,
-      claim_id: receipt.claim_id,
-      lease_generation: receipt.lease_generation,
-      work_envelope_sha256: receipt.work_envelope_sha256,
-      worktree_path: receipt.worktree_path,
-      branch: receipt.branch,
-      unit_ref: receipt.unit_ref,
-      receipt_sha256: receipt.receipt_sha256,
-    }),
-    revision: digest(receipts.map((item) => item.receipt_sha256)),
-  });
-}
-
-function runtimeEffectProjection(statuses: readonly AgentRuntimeEffectStatus[]): OverlayRuntimeEffectProjectionV1 {
-  const current = statuses.map((status) => ({ effect_id: status.intent.effect_id, current_sha256: status.current.current_sha256, operation: status.intent.operation, state: status.current.state }))
-    .sort((left, right) => left.effect_id.localeCompare(right.effect_id));
-  const wakes = current.filter((item) => item.operation === 'wake_for_offer');
-  return Object.freeze({
-    support: 'available',
-    active: current.filter((item) => item.state === 'intent_persisted' || item.state === 'effect_started').length,
-    reconciliation_required: current.filter((item) => item.state === 'reconciliation_required').length,
-    failed: current.filter((item) => item.state === 'observed_failure').length,
-    wake: Object.freeze({
-      pending: wakes.filter((item) => item.state === 'intent_persisted' || item.state === 'effect_started').length,
-      delivered: wakes.filter((item) => item.state === 'observed_success').length,
-      failed: wakes.filter((item) => item.state === 'observed_failure').length,
-      reconciliation_required: wakes.filter((item) => item.state === 'reconciliation_required').length,
-    }),
-    revision: digest(current),
-  });
-}
-
-function componentAggregate<T>(values: readonly ComponentRead<T>[]): { readonly support: 'available' | 'unreadable'; readonly revision: string | null } {
-  if (values.some((value) => value.support === 'unreadable')) return Object.freeze({ support: 'unreadable', revision: null });
-  return Object.freeze({ support: 'available', revision: digest(values.map((value) => value.revision)) });
-}
-
-function readPass(repoRoot: string, deps: EngineeringOverlayDependencies): ReadPass {
-  const profiles = observe(() => {
-    const value = deps.listProfiles(repoRoot);
-    return { value, revision: digest(value.map((profile) => ({ engineer_id: profile.profile.engineer_id, capability_id: profile.profile.capability_id, engineer_contract_revision: profile.engineer_contract_revision }))) };
-  });
-  if (profiles.support === 'unreadable' || profiles.value === null) {
-    const support = Object.freeze({ profiles: 'unreadable', bindings: 'unreadable', claims: 'unreadable', runtime_effects: 'unreadable' } as const);
-    return Object.freeze({ profiles, engineers: Object.freeze([]), support, revisions: Object.freeze({ profiles: null, bindings: null, claims: null, runtime_effects: null }) });
-  }
-  const engineers = profiles.value.map((profile) => {
-    const engineerId = profile.profile.engineer_id;
-    const binding = observe(() => {
-      const value = bindingProjection(deps.readBinding(repoRoot, engineerId, profile.engineer_contract_revision));
-      return { value, revision: value.revision! };
-    });
-    const claim = observe(() => {
-      const value = claimProjection(deps.listClaims(repoRoot, engineerId));
-      return { value, revision: value.revision! };
-    });
-    const runtimeEffects = observe(() => {
-      const value = runtimeEffectProjection(deps.listRuntimeEffects(repoRoot, engineerId));
-      return { value, revision: value.revision! };
-    });
-    return Object.freeze({ profile, binding, claim, runtime_effects: runtimeEffects });
-  });
-  const bindings = componentAggregate(engineers.map((item) => item.binding));
-  const claims = componentAggregate(engineers.map((item) => item.claim));
-  const runtimeEffects = componentAggregate(engineers.map((item) => item.runtime_effects));
-  return Object.freeze({
-    profiles,
-    engineers: Object.freeze(engineers),
-    support: Object.freeze({ profiles: 'available', bindings: bindings.support, claims: claims.support, runtime_effects: runtimeEffects.support }),
-    revisions: Object.freeze({ profiles: profiles.revision, bindings: bindings.revision, claims: claims.revision, runtime_effects: runtimeEffects.revision }),
-  });
-}
-
-function projectionOrUnreadable<T>(read: ComponentRead<T>, fallback: T): T {
-  return read.support === 'available' && read.value !== null ? read.value : fallback;
-}
-
-function engineerProjection(read: EngineerRead): EngineeringOverlayEngineerV1 {
-  return Object.freeze({
-    engineer_id: read.profile.profile.engineer_id,
-    capability_id: read.profile.profile.capability_id,
-    engineer_contract_revision: read.profile.engineer_contract_revision,
-    binding: projectionOrUnreadable(read.binding, Object.freeze({ support: 'unreadable', state: null, value: null, revision: null })),
-    active_claim: projectionOrUnreadable(read.claim, Object.freeze({ support: 'unreadable', value: null, revision: null })),
-    delegations: Object.freeze({ support: 'unsupported', value: null }),
-    runtime_effects: projectionOrUnreadable(read.runtime_effects, Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, wake: null, revision: null })),
-    memory: Object.freeze({ support: 'unsupported', value: null }),
-  });
-}
-
-const COMPONENT_ORDER: readonly OverlayComponentName[] = ['profiles', 'bindings', 'claims', 'runtime_effects'];
-
-export function collectEngineeringBoard(options: CollectEngineeringOverlayOptions): EngineeringBoardReadV1 {
-  const deps = dependencies(options.dependencies);
-  let registry;
-  try {
-    registry = deps.readRegistry({ env: options.env });
-  } catch (error) {
-    throw new EngineeringOverlayProjectionError('engineering_overlay_unreadable', 'repository registry authority is unreadable', error);
-  }
-  let repo;
-  try {
-    repo = resolveRegisteredRepoForWorktree(options.repo_root, registry);
-  } catch (error) {
-    throw new EngineeringOverlayProjectionError('engineering_overlay_repository_unregistered', 'current worktree is not an exact registered repository', error);
-  }
-  const before = readPass(options.repo_root, deps);
+  const before = read();
   options.between_reads?.();
-  const after = readPass(options.repo_root, deps);
-  const components: OverlayComponentObservationV1[] = COMPONENT_ORDER.map((component) => {
-    const support = before.support[component] === 'available' && after.support[component] === 'available' ? 'available' : 'unreadable';
-    return Object.freeze({
-      component,
-      support,
-      observation_before: support === 'available' ? before.revisions[component] : null,
-      observation_after: support === 'available' ? after.revisions[component] : null,
-    });
+  const after = read();
+  if (deps.readRegistry({ env: options.env }).registryRevision !== registry.registryRevision) throw new Error('engineering overlay registry changed');
+  const schedulingReadable = before.scheduling !== null && after.scheduling !== null;
+  const runtimeReadable = schedulingReadable && before.runtime !== null && after.runtime !== null;
+  const components: EngineeringOverlaySnapshotV2['components'] = [
+    { component: 'scheduling', support: schedulingReadable ? 'available' : 'unreadable',
+      observation_before: schedulingReadable ? before.scheduling!.source_revision : null, observation_after: schedulingReadable ? after.scheduling!.source_revision : null },
+    { component: 'runtime_effects', support: runtimeReadable ? 'available' : 'unreadable',
+      observation_before: runtimeReadable ? digest(before.runtime) : null, observation_after: runtimeReadable ? digest(after.runtime) : null },
+  ];
+  const overlay = buildAdmittedEngineeringOverlay({
+    repository_id: repo.id, registry_revision: registry.registryRevision,
+    observed_at: options.observed_at ?? new Date().toISOString(), scheduling: schedulingReadable ? after.scheduling : null,
+    runtime_effects: runtimeReadable ? after.runtime! : { support: 'unreadable', engineers: [] }, components,
+    snapshot_consistency: components.some(component => component.support === 'unreadable') ? 'degraded'
+      : components.some(component => component.observation_before !== component.observation_after) ? 'changed_during_read' : 'stable',
   });
-  const degraded = components.some((component) => component.support === 'unreadable');
-  const changed = components.some((component) => component.support === 'available' && component.observation_before !== component.observation_after);
-  // The Profile authority names the projection's rows. A pass that lost it saw
-  // no Engineers at all, so a surviving pass must not repopulate the roster:
-  // both read directions converge on the same empty degraded projection.
-  const profilesReadable = before.profiles.support === 'available' && after.profiles.support === 'available';
-  const overlay = buildEngineeringOverlaySnapshot({
-    repository_id: repo.id,
-    registry_revision: registry.registryRevision,
-    observed_at: options.observed_at ?? new Date().toISOString(),
-    engineers: profilesReadable ? after.engineers.map(engineerProjection) : Object.freeze([]),
-    components: Object.freeze(components),
-    snapshot_consistency: degraded ? 'degraded' : changed ? 'changed_during_read' : 'stable',
-  });
-  return Object.freeze({ overlay, organization_attention: projectOrganizationAttention(overlay) });
+  return { overlay, organization_attention: projectAdmittedOrganizationAttention(overlay) };
 }

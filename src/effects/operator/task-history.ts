@@ -5,7 +5,7 @@ import { decodeOperatorTaskHistory, isTaskHistoryRequest, TASK_HISTORY_DEADLINE_
 import { projectCanonicalTasks, type CanonicalTask } from '../../core/state/coordination-identity';
 import { sprintBacklogSchema, SPRINT_BACKLOG_SCHEMA_V2 } from '../../core/state/sprint-backlog-rows';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readCanonicalTargetRef } from '../state/collect-board-inputs';
+import { readCanonicalTargetRef } from '../state/canonical-target';
 import { canonicalSprintsDirectory } from '../state/coordination-canonical-source';
 import { gitExecFileSync } from '../git/runner';
 

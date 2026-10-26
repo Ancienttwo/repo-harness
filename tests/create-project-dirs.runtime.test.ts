@@ -5,7 +5,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
-import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
+import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
 
 const ROOT = join(import.meta.dir, "..");

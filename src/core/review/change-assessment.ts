@@ -157,7 +157,7 @@ function normalizeOracle(oracle: unknown): DeclaredReviewOracle | null {
   return Object.freeze({ id: record.id, kind: record.kind as ReviewOracleKind, paths });
 }
 
-function normalizedOracles(oracles: readonly unknown[]): DeclaredReviewOracle[] | null {
+export function normalizeDeclaredReviewOracles(oracles: readonly unknown[]): DeclaredReviewOracle[] | null {
   const values: DeclaredReviewOracle[] = [];
   const ids = new Set<string>();
   for (const oracle of oracles) {
@@ -239,7 +239,7 @@ export function assessChange(input: ChangeAssessmentInput): ChangeAssessmentResu
     });
   }
   const paths = subjectPaths(input.subject.paths);
-  const oracles = normalizedOracles(input.declaredOracles);
+  const oracles = normalizeDeclaredReviewOracles(input.declaredOracles);
   if (!paths || !oracles) {
     return Object.freeze({
       protocol: CHANGE_ASSESSMENT_PROTOCOL,
@@ -413,7 +413,7 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
     throw new Error('change assessment strict categories are not canonical');
   }
   if (!Array.isArray(assessment.required_oracles)) throw new Error('change assessment required oracles are invalid');
-  const oracles = normalizedOracles(assessment.required_oracles);
+  const oracles = normalizeDeclaredReviewOracles(assessment.required_oracles);
   if (!oracles || stableJson(oracles) !== stableJson(assessment.required_oracles)) {
     throw new Error('change assessment required oracles are not canonical');
   }
@@ -504,7 +504,7 @@ export function validateReviewSelectionPacket(value: unknown): ReviewSelectionPa
   if (!normalizedSubjectPaths) throw new Error('review selection packet subject paths are invalid');
   const selected = uniqueSorted(packet.selected_paths);
   if (selected.some((path) => !normalizedSubjectPaths.includes(path))) throw new Error('review selection packet selected paths escape subject');
-  const oracles = normalizedOracles(packet.required_oracles as DeclaredReviewOracle[]);
+  const oracles = normalizeDeclaredReviewOracles(packet.required_oracles as DeclaredReviewOracle[]);
   if (!oracles) throw new Error('review selection packet required oracles are invalid');
   const orderedReasons = parseReasons(packet.reasons, normalizedSubjectPaths, 'review selection packet');
   const basis: Omit<ReviewSelectionPacket, 'packet_sha256'> = {

@@ -1,3 +1,6 @@
+import { captureGitVirtualTreeSnapshot } from '../evidence/verification-execution';
+import { osAccountHome } from '../runtime/os-account-home';
+import type { ReviewAdmissionSource } from '../admission/admission-source';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 import {
   closeSync,
@@ -14,7 +17,6 @@ import {
   unlinkSync,
   writeSync,
 } from 'fs';
-import { userInfo } from 'os';
 import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import { randomUUID } from 'crypto';
 
@@ -33,29 +35,27 @@ import {
   validateIntegrationEnvelope,
   validateProductAcceptanceProjection,
   type AcceptanceMatrixResult,
-  type AcceptanceMatrixV1,
-  type IntegrationContractV1,
-  type IntegrationEnvelopeV1,
-  type ProductAcceptanceProjectionV1,
-  type RequiredWorkPackageV1,
-  type SelectedPublicationV1,
+  type AcceptanceMatrixV2,
+  type IntegrationContractV2,
+  type IntegrationEnvelopeV2,
+  type ProductAcceptanceProjectionV2,
+  type RequiredPullRequestV2,
+  type SelectedPullRequestV2,
 } from '../../core/integration/product-acceptance';
 import {
-  canonicalPublicationReceiptBytes,
-  publicationReceiptDigest,
   publicationSha256,
   stablePublicationJson,
 } from '../../core/publication/publication-receipt';
-import { readPublicationReceiptCache } from '../publication/publication-receipt';
-import { readLease } from '../state/coordination-lease-store';
+import { collectPullRequestIntegration, observeProviderReadinessIdentity, type PublicationReadinessInput } from '../publication/merge-readiness';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import {
   acceptanceReceiptPath,
+  readAcceptanceReceiptRecord,
   verifyAcceptance,
   type AcceptanceReceipt,
 } from '../review/acceptance-receipt';
 
-export const INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH = 'repo-harness/integration/v1';
+export const INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH = 'repo-harness/integration/v2';
 
 export type IntegrationAcceptanceErrorCode =
   | 'requirement_invalid'
@@ -81,7 +81,7 @@ export interface CreateIntegrationContractInput {
   readonly approved_prd_ref: string;
   readonly source_spec_ref: string;
   readonly integration_group: string;
-  readonly required_work_packages: readonly RequiredWorkPackageV1[];
+  readonly required_pull_requests: readonly RequiredPullRequestV2[];
   readonly required_constraints: readonly string[];
 }
 
@@ -89,6 +89,7 @@ export interface CreateIntegrationEnvelopeInput {
   readonly contract_sha256: string;
   readonly base_sha: string;
   readonly final_head_sha: string;
+  readonly final_tree_sha: string;
 }
 
 export interface CreateAcceptanceMatrixRowInput {
@@ -108,13 +109,16 @@ export interface CreateProductAcceptanceInput {
   readonly contract_sha256: string;
   readonly envelope_sha256: string;
   readonly matrix_sha256: string;
-  readonly workflow_contract_ref?: string;
+  readonly review_authority: ReviewAdmissionSource;
   readonly verification_ref?: string;
 }
 
 export interface IntegrationAcceptanceEnvironment {
   readonly repo_root: string;
   readonly git_bin?: string;
+  readonly gh_bin?: string;
+  /** Trusted in-process provider seam, never populated from candidate JSON. */
+  readonly gh_runner?: PublicationReadinessInput['gh_runner'];
   readonly authority_home?: string;
 }
 
@@ -122,7 +126,7 @@ export interface ProductAcceptanceDependencies {
   readonly verify_acceptance?: (args: {
     root: string;
     authorityHome: string;
-    contract?: string;
+    authority: ReviewAdmissionSource;
     verification?: string;
   }) => Promise<AcceptanceReceipt>;
   readonly read_acceptance_receipt_bytes?: (root: string, authorityHome: string) => Buffer;
@@ -321,19 +325,19 @@ function readStored<T>(
   return result;
 }
 
-export function readIntegrationContract(repoRoot: string, digest: string, gitBin = 'git'): IntegrationContractV1 {
+export function readIntegrationContract(repoRoot: string, digest: string, gitBin = 'git'): IntegrationContractV2 {
   return readStored(repoRoot, gitBin, 'contracts', digest, validateIntegrationContract, canonicalIntegrationContractBytes);
 }
 
-export function readIntegrationEnvelope(repoRoot: string, digest: string, gitBin = 'git'): IntegrationEnvelopeV1 {
+export function readIntegrationEnvelope(repoRoot: string, digest: string, gitBin = 'git'): IntegrationEnvelopeV2 {
   return readStored(repoRoot, gitBin, 'envelopes', digest, validateIntegrationEnvelope, canonicalIntegrationEnvelopeBytes);
 }
 
-export function readAcceptanceMatrix(repoRoot: string, digest: string, gitBin = 'git'): AcceptanceMatrixV1 {
+export function readAcceptanceMatrix(repoRoot: string, digest: string, gitBin = 'git'): AcceptanceMatrixV2 {
   return readStored(repoRoot, gitBin, 'matrices', digest, validateAcceptanceMatrix, canonicalAcceptanceMatrixBytes);
 }
 
-export function readProductAcceptanceProjection(repoRoot: string, digest: string, gitBin = 'git'): ProductAcceptanceProjectionV1 {
+export function readProductAcceptanceProjection(repoRoot: string, digest: string, gitBin = 'git'): ProductAcceptanceProjectionV2 {
   return readStored(repoRoot, gitBin, 'products', digest, validateProductAcceptanceProjection, canonicalProductAcceptanceProjectionBytes);
 }
 
@@ -343,7 +347,7 @@ export function readProductAcceptanceProjection(repoRoot: string, digest: string
  * work package product-accepted" reads the projections this module persisted
  * rather than reconstructing a second product verdict.
  */
-export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git'): readonly ProductAcceptanceProjectionV1[] {
+export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git'): readonly ProductAcceptanceProjectionV2[] {
   let directory: string;
   try {
     directory = integrationEvidenceDirectory(repoRoot, gitBin, 'products', false);
@@ -360,7 +364,7 @@ export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git
   return Object.freeze(digests.map((digest) => readProductAcceptanceProjection(repoRoot, digest, gitBin)));
 }
 
-function assertApprovedRequirement(repoRoot: string, contract: IntegrationContractV1): void {
+function assertApprovedRequirement(repoRoot: string, contract: IntegrationContractV2): void {
   const prd = readRepoEvidence(repoRoot, contract.requirement.approved_prd_ref, 'approved PRD');
   const spec = readRepoEvidence(repoRoot, contract.requirement.source_spec_ref, 'source spec');
   if (publicationSha256(prd) !== contract.requirement.approved_prd_sha256 || publicationSha256(spec) !== contract.requirement.source_spec_sha256) {
@@ -374,7 +378,7 @@ function assertApprovedRequirement(repoRoot: string, contract: IntegrationContra
 export function createIntegrationContract(
   environment: IntegrationAcceptanceEnvironment,
   input: CreateIntegrationContractInput,
-): IntegrationContractV1 {
+): IntegrationContractV2 {
   const repoRoot = realpathSync(environment.repo_root);
   const gitBin = environment.git_bin ?? 'git';
   const prd = readRepoEvidence(repoRoot, input.approved_prd_ref, 'approved PRD');
@@ -389,59 +393,71 @@ export function createIntegrationContract(
     },
     repository_id: repositoryId(repoRoot, gitBin),
     integration_group: input.integration_group,
-    required_work_packages: input.required_work_packages,
+    required_pull_requests: input.required_pull_requests,
     required_constraints: input.required_constraints,
   });
   persistImmutable(repoRoot, gitBin, 'contracts', contract.contract_sha256, canonicalIntegrationContractBytes(contract));
   return contract;
 }
 
-function observeSelectedPublication(
+export function observeSelectedPullRequest(
+  environment: IntegrationAcceptanceEnvironment,
   repoRoot: string,
   gitBin: string,
-  repositoryId: string,
-  workPackage: RequiredWorkPackageV1,
+  selection: RequiredPullRequestV2,
   finalHead: string,
-): SelectedPublicationV1 {
-  const lease = readLease(repoRoot, workPackage.work_package_id);
-  const record = lease.record;
-  if (lease.classification !== 'reviewing' || record === null || lease.raw === null || !('current_publication' in record) || record.current_publication === null) {
-    throw fail('publication_stale', `work package ${workPackage.work_package_id} has no exact current reviewing publication`);
+): SelectedPullRequestV2 {
+  let integrated: ReturnType<typeof collectPullRequestIntegration>;
+  try {
+    integrated = collectPullRequestIntegration({ ...selection, repo_root: repoRoot,
+      gh_bin: environment.gh_bin, gh_runner: environment.gh_runner });
+  } catch (error) {
+    throw fail('publication_stale', `PR ${selection.repository}#${selection.pr_number} integration evidence is unavailable`, error);
   }
-  if (record.task_revision !== workPackage.work_package_revision) throw fail('publication_stale', `work package ${workPackage.work_package_id} revision changed`);
-  const pointer = record.current_publication;
-  const receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id, gitBin);
-  if (receipt === null) throw fail('publication_stale', `publication receipt ${pointer.publication_id} is unavailable`);
-  if (receipt.repo_id !== repositoryId
-    || receipt.task_id !== workPackage.work_package_id
-    || receipt.task_revision !== workPackage.work_package_revision
-    || receipt.publication_id !== pointer.publication_id
-    || publicationReceiptDigest(receipt) !== pointer.receipt_sha256
-    || receipt.head_sha !== pointer.head_sha) {
-    throw fail('publication_stale', `publication ${pointer.publication_id} no longer matches its lease pointer`);
+  const mergeCommit = resolveCommit(repoRoot, gitBin, integrated.merge_commit_sha, 'provider merge commit');
+  if (treeForCommit(repoRoot, gitBin, mergeCommit) !== integrated.merge_tree_sha) {
+    throw fail('publication_stale', 'provider merge tree does not match the exact local commit');
   }
-  resolveCommit(repoRoot, gitBin, receipt.head_sha, 'publication head');
-  if (treeForCommit(repoRoot, gitBin, receipt.head_sha) !== receipt.tree_sha) throw fail('publication_stale', `publication ${pointer.publication_id} tree is stale`);
-  assertAncestor(repoRoot, gitBin, receipt.head_sha, finalHead, 'publication head');
-  return Object.freeze({
-    work_package_id: workPackage.work_package_id,
-    work_package_revision: workPackage.work_package_revision,
-    publication_id: receipt.publication_id,
-    receipt_sha256: publicationSha256(canonicalPublicationReceiptBytes(receipt)),
-    current_publication_pointer_digest: publicationSha256(stablePublicationJson(pointer)),
-    publication_status_observation_digest: publicationSha256(lease.raw),
-    head_sha: receipt.head_sha,
-    tree_sha: receipt.tree_sha,
-  });
+  resolveCommit(repoRoot, gitBin, selection.expected_base_sha, 'selected PR base');
+  assertAncestor(repoRoot, gitBin, selection.expected_base_sha, mergeCommit, 'selected PR base');
+  // Squash creates a new commit: prove the provider's actual merge commit,
+  // not the unmerged feature head, is contained in the final candidate.
+  assertAncestor(repoRoot, gitBin, mergeCommit, finalHead, 'provider merge commit');
+  return Object.freeze({ ...selection, ...integrated });
+}
+
+/**
+ * The provider state (`OPEN`, `CLOSED` or `MERGED`) of one selected PR at its
+ * exact selected head. It lets a reader tell a readable unmerged selection
+ * from unavailable merge evidence before it asks for merge proof.
+ */
+export function observeSelectedPullRequestState(
+  environment: IntegrationAcceptanceEnvironment,
+  selection: RequiredPullRequestV2,
+): string {
+  let identity: ReturnType<typeof observeProviderReadinessIdentity>;
+  try {
+    identity = observeProviderReadinessIdentity({ repo_root: environment.repo_root, gh_bin: environment.gh_bin,
+      gh_runner: environment.gh_runner, repository: selection.repository, provider_repository_id: selection.provider_repository_id,
+      pr_number: selection.pr_number, expected_head_sha: selection.expected_head_sha, expected_base_sha: selection.expected_base_sha });
+  } catch (error) {
+    throw fail('publication_stale', `PR ${selection.repository}#${selection.pr_number} state is unavailable`, error);
+  }
+  if (identity.head_sha !== selection.expected_head_sha) {
+    throw fail('publication_stale', `PR ${selection.repository}#${selection.pr_number} head moved from the selection`);
+  }
+  return identity.state;
 }
 
 function buildCurrentEnvelope(
+  environment: IntegrationAcceptanceEnvironment,
   repoRoot: string,
   gitBin: string,
-  contract: IntegrationContractV1,
+  contract: IntegrationContractV2,
   baseSha: string,
   finalHeadSha: string,
-): IntegrationEnvelopeV1 {
+  finalTreeSha: string,
+): IntegrationEnvelopeV2 {
   const currentRepositoryId = repositoryId(repoRoot, gitBin);
   if (contract.repository_id !== currentRepositoryId) throw fail('repository_mismatch', 'integration contract belongs to another repository');
   assertApprovedRequirement(repoRoot, contract);
@@ -450,34 +466,39 @@ function buildCurrentEnvelope(
   const currentHead = gitText(repoRoot, gitBin, ['rev-parse', 'HEAD^{commit}']);
   if (currentHead !== finalHead) throw fail('candidate_stale', `current HEAD ${currentHead} does not match candidate ${finalHead}`);
   assertAncestor(repoRoot, gitBin, base, finalHead, 'candidate base');
-  const selected = contract.required_work_packages.map((workPackage) => observeSelectedPublication(repoRoot, gitBin, currentRepositoryId, workPackage, finalHead));
+  if (treeForCommit(repoRoot, gitBin, finalHead) !== finalTreeSha) throw fail('candidate_stale', 'candidate tree does not match the exact selected tree');
+  const selected = contract.required_pull_requests.map(selection => observeSelectedPullRequest(environment, repoRoot, gitBin, selection, finalHead));
+  const confirmed = contract.required_pull_requests.map(selection => observeSelectedPullRequest(environment, repoRoot, gitBin, selection, finalHead));
+  if (stablePublicationJson(selected) !== stablePublicationJson(confirmed)) throw fail('publication_stale', 'selected PR integrations changed during envelope observation');
+  assertApprovedRequirement(repoRoot, contract);
+  if (gitText(repoRoot, gitBin, ['rev-parse', 'HEAD^{commit}']) !== finalHead) throw fail('candidate_stale', 'current HEAD changed during envelope observation');
   return buildIntegrationEnvelope({
     integration_contract_sha256: contract.contract_sha256,
-    selected_publications: selected,
+    selected_pull_requests: selected,
     base_sha: base,
     final_head_sha: finalHead,
-    final_tree_sha: treeForCommit(repoRoot, gitBin, finalHead),
+    final_tree_sha: finalTreeSha,
   });
 }
 
 export function createIntegrationEnvelope(
   environment: IntegrationAcceptanceEnvironment,
   input: CreateIntegrationEnvelopeInput,
-): IntegrationEnvelopeV1 {
+): IntegrationEnvelopeV2 {
   const repoRoot = realpathSync(environment.repo_root);
   const gitBin = environment.git_bin ?? 'git';
   const contract = readIntegrationContract(repoRoot, input.contract_sha256, gitBin);
-  const envelope = buildCurrentEnvelope(repoRoot, gitBin, contract, input.base_sha, input.final_head_sha);
+  const envelope = buildCurrentEnvelope(environment, repoRoot, gitBin, contract, input.base_sha, input.final_head_sha, input.final_tree_sha);
   persistImmutable(repoRoot, gitBin, 'envelopes', envelope.envelope_sha256, canonicalIntegrationEnvelopeBytes(envelope));
   return envelope;
 }
 
-function assertEnvelopeCurrent(repoRoot: string, gitBin: string, contract: IntegrationContractV1, envelope: IntegrationEnvelopeV1): void {
-  const current = buildCurrentEnvelope(repoRoot, gitBin, contract, envelope.base_sha, envelope.final_head_sha);
+function assertEnvelopeCurrent(environment: IntegrationAcceptanceEnvironment, repoRoot: string, gitBin: string, contract: IntegrationContractV2, envelope: IntegrationEnvelopeV2): void {
+  const current = buildCurrentEnvelope(environment, repoRoot, gitBin, contract, envelope.base_sha, envelope.final_head_sha, envelope.final_tree_sha);
   if (canonicalIntegrationEnvelopeBytes(current) !== canonicalIntegrationEnvelopeBytes(envelope)) throw fail('publication_stale', 'integration envelope no longer matches current authority bytes');
 }
 
-function assertMatrixEvidenceCurrent(repoRoot: string, matrix: AcceptanceMatrixV1): void {
+function assertMatrixEvidenceCurrent(repoRoot: string, matrix: AcceptanceMatrixV2): void {
   for (const row of matrix.rows) {
     if (publicationSha256(readRepoEvidence(repoRoot, row.evidence_ref, `matrix evidence ${row.constraint_id}`)) !== row.evidence_sha256) {
       throw fail('matrix_invalid', `matrix evidence changed for ${row.constraint_id}`);
@@ -491,12 +512,12 @@ function assertMatrixEvidenceCurrent(repoRoot: string, matrix: AcceptanceMatrixV
 export function createAcceptanceMatrix(
   environment: IntegrationAcceptanceEnvironment,
   input: CreateAcceptanceMatrixInput,
-): AcceptanceMatrixV1 {
+): AcceptanceMatrixV2 {
   const repoRoot = realpathSync(environment.repo_root);
   const gitBin = environment.git_bin ?? 'git';
   const contract = readIntegrationContract(repoRoot, input.contract_sha256, gitBin);
   const envelope = readIntegrationEnvelope(repoRoot, input.envelope_sha256, gitBin);
-  assertEnvelopeCurrent(repoRoot, gitBin, contract, envelope);
+  assertEnvelopeCurrent(environment, repoRoot, gitBin, contract, envelope);
   const matrix = buildAcceptanceMatrix({
     envelope_sha256: envelope.envelope_sha256,
     rows: input.rows.map((row) => ({
@@ -517,22 +538,33 @@ export function createAcceptanceMatrix(
   return matrix;
 }
 
-function defaultReadAcceptanceReceiptBytes(root: string, authorityHome: string): Buffer {
-  return readRegular(acceptanceReceiptPath(root, authorityHome), 'AcceptanceReceipt');
+/**
+ * The projection pins the digest of the latest receipt. A dependency reader
+ * resolves that digest from the immutable receipt record after later reviews
+ * replace the latest file, so a receipt without its record is refused here.
+ */
+export function defaultReadAcceptanceReceiptBytes(root: string, authorityHome: string): Buffer {
+  const latest = readRegular(acceptanceReceiptPath(root, authorityHome), 'AcceptanceReceipt');
+  try {
+    readAcceptanceReceiptRecord(root, authorityHome, publicationSha256(latest));
+  } catch (error) {
+    throw fail('acceptance_unavailable', 'AcceptanceReceipt has no immutable receipt record', error);
+  }
+  return latest;
 }
 
 export async function createProductAcceptanceProjection(
   environment: IntegrationAcceptanceEnvironment,
   input: CreateProductAcceptanceInput,
   dependencies: ProductAcceptanceDependencies = {},
-): Promise<ProductAcceptanceProjectionV1> {
+): Promise<ProductAcceptanceProjectionV2> {
   const repoRoot = realpathSync(environment.repo_root);
   const gitBin = environment.git_bin ?? 'git';
-  const authorityHome = realpathSync(environment.authority_home ?? userInfo().homedir);
+  const authorityHome = realpathSync(environment.authority_home ?? osAccountHome());
   const contract = readIntegrationContract(repoRoot, input.contract_sha256, gitBin);
   const envelope = readIntegrationEnvelope(repoRoot, input.envelope_sha256, gitBin);
   const matrix = readAcceptanceMatrix(repoRoot, input.matrix_sha256, gitBin);
-  assertEnvelopeCurrent(repoRoot, gitBin, contract, envelope);
+  assertEnvelopeCurrent(environment, repoRoot, gitBin, contract, envelope);
   try {
     assertCompletePassingMatrix(contract, envelope, matrix);
     assertMatrixEvidenceCurrent(repoRoot, matrix);
@@ -540,13 +572,20 @@ export async function createProductAcceptanceProjection(
     if (error instanceof IntegrationAcceptanceError) throw error;
     throw fail('matrix_invalid', 'acceptance matrix is stale or incomplete', error);
   }
+  // Acceptance validates the complete Git-visible source, not HEAD provenance.
+  const assertAcceptedTree = () => {
+    if (captureGitVirtualTreeSnapshot(repoRoot).tree_hash !== envelope.final_tree_sha) {
+      throw fail('candidate_stale', 'Acceptance source tree differs from the final integration tree');
+    }
+  };
+  assertAcceptedTree();
   const verifier = dependencies.verify_acceptance ?? verifyAcceptance;
   let receipt: AcceptanceReceipt;
   try {
     receipt = await verifier({
       root: repoRoot,
       authorityHome,
-      contract: input.workflow_contract_ref,
+      authority: input.review_authority,
       verification: input.verification_ref,
     });
   } catch (error) {
@@ -564,6 +603,7 @@ export async function createProductAcceptanceProjection(
   if (stablePublicationJson(observedReceipt) !== stablePublicationJson(receipt)) {
     throw fail('acceptance_unavailable', 'AcceptanceReceipt bytes changed after verification');
   }
+  assertAcceptedTree();
   const projection = buildProductAcceptanceProjection({
     envelope_sha256: envelope.envelope_sha256,
     matrix_sha256: matrix.matrix_sha256,
@@ -572,6 +612,8 @@ export async function createProductAcceptanceProjection(
     acceptance_target_revision: receipt.target_revision,
     acceptance_disposition: receipt.disposition,
   });
+  assertEnvelopeCurrent(environment, repoRoot, gitBin, contract, envelope);
+  assertMatrixEvidenceCurrent(repoRoot, matrix);
   persistImmutable(repoRoot, gitBin, 'products', projection.projection_sha256, canonicalProductAcceptanceProjectionBytes(projection));
   return projection;
 }

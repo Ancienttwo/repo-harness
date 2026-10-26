@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { seedReviewAdmissionFixture } from "./helpers/review-admission-fixture";
+import { parseVerificationPlanFromContractText } from "../src/core/evidence/verification-plan";
+
+const approved = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
 const ROOT = resolve(import.meta.dir, "..");
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  approved.clear();
   for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -92,11 +97,30 @@ function fixture(name: string, checks: unknown[]): { root: string; counter: stri
   writeFileSync(join(root, "source.txt"), "source\n");
   writeFileSync(join(root, contractPath), contract(checks));
   commit(root, "fixture");
+  if (checks.length) {
+    const home = mkdtempSync(join(tmpdir(), "verification-adapter-authority-"));
+    tempDirs.push(home);
+    approved.set(root, seedReviewAdmissionFixture(root, home, {
+      plan: parseVerificationPlanFromContractText(readFileSync(join(root, contractPath), "utf8")),
+    }));
+  }
   return { root, counter, contract: contractPath };
 }
 
-function verify(root: string, script: string, contractPath: string, report: string, counter: string) {
-  return spawnSync(process.execPath, [script, "execute", "--repo", root, "--contract", contractPath, "--report-file", report], {
+function verify(root: string, script: string, report: string, counter: string) {
+  const approval = approved.get(root)!;
+  const args = ['execute', '--repo', root,
+    '--repository-id', approval.source.repository_id, '--issue-id', approval.source.issue_id,
+    '--campaign-id', approval.source.campaign_id, '--grant-sha256', approval.source.expectedGrantSha256,
+    '--policy-sha256', approval.source.expectedPolicySha256, '--actor', approval.source.expectedActor,
+    '--report-file', report];
+  return spawnSync(process.execPath, ["-e", `
+    const { main } = await import(${JSON.stringify(join(root, script))});
+    const source = ${JSON.stringify(approval.source)};
+    source.runner = args => ({ stdout: JSON.stringify(args.includes('repos/acme/widgets/issues/903')
+      ? ${JSON.stringify(approval.issue)} : { id: 'R_provider', full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) });
+    process.exit(await main(${JSON.stringify(args)}, () => source));
+  `], {
     cwd: root,
     encoding: "utf-8",
     env: { ...process.env, COUNTER_PATH: counter },
@@ -112,9 +136,9 @@ describe("verification lifecycle explicit adapters", () => {
     const expensive = check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]);
     const { root, counter, contract: contractPath } = fixture("verification-adapter-reuse", [expensive]);
 
-    const source = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/source.json", counter);
+    const source = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/source.json", counter);
     expect(source.status, `${source.stdout}\n${source.stderr}`).toBe(0);
-    const projected = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/projected.json", counter);
+    const projected = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/projected.json", counter);
     expect(projected.status, `${projected.stdout}\n${projected.stderr}`).toBe(0);
     expect(counterLines(counter)).toBe(1);
 
@@ -132,12 +156,12 @@ describe("verification lifecycle explicit adapters", () => {
   test("prose movement and main movement never auto-start another expensive execution", () => {
     const expensive = check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]);
     const { root, counter, contract: contractPath } = fixture("verification-adapter-drift", [expensive]);
-    const first = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/first.json", counter);
+    const first = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/first.json", counter);
     expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
 
     const original = readFileSync(join(root, contractPath), "utf-8");
     writeFileSync(join(root, contractPath), original.replace("fixture", "changed prose"));
-    const prose = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/prose.json", counter);
+    const prose = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/prose.json", counter);
     expect(prose.status).toBe(1);
     expect(JSON.parse(readFileSync(join(root, ".ai/harness/checks/prose.json"), "utf-8")).status).toBe("needs_verification_plan");
     expect(counterLines(counter)).toBe(1);
@@ -148,7 +172,7 @@ describe("verification lifecycle explicit adapters", () => {
     writeFileSync(join(root, "main-only.txt"), "advance main\n");
     commit(root, "advance main");
     git(root, "checkout", "codex/demo");
-    const main = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/main.json", counter);
+    const main = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/main.json", counter);
     expect(main.status, main.stderr).toBe(0);
     expect(counterLines(counter)).toBe(1);
   }, 30_000);
@@ -158,7 +182,7 @@ describe("verification lifecycle explicit adapters", () => {
       check("preflight", "exit 9", "preflight", "normal"),
       check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]),
     ]);
-    const result = verify(root, "scripts/verification-plan.ts", contractPath, ".ai/harness/checks/preflight.json", counter);
+    const result = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/preflight.json", counter);
     expect(result.status).toBe(1);
     expect(counterLines(counter)).toBe(0);
     const report = JSON.parse(readFileSync(join(root, ".ai/harness/checks/preflight.json"), "utf-8"));

@@ -1,196 +1,101 @@
+import { createHash } from 'node:crypto';
+import { canonicalize } from '../../core/evidence/canonical-json';
+import { isAdmittedSessionSelector, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { buildExternalSourceProjection } from '../../core/external-sources/projection';
-import {
-  buildExternalSourceBindingReceipt,
-  renderExternalSourceUntrustedContext,
-  type ExternalSourceBindingProjectionV1,
-  type ExternalSourceBindingReceiptV1,
-} from '../../core/external-sources/binding';
-import { lookupCanonicalTask, PENDING_ROW_STATUS } from '../../core/state/coordination-identity';
-import {
-  readRepoHarnessRegistryStrictSnapshot,
-  type RepoHarnessRegisteredRepo,
-  type RepoHarnessRegistryStrictSnapshot,
-} from '../repo-registry';
-import {
-  readCanonicalSprint,
-  readCanonicalTaskPlanProof,
-  type CanonicalTaskPlanProofResult,
-} from '../state/coordination-canonical-source';
-import { resolveRepoIdentity } from '../git/repository-identity';
-import {
-  listExternalSourceBindingReceipts,
-  listExternalSourceRefreshReceipts,
-  listProviderIssueObservations,
-  writeExternalSourceBindingReceipt,
-} from './store';
+import { renderExternalSourceUntrustedContext } from '../../core/external-sources/binding';
+import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
+import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { readReviewAdmissionSource } from '../admission/admission-source';
+import { observeTaskInboxContext } from '../fleet/task-inbox';
+import { readTaskAgent } from '../terminal/task-session';
+import { listExternalSourceBindingReceipts, listHistoricalExternalSourceBindingReceipts,
+  listExternalSourceRefreshReceipts, listProviderIssueObservations, writeExternalSourceBindingReceipt } from './store';
 
 export interface BindExternalSourceInput {
   readonly registered_repository_id: string;
   readonly source_revision: string;
-  readonly sprint_path: string;
-  readonly task_id: string;
-  readonly target_ref: string;
+  readonly session: AdmittedSessionSelector;
   readonly bound_at?: string;
   readonly env?: NodeJS.ProcessEnv;
 }
-
 export interface ExternalSourceBindingDependencies {
   readonly registry: (env?: NodeJS.ProcessEnv) => RepoHarnessRegistryStrictSnapshot;
   readonly observations: typeof listProviderIssueObservations;
   readonly refreshReceipts: typeof listExternalSourceRefreshReceipts;
   readonly receipts: typeof listExternalSourceBindingReceipts;
-  readonly canonical: typeof readCanonicalSprint;
-  readonly plan: typeof readCanonicalTaskPlanProof;
-  readonly repoIdentity: typeof resolveRepoIdentity;
+  readonly admissionSource: typeof readReviewAdmissionSource;
   readonly write: typeof writeExternalSourceBindingReceipt;
 }
-
 function dependencies(overrides: Partial<ExternalSourceBindingDependencies> = {}): ExternalSourceBindingDependencies {
-  return {
-    registry: (env) => readRepoHarnessRegistryStrictSnapshot({ env }),
-    observations: listProviderIssueObservations,
-    refreshReceipts: listExternalSourceRefreshReceipts,
-    receipts: listExternalSourceBindingReceipts,
-    canonical: readCanonicalSprint,
-    plan: readCanonicalTaskPlanProof,
-    repoIdentity: resolveRepoIdentity,
-    write: writeExternalSourceBindingReceipt,
-    ...overrides,
-  };
+  return { registry: env => readRepoHarnessRegistryStrictSnapshot({ env }), observations: listProviderIssueObservations,
+    refreshReceipts: listExternalSourceRefreshReceipts, receipts: listExternalSourceBindingReceipts,
+    admissionSource: readReviewAdmissionSource, write: writeExternalSourceBindingReceipt, ...overrides };
 }
-
-function writableRepo(snapshot: RepoHarnessRegistryStrictSnapshot, id: string, expectedPath?: string): RepoHarnessRegisteredRepo {
-  const repo = snapshot.repos.find((candidate) => candidate.id === id);
-  if (!repo) throw new Error(`registered repository is unknown: ${id}`);
-  if (repo.accessMode !== 'read_write') throw new Error(`registered repository is not write-authorized: ${id}`);
-  if (expectedPath !== undefined && repo.path !== expectedPath) throw new Error(`registered repository path changed: ${id}`);
-  return repo;
-}
-
-function sourceObservation(repoRoot: string, repositoryId: string, sourceRevision: string, deps: ExternalSourceBindingDependencies) {
-  const matches = deps.observations(repoRoot).filter((observation) => (
-    observation.registered_repository_id === repositoryId && observation.source_revision === sourceRevision
-  ));
-  if (matches.length !== 1) throw new Error(`expected exactly one immutable observation for source revision ${sourceRevision}, found ${matches.length}`);
-  if (!matches[0].eligible) throw new Error(`source revision is not eligible under policy ${matches[0].policy_revision}`);
-  return matches[0];
-}
-
-function exactPlan(proof: CanonicalTaskPlanProofResult) {
-  if (!proof.ok) throw new Error(`canonical task plan/contract is not projectable: ${proof.error}`);
-  return proof.proof;
-}
-
-function resolveBindingAuthority(input: BindExternalSourceInput, repo: RepoHarnessRegisteredRepo, deps: ExternalSourceBindingDependencies) {
-  const observation = sourceObservation(repo.path, repo.id, input.source_revision, deps);
-  const canonical = deps.canonical(repo.path, { targetRef: input.target_ref, sprintPath: input.sprint_path });
-  if (!canonical.ok) throw new Error(canonical.error);
-  const task = lookupCanonicalTask({ repoIdentity: deps.repoIdentity(repo.path), sprintPath: input.sprint_path, sprintText: canonical.text }, input.task_id);
-  if (!task.ok) throw new Error(task.error);
-  if (task.task.row.status !== PENDING_ROW_STATUS) throw new Error(`canonical task ${input.task_id} is not pending`);
-  const proof = exactPlan(deps.plan(repo.path, { sprintPath: input.sprint_path, taskCell: task.task.row.task }));
-  return Object.freeze({ observation, canonical, task: task.task, proof });
-}
-
-export function bindExternalSource(
-  input: BindExternalSourceInput,
-  overrides: Partial<ExternalSourceBindingDependencies> = {},
-): ExternalSourceBindingReceiptV1 {
-  const deps = dependencies(overrides);
-  const initialRegistry = deps.registry(input.env);
-  const repo = writableRepo(initialRegistry, input.registered_repository_id);
-  const authority = resolveBindingAuthority(input, repo, deps);
-
-  const currentRegistry = deps.registry(input.env);
-  writableRepo(currentRegistry, repo.id, repo.path);
-  if (currentRegistry.authorizationRevision !== initialRegistry.authorizationRevision) throw new Error('registry authorization changed before binding persistence');
-  const current = resolveBindingAuthority(input, repo, deps);
-  if (current.observation.observation_sha256 !== authority.observation.observation_sha256
-    || current.canonical.commit !== authority.canonical.commit
-    || current.task.task_revision !== authority.task.task_revision
-    || current.proof.plan_sha256 !== authority.proof.plan_sha256
-    || current.proof.contract_sha256 !== authority.proof.contract_sha256) {
-    throw new Error('binding authority changed during revalidation');
-  }
-
-  return deps.write(repo.path, buildExternalSourceBindingReceipt({
-    registered_repository_id: repo.id,
-    authorization_revision: currentRegistry.authorizationRevision,
-    provider: current.observation.provider,
-    provider_repository_id: current.observation.provider_repository_id,
-    provider_issue_id: current.observation.provider_issue_id,
-    source_revision: current.observation.source_revision,
-    observation_sha256: current.observation.observation_sha256,
-    canonical_target_ref: input.target_ref,
-    canonical_target_commit: current.canonical.commit,
-    sprint_path: input.sprint_path,
-    task_id: current.task.task_id,
-    task_revision: current.task.task_revision,
-    task_ref: current.task.row.task,
-    plan_path: current.proof.plan_path,
-    plan_sha256: current.proof.plan_sha256,
-    contract_path: current.proof.contract_path,
-    contract_sha256: current.proof.contract_sha256,
-    bound_at: input.bound_at ?? current.observation.observed_at,
-  }));
-}
-
-function samePlan(receipt: ExternalSourceBindingReceiptV1, proof: CanonicalTaskPlanProofResult): boolean {
-  return proof.ok
-    && proof.proof.plan_path === receipt.plan_path
-    && proof.proof.plan_sha256 === receipt.plan_sha256
-    && proof.proof.contract_path === receipt.contract_path
-    && proof.proof.contract_sha256 === receipt.contract_sha256;
-}
-
-function canonicalStatus(repo: RepoHarnessRegisteredRepo, receipt: ExternalSourceBindingReceiptV1, deps: ExternalSourceBindingDependencies): 'current' | 'drifted' | 'unavailable' {
-  try {
-    const canonical = deps.canonical(repo.path, { targetRef: receipt.canonical_target_ref, sprintPath: receipt.sprint_path });
-    if (!canonical.ok) return 'unavailable';
-    const task = lookupCanonicalTask({ repoIdentity: deps.repoIdentity(repo.path), sprintPath: receipt.sprint_path, sprintText: canonical.text }, receipt.task_id);
-    if (!task.ok) return 'drifted';
-    const proof = deps.plan(repo.path, { sprintPath: receipt.sprint_path, taskCell: task.task.row.task });
-    return task.task.task_revision === receipt.task_revision && samePlan(receipt, proof) ? 'current' : 'drifted';
-  } catch {
-    return 'unavailable';
-  }
-}
-
-export function listExternalSourceBindings(
-  repositoryId: string,
-  env?: NodeJS.ProcessEnv,
-  overrides: Partial<ExternalSourceBindingDependencies> = {},
-): ExternalSourceBindingProjectionV1 {
-  const deps = dependencies(overrides);
-  const registry = deps.registry(env);
-  const repo = registry.repos.find((candidate) => candidate.id === repositoryId);
-  if (!repo) throw new Error(`registered repository is unknown: ${repositoryId}`);
-  const observations = deps.observations(repo.path).filter((entry) => entry.registered_repository_id === repositoryId);
-  // Latest observed state follows successful refresh chronology, so it is the
-  // projection's own latest_observation and not the newest immutable record.
-  const projection = buildExternalSourceProjection({ registered_repository_id: repositoryId, observations, receipts: deps.refreshReceipts(repo.path) });
-  const latest = new Map(projection.issues.map((issue) => [`${issue.provider_repository_id}\0${issue.provider_issue_id}`, issue.latest_observation.source_revision]));
-  const bindings = deps.receipts(repo.path).filter((receipt) => receipt.registered_repository_id === repositoryId).map((receipt) => {
-    const latestRevision = latest.get(`${receipt.provider_repository_id}\0${receipt.provider_issue_id}`);
-    const sourceStatus = latestRevision === undefined ? 'unavailable' : latestRevision === receipt.source_revision ? 'current' : 'drifted';
-    const canonical = canonicalStatus(repo, receipt, deps);
-    const authorization = repo.accessMode === 'read_write' && receipt.authorization_revision === registry.authorizationRevision ? 'current' : 'stale';
-    const attention = authorization === 'stale'
-      ? 'authorization_stale'
-      : canonical === 'unavailable' || sourceStatus === 'unavailable'
-        ? 'authority_unavailable'
-        : canonical === 'drifted'
-          ? 'canonical_drift'
-          : sourceStatus === 'drifted' ? 'source_drift' : 'none';
-    return Object.freeze({ receipt, source_status: sourceStatus, canonical_status: canonical, authorization_status: authorization, attention });
+function observeSession(root: string, session: AdmittedSessionSelector, deps: ExternalSourceBindingDependencies) {
+  if (!isAdmittedSessionSelector(session)) throw new Error('explicit admitted session selector is invalid');
+  const { binding } = readTaskAgent(root, session.task, session.role);
+  const digest = `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`;
+  if (digest !== session.session_binding_sha256 || !binding.task_admission) throw new Error('session binding changed');
+  const source = deps.admissionSource(binding.task_admission.identity.source_root, {
+    'repository-id': session.provider_repository_id, 'issue-id': session.issue_id, 'campaign-id': session.campaign_id,
+    'grant-sha256': session.grant_sha256, 'policy-sha256': session.policy_sha256, actor: session.actor_id,
   });
-  return Object.freeze({
-    protocol: 1,
-    kind: 'repo-harness-external-source-binding-projection',
-    registered_repository_id: repositoryId,
-    authorization_revision: registry.authorizationRevision,
-    bindings: Object.freeze(bindings),
+  return observeTaskInboxContext({ repo_root: root, task_id: session.task, source: {
+    session: { task: session.task, role: session.role }, authority: { source,
+      claim: { reference: session.claim_ref, revision: session.claim_revision }, engineer_profile: binding.task_admission.identity.engineer_profile } } });
+}
+function authority(input: BindExternalSourceInput, deps: ExternalSourceBindingDependencies) {
+  const registry = deps.registry(input.env), repo = registry.repos.find(r => r.id === input.registered_repository_id);
+  if (!repo || repo.accessMode !== 'read_write') throw new Error('registered repository is not write-authorized');
+  if (input.session.repository_id !== repo.id) throw new Error('session selects a different registered repository');
+  const matches = deps.observations(repo.path).filter(o => o.registered_repository_id === repo.id && o.source_revision === input.source_revision);
+  if (matches.length !== 1) throw new Error('expected exactly one immutable observation');
+  const observation = matches[0]!;
+  if (!observation.eligible) throw new Error('source revision is not eligible');
+  const session = observeSession(repo.path, input.session, deps);
+  if (observation.provider_repository_id !== session.identity.repository_id || observation.provider_issue_id !== session.identity.issue_id)
+    throw new Error('source provider identity differs from admitted issue');
+  return { repo, registry, observation, session };
+}
+export function bindExternalSource(input: BindExternalSourceInput, overrides: Partial<ExternalSourceBindingDependencies> = {}): ExternalSourceBindingReceiptV2 {
+  const deps = dependencies(overrides), before = authority(input, deps), after = authority(input, deps);
+  if (before.repo.path !== after.repo.path || before.registry.authorizationRevision !== after.registry.authorizationRevision
+    || before.observation.observation_sha256 !== after.observation.observation_sha256
+    || canonicalize(JSON.parse(JSON.stringify(before.session))) !== canonicalize(JSON.parse(JSON.stringify(after.session)))) throw new Error('binding authority changed during revalidation');
+  return deps.write(after.repo.path, buildAdmittedSourceBindingReceipt({ registered_repository_id: after.repo.id,
+    authorization_revision: after.registry.authorizationRevision, provider: after.observation.provider,
+    provider_repository_id: after.observation.provider_repository_id, provider_issue_id: after.observation.provider_issue_id,
+    source_revision: after.observation.source_revision, observation_sha256: after.observation.observation_sha256,
+    session: input.session, admission_sha256: after.session.approval.admission_sha256,
+    bound_at: input.bound_at ?? after.observation.observed_at }));
+}
+export function listExternalSourceBindings(repositoryId: string, env?: NodeJS.ProcessEnv, overrides: Partial<ExternalSourceBindingDependencies> = {}) {
+  const deps = dependencies(overrides), registry = deps.registry(env), repo = registry.repos.find(r => r.id === repositoryId);
+  if (!repo) throw new Error('registered repository is unknown');
+  const projection = buildExternalSourceProjection({ registered_repository_id: repositoryId,
+    observations: deps.observations(repo.path).filter(o => o.registered_repository_id === repositoryId), receipts: deps.refreshReceipts(repo.path) });
+  const latest = new Map(projection.issues.map(i => [`${i.provider_repository_id}\0${i.provider_issue_id}`, i.latest_observation.source_revision]));
+  const bindings = deps.receipts(repo.path).filter(r => r.registered_repository_id === repositoryId).map(receipt => {
+    const revision = latest.get(`${receipt.provider_repository_id}\0${receipt.provider_issue_id}`);
+    const source_status = revision === undefined ? 'unavailable' : revision === receipt.source_revision ? 'current' : 'drifted';
+    let session_status: 'current' | 'drifted' | 'unavailable' = 'unavailable';
+    try { session_status = observeSession(repo.path, receipt.session, deps).approval.admission_sha256 === receipt.admission_sha256 ? 'current' : 'drifted'; } catch { /* Historical correlation cannot establish current authority. */ }
+    const authorization_status = repo.accessMode === 'read_write' && receipt.authorization_revision === registry.authorizationRevision ? 'current' : 'stale';
+    const attention = authorization_status === 'stale' ? 'authorization_stale'
+      : session_status === 'unavailable' || source_status === 'unavailable' ? 'authority_unavailable'
+      : session_status === 'drifted' ? 'session_drift' : source_status === 'drifted' ? 'source_drift' : 'none';
+    return { receipt, source_status, session_status, authorization_status, attention };
   });
+  const after = deps.registry(env);
+  if (after.authorizationRevision !== registry.authorizationRevision || after.repos.find(r => r.id === repositoryId)?.path !== repo.path) throw new Error('registry changed during binding observation');
+  return { protocol: 2, kind: 'repo-harness-external-source-binding-projection', registered_repository_id: repositoryId,
+    authorization_revision: registry.authorizationRevision, bindings };
+}
+export function listHistoricalExternalSourceBindings(repositoryId: string, env?: NodeJS.ProcessEnv) {
+  const repo = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(r => r.id === repositoryId);
+  if (!repo) throw new Error('registered repository is unknown');
+  return { protocol: 1, kind: 'repo-harness-historical-external-source-bindings', registered_repository_id: repositoryId,
+    bindings: listHistoricalExternalSourceBindingReceipts(repo.path).filter(r => r.registered_repository_id === repositoryId) };
 }
 
 export function externalSourceContext(repoRoot: string, repositoryId: string, sourceRevision: string): string {

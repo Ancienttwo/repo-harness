@@ -1,10 +1,15 @@
+import { osAccountHome } from '../runtime/os-account-home';
+import { observeActiveReviewAdmission } from '../admission/issue-goal';
+import { bindReviewAdmission, reviewAdmissionAllowsPath } from '../../core/review/authority-context';
+import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admission/admission-source';
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   realpathSync,
@@ -22,24 +27,23 @@ import {
   ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
   CONSUMED_RECEIPT_KEYS,
   GENERIC_REVIEW_ROLE,
-  acceptanceBenchmarkRequirement,
-  acceptanceContractField,
   acceptancePolicySource,
   acceptanceReviewContextDigest,
   acceptanceVerificationObservationSubjectKey,
   assertReviewFields,
+  assertUserWaiverGrant,
   authorityFingerprint,
   buildAcceptanceVerificationObservation,
   contractCarriesArchiveProjection,
   fail,
   isRecord,
-  parseAcceptancePolicy,
   renderAcceptanceProjection,
   sha256,
   stableJson,
   validateDisposition,
   validateDomainReview,
   validateFindings,
+  validateUserWaiverAuthorization,
   waiverGrantFingerprint,
   type AcceptanceDisposition,
   type AcceptanceEvidence,
@@ -61,13 +65,11 @@ export {
   ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
   CONSUMED_RECEIPT_KEYS,
   GENERIC_REVIEW_ROLE,
-  acceptanceBenchmarkRequirement,
   acceptancePolicySource,
   acceptanceReviewContextDigest,
   acceptanceVerificationObservationSubjectKey,
   authorityFingerprint,
   contractCarriesArchiveProjection,
-  parseAcceptancePolicy,
   renderAcceptanceProjection,
 } from '../../core/review/acceptance-receipt';
 
@@ -110,6 +112,7 @@ function verifyReviewResult(root: string, authorityHome: string, receipt: Accept
 
 
 type Options = {
+  admissionSource?: (root: string, values: Readonly<Record<string, string | undefined>>) => ReviewAdmissionSource;
   authorityHome?: string;
   now?: () => Date;
 };
@@ -167,7 +170,7 @@ export function resolveProtectedGitRuntime(): ProtectedGitRuntime {
     protectedGitRuntimeCache = {
       gitBin,
       env: {
-        HOME: account.homedir,
+        HOME: osAccountHome(),
         USER: account.username,
         LOGNAME: account.username,
         PATH: protectedPath,
@@ -243,36 +246,31 @@ function verificationReportFile(root: string, requested: string): { path: string
   return readRegular(root, requested, 'verification evidence');
 }
 
-/** Validate owner facts supplied by a current evaluator, without another tree capture. */
+/** Validate a materialized report, without another tree capture. Raw evaluator
+ * results must cross the materialization boundary exactly once at the caller. */
 export function inspectAcceptanceEvidence(args: {
   root: string;
-  contract: string;
-  contractContent?: string;
+  authority: ReviewAdmissionSource;
   report: unknown;
   subject: ReviewSubject;
   env?: NodeJS.ProcessEnv;
   current?: boolean;
-  assessmentContract?: string;
 }): AcceptanceEvidence {
   const root = realpathSync(args.root);
-  const contractContent = args.contractContent ?? readCurrentContract(root, args.contract).content;
+  const active = currentAdmission(root, args.authority);
+  const admission = active.admission;
   if (isRecord(args.report) && args.report.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + args.report.reason);
   const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
   let report: import('../evidence/verification-execution').VerificationExecutionReport;
   try {
-    report = execution.validateMaterializedVerificationExecutionReport({ repoRoot: root, contractPath: args.contract,
-      contractText: contractContent,
-      report: args.current && isRecord(args.report) && args.report.kind === 'verification_execution_report'
-        ? execution.materializeVerificationExecutionReport(args.report as unknown as import('../evidence/verification-execution').VerificationExecutionReport)
-        : args.report,
+    report = execution.validateMaterializedVerificationExecutionReport({ repoRoot: root, authority: args.authority,
+      report: args.report,
       env: args.env, current: args.current }).report;
   } catch (error) { fail('verification execution evidence is invalid: ' + (error as Error).message); }
   const subject = args.subject;
-  const parsers = requireFromHelper(join(PACKAGE_ROOT, 'src/core/state/artifact-parsers.ts')) as typeof import('../../core/state/artifact-parsers');
-  const allowed = parsers.parseAllowedPaths(contractContent);
-  if (!allowed.length) fail('contract Allowed Paths are missing or malformed');
+  const allowed = admission.allowed_paths;
   if (subject.status !== 'ok') fail('current normalized review subject is unavailable');
-  for (const path of subject.paths) if (!parsers.contractAllowsPath(args.contract, allowed, path)) fail('contract Allowed Paths refuse reviewed path: ' + path);
+  for (const path of subject.paths) if (!reviewAdmissionAllowsPath(allowed, path)) fail('admission Allowed Paths refuse reviewed path: ' + path);
   if (currentReadonlyObservation()) rejectObservation('Bounded acceptance assessment and benchmark adapters are not available');
   const assessmentFile = readRegular(root, '.ai/harness/checks/change-assessment.latest.json', 'Change Assessment');
   let assessment: unknown;
@@ -288,14 +286,14 @@ export function inspectAcceptanceEvidence(args: {
     const selfBoundPacket = core.validateReviewSelectionPacket(assessment.selection_packet);
     if (selfBoundPacket.review_subject_sha256 !== subject.review_subject_sha256 || selfBoundPacket.target_ref !== subject.target_ref
       || selfBoundPacket.target_revision !== subject.target_rev) fail('verification evidence change assessment packet is stale for the current subject');
-    const recomputed = effects.prepareChangeAssessment({ repoRoot: root, contractPath: args.assessmentContract ?? args.contract, targetRevision: subject.target_rev });
+    const recomputed = effects.prepareChangeAssessment({ repoRoot: root, authority: args.authority, targetRevision: subject.target_rev });
     if (recomputed.assessment.status === 'degraded') fail('verification evidence Change Assessment base is unavailable');
     if (declared.assessment_sha256 !== recomputed.assessment.assessment_sha256) fail('verification evidence Change Assessment does not match current base assessment');
     packet = core.validateReviewSelectionPacketAgainstAssessment(assessment.selection_packet, recomputed.assessment);
   } catch (error) { fail('verification evidence change assessment is invalid: ' + (error as Error).message); }
   if (packet.status !== 'ready') fail('verification evidence change assessment packet is blocked');
   let benchmark = 'not-applicable';
-  if (acceptanceBenchmarkRequirement(contractContent) === 'required') {
+  if (admission.benchmark === 'required') {
     const validator = requireFromHelper(join(PACKAGE_ROOT, 'scripts/run-harness-profile-benchmark.ts')) as ProfileBenchmarkValidator;
     const reportPath = readRegular(root, 'evals/harness/reports/profile-comparison.json', 'required benchmark report').path;
     const validated = validator.validateHarnessBenchmarkReport(join(root, reportPath), true);
@@ -304,22 +302,20 @@ export function inspectAcceptanceEvidence(args: {
     if (!validated.authoritative) fail('required benchmark report is not authoritative');
   }
   const results = report.results.map(result => ({ ...result, execution: result.execution === 'reused' ? 'executed' : result.execution }));
-  const target = { contract: report.target.contract, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
+  const target = { campaign_sha256: report.target.campaign_sha256, admission_sha256: report.target.admission_sha256, grant_sha256: report.target.grant_sha256, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
   return { fingerprint: sha256(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
 }
 
-function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string, contractPath: string,
-  contractContent: string): AcceptanceEvidence {
+function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string,
+  authority: ReviewAdmissionSource): AcceptanceEvidence {
   let report: unknown;
   try { report = JSON.parse(content); } catch (error) { fail('verification evidence is invalid JSON: ' + (error as Error).message); }
   const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
-  if (!isRecord(report) || !isRecord(report.target) || report.target.contract !== contractPath) fail('verification evidence contract is stale for the active acceptance contract');
-  const current = execution.evaluateVerificationContract({ repoRoot: root, contractPath });
-  if (current.kind === 'verification_unavailable') fail('verification evidence is unavailable: ' + current.reason);
+  const current = execution.evaluateAdmittedVerification({ repoRoot: root, authority });
   if (!current.passed) fail('verification evidence is stale: current passing evaluation is unavailable');
   if (!isRecord(report) || !isRecord(report.target) || report.target.snapshot_hash !== current.target.snapshot_hash
     || report.target.plan_hash !== current.target.plan_hash) fail('verification evidence is stale for the current source snapshot');
-  return inspectAcceptanceEvidence({ root, contract: contractPath, contractContent, report, subject, current: true, assessmentContract: contractPath });
+  return inspectAcceptanceEvidence({ root, authority, report, subject, current: true });
 }
 
 function stateRoot(authorityHome: string): string {
@@ -340,6 +336,59 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
 
 
 
+/**
+ * `acceptance.latest.json` is replaced by every later review in this checkout.
+ * Each recorded receipt is also kept write-once under its own digest, so an
+ * observation or product projection that pinned the digest still reads the
+ * exact receipt it was built from.
+ */
+export function acceptanceReceiptRecordPath(root: string, authorityHome: string, receiptSha256: string, createParent = false): string {
+  if (!/^sha256:[0-9a-f]{64}$/.test(receiptSha256)) fail('AcceptanceReceipt record digest is invalid');
+  const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)), 'acceptance-receipts');
+  if (createParent) {
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+  }
+  return join(parent, `${receiptSha256.slice('sha256:'.length)}.json`);
+}
+
+function persistAcceptanceReceiptRecord(root: string, authorityHome: string, bytes: Buffer): string {
+  const digest = sha256(bytes);
+  const path = acceptanceReceiptRecordPath(root, authorityHome, digest, true);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
+  try {
+    chmodSync(temporary, 0o600);
+    linkSync(temporary, path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if (!readFileSync(path).equals(bytes)) fail('AcceptanceReceipt record conflicts with existing bytes');
+  } finally {
+    unlinkSync(temporary);
+  }
+  return digest;
+}
+
+export function readAcceptanceReceiptRecord(
+  root: string,
+  authorityHome: string,
+  receiptSha256: string,
+): { readonly bytes: Buffer; readonly receipt: AcceptanceReceipt } {
+  const path = acceptanceReceiptRecordPath(root, authorityHome, receiptSha256);
+  let bytes: Buffer;
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) {
+      fail('AcceptanceReceipt record must be a regular file of at most 1 MiB');
+    }
+    bytes = readFileSync(path);
+  } catch (error) {
+    fail(`AcceptanceReceipt record is unavailable for ${receiptSha256}: ${(error as Error).message}`);
+  }
+  if (sha256(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
+  return Object.freeze({ bytes, receipt: parseReceipt(bytes.toString('utf-8')) });
+}
+
 export function userWaiverGrantPath(root: string, authorityHome: string, createParent = false): string {
   const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)));
   if (createParent) {
@@ -353,8 +402,8 @@ export function userWaiverGrantPath(root: string, authorityHome: string, createP
 export function acceptanceVerificationObservationPath(
   root: string,
   authorityHome: string,
-  contractFile: string,
-  contractSha256: string,
+  campaignSha256: string,
+  admissionSha256: string,
   createParent = false,
 ): string {
   const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)), 'acceptance-observations');
@@ -362,12 +411,11 @@ export function acceptanceVerificationObservationPath(
     mkdirSync(parent, { recursive: true, mode: 0o700 });
     chmodSync(parent, 0o700);
   }
-  const key = acceptanceVerificationObservationSubjectKey(contractFile, contractSha256);
+  const key = acceptanceVerificationObservationSubjectKey(campaignSha256, admissionSha256);
   return join(parent, `${key.slice('sha256:'.length)}.json`);
 }
 
 
-/** Thin read-only wrapper so other modules can refuse an archive-projected contract without a second parser. */
 
 export function writeAcceptanceVerificationObservation(args: {
   root: string;
@@ -375,13 +423,12 @@ export function writeAcceptanceVerificationObservation(args: {
   receipt: AcceptanceReceipt;
 }): AcceptanceVerificationObservationV1 {
   const root = realpathSync(args.root);
-  const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
   const observation = buildAcceptanceVerificationObservation({
     repository_root: root,
-    acceptance_receipt_sha256: sha256(readFileSync(acceptancePath)),
-    contract_file: args.receipt.contract_file,
-    contract_sha256: args.receipt.contract_sha256,
-    goal_file: args.receipt.goal_file,
+    acceptance_receipt_sha256: persistAcceptanceReceiptRecord(root, args.authorityHome, serializedRecord(args.receipt)),
+    campaign_sha256: args.receipt.campaign_sha256,
+    admission_sha256: args.receipt.admission_sha256,
+    grant_sha256: args.receipt.grant_sha256,
     goal_sha256: args.receipt.goal_sha256,
     target_ref: args.receipt.target_ref,
     target_revision: args.receipt.target_revision,
@@ -394,8 +441,8 @@ export function writeAcceptanceVerificationObservation(args: {
   const path = acceptanceVerificationObservationPath(
     root,
     args.authorityHome,
-    observation.contract_file,
-    observation.contract_sha256,
+    observation.campaign_sha256,
+    observation.admission_sha256,
     true,
   );
   const temporary = `${path}.${process.pid}.tmp`;
@@ -408,11 +455,11 @@ export function writeAcceptanceVerificationObservation(args: {
 export function readAcceptanceVerificationObservation(
   root: string,
   authorityHome: string,
-  contractFile: string,
-  contractSha256: string,
+  campaignSha256: string,
+  admissionSha256: string,
 ): AcceptanceVerificationObservationV1 | null {
   const repositoryRoot = realpathSync(root);
-  const path = acceptanceVerificationObservationPath(repositoryRoot, authorityHome, contractFile, contractSha256);
+  const path = acceptanceVerificationObservationPath(repositoryRoot, authorityHome, campaignSha256, admissionSha256);
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, 'utf-8');
   let value: unknown;
@@ -428,19 +475,19 @@ export function readAcceptanceVerificationObservation(
   }
   const record = value as unknown as AcceptanceVerificationObservationV1;
   if (record.repository_root !== repositoryRoot) fail('AcceptanceVerificationObservation repository root is stale');
-  if (record.contract_file !== contractFile || record.contract_sha256 !== contractSha256) {
+  if (record.campaign_sha256 !== campaignSha256 || record.admission_sha256 !== admissionSha256) {
     fail('AcceptanceVerificationObservation subject is stale');
   }
-  if (unsafeRepoRelativePath(record.goal_file)) fail('AcceptanceVerificationObservation goal_file is unsafe');
+  if (!/^sha256:[0-9a-f]{64}$/.test(record.grant_sha256)) fail('AcceptanceVerificationObservation grant_sha256 is invalid');
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(record.disposition))) {
     fail('AcceptanceVerificationObservation disposition is invalid');
   }
   const rebuilt = buildAcceptanceVerificationObservation({
     repository_root: record.repository_root,
     acceptance_receipt_sha256: record.acceptance_receipt_sha256,
-    contract_file: record.contract_file,
-    contract_sha256: record.contract_sha256,
-    goal_file: record.goal_file,
+    campaign_sha256: record.campaign_sha256,
+    admission_sha256: record.admission_sha256,
+    grant_sha256: record.grant_sha256,
     goal_sha256: record.goal_sha256,
     target_ref: record.target_ref,
     target_revision: record.target_revision,
@@ -452,7 +499,7 @@ export function readAcceptanceVerificationObservation(
   });
   if (record.observation_id !== rebuilt.observation_id) fail('AcceptanceVerificationObservation id is stale');
   if (`${stableJson(rebuilt)}\n` !== raw) fail('AcceptanceVerificationObservation bytes are not canonical');
-  const key = acceptanceVerificationObservationSubjectKey(rebuilt.contract_file, rebuilt.contract_sha256);
+  const key = acceptanceVerificationObservationSubjectKey(rebuilt.campaign_sha256, rebuilt.admission_sha256);
   if (basename(path) !== `${key.slice('sha256:'.length)}.json`) {
     fail('AcceptanceVerificationObservation is misfiled');
   }
@@ -485,16 +532,16 @@ export function validateAcceptanceReceiptAgainstPolicy(
   const no = (rule: AcceptanceValidatorRuleId, reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, rule, reason });
   const receipt = input.receipt;
   try {
-    if (receipt.protocol !== 2 || receipt.kind !== 'repo-harness-acceptance-receipt') {
+    if (receipt.protocol !== 3 || receipt.kind !== 'repo-harness-acceptance-receipt') {
       return no('receipt_protocol_kind', 'AcceptanceReceipt kind/protocol is invalid');
     }
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
-    if (receipt.contract_file !== input.expectedContractFile) return no('contract_file', 'AcceptanceReceipt contract file is stale');
-    if (authorityFingerprint(input.contractContent) !== receipt.contract_sha256) return no('contract_fingerprint', 'AcceptanceReceipt contract is stale');
-    const policy = parseAcceptancePolicy(input.contractContent);
+    if (receipt.campaign_sha256 !== input.admission.campaign_sha256) return no('campaign_identity', 'AcceptanceReceipt campaign is stale');
+    if (receipt.admission_sha256 !== input.admission.admission_sha256 || receipt.grant_sha256 !== input.grantSha256) return no('admission_binding', 'AcceptanceReceipt admission is stale');
+    if (!SHA256_FIELD.test(receipt.grant_sha256)) return no('grant_digest_shape', 'AcceptanceReceipt grant digest is invalid');
+    const policy: AcceptancePolicy = { protocol: 1, ...input.admission.policy };
     if (policy.reviewer !== receipt.expected_reviewer) return no('reviewer_policy', 'AcceptanceReceipt reviewer policy is stale');
-    if (unsafeRepoRelativePath(receipt.goal_file)) return no('goal_file_shape', 'AcceptanceReceipt goal_file is unsafe');
-    if (authorityFingerprint(input.goalContent) !== receipt.goal_sha256) return no('goal_fingerprint', 'AcceptanceReceipt goal is stale');
+    if (input.admission.goal.revision !== receipt.goal_sha256) return no('goal_fingerprint', 'AcceptanceReceipt goal is stale');
     if (unsafeRepoRelativePath(receipt.verification_file)) return no('verification_file_shape', 'AcceptanceReceipt verification_file is unsafe');
     if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('verification_evidence_shape', 'AcceptanceReceipt verification_evidence_sha256 is invalid');
     if (receipt.benchmark_evidence_sha256.trim() === '') return no('benchmark_evidence_present', 'AcceptanceReceipt benchmark_evidence_sha256 is required');
@@ -508,21 +555,22 @@ export function validateAcceptanceReceiptAgainstPolicy(
     if (receipt.issued_at.trim() === '' || Number.isNaN(Date.parse(receipt.issued_at))) {
       return no('issued_at_shape', 'AcceptanceReceipt issued_at is invalid');
     }
-    if (receipt.disposition === 'reject') return no('disposition_not_reject', 'AcceptanceReceipt disposition is reject');
-    const owner = acceptanceContractField(input.contractContent, 'Owner');
+    const owner = input.admission.actor_id;
     if (receipt.disposition === 'user_waiver') {
       const grant = input.waiverGrant;
       if (grant === null) return no('waiver_grant_present', 'AcceptanceReceipt user_waiver requires a UserWaiverGrant');
-      if (policy.user_waiver !== 'allowed') return no('waiver_policy_allowed', 'contract forbids user waiver');
+      assertUserWaiverGrant(grant);
+      if (policy.user_waiver !== 'allowed') return no('waiver_policy_allowed', 'admission forbids user waiver');
       if (grant.repository_root !== input.repositoryRoot) return no('waiver_grant_repository', 'UserWaiverGrant repository root is stale');
-      if (grant.contract_file !== receipt.contract_file || grant.contract_sha256 !== receipt.contract_sha256) {
-        return no('waiver_grant_contract', 'UserWaiverGrant contract authority is stale');
+      if (grant.campaign_sha256 !== receipt.campaign_sha256 || grant.admission_sha256 !== receipt.admission_sha256) {
+        return no('waiver_grant_admission', 'UserWaiverGrant admission authority is stale');
       }
-      if (grant.goal_file !== receipt.goal_file || grant.goal_sha256 !== receipt.goal_sha256) {
+      if (grant.grant_sha256 !== receipt.grant_sha256 || grant.goal_sha256 !== receipt.goal_sha256) {
         return no('waiver_grant_goal', 'UserWaiverGrant goal authority is stale');
       }
       if (grant.actor !== owner) return no('waiver_grant_owner', 'UserWaiverGrant owner is stale');
       if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('waiver_grant_fingerprint', 'AcceptanceReceipt waiver grant is stale');
+      validateUserWaiverAuthorization(grant.authorization, waiverAuthorizationSubject(input.repositoryRoot, input.admission, input.grantSha256, grant.summary), Date.now());
     } else if (receipt.waiver_grant_sha256 !== null || input.waiverGrant !== null) {
       return no('waiver_binding_symmetry', 'AcceptanceReceipt waiver grant binding does not match disposition');
     }
@@ -532,6 +580,7 @@ export function validateAcceptanceReceiptAgainstPolicy(
     } catch (error) {
       return no('disposition_policy', (error as Error).message);
     }
+    if (receipt.disposition === 'reject') return no('disposition_not_reject', 'AcceptanceReceipt disposition is reject');
     return { ok: true };
   } catch (error) {
     // A rule that threw rather than returned: the contract policy block is
@@ -542,17 +591,21 @@ export function validateAcceptanceReceiptAgainstPolicy(
 
 function readReceipt(path: string): AcceptanceReceipt {
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
+  return parseReceipt(readFileSync(path, 'utf-8'));
+}
+
+function parseReceipt(text: string): AcceptanceReceipt {
   let value: unknown;
   try {
-    value = JSON.parse(readFileSync(path, 'utf-8'));
+    value = JSON.parse(text);
   } catch (error) {
     fail(`AcceptanceReceipt is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 2 || value.kind !== 'repo-harness-acceptance-receipt') {
+  if (!isRecord(value) || value.protocol !== 3 || value.kind !== 'repo-harness-acceptance-receipt') {
     fail('AcceptanceReceipt kind/protocol is invalid');
   }
   const requiredStrings = [
-    'repository_root', 'contract_file', 'contract_sha256', 'goal_file', 'goal_sha256',
+    'repository_root', 'campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256',
     'verification_file', 'verification_evidence_sha256', 'benchmark_evidence_sha256',
     'subject_sha256', 'subject_scope', 'target_ref', 'target_revision', 'disposition',
     'expected_reviewer', 'reviewer', 'source', 'summary', 'issued_at',
@@ -568,7 +621,7 @@ function readReceipt(path: string): AcceptanceReceipt {
   if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
     fail('AcceptanceReceipt waiver_grant_sha256 is invalid');
   }
-  for (const field of ['contract_sha256', 'goal_sha256', 'verification_evidence_sha256', 'subject_sha256']) {
+  for (const field of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256', 'verification_evidence_sha256', 'subject_sha256']) {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`AcceptanceReceipt ${field} is invalid`);
   }
   if (!Array.isArray(value.reviewed_paths) || value.reviewed_paths.some((entry) => typeof entry !== 'string')) {
@@ -583,17 +636,17 @@ function readReceipt(path: string): AcceptanceReceipt {
 }
 
 /**
- * Read-only accessor for the single AcceptanceReceipt authority file. It
- * exists so other authorities revalidate the same bytes through the same
- * validator instead of re-deriving a second receipt parser.
+ * The one serialization of a receipt file. The digest-keyed record stores
+ * these bytes for the receipt being recorded, never a re-read of the latest
+ * file another acceptance in the same checkout may have replaced.
  */
-export function readAcceptanceReceiptFile(path: string): AcceptanceReceipt {
-  return readReceipt(path);
+function serializedRecord(receipt: AcceptanceReceipt | AcceptanceReviewResult): Buffer {
+  return Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, 'utf-8');
 }
 
 function writeReceipt(path: string, receipt: AcceptanceReceipt | AcceptanceReviewResult): void {
   const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(temporary, serializedRecord(receipt), { mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
 }
@@ -610,20 +663,8 @@ function readUserWaiverGrant(path: string): UserWaiverGrant {
   } catch (error) {
     fail(`UserWaiverGrant is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 1 || value.kind !== 'repo-harness-user-waiver-grant') {
-    fail('UserWaiverGrant kind/protocol is invalid');
-  }
-  for (const field of [
-    'repository_root', 'contract_file', 'contract_sha256', 'goal_file', 'goal_sha256',
-    'actor', 'scope', 'summary', 'issued_at',
-  ]) {
-    if (typeof value[field] !== 'string' || String(value[field]).trim() === '') fail(`UserWaiverGrant ${field} is required`);
-  }
-  if (value.scope !== 'contract-authority') fail('UserWaiverGrant scope is invalid');
-  for (const field of ['contract_sha256', 'goal_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`UserWaiverGrant ${field} is invalid`);
-  }
-  return value as UserWaiverGrant;
+  assertUserWaiverGrant(value);
+  return value;
 }
 
 function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
@@ -637,93 +678,81 @@ function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
 
 
 
-function readCurrentContract(root: string, path: string): { path: string; content: string } {
-  const contract = readRegular(root, path, 'contract');
-  if (contract.path.startsWith('tasks/archive/') || contractCarriesArchiveProjection(contract.content)) {
-    fail('archived contracts cannot authorize acceptance');
-  }
-  return contract;
+function currentAdmission(root: string, authority: ReviewAdmissionSource) {
+  if (currentReadonlyObservation()) rejectObservation('Live issue admission requires an external observation');
+  if (realpathSync(authority.repoRoot) !== root) fail('review admission repository mismatch');
+  return observeActiveReviewAdmission(authority);
 }
 
+function waiverAuthorizationSubject(root: string, admission: ReturnType<typeof currentAdmission>['admission'], grant: string, summary: string) {
+  return { repository_root: root, repository_id: admission.repository_id, issue_id: admission.issue_id, campaign_id: admission.campaign_id,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: grant, goal_sha256: admission.goal.revision, actor: admission.actor_id, summary };
+}
 
+/** Trusted Bot entrypoint. The caller must obtain separate human waiver approval
+ * upstream. Policy eligibility and an execution actor name are not that action.
+ */
 export function recordUserWaiverGrant(args: {
-  root: string;
-  authorityHome: string;
-  contract: string;
-  actor: string;
-  summary: string;
-  now?: () => Date;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; actor: string; summary: string; authorization?: unknown; now?: () => Date;
 }): UserWaiverGrant {
-  if (args.summary.trim() === '') fail('waiver grant summary is required');
-  const root = realpathSync(args.root);
-  const contract = readCurrentContract(root, args.contract);
-  const policy = parseAcceptancePolicy(contract.content);
-  if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
-  const owner = acceptanceContractField(contract.content, 'Owner');
-  const goalPath = acceptanceContractField(contract.content, 'Plan');
-  if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
-  if (args.actor !== owner) fail('UserWaiverGrant actor must equal the contract owner');
-  const goal = readRegular(root, goalPath, 'goal');
+  if (!args.summary.trim()) fail('waiver grant summary is required');
+  const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
+  if (admission.policy.user_waiver !== 'allowed') fail('admission forbids user waiver');
+  if (args.actor !== admission.actor_id) fail('UserWaiverGrant actor must equal the approved actor');
+  const now = (args.now ?? (() => new Date()))();
+  const authorization = validateUserWaiverAuthorization(args.authorization,
+    waiverAuthorizationSubject(root, admission, active.grant_sha256, args.summary), now.getTime());
   const grant: UserWaiverGrant = {
-    protocol: 1,
-    kind: 'repo-harness-user-waiver-grant',
-    repository_root: root,
-    contract_file: contract.path,
-    contract_sha256: authorityFingerprint(contract.content),
-    goal_file: goal.path,
-    goal_sha256: authorityFingerprint(goal.content),
-    actor: args.actor,
-    scope: 'contract-authority',
-    summary: args.summary,
-    issued_at: (args.now ?? (() => new Date()))().toISOString(),
+    protocol: 3, kind: 'repo-harness-user-waiver-grant', repository_root: root,
+    campaign_sha256: admission.campaign_sha256, admission_sha256: admission.admission_sha256,
+    grant_sha256: active.grant_sha256, goal_sha256: admission.goal.revision,
+    actor: args.actor, scope: 'admission-authority', summary: args.summary,
+    issued_at: now.toISOString(), authorization,
   };
   writeUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome, true), grant);
   return grant;
 }
 
 export function verifyUserWaiverGrant(args: {
-  root: string;
-  authorityHome: string;
-  contract?: string;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; now?: () => Date;
 }): UserWaiverGrant {
-  const root = realpathSync(args.root);
+  const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
   const grant = readUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome));
-  if (grant.repository_root !== root) fail('UserWaiverGrant repository root is stale');
-  const contractPath = args.contract ?? grant.contract_file;
-  const contract = readCurrentContract(root, contractPath);
-  if (contract.path !== grant.contract_file) fail('UserWaiverGrant contract file is stale');
-  if (authorityFingerprint(contract.content) !== grant.contract_sha256) fail('UserWaiverGrant contract authority is stale');
-  const policy = parseAcceptancePolicy(contract.content);
-  if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
-  if (acceptanceContractField(contract.content, 'Owner') !== grant.actor) fail('UserWaiverGrant owner is stale');
-  const goalPath = grant.goal_file;
-  const goal = readRegular(root, goalPath, 'goal');
-  if (authorityFingerprint(goal.content) !== grant.goal_sha256) fail('UserWaiverGrant goal authority is stale');
+  if (grant.repository_root !== root || grant.campaign_sha256 !== admission.campaign_sha256
+    || grant.admission_sha256 !== admission.admission_sha256 || grant.grant_sha256 !== active.grant_sha256
+    || grant.goal_sha256 !== admission.goal.revision || grant.actor !== admission.actor_id) fail('UserWaiverGrant authority is stale');
+  if (admission.policy.user_waiver !== 'allowed') fail('admission forbids user waiver');
+  validateUserWaiverAuthorization(grant.authorization, waiverAuthorizationSubject(root, admission, active.grant_sha256, grant.summary),
+    (args.now ?? (() => new Date()))().getTime());
   return grant;
 }
 
 export function revokeUserWaiverGrant(args: { root: string; authorityHome: string }): void {
+  if (currentReadonlyObservation()) rejectObservation('Observation cannot revoke a waiver');
   const path = userWaiverGrantPath(realpathSync(args.root), args.authorityHome);
   if (existsSync(path)) unlinkSync(path);
 }
 
 export async function acceptanceContext(args: {
-  root: string;
-  contract: string;
-  verification: string;
-  authorityHome?: string;
+  root: string; authority: ReviewAdmissionSource; verification: string; authorityHome?: string; targetRef?: string; targetRevision?: string;
 }) {
-  const root = realpathSync(args.root);
-  const contract = readCurrentContract(root, args.contract);
-  const policy = parseAcceptancePolicy(contract.content);
-  const owner = acceptanceContractField(contract.content, 'Owner');
-  const goalPath = acceptanceContractField(contract.content, 'Plan');
-  if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
-  const goal = readRegular(root, goalPath, 'goal');
+  const root = realpathSync(args.root), active = currentAdmission(root, args.authority), admission = active.admission;
   const verification = verificationReportFile(root, args.verification);
-  const subject = await currentSubject(root);
-  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
-  return { root, contract, policy, owner, goal, verification, subject, evidence };
+  const subject = currentSubject(root, args.targetRef, args.targetRevision);
+  const evidence = normalizedVerificationEvidence(verification.content, subject, root, args.authority);
+  const report = JSON.parse(verification.content);
+  const authorityContext = bindReviewAdmission(admission, {
+    subject: { status: 'ok', scope: subject.scope, target_ref: subject.target_ref, target_rev: subject.target_rev,
+      head_rev: subject.head_rev, review_subject_sha256: subject.review_subject_sha256 },
+    verification: { plan_sha256: report.target.plan_hash, source_sha256: report.target.snapshot_hash,
+      // The validated snapshot SHA256 binds the Git tree OID; the OID itself may be SHA1.
+      tree_sha256: report.target.snapshot_hash, evidence_sha256: evidence.fingerprint },
+  }, active.grant_sha256);
+  if (currentAdmission(root, args.authority).revision !== active.revision) fail('review admission changed during evidence observation');
+  const policy: AcceptancePolicy = { protocol: 1, ...admission.policy };
+  return { root, authority: args.authority, admission, authorityContext, policy, owner: admission.actor_id,
+    goal: admission.goal, verification, subject, evidence };
 }
 
 function buildReceipt(
@@ -738,13 +767,13 @@ function buildReceipt(
   now: () => Date,
 ): AcceptanceReceipt {
   return {
-    protocol: 2,
+    protocol: 3,
     kind: 'repo-harness-acceptance-receipt',
     repository_root: context.root,
-    contract_file: context.contract.path,
-    contract_sha256: authorityFingerprint(context.contract.content),
-    goal_file: context.goal.path,
-    goal_sha256: authorityFingerprint(context.goal.content),
+    campaign_sha256: context.admission.campaign_sha256,
+    admission_sha256: context.admission.admission_sha256,
+    grant_sha256: context.authorityContext.authorization.grant_sha256,
+    goal_sha256: context.goal.revision,
     verification_file: context.verification.path,
     verification_evidence_sha256: context.evidence.fingerprint,
     benchmark_evidence_sha256: context.evidence.benchmark,
@@ -776,8 +805,8 @@ function writeAcceptanceWithObservation(
   const observationPath = acceptanceVerificationObservationPath(
     root,
     authorityHome,
-    receipt.contract_file,
-    receipt.contract_sha256,
+    receipt.campaign_sha256,
+    receipt.admission_sha256,
     true,
   );
   const previousObservation = existsSync(observationPath) ? readFileSync(observationPath) : null;
@@ -826,9 +855,8 @@ function assertRecordedReceiptPolicy(
   const verdict = validateAcceptanceReceiptAgainstPolicy({
     receipt,
     repositoryRoot: context.root,
-    expectedContractFile: receipt.contract_file,
-    contractContent: context.contract.content,
-    goalContent: context.goal.content,
+    admission: context.admission,
+    grantSha256: context.authorityContext.authorization.grant_sha256,
     waiverGrant,
   });
   if (verdict.ok || verdict.rule === 'disposition_not_reject') return;
@@ -839,7 +867,7 @@ export async function recordAcceptance(args: {
   reviewResult?: AcceptanceReviewResult;
   root: string;
   authorityHome: string;
-  contract: string;
+  authority: ReviewAdmissionSource;
   verification: string;
   disposition: AcceptanceDisposition;
   reviewer: string;
@@ -849,7 +877,7 @@ export async function recordAcceptance(args: {
   findings: AcceptanceFinding[];
   /** A provider must bind its opinion to the context it actually reviewed. */
   expectedContext?: {
-    contract_sha256: string;
+    admission_sha256: string;
     goal_sha256: string;
     subject_sha256: string;
     verification_evidence_sha256: string;
@@ -864,8 +892,8 @@ export async function recordAcceptance(args: {
   const context = await acceptanceContext(args);
   if (args.expectedContext) {
     const actual = {
-      contract_sha256: authorityFingerprint(context.contract.content),
-      goal_sha256: authorityFingerprint(context.goal.content),
+      admission_sha256: context.admission.admission_sha256,
+      goal_sha256: context.goal.revision,
       subject_sha256: context.subject.review_subject_sha256,
       verification_evidence_sha256: context.evidence.fingerprint,
       target_revision: context.subject.target_rev,
@@ -903,7 +931,7 @@ export async function recordAcceptance(args: {
 export async function recordUserWaiverAcceptance(args: {
   root: string;
   authorityHome: string;
-  contract: string;
+  authority: ReviewAdmissionSource;
   verification: string;
   now?: () => Date;
 }): Promise<AcceptanceReceipt> {
@@ -911,7 +939,8 @@ export async function recordUserWaiverAcceptance(args: {
   const grant = verifyUserWaiverGrant({
     root: context.root,
     authorityHome: args.authorityHome,
-    contract: context.contract.path,
+    authority: args.authority,
+    now: args.now,
   });
   const findings: AcceptanceFinding[] = [];
   validateDisposition(context.policy, context.owner, 'user_waiver', 'User', 'user-waiver', grant.actor, findings);
@@ -932,57 +961,43 @@ export async function recordUserWaiverAcceptance(args: {
 }
 
 export async function verifyAcceptance(args: {
-  root: string;
-  authorityHome: string;
-  contract?: string;
-  verification?: string;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; verification?: string;
 }): Promise<AcceptanceReceipt> {
   const root = realpathSync(args.root);
   const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-  if (receipt.repository_root !== root) fail('AcceptanceReceipt repository root is stale');
-  const contractPath = args.contract ?? receipt.contract_file;
-  const contract = readCurrentContract(root, contractPath);
-  if (authorityFingerprint(contract.content) !== receipt.contract_sha256) fail('AcceptanceReceipt contract is stale');
-  const goalPath = receipt.goal_file;
-  const goal = readRegular(root, goalPath, 'goal');
-  const verificationPath = args.verification ?? receipt.verification_file;
-  const verification = verificationReportFile(root, verificationPath);
-  const subject = await currentSubject(root, receipt.target_ref, receipt.target_revision);
+  const subject = currentSubject(root, receipt.target_ref, receipt.target_revision);
   if (subject.review_subject_sha256 !== receipt.subject_sha256) fail('AcceptanceReceipt semantic subject is stale');
-  const evidence = normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
-  return inspectAcceptanceCurrentBinding({ root, authorityHome: args.authorityHome, contract: contract.path, subject, evidence });
+  const context = await acceptanceContext({ ...args, root, verification: args.verification ?? receipt.verification_file,
+    targetRef: receipt.target_ref, targetRevision: receipt.target_revision });
+  return inspectAcceptanceCurrentBinding({ root, authorityHome: args.authorityHome, authority: args.authority,
+    subject: context.subject, evidence: context.evidence });
 }
 
-/** The synchronous acceptance owner rule shared by verify and state inspection. */
+/** Reobserve admission even when the evaluator supplies current subject evidence. */
 export function inspectAcceptanceCurrentBinding(args: {
-  root: string;
-  authorityHome: string;
-  contract: string;
-  subject: ReviewSubject;
-  evidence: AcceptanceEvidence;
+  root: string; authorityHome: string; authority: ReviewAdmissionSource; subject: ReviewSubject; evidence: AcceptanceEvidence;
 }): AcceptanceReceipt {
-  const root = realpathSync(args.root);
-  const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome));
-  const contract = readCurrentContract(root, args.contract);
-  const goal = readRegular(root, receipt.goal_file, 'goal');
-  if (contract.path !== receipt.contract_file) fail('AcceptanceReceipt contract path is stale');
-  const subject = args.subject;
+  const root = realpathSync(args.root), active = currentAdmission(root, args.authority);
+  const receipt = readReceipt(acceptanceReceiptPath(root, args.authorityHome)), subject = args.subject;
   if (subject.review_subject_sha256 !== receipt.subject_sha256 || subject.target_ref !== receipt.target_ref
     || subject.target_rev !== receipt.target_revision || stableJson(subject.paths) !== stableJson(receipt.reviewed_paths)) fail('AcceptanceReceipt semantic subject is stale');
   const diff = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/diff-fingerprint.ts')) as typeof import('./diff-fingerprint');
   const base = diff.resolvePolicyReviewBase(root);
   if (!base.ok || base.targetRef !== receipt.target_ref) fail('AcceptanceReceipt target ref is stale against workflow policy');
   if (args.evidence.fingerprint !== receipt.verification_evidence_sha256 || args.evidence.benchmark !== receipt.benchmark_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
-  verifyReviewResult(root, args.authorityHome, receipt, authorityFingerprint(stableJson([
-    authorityFingerprint(contract.content), authorityFingerprint(goal.content), subject.review_subject_sha256, args.evidence.fingerprint, subject.target_rev,
-  ])));
-  const verdict = validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: root, expectedContractFile: receipt.contract_file,
-    contractContent: contract.content, goalContent: goal.content,
-    waiverGrant: receipt.disposition === 'user_waiver' ? verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path }) : null });
+  const report = JSON.parse(verificationReportFile(root, receipt.verification_file).content);
+  const context = bindReviewAdmission(active.admission, {
+    subject: { status: 'ok', scope: subject.scope, target_ref: subject.target_ref, target_rev: subject.target_rev, head_rev: subject.head_rev, review_subject_sha256: subject.review_subject_sha256 },
+    verification: { plan_sha256: report.target.plan_hash, source_sha256: report.target.snapshot_hash, // The validated snapshot SHA256 binds the Git tree OID; the OID itself may be SHA1.
+      tree_sha256: report.target.snapshot_hash, evidence_sha256: args.evidence.fingerprint },
+  }, active.grant_sha256);
+  verifyReviewResult(root, args.authorityHome, receipt, context.context_sha256);
+  const verdict = validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: root, admission: active.admission, grantSha256: active.grant_sha256,
+    waiverGrant: receipt.disposition === 'user_waiver' ? verifyUserWaiverGrant(args) : null });
   if (!verdict.ok) fail(verdict.reason);
-  const observation = readAcceptanceVerificationObservation(root, args.authorityHome, receipt.contract_file, receipt.contract_sha256);
+  const observation = readAcceptanceVerificationObservation(root, args.authorityHome, receipt.campaign_sha256, receipt.admission_sha256);
   if (!observation || observation.acceptance_receipt_sha256 !== sha256(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
-    || observation.goal_file !== receipt.goal_file || observation.goal_sha256 !== receipt.goal_sha256
+    || observation.grant_sha256 !== receipt.grant_sha256 || observation.goal_sha256 !== receipt.goal_sha256
     || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.target_revision
     || observation.subject_sha256 !== receipt.subject_sha256 || observation.verification_evidence_sha256 !== receipt.verification_evidence_sha256
     || observation.disposition !== receipt.disposition) fail('AcceptanceVerificationObservation is missing or stale');
@@ -1016,6 +1031,7 @@ function syncReviewHeader(source: string, receipt: AcceptanceReceipt): string {
 }
 
 export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt): void {
+  if (currentReadonlyObservation()) rejectObservation('Observation cannot write an acceptance projection');
   const source = readFileSync(reviewPath, 'utf-8');
   const projection = renderAcceptanceProjection(receipt);
   const pattern = /^## Acceptance Receipt Projection[ \t]*(?:\r?\n|$)[\s\S]*?(?=^##[ \t]+|(?![\s\S]))/m;
@@ -1047,27 +1063,12 @@ export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt
 async function importAttestedReceiptIfApplicable(
   root: string,
   receipt: AcceptanceReceipt,
-  authorityContractFile: string,
+  authority: ReviewAdmissionSource,
 ): Promise<void> {
   if (receipt.disposition !== 'external_pass' && receipt.disposition !== 'user_waiver') return;
 
   type AttestedImportModule = {
-    importAttestedEvidence: (input: {
-      repoRoot: string;
-      authorityContractFile: string;
-      receipt: {
-        disposition: string;
-        reviewer: string;
-        source: string;
-        actor: string | null;
-        summary: string;
-        findings: AcceptanceFinding[];
-        subject_sha256: string;
-        target_revision: string;
-        contract_file: string;
-        issued_at: string;
-      };
-    }) => { ok: boolean; reason?: string; message?: string };
+    importAttestedEvidence: (input: { repoRoot: string; authority: ReviewAdmissionSource; receipt: AcceptanceReceipt }) => { ok: boolean; reason?: string; message?: string };
   };
   let attestedImport: AttestedImportModule;
   try {
@@ -1080,22 +1081,7 @@ async function importAttestedReceiptIfApplicable(
     throw error;
   }
 
-  const result = attestedImport.importAttestedEvidence({
-    repoRoot: root,
-    authorityContractFile,
-    receipt: {
-      disposition: receipt.disposition,
-      reviewer: receipt.reviewer,
-      source: receipt.source,
-      actor: receipt.actor,
-      summary: receipt.summary,
-      findings: receipt.findings,
-      subject_sha256: receipt.subject_sha256,
-      target_revision: receipt.target_revision,
-      contract_file: receipt.contract_file,
-      issued_at: receipt.issued_at,
-    },
-  });
+  const result = attestedImport.importAttestedEvidence({ repoRoot: root, authority, receipt });
   if (!result.ok) {
     fail(`AcceptanceReceipt recorded but ledger import failed closed: ${result.message ?? result.reason}`);
   }
@@ -1122,37 +1108,39 @@ function option(argv: string[], name: string, required = true): string | undefin
 
 export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}): Promise<number> {
   const command = argv[0];
-  if (command === 'evidence-requirement') {
-    process.stdout.write(acceptanceBenchmarkRequirement(readRegular(realpathSync(process.cwd()), option(argv, '--contract')!, 'contract').content));
-    return 0;
-  }
   const root = repositoryRoot();
-  const authorityHome = opts.authorityHome ?? userInfo().homedir;
-  if (command === 'inspect-current') {
-    const contract = option(argv, '--contract')!;
-    const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
-    const report = execution.evaluateVerificationContract({ repoRoot: root, contractPath: contract });
-    const subject = currentSubject(root);
-    const evidence = inspectAcceptanceEvidence({ root, contract, report, subject, current: true });
-    console.log(JSON.stringify(inspectAcceptanceCurrentBinding({ root, authorityHome, contract, subject, evidence })));
-    return 0;
+  const authorityHome = opts.authorityHome ?? osAccountHome();
+  if (command === 'path') { console.log(acceptanceReceiptPath(root, authorityHome)); return 0; }
+  if (command === 'revoke-waiver') { revokeUserWaiverGrant({ root, authorityHome }); return 0; }
+  const authority = (opts.admissionSource ?? readReviewAdmissionSource)(root, {
+    'repository-id': option(argv, '--repository-id', false), 'issue-id': option(argv, '--issue-id', false),
+    'campaign-id': option(argv, '--campaign-id', false), 'grant-sha256': option(argv, '--grant-sha256', false),
+    'policy-sha256': option(argv, '--policy-sha256', false), actor: option(argv, '--actor', false),
+  });
+  if (command === 'evidence-requirement') {
+    process.stdout.write(currentAdmission(root, authority).admission.benchmark); return 0;
   }
-  if (command === 'path') {
-    console.log(acceptanceReceiptPath(root, authorityHome));
+  if (command === 'inspect-current') {
+    const execution = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/evidence/verification-execution.ts')) as typeof import('../evidence/verification-execution');
+    const report = execution.evaluateAdmittedVerification({ repoRoot: root, authority });
+    const subject = currentSubject(root);
+    const evidence = inspectAcceptanceEvidence({ root, authority,
+      report: execution.materializeVerificationExecutionReport(report), subject, current: true });
+    console.log(JSON.stringify(inspectAcceptanceCurrentBinding({ root, authorityHome, authority, subject, evidence })));
     return 0;
   }
   if (command === 'policy') {
-    const contract = readRegular(root, option(argv, '--contract')!, 'contract');
-    console.log(JSON.stringify(parseAcceptancePolicy(contract.content)));
+    console.log(JSON.stringify(currentAdmission(root, authority).admission.policy));
     return 0;
   }
   if (command === 'grant-waiver') {
     const grant = recordUserWaiverGrant({
       root,
       authorityHome,
-      contract: option(argv, '--contract')!,
+      authority,
       actor: option(argv, '--actor')!,
       summary: option(argv, '--summary')!,
+      authorization: JSON.parse(readFileSync(resolve(root, option(argv, '--authorization')!), 'utf8')),
       now: opts.now,
     });
     console.log(JSON.stringify(grant));
@@ -1162,29 +1150,25 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     console.log(JSON.stringify(verifyUserWaiverGrant({
       root,
       authorityHome,
-      contract: option(argv, '--contract', false),
+      authority,
+      now: opts.now,
     })));
-    return 0;
-  }
-  if (command === 'revoke-waiver') {
-    revokeUserWaiverGrant({ root, authorityHome });
     return 0;
   }
   if (command === 'record') {
     const disposition = option(argv, '--disposition') as AcceptanceDisposition;
     if (!['external_pass', 'user_waiver', 'reject'].includes(disposition)) fail('--disposition is invalid', 2);
-    const contract = option(argv, '--contract')!;
     const review = option(argv, '--review', false);
     if (disposition === 'user_waiver') {
       const receipt = await recordUserWaiverAcceptance({
         root,
         authorityHome,
-        contract,
+        authority,
         verification: option(argv, '--verification')!,
         now: opts.now,
       });
       projectRecordedAcceptance({ root, review, receipt });
-      await importAttestedReceiptIfApplicable(root, receipt, contract);
+      await importAttestedReceiptIfApplicable(root, receipt, authority);
       console.log(JSON.stringify(receipt));
       return 0;
     }
@@ -1195,18 +1179,18 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       reviewResult: validateDomainReview(JSON.parse(readFileSync(reviewResultFile,'utf8'))),
       root,
       authorityHome,
-      contract,
+      authority,
       verification: option(argv, '--verification')!,
       disposition,
       reviewer: option(argv, '--reviewer')!,
       source: option(argv, '--source')!,
-      actor: option(argv, '--actor', false) ?? null,
+      actor: null,
       summary: option(argv, '--summary')!,
       findings: validateFindings(JSON.parse(findingsRaw)),
       now: opts.now,
     });
     projectRecordedAcceptance({ root, review, receipt });
-    await importAttestedReceiptIfApplicable(root, receipt, contract);
+    await importAttestedReceiptIfApplicable(root, receipt, authority);
     console.log(JSON.stringify(receipt));
     return disposition === 'reject' ? 1 : 0;
   }
@@ -1214,7 +1198,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const receipt = await verifyAcceptance({
       root,
       authorityHome,
-      contract: option(argv, '--contract', false),
+      authority,
       verification: option(argv, '--verification', false),
     });
     const format = option(argv, '--format', false) ?? 'json';
@@ -1229,7 +1213,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const receipt = await verifyAcceptance({
       root,
       authorityHome,
-      contract: option(argv, '--contract', false),
+      authority,
       verification: option(argv, '--verification', false),
     });
     projectAcceptance(resolve(root, option(argv, '--review')!), receipt);

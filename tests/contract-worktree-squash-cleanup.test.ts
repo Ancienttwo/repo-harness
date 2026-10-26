@@ -15,7 +15,9 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
-import { executeVerificationContract } from "../src/effects/evidence/verification-execution";
+import { executeAdmittedVerification } from "../src/effects/evidence/verification-execution";
+import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
+import { parseVerificationPlanFromContractText } from '../src/core/evidence/verification-plan';
 import { nativeVerificationPlan } from "./state/effective-state-fixture";
 import { sweepManagedWorktrees } from "../src/effects/state/coordination-worktree-topology";
 import { listHelperFiles } from "../src/effects/runtime/helper-runner";
@@ -81,6 +83,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
   test("cleanup removes a merged clean worktree that holds an ignored native ledger and executed run", () => {
     const cwd = tmpWorkspace("cleanup-native-evidence");
     const worktreePath = `${cwd}-wt-native-evidence`;
+    const authorityHome = tmpWorkspace("cleanup-authority");
     try {
       copyHelpers(cwd);
       initGitRepo(cwd);
@@ -91,9 +94,12 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       writeFileSync(join(cwd, "feature.txt"), "fixture\n");
       commitAll(cwd, "native cleanup fixture");
       expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/native-evidence"], cwd).status).toBe(0);
-      const report = executeVerificationContract({ repoRoot: worktreePath, contractPath: contract });
+      const { source: authority } = seedReviewAdmissionFixture(worktreePath, authorityHome, {
+        plan: parseVerificationPlanFromContractText(readFileSync(join(worktreePath, contract), 'utf8')),
+      });
+      const report = executeAdmittedVerification({ repoRoot: worktreePath, authority });
       expect(report.passed).toBe(true);
-      if (report.kind !== "verification_execution_report") throw new Error(report.reason);
+      expect(report.kind).toBe("verification_execution_report");
       expect(report.results).toHaveLength(1);
       expect(report.results[0]!.execution).toBe("executed");
       const runPath = join(worktreePath, report.results[0]!.run_file!);
@@ -118,6 +124,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       expect(existsSync(metadataPath)).toBe(false);
       expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/native-evidence"], cwd).status).not.toBe(0);
     } finally {
+      rmSync(authorityHome, { recursive: true, force: true });
       rmSync(worktreePath, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }

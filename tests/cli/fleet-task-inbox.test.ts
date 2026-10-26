@@ -27,6 +27,9 @@ describe('fleet task inbox CLI transport', () => {
     const send = help(['fleet', 'message', 'send']);
     expect(send.status, send.stderr).toBe(0);
     expect(send.stdout).toContain('--task-id');
+    expect(send.stdout).toContain('--context');
+    expect(send.stdout).not.toContain('--target-ref');
+    expect(send.stdout).not.toContain('--sprint');
     expect(send.stdout).toContain('--scope');
     expect(send.stdout).toContain('--audience');
     expect(send.stdout).toContain('--body-file');
@@ -37,12 +40,14 @@ describe('fleet task inbox CLI transport', () => {
     const list = help(['fleet', 'inbox', 'list']);
     expect(list.status, list.stderr).toBe(0);
     expect(list.stdout).toContain('--task-id');
+    expect(list.stdout).toContain('--context');
     expect(list.stdout).not.toContain('--recipient-kind');
     expect(list.stdout).not.toContain('--recipient-id');
 
     const ack = help(['fleet', 'inbox', 'ack']);
     expect(ack.status, ack.stderr).toBe(0);
     expect(ack.stdout).toContain('--message-id');
+    expect(ack.stdout).toContain('--context');
     expect(ack.stdout).not.toContain('--recipient-kind');
     expect(ack.stdout).not.toContain('--recipient-id');
   });
@@ -50,7 +55,7 @@ describe('fleet task inbox CLI transport', () => {
   test('rejects caller-selected durable recipient identities', () => {
     const result = run([
       'fleet', 'inbox', 'list', '--json', '--task-id', 'a'.repeat(64),
-      '--recipient-kind', 'user', '--recipient-id', 'victim',
+      '--context', 'unused-context.json', '--recipient-kind', 'user', '--recipient-id', 'victim',
     ]);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("unknown option '--recipient-kind'");

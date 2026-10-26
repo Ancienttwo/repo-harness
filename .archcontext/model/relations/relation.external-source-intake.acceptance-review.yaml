@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.external-source-intake.acceptance-review"
+kind: "depends-on"
+source: "capability.runtime-harness.external-source-intake"
+target: "capability.verification.acceptance-review"
+intent: "Read protected review admission sources for current source-binding validation"

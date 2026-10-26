@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
-import { acceptancePolicySource, parseAcceptancePolicy } from '../../scripts/acceptance-receipt';
+import { acceptancePolicySource, parseAcceptancePolicy } from '../../src/core/review/acceptance-receipt';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });

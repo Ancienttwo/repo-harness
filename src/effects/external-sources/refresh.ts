@@ -11,8 +11,8 @@ import {
   GithubAdapterError,
   type GithubCommandRunner,
   type GithubRepositoryIdentityV1,
-} from './github';
-import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from './policy';
+} from '../github/issues';
+import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../github/policy';
 import {
   listExternalSourceRefreshReceipts,
   listProviderIssueObservations,

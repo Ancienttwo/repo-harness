@@ -9,13 +9,12 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { pathToFileURL } from "url";
 
 const ROOT = join(import.meta.dir, "..");
 
-// Fixture subprocesses must never see the host repo's REPO_HARNESS_*/HOOK_REPO_ROOT
-// env: verify-sprint.sh cds into REPO_HARNESS_TARGET_REPO_ROOT when set, which lets
-// a fixture gate escape into the real repo and recursively execute the real
-// contract's exit criteria (which run this very test file).
+// Parser children use only the historical metadata parser. Strip repository
+// overrides so the fixture cannot inherit a caller's execution context.
 function fixtureEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -25,10 +24,13 @@ function fixtureEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runEvidenceRequirement(cwd: string, contractRelPath: string) {
-  const initialized = spawnSync("git", ["init", "-q", cwd], { encoding: "utf-8", env: fixtureEnv() });
-  expect(initialized.status, initialized.stderr).toBe(0);
-  return spawnSync(process.execPath, [join(ROOT, "scripts/acceptance-receipt.ts"), "evidence-requirement", "--contract", contractRelPath], {
+function runHistoricalEvidenceParser(cwd: string, contractRelPath: string) {
+  const source = [
+    'import { readFileSync } from "node:fs";',
+    `import { acceptanceBenchmarkRequirement } from ${JSON.stringify(pathToFileURL(join(ROOT, "src/core/review/acceptance-receipt.ts")).href)};`,
+    `process.stdout.write(acceptanceBenchmarkRequirement(readFileSync(${JSON.stringify(join(cwd, contractRelPath))}, "utf8")));`,
+  ].join("\n");
+  return spawnSync(process.execPath, ["--eval", source], {
     cwd, encoding: "utf-8", env: fixtureEnv(),
   });
 }
@@ -45,7 +47,7 @@ describe("workflow evidence requirement and explicit verification", () => {
     }
   });
 
-  test("evidence-requirement fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
+  test("historical evidence-requirement parser fails closed on a duplicate benchmark: key, a sibling-nested benchmark:, and a grandchild-nested benchmark:", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-hardening-")));
     try {
       writeFileSync(
@@ -61,9 +63,10 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const duplicate = runEvidenceRequirement(cwd, "duplicate-benchmark.contract.md");
+      const duplicate = runHistoricalEvidenceParser(cwd, "duplicate-benchmark.contract.md");
       expect(duplicate.status).not.toBe(0);
       expect(duplicate.stdout).toBe("");
+      expect(duplicate.stderr).toContain("contract evidence requirements are ambiguous");
 
       writeFileSync(
         join(cwd, "nested-sibling-benchmark.contract.md"),
@@ -80,9 +83,10 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const nestedSibling = runEvidenceRequirement(cwd, "nested-sibling-benchmark.contract.md");
+      const nestedSibling = runHistoricalEvidenceParser(cwd, "nested-sibling-benchmark.contract.md");
       expect(nestedSibling.status).not.toBe(0);
       expect(nestedSibling.stdout).toBe("");
+      expect(nestedSibling.stderr).toContain("contract benchmark requirement must be required or not_applicable");
 
       writeFileSync(
         join(cwd, "nested-grandchild-benchmark.contract.md"),
@@ -97,9 +101,10 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const nestedGrandchild = runEvidenceRequirement(cwd, "nested-grandchild-benchmark.contract.md");
+      const nestedGrandchild = runHistoricalEvidenceParser(cwd, "nested-grandchild-benchmark.contract.md");
       expect(nestedGrandchild.status).not.toBe(0);
       expect(nestedGrandchild.stdout).toBe("");
+      expect(nestedGrandchild.stderr).toContain("contract benchmark requirement must be required or not_applicable");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -113,7 +118,7 @@ describe("workflow evidence requirement and explicit verification", () => {
   // "not_applicable#required" -- was stripped as if it were a trailing
   // comment, silently truncating the malformed value into a valid-looking
   // "not_applicable" instead of failing closed on the garbage suffix.
-  test("evidence-requirement fails closed on a value with no whitespace before a trailing #, and still strips a real whitespace-separated comment", () => {
+  test("historical evidence-requirement parser fails closed on a value with no whitespace before a trailing #, and still strips a real whitespace-separated comment", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-comment-")));
     try {
       writeFileSync(
@@ -128,9 +133,10 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const glued = runEvidenceRequirement(cwd, "glued-hash-benchmark.contract.md");
+      const glued = runHistoricalEvidenceParser(cwd, "glued-hash-benchmark.contract.md");
       expect(glued.status).not.toBe(0);
       expect(glued.stdout).toBe("");
+      expect(glued.stderr).toContain("contract benchmark requirement must be required or not_applicable");
 
       writeFileSync(
         join(cwd, "real-comment-benchmark.contract.md"),
@@ -144,7 +150,7 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const realComment = runEvidenceRequirement(cwd, "real-comment-benchmark.contract.md");
+      const realComment = runHistoricalEvidenceParser(cwd, "real-comment-benchmark.contract.md");
       expect(realComment.status, realComment.stderr).toBe(0);
       expect(realComment.stdout).toBe("not_applicable");
     } finally {
@@ -152,7 +158,7 @@ describe("workflow evidence requirement and explicit verification", () => {
     }
   }, 30_000);
 
-  test("evidence-requirement fails closed when parser sentinels appear as yaml content", () => {
+  test("historical evidence-requirement parser fails closed when parser sentinels appear as yaml content", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-sentinel-")));
     try {
       for (const [name, marker] of [
@@ -174,16 +180,17 @@ describe("workflow evidence requirement and explicit verification", () => {
             "",
           ].join("\n")
         );
-        const result = runEvidenceRequirement(cwd, `${name}-marker.contract.md`);
+        const result = runHistoricalEvidenceParser(cwd, `${name}-marker.contract.md`);
         expect(result.status).not.toBe(0);
         expect(result.stdout).toBe("");
+        expect(result.stderr).toContain("contract evidence requirements are ambiguous");
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("evidence-requirement fails closed on quoted spellings of canonical evidence keys", () => {
+  test("historical evidence-requirement parser fails closed on quoted spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-quoted-key-")));
     try {
       for (const [name, quotedLine] of [
@@ -203,16 +210,17 @@ describe("workflow evidence requirement and explicit verification", () => {
             "",
           ].join("\n")
         );
-        const result = runEvidenceRequirement(cwd, `${name}.contract.md`);
+        const result = runHistoricalEvidenceParser(cwd, `${name}.contract.md`);
         expect(result.status).not.toBe(0);
         expect(result.stdout).toBe("");
+        expect(result.stderr).toContain("contract evidence requirements use an unsupported key or document form");
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("evidence-requirement fails closed on whitespace-before-colon spellings of canonical evidence keys", () => {
+  test("historical evidence-requirement parser fails closed on whitespace-before-colon spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-spaced-key-")));
     try {
       writeFileSync(
@@ -228,9 +236,10 @@ describe("workflow evidence requirement and explicit verification", () => {
           "",
         ].join("\n")
       );
-      const result = runEvidenceRequirement(cwd, "spaced-key.contract.md");
+      const result = runHistoricalEvidenceParser(cwd, "spaced-key.contract.md");
       expect(result.status).not.toBe(0);
       expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("contract evidence requirements use an unsupported key or document form");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

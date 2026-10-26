@@ -36,12 +36,22 @@ function isValidGenesis(value: unknown): value is GenesisRecord {
 
 function isValidSubjectIdentity(value: unknown): value is SubjectIdentity {
   if (!isRecord(value)) return false;
+  if ('authority_kind' in value) {
+    const common = ['authority_commit', 'base_commit', 'target_commit', 'scope_hash', 'subject_hash', 'command_hash', 'env_provider_id', 'authority_kind'];
+    const hashes = value.authority_kind === 'review-admission'
+      ? ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'plan_hash']
+      : value.authority_kind === 'eval-catalog' ? ['catalog_sha256', 'eval_sha256', 'plan_hash'] : null;
+    if (!hashes) return false;
+    const fields = [...common, ...hashes, ...(value.authority_kind === 'eval-catalog' ? ['eval_id'] : [])];
+    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(fields.sort())
+      || !hashes.every(key => typeof value[key] === 'string' && /^sha256:[0-9a-f]{64}$/.test(value[key] as string))
+      || value.authority_kind === 'eval-catalog' && !isNonEmptyString(value.eval_id)) return false;
+  } else if (!isNonEmptyString(value.contract_hash)) return false;
   return isNonEmptyString(value.authority_commit)
     && isNonEmptyString(value.base_commit)
     && isNonEmptyString(value.target_commit)
     && isNonEmptyString(value.scope_hash)
     && isNonEmptyString(value.subject_hash)
-    && isNonEmptyString(value.contract_hash)
     && isNonEmptyString(value.command_hash)
     && isNonEmptyString(value.env_provider_id);
 }

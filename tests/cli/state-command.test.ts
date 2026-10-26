@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { EffectiveState } from '../../src/core/state/types';
 import {
   resolveStateCommand,
+  boardStateCommand,
+  buildStateCommand,
   type ResolveEffectiveState,
 } from '../../src/cli/commands/state';
 
@@ -130,6 +132,33 @@ describe('resolveStateCommand', () => {
       exitCode: 1,
       stdout: '',
       stderr: 'state lock unavailable\n',
+    });
+  });
+});
+
+describe('provider state board command', () => {
+  test('requires exact registry selection and preserves the complete provider observation', () => {
+    const board = { protocol: 2 as const, kind: 'repo-harness-provider-board' as const, registered_repository_id: 'repo_1',
+      revision: `sha256:${'a'.repeat(64)}`, snapshot_consistency: 'changed_during_read' as const, source_status: 'unavailable' as const, cards: [] };
+    const calls: unknown[] = [];
+    const result = boardStateCommand({ repositoryId: 'repo_1', json: true }, { resolveBoard: input => { calls.push(input); return board; } });
+    expect(calls).toEqual([{ repository_id: 'repo_1' }]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(board);
+  });
+  test('refuses absent and retired authority selectors before any observation', () => {
+    const deps = { resolveBoard: () => { throw new Error('must not observe'); } };
+    expect(boardStateCommand({}, deps).exitCode).toBe(2);
+    expect(boardStateCommand({ repositoryId: 'repo_1', ...{ sprint: 'plans/old.md' } }, deps).exitCode).toBe(2);
+    expect(boardStateCommand({ repositoryId: 'repo_1', ...{ targetRef: 'main' } }, deps).exitCode).toBe(2);
+    const board = buildStateCommand().commands.find(command => command.name() === 'board')!;
+    expect(board.options.map(option => option.long)).toEqual(['--json', '--repository-id']);
+    board.exitOverride().configureOutput({ writeErr: () => undefined });
+    expect(() => board.parse(['--json', '--repository-id', 'repo_1', '--sprint', 'plans/old.md'], { from: 'user' })).toThrow();
+  });
+  test('does not replace an unavailable provider observation with legacy board state', () => {
+    expect(boardStateCommand({ repositoryId: 'repo_1' }, { resolveBoard: () => { throw new Error('provider unavailable'); } })).toEqual({
+      exitCode: 1, stdout: '', stderr: 'provider unavailable\n',
     });
   });
 });

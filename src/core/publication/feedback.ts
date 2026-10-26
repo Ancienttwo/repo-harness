@@ -1,3 +1,4 @@
+import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
 import {
   publicationSha256,
@@ -139,26 +140,26 @@ export interface ReactionTokenInput {
 
 export type RepairOfferAttentionOwner = 'agent' | 'user';
 
-export interface RepairOfferV1 {
-  readonly protocol: typeof FEEDBACK_PROTOCOL;
+export interface RepairOfferV2 {
+  readonly protocol: 2;
   readonly kind: typeof REPAIR_OFFER_KIND;
   readonly task_id: string;
   readonly publication_id: string;
-  readonly expected_claim_id: string;
-  readonly expected_generation: number;
+  readonly expected_claim: TaskMessageClaim;
+  readonly admission_sha256: string;
   readonly expected_head_sha: string;
   readonly feedback_revision: string;
   readonly attention_owner: RepairOfferAttentionOwner;
   readonly allowed_actions: readonly never[];
 }
 
-export type RepairOfferInput = Omit<RepairOfferV1, 'protocol' | 'kind'>;
+export type RepairOfferInput = Omit<RepairOfferV2, 'protocol' | 'kind'>;
 
 export interface RepairOfferProjectionInput {
   readonly task_id: string;
   readonly publication_id: string;
-  readonly expected_claim_id: string;
-  readonly expected_generation: number;
+  readonly expected_claim: TaskMessageClaim;
+  readonly admission_sha256: string;
   readonly expected_head_sha: string;
   readonly feedback_revision: string;
   readonly reaction_token: string;
@@ -166,7 +167,7 @@ export interface RepairOfferProjectionInput {
 }
 
 export type RepairOfferProjection =
-  | { readonly state: 'offered'; readonly attention_owner: 'agent'; readonly offer: RepairOfferV1 }
+  | { readonly state: 'offered'; readonly attention_owner: 'agent'; readonly offer: RepairOfferV2 }
   | {
     readonly state: 'no_progress';
     readonly attention_owner: 'user';
@@ -634,14 +635,11 @@ function validateRepairOfferInput(input: RepairOfferInput): RepairOfferInput {
   if (input.attention_owner !== 'agent' && input.attention_owner !== 'user') {
     fail('feedback_provider_shape_invalid', 'repair offer attention_owner is invalid');
   }
-  if (!Number.isInteger(input.expected_generation) || input.expected_generation < 1) {
-    fail('feedback_provider_shape_invalid', 'repair offer expected_generation is invalid');
-  }
   return Object.freeze({
     task_id: requiredTaskId(input.task_id),
     publication_id: requiredPublicationId(input.publication_id),
-    expected_claim_id: requiredString(input.expected_claim_id, 'expected_claim_id'),
-    expected_generation: input.expected_generation,
+    expected_claim: validateTaskMessageClaim(input.expected_claim),
+    admission_sha256: requiredDigest(input.admission_sha256, 'admission_sha256'),
     expected_head_sha: requiredGitOid(input.expected_head_sha, 'expected_head_sha'),
     feedback_revision: requiredDigest(input.feedback_revision, 'feedback_revision'),
     attention_owner: input.attention_owner,
@@ -649,9 +647,9 @@ function validateRepairOfferInput(input: RepairOfferInput): RepairOfferInput {
   });
 }
 
-export function buildRepairOffer(input: RepairOfferInput): RepairOfferV1 {
+export function buildRepairOffer(input: RepairOfferInput): RepairOfferV2 {
   return Object.freeze({
-    protocol: FEEDBACK_PROTOCOL,
+    protocol: 2 as const,
     kind: REPAIR_OFFER_KIND,
     ...validateRepairOfferInput(input),
   });
@@ -701,8 +699,8 @@ export function projectRepairOffer(input: RepairOfferProjectionInput): RepairOff
     offer: buildRepairOffer({
       task_id: input.task_id,
       publication_id: publicationId,
-      expected_claim_id: input.expected_claim_id,
-      expected_generation: input.expected_generation,
+      expected_claim: input.expected_claim,
+      admission_sha256: input.admission_sha256,
       expected_head_sha: input.expected_head_sha,
       feedback_revision: feedbackRevision,
       attention_owner: 'agent',

@@ -329,20 +329,39 @@ accepted suggestion goes through the normal plan and pull request workflow.
 
 ```bash
 repo-harness external-source refresh   # one bounded, explicitly enabled GitHub observation
-repo-harness external-source bind      # one immutable revision to one pending canonical task
+repo-harness external-source bind --repo <id> --source-revision <digest> --session <selector.json>
+repo-harness external-source historical-bindings --repo <id>  # retired V1 records only
 repo-harness external-source bindings  # binding edges and current drift attention
 ```
 
 Intake is inert by design. An observed Issue mints no execution authority and
 does not become a runnable task on its own; binding attaches an immutable source
-revision to a task that already has an approved plan and contract.
+revision to an existing admitted session selected by its provider issue, immutable
+claim, approved grant and session binding digest. The selector comes from task
+session discovery. Binding never creates a claim or approval.
 
 ### Persistent acceptance review
 
+Before review, configure the repository's manual `external_sources` policy and
+provide working provider access. The default policy is off; initialization does
+not enable it. The trusted upstream Bot must authenticate the human, authorize
+the scope, and supply the bound request. Its integration calls
+`repo-harness review admit --repo <execution-checkout> --request <authorized-request.json>`.
+The request contains `{admission, approval, expectedRevision}`. Admission requires
+an explicit `execution_mode`: `contract` or `inline`. The mode is part of the
+approved admission digest; changing it requires new approval. Do not create an
+approval from these examples: actor IDs and authorization references are binding
+data, not authentication. Select the resulting active grant and policy digests
+below, and supply the current immutable issue claim. A contract or plan file
+cannot grant permission. A user waiver requires a separate upstream-authorized
+decision; waiver eligibility in an admission does not grant one.
+
+See [the control Bot boundary](docs/control-bot-boundary.md) for the integration contract.
+
 ```bash
-repo-harness review round --contract tasks/contracts/<task>.contract.md --reviewer-repo <linked-checkout> --herdr-endpoint <address.json>
-repo-harness review status --contract tasks/contracts/<task>.contract.md
-repo-harness review close --contract tasks/contracts/<task>.contract.md
+repo-harness review round --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked-checkout> --herdr-endpoint <address.json> --verification <native-report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
+repo-harness review status --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
+repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
 In the Claude desktop app without Herdr, add `--launch app-terminal` and omit `--herdr-endpoint`. The first call prints the fixed host command. Claude runs it once in an app Terminal tab, then repeats the round. OAR, Seatbelt and the Receipt stay the same.

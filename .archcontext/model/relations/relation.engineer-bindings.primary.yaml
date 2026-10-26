@@ -4,5 +4,5 @@
   "kind": "calls",
   "source": "capability.runtime-harness.engineer-bindings",
   "target": "component.engineer-bindings.primary",
-  "intent": "Read retained Engineer binding records for the operator"
+  "intent": "Resolve and validate tracked Engineer profiles"
 }

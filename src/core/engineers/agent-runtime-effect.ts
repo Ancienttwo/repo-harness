@@ -1,3 +1,4 @@
+import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import {
   assertMessageBoundedUtf8,
   assertMessageExactKeys,
@@ -10,7 +11,7 @@ import {
   messageNullableString,
   messageRequiredString,
 } from '../messages/mechanics';
-import { validateEngineerOffersDocument, type EngineerOfferBlockerCode, type EngineerOffersV1 } from './scheduling';
+import { validateProviderEngineerOffers, type ProviderEngineerOfferBlocker, type ProviderEngineerOffersV2 } from './scheduling';
 
 export const AGENT_RUNTIME_EFFECT_PROTOCOL = 2 as const;
 export const AGENT_RUNTIME_CAPABILITY_KIND = 'repo-harness-agent-runtime-capability-observation' as const;
@@ -24,7 +25,6 @@ export const AGENT_RUNTIME_OFFER_WAKE_LEDGER_KIND = 'repo-harness-agent-runtime-
 const ENGINEER_ID = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/u;
 const TASK_DIGEST = /^[0-9a-f]{64}$/u;
 const REPOSITORY_ID = /^repo_[0-9a-f]{16}$/u;
-const WORK_PACKAGE_ID = /^[a-z0-9][a-z0-9-]{0,127}$/u;
 
 export type AgentRuntimeAdapterKind = 'herdr-cli-agent';
 export type AgentRuntimeOperation = 'notify_inbox' | 'wake_for_offer';
@@ -44,7 +44,7 @@ export interface AgentRuntimeCapabilityObservationV2 {
   readonly protocol: typeof AGENT_RUNTIME_EFFECT_PROTOCOL;
   readonly kind: typeof AGENT_RUNTIME_CAPABILITY_KIND;
   readonly adapter_kind: AgentRuntimeAdapterKind;
-  readonly host_id: string;
+  readonly transport_endpoint_sha256: string;
   readonly operations: Readonly<Record<AgentRuntimeOperation, AgentRuntimeCapabilityStatus>>;
   readonly evidence_refs: readonly AgentRuntimeCapabilityEvidenceRefV2[];
   readonly observed_at: string;
@@ -56,9 +56,8 @@ export interface TaskRuntimeMessageRefV2 {
   readonly message_id: string;
   readonly message_event_digest: string;
   readonly task_id: string;
-  readonly task_revision: string;
-  readonly claim_id: string;
-  readonly lease_generation: number;
+  readonly admission_sha256: string;
+  readonly claim: TaskMessageClaim;
   readonly delivery_attempt: number;
 }
 export type RuntimeMessageRefV2 = TaskRuntimeMessageRefV2;
@@ -74,12 +73,15 @@ export interface RuntimeOfferWakeRefV2 {
 }
 
 export interface RuntimeEndpointFenceV2 {
+  readonly task: string;
+  readonly role: string;
+  readonly admission_sha256: string;
+  readonly grant_sha256: string;
   readonly engineer_id: string;
-  readonly binding_id: string;
-  readonly binding_generation: number;
+  readonly session_binding_sha256: string;
   readonly engineer_contract_revision: string;
   readonly adapter_kind: AgentRuntimeAdapterKind;
-  readonly host_id: string;
+  readonly transport_endpoint_sha256: string;
   readonly endpoint_id: string;
 }
 
@@ -110,7 +112,7 @@ interface AgentRuntimeHostActionBaseV2 {
   readonly effect_id: string;
   readonly intent_sha256: string;
   readonly adapter_kind: AgentRuntimeAdapterKind;
-  readonly host_id: string;
+  readonly transport_endpoint_sha256: string;
   readonly endpoint_id: string;
   readonly control_ref: string;
   readonly control_sha256: string;
@@ -176,18 +178,17 @@ export interface AgentRuntimeControllerStepReceiptV2 {
   readonly control_ref: string;
   readonly control_sha256: string;
   readonly engineer_id: string;
-  readonly binding_id: string;
-  readonly binding_generation: number;
+  readonly session_binding_sha256: string;
   readonly observed_snapshot_revision: string;
   readonly observed_at: string;
   readonly receipt_sha256: string;
 }
 
 export interface AgentRuntimeOfferWakeBlockedV2 {
-  readonly work_package_id: string;
-  readonly blockers: readonly EngineerOfferBlockerCode[];
+  readonly issue_key: string;
+  readonly blockers: readonly ProviderEngineerOfferBlocker[];
 }
-/** The bounded projection of one `EngineerOffersV1` the wake observer needs.
+/** The bounded projection of one `ProviderEngineerOffersV2` the wake observer needs.
  * The offers document stays the authority; this keeps only the eligibility and
  * blocker facts a transition decision reads, so one Binding's durable ledger
  * does not grow with offer bodies. */
@@ -196,7 +197,7 @@ export interface AgentRuntimeOfferWakeSnapshotV2 {
   readonly engineer_id: string;
   readonly snapshot_revision: string;
   readonly authorization_revision: number | null;
-  readonly eligible_work_package_ids: readonly string[];
+  readonly eligible_issue_keys: readonly string[];
   readonly blocked: readonly AgentRuntimeOfferWakeBlockedV2[];
 }
 export type AgentRuntimeOfferWakeDecisionV2 =
@@ -255,19 +256,19 @@ function wakeReason(value: unknown): AgentRuntimeOfferWakeReason {
   if (value !== 'new_eligible_offer' && value !== 'dependency_unblocked' && value !== 'concurrency_released' && value !== 'retry_due') invalid('wake_reason is invalid'); return value;
 }
 function repositoryId(value: unknown, field: string): string { const text = messageRequiredString(value, field, invalid); if (!REPOSITORY_ID.test(text)) invalid(`${field} is invalid`); return text; }
-function workPackageId(value: unknown, field: string): string { const text = messageRequiredString(value, field, invalid); if (!WORK_PACKAGE_ID.test(text)) invalid(`${field} is invalid`); return text; }
-function blockerCode(value: unknown): EngineerOfferBlockerCode {
-  const allowed: readonly unknown[] = ['profile_capability_mismatch', 'binding_inactive', 'fleet_offer_unavailable', 'dependency_not_ready', 'dependency_authority_unavailable', 'concurrency_unavailable', 'active_claim_limit'];
-  if (!allowed.includes(value)) invalid('offer blocker code is invalid'); return value as EngineerOfferBlockerCode;
+function issueKey(value: unknown, field: string): string { return sha(value, field); }
+function blockerCode(value: unknown): ProviderEngineerOfferBlocker {
+  const allowed: readonly unknown[] = ['provider_unavailable', 'provider_closed', 'provider_ineligible', 'profile_unassigned', 'profile_revision_changed', 'capability_mismatch', 'dependency_not_ready', 'dependency_authority_unavailable', 'session_conflict'];
+  if (!allowed.includes(value)) invalid('offer blocker code is invalid'); return value as ProviderEngineerOfferBlocker;
 }
 function digest(value: Readonly<Record<string, unknown>>): string { return canonicalMessageDigest(value); }
 
 export function buildAgentRuntimeCapabilityObservation(input: {
-  readonly adapter_kind: AgentRuntimeAdapterKind; readonly host_id: string;
+  readonly adapter_kind: AgentRuntimeAdapterKind; readonly transport_endpoint_sha256: string;
   readonly operations: Readonly<Record<AgentRuntimeOperation, AgentRuntimeCapabilityStatus>>;
   readonly evidence_refs: readonly AgentRuntimeCapabilityEvidenceRefV2[]; readonly observed_at: string;
 }): AgentRuntimeCapabilityObservationV2 {
-  const adapter = adapterKind(input.adapter_kind); const hostId = bounded(input.host_id, 'host_id');
+  const adapter = adapterKind(input.adapter_kind); const hostId = sha(input.transport_endpoint_sha256, 'transport_endpoint_sha256');
   const operations = record(input.operations, 'operations'); assertMessageExactKeys(operations, AGENT_RUNTIME_OPERATIONS, 'operations', invalid);
   const notifyInbox = capabilityStatus(operations.notify_inbox); const wakeForOffer = capabilityStatus(operations.wake_for_offer);
   if (!Array.isArray(input.evidence_refs) || input.evidence_refs.length > 8) invalid('evidence_refs is invalid');
@@ -276,14 +277,14 @@ export function buildAgentRuntimeCapabilityObservation(input: {
     return Object.freeze({ ref: bounded(item.ref, 'evidence_ref.ref', 1024), sha256: sha(item.sha256, 'evidence_ref.sha256') });
   });
   assertMessageTimestamp(input.observed_at, 'observed_at', invalid);
-  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_CAPABILITY_KIND, adapter_kind: adapter, host_id: hostId, operations: Object.freeze({ notify_inbox: notifyInbox, wake_for_offer: wakeForOffer }), evidence_refs: Object.freeze(evidenceRefs), observed_at: input.observed_at });
+  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_CAPABILITY_KIND, adapter_kind: adapter, transport_endpoint_sha256: hostId, operations: Object.freeze({ notify_inbox: notifyInbox, wake_for_offer: wakeForOffer }), evidence_refs: Object.freeze(evidenceRefs), observed_at: input.observed_at });
   return Object.freeze({ ...basis, capability_sha256: digest(basis) });
 }
 export function validateAgentRuntimeCapabilityObservation(value: unknown): AgentRuntimeCapabilityObservationV2 {
   const input = record(value, 'capability observation');
-  assertMessageExactKeys(input, ['protocol', 'kind', 'adapter_kind', 'host_id', 'operations', 'evidence_refs', 'observed_at', 'capability_sha256'], 'capability observation', invalid);
+  assertMessageExactKeys(input, ['protocol', 'kind', 'adapter_kind', 'transport_endpoint_sha256', 'operations', 'evidence_refs', 'observed_at', 'capability_sha256'], 'capability observation', invalid);
   if (input.protocol !== AGENT_RUNTIME_EFFECT_PROTOCOL || input.kind !== AGENT_RUNTIME_CAPABILITY_KIND) invalid('capability protocol or kind is invalid');
-  const built = buildAgentRuntimeCapabilityObservation({ adapter_kind: input.adapter_kind as AgentRuntimeAdapterKind, host_id: input.host_id as string, operations: input.operations as Readonly<Record<AgentRuntimeOperation, AgentRuntimeCapabilityStatus>>, evidence_refs: input.evidence_refs as readonly AgentRuntimeCapabilityEvidenceRefV2[], observed_at: input.observed_at as string });
+  const built = buildAgentRuntimeCapabilityObservation({ adapter_kind: input.adapter_kind as AgentRuntimeAdapterKind, transport_endpoint_sha256: input.transport_endpoint_sha256 as string, operations: input.operations as Readonly<Record<AgentRuntimeOperation, AgentRuntimeCapabilityStatus>>, evidence_refs: input.evidence_refs as readonly AgentRuntimeCapabilityEvidenceRefV2[], observed_at: input.observed_at as string });
   if (input.capability_sha256 !== built.capability_sha256) invalid('capability_sha256 is stale'); return built;
 }
 export function canonicalAgentRuntimeCapabilityBytes(value: AgentRuntimeCapabilityObservationV2): string { return canonicalMessageBytes(validateAgentRuntimeCapabilityObservation(value) as unknown as Readonly<Record<string, unknown>>); }
@@ -291,14 +292,14 @@ export function canonicalAgentRuntimeCapabilityBytes(value: AgentRuntimeCapabili
 export function validateRuntimeMessageRef(value: unknown): RuntimeMessageRefV2 {
   const input = record(value, 'message_ref');
   if (input.kind === 'task_message') {
-    assertMessageExactKeys(input, ['kind', 'message_id', 'message_event_digest', 'task_id', 'task_revision', 'claim_id', 'lease_generation', 'delivery_attempt'], 'task message_ref', invalid);
-    return Object.freeze({ kind: 'task_message', message_id: uuid(input.message_id, 'message_id'), message_event_digest: sha(input.message_event_digest, 'message_event_digest'), task_id: taskDigest(input.task_id, 'task_id'), task_revision: taskDigest(input.task_revision, 'task_revision'), claim_id: uuid(input.claim_id, 'claim_id'), lease_generation: integer(input.lease_generation, 'lease_generation'), delivery_attempt: integer(input.delivery_attempt, 'delivery_attempt') });
+    assertMessageExactKeys(input, ['kind', 'message_id', 'message_event_digest', 'task_id', 'admission_sha256', 'claim', 'delivery_attempt'], 'task message_ref', invalid);
+    return Object.freeze({ kind: 'task_message', message_id: uuid(input.message_id, 'message_id'), message_event_digest: sha(input.message_event_digest, 'message_event_digest'), task_id: taskDigest(input.task_id, 'task_id'), admission_sha256: sha(input.admission_sha256, 'admission_sha256'), claim: validateTaskMessageClaim(input.claim), delivery_attempt: integer(input.delivery_attempt, 'delivery_attempt') });
   }
   return invalid('message_ref kind is invalid');
 }
 export function validateRuntimeEndpointFence(value: unknown): RuntimeEndpointFenceV2 {
-  const input = record(value, 'endpoint_fence'); assertMessageExactKeys(input, ['engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'adapter_kind', 'host_id', 'endpoint_id'], 'endpoint_fence', invalid);
-  return Object.freeze({ engineer_id: engineer(input.engineer_id, 'endpoint_fence.engineer_id'), binding_id: uuid(input.binding_id, 'endpoint_fence.binding_id'), binding_generation: integer(input.binding_generation, 'endpoint_fence.binding_generation'), engineer_contract_revision: sha(input.engineer_contract_revision, 'endpoint_fence.engineer_contract_revision'), adapter_kind: adapterKind(input.adapter_kind), host_id: bounded(input.host_id, 'endpoint_fence.host_id'), endpoint_id: bounded(input.endpoint_id, 'endpoint_fence.endpoint_id') });
+  const input = record(value, 'endpoint_fence'); assertMessageExactKeys(input, ['task', 'role', 'admission_sha256', 'grant_sha256', 'engineer_id', 'session_binding_sha256', 'engineer_contract_revision', 'adapter_kind', 'transport_endpoint_sha256', 'endpoint_id'], 'endpoint_fence', invalid);
+  return Object.freeze({ task: bounded(input.task, 'endpoint_fence.task'), role: bounded(input.role, 'endpoint_fence.role'), admission_sha256: sha(input.admission_sha256, 'endpoint_fence.admission_sha256'), grant_sha256: sha(input.grant_sha256, 'endpoint_fence.grant_sha256'), engineer_id: engineer(input.engineer_id, 'endpoint_fence.engineer_id'), session_binding_sha256: sha(input.session_binding_sha256, 'endpoint_fence.session_binding_sha256'), engineer_contract_revision: sha(input.engineer_contract_revision, 'endpoint_fence.engineer_contract_revision'), adapter_kind: adapterKind(input.adapter_kind), transport_endpoint_sha256: sha(input.transport_endpoint_sha256, 'endpoint_fence.transport_endpoint_sha256'), endpoint_id: bounded(input.endpoint_id, 'endpoint_fence.endpoint_id') });
 }
 export function validateRuntimeOfferWakeRef(value: unknown): RuntimeOfferWakeRefV2 {
   const input = record(value, 'wake_ref'); assertMessageExactKeys(input, ['repository_id', 'authorization_revision', 'snapshot_revision', 'wake_reason'], 'wake_ref', invalid);
@@ -354,18 +355,18 @@ export function buildAgentRuntimeHostAction(intentValue: AgentRuntimeEffectInten
   const subject = intent.operation === 'notify_inbox'
     ? { message_id: intent.message_ref.message_id, message_event_digest: intent.message_ref.message_event_digest, delivery_attempt: intent.message_ref.delivery_attempt }
     : { repository_id: intent.wake_ref.repository_id, snapshot_revision: intent.wake_ref.snapshot_revision, wake_reason: intent.wake_ref.wake_reason };
-  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, adapter_kind: intent.endpoint_fence.adapter_kind, operation: intent.operation, host_id: intent.endpoint_fence.host_id, endpoint_id: intent.endpoint_fence.endpoint_id, ...subject, control_ref: agentRuntimeControlRef(intent), control_sha256: control });
+  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, adapter_kind: intent.endpoint_fence.adapter_kind, operation: intent.operation, transport_endpoint_sha256: intent.endpoint_fence.transport_endpoint_sha256, endpoint_id: intent.endpoint_fence.endpoint_id, ...subject, control_ref: agentRuntimeControlRef(intent), control_sha256: control });
   return Object.freeze({ ...basis, action_sha256: digest(basis) }) as AgentRuntimeHostActionV2;
 }
 export function validateAgentRuntimeHostAction(value: unknown): AgentRuntimeHostActionV2 {
   const input = record(value, 'host action'); const operation = operationName(input.operation);
   const subjectKeys = operation === 'notify_inbox' ? ['message_id', 'message_event_digest', 'delivery_attempt'] : ['repository_id', 'snapshot_revision', 'wake_reason'];
-  assertMessageExactKeys(input, ['protocol', 'kind', 'effect_id', 'intent_sha256', 'adapter_kind', 'operation', 'host_id', 'endpoint_id', ...subjectKeys, 'control_ref', 'control_sha256', 'action_sha256'], 'host action', invalid);
+  assertMessageExactKeys(input, ['protocol', 'kind', 'effect_id', 'intent_sha256', 'adapter_kind', 'operation', 'transport_endpoint_sha256', 'endpoint_id', ...subjectKeys, 'control_ref', 'control_sha256', 'action_sha256'], 'host action', invalid);
   if (input.protocol !== AGENT_RUNTIME_EFFECT_PROTOCOL || input.kind !== AGENT_RUNTIME_HOST_ACTION_KIND) invalid('host action protocol or kind is invalid');
   const subject = operation === 'notify_inbox'
     ? { message_id: uuid(input.message_id, 'message_id'), message_event_digest: sha(input.message_event_digest, 'message_event_digest'), delivery_attempt: integer(input.delivery_attempt, 'delivery_attempt') }
     : { repository_id: repositoryId(input.repository_id, 'repository_id'), snapshot_revision: sha(input.snapshot_revision, 'snapshot_revision'), wake_reason: wakeReason(input.wake_reason) };
-  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: sha(input.effect_id, 'effect_id'), intent_sha256: sha(input.intent_sha256, 'intent_sha256'), adapter_kind: adapterKind(input.adapter_kind), operation, host_id: bounded(input.host_id, 'host_id'), endpoint_id: bounded(input.endpoint_id, 'endpoint_id'), ...subject, control_ref: bounded(input.control_ref, 'control_ref', 1024), control_sha256: sha(input.control_sha256, 'control_sha256') });
+  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: sha(input.effect_id, 'effect_id'), intent_sha256: sha(input.intent_sha256, 'intent_sha256'), adapter_kind: adapterKind(input.adapter_kind), operation, transport_endpoint_sha256: sha(input.transport_endpoint_sha256, 'transport_endpoint_sha256'), endpoint_id: bounded(input.endpoint_id, 'endpoint_id'), ...subject, control_ref: bounded(input.control_ref, 'control_ref', 1024), control_sha256: sha(input.control_sha256, 'control_sha256') });
   if (basis.control_ref !== `${CONTROL_PREFIX[operation]}:${basis.effect_id}:${basis.control_sha256}`) invalid('control_ref does not match the bounded control identity');
   const built = Object.freeze({ ...basis, action_sha256: digest(basis) }); if (input.action_sha256 !== built.action_sha256) invalid('action_sha256 is stale'); return built as AgentRuntimeHostActionV2;
 }
@@ -437,20 +438,20 @@ export function buildAgentRuntimeControllerStepReceipt(input: Omit<AgentRuntimeC
   assertMessageTimestamp(input.observed_at, 'observed_at', invalid);
   const basis = Object.freeze({
     protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_CONTROLLER_STEP_RECEIPT_KIND, effect_id: effectId, intent_sha256: intentSha,
-    control_ref: controlRef, control_sha256: controlSha256, engineer_id: engineer(input.engineer_id, 'engineer_id'), binding_id: uuid(input.binding_id, 'binding_id'),
-    binding_generation: integer(input.binding_generation, 'binding_generation'), observed_snapshot_revision: sha(input.observed_snapshot_revision, 'observed_snapshot_revision'),
+    control_ref: controlRef, control_sha256: controlSha256, engineer_id: engineer(input.engineer_id, 'engineer_id'), session_binding_sha256: sha(input.session_binding_sha256, 'session_binding_sha256'),
+ observed_snapshot_revision: sha(input.observed_snapshot_revision, 'observed_snapshot_revision'),
     observed_at: input.observed_at,
   });
   return Object.freeze({ ...basis, receipt_sha256: digest(basis) });
 }
 export function validateAgentRuntimeControllerStepReceipt(value: unknown): AgentRuntimeControllerStepReceiptV2 {
   const input = record(value, 'controller step receipt');
-  assertMessageExactKeys(input, ['protocol', 'kind', 'effect_id', 'intent_sha256', 'control_ref', 'control_sha256', 'engineer_id', 'binding_id', 'binding_generation', 'observed_snapshot_revision', 'observed_at', 'receipt_sha256'], 'controller step receipt', invalid);
+  assertMessageExactKeys(input, ['protocol', 'kind', 'effect_id', 'intent_sha256', 'control_ref', 'control_sha256', 'engineer_id', 'session_binding_sha256', 'observed_snapshot_revision', 'observed_at', 'receipt_sha256'], 'controller step receipt', invalid);
   if (input.protocol !== AGENT_RUNTIME_EFFECT_PROTOCOL || input.kind !== AGENT_RUNTIME_CONTROLLER_STEP_RECEIPT_KIND) invalid('controller step receipt protocol or kind is invalid');
   const built = buildAgentRuntimeControllerStepReceipt({
     effect_id: input.effect_id as string, intent_sha256: input.intent_sha256 as string, control_ref: input.control_ref as string,
-    control_sha256: input.control_sha256 as string, engineer_id: input.engineer_id as string, binding_id: input.binding_id as string,
-    binding_generation: input.binding_generation as number, observed_snapshot_revision: input.observed_snapshot_revision as string,
+    control_sha256: input.control_sha256 as string, engineer_id: input.engineer_id as string, session_binding_sha256: input.session_binding_sha256 as string,
+ observed_snapshot_revision: input.observed_snapshot_revision as string,
     observed_at: input.observed_at as string,
   });
   if (input.receipt_sha256 !== built.receipt_sha256) invalid('receipt_sha256 is stale'); return built;
@@ -463,36 +464,34 @@ export function canonicalAgentRuntimeControllerStepReceiptBytes(value: AgentRunt
  * re-proved against the scheduling authority's own whole-document validator
  * before a single field is read, so a forged, edited, reordered or foreign
  * snapshot can never reach the ledger. */
-export function buildAgentRuntimeOfferWakeSnapshot(offersValue: EngineerOffersV1): AgentRuntimeOfferWakeSnapshotV2 {
-  const offers = validateEngineerOffersDocument(offersValue);
-  const revisions = new Set(offers.offers.map((offer) => offer.authorization_revision));
-  if (revisions.size > 1) invalid('offers document mixes authorization revisions');
+export function buildAgentRuntimeOfferWakeSnapshot(offersValue: ProviderEngineerOffersV2): AgentRuntimeOfferWakeSnapshotV2 {
+  const offers = validateProviderEngineerOffers(offersValue);
+  const key = (offer: ProviderEngineerOffersV2['offers'][number]) => digest({ domain: 'provider-issue/v1',
+    provider_repository_id: offer.provider_repository_id, issue_id: offer.issue_id });
   return Object.freeze({
     repository_id: repositoryId(offers.repository_id, 'offers.repository_id'),
     engineer_id: engineer(offers.engineer_id, 'offers.engineer_id'),
     snapshot_revision: sha(offers.snapshot_revision, 'offers.snapshot_revision'),
-    authorization_revision: offers.offers.length === 0 ? null : integer(offers.offers[0]!.authorization_revision, 'offers.authorization_revision', 0),
-    eligible_work_package_ids: Object.freeze(offers.offers.map((offer) => workPackageId(offer.work_package_id, 'offer.work_package_id'))),
-    blocked: Object.freeze(offers.exclusions.map((exclusion) => Object.freeze({
-      work_package_id: workPackageId(exclusion.work_package_id, 'exclusion.work_package_id'),
-      blockers: Object.freeze((exclusion.blockers as readonly unknown[]).map((code) => blockerCode(code))),
-    }))),
+    authorization_revision: offers.offers.some(offer => offer.eligible) ? offers.authorization_revision : null,
+    eligible_issue_keys: Object.freeze(offers.offers.filter(offer => offer.eligible).map(key)),
+    blocked: Object.freeze(offers.offers.filter(offer => !offer.eligible).map(offer => Object.freeze({
+      issue_key: key(offer), blockers: Object.freeze(offer.blockers.map(blockerCode)) }))),
   });
 }
 export function validateAgentRuntimeOfferWakeSnapshot(value: unknown): AgentRuntimeOfferWakeSnapshotV2 {
   const input = record(value, 'offer wake snapshot');
-  assertMessageExactKeys(input, ['repository_id', 'engineer_id', 'snapshot_revision', 'authorization_revision', 'eligible_work_package_ids', 'blocked'], 'offer wake snapshot', invalid);
-  if (!Array.isArray(input.eligible_work_package_ids) || !Array.isArray(input.blocked)) invalid('offer wake snapshot collections are invalid');
+  assertMessageExactKeys(input, ['repository_id', 'engineer_id', 'snapshot_revision', 'authorization_revision', 'eligible_issue_keys', 'blocked'], 'offer wake snapshot', invalid);
+  if (!Array.isArray(input.eligible_issue_keys) || !Array.isArray(input.blocked)) invalid('offer wake snapshot collections are invalid');
   if (input.authorization_revision !== null) integer(input.authorization_revision, 'authorization_revision', 0);
-  if ((input.authorization_revision === null) !== (input.eligible_work_package_ids.length === 0)) invalid('offer wake snapshot authorization revision does not match eligibility');
+  if ((input.authorization_revision === null) !== (input.eligible_issue_keys.length === 0)) invalid('offer wake snapshot authorization revision does not match eligibility');
   return Object.freeze({
     repository_id: repositoryId(input.repository_id, 'repository_id'), engineer_id: engineer(input.engineer_id, 'engineer_id'),
     snapshot_revision: sha(input.snapshot_revision, 'snapshot_revision'), authorization_revision: input.authorization_revision as number | null,
-    eligible_work_package_ids: Object.freeze(input.eligible_work_package_ids.map((entry) => workPackageId(entry, 'eligible_work_package_id'))),
+    eligible_issue_keys: Object.freeze(input.eligible_issue_keys.map((entry) => issueKey(entry, 'eligible_issue_key'))),
     blocked: Object.freeze(input.blocked.map((entry) => {
-      const item = record(entry, 'blocked'); assertMessageExactKeys(item, ['work_package_id', 'blockers'], 'blocked', invalid);
+      const item = record(entry, 'blocked'); assertMessageExactKeys(item, ['issue_key', 'blockers'], 'blocked', invalid);
       if (!Array.isArray(item.blockers)) invalid('blocked.blockers is invalid');
-      return Object.freeze({ work_package_id: workPackageId(item.work_package_id, 'blocked.work_package_id'), blockers: Object.freeze((item.blockers as readonly unknown[]).map((code) => blockerCode(code))) });
+      return Object.freeze({ issue_key: issueKey(item.issue_key, 'blocked.issue_key'), blockers: Object.freeze((item.blockers as readonly unknown[]).map((code) => blockerCode(code))) });
     })),
   });
 }
@@ -511,14 +510,14 @@ export function decideAgentRuntimeOfferWake(previous: AgentRuntimeOfferWakeSnaps
   if (before && (before.repository_id !== current.repository_id || before.engineer_id !== current.engineer_id)) {
     invalid('offer wake snapshots describe different Engineers or repositories');
   }
-  if (current.eligible_work_package_ids.length === 0) return Object.freeze({ due: false, cause: 'no_eligible_offers' });
+  if (current.eligible_issue_keys.length === 0) return Object.freeze({ due: false, cause: 'no_eligible_offers' });
   if (before && before.snapshot_revision === current.snapshot_revision) return Object.freeze({ due: false, cause: 'unchanged_snapshot' });
-  const newlyEligible = current.eligible_work_package_ids.filter((id) => !(before?.eligible_work_package_ids ?? []).includes(id));
-  const lead = newlyEligible[0] ?? current.eligible_work_package_ids[0]!;
-  const priorBlockers = before?.blocked.find((entry) => entry.work_package_id === lead)?.blockers ?? [];
+  const newlyEligible = current.eligible_issue_keys.filter((id) => !(before?.eligible_issue_keys ?? []).includes(id));
+  const lead = newlyEligible[0] ?? current.eligible_issue_keys[0]!;
+  const priorBlockers = before?.blocked.find((entry) => entry.issue_key === lead)?.blockers ?? [];
   const reason: AgentRuntimeOfferWakeReason = priorBlockers.includes('dependency_not_ready') || priorBlockers.includes('dependency_authority_unavailable')
     ? 'dependency_unblocked'
-    : priorBlockers.includes('concurrency_unavailable') || priorBlockers.includes('active_claim_limit')
+    : priorBlockers.includes('session_conflict')
       ? 'concurrency_released'
       : 'new_eligible_offer';
   return Object.freeze({
@@ -531,13 +530,13 @@ export function decideAgentRuntimeOfferWake(previous: AgentRuntimeOfferWakeSnaps
  * replay sees the same unpublished predecessor and reuses the key, while a
  * later return to an earlier snapshot is a new occurrence with a new wake. */
 export function deriveAgentRuntimeOfferWakeIdempotencyKey(input: {
-  readonly engineer_id: string; readonly binding_id: string; readonly binding_generation: number;
+  readonly engineer_id: string; readonly session_binding_sha256: string; readonly grant_sha256: string;
   readonly snapshot_revision: string; readonly wake_reason: AgentRuntimeOfferWakeReason;
   readonly predecessor_ledger_sha256: string | null;
 }): string {
   return digest({
-    domain: 'repo-harness-agent-runtime-offer-wake-key.v3', engineer_id: engineer(input.engineer_id, 'engineer_id'),
-    binding_id: uuid(input.binding_id, 'binding_id'), binding_generation: integer(input.binding_generation, 'binding_generation'),
+    domain: 'repo-harness-agent-runtime-offer-wake-key.admitted-v2', grant_sha256: sha(input.grant_sha256, 'grant_sha256'), engineer_id: engineer(input.engineer_id, 'engineer_id'),
+    session_binding_sha256: sha(input.session_binding_sha256, 'session_binding_sha256'),
     snapshot_revision: sha(input.snapshot_revision, 'snapshot_revision'), wake_reason: wakeReason(input.wake_reason),
     predecessor_ledger_sha256: input.predecessor_ledger_sha256 === null ? null : sha(input.predecessor_ledger_sha256, 'predecessor_ledger_sha256'),
   });

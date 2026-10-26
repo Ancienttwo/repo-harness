@@ -105,10 +105,10 @@ sequenceDiagram
 
 ## 3. P3: Retained fleet observations
 
-- `collectRepoTaskOffers` joins each repository's canonical board, registry and plan proof. Its result is read-only. It does not grant a claim or create a worktree.
-- `fleet board` and the operator retain the task, publication, inbox and runtime observations. They do not persist board columns or readiness flags.
-- Task messages remain immutable communication records. Per-recipient delivery receipts do not change Lease or publication authority.
-- Claim-scoped messages name an exact claim and generation. The retained manual inbox path checks that recipient before delivery or acknowledgement.
+- `fleet board` joins each registered repository to provider issue observations and zero or more exact admitted sessions. Its result is read-only. It does not grant a claim or create a worktree.
+- `fleet board` and the operator show issue, PR readiness, inbox and runtime observations. They do not persist board columns or readiness flags.
+- Task messages remain immutable communication records. Per-recipient delivery receipts do not change a provider claim or PR state.
+- Admitted messages name the admission digest and the exact claim reference and revision. The manual inbox path checks that recipient before delivery or acknowledgement.
 - Message bodies remain untrusted data. The UserPromptSubmit inbox adapter is a no-op and prints no message context.
 - Historical reply inspection validates the stored intent, event and commit chain without granting current authorization.
 - Inbox layout migration retains canonical recipient keys and checks record bytes. The operator reader performs no migration.
@@ -125,6 +125,5 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
-- Fleet board 和 operator 保留 `collectRepoTaskOffers` 的只读结果。全局 offers/acquire 入口和 WorkEnvelope 已删除。
 - **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
 - **`relation.task-fleet.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。mcp-sidecar primary → task-fleet 因此不形成节点级的环。
