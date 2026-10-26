@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readNotifyStatus } from '../../src/effects/operator/notify-status';
+import { readNotifyChannelStatus, readNotifyStatus } from '../../src/effects/operator/notify-status';
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
@@ -108,6 +108,17 @@ describe('notify plugin status', () => {
     try {
       await expect(readNotifyStatus({ env: f.env, session: '../other' })).rejects.toThrow('notify_status_session');
       expect(() => readFileSync(f.env.FIXTURE_CALLS!, 'utf8')).toThrow();
+    } finally { f.cleanup(); }
+  });
+
+  test('each channel is configured only when the plugin would send to it, and no value leaves the reader', async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nSLACK_WEBHOOK_URL='${SLACK}'\nDISCORD_WEBHOOK_URL='https://discord.example/discord-secret'\nTELEGRAM_BOT_TOKEN='123:telegram-secret'\n`, { mode: 0o600 });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test', now: new Date('2026-10-04T00:00:00.000Z') });
+      expect(read.channels).toEqual({ webhook: 'missing', slack: 'configured', discord: 'configured', telegram: 'missing' });
+      expect(read.status.config).toEqual({ WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'configured' });
+      for (const value of [SLACK, 'discord-secret', 'telegram-secret', 'bot.example']) expect(JSON.stringify(read)).not.toContain(value);
     } finally { f.cleanup(); }
   });
 
