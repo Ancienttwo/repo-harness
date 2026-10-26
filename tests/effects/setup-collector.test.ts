@@ -17,7 +17,7 @@ import {
   type SetupProcessRunner,
 } from '../../src/effects/setup/collector';
 import { SETUP_FLEET_SOURCE_DIR, readFleetRoles } from '../../src/cli/commands/setup-snapshot';
-import { HOOK_EVENT_TELEMETRY_PATH } from '../../src/cli/hook/event-telemetry';
+import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../../src/cli/hook/event-telemetry';
 import { appendSegmentedLog } from '../../src/effects/segmented-log';
 import { readHookUsage, readTailLines } from '../../src/effects/setup/hook-usage';
 import { FAILURE_LOG_FILE } from '../../src/effects/state/resolve-effective-state';
@@ -209,12 +209,12 @@ describe('setup hook usage reader', () => {
   test('reads the telemetry log and the failure log tail of one repository', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'setup-hook-usage-')));
     try {
-      expect(readHookUsage(root, HOOK_EVENT_TELEMETRY_PATH, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'))).toEqual({ window_hours: 24, routes: [], recent_denials: [] });
-      const record = { protocol: 'loop-engine-hook-event/v2', started_at: '2026-10-10T11:00:00.000Z', host: 'claude', event: 'PreToolUse', route_id: 'edit', blocked: true };
+      expect(readHookUsage(root, { path: HOOK_EVENT_TELEMETRY_PATH, protocol: HOOK_EVENT_TELEMETRY_PROTOCOL }, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'))).toEqual({ window_hours: 24, routes: [], recent_denials: [] });
+      const record = { protocol: HOOK_EVENT_TELEMETRY_PROTOCOL, started_at: '2026-10-10T11:00:00.000Z', host: 'claude', event: 'PreToolUse', route_id: 'edit', blocked: true };
       appendSegmentedLog(join(root, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n`, root);
       mkdirSync(join(root, '.ai/harness/failures'), { recursive: true });
       writeFileSync(join(root, FAILURE_LOG_FILE), `${JSON.stringify({ ts: '2026-10-10T11:00:00Z', guard: 'EditScopeGuard', action: 'block', reason: `${root}/src/a.ts is outside scope` })}\n`);
-      const usage = readHookUsage(root, HOOK_EVENT_TELEMETRY_PATH, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'));
+      const usage = readHookUsage(root, { path: HOOK_EVENT_TELEMETRY_PATH, protocol: HOOK_EVENT_TELEMETRY_PROTOCOL }, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'));
       expect(usage.routes).toEqual([{ host: 'claude', event: 'PreToolUse', route_id: 'edit', calls: 1, blocked: 1, last_blocked_at: '2026-10-10T11:00:00.000Z' }]);
       expect(usage.recent_denials).toEqual([{ at: '2026-10-10T11:00:00.000Z', guard: 'EditScopeGuard', reason: '[private path] is outside scope' }]);
     } finally {

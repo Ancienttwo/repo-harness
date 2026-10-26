@@ -188,7 +188,7 @@ export interface SetupSnapshotV1 {
   /** Skills that setup check judged on at least one host, in setup check order. */
   skills: SetupSkill[];
   hooks: SetupHookEvent[];
-  /** Null when there is no data or the collector found no repository root. */
+  /** Null when there is no data, the collector found no repository root, or a hook log read failed. */
   hook_usage: SetupHookUsage | null;
   fleet: SetupFleetRole[];
 }

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { skillProjectionSourceRoot } from './doctor';
 import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
-import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
+import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../hook/event-telemetry';
 import { ROUTES } from '../hook/route-registry';
 import { resolveRepoRoot } from '../hook/runtime';
 import { PROFILE_COMPONENTS } from '../installer/install-profile';
@@ -76,7 +76,7 @@ function hookUsageAt(cwd: string, nowMs: number): SetupHookUsage | null {
   const repoRoot = resolveRepoRoot(cwd);
   if (repoRoot === null) return null;
   try {
-    return readHookUsage(repoRoot, HOOK_EVENT_TELEMETRY_PATH, ROUTES, nowMs);
+    return readHookUsage(repoRoot, { path: HOOK_EVENT_TELEMETRY_PATH, protocol: HOOK_EVENT_TELEMETRY_PROTOCOL }, ROUTES, nowMs);
   } catch {
     return null;
   }

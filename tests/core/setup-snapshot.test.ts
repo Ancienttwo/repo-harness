@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { HOOK_EVENT_TELEMETRY_PROTOCOL } from '../../src/cli/hook/event-telemetry';
 import { ROUTES } from '../../src/cli/hook/route-registry';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { summarizeHookUsage } from '../../src/core/setup/hook-usage';
@@ -9,7 +10,7 @@ import { SETUP_HOSTS, type SetupSnapshotV1 } from '../../src/core/setup/types';
 const FAKE_SECRETS = ['sk-proj-FAKEFAKEFAKEFAKEFAKEFAKE0001', 'ghp_FAKEFAKEFAKEFAKEFAKEFAKE0002', 'hunter2-fake-password'];
 
 const NOW = Date.parse('2026-10-10T12:00:00.000Z');
-const telemetry = (host: string, event: string, route_id: string, started_at: string, blocked = false, protocol = 'loop-engine-hook-event/v2') =>
+const telemetry = (host: string, event: string, route_id: string, started_at: string, blocked = false, protocol: string = HOOK_EVENT_TELEMETRY_PROTOCOL) =>
   JSON.stringify({ protocol, event_id: 'e', started_at, completed_at: started_at, host, session_id: null, run_id: null, turn_id: null,
     event, route_id, exit_code: blocked ? 2 : 0, blocked, reason: blocked ? 'blocked' : 'ok', elapsed_ms: 1, fingerprint: 'sha256:x' });
 const failure = (ts: string, guard: string, reason: string) =>
@@ -19,6 +20,7 @@ function usage() {
   return summarizeHookUsage({
     now_ms: NOW,
     routes: ROUTES,
+    telemetry_protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
     telemetry_lines: [
       telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z'),
       telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T09:00:00.000Z', true),
@@ -168,9 +170,22 @@ describe('hook usage summary', () => {
     expect(text).not.toContain(FAKE_SECRETS[1]);
   });
 
+  test('counts the telemetry protocol the caller names, so a protocol bump cannot zero the counts', () => {
+    const next = 'loop-engine-hook-event/v9';
+    const summary = summarizeHookUsage({
+      now_ms: NOW, routes: ROUTES, telemetry_protocol: next, failure_lines: [],
+      telemetry_lines: [
+        telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z', false, next),
+        telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T10:00:00.000Z', true, next),
+        telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z', false, HOOK_EVENT_TELEMETRY_PROTOCOL),
+      ],
+    });
+    expect(summary.routes).toEqual([{ host: 'claude', event: 'PreToolUse', route_id: 'bash', calls: 2, blocked: 1, last_blocked_at: '2026-10-10T10:00:00.000Z' }]);
+  });
+
   test('keeps only the newest ten denials', () => {
     const lines = Array.from({ length: 12 }, (_, index) => failure(`2026-10-10T${String(index).padStart(2, '0')}:00:00Z`, 'RepoScopeGuard', `denial ${index}`));
-    const summary = summarizeHookUsage({ now_ms: NOW, routes: ROUTES, telemetry_lines: [], failure_lines: lines });
+    const summary = summarizeHookUsage({ now_ms: NOW, routes: ROUTES, telemetry_protocol: HOOK_EVENT_TELEMETRY_PROTOCOL, telemetry_lines: [], failure_lines: lines });
     expect(summary.recent_denials.map(denial => denial.reason)).toEqual(Array.from({ length: 10 }, (_, index) => `denial ${11 - index}`));
     expect(summary.routes).toEqual([]);
   });

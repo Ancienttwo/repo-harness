@@ -39,10 +39,16 @@ export function readTailLines(path: string, limit: number = FAILURE_LOG_TAIL_BYT
   }
 }
 
-/** `telemetryPath` is `HOOK_EVENT_TELEMETRY_PATH`, relative to `repoRoot`; the hook layer owns it. */
-export function readHookUsage(repoRoot: string, telemetryPath: string, routes: readonly SetupRawRoute[], nowMs: number): SetupHookUsage {
+/** The hook layer owns the telemetry log: `HOOK_EVENT_TELEMETRY_PATH` (relative to the repository root) and `HOOK_EVENT_TELEMETRY_PROTOCOL`. */
+export interface HookTelemetryLog {
+  readonly path: string;
+  readonly protocol: string;
+}
+
+export function readHookUsage(repoRoot: string, telemetry: HookTelemetryLog, routes: readonly SetupRawRoute[], nowMs: number): SetupHookUsage {
   return summarizeHookUsage({
-    telemetry_lines: readSegmentedLog(join(repoRoot, telemetryPath), repoRoot) ?? [],
+    telemetry_lines: readSegmentedLog(join(repoRoot, telemetry.path), repoRoot) ?? [],
+    telemetry_protocol: telemetry.protocol,
     failure_lines: readTailLines(join(repoRoot, FAILURE_LOG_FILE)),
     routes,
     now_ms: nowMs,
