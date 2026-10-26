@@ -253,7 +253,7 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 
 两个 sink 不是同一个东西，早期版本把它们混为一谈：
 
-- `.ai/harness/runs/hook-events.jsonl` 由 dispatcher 的 `createHookEventTelemetry().finalize`（`event-telemetry.ts`）在**每条 route** 完成后经 `appendHookEventLog`（`src/effects/hook-event-log.ts:87`）同步追加一条，因此它是上表的数据来源，也是唯一全 route 覆盖的写入。
+- `.ai/harness/runs/hook-events.jsonl` 由 dispatcher 的 `createHookEventTelemetry().finalize`（`event-telemetry.ts`）在**每条 route** 完成后经 `appendSegmentedLog`（`src/effects/segmented-log.ts:92`）同步追加一条，因此它是上表的数据来源，也是唯一全 route 覆盖的写入。
 - `.claude/.trace.jsonl` 的 writer `trace-observer.ts` 已删除（#695）。`PostToolUse.always` 已退役（#705）。
 
 `PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash）。旧实测里它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。#705 已删除这条 route。现在没有这项进程启动成本。

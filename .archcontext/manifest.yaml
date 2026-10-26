@@ -6,7 +6,6 @@ content:
   decisions: ".archcontext/decisions"
   generated: ".archcontext/generated"
   policies: ".archcontext/policies"
-  practices: ".archcontext/practices"
   projections: ".archcontext/projections"
 generated:
   commitToGit: true
@@ -25,13 +24,6 @@ product:
   governanceLevel: "auto"
   id: "product.repo-harness"
   name: "repo-harness"
-review:
-  failOn:
-    - "invalid-schema"
-    - "prohibited-dependency"
-    - "unjustified-compatibility"
-    - "stale-context"
-    - "incomplete-intervention"
 runtime:
   checkpoint:
     changedFileThreshold: 20

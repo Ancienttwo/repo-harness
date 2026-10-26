@@ -260,7 +260,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ### 2026-10-11 Component decomposition and helper ownership
 
 - 本 capability 拆成五个组件：primary（契约与 policy）、capability-registry、template-projection、contract-worktree-lifecycle、planning-helpers。见 §3.3。
-- 之前没有 owner 的 29 个 `scripts/` 契约与 helper 脚本进入 include，另外加入 `src/core/capabilities/**`、`src/core/source-projection.ts`、`run`/`brain`/`brain-root` 命令、`.archcontext/**`、`.ai/context/**`、`assets/{AGENTS,CLAUDE}.md`、partials、project structures 与 `.claude/templates/**`。没有删除任何既有 include。
+- 之前没有 owner 的 29 个 `scripts/` 契约与 helper 脚本进入 include，另外加入 `src/core/capabilities/**`、当时位于 core 层的 source projection 模块（#942 移到 effects 层）、`run`/`brain`/`brain-root` 命令、`.archcontext/**`、`.ai/context/**`、`assets/{AGENTS,CLAUDE}.md`、partials、project structures 与 `.claude/templates/**`。没有删除任何既有 include。
 - 入口从 adoption 拥有的 `src/core/adoption/workflow-contract-asset.ts` 移到本 capability 的 `scripts/sync-helper-sources.ts#main`。新增第二条 flow：`repo-harness run` 解析 helper 并交给 execution-primitives 运行。
 - 以下三段原在 §3 末尾，现逐字移入本节：
 
