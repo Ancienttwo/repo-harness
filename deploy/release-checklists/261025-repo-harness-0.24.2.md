@@ -112,39 +112,131 @@ PENDING. The orchestrator records the daily CI run on the release base.
 
 ## Acceptance environment
 
-PENDING.
+- macOS 26.5 arm64, Bun 1.4.3, Node 24.18.0. The installed global runtime
+  on this host is 0.24.1.
+- `bun install --frozen-lockfile`: exit 0. It installed `archctx` 0.9.3
+  and `archctx-contracts` 0.9.3 into the worktree.
+- Each gate used a new temporary HOME and `REPO_HARNESS_HOME` under `/tmp`,
+  and `TMPDIR=/tmp`. The wrapper removed `CLAUDECODE`, `AI_AGENT`, `AGENT`,
+  `REPL_ID` and `REPO_HARNESS_SOURCE_ROOT`, and deleted the HOME after the
+  gate.
+- The gates ran one at a time. No other test run was active on the host.
 
 ## Acceptance status
 
-PENDING. The orchestrator records the subject commit and tree, the changelog
-SHA-256, each gate command with its exit code and counts, the version and
-changelog coverage check, and `git diff --check`.
+- Subject: commit `2ff03c8dc4c4839bde60c1a2680dc1c2351ccf14`, tree
+  `26bea82a346e490fc5b967dd5c5f49944e1b4900`. It is the final base plus the
+  release preparation commits. After the gates, only this record changed.
+  The changelog, the shipped files and the test inputs did not change.
+- Changelog SHA-256 at verification:
+  `6d3a7b901893bac82f9d304243d356978352c518a723dcad990a5d40c7ed347f`.
+- `bun run check:type`: exit 0.
+- `bun run check:helpers`: exit 0; helper projection matches.
+- `bun run check:reference-configs`: exit 0; 25 documents match.
+- `bun run test:files tests/installed-copy-sync.test.ts
+  tests/readme-dx.test.ts tests/skill-version.test.ts
+  tests/effective-state.test.ts tests/hook-runtime.test.ts
+  tests/action-command-skills.test.ts
+  tests/reference-configs-projection.test.ts --timeout 60000
+  --max-concurrency 1`: exit 0 in 67 seconds; 134 pass, 0 fail across seven
+  files (29, 4, 10, 46, 19, 24 and 2).
+- `bash scripts/check-npm-release.sh --prepublish`: exit 0; repo-harness
+  0.24.2 is unpublished.
+- `bun run check:release`: exit 0 in 220 seconds. Benchmark matrix:
+  31 pass, 0 fail. `check-tarball-install-smoke.sh` installs
+  `repo-harness-0.24.2.tgz`, serves the packaged Operator and starts the
+  packaged CLI bins. Coding OAuth E2E: 1 pass, 0 fail, 15 filtered out.
+- The package build reports a Vite chunk-size warning above 500 kB, as for
+  0.24.1. It does not fail the gate.
+- Version and changelog coverage check:
+  - `git rev-list --count v0.24.1..origin/main` is 48, and 48 subjects end
+    with a PR number.
+  - All 48 PR numbers, the 8 issues that the merged commits close (#902,
+    #904, #908, #910, #912, #913, #916 and #922) and #967 are in the 0.24.2
+    section.
+  - `package.json`, `assets/skill-version.json` (version and template
+    version) and README show 0.24.2. `package.json` and `bun.lock` pin
+    `archctx` and `archctx-contracts` at exact 0.9.3.
+- `git diff --check origin/main...HEAD`: exit 0.
+- No test assertion, timeout or release tool changed in the release
+  preparation commits.
+- The full suite is outside this gate sequence. The hosted daily CI above
+  ran it on the base.
 
 ## Release readiness items
 
 - Consumer architecture smoke: `tests/hook-runtime.test.ts` test
   "a registry consumer without code facts or a projection manifest gets
-  one architecture line (#850)". Result: PENDING.
-- Skill eval evidence: PENDING.
-  - `full_test_count`: PENDING
-  - `dry_run_ratio`: PENDING
-  - `grader_pass_rate`: PENDING
-  - `effectiveness_authority`: PENDING
-- Readiness yellow flags: PENDING. See "Readiness check".
+  one architecture line (#850)". It passed in the `test:files` gate above.
+- Skill eval evidence: unavailable. See flag 6.
+- Readiness yellow flags: see "Readiness check".
 
 ## Readiness check
 
 ### Subject and commands
 
-PENDING.
+- Candidate: the release worktree at `2ff03c8dc`, after
+  `bun install --frozen-lockfile`.
+- Real HOME, read-only by contract, with `CLAUDECODE`, `AI_AGENT`, `AGENT`,
+  `REPL_ID` and `REPO_HARNESS_SOURCE_ROOT` removed and `TMPDIR=/tmp`:
+  - `bun src/cli/index.ts setup check --target both --check-updates --json`:
+    exit 0, `status: attention`; 28 ok, 5 warn, 0 fail, 1 n/a, 4
+    needs_agent.
+  - `bash scripts/check-agent-tooling.sh --json --host both
+    --check-updates`: exit 0.
+  - `bun src/cli/index.ts security scan --json`: exit 0, `status: warn`.
+  - `bun src/cli/index.ts upgrade --json` (no `--apply`): exit 1 by design,
+    because leftovers exist; 36 items. With a temporary HOME: 0 items.
+- Temporary HOME: `bun src/cli/index.ts run check-deploy-sql-order`.
 
 ### Signals
 
-PENDING.
+| Signal | Source | Observed result | Flag |
+| --- | --- | --- | --- |
+| CodeGraph project index | `setup check` | `doctor.codegraph-index`: `index=stale` in the release worktree after the rebase. `bash scripts/ensure-codegraph.sh --sync` in the worktree repaired it (`sync-index: changed`). The index is worktree-local and not in the package. | no |
+| PATH archctx | `check-agent-tooling.sh` | The probe put the worktree `node_modules/.bin` first in PATH, so the warning names the worktree's own archctx 0.9.3. `~/.bun/bin/archctx` from 0.24.1 flag 6 is gone. | no |
+| Global rules markers | `setup check` | `global-rules.claude` and `global-rules.codex`: managed block is stale | yes |
+| Install ledger | `setup check` | `status: drift`, surface drift on `~/.claude/settings.json`; no missing or unexpected components | yes |
+| Security config | `security scan --json` | `status: warn`; 2 active `unmanaged-hook-command` findings, the SessionStart hook `herdr-agent-state.sh` in `~/.claude/settings.json` and in `~/.codex/hooks.json` | yes |
+| Waza | `setup check` | `tooling.waza`: present, `update-available` | yes |
+| Skills CLI | `setup check` | `runtime.skills_cli`: missing, optional | yes |
+| Leftovers | `upgrade --json` | 36 items in the real HOME: 18 refresh and 18 report (old backups to keep). 0 with a temporary HOME. | yes |
+| Deploy SQL order | `run check-deploy-sql-order` | exit 0, `[deploy-sql] OK` | no |
+| Deploy surface | read `deploy/` | README, runbooks, scripts, SQL, submissions and release checklists are present. `deploy/env/` holds only `.gitkeep`; `deploy/env/.env.example` is absent. | yes |
+| `_ops/` boundary | `git check-ignore`, `git ls-files _ops` | `_ops/` is ignored; 0 tracked files | no |
+| Practices | archctx debt coverage | `practices:not-enabled`; the repo defines no practices, and evaluation is advisory | yes |
+| Skill eval evidence | read `evals/` | `evals/benchmark.md` is from 2026-06-14. No skill eval fields since then. | yes |
 
 ### Yellow flags
 
-PENDING. Each flag needs the owner's decision for 0.24.2.
+The 0.24.1 acceptances do not carry over. Each flag needs the owner's
+decision for 0.24.2.
+
+1. Global rules managed blocks are stale. Repair after publication:
+   `repo-harness update --report-language <follow|zh-CN|en>`. It writes the
+   real HOME, so it is the owner's action. The package does not read these
+   files.
+2. Install ledger drift on `~/.claude/settings.json`. Host state before the
+   upgrade. Repair after publication: `repo-harness update`, or
+   `repo-harness install --profile full`. Both write user-level config, so
+   the owner runs or approves them.
+3. Security config: the same 2 `herdr-agent-state.sh` findings as 0.24.1
+   flag 4. Repair: the owner adds a reviewed exception for each to
+   `~/.repo-harness/config.json`. The hooks are host config and are not in
+   the package.
+4. Waza update available and Skills CLI missing. Proposed acceptance: both
+   are external, optional tools; the package does not ship them. Repair:
+   update Waza and install the Skills CLI, then rerun `setup check`.
+5. Leftovers. Proposed acceptance: the 18 refresh items are expected while
+   the host runs 0.24.1. Repair after publication: `repo-harness update`,
+   then `repo-harness upgrade` to review the rest. `--apply` is the owner's
+   action.
+6. Skill eval evidence unavailable. Proposed acceptance: 0.24.2 makes no
+   skill-effectiveness claim. Repair: run `bun run benchmark:skills --
+   --home <temp-dir> --require-disposable` without `--dry-run`.
+7. `deploy/env/.env.example` absent and practices not enabled. Proposed
+   acceptance: the package has no deploy runtime or deploy environment
+   variables, and practice evaluation stays advisory, as in #964.
 
 ## Publication checklist
 
