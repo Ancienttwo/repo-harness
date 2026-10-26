@@ -15,7 +15,7 @@
 
 ## Purpose & Audience
 
-- Page/surface: the localhost `repo-harness operator serve` console, extended from a read-only board into a local management console with 19 designed pages (home, board, task drawer, repositories, worktrees, worktree cleanup session, docs, docs session, Agents, Skills, Hooks, CLI, architecture layers/sequence/topology, tests, system, tools, settings).
+- Page/surface: the localhost `repo-harness operator serve` console, extended from a read-only board into a local management console with 21 designed pages (home, board, task drawer, repositories, worktrees, worktree cleanup session, docs, docs session, Agents, Skills, Hooks, CLI, Bots, architecture modules/layers/sequence/topology, tests, system, tools, settings).
 - Primary audience: one maintainer who runs several adopted repositories and several coding agents (Claude Code, Codex, others through OAR) on one machine.
 - Job to be done: see in one window what is waiting for them, what each task is doing and which agent owns it; keep the development environment (hooks, skills, CLIs, agents) healthy; read, quote and update `docs/` through an agent, getting the change back as a Draft PR.
 
@@ -46,11 +46,12 @@
 | Task drawer, evidence, diff | `src/operator-web/Drawer.tsx`, `ItemDrawer.tsx`, `TaskEvidence.tsx`, `TaskDiff.tsx` | extend | add the read-only "Follow up" block and "Tests changed" list |
 | Repositories, system, tools pages | `src/operator-web/RepositoriesPage.tsx`, `SystemPage.tsx`, `ToolsPage.tsx` | extend | — |
 | Agents / Skills / Hooks | `src/operator-web/SetupPages.tsx`, `src/cli/hook/route-registry.ts` (`ROUTES`) | extend | hook stats need a collector source (PRD gap G16) |
-| Architecture views | `src/operator-web/ArchitectureWorkspace.tsx`, `ModuleGraph.tsx`, `.archcontext/model/` | extend | layered/sequence/topology canvases (PRD gap G11) |
+| Architecture views | `src/operator-web/ArchitectureWorkspace.tsx`, `ModuleGraph.tsx`, `.archcontext/model/` | extend | module map with five layers, plus layered/sequence/topology canvases (PRD gaps G11, G22, G27) |
 | HTTP routes and write gate | `src/effects/operator/server.ts` | extend | today every non-GET returns 405; the two bounded writes need the POST channel in the PRD |
 | Task message to owner | `repo-harness fleet message send` (`src/cli/commands/fleet.ts`) | reuse via Bot | the console shows the inbox read-only; it never sends |
 | Docs sessions | none | new | no existing surface edits `docs/` through an agent in an isolated worktree |
-| CLI probes (gh, cf, asc, supabase, pscale) | none | new | PRD gap G18; read-only status commands only |
+| CLI inventory (every CLI on the machine) | none | new | PRD gap G18; read-only probes; uninstall and logout are copyable commands |
+| Bots (MCP clients, Slack channels, herdr panes) | `repo-harness mcp doctor --json`, herdr notify plugin, herdr socket | new view | PRD gaps G29–G32; read-only; access changes are commands |
 | Tests page | `scripts/select-ci-coverage.ts`, `scripts/test-file-durations.json`, `.ai/harness/runs/` | new view over existing data | PRD "Testing and TDD" section |
 | Visual tokens | design system in `docs/design/operator-console/design-system/tokens.json` | new, derived from `repo-harness-page@ffe3ff1` | Kumo semantic names plus contrast fixes |
 
@@ -91,13 +92,13 @@
 
 ## Layout
 
-- Grid / breakpoints: sidebar (248–272px) plus main area up to 1152px; reading column 672px; right inspector 300–360px. Desktop only (no mobile layout).
+- Grid / breakpoints: sidebar (248–272px, collapsible to a 64px icon rail; architecture pages open collapsed) plus main area up to 1152px; reading column 672px; right inspector 300–360px. Desktop only (no mobile layout).
 - Spacing scale: 4, 8, 12, 16, 24, 32, 40, 48px.
 - Key components and hierarchy: NavRail with a prominent repository switcher under the logo; ListGroup rows; SegmentedTabs; StatusBadge; SourceBanner; CommandCopy; MarketCard; FolderCard; DiagramCanvas; Conversation; AgentRow; HookRouteTable. Each has a guideline file in `design-system/components/`.
 
 ## Motion
 
-- Trigger -> effect pairs: press -> 1px down; clickable card hover -> 2px up; switcher open -> orange border and 3px tint ring; copy -> "copied" in place for about 2s.
+- Trigger -> effect pairs: press -> 1px down; clickable card hover -> 2px up; switcher open -> orange border and 3px tint ring; sidebar toggle -> rail and full width swap without animation; copy -> "copied" in place for about 2s.
 - Duration / easing: 120 / 180 / 280ms, `cubic-bezier(0.22, 0.61, 0.36, 1)`, no bounce.
 - What must stay static: status dots, counts and data rows (no animated numbers); near-zero motion under `prefers-reduced-motion`.
 
@@ -125,4 +126,4 @@
 
 ## Preview Attachment
 
-- Preview path/link: the design canvas in Claude (19 artboards, light and dark themes), listed with every page in [`operator-console/README.md`](operator-console/README.md). The link is private until shared from the canvas.
+- Preview path/link: the design canvas in Claude (21 artboards, light and dark themes), listed with every page in [`operator-console/README.md`](operator-console/README.md). The link is private until shared from the canvas.

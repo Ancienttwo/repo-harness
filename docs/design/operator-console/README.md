@@ -7,7 +7,7 @@ the PRD is
 
 | Material | Where |
 | --- | --- |
-| Design canvas (19 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared) |
+| Design canvas (21 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared) |
 | Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared) |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
 
@@ -18,7 +18,7 @@ sidebar labels.
 
 | Group | Page (sidebar label) | Artboard | Writes |
 | --- | --- | --- | --- |
-| — | Home (首页) | `Home` | none |
+| — | Home (首页) | `Home` | none (includes the today summary) |
 | Work | Board (看板) | `Main` | none |
 | Work | Task drawer | `Task` | none (follow-up is copyable commands; inbox is read-only) |
 | Work | Repositories (仓库) | `Repositories` | none |
@@ -29,8 +29,9 @@ sidebar labels.
 | Setup | Agents | `Agents` | none (commands only) |
 | Setup | Skills | `Skills` | none |
 | Setup | Hooks | `Hooks` | none |
-| Setup | CLI | `CLI` | none (read-only status probes) |
-| Observe | Architecture: layers, sequence, topology (架构) | `ArchLayers`, `ArchSequence`, `ArchTopology` | none |
+| Setup | CLI | `CLI` | none (machine-wide inventory; uninstall is a copyable command) |
+| Setup | Bots | `Bots` | none (MCP, Slack and herdr status; access changes are commands) |
+| Observe | Architecture: modules (default), layers, sequence, topology (架构) | `ArchModules`, `ArchLayers`, `ArchSequence`, `ArchTopology` | none |
 | Observe | Tests (测试) | `Tests` | none |
 | Observe | System (系统) | `System` | none |
 | Observe | Tools (工具) | `Tools` | none |
@@ -51,6 +52,31 @@ yellow rows read-only and returns a plan with evidence; the user ticks items;
 the server rechecks each item under the topology lock, deletes it and writes
 an audit entry. Leftover directories that git no longer registers are listed
 by directory name only. PRD gaps G23–G26.
+
+## Home today summary
+
+The home page has a "Today" (今天) list below "Waiting for you". It has five
+rows: PRs merged since 00:00, the three items that waited longest, failed
+checks, open `[CI repair]` issues, and the reclaimable worktree space. Each row
+links to the page that owns the data.
+
+## Architecture module map
+
+The sidebar "Architecture" entry opens the module map. It shows the 28
+capabilities in their groups, with external systems around them. Edge width is
+the import count; a red dashed edge is an undeclared dependency. Five layers
+switch on top of the base map: today's changes, violations and drift, the
+impact of one PR, test coverage, and decisions. The decision layer stays
+disabled until archctx exports ADR `appliesTo` (#407). A side panel shows the
+selected module and a copyable fix command. PRD gaps G11, G22 and G27.
+
+## Collapsible sidebar
+
+A toggle next to the logo collapses the sidebar to a 64px icon rail. The rail
+keeps the nav icons with their names as tooltips, the repository tile and the
+search icon. It hides group labels, counts and the recent docs sessions. The
+architecture pages open collapsed to give the canvas the width; all other
+pages open expanded.
 
 ## Repository switcher
 
