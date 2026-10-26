@@ -99,11 +99,12 @@ sequenceDiagram
 2. `provider_repository_id` 与 `provider_issue_id` 是稳定身份；显示用 `owner/repo#number` 仅为引用，不参与身份判断。
 3. 每次刷新写一个不可变 receipt；complete-empty、incomplete 和 unavailable 绝不折叠为同一个投影状态。
 4. 标题、正文、labels 与 assignees 是未信任 JSON。P0 只通过 JSON read model 暴露它们，不进入 prompt、合同或执行上下文。
-5. append-only 扫描成本是已知 P0 权衡；在实测前不引入 mutable cache 或 adoption state。
+5. observation、refresh receipt 与 binding receipt 只追加。`receipt-head.json` 是 store 中唯一可变的文件。它记录最新 refresh receipt 的摘要和 receipt 数量。每次写 refresh receipt，store 都在 store 锁内重写它（`src/effects/external-sources/store.ts#writeReceiptHead`）。`list`、`bindings` 与 provider board 仍全量扫描。
 6. binding 是 provenance edge。`external-source bind --session <file>` 把一个 eligible source revision 绑定到一个已存在的 admitted session。observation 的 provider repository 与 issue 必须等于该 session admission 的 repository 与 issue（`src/effects/external-sources/binding.ts:47-58`）。receipt 本身不能创建工作或 admission。
 7. 一个 receipt 只绑定一个 source revision 与一个 admitted session；多条 receipt 自然表达 one-to-many / many-to-one，不做 semantic duplicate 推断。
 8. source、admitted session 或 registry authorization 漂移只产生显式 attention，不自动 rebind、取消或重开。
 9. provider 内容只允许由 `renderExternalSourceUntrustedContext` 输出，且 JSON 数据必须位于明确的 `[ExternalSourceUntrusted]` 边界内。
+10. board-slice hook 只读最新快照。`collectSliceInputs` 只读 head 指定的最新 refresh receipt，以及该 receipt 列出的 observation（`src/effects/external-sources/store.ts#readLatestExternalSourceSnapshot`）。上限固定为 200 条 observation、2000 个 issue 目录和 2 MiB（`src/effects/state/collect-slice-inputs.ts#SLICE_SOURCE_LIMITS`）。head 缺失、head 的 receipt 数量与 store 不符，或超出上限时，读取失败，不回退到全量扫描。slice 不输出 provider 标题。
 
 证据补充：
 
@@ -116,7 +117,7 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| observation、receipt 和 binding 都只追加、不可变 | 每次刷新都可审计，漂移只产生 attention。代价是 list 和投影每次全量读取并逐条校验 canonical 字节（`store.ts:233-252`）。记录数增长后读取成本线性增长。 |
+| observation、receipt 和 binding 都只追加、不可变 | 每次刷新都可审计，漂移只产生 attention。代价是 list 和投影每次全量读取并逐条校验 canonical 字节（`src/effects/external-sources/store.ts#listExternalSourceRefreshReceipts`）。记录数增长后读取成本线性增长。hook 每次 agent spawn 都运行，所以它只读 `receipt-head.json` 指定的有界快照（§3.1 第 10 条）。 |
 | 只支持手动 GitHub 刷新 | 没有轮询、webhook 或写回，provider 无法自行触发工作。代价是新 Issue 要人或 Bot 手动刷新才可见。 |
 | binding 是 provenance 边，不是调度边 | 外部 Issue 不能绕过 review admission。代价是 binding 之前必须先有同一 issue 的 admitted session。 |
 | 稳定身份用 provider 数字 id | `owner/repo#number` 改名或迁移不会产生重复身份。代价是显示引用与身份分离，排查时要同时看两者。 |
@@ -125,7 +126,7 @@ sequenceDiagram
 
 | 节点 | footprint | 说明 |
 | --- | --- | --- |
-| `component.external-source-intake.immutable-evidence` | `src/effects/external-sources/store.ts` | 在 Git common 目录下一次性创建 observation、refresh receipt 和 binding receipt，只提供校验过的读取 |
+| `component.external-source-intake.immutable-evidence` | `src/effects/external-sources/store.ts` | 在 Git common 目录下一次性创建 observation、refresh receipt 和 binding receipt，在 store 锁内重写 `receipt-head.json`，只提供校验过的读取 |
 | capability 自身 | `src/core/external-sources/**`、其余 `src/effects/external-sources/**`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`、`src/cli/commands/external-source.ts` | 协议、策略、GitHub 读取、刷新、绑定、投影、CLI |
 
 对外关系：
@@ -134,7 +135,7 @@ sequenceDiagram
 - capability → acceptance-review：`binding.ts` 用 `readReviewAdmissionSource` 读取 protected review admission（`src/effects/external-sources/binding.ts:8`）。
 - capability → task-agent-host：`binding.ts` 读取精确的 session binding（`readTaskAgent`，`src/effects/external-sources/binding.ts:10`）。
 - capability → task-fleet：`binding.ts` 用 `observeTaskInboxContext` 重新观察 admitted inbox context（`src/effects/external-sources/binding.ts:9`）。
-- workflow-state 的 coordination-plane → capability：provider board 与 hook slice 读取 observation 与 refresh receipt。
+- workflow-state 的 coordination-plane → capability：provider board 读取全部 observation 与 refresh receipt。hook slice 只读最新的有界快照。
 
 集成步骤补上的关系：
 

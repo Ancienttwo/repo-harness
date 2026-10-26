@@ -114,7 +114,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **一个验收来源。** `acceptancePolicySource()` 只返回 `'generic-review'`（`src/core/review/acceptance-receipt.ts:365`）。旧的 direct cross-review 运行路径已删除，没有 alias（PR #484）。
+1. **一个验收来源。** `acceptancePolicySource()` 只返回 `'generic-review'`（`src/core/review/acceptance-receipt.ts#acceptancePolicySource`）。旧的 direct cross-review 运行路径已删除，没有 alias（PR #484）。
 2. **每个工作包最多一个持久 reviewer。** review 命令在启动 session 前调用 `recordCircuitAttempt`，guard 是 `one-semantic-review-per-work-package`（`src/cli/commands/review.ts:27`）。预算用完时命令失败，不启动新的 reviewer。
 3. **reviewer 不能复用 owner pane。** 绑定的 pane 等于 owner pane 时，round 失败（`src/effects/review/generic-review.ts:261`）。
 4. **packet 先保存，reviewer 后启动。** `composeReviewPacket` 在任何 reviewer pane 启动前生成完整 packet（`src/core/review/review-packet.ts:16`）。packet 上限是 10 MiB UTF-8（`review-packet.ts:25`）。启动失败后 packet 保留。内容不变的重试复用原字节；内容改变的重试在再次启动前失败（PR #578）。
@@ -122,8 +122,8 @@ sequenceDiagram
 6. **receipt 只在稳定状态下记录。** 在 `recordAcceptance` 前，round 再次检查 `close.request`，并比较两个 worktree 的指纹。worktree 改变时 round 失败（`src/effects/review/generic-review.ts:368`、`src/effects/review/generic-review.ts:369`）。cancel 与 accept 的线性化点写在 `src/effects/review/generic-review.ts:364-367` 的注释里。
 7. **隔离失败不能降级。** reviewer 在 macOS Seatbelt launcher 里运行（`src/effects/review/review-isolation.ts:160`）。隔离不可用时结果是 `unsupported`，不能退回到无隔离运行（PR #476 回滚说明）。
 8. **只有可验证模型的 harness 能生成 receipt。** Claude reviewer 或没有观测到实际模型时，round 以 `review_actual_model_unverified` 失败（`src/effects/review/generic-review.ts:88`）。
-9. **脚本是源。** `scripts/acceptance-receipt.ts` 是唯一副本。`assets/templates/helpers/` 只投影 `capability-resolver.ts`。
-10. **round 只在当前 review admission 下运行。** `review admit --request <file>` 写入上游 Bot 已授权的 approval。`review revoke --request <file>` 撤销它。两个命令都按 `expectedRevision` 做 CAS（`src/effects/admission/admission-store.ts`）。round 用 `acceptanceContext` 读 protected admission，并重新观察 GitHub issue goal（`src/effects/review/acceptance-receipt.ts`）。发送请求前，round 再读一次。admission 缺失、过期、被撤销或被替换时，round 失败。goal 改变时，round 也失败。失败的 round 不发送请求，也不写 receipt。
+9. **receipt 库代码在 `src`。** 纯规则在 `src/core/review/acceptance-receipt.ts`。存储、上下文观察和 CLI 逻辑在 `src/effects/review/acceptance-receipt.ts`。`scripts/acceptance-receipt.ts` 是薄 CLI 外壳：它重新导出 effects 模块，并调用 `runAcceptanceReceiptCli`。`src` 不导入 `scripts/`（`scripts/check-state-boundaries.ts` 检查这条规则）。`assets/templates/helpers/` 只投影 `capability-resolver.ts`。
+10. **round 只在当前 review admission 下运行。** `review admit --request <file>` 写入上游 Bot 已授权的 approval。`review revoke --request <file>` 撤销它。revoke 请求指定 repository、issue 和 campaign，以及预期的 `grant_sha256` 和 revision。两个命令都按 `expectedRevision` 做 CAS，revoke 还要求当前 grant 等于预期的 grant（`src/effects/admission/admission-store.ts#revokeActiveReviewAdmission`）。round 用 `acceptanceContext` 读 protected admission，并重新观察 GitHub issue goal（`src/effects/review/acceptance-receipt.ts`）。发送请求前，round 再读一次。admission 缺失、过期、被撤销或被替换时，round 失败。goal 改变时，round 也失败。失败的 round 不发送请求，也不写 receipt。
 
 ### 3.2 关键权衡
 
@@ -137,7 +137,7 @@ sequenceDiagram
 
 ### 3.3 开放问题
 
-- `scripts/acceptance-receipt.ts` 有 1994 行。它包含 receipt、waiver、archive projection 和 verification observation 四类权威。这些职责为什么在一个文件里，没有记录。
+- `src/effects/review/acceptance-receipt.ts` 约 1,200 行。它包含 receipt、waiver、archive projection 和 verification observation 四类权威，还包含 CLI 逻辑。这些职责为什么在一个文件里，没有记录。
 - PR #476 记录 reviewer 隔离只保护写入，不限制读取真实 `~/.codex` 和网络。这个残余风险是否被接受，以及由谁复核，没有记录。
 
 ## 4. 歷史決策記錄(append-only)
@@ -161,5 +161,5 @@ sequenceDiagram
 ## Optimization Backlog
 
 - 在 arch-context#296 之后拆分目录：`src/core/review/module-review-prompt.ts` 归 operator 的 architecture-view 组件；`src/effects/review/diff-fingerprint.ts` 归 workflow-state（归属提议 §4）。拆分前，operator 与 module CLI 对本 capability 的关系是归属造成的，不是职责依赖。
-- `scripts/acceptance-receipt.ts`（1994 行）可以按 receipt、waiver、archive projection 和 verification observation 拆分。拆分前需要先确认 §3.3 的原因。
-- 本 capability 现在只有一个组件。源码有三个可分的职责：review round（`src/effects/review/generic-review.ts`）、change assessment（`src/*/review/change-assessment.ts`）和 receipt（`scripts/acceptance-receipt.ts`）。需要独立 owner 时再拆。
+- `src/effects/review/acceptance-receipt.ts` 可以按 receipt、waiver、archive projection 和 verification observation 拆分。拆分前需要先确认 §3.3 的原因。
+- 本 capability 现在只有一个组件。源码有三个可分的职责：review round（`src/effects/review/generic-review.ts`）、change assessment（`src/*/review/change-assessment.ts`）和 receipt（`src/core/review/acceptance-receipt.ts`、`src/effects/review/acceptance-receipt.ts`）。需要独立 owner 时再拆。
