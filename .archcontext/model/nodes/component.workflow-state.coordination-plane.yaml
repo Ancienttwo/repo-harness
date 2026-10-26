@@ -8,7 +8,7 @@ summary: "Joins provider issue observations and exact admitted sessions, retains
 responsibilities:
   - "Project provider boards by exact canonical REST repository and issue identities; preserve all admitted session bindings and typed unavailable rows."
   - "Compare complete board revisions with bounded rereads without task locks or mutation."
-  - "Supply hooks with stored local provider observations and explicitly supplied admitted session context; absent trusted self context remains unobserved without network discovery."
+  - "Supply hooks with the newest bounded provider observation snapshot named by the receipt head, without network or session discovery; a missing or stale head yields no slice."
   - "Retain historical canonical task parsing, worktree topology, sweep and exact deletion guards. Historical leases and claim tokens are not current authority."
 source:
   include:

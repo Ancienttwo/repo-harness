@@ -3,9 +3,9 @@ id: "capability.organization.publication"
 kind: "capability"
 name: "Publication Observations"
 status: "active"
-summary: "Observes explicit canonical provider PR readiness and integration evidence, retains historical receipt reads and records admitted manual feedback."
+summary: "Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and records admitted manual feedback."
 responsibilities:
-  - "Keep historical publication receipt and integration records as explicit history, never current readiness or dependency authority."
+  - "Provide the canonical publication JSON and SHA-256 helpers that integration evidence digests use; no publication receipt or lifecycle store reader or writer remains."
   - "Derive PullRequestReadinessV2 from explicit canonical REST repository identity, PR number and exact expected head/base through provider identity, facts and reobservation."
   - "Bind registry-scoped readiness to the local GitHub origin before provider reads; preserve the standalone explicit PR CLI capability."
   - "Record manual feedback against exact admitted claim and provider PR evidence with separate delivery receipts."
@@ -31,5 +31,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/unit/publication-receipt.test.ts tests/unit/publication-recovery-reconcile.test.ts tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/unit/merge-readiness-v1.test.ts tests/unit/publication-feedback-effect.test.ts tests/publication-feedback-concurrency.test.ts tests/cli/fleet-feedback.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

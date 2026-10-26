@@ -4,10 +4,10 @@ kind: component
 name: "Verification Check Execution"
 status: active
 parent: capability.verification.evals-checks
-summary: "Executes the existing contract Verification Plan with exact snapshot, process result and evidence binding."
+summary: "Executes the Verification Plan of the current review admission with exact snapshot, process result and evidence binding."
 responsibilities:
-  - Run the declared Verification Plan through the verification-plan CLI and migrate old contracts to it.
-  - Run each contract command in a bounded, detached process group with one absolute deadline.
+  - Run the admitted Verification Plan through the verification-plan CLI; the migration helper converts legacy contract criteria to a plan.
+  - Run each declared plan check in a bounded, detached process group with one absolute deadline.
   - Refuse evidence-producer commands inside the verifier before execution.
 source:
   include:

@@ -2,8 +2,8 @@
   "schemaVersion": "archcontext.node/v2",
   "id": "component.engineer-bindings.primary",
   "kind": "component",
-  "name": "Shared Engineer Binding Store",
+  "name": "Engineer Profile Resolver",
   "status": "active",
   "parent": "capability.runtime-harness.engineer-bindings",
-  "summary": "Resolves tracked Engineer contracts and validates existing canonical binding event and current records without mutation."
+  "summary": "Resolves tracked Engineer Profile and SOP contracts and derives the exact engineer contract revision without mutation."
 }

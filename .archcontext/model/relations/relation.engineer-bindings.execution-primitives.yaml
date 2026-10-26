@@ -3,4 +3,4 @@ id: relation.engineer-bindings.execution-primitives
 kind: calls
 source: capability.runtime-harness.engineer-bindings
 target: capability.workflow-engine.execution-primitives
-intent: "Hold exclusive directory locks under the Git common directory"
+intent: "List tracked Engineer profile and SOP paths through the shared Git runner"
