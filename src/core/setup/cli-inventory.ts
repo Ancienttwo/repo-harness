@@ -259,6 +259,17 @@ function uninstallCommand(record: CliPackageRecord): string | null {
   }
 }
 
+/** POSIX `path.resolve` for an absolute path, without a filesystem or `node:path` (this module is pure). */
+function normalizePath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') parts.pop();
+    else parts.push(part);
+  }
+  return `/${parts.join('/')}`;
+}
+
 /**
  * `rm` of every binary of a go module: go install has no uninstall, the files
  * are the whole install. Arguments come from the raw path under HOME, never
@@ -268,10 +279,12 @@ function uninstallCommand(record: CliPackageRecord): string | null {
  * gives no command.
  */
 function removeFiles(paths: readonly string[], home: string): string | null {
-  const root = home.replace(/\/+$/u, '');
-  if (root === '') return null;
+  const root = normalizePath(home);
+  if (root === '/') return null;
   const args: string[] = [];
-  for (const path of paths) {
+  for (const raw of paths) {
+    // GOBIN comes from `go env` unnormalized; `..` must not walk out of HOME.
+    const path = normalizePath(raw);
     if (!path.startsWith(`${root}/`)) return null;
     const rest = path.slice(root.length + 1);
     const arg = /^[A-Za-z0-9._/+-]+$/u.test(rest) ? `~/${rest}` : `~/'${rest.replaceAll("'", "'\\''")}'`;
