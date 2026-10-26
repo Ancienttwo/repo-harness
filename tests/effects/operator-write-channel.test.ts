@@ -393,6 +393,9 @@ describe('operator write channel', () => {
       spy.mockRestore();
     }
     expect(harness.executions).toEqual([]);
+    // The torn tail is cut, so the next write still finds a readable log.
+    expect(auditRecords(harness)).toEqual([]);
+    expect((await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v2' })).status).toBe(200);
   });
 
   test('a result the audit reader would refuse is not appended and the log stays usable', async () => {

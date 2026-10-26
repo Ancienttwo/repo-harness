@@ -1,4 +1,4 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { JsonValue } from '../../core/evidence/types';
@@ -126,9 +126,19 @@ export function readOperatorAuditRequest(auditPath: string, requestId: string): 
 
 /** One durable line per record. A record that is not on disk does not count as written. */
 export function appendOperatorAuditRecord(auditPath: string, record: OperatorAuditRecordV1): void {
+  const line = `${JSON.stringify(record)}\n`;
+  // A line the reader refuses would fail every later lookup closed for the
+  // whole account, so it must not reach the log.
+  decodeAuditRecord(JSON.parse(line));
   const fd = openSync(auditPath, 'a', 0o600);
   try {
-    writeSync(fd, `${JSON.stringify(record)}\n`);
+    const before = fstatSync(fd).size;
+    const written = writeSync(fd, line);
+    if (written !== Buffer.byteLength(line)) {
+      // Cut the torn tail so the log stays readable; the caller holds the audit lock.
+      ftruncateSync(fd, before);
+      throw new OperatorAuditUnavailableError('audit record was only partly written');
+    }
     fsyncSync(fd);
   } finally {
     closeSync(fd);
