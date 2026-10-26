@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import type { AdoptionMode } from "../../core/adoption/modes";
+import type { AdoptionPlan } from "../../core/adoption/operations";
 import { planAdoption } from "../../effects/adoption/plan";
 import { renderAdoptionPlanJson, renderAdoptionPlanObject, renderAdoptionPlanText } from "../../core/adoption/render";
 import { applyAdoptionPlan, type ApplyAdoptionPlanResult } from "../../effects/fs-transaction";
@@ -64,24 +65,28 @@ function errorOutput(
   return { exitCode: 2, output: `[init] failed: ${message}\n` };
 }
 
-function createPlan(opts: RunAdoptionPlanOptions) {
+export type RepoAdoptionPlanOutcome =
+  | { readonly repoRoot: string; readonly plan: AdoptionPlan; readonly error?: undefined }
+  | { readonly repoRoot: string; readonly plan?: undefined; readonly error: { readonly code: string; readonly message: string } };
+
+/** The structured plan behind `init --dry-run`; it writes nothing. */
+export function planRepoAdoption(opts: RunAdoptionPlanOptions): RepoAdoptionPlanOutcome {
   const repoRoot = resolve(opts.repo ?? process.cwd());
   const targetError = validateRepoAdoptionTarget(repoRoot, opts.explicitRepo === true, opts.env);
-  if (targetError) return { repoRoot, error: errorOutput(repoRoot, opts.mode, "invalid_repo_target", targetErrorMessage(targetError), opts.json === true) };
+  if (targetError) return { repoRoot, error: { code: "invalid_repo_target", message: targetErrorMessage(targetError) } };
   try {
     return { repoRoot, plan: planAdoption({ repoRoot, mode: opts.mode, apply: false, env: opts.env }) };
   } catch (error) {
-    return {
-      repoRoot,
-      error: errorOutput(
-        repoRoot,
-        opts.mode,
-        "invalid_adoption_plan",
-        error instanceof Error ? error.message : String(error),
-        opts.json === true,
-      ),
-    };
+    return { repoRoot, error: { code: "invalid_adoption_plan", message: error instanceof Error ? error.message : String(error) } };
   }
+}
+
+function createPlan(opts: RunAdoptionPlanOptions) {
+  const planned = planRepoAdoption(opts);
+  if (planned.error) {
+    return { repoRoot: planned.repoRoot, error: errorOutput(planned.repoRoot, opts.mode, planned.error.code, planned.error.message, opts.json === true) };
+  }
+  return { repoRoot: planned.repoRoot, plan: planned.plan };
 }
 
 export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanResult {

@@ -11,6 +11,8 @@ import { hashManagedTree } from '../../src/effects/managed-tree';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
+import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
+import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -1090,3 +1092,206 @@ test('router keeps canonical includes while non-projected top-level examples cha
     expect(existsSync(join(router, path))).toBe(false);
   }
 }));
+
+describe('upgrade --registered', () => {
+  const PORTABLE = '{{system_tmp}}/{{repo}}-wt-{{slug}}';
+  const policyPath = (repo: string) => join(repo, '.ai/harness/policy.json');
+  function registeredSandbox(run: (f: RegisteredReposFixture) => void): void {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'upgrade-registered-')));
+    try { run(registeredReposFixture(root)); }
+    finally { rmSync(root, { recursive: true, force: true }); }
+  }
+  function editPolicy(f: RegisteredReposFixture, repo: string, edit: (policy: { worktree_strategy: Record<string, unknown> }) => void): void {
+    const policy = JSON.parse(readFileSync(policyPath(repo), 'utf8'));
+    edit(policy);
+    writeFileSync(policyPath(repo), `${JSON.stringify(policy, null, 2)}\n`);
+    commitAll(f, repo, 'edit policy');
+  }
+  /** Adopted and committed, then one managed file is deleted and the deletion committed. */
+  function staleRepo(f: RegisteredReposFixture, name: string): string {
+    const repo = adoptedRepo(f, name);
+    rmSync(join(repo, '.ai/hooks/README.md'));
+    commitAll(f, repo, 'drop managed file');
+    return repo;
+  }
+  const byPath = (repos: readonly RegisteredRepoResult[], path: string) => {
+    const repo = repos.find((entry) => entry.path === path);
+    if (!repo) throw new Error(`no result for ${path}`);
+    return repo;
+  };
+  const cli = (f: RegisteredReposFixture, ...args: string[]) => spawnSync(process.execPath, [CLI, 'upgrade', ...args], {
+    cwd: f.root, env: { ...f.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 120000,
+  });
+
+  test('preview classifies every row from one registry snapshot and writes nothing', () => registeredSandbox((f) => {
+    const fresh = adoptedRepo(f, 'fresh');
+    const stale = staleRepo(f, 'stale');
+    const missing = join(f.root, 'missing');
+    const linked = join(f.root, 'linked');
+    git(f, fresh, 'worktree', 'add', '-q', '-b', 'feature', linked);
+    const plain = join(f.root, 'plain');
+    mkdirSync(plain);
+    git(f, plain, 'init', '-q', '-b', 'main');
+    const noBase = adoptedRepo(f, 'no-base');
+    editPolicy(f, noBase, (policy) => { delete policy.worktree_strategy.base_branch; });
+    const topic = adoptedRepo(f, 'topic');
+    git(f, topic, 'checkout', '-q', '-b', 'topic');
+    const dirty = adoptedRepo(f, 'dirty');
+    writeFileSync(join(dirty, 'untracked.txt'), 'operator work\n');
+    const broken = join(f.root, 'broken');
+    mkdirSync(join(broken, '.ai/harness'), { recursive: true });
+    writeFileSync(join(broken, '.ai/harness/policy.json'), '{}\n');
+    writeFileSync(join(broken, '.git'), `gitdir: ${join(f.root, 'no-such-git-dir')}\n`);
+    // An unregistered adopted repo is never a target: nothing scans directories.
+    const unregistered = staleRepo(f, 'unregistered');
+    const targets = [fresh, stale, missing, linked, plain, noBase, topic, dirty, broken];
+    writeRegistry(f, targets);
+    const registryBefore = readFileSync(f.registry, 'utf8');
+    const before = Object.fromEntries([...targets.filter(existsSync), unregistered].map((path) => [path, worktreeSnapshot(path)]));
+
+    const result = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(result.error).toBeUndefined();
+    expect(result.apply).toBe(false);
+    expect(result.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(result.repos.map((repo) => repo.path).sort()).toEqual([...targets].sort());
+    expect(byPath(result.repos, fresh)).toMatchObject({ status: 'ready', pending: false, init: { planned: 0, operations: [] }, sweep: { ran: false } });
+    const staleResult = byPath(result.repos, stale);
+    expect(staleResult).toMatchObject({ status: 'ready', pending: true });
+    expect((staleResult.init as { planned: number }).planned).toBeGreaterThan(0);
+    expect((staleResult.init as { operations: unknown[] }).operations).toContainEqual(expect.objectContaining({ path: '.ai/hooks/README.md' }));
+    expect(staleResult.upgrade).toMatchObject({ apply: false, operatorKept: [] });
+    const reasons = Object.fromEntries(result.repos.filter((repo) => repo.status === 'skipped').map((repo) => [repo.path, repo.reason]));
+    expect(reasons).toEqual({
+      [missing]: 'path_missing',
+      [linked]: 'not_primary_checkout',
+      [plain]: 'not_adopted',
+      [noBase]: 'default_branch_unknown',
+      [topic]: 'not_default_branch',
+      [dirty]: 'dirty_worktree',
+      [broken]: 'git_probe_failed',
+    });
+    for (const repo of result.repos.filter((entry) => entry.status === 'skipped')) {
+      expect(repo.detail?.length).toBeGreaterThan(0);
+      expect(repo.init ?? repo.upgrade ?? repo.sweep).toBeUndefined();
+    }
+    expect(result.exitCode).toBe(1);
+    const text = formatRegisteredUpgradeResult(result);
+    expect(text).toContain(`Registry revision: ${result.revision}`);
+    expect(text).toContain(`${dirty}: skipped (dirty_worktree)`);
+    expect(text).toContain('no dry-run path');
+    expect(text).toContain(`--apply --expected-revision ${result.revision}`);
+
+    const json = cli(f, '--registered', '--json');
+    expect(json.status, json.stderr).toBe(1);
+    const payload = JSON.parse(json.stdout);
+    expect(Object.keys(payload).sort()).toEqual(['apply', 'exitCode', 'repos', 'revision']);
+    expect(payload.revision).toBe(result.revision);
+    expect(payload.repos.map((repo: RegisteredRepoResult) => [repo.path, repo.status, repo.reason ?? null]).sort())
+      .toEqual(result.repos.map((repo) => [repo.path, repo.status, repo.reason ?? null]).sort());
+
+    expect(readFileSync(f.registry, 'utf8')).toBe(registryBefore);
+    for (const [path, snapshot] of Object.entries(before)) expect(worktreeSnapshot(path)).toEqual(snapshot);
+    expect(git(f, dirty, 'status', '--porcelain')).toBe('?? untracked.txt');
+  }), 120_000);
+
+  test('apply refuses a missing or changed registry revision before any repo write', () => registeredSandbox((f) => {
+    const stale = staleRepo(f, 'stale');
+    writeRegistry(f, [stale]);
+    const before = worktreeSnapshot(stale);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, stale).pending).toBe(true);
+
+    const unfenced = runRegisteredUpgrade({ apply: true, env: f.env, callerCwd: f.root });
+    expect(unfenced).toMatchObject({ exitCode: 2, repos: [], error: '--apply requires --expected-revision from the preview' });
+
+    writeRegistry(f, [stale], 2);
+    const changed = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(changed.revision).not.toBe(preview.revision);
+    expect(worktreeSnapshot(stale)).toEqual(before);
+
+    const mismatch = cli(f, '--registered', '--apply', '--expected-revision', preview.revision!, '--json');
+    expect(mismatch.status).toBe(2);
+    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(cli(f, '--expected-revision', preview.revision!).status).toBe(2);
+    expect(cli(f, '--registered', '--scope', 'global').status).toBe(2);
+    expect(worktreeSnapshot(stale)).toEqual(before);
+  }), 120_000);
+
+  test('apply re-checks each repo, isolates a failing repo and never commits', () => registeredSandbox((f) => {
+    const stale = staleRepo(f, 'stale');
+    const template = adoptedRepo(f, 'template');
+    editPolicy(f, template, (policy) => { policy.worktree_strategy.worktree_dir_template = '../{{repo}}-wt-{{slug}}'; });
+    const failing = adoptedRepo(f, 'failing');
+    // A user archive at the retirement target makes the init plan fail closed.
+    mkdirSync(join(failing, 'tasks/archive'), { recursive: true });
+    writeFileSync(join(failing, 'docs/TODO.md'), '# Legacy todo\n');
+    writeFileSync(join(failing, 'tasks/archive/legacy-docs-TODO.md'), '# Different user archive\n');
+    commitAll(f, failing, 'legacy todo');
+    const dirtyLater = staleRepo(f, 'dirty-later');
+    const branchLater = staleRepo(f, 'branch-later');
+    writeRegistry(f, [stale, template, failing, dirtyLater, branchLater]);
+    const heads = Object.fromEntries([stale, template].map((repo) => [repo, git(f, repo, 'rev-parse', 'HEAD')]));
+
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, dirtyLater).status).toBe('ready');
+    expect(byPath(preview.repos, branchLater).status).toBe('ready');
+    expect(byPath(preview.repos, template)).toMatchObject({ status: 'ready', pending: true,
+      upgrade: { worktreeTemplate: { item: { action: 'rewrite', replacement: PORTABLE } } } });
+    expect(byPath(preview.repos, failing)).toMatchObject({ status: 'failed' });
+    expect(byPath(preview.repos, failing).error).toContain('legacy archive collision');
+
+    // Both repos were ready at preview time; apply must see the change.
+    writeFileSync(join(dirtyLater, 'late-edit.txt'), 'operator work\n');
+    git(f, branchLater, 'checkout', '-q', '-b', 'topic');
+    const dirtyBefore = worktreeSnapshot(dirtyLater);
+    const branchBefore = worktreeSnapshot(branchLater);
+
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, migrateWorktreeTemplate: true, env: f.env, callerCwd: f.root });
+    expect(result.error).toBeUndefined();
+    expect(result.exitCode).toBe(1);
+    expect(byPath(result.repos, dirtyLater)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+    expect(byPath(result.repos, branchLater)).toMatchObject({ status: 'skipped', reason: 'not_default_branch' });
+    expect(worktreeSnapshot(dirtyLater)).toEqual(dirtyBefore);
+    expect(worktreeSnapshot(branchLater)).toEqual(branchBefore);
+    const failed = byPath(result.repos, failing);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('legacy archive collision');
+    expect(failed.upgrade).toBeUndefined();
+
+    const staleResult = byPath(result.repos, stale);
+    expect(staleResult).toMatchObject({ status: 'applied', init: { ok: true, failed: 0 }, upgrade: { apply: true }, sweep: { ran: true } });
+    expect((staleResult.init as { applied: number }).applied).toBeGreaterThan(0);
+    expect(existsSync(join(stale, '.ai/hooks/README.md'))).toBe(true);
+    const templateResult = byPath(result.repos, template);
+    expect(templateResult).toMatchObject({ status: 'applied', upgrade: { worktreeTemplate: { applied: true } }, sweep: { ran: true } });
+    expect(JSON.parse(readFileSync(policyPath(template), 'utf8')).worktree_strategy.worktree_dir_template).toBe(PORTABLE);
+    expect(formatRegisteredUpgradeResult(result)).toContain('Nothing was committed.');
+    for (const [repo, head] of Object.entries(heads)) expect(git(f, repo, 'rev-parse', 'HEAD')).toBe(head);
+
+    // The operator commits; a new preview then plans nothing for the refreshed repos.
+    commitAll(f, stale, 'refresh');
+    commitAll(f, template, 'refresh');
+    const again = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(again.error).toBeUndefined();
+    for (const repo of [stale, template]) {
+      expect(byPath(again.repos, repo)).toMatchObject({ status: 'ready', init: { planned: 0, operations: [] } });
+      expect(byPath(again.repos, repo).upgrade?.worktreeTemplate?.item?.action).not.toBe('rewrite');
+    }
+  }), 120_000);
+
+  test('apply passes the caller cwd to the sweep, which keeps a managed worktree that holds it', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'swept');
+    writeRegistry(f, [repo]);
+    const managed = join(f.env.REPO_HARNESS_WORKTREE_ROOT!, 'swept-wt-held');
+    git(f, repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(f, repo, 'worktree', 'add', '-q', '-b', 'held', managed);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: managed });
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: managed });
+    const swept = byPath(result.repos, repo);
+    expect(swept.status, swept.error).toBe('applied');
+    expect(swept.sweep).toMatchObject({ ran: true });
+    expect((swept.sweep as { report: string | null }).report).toContain(`${managed}: kept; session cwd`);
+    expect(existsSync(managed)).toBe(true);
+  }), 120_000);
+});

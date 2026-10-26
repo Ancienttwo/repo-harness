@@ -845,35 +845,44 @@ function reconcileWithInstalledCandidate(
 }
 
 /**
- * Bun replaces the package files in place, but the updater keeps its
- * predecessor modules. Old modules cannot be trusted to parse new assets, so
- * the package that now owns the runtime runs the leftover check.
+ * Run the installed package's read-only `upgrade` check. Bun replaces the
+ * package files in place, but the updater keeps its predecessor modules. Old
+ * modules cannot be trusted to parse new assets, so the package that now owns
+ * the runtime runs the check. The payload is parsed before any redaction or
+ * cap: a path such as token=x would otherwise lose its closing quote. Callers
+ * print parsed counts only.
  */
-export function updateLeftoverSummary(cwd: string, installedCli: boolean): string {
+function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installedCli: boolean):
+  { readonly payload: unknown; readonly stderr: string } | { readonly failure: string } {
   const bunExecutable = resolveBunExecutable();
   const env = bindBunRuntimeEnv(commandEnv(defaultSourceRoot()), bunExecutable);
   const packageRoot = installedCli ? bunGlobalPackageRoot(env) : defaultSourceRoot();
-  if (packageRoot === null) return leftoverCheckWarning('unable to resolve the installed package root');
-  // Parse the payload before any redaction or cap: a path such as token=x
-  // would otherwise lose its closing quote. Only the parsed count is printed.
-  const check = runBoundedProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', '--json'], {
+  if (packageRoot === null) return { failure: 'unable to resolve the installed package root' };
+  const check = runBoundedProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', ...args, '--json'], {
     cwd,
     env,
     redactions: [],
     maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
   });
-  let payload: { items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } } } | null;
+  let payload: unknown;
   try {
-    payload = JSON.parse(check.stdout) as typeof payload;
+    payload = JSON.parse(check.stdout);
   } catch (_error) {
     payload = null;
   }
+  return { payload, stderr: (check.stderr || check.error || '').trim() };
+}
+
+export function updateLeftoverSummary(cwd: string, installedCli: boolean): string {
+  const run = runInstalledUpgradeCheck([], cwd, installedCli);
+  if ('failure' in run) return leftoverCheckWarning(run.failure);
+  const payload = run.payload as { items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } } } | null;
   // The check exits 1 when anything is pending, including a policy rewrite with no leftover items.
   // Only a missing items list or an error field is a failed check.
   const items = payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload.items : undefined;
   const reportedError = typeof payload?.error === 'string' ? payload.error : '';
   if (!Array.isArray(items) || reportedError !== '') {
-    return leftoverCheckWarning(redactProcessOutput((check.stderr || check.error || reportedError).trim()) || 'upgrade --json returned no leftover list');
+    return leftoverCheckWarning(redactProcessOutput(run.stderr || reportedError.trim()) || 'upgrade --json returned no leftover list');
   }
   const summary = formatLegacyLeftoverSummary(items as LeftoverItem[]);
   return payload?.worktreeTemplate?.item?.action === 'rewrite'
@@ -883,6 +892,30 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
 
 function leftoverCheckWarning(reason: string): string {
   return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
+}
+
+/**
+ * One read-only line: how many registered repos have pending project upgrade
+ * work. It runs the `upgrade --registered` preview only and never fails update.
+ * When the count cannot be computed, the line says so instead of a number.
+ */
+export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolean): string {
+  const hint = 'Preview: repo-harness upgrade --registered';
+  const unavailable = (reason: string) => `Registered repo upgrade check could not be computed: ${reason}. ${hint}`;
+  const run = runInstalledUpgradeCheck(['--registered'], cwd, installedCli);
+  if ('failure' in run) return unavailable(run.failure);
+  const record = run.payload !== null && typeof run.payload === 'object' && !Array.isArray(run.payload)
+    ? run.payload as { repos?: unknown; error?: unknown } : null;
+  const reportedError = typeof record?.error === 'string' ? record.error.trim() : '';
+  if (!record || !Array.isArray(record.repos) || reportedError !== '') {
+    return unavailable(redactProcessOutput(reportedError || run.stderr) || 'upgrade --registered --json returned no repo list');
+  }
+  const repos = record.repos.map((repo) => (repo !== null && typeof repo === 'object' ? repo : {}) as { status?: unknown; pending?: unknown });
+  const pending = repos.filter((repo) => repo.status === 'ready' && repo.pending === true).length;
+  const skipped = repos.filter((repo) => repo.status === 'skipped').length;
+  const failed = repos.filter((repo) => repo.status === 'failed').length;
+  return `Registered repos: ${pending} of ${repos.length} have pending project upgrade work`
+    + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}`;
 }
 
 const AGENT_FLEET_STEP = 'install agent fleet';
