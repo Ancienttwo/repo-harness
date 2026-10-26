@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
+import * as atomicAppend from '../../src/effects/atomic-append';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 import { OPERATOR_ROUTES, OperatorServerError, startOperatorServer, type OperatorRouteV1, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
@@ -409,7 +410,7 @@ describe('operator write channel', () => {
     expect(harness.executions).toEqual(['v1', 'v2']);
   });
 
-  test('busy, audit_unavailable and reconcile_required each log one stderr line without the body', async () => {
+  test('busy, reconcile_required, audit_unavailable and request_mismatch each log one stderr line without the body', async () => {
     const harness = await startHarness();
     const captured: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
@@ -423,6 +424,11 @@ describe('operator write channel', () => {
       await held;
       expect((await post(harness, { request_id: ids.reconcile, mode: 'break_result_audit', value: 'reconcile-body' }, {}, '/api/v1/test-echo/beta')).status).toBe(409);
       expect((await post(harness, { request_id: ids.audit, mode: 'ok', value: 'audit-body' }, {}, '/api/v1/test-echo/gamma')).status).toBe(503);
+      // Restore the log, then reuse the reconcile request_id with another value.
+      const audit = operatorAuditPath(harness.env);
+      rmSync(audit, { recursive: true });
+      writeFileSync(audit, harness.auditAtBreak);
+      expect((await post(harness, { request_id: ids.reconcile, mode: 'break_result_audit', value: 'mismatch-body' }, {}, '/api/v1/test-echo/beta')).status).toBe(409);
     } finally {
       process.stderr.write = originalWrite;
     }
@@ -431,7 +437,43 @@ describe('operator write channel', () => {
       `repo-harness-operator write code=busy request_id=${ids.busy}`,
       `repo-harness-operator write code=reconcile_required request_id=${ids.reconcile}`,
       `repo-harness-operator write code=audit_unavailable request_id=${ids.audit}`,
+      `repo-harness-operator write code=request_mismatch request_id=${ids.reconcile}`,
     ]);
     expect(captured.join('')).not.toMatch(/-body/u);
+  });
+
+  test('an audit log that ends without a newline fails closed and is left as it is', async () => {
+    const harness = await startHarness();
+    expect((await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v1' })).status).toBe(200);
+    const audit = operatorAuditPath(harness.env);
+    // An interrupted append can leave a complete record without its newline.
+    const unterminated = readFileSync(audit, 'utf-8').replace(/\n$/u, '');
+    writeFileSync(audit, unterminated);
+    const response = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v2' });
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe('audit_unavailable');
+    expect(harness.executions).toEqual(['v1']);
+    expect(readFileSync(audit, 'utf-8')).toBe(unterminated);
+  });
+
+  test('a new audit log and state directory are made durable before the action runs', async () => {
+    const harness = await startHarness();
+    const events: string[] = [];
+    const original = atomicAppend.syncDirectoryDurably;
+    const spy = spyOn(atomicAppend, 'syncDirectoryDurably').mockImplementation((path: string) => {
+      events.push(`sync:${path}`);
+      original(path);
+    });
+    const executions = harness.executions;
+    const push = executions.push.bind(executions);
+    executions.push = (...values: string[]) => { events.push(...values.map(value => `execute:${value}`)); return push(...values); };
+    try {
+      expect((await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'first' })).status).toBe(200);
+      expect((await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'second' })).status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+    const operatorDir = join(harness.home, 'operator');
+    expect(events).toEqual([`sync:${harness.home}`, `sync:${operatorDir}`, 'execute:first', 'execute:second']);
   });
 });
