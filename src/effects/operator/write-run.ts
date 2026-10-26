@@ -79,10 +79,19 @@ function failure(status: number, code: string, message: string, nextAction: stri
   return { status, body: operatorWriteError(code, message, nextAction) as unknown as JsonValue };
 }
 
-const busy = () => failure(503, 'busy', 'Another write to this target is running.', 'Wait for the other write to finish, then retry with the same request_id.');
-const auditUnavailable = () => failure(503, 'audit_unavailable', 'The operator audit log is unavailable. Nothing was changed.', 'Check the operator audit log, then retry with the same request_id.');
-const reconcileRequired = () => failure(409, 'reconcile_required', 'The action may have run, but its result is not recorded.', OPERATOR_RECONCILE_ACTION);
-const requestMismatch = () => failure(409, 'request_mismatch', 'This request_id was already used for a different request.', 'Send a new request_id for a different request.');
+/**
+ * A failure the run itself decides is otherwise visible only to the caller.
+ * The line names the code and request_id; it never carries the body.
+ */
+function runFailure(requestId: string, status: number, code: string, message: string, nextAction: string): OperatorWriteResponse {
+  process.stderr.write(`repo-harness-operator write code=${code} request_id=${requestId}\n`);
+  return failure(status, code, message, nextAction);
+}
+
+const busy = (requestId: string) => runFailure(requestId, 503, 'busy', 'Another write to this target is running.', 'Wait for the other write to finish, then retry with the same request_id.');
+const auditUnavailable = (requestId: string) => runFailure(requestId, 503, 'audit_unavailable', 'The operator audit log is unavailable. Nothing was changed.', 'Check the operator audit log, then retry with the same request_id.');
+const reconcileRequired = (requestId: string) => runFailure(requestId, 409, 'reconcile_required', 'The action may have run, but its result is not recorded.', OPERATOR_RECONCILE_ACTION);
+const requestMismatch = (requestId: string) => runFailure(requestId, 409, 'request_mismatch', 'This request_id was already used for a different request.', 'Send a new request_id for a different request.');
 
 const activeTargets = new Set<string>();
 
@@ -127,14 +136,14 @@ export async function runOperatorWrite(
   try {
     root = prepareOperatorStateDir(env);
   } catch {
-    return auditUnavailable();
+    return auditUnavailable(requestId);
   }
   const auditPath = operatorAuditPath(env);
   const targetKey = `${root}\0${operation.target}`;
-  if (activeTargets.has(targetKey)) return busy();
+  if (activeTargets.has(targetKey)) return busy(requestId);
   const targetLock = acquire(root, `locks/target-${createHash('sha256').update(operation.target).digest('hex').slice(0, 32)}`, TARGET_LOCK_WAIT_MS);
-  if (targetLock === 'busy') return busy();
-  if (targetLock === 'unavailable') return auditUnavailable();
+  if (targetLock === 'busy') return busy(requestId);
+  if (targetLock === 'unavailable') return auditUnavailable(requestId);
   activeTargets.add(targetKey);
   try {
     const admission = withAuditLock(root, (): OperatorAuditRequestState | 'admitted' => {
@@ -151,12 +160,12 @@ export async function runOperatorWrite(
       });
       return 'admitted';
     });
-    if (admission === null) return auditUnavailable();
+    if (admission === null) return auditUnavailable(requestId);
     if (admission !== 'admitted') {
       const recordedBinding = admission.intent?.binding_sha256 ?? admission.result?.binding_sha256;
-      if (recordedBinding !== binding) return requestMismatch();
+      if (recordedBinding !== binding) return requestMismatch(requestId);
       if (admission.result !== null) return { status: admission.result.status, body: admission.result.body };
-      return reconcileRequired();
+      return reconcileRequired(requestId);
     }
 
     let outcome: OperatorWriteResponse;
@@ -164,7 +173,7 @@ export async function runOperatorWrite(
       targetLock.assertOwned();
       outcome = await operation.execute();
     } catch (error) {
-      if (!(error instanceof OperatorWriteRefusal)) return reconcileRequired();
+      if (!(error instanceof OperatorWriteRefusal)) return reconcileRequired(requestId);
       outcome = failure(error.status, error.code, error.message, error.next_action);
     }
     const recorded = withAuditLock(root, () => {
@@ -179,7 +188,7 @@ export async function runOperatorWrite(
       });
       return true;
     });
-    return recorded === true ? outcome : reconcileRequired();
+    return recorded === true ? outcome : reconcileRequired(requestId);
   } finally {
     activeTargets.delete(targetKey);
     targetLock.release();
