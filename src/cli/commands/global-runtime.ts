@@ -862,17 +862,23 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
     redactions: [],
     maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
   });
-  let items: unknown;
+  let payload: { items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } } } | null;
   try {
-    items = JSON.parse(check.stdout);
+    payload = JSON.parse(check.stdout) as typeof payload;
   } catch (_error) {
-    items = null;
+    payload = null;
   }
-  // The check exits 1 when leftovers exist. An empty list with exit 1 is a failed check.
-  if (!Array.isArray(items) || (!check.ok && items.length === 0)) {
-    return leftoverCheckWarning(redactProcessOutput((check.stderr || check.error).trim()) || 'upgrade --json returned no leftover list');
+  // The check exits 1 when anything is pending, including a policy rewrite with no leftover items.
+  // Only a missing items list or an error field is a failed check.
+  const items = payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload.items : undefined;
+  const reportedError = typeof payload?.error === 'string' ? payload.error : '';
+  if (!Array.isArray(items) || reportedError !== '') {
+    return leftoverCheckWarning(redactProcessOutput((check.stderr || check.error || reportedError).trim()) || 'upgrade --json returned no leftover list');
   }
-  return formatLegacyLeftoverSummary(items as LeftoverItem[]);
+  const summary = formatLegacyLeftoverSummary(items as LeftoverItem[]);
+  return payload?.worktreeTemplate?.item?.action === 'rewrite'
+    ? `${summary}; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template`
+    : summary;
 }
 
 function leftoverCheckWarning(reason: string): string {

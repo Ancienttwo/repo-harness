@@ -13,6 +13,11 @@ import {
   stripLegacyHookEntries,
   type LeftoverItem,
 } from '../../effects/upgrade/legacy-inventory';
+import {
+  formatWorktreeTemplateOutcome,
+  runWorktreeTemplateMigration,
+  type WorktreeTemplateOutcome,
+} from '../../effects/upgrade/worktree-template-migration';
 import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
@@ -35,6 +40,8 @@ export interface UpgradeOptions {
   readonly scope?: 'project' | 'global' | 'all';
   readonly apply?: boolean;
   readonly includeStateArtifacts?: boolean;
+  /** With `apply`, rewrite a legacy policy worktree template. Without it the item is reported only. */
+  readonly migrateWorktreeTemplate?: boolean;
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -43,6 +50,8 @@ export interface UpgradeDependencies {
   readonly beforeRemove?: (item: LeftoverItem) => void;
   /** Runs after the real copy, before staging and source fences. */
   readonly afterStage?: (item: LeftoverItem, staging: string) => void;
+  /** Runs after the policy template is planned and before it is written. */
+  readonly beforeTemplateWrite?: () => void;
 }
 
 export interface UpgradeResult {
@@ -55,6 +64,7 @@ export interface UpgradeResult {
   readonly transactionId?: string;
   readonly backupPath?: string;
   readonly projectBackupPath?: string;
+  readonly worktreeTemplate?: WorktreeTemplateOutcome;
   readonly error?: string;
 }
 
@@ -379,6 +389,13 @@ function applyLocked(
     projectBackupPath: projectBackup?.manifestPath, ...(error ? { error } : {}) };
 }
 
+function withWorktreeTemplate(result: UpgradeResult, outcome: WorktreeTemplateOutcome | undefined): UpgradeResult {
+  if (!outcome?.item && !outcome?.error) return result;
+  const pending = !result.apply && outcome.item?.action === 'rewrite';
+  const error = result.error ?? outcome.error;
+  return { ...result, worktreeTemplate: outcome, exitCode: result.exitCode === 1 || pending || outcome.error ? 1 : 0, ...(error ? { error } : {}) };
+}
+
 export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDependencies = {}): UpgradeResult {
   const apply = opts.apply === true;
   try {
@@ -399,19 +416,23 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const items = supportedItems(planLegacyLeftovers(options).items);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))] };
-    if (!apply || !items.some(removable)) return emptyResult;
-    return withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
+    // A failed leftover apply leaves the policy untouched: the template item is reported, not written.
+    const finish = (result: UpgradeResult) => withWorktreeTemplate(result,
+      scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true && !result.error,
+        dependencies.beforeTemplateWrite));
+    if (!apply || !items.some(removable)) return finish(emptyResult);
+    return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
       const underHostLock = supportedItems(planLegacyLeftovers(options).items);
       const paths = [...new Set(underHostLock.filter((item) => item.location === 'project' && removable(item)).map((item) => item.path))].sort();
       return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths)));
-    });
+    }));
   } catch (error) {
     return { items: [], apply, exitCode: 1, removedPaths: [], refreshedPaths: [], keptPaths: [], error: error instanceof Error ? error.message : String(error) };
   }
 }
 
 export function formatUpgradeResult(result: UpgradeResult, asJson = false): string {
-  if (asJson) return formatJson(result.apply ? result : result.items);
+  if (asJson) return formatJson(result);
   const lines = [result.apply ? 'Upgrade cleanup apply.' : 'Upgrade cleanup check.'];
   const groups = new Map<string, LeftoverItem[]>();
   for (const item of result.items) {
@@ -423,6 +444,7 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
     for (const item of items) lines.push(`  ${item.path}: ${item.ownership}; proof=${item.proof ?? 'none'}; ${item.action}${item.reason ? `; ${item.reason}` : ''}`);
   }
   if (result.items.length === 0) lines.push('No leftovers.');
+  if (result.worktreeTemplate) lines.push(...formatWorktreeTemplateOutcome(result.worktreeTemplate, result.apply));
   if (result.backupPath) lines.push(`Backup: ${result.backupPath}`);
   if (result.projectBackupPath) lines.push(`Project rollback: repo-harness init rollback --transaction ${result.projectBackupPath}`);
   if (result.error) lines.push(`Failed: ${result.error}`);
@@ -435,6 +457,7 @@ export function buildUpgradeCommand(): Command {
     .option('--scope <scope>', 'project|global|all', 'all')
     .option('--apply', 'Back up and remove verified owned leftovers')
     .option('--include-state-artifacts', 'Include proven owned obsolete state artifacts with --apply')
+    .option('--migrate-worktree-template', 'With --apply, rewrite a legacy policy worktree template to {{system_tmp}}')
     .option('--json', 'Print JSON')
     .action((opts: UpgradeOptions & { json?: boolean }) => {
       const result = runUpgrade(opts);

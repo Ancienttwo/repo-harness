@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { formatUpgradeResult, runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
@@ -88,7 +88,7 @@ describe('upgrade with real release bytes', () => {
       cwd: opts.cwd, env: { ...process.env, HOME: opts.home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
     expect(result.status).toBe(1);
-    const items = JSON.parse(result.stdout);
+    const { items } = JSON.parse(result.stdout);
     expect(items.length).toBeGreaterThan(0);
     expect(items.map((item: Record<string, string>) => [item.location, item.surface,
       relative(item.location === 'global' ? opts.home : opts.cwd, item.path!), item.retiredBy,
@@ -542,6 +542,113 @@ describe('upgrade with real release bytes', () => {
   }, false));
 });
 
+describe('policy worktree template migration', () => {
+  const policyPath = (cwd: string) => join(cwd, '.ai/harness/policy.json');
+  const LEGACY = ['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'];
+  const PORTABLE = '{{system_tmp}}/{{repo}}-wt-{{slug}}';
+  const policyText = (template: string) => `{\n    "mode": "standard",\n    "worktree_strategy": {\n        "branch_prefix": "codex/",\n        "worktree_dir_template": ${JSON.stringify(template)},\n        "merge_back": { "target": "main" }\n    }\n}\n`;
+  const apply = (opts: { cwd: string; home: string; packageRoot: string }, migrate = true) =>
+    runUpgrade({ ...opts, scope: 'project', apply: true, migrateWorktreeTemplate: migrate });
+
+  test.each(LEGACY)('rewrites %s, keeps every other byte and rolls back from the manifest', (legacy) => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(legacy));
+    const result = apply(opts);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.worktreeTemplate).toMatchObject({ applied: true, item: { action: 'rewrite', current: legacy, replacement: PORTABLE } });
+    // Four-space indent, key order and the sibling inline object stay as written.
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(PORTABLE));
+    expect(formatUpgradeResult(result)).toContain('rewritten');
+    const manifest = result.worktreeTemplate!.transactionManifestPath!;
+    expect(manifest).toStartWith('.ai/harness/backups/fs-transaction/');
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: manifest });
+    expect(rollback.ok).toBe(true);
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(legacy));
+  }, false));
+
+  test.each(['../custom-{{repo}}-{{slug}}', '/var/work/{{repo}}-wt-{{slug}}', '../{{repo}}-wt-{{slug}}/', '{{system_tmp}}/custom-{{repo}}-{{slug}}'])('keeps custom template %s and reports it', (custom) => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(custom));
+    const before = tree(opts.cwd);
+    const preview = runUpgrade({ ...opts, scope: 'project' });
+    expect(preview.exitCode).toBe(0);
+    expect(preview.worktreeTemplate?.item).toMatchObject({ action: 'report', current: custom });
+    const result = apply(opts);
+    expect(result.exitCode).toBe(0);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report', current: custom } });
+    expect(formatUpgradeResult(result)).toContain(custom);
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('preview and apply without the confirm flag write nothing', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const before = tree(opts.cwd);
+    const preview = runUpgrade({ ...opts, scope: 'project' });
+    expect(preview.exitCode).toBe(1);
+    expect(preview.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'rewrite', current: LEGACY[0], replacement: PORTABLE } });
+    expect(formatUpgradeResult(preview)).toContain('--apply --migrate-worktree-template');
+    expect(JSON.parse(formatUpgradeResult(preview, true)).worktreeTemplate.item.action).toBe('rewrite');
+    const unconfirmed = apply(opts, false);
+    expect(unconfirmed.exitCode).toBe(0);
+    expect(unconfirmed.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'rewrite' } });
+    expect(formatUpgradeResult(unconfirmed)).toContain('not written');
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a second run is a no-op', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[1]!));
+    expect(apply(opts).worktreeTemplate?.applied).toBe(true);
+    const before = tree(opts.cwd);
+    for (const second of [apply(opts), runUpgrade({ ...opts, scope: 'project' })]) {
+      expect(second.exitCode).toBe(0);
+      expect(second.worktreeTemplate).toBeUndefined();
+    }
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('an absent template and an absent policy produce no item', () => sandbox((opts) => {
+    expect(runUpgrade({ ...opts, scope: 'project' }).worktreeTemplate).toBeUndefined();
+    put(policyPath(opts.cwd), '{"mode":"standard","worktree_strategy":{"branch_prefix":"codex/"}}\n');
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toBeUndefined();
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe('{"mode":"standard","worktree_strategy":{"branch_prefix":"codex/"}}\n');
+  }, false));
+
+  test('a malformed policy is reported and never written', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), '{"worktree_strategy": {"worktree_dir_template": "../{{repo}}-wt-{{slug}}",}}\n');
+    const before = tree(opts.cwd);
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report' } });
+    expect(result.worktreeTemplate?.item?.reason).toContain('not valid JSON');
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a template literal that cannot be swapped byte-exact stays report-only', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), '{"worktree_strategy":{"worktree_dir_template":"..\\/{{repo}}-wt-{{slug}}"}}\n');
+    const before = tree(opts.cwd);
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report', current: LEGACY[0] } });
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a policy edit between planning and writing fails the template write closed', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const edited = policyText(LEGACY[0]!).replace('"codex/"', '"edited/"');
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true, migrateWorktreeTemplate: true },
+      { beforeTemplateWrite: () => put(policyPath(opts.cwd), edited) });
+    expect(result.exitCode).toBe(1);
+    expect(result.worktreeTemplate?.applied).toBe(false);
+    expect(result.worktreeTemplate?.error).toBeTruthy();
+    expect(result.error).toBe(result.worktreeTemplate?.error);
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(edited);
+  }, false));
+
+  test('global scope never reads the project policy', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true, migrateWorktreeTemplate: true });
+    expect(result.worktreeTemplate).toBeUndefined();
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(LEGACY[0]!));
+  }, false));
+});
+
 describe('legacy workflow-state upgrade report', () => {
   for (const edited of [false, true]) {
     test(`check and apply report and preserve ${edited ? 'edited' : 'historical'} library bytes`, () => sandbox((opts) => {
@@ -579,7 +686,7 @@ describe('legacy workflow-state upgrade report', () => {
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
     expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
-    const items = JSON.parse(json.stdout);
+    const { items } = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
     expect(items[0].reason).toContain('manual removal');
