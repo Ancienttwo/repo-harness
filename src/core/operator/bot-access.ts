@@ -239,7 +239,7 @@ export function projectOAuthClients(value: unknown, nowSeconds: number, director
  * One MCP audit JSONL row. Paths, hashes, errors and correlation ids are
  * dropped. `botId` names the Bot the writer resolved from the caller's OAuth
  * client; a row without one, or whose Bot is no longer registered, is
- * unregistered.
+ * unregistered. A row marked `botLookup: unavailable` is unavailable.
  */
 export function projectMcpAuditEntry(value: unknown, directory: BotDirectory): McpAuditProjection | null {
   const entry = object(value);
@@ -247,7 +247,9 @@ export function projectMcpAuditEntry(value: unknown, directory: BotDirectory): M
   const tool = text(entry?.tool, TOOL_TEXT);
   const status = one(entry?.status, ['ok', 'blocked', 'failed'] as const);
   if (at === null || tool === null || status === null) return null;
-  return { at, tool, status, bot: attributeBot(directory, 'bot_id', text(entry?.botId, BOT_ID_TEXT)) };
+  // The writer marks a row whose registry lookup failed; that Bot is unknown, not unregistered.
+  const bot: BotAttribution = entry?.botLookup === 'unavailable' ? { state: 'unavailable' } : attributeBot(directory, 'bot_id', text(entry?.botId, BOT_ID_TEXT));
+  return { at, tool, status, bot };
 }
 
 /** A registry row: the repository id, the last path segment as a label, and the access mode. */

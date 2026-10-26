@@ -288,18 +288,22 @@ describe('mcp redaction and audit', () => {
     try {
       const env = { REPO_HARNESS_HOME: join(tmp, 'home') };
       registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a' }, env);
-      expect(mcpAuditBotForClient('client-a', env)).toBe('hermes');
-      expect(mcpAuditBotForClient('client-z', env)).toBeNull();
-      expect(mcpAuditBotForClient(undefined, env)).toBeNull();
+      expect(mcpAuditBotForClient('client-a', env)).toEqual({ state: 'resolved', botId: 'hermes' });
+      expect(mcpAuditBotForClient('client-z', env)).toEqual({ state: 'resolved', botId: null });
+      expect(mcpAuditBotForClient(undefined, env)).toEqual({ state: 'resolved', botId: null });
       writeFileSync(join(tmp, 'home', 'bots', 'broken.json'), '{');
-      // An unreadable registry leaves the call unattributed; it never blocks the call.
-      expect(mcpAuditBotForClient('client-a', env)).toBeNull();
+      // An unreadable registry makes the Bot unknown; it never blocks the call.
+      const unknown = mcpAuditBotForClient('client-a', env);
+      expect(unknown).toEqual({ state: 'unavailable' });
 
       const entry = (tool: string) => ({ timestamp: '2026-10-27T00:00:00.000Z', tool, status: 'ok' as const, inputHash: hashMcpInput({}) });
-      runWithMcpAuditBot('hermes', () => writeMcpAuditEntry(tmp, entry('from_bot')));
+      runWithMcpAuditBot({ state: 'resolved', botId: 'hermes' }, () => writeMcpAuditEntry(tmp, entry('from_bot')));
+      runWithMcpAuditBot(unknown, () => writeMcpAuditEntry(tmp, entry('registry_unreadable')));
       writeMcpAuditEntry(tmp, entry('outside_call'));
       const rows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map(line => JSON.parse(line));
-      expect(rows.map(row => [row.tool, row.botId])).toEqual([['from_bot', 'hermes'], ['outside_call', null]]);
+      expect(rows.map(row => [row.tool, row.botId, row.botLookup])).toEqual([
+        ['from_bot', 'hermes', undefined], ['registry_unreadable', null, 'unavailable'], ['outside_call', null, undefined],
+      ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

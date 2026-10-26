@@ -16,30 +16,36 @@ export function mcpAuditLogPath(repoRoot: string): string {
   return join(repoRoot, MCP_AUDIT_LOG_RELATIVE_PATH);
 }
 
-/** The registered Bot of the tool call in progress; null for an unregistered or unauthenticated caller. */
-const auditBot = new AsyncLocalStorage<string | null>();
-
 /**
- * Resolve the OAuth client of one tool call to a registered Bot. Attribution
- * never gates a call: an unreadable registry leaves the call unattributed.
+ * The Bot of one tool call. `resolved` with a null id is a caller that names
+ * no registered Bot; `unavailable` means the registry could not be read, so
+ * the Bot is unknown rather than unregistered.
  */
-export function mcpAuditBotForClient(clientId: string | undefined, env: NodeJS.ProcessEnv = process.env): string | null {
-  if (clientId === undefined) return null;
+export type McpAuditBot = { readonly state: 'resolved'; readonly botId: string | null } | { readonly state: 'unavailable' };
+
+const auditBot = new AsyncLocalStorage<McpAuditBot>();
+
+/** Resolve the OAuth client of one tool call to a registered Bot. Attribution never gates a call. */
+export function mcpAuditBotForClient(clientId: string | undefined, env: NodeJS.ProcessEnv = process.env): McpAuditBot {
+  if (clientId === undefined) return { state: 'resolved', botId: null };
   try {
-    return botIdForMcpClient(readBotRegistry(env), clientId);
+    return { state: 'resolved', botId: botIdForMcpClient(readBotRegistry(env), clientId) };
   } catch {
-    return null;
+    return { state: 'unavailable' };
   }
 }
 
-export function runWithMcpAuditBot<T>(botId: string | null, run: () => T): T {
-  return auditBot.run(botId, run);
+export function runWithMcpAuditBot<T>(bot: McpAuditBot, run: () => T): T {
+  return auditBot.run(bot, run);
 }
 
 export function writeMcpAuditEntry(repoRoot: string, entry: McpAuditEntry): void {
+  const bot = auditBot.getStore() ?? { state: 'resolved', botId: null };
   const safeEntry = {
     ...entry,
-    botId: auditBot.getStore() ?? null,
+    botId: bot.state === 'resolved' ? bot.botId : null,
+    // Only a failed lookup writes this marker; the projection then shows the Bot as unavailable, not unregistered.
+    ...(bot.state === 'unavailable' ? { botLookup: 'unavailable' as const } : {}),
     error: entry.error ? redactMcpText(entry.error).text : undefined,
   };
   appendSegmentedLog(mcpAuditLogPath(repoRoot), `${JSON.stringify(safeEntry)}\n`, repoRoot);

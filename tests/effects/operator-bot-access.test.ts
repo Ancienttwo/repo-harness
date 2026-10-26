@@ -15,7 +15,7 @@ import {
 import type { NotifyChannelStatus } from '../../src/effects/operator/notify-status';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { projectMcpDoctor, projectOAuthClients } from '../../src/core/operator/bot-access';
+import { projectMcpAuditEntry, projectMcpDoctor, projectOAuthClients } from '../../src/core/operator/bot-access';
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
@@ -298,6 +298,15 @@ describe('Bot access collector', () => {
       { client_id: 'client-d', bot: { state: 'unregistered' }, issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: [], expires_at: null },
     ]);
     expect(JSON.stringify(projection)).not.toContain('secret');
+  });
+
+  test('an audit row whose registry lookup failed is unavailable; a row without a Bot field is unregistered', () => {
+    const directory = { state: 'ok' as const, bots: [{ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a', slack_bot_id: null, herdr_agent: null }] };
+    const row = { timestamp: '2026-10-27T00:00:00.000Z', tool: 'read_file', status: 'ok' };
+    expect(projectMcpAuditEntry({ ...row, botId: null, botLookup: 'unavailable' }, directory)?.bot).toEqual({ state: 'unavailable' });
+    expect(projectMcpAuditEntry({ ...row, botId: null }, directory)?.bot).toEqual({ state: 'unregistered' });
+    expect(projectMcpAuditEntry(row, directory)?.bot).toEqual({ state: 'unregistered' });
+    expect(projectMcpAuditEntry({ ...row, botId: 'hermes' }, directory)?.bot).toEqual({ state: 'registered', bot_id: 'hermes' });
   });
 
   test('local constants match the writers they read after', async () => {
