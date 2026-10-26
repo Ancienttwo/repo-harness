@@ -1,9 +1,9 @@
-import { readActiveReviewAdmission } from './admission-store';
+import { readActiveReviewAdmission, readCurrentReviewAdmissionSelection } from './admission-store';
 import { bindReviewAdmission, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { fetchGithubIssues, type GithubCommandRunner } from '../github/issues';
-import { requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../github/policy';
+import { parseExternalSourcesPolicy, requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../github/policy';
 
 /** Read one explicitly selected issue through the existing bounded provider
  * adapter. This observes a goal; it does not grant review or waiver permission.
@@ -43,7 +43,17 @@ export function observeActiveReviewAdmission(input: Omit<Parameters<typeof readA
   issuePolicy: ExternalSourcesPolicyV1;
   runner?: GithubCommandRunner;
 }) {
-  const observe = () => observeReviewIssueGoal({ policy: input.issuePolicy, repository_id: input.repository_id,
+  // Discovery selection is not the approved task locator. Read the locator from
+  // the current, validated approval, then freshly observe that exact provider
+  // issue. This preliminary read grants no execution authority by itself.
+  const selected = readCurrentReviewAdmissionSelection(input);
+  if (!selected || selected.expectedGrantSha256 !== input.expectedGrantSha256
+    || selected.expectedActor !== input.expectedActor
+    || selected.expectedPolicySha256 !== input.expectedPolicySha256) throw new Error('review_admission_revoked_or_replaced');
+  const discovery = requireManualGithubPolicy(input.issuePolicy);
+  const policy = parseExternalSourcesPolicy({ version: discovery.version, mode: discovery.mode,
+    github: { ...discovery.github, selection: { kind: 'issue_numbers', issue_numbers: [selected.issue_number] } } });
+  const observe = () => observeReviewIssueGoal({ policy, repository_id: input.repository_id,
     issue_id: input.issue_id, runner: input.runner });
   const before = observe();
   const result = readActiveReviewAdmission({ ...input, expectedGoal: before });

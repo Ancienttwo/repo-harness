@@ -163,7 +163,7 @@ export function readCurrentReviewAdmissionSelection(input: StoreInput & Campaign
   const admission = validateReviewAdmission(record.admission);
   const checked = readActiveReviewAdmission({ ...input, expectedGrantSha256: selected.grant_sha256,
     expectedActor: admission.actor_id, expectedPolicySha256: admission.policy.policy_sha256, expectedGoal: admission.goal });
-  return { expectedGrantSha256: checked.grant_sha256, expectedActor: checked.admission.actor_id,
+  return { issue_number: checked.admission.issue_number, expectedGrantSha256: checked.grant_sha256, expectedActor: checked.admission.actor_id,
     expectedPolicySha256: checked.admission.policy.policy_sha256 };
 }
 

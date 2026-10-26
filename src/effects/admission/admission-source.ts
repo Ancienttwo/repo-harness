@@ -5,7 +5,9 @@ import { parseExternalSourcesPolicy, requireManualGithubPolicy, readExternalSour
 export type ReviewAdmissionSource = Parameters<typeof observeActiveReviewAdmission>[0];
 
 /** CLI identifiers locate an existing protected approval. They never create one
- * or select an authority directory from the candidate or launch environment. */
+ * or select an authority directory from the candidate or launch environment.
+ * The observer obtains the exact issue number from the approved record; this
+ * policy remains repository-wide discovery configuration, not a task selector. */
 export function readReviewAdmissionSource(repoRoot: string, values: Readonly<Record<string, string | undefined>>): ReviewAdmissionSource {
   if (values.contract !== undefined) throw new Error('--contract is retired; select an approved review campaign');
   const required = (key: string) => {
