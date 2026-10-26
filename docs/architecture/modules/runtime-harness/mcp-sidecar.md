@@ -172,8 +172,8 @@ sequenceDiagram
 ### 3.1 必须保持的不变量
 
 1. **单一存储权威。** MCP 配置与凭证只存在 `mcpStorageDir()` 下（`src/cli/mcp/auth.ts:66`）。PR #167 把 repo 级配置迁到用户级。迁移轮换凭证，不搬运凭证。原因写在 `src/cli/mcp/setup.ts:820-830` 的注释里：repo 级 bearer token 和 passphrase 曾在 Git 工作树内，可能留在备份或历史中。迁移删除 repo 级 OAuth token store。用户因此必须重新授权一次。
-2. **授权真相在注册表。** `read_write` 授权和 `authorizationRevision` 存在 `registered-repos.json`。写入先写临时文件，再 rename（`src/effects/repo-registry.ts:206-210`）。写入持有一把带 owner 记录的互斥锁，死锁持有者可以回收（`repo-registry.ts:28`、`:237`）。MCP 配置里的 `authorizationRevision` 只是副本。授权型 profile 的 HTTP 中间件在每个请求上比较两者，不相等就拒绝（`src/cli/mcp/transports/http.ts:746-760`）。
-3. **每个 profile 默认关闭，各自闭合。** coding profile 需要 v3 配置、`coding.enabled: true`、至少一个 `read_write` 注册仓库和 OAuth。Engineer 和 PM profile 已退役。旧配置中的这两个 profile 会在启动时被拒绝。只有 coding profile 建立 shell runtime（`src/cli/mcp/server.ts:174`）。
+2. **授权真相在注册表。** `read_write` 授权和 `authorizationRevision` 存在 `registered-repos.json`。写入先写临时文件，再 rename（`src/effects/repo-registry.ts:206-210`）。写入持有一把带 owner 记录的互斥锁，死锁持有者可以回收（`repo-registry.ts:28`、`:237`）。MCP 配置里的 `authorizationRevision` 只是副本。授权型 profile 的 HTTP 中间件在每个请求上比较两者，不相等就拒绝（`authorizationProfileBlocker`，`src/cli/mcp/server.ts`）。
+3. **每个 profile 默认关闭，各自闭合。** 授权型 profile 只在 `src/cli/mcp/policy.ts` 的授权 profile 表里列出：coding 和 orchestrator，各有自己的必需 OAuth scope。它们需要 v3 配置选中该 profile、至少一个 `read_write` 注册仓库、当前的 authorization revision 和 OAuth。`authorizationProfileBlocker`（`src/cli/mcp/server.ts`）是这组前提的唯一实现；context 构造、HTTP 中间件和清理定时器都调用它。Engineer 和 PM profile 已退役。旧配置中的这两个 profile 会在启动时被拒绝。只有 coding profile 建立 shell runtime。orchestrator 只暴露三个 Herdr 派活工具（`src/cli/mcp/herdr-tools.ts`），没有文件、workflow 或 shell 工具。
 4. **HTTP session 绑定启动时的 profile。** 新 session 初始化时重读配置。profile 与启动时不同，服务返回 503 `PROFILE_CHANGED`，并且不占用 session 名额（`transports/http.ts:484-499`，PR #210）。服务不做热升级，也不静默降级。
 5. **HTTP session 绑定一个已验证的 authorization ID。** 另一个 authorization 复用该 session 会失败（见 §4 的 2026-08-25 条目）。coding session 的权限来自已验证的 authorization ID。请求不能选择另一个授权身份。
 6. **worktree 优先。** `open_workspace` 默认新建独立 worktree，`checkout` 模式必须显式指定（`src/cli/mcp/coding-tools.ts:242-247`）。远端代理的失败只影响一个可丢弃的分支。
@@ -185,7 +185,7 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| 每个请求同步重读 `mcp.local.json` 和 `registered-repos.json`（`transports/http.ts:746-760`） | 授权撤销和 revision 变化立即生效。代价是每个请求都做同步文件 IO。QPS 上升时这里先成为热点。 |
+| 每个请求同步重读 `mcp.local.json` 和 `registered-repos.json`（`authorizationProfileBlocker`） | 授权撤销和 revision 变化立即生效。代价是每个请求都做同步文件 IO。QPS 上升时这里先成为热点。 |
 | session 名额满时回收最久未用的空闲 session（PR #175） | ChatGPT Connector 重连时不发 DELETE。只按 TTL 清理会占满 `max_sessions`，之后所有新 initialize 都失败。代价是空闲但有效的客户端可能被回收，必须重新初始化。 |
 | coding runtime 与 session 共用 `maxSessions`（`transports/http.ts:671-673`；默认 64，最大 256） | 一个配置项控制两种资源。代价是授权数与 transport 数的增长曲线不同，先到者可能占满后到者的名额。 |
 | mutation 后串行刷新 CodeGraph 索引（`coding-tools.ts:157-158`） | 变更与索引不竞争。代价是仓库变大后端到端延迟增加。 |
@@ -197,7 +197,7 @@ sequenceDiagram
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`instructions.ts`、`version.ts` | 6 个文件 | 按保留的 profile 建工具清单，把调用分派到各工具块 |
+| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`herdr-tools.ts`、`instructions.ts`、`version.ts` | 7 个文件 | 按保留的 profile 建工具清单，把调用分派到各工具块 |
 | `component.mcp-sidecar.transport-auth` | `transports/**`、`oauth.ts`、`session-store.ts` | 4 / 1648 | stdio 与 HTTP transport、OAuth、session 准入与回收 |
 | `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts`、`src/effects/repo-registry.ts`、`src/core/security/**` | 11 / 2151 | 用户级配置与凭证、路径策略、脱敏、审计、注册仓库授权 |
 | `component.mcp-sidecar.coding-profile` | `coding-tools.ts`、`coding-workspaces.ts`、`process-sessions.ts` | 3 / 2143 | 受管 worktree、文件编辑、受限 shell 进程 |
@@ -233,7 +233,7 @@ sequenceDiagram
 ### 3.5 已知张力
 
 - 配置的 `repo` 字段仍被写入（`setup.ts:735`、`:879`）。runtime 的 repoRoot 只来自 `--repo` 或 cwd（`server.ts:185`）。这个字段已实现但保留不用：doctor 和迁移输出显示它，没有解析路径消费它。
-- `McpLocalConfig.version` 仍接受 `1 | 2 | 3`（`auth.ts:7`）。coding 面要求 `version === 3`。v1 和 v2 只对非 coding profile 有效。
+- `McpLocalConfig.version` 仍接受 `1 | 2 | 3`（`auth.ts:7`）。授权型 profile 要求 `version === 3`。v1 和 v2 只对非授权型 profile 有效。
 - `capabilities.reader` 是标注为 deprecated 的键（`auth.ts:30-31`）。只有 `workspaceReader` 未定义时它才参与判断。
 
 ### 3.6 开放问题
