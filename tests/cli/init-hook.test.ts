@@ -134,6 +134,29 @@ describe('init-hook command', () => {
       expect(readFileSync(target, 'utf8')).toBe(original);
     });
   });
+  test('leaves operator-kept project items out of the leftover count and warns on an invalid decision file', () => {
+    withTempHome((home, repo) => {
+      const library = '.ai/hooks/lib/workflow-state.sh';
+      const decisionsFile = join(repo, '.ai/harness/upgrade-decisions.json');
+      mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
+      mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repo, library), readUpgradeFixture('upgrade-v0.10-project', library));
+      const run = () => runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
+      expect(run().leftovers).toEqual({ total: 1, removable: 0 });
+
+      const contentHash = `sha256:${new Bun.CryptoHasher('sha256').update(readFileSync(join(repo, library))).digest('hex')}`;
+      writeFileSync(decisionsFile, JSON.stringify({ version: 1, decisions: [{ path: library, decision: 'keep', contentHash }] }));
+      const kept = run();
+      expect(kept.leftovers).toEqual({ total: 0, removable: 0 });
+      expect(kept.checks.some((check) => check.id === 'legacy.upgrade-decisions')).toBe(false);
+
+      writeFileSync(decisionsFile, '{ not json');
+      const invalid = run();
+      expect(invalid.checks.find((check) => check.id === 'legacy.upgrade-decisions')?.status).toBe('warn');
+      expect(invalid.leftovers).toEqual({ total: 1, removable: 0 });
+    });
+  });
   test('flags a project host config only when it holds a repo-harness command', () => {
     withTempHome((home, repo) => {
       const run = () => runInitHook({ cwd: repo, env: { ...process.env, HOME: home },

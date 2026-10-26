@@ -100,7 +100,7 @@ function supportedItems(items: readonly LeftoverItem[]): LeftoverItem[] {
     : item);
 }
 
-function planUpgrade(options: PlannerOptions, decisions: readonly UpgradeDecision[]): DecidedUpgradePlan {
+export function planUpgrade(options: PlannerOptions, decisions: readonly UpgradeDecision[]): DecidedUpgradePlan {
   return applyUpgradeDecisions(supportedItems(planLegacyLeftovers(options).items), decisions, options.cwd);
 }
 
