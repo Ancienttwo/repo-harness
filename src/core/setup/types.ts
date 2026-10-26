@@ -125,6 +125,44 @@ export interface SetupHookEvent {
   routes: SetupHookRoute[];
 }
 
+/** Hook usage window: records older than this leave the counts. */
+export const SETUP_HOOK_USAGE_WINDOW_HOURS = 24;
+/** At most this many denials, newest first. */
+export const SETUP_HOOK_DENIAL_LIMIT = 10;
+
+/** Counts of one configured route on one host inside the usage window. */
+export interface SetupHookRouteUsage {
+  host: SetupHost;
+  event: SetupHookEventName;
+  route_id: string;
+  calls: number;
+  /** Calls that exited 2 or returned a deny decision. */
+  blocked: number;
+  last_blocked_at: string | null;
+}
+
+/** One guard denial from `.ai/harness/failures/latest.jsonl`. */
+export interface SetupHookDenial {
+  at: string;
+  /** Guard name, e.g. `RepoScopeGuard`. */
+  guard: string;
+  /** Redacted denial reason. */
+  reason: string;
+}
+
+/**
+ * Hook usage of the collected repository from `.ai/harness/runs/hook-events.jsonl`
+ * (counts) and `.ai/harness/failures/latest.jsonl` (denial text). Routes with no
+ * call in the window are left out; records of routes the registry does not
+ * declare are dropped.
+ */
+export interface SetupHookUsage {
+  window_hours: typeof SETUP_HOOK_USAGE_WINDOW_HOURS;
+  /** Route registry order, then host order. */
+  routes: SetupHookRouteUsage[];
+  recent_denials: SetupHookDenial[];
+}
+
 export interface SetupFleetRole {
   /** Frontmatter `name` of agents/fleet/<name>.md. */
   name: string;
@@ -150,5 +188,7 @@ export interface SetupSnapshotV1 {
   /** Skills that setup check judged on at least one host, in setup check order. */
   skills: SetupSkill[];
   hooks: SetupHookEvent[];
+  /** Null when there is no data or the collector found no repository root. */
+  hook_usage: SetupHookUsage | null;
   fleet: SetupFleetRole[];
 }

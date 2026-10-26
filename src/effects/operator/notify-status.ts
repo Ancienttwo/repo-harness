@@ -14,6 +14,8 @@ const runFile = promisify(execFile);
 
 export interface NotifyStatusReadInput {
   readonly env?: NodeJS.ProcessEnv;
+  /** The Herdr session the plugin was installed into. Defaults to the session Herdr itself selects from `HERDR_SESSION`. */
+  readonly session?: string;
   readonly now?: Date;
 }
 
@@ -31,9 +33,9 @@ interface HerdrPluginLog {
 }
 
 // The server answers other requests while Herdr runs, so these reads must not block.
-async function herdr(args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
+async function herdr(session: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
   try {
-    const { stdout } = await runFile('herdr', [...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+    const { stdout } = await runFile('herdr', ['--session', session, ...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
     return stdout.trim();
   } catch { return null; }
 }
@@ -45,25 +47,43 @@ function json(raw: string | null): unknown {
   catch { return null; }
 }
 
-function presence(config: Record<string, string | undefined>, key: NotifyConfigKey): NotifyPresence {
-  return config[key] ? 'configured' : 'missing';
+function presence(config: Record<string, string | undefined>, ...keys: readonly string[]): NotifyPresence {
+  return keys.every(key => config[key]) ? 'configured' : 'missing';
 }
 
-async function configPresence(dir: string | null): Promise<Record<NotifyConfigKey, NotifyPresence>> {
-  const empty = { WEBHOOK_URL: 'missing', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' } as const;
-  if (!dir) return { ...empty };
-  const path = `${dir}/.env`;
-  try {
-    const stat = await lstat(path);
-    if (stat.isSymbolicLink() || !stat.isFile()) return { ...empty };
-    const config = parseEnv(await readFile(path, 'utf8'));
-    return {
+export type NotifyChannel = 'webhook' | 'slack' | 'discord' | 'telegram';
+
+interface ConfigPresence {
+  readonly config: Record<NotifyConfigKey, NotifyPresence>;
+  /** A channel is configured when the plugin would send to it. */
+  readonly channels: Record<NotifyChannel, NotifyPresence>;
+}
+
+function presences(config: Record<string, string | undefined>): ConfigPresence {
+  return {
+    config: {
       WEBHOOK_URL: presence(config, 'WEBHOOK_URL'),
       WEBHOOK_KEY: presence(config, 'WEBHOOK_KEY'),
       SLACK_WEBHOOK_URL: presence(config, 'SLACK_WEBHOOK_URL'),
-    };
+    },
+    channels: {
+      webhook: presence(config, 'WEBHOOK_URL', 'WEBHOOK_KEY'),
+      slack: presence(config, 'SLACK_WEBHOOK_URL'),
+      discord: presence(config, 'DISCORD_WEBHOOK_URL'),
+      telegram: presence(config, 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'),
+    },
+  };
+}
+
+async function configPresence(dir: string | null): Promise<ConfigPresence> {
+  if (!dir) return presences({});
+  const path = `${dir}/.env`;
+  try {
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink() || !stat.isFile()) return presences({});
+    return presences(parseEnv(await readFile(path, 'utf8')));
   } catch {
-    return { ...empty };
+    return presences({});
   }
 }
 
@@ -123,13 +143,28 @@ function lastDelivery(raw: string | null): NotifyDeliveryV1 {
   return { at: new Date(newest.finished).toISOString(), result: newest.result };
 }
 
+export interface NotifyChannelStatus {
+  readonly status: NotifyStatusV1;
+  readonly channels: Readonly<Record<NotifyChannel, NotifyPresence>>;
+}
+
 /** Read plugin install, enable, config presence, and the last recorded delivery. Values stay out. */
 export async function readNotifyStatus(input: NotifyStatusReadInput = {}): Promise<NotifyStatusV1> {
+  return (await readNotifyChannelStatus(input)).status;
+}
+
+/** The status plus whether each delivery channel is configured, from the same config read. */
+export async function readNotifyChannelStatus(input: NotifyStatusReadInput = {}): Promise<NotifyChannelStatus> {
   const env = { ...process.env, ...input.env };
+  // Install names the session with --session and strips HERDR_*; the reader must
+  // target the same session, so a pane's socket or caller identity cannot redirect it.
+  const session = input.session ?? (env.HERDR_SESSION || 'default');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new Error('notify_status_session');
+  for (const name of Object.keys(env)) if (name.startsWith('HERDR_')) delete env[name];
   const [listed, dir, logs] = await Promise.all([
-    herdr(['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env),
-    herdr(['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
-    herdr(['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
   ]);
   const plugins = (json(listed) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
   const plugin = Array.isArray(plugins) ? plugins.find(item => item.plugin_id === NOTIFY_PLUGIN_ID) ?? null : null;
@@ -140,14 +175,15 @@ export async function readNotifyStatus(input: NotifyStatusReadInput = {}): Promi
     catch { linked = 'missing'; }
   }
   const configDir = dir && isAbsolute(dir) && !/[\r\n\x00]/.test(dir) ? dir : null;
-  return {
+  const { config, channels } = await configPresence(configDir);
+  return { channels, status: {
     protocol: 1,
     kind: 'operator_notify_status',
     plugin_id: NOTIFY_PLUGIN_ID,
     linked,
     enabled: plugin ? (plugin.enabled === true ? 'enabled' : 'disabled') : 'missing',
-    config: await configPresence(configDir),
+    config,
     last_delivery: lastDelivery(logs),
     observed_at: (input.now ?? new Date()).toISOString(),
-  };
+  } };
 }

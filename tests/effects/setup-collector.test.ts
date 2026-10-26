@@ -17,6 +17,10 @@ import {
   type SetupProcessRunner,
 } from '../../src/effects/setup/collector';
 import { SETUP_FLEET_SOURCE_DIR, readFleetRoles } from '../../src/cli/commands/setup-snapshot';
+import { HOOK_EVENT_TELEMETRY_PATH } from '../../src/cli/hook/event-telemetry';
+import { appendSegmentedLog } from '../../src/effects/segmented-log';
+import { readHookUsage, readTailLines } from '../../src/effects/setup/hook-usage';
+import { FAILURE_LOG_FILE } from '../../src/effects/state/resolve-effective-state';
 import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
@@ -25,7 +29,7 @@ function snapshot(collectedAt: string): SetupSnapshotV1 {
     collected_at: collectedAt, setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
     checks: [{ id: 'doctor.cli-version', title: 'repo-harness CLI version', status: 'ok', detail: '0.21.1' }],
     check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_summaries: new Map(),
-    routes: ROUTES, fleet_roles: [], fleet_hosts: null,
+    routes: ROUTES, fleet_roles: [], fleet_hosts: null, hook_usage: null,
   });
 }
 
@@ -166,7 +170,7 @@ setInterval(() => {}, 1000);
       checks: [], check_commands: new Map(), adapters: [], cli_versions: {},
       skill_rows: packages.map(pkg => ({ host: 'claude' as const, name: pkg.name, state: 'ok link' as const, ok: true })),
       skill_summaries: new Map(packages.map(pkg => [pkg.name, pkg.summary])),
-      routes: ROUTES, fleet_roles: roles, fleet_hosts: null,
+      routes: ROUTES, fleet_roles: roles, fleet_hosts: null, hook_usage: null,
     }));
     expect(packages.length).toBeGreaterThan(0);
     expect(projected.skills.map(skill => [skill.name, skill.summary])).toEqual(packages.map(pkg => [pkg.name, pkg.summary]));
@@ -199,4 +203,35 @@ setInterval(() => {}, 1000);
       expect(existsSync(join(home, '.codex/agents'))).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
+});
+
+describe('setup hook usage reader', () => {
+  test('reads the telemetry log and the failure log tail of one repository', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'setup-hook-usage-')));
+    try {
+      expect(readHookUsage(root, HOOK_EVENT_TELEMETRY_PATH, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'))).toEqual({ window_hours: 24, routes: [], recent_denials: [] });
+      const record = { protocol: 'loop-engine-hook-event/v2', started_at: '2026-10-10T11:00:00.000Z', host: 'claude', event: 'PreToolUse', route_id: 'edit', blocked: true };
+      appendSegmentedLog(join(root, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n`, root);
+      mkdirSync(join(root, '.ai/harness/failures'), { recursive: true });
+      writeFileSync(join(root, FAILURE_LOG_FILE), `${JSON.stringify({ ts: '2026-10-10T11:00:00Z', guard: 'EditScopeGuard', action: 'block', reason: `${root}/src/a.ts is outside scope` })}\n`);
+      const usage = readHookUsage(root, HOOK_EVENT_TELEMETRY_PATH, ROUTES, Date.parse('2026-10-10T12:00:00.000Z'));
+      expect(usage.routes).toEqual([{ host: 'claude', event: 'PreToolUse', route_id: 'edit', calls: 1, blocked: 1, last_blocked_at: '2026-10-10T11:00:00.000Z' }]);
+      expect(usage.recent_denials).toEqual([{ at: '2026-10-10T11:00:00.000Z', guard: 'EditScopeGuard', reason: '[private path] is outside scope' }]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a tail read drops the partial first line', () => {
+    const root = mkdtempSync(join(tmpdir(), 'setup-tail-'));
+    try {
+      const file = join(root, 'log.jsonl');
+      writeFileSync(file, 'first line\nsecond\nthird\n');
+      expect(readTailLines(file, 1024)).toEqual(['first line', 'second', 'third']);
+      expect(readTailLines(file, 15)).toEqual(['second', 'third']);
+      expect(readTailLines(join(root, 'missing.jsonl'))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
