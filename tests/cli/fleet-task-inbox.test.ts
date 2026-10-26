@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { resolve } from 'path';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, resolve } from 'path';
 
 const ROOT = resolve(import.meta.dir, '../..');
 const CLI = resolve(ROOT, 'src/cli/index.ts');
@@ -34,6 +36,7 @@ describe('fleet task inbox CLI transport', () => {
     expect(send.stdout).toContain('--audience');
     expect(send.stdout).toContain('--body-file');
     expect(send.stdout).toContain('--message-id');
+    expect(send.stdout).toContain('--bot <bot-id>');
     expect(send.stdout).not.toContain('--sender-trust');
     expect(send.stdout).not.toContain('--recipient-path');
 
@@ -50,6 +53,18 @@ describe('fleet task inbox CLI transport', () => {
     expect(ack.stdout).toContain('--context');
     expect(ack.stdout).not.toContain('--recipient-kind');
     expect(ack.stdout).not.toContain('--recipient-id');
+  });
+
+  test('refuses a sender Bot that is not registered before reading the task context', () => {
+    const home = mkdtempSync(join(tmpdir(), 'rh-fleet-bot-'));
+    try {
+      const result = spawnSync('bun', [CLI, 'fleet', 'message', 'send', '--json', '--task-id', 'a'.repeat(64), '--context', 'unused-context.json',
+        '--scope', 'task', '--audience', 'owner', '--body-file', 'unused-body.txt', '--bot', 'ghost'], {
+        cwd: ROOT, encoding: 'utf8', env: { ...process.env, REPO_HARNESS_HOME: home },
+      });
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stderr)).toEqual({ ok: false, error: 'invalid_argument', message: '--bot ghost is not a registered Bot' });
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
   test('rejects caller-selected durable recipient identities', () => {

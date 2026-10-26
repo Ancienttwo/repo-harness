@@ -28,8 +28,30 @@ export interface McpDoctorProjection {
   readonly chatgpt: { readonly server_name_configured: boolean; readonly public_endpoint_configured: boolean };
 }
 
+/**
+ * The registered Bots that attribution reads (PRD G30). A record attributes
+ * an MCP OAuth client, a Herdr agent name or an audit row to a Bot; it never
+ * grants access.
+ */
+export interface BotIdentity {
+  readonly bot_id: string;
+  readonly name: string;
+  readonly host: string;
+  readonly mcp_client_id: string | null;
+  readonly slack_bot_id: string | null;
+  readonly herdr_agent: string | null;
+}
+
+export type BotDirectory = { readonly state: 'ok'; readonly bots: readonly BotIdentity[] } | { readonly state: 'unavailable' };
+
+/** `unregistered` matches no registered Bot; `unavailable` means the registry could not be read, so no answer is known. */
+export type BotAttribution = { readonly state: 'registered'; readonly bot_id: string } | { readonly state: 'unregistered' } | { readonly state: 'unavailable' };
+
+export type BotProjection = BotIdentity;
+
 export interface OAuthClientProjection {
   readonly client_id: string;
+  readonly bot: BotAttribution;
   readonly issued_at: string | null;
   readonly profiles: readonly string[];
   /** The latest end of a live grant for this client: refresh expiry when present, else access expiry. */
@@ -40,7 +62,7 @@ export interface McpAuditProjection {
   readonly at: string;
   readonly tool: string;
   readonly status: 'ok' | 'blocked' | 'failed';
-  readonly actor: string | null;
+  readonly bot: BotAttribution;
 }
 
 export interface RegistryRepoProjection {
@@ -71,13 +93,14 @@ export interface HerdrSnapshotProjection {
   readonly workspaces: number;
   readonly tabs: number;
   readonly panes: number;
-  readonly agents: readonly { readonly pane_id: string; readonly agent: string | null; readonly agent_status: HerdrAgentStatus }[];
+  readonly agents: readonly { readonly pane_id: string; readonly agent: string | null; readonly name: string | null; readonly agent_status: HerdrAgentStatus; readonly bot: BotAttribution }[];
 }
 
 export interface BotAccessSnapshotV1 {
   readonly protocol: 1;
   readonly kind: 'operator_bot_access';
   readonly observed_at: string;
+  readonly bots: { readonly state: 'ok'; readonly bots: readonly BotProjection[] } | BotAccessUnavailable<'bot_registry_invalid'>;
   readonly mcp: { readonly state: 'ok'; readonly doctor: McpDoctorProjection } | BotAccessUnavailable<'mcp_doctor_failed' | 'mcp_doctor_timeout' | 'mcp_doctor_invalid'>;
   readonly oauth: { readonly state: 'ok'; readonly clients: readonly OAuthClientProjection[]; readonly unreadable_clients: number }
     | { readonly state: 'missing' } | BotAccessUnavailable<'oauth_unreadable'>;
@@ -100,7 +123,8 @@ const NAME_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const CLIENT_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const PROFILE_TEXT = /^[a-z][a-z0-9_-]{0,31}$/;
 const TOOL_TEXT = /^[a-z][a-z0-9_.-]{0,63}$/;
-const ACTOR_TEXT = /^mcp:[a-z][a-z0-9_-]{0,31}$/;
+const BOT_ID_TEXT = /^[a-z][a-z0-9-]{0,62}$/;
+const HERDR_AGENT_TEXT = /^[a-z][a-z0-9_-]{0,31}$/;
 const HERDR_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/;
 
 type Json = Record<string, unknown>;
@@ -110,6 +134,19 @@ const count = (value: unknown): number => typeof value === 'number' && Number.is
 const text = (value: unknown, grammar: RegExp): string | null => typeof value === 'string' && grammar.test(value) ? value : null;
 const integer = (value: unknown): number | null => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 const one = <T extends string>(value: unknown, allowed: readonly T[]): T | null => allowed.includes(value as T) ? value as T : null;
+
+/** The Bot whose `field` equals `value`. The registry keeps each identity on at most one Bot. */
+export function attributeBot(directory: BotDirectory, field: 'bot_id' | 'mcp_client_id' | 'herdr_agent', value: string | null): BotAttribution {
+  if (directory.state !== 'ok') return { state: 'unavailable' };
+  const bot = value === null ? undefined : directory.bots.find(entry => entry[field] === value);
+  return bot ? { state: 'registered', bot_id: bot.bot_id } : { state: 'unregistered' };
+}
+
+export function projectBots(directory: BotDirectory & { readonly state: 'ok' }): readonly BotProjection[] {
+  return directory.bots.map(bot => ({
+    bot_id: bot.bot_id, name: bot.name, host: bot.host, mcp_client_id: bot.mcp_client_id, slack_bot_id: bot.slack_bot_id, herdr_agent: bot.herdr_agent,
+  })).sort((a, b) => a.bot_id.localeCompare(b.bot_id));
+}
 
 function seconds(value: unknown): string | null {
   const at = integer(value);
@@ -151,7 +188,7 @@ export function projectMcpDoctor(value: unknown): McpDoctorProjection {
  * The MCP OAuth token store. Token strings are map keys and the stored grant
  * repeats them, so only client id, issue time, profile and expiry are read.
  */
-export function projectOAuthClients(value: unknown, nowSeconds: number): { readonly clients: readonly OAuthClientProjection[]; readonly unreadable_clients: number } {
+export function projectOAuthClients(value: unknown, nowSeconds: number, directory: BotDirectory): { readonly clients: readonly OAuthClientProjection[]; readonly unreadable_clients: number } {
   const store = object(value);
   if (!store) throw new Error('oauth_unreadable');
   const grants = new Map<string, { profiles: Set<string>; expires: number | null }>();
@@ -189,6 +226,7 @@ export function projectOAuthClients(value: unknown, nowSeconds: number): { reado
     const entry = grants.get(clientId);
     clients.push({
       client_id: clientId,
+      bot: attributeBot(directory, 'mcp_client_id', clientId),
       issued_at: seconds(client.client_id_issued_at),
       profiles: [...entry?.profiles ?? []].sort(),
       expires_at: entry?.expires == null ? null : seconds(entry.expires),
@@ -197,14 +235,19 @@ export function projectOAuthClients(value: unknown, nowSeconds: number): { reado
   return { clients: clients.sort((a, b) => a.client_id.localeCompare(b.client_id)), unreadable_clients: unreadable };
 }
 
-/** One MCP audit JSONL row. Paths, hashes, errors and correlation ids are dropped. */
-export function projectMcpAuditEntry(value: unknown): McpAuditProjection | null {
+/**
+ * One MCP audit JSONL row. Paths, hashes, errors and correlation ids are
+ * dropped. `botId` names the Bot the writer resolved from the caller's OAuth
+ * client; a row without one, or whose Bot is no longer registered, is
+ * unregistered.
+ */
+export function projectMcpAuditEntry(value: unknown, directory: BotDirectory): McpAuditProjection | null {
   const entry = object(value);
   const at = typeof entry?.timestamp === 'string' && !Number.isNaN(Date.parse(entry.timestamp)) ? new Date(entry.timestamp).toISOString() : null;
   const tool = text(entry?.tool, TOOL_TEXT);
   const status = one(entry?.status, ['ok', 'blocked', 'failed'] as const);
   if (at === null || tool === null || status === null) return null;
-  return { at, tool, status, actor: text(entry?.actor, ACTOR_TEXT) };
+  return { at, tool, status, bot: attributeBot(directory, 'bot_id', text(entry?.botId, BOT_ID_TEXT)) };
 }
 
 /** A registry row: the repository id, the last path segment as a label, and the access mode. */
@@ -225,14 +268,17 @@ export function projectHerdrStatus(value: unknown, check: (server: Json) => Herd
   };
 }
 
-/** `session.snapshot`. Only counts and agent pane states remain: no cwd, title, label or terminal text. */
-export function projectHerdrSnapshot(value: unknown): HerdrSnapshotProjection {
+/** `session.snapshot`. Only counts, agent pane states and the Bot that owns each agent name remain: no cwd, title, label or terminal text. */
+export function projectHerdrSnapshot(value: unknown, directory: BotDirectory): HerdrSnapshotProjection {
   const snapshot = object(value);
   if (!snapshot || !['workspaces', 'tabs', 'panes', 'agents'].every(key => Array.isArray(snapshot[key]))) throw new Error('herdr_snapshot_invalid');
   const agents = (snapshot.agents as unknown[]).flatMap(raw => {
     const agent = object(raw), pane_id = text(agent?.pane_id, HERDR_ID_TEXT);
     if (pane_id === null) return [];
-    return [{ pane_id, agent: text(agent?.agent, NAME_TEXT), agent_status: one(agent?.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const) ?? 'unknown' }];
+    // `agent` is the detected kind (claude, codex); `name` is the alias `herdr agent rename` set, which a Bot record names.
+    const name = text(agent?.name, HERDR_AGENT_TEXT);
+    return [{ pane_id, agent: text(agent?.agent, NAME_TEXT), name, agent_status: one(agent?.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const) ?? 'unknown',
+      bot: attributeBot(directory, 'herdr_agent', name) }];
   });
   return {
     workspaces: (snapshot.workspaces as unknown[]).length,

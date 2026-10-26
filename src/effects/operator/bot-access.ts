@@ -2,7 +2,7 @@
 // serve` process on a timer, never on a request path; a GET reads `read()`.
 //
 // Sources: `repo-harness mcp doctor --json` (never `--live`, which registers
-// and saves an OAuth client), the MCP OAuth token store, the repository
+// and saves an OAuth client), the Bot registry, the MCP OAuth token store, the repository
 // registry, the newest MCP audit row of each registered repository, `herdr
 // status --json` and the `session.snapshot` socket method, and the notify
 // plugin status. Every source passes through a projection in
@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
+  projectBots,
   projectHerdrSnapshot,
   projectHerdrStatus,
   projectMcpAuditEntry,
@@ -25,9 +26,11 @@ import {
   projectOAuthClients,
   projectRegistryRepo,
   type BotAccessSnapshotV1,
+  type BotDirectory,
   type McpAuditProjection,
   type RegistryRepoProjection,
 } from '../../core/operator/bot-access';
+import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError, repoHarnessHome } from '../repo-registry';
 import { herdrVersionCheck, requestHerdrObservation, type HerdrJson } from '../terminal/herdr-observation';
 import { readNotifyChannelStatus, type NotifyChannelStatus, type NotifyStatusReadInput } from './notify-status';
@@ -92,7 +95,13 @@ async function mcpSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cwd'
   catch { return { state: 'unavailable', reason: 'mcp_doctor_invalid' }; }
 }
 
-async function oauthSection(env: NodeJS.ProcessEnv, now: Date): Promise<BotAccessSnapshotV1['oauth']> {
+/** A strict registry read: one invalid record makes every attribution `unavailable`, never `unregistered`. */
+function botDirectory(env: NodeJS.ProcessEnv): BotDirectory {
+  try { return { state: 'ok', bots: readBotRegistry(env) }; }
+  catch { return { state: 'unavailable' }; }
+}
+
+async function oauthSection(env: NodeJS.ProcessEnv, now: Date, directory: BotDirectory): Promise<BotAccessSnapshotV1['oauth']> {
   const path = join(repoHarnessHome(env), MCP_OAUTH_TOKEN_STORE_FILE);
   try {
     const stat = await lstat(path);
@@ -104,14 +113,14 @@ async function oauthSection(env: NodeJS.ProcessEnv, now: Date): Promise<BotAcces
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     let raw: string;
     try { raw = await handle.readFile('utf8'); } finally { await handle.close(); }
-    return { state: 'ok', ...projectOAuthClients(JSON.parse(raw), Math.floor(now.getTime() / 1000)) };
+    return { state: 'ok', ...projectOAuthClients(JSON.parse(raw), Math.floor(now.getTime() / 1000), directory) };
   } catch {
     return { state: 'unavailable', reason: 'oauth_unreadable' };
   }
 }
 
 /** The newest projectable row in the last `AUDIT_TAIL_BYTES` of one file; `undefined` when the file does not exist. */
-async function newestAuditRow(path: string): Promise<McpAuditProjection | null | undefined> {
+async function newestAuditRow(path: string, directory: BotDirectory): Promise<McpAuditProjection | null | undefined> {
   let handle;
   try { handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
@@ -126,7 +135,7 @@ async function newestAuditRow(path: string): Promise<McpAuditProjection | null |
     for (const line of lines.reverse()) {
       if (!line.trim()) continue;
       try {
-        const row = projectMcpAuditEntry(JSON.parse(line));
+        const row = projectMcpAuditEntry(JSON.parse(line), directory);
         if (row) return row;
       } catch { /* a torn or foreign row is skipped, never echoed */ }
     }
@@ -139,14 +148,14 @@ async function newestAuditRow(path: string): Promise<McpAuditProjection | null |
  * must resolve to itself, so a symlinked ancestor cannot point the read outside
  * the repository.
  */
-async function lastAudit(repoPath: string): Promise<RegistryRepoProjection['last_audit']> {
+async function lastAudit(repoPath: string, bots: BotDirectory): Promise<RegistryRepoProjection['last_audit']> {
   try {
     const root = await realpath(repoPath);
     const directory = join(root, ...MCP_AUDIT_LOG_SEGMENTS.slice(0, -1));
     try { if (await realpath(directory) !== directory) return { state: 'unavailable', reason: 'audit_unreadable' }; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'missing' }; throw error; }
     const active = join(directory, MCP_AUDIT_LOG_SEGMENTS.at(-1)!);
-    const current = await newestAuditRow(active);
+    const current = await newestAuditRow(active, bots);
     if (current) return { state: 'ok', entry: current };
     const archive = `${active}.archive`;
     let segments: string[] = [];
@@ -154,7 +163,7 @@ async function lastAudit(repoPath: string): Promise<RegistryRepoProjection['last
       if ((await lstat(archive)).isDirectory()) segments = (await readdir(archive)).filter(name => AUDIT_SEGMENT_NAME.test(name)).sort().reverse();
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     for (const name of segments) {
-      const row = await newestAuditRow(join(archive, name));
+      const row = await newestAuditRow(join(archive, name), bots);
       if (row) return { state: 'ok', entry: row };
     }
     return { state: 'missing' };
@@ -163,17 +172,17 @@ async function lastAudit(repoPath: string): Promise<RegistryRepoProjection['last
   }
 }
 
-async function registrySection(env: NodeJS.ProcessEnv): Promise<BotAccessSnapshotV1['registry']> {
+async function registrySection(env: NodeJS.ProcessEnv, directory: BotDirectory): Promise<BotAccessSnapshotV1['registry']> {
   let snapshot;
   try { snapshot = readRepoHarnessRegistryStrictSnapshot({ env }); }
   catch (error) {
     return { state: 'unavailable', reason: error instanceof RepoHarnessRegistryStrictError && error.code === 'fleet_registry_invalid' ? 'registry_invalid' : 'registry_unavailable' };
   }
-  const repos = await Promise.all(snapshot.repos.map(async repo => projectRegistryRepo(repo, await lastAudit(repo.path))));
+  const repos = await Promise.all(snapshot.repos.map(async repo => projectRegistryRepo(repo, await lastAudit(repo.path, directory))));
   return { state: 'ok', authorization_revision: snapshot.authorizationRevision, registry_revision: snapshot.registryRevision, repos };
 }
 
-async function herdrSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cwd' | 'timeout_ms' | 'run_command'>> & { readonly session: string }): Promise<BotAccessSnapshotV1['herdr']> {
+async function herdrSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cwd' | 'timeout_ms' | 'run_command'>> & { readonly session: string; readonly directory: BotDirectory }): Promise<BotAccessSnapshotV1['herdr']> {
   const result = await input.run_command('herdr', ['--session', input.session, 'status', '--json'], {
     cwd: input.cwd, env: withoutHerdr(input.env), timeout_ms: input.timeout_ms,
   });
@@ -195,7 +204,7 @@ async function herdrSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cw
   try {
     const reply = await requestHerdrObservation({ socket_path: socket, deadline_ms: SNAPSHOT_DEADLINE_MS }, 'session.snapshot');
     if (reply.type !== 'session_snapshot') throw new Error('herdr_snapshot_type');
-    return { session: input.session, status, snapshot: { state: 'ok', value: projectHerdrSnapshot(reply.snapshot) } };
+    return { session: input.session, status, snapshot: { state: 'ok', value: projectHerdrSnapshot(reply.snapshot, input.directory) } };
   } catch {
     return { session: input.session, status, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
   }
@@ -217,14 +226,17 @@ export async function collectBotAccess(input: BotAccessReadInput = {}): Promise<
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new Error('bot_access_session');
   const now = (input.now ?? (() => new Date()))();
   const base = { env, cwd: input.cwd ?? process.cwd(), timeout_ms: input.timeout_ms ?? BOT_ACCESS_TIMEOUT_MS, run_command: input.run_command ?? runBotAccessCommand };
+  // One registry read per cycle, so every attribution in a snapshot agrees.
+  const directory = botDirectory(env);
+  const bots: BotAccessSnapshotV1['bots'] = directory.state === 'ok' ? { state: 'ok', bots: projectBots(directory) } : { state: 'unavailable', reason: 'bot_registry_invalid' };
   const [mcp, oauth, registry, herdr, notify] = await Promise.all([
     mcpSection(base),
-    oauthSection(env, now),
-    registrySection(env),
-    herdrSection({ ...base, session }),
+    oauthSection(env, now, directory),
+    registrySection(env, directory),
+    herdrSection({ ...base, session, directory }),
     notifySection(input.read_notify ?? readNotifyChannelStatus, env, session, now),
   ]);
-  return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), mcp, oauth, registry, herdr, notify };
+  return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, oauth, registry, herdr, notify };
 }
 
 export interface BotAccessCollectorHandle {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync } from 'fs';
-import { dirname } from 'path';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'fs';
+import { basename, dirname } from 'path';
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import { InvalidGrantError, InvalidScopeError, InvalidTokenError, ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthorizationParams, OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
@@ -10,6 +10,7 @@ import type {
   OAuthTokenRevocationRequest,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
 interface TokenData {
   accessTokens?: Record<string, AuthInfo>;
@@ -59,10 +60,28 @@ function normalizeScopes(scopes: string[] | undefined, profile = 'planner'): str
   return unique;
 }
 
+/** One OAuth client as `mcp clients list` shows it: identifiers and grant metadata, never a token. */
+export interface McpOAuthClientSummary {
+  readonly clientId: string;
+  readonly clientName: string | null;
+  readonly issuedAt: number | null;
+  readonly profiles: readonly string[];
+  readonly liveGrants: number;
+}
+
+/**
+ * The token file is the only authority. A serving process and the `mcp
+ * clients revoke` command share it, so every read first picks up a newer file
+ * and every write is a locked read-modify-write; a revocation made by another
+ * process is therefore seen by the next request and is never overwritten.
+ */
 export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   private accessTokens = new Map<string, McpStoredAuthInfo>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
   private clients = new Map<string, OAuthClientInformationFull>();
+  /** Identity of the file the maps were read from or last written to; null when there is no file. */
+  private fileIdentity: string | null = null;
+  private synced = false;
   private clock: () => number;
   private readonly dynamicClientTtlSeconds: number;
   private readonly maxDynamicClients: number;
@@ -90,7 +109,52 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     this.clock = clock;
   }
 
+  private currentFileIdentity(): string | null {
+    try {
+      const stat = statSync(this.path);
+      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  /** Replace the maps with the file when it changed since the last read or write. A missing file holds no grant. */
+  private sync(): void {
+    const identity = this.currentFileIdentity();
+    if (this.synced && identity === this.fileIdentity) return;
+    this.accessTokens = new Map();
+    this.refreshTokens = new Map();
+    this.clients = new Map();
+    if (identity !== null) {
+      try {
+        const data = JSON.parse(readFileSync(this.path, 'utf-8')) as TokenData;
+        this.accessTokens = new Map(Object.entries(data.accessTokens ?? {}));
+        for (const [token, record] of Object.entries(data.refreshTokens ?? {})) {
+          this.refreshTokens.set(token, typeof record === 'string' ? { accessToken: record } : record);
+        }
+        this.clients = new Map(Object.entries(data.clients ?? {}));
+      } catch (_error) {
+        // Corrupt local auth state holds no grant and must not prevent starting the server.
+      }
+    }
+    this.fileIdentity = identity;
+    this.synced = true;
+  }
+
+  /** A locked read-modify-write. `run` returns false when it changed nothing, which skips the write. */
+  private mutate<T>(run: () => T): T {
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    return withExclusiveDirectoryLock(realpathSync(dirname(this.path)), `${basename(this.path)}.lock`, () => {
+      this.sync();
+      const result = run();
+      if (result !== false) this.flush();
+      return result;
+    }, { waitTimeoutMs: 10_000, reclaimStaleEmptyDirectory: true });
+  }
+
   listAuthorizations(profile: string): readonly McpAuthorizationSummary[] {
+    this.sync();
     const byAuthorization = new Map<string, McpAuthorizationSummary>();
     const now = this.clock();
     for (const [accessToken, info] of this.accessTokens) {
@@ -109,6 +173,55 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
       });
     }
     return Object.freeze([...byAuthorization.values()].sort((left, right) => left.authorizationId.localeCompare(right.authorizationId)));
+  }
+
+  /** Registered clients with the profiles and count of their live grants. */
+  listClients(): readonly McpOAuthClientSummary[] {
+    this.sync();
+    const now = this.clock();
+    const liveRefresh = new Set([...this.refreshTokens.values()]
+      .filter((record) => record.expiresAt === undefined || record.expiresAt > now)
+      .map((record) => record.accessToken));
+    const grants = new Map<string, { profiles: Set<string>; live: number }>();
+    for (const [token, info] of this.accessTokens) {
+      if (!(info.expiresAt === undefined || info.expiresAt > now || liveRefresh.has(token))) continue;
+      const entry = grants.get(info.clientId) ?? { profiles: new Set<string>(), live: 0 };
+      entry.profiles.add(info.profile ?? 'planner');
+      entry.live += 1;
+      grants.set(info.clientId, entry);
+    }
+    return Object.freeze([...this.clients.values()].map((client) => Object.freeze({
+      clientId: client.client_id,
+      // The name comes from dynamic registration; only short printable text is shown.
+      clientName: typeof client.client_name === 'string' && /^[\x20-\x7e]{1,128}$/.test(client.client_name) ? client.client_name : null,
+      issuedAt: typeof client.client_id_issued_at === 'number' ? client.client_id_issued_at : null,
+      profiles: Object.freeze([...grants.get(client.client_id)?.profiles ?? []].sort()),
+      liveGrants: grants.get(client.client_id)?.live ?? 0,
+    })).sort((left, right) => left.clientId.localeCompare(right.clientId)));
+  }
+
+  /**
+   * Remove one client with every access token it holds and every refresh
+   * token that points at one of them. Returns false when the client is unknown.
+   */
+  revokeClient(clientId: string): { readonly revoked: boolean; readonly accessTokens: number; readonly refreshTokens: number } {
+    return this.mutate(() => {
+      const known = this.clients.delete(clientId);
+      const revoked = new Set<string>();
+      for (const [token, info] of this.accessTokens) {
+        if (info.clientId !== clientId) continue;
+        this.accessTokens.delete(token);
+        revoked.add(token);
+      }
+      let refreshTokens = 0;
+      for (const [token, record] of this.refreshTokens) {
+        if (!revoked.has(record.accessToken)) continue;
+        this.refreshTokens.delete(token);
+        refreshTokens += 1;
+      }
+      const result = { revoked: known || revoked.size > 0, accessTokens: revoked.size, refreshTokens };
+      return result.revoked ? result : false;
+    }) || { revoked: false, accessTokens: 0, refreshTokens: 0 };
   }
 
   private hasActiveTokens(clientId: string, now: number): boolean {
@@ -130,7 +243,8 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     return !this.hasActiveTokens(clientId, now);
   }
 
-  private cleanupExpiredClients(flush = true): void {
+  /** Map-only cleanup; callers hold the write lock. Returns whether a client was removed. */
+  private removeExpiredClients(): boolean {
     const now = this.clock();
     let changed = false;
     for (const [clientId, client] of this.clients) {
@@ -139,39 +253,24 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
         changed = true;
       }
     }
-    if (changed && flush) this.flush();
+    return changed;
+  }
+
+  private cleanupExpiredClients(): void {
+    this.sync();
+    const now = this.clock();
+    const removable = [...this.clients].some(([clientId, client]) => this.isRemovableClient(clientId, client, now));
+    if (removable) this.mutate(() => this.removeExpiredClients());
   }
 
   load(): void {
-    if (!existsSync(this.path)) return;
-    try {
-      const data = JSON.parse(readFileSync(this.path, 'utf-8')) as TokenData;
-      const refreshTargets = new Set(Object.values(data.refreshTokens ?? {}).map((entry) => typeof entry === 'string' ? entry : entry.accessToken));
-      for (const [token, info] of Object.entries(data.accessTokens ?? {})) {
-        if (!info.expiresAt || info.expiresAt > nowSeconds() || refreshTargets.has(token)) {
-          this.accessTokens.set(token, info);
-        }
-      }
-      for (const [token, record] of Object.entries(data.refreshTokens ?? {})) {
-        this.refreshTokens.set(token, typeof record === 'string' ? { accessToken: record } : record);
-      }
-      const clients = new Map(Object.entries(data.clients ?? {}));
-      const persistedClientCount = clients.size;
-      const now = this.clock();
-      for (const [clientId, client] of clients) {
-        if (this.isRemovableClient(clientId, client, now)) {
-          clients.delete(clientId);
-        }
-      }
-      if (clients.size > this.maxDynamicClients) {
+    this.mutate(() => {
+      const changed = this.removeExpiredClients();
+      if (this.clients.size > this.maxDynamicClients) {
         throw new ServerError('Dynamic OAuth client capacity reached');
       }
-      this.clients = clients;
-      if (clients.size !== persistedClientCount) this.flush();
-    } catch (error) {
-      if (error instanceof ServerError) throw error;
-      // Corrupt local auth state should not prevent starting the server.
-    }
+      return changed;
+    });
   }
 
   flush(): void {
@@ -186,6 +285,8 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     writeFileSync(tmpPath, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
     renameSync(tmpPath, this.path);
     chmodSync(this.path, 0o600);
+    this.fileIdentity = this.currentFileIdentity();
+    this.synced = true;
   }
 
   getClient(clientId: string): OAuthClientInformationFull | undefined {
@@ -194,54 +295,56 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   }
 
   registerClient(client: Omit<OAuthClientInformationFull, 'client_id' | 'client_id_issued_at'>): OAuthClientInformationFull {
-    this.cleanupExpiredClients();
-    if (this.clients.size >= this.maxDynamicClients) {
-      throw new ServerError('Dynamic OAuth client capacity reached');
-    }
-    const candidate = client as Partial<OAuthClientInformationFull>;
-    const full: OAuthClientInformationFull = {
-      ...client,
-      client_id: candidate.client_id ?? randomUUID(),
-      client_id_issued_at: this.clock(),
-    };
-    this.clients.set(full.client_id, full);
-    this.flush();
-    return full;
+    return this.mutate(() => {
+      this.removeExpiredClients();
+      if (this.clients.size >= this.maxDynamicClients) {
+        throw new ServerError('Dynamic OAuth client capacity reached');
+      }
+      const candidate = client as Partial<OAuthClientInformationFull>;
+      const full: OAuthClientInformationFull = {
+        ...client,
+        client_id: candidate.client_id ?? randomUUID(),
+        client_id_issued_at: this.clock(),
+      };
+      this.clients.set(full.client_id, full);
+      return full;
+    });
   }
 
   getAccessToken(token: string): McpStoredAuthInfo | undefined {
+    this.sync();
     return this.accessTokens.get(token);
   }
 
   setAccessToken(token: string, info: McpStoredAuthInfo): void {
-    this.accessTokens.set(token, info);
-    this.flush();
+    this.mutate(() => {
+      // A client revoked by another process after the caller looked it up gets no new grant.
+      if (!this.clients.has(info.clientId)) throw new InvalidGrantError('Unknown OAuth client');
+      this.accessTokens.set(token, info);
+    });
   }
 
   deleteAccessToken(token: string): void {
-    this.accessTokens.delete(token);
-    this.flush();
+    this.mutate(() => { this.accessTokens.delete(token); });
   }
 
   getRefreshToken(token: string): string | undefined {
+    this.sync();
     const record = this.refreshTokens.get(token);
     if (!record) return undefined;
     if (record.expiresAt !== undefined && record.expiresAt <= this.clock()) {
-      this.refreshTokens.delete(token);
-      this.flush();
+      this.deleteRefreshToken(token);
       return undefined;
     }
     return record.accessToken;
   }
 
   setRefreshToken(token: string, accessToken: string, expiresAt?: number): void {
-    this.refreshTokens.set(token, { accessToken, expiresAt });
-    this.flush();
+    this.mutate(() => { this.refreshTokens.set(token, { accessToken, expiresAt }); });
   }
 
   deleteRefreshToken(token: string): void {
-    this.refreshTokens.delete(token);
-    this.flush();
+    this.mutate(() => { this.refreshTokens.delete(token); });
   }
 
   /** Replace a refresh grant and its access token with their successors in one persisted write. */
@@ -250,14 +353,18 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     accessToken: string,
     next: { readonly accessToken: McpStoredAuthInfo; readonly refreshToken: string; readonly refreshExpiresAt?: number },
   ): void {
-    this.refreshTokens.delete(refreshToken);
-    this.accessTokens.delete(accessToken);
-    this.accessTokens.set(next.accessToken.token, next.accessToken);
-    this.refreshTokens.set(next.refreshToken, { accessToken: next.accessToken.token, expiresAt: next.refreshExpiresAt });
-    this.flush();
+    this.mutate(() => {
+      // A revocation by another process between the caller's read and this write wins.
+      if (!this.refreshTokens.has(refreshToken) || !this.accessTokens.has(accessToken)) throw new InvalidGrantError('Invalid refresh token');
+      this.refreshTokens.delete(refreshToken);
+      this.accessTokens.delete(accessToken);
+      this.accessTokens.set(next.accessToken.token, next.accessToken);
+      this.refreshTokens.set(next.refreshToken, { accessToken: next.accessToken.token, expiresAt: next.refreshExpiresAt });
+    });
   }
 
   findRefreshTokenByAccessToken(accessToken: string): string | undefined {
+    this.sync();
     for (const [refreshToken, record] of this.refreshTokens) {
       if (record.accessToken === accessToken) return refreshToken;
     }
@@ -265,17 +372,19 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   }
 
   revokeMismatchedAuthorization(profile: string, authorizationRevision: number): void {
-    const revoked = new Set<string>();
-    for (const [token, info] of this.accessTokens) {
-      if (info.profile === profile && info.authorizationRevision !== authorizationRevision) {
-        this.accessTokens.delete(token);
-        revoked.add(token);
+    this.mutate(() => {
+      const revoked = new Set<string>();
+      for (const [token, info] of this.accessTokens) {
+        if (info.profile === profile && info.authorizationRevision !== authorizationRevision) {
+          this.accessTokens.delete(token);
+          revoked.add(token);
+        }
       }
-    }
-    for (const [token, record] of this.refreshTokens) {
-      if (revoked.has(record.accessToken)) this.refreshTokens.delete(token);
-    }
-    if (revoked.size > 0) this.flush();
+      for (const [token, record] of this.refreshTokens) {
+        if (revoked.has(record.accessToken)) this.refreshTokens.delete(token);
+      }
+      return revoked.size > 0;
+    });
   }
 }
 

@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
 import { backfillRepoHarnessRegistry, pruneRepoHarnessRegistry } from '../../effects/repo-registry';
+import { BotRegistryError, readBotRegistry, type BotRecordV1 } from '../../effects/bot-registry';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 
@@ -53,7 +54,7 @@ function feedbackEnvironment() {
 }
 
 function outputTaskInboxError(error: unknown): void {
-  const code = error instanceof TaskInboxError || error instanceof TaskMessageError || error instanceof TaskInboxMigrationError || error instanceof TaskInboxLayoutError
+  const code = error instanceof TaskInboxError || error instanceof TaskMessageError || error instanceof TaskInboxMigrationError || error instanceof TaskInboxLayoutError || error instanceof BotRegistryError
     ? error.code
     : 'invalid_argument';
   const message = error instanceof Error ? error.message : String(error);
@@ -87,6 +88,17 @@ function readMessageBody(bodyFile: string): string {
   return readFileSync(bodyFile).toString('utf8');
 }
 
+/**
+ * The sender of a `fleet message send` event. A registered Bot is attributed,
+ * not trusted more: it keeps local operator trust, so its steer is delivered
+ * like the user's. An id that names no registered Bot is refused.
+ */
+export function taskMessageSender(botId: string | null, bots: readonly BotRecordV1[]): Pick<TaskMessageEventInput, 'sender_kind' | 'sender_id' | 'sender_trust'> {
+  if (botId === null) return { sender_kind: 'user', sender_id: null, sender_trust: 'local_operator' };
+  if (!bots.some(bot => bot.bot_id === botId)) throw new Error(`--bot ${botId} is not a registered Bot`);
+  return { sender_kind: 'operator', sender_id: botId, sender_trust: 'local_operator' };
+}
+
 function messageInput(
   options: {
     readonly taskId: string;
@@ -95,6 +107,7 @@ function messageInput(
     readonly body: string;
     readonly messageId?: string;
     readonly inReplyTo?: string;
+    readonly sender: Pick<TaskMessageEventInput, 'sender_kind' | 'sender_id' | 'sender_trust'>;
   },
   context: ReturnType<typeof admittedInboxContext>,
 ): TaskMessageEventInput {
@@ -105,9 +118,7 @@ function messageInput(
     task_identity: { repository_id: context.admission.identity.repository_id, issue_id: context.admission.identity.issue_id, campaign_id: context.admission.identity.campaign_id },
     scope: options.scope,
     target_claim: options.scope === 'claim' ? context.admission.identity.claim : null,
-    sender_kind: 'user',
-    sender_id: null,
-    sender_trust: 'local_operator',
+    ...options.sender,
     audience: options.audience,
     body: options.body,
     created_at: new Date().toISOString(),
@@ -430,6 +441,7 @@ export function buildFleetCommand(): Command {
     .requiredOption('--body-file <path>', 'UTF-8 file containing the untrusted message body')
     .option('--message-id <messageId>', 'Stable UUID for an idempotent retry')
     .option('--in-reply-to <messageId>', 'Prior message UUID')
+    .option('--bot <bot-id>', 'Registered Bot that sends this message (see `repo-harness bots register`)')
     .action((options: {
       readonly taskId: string;
       readonly context: string;
@@ -438,6 +450,7 @@ export function buildFleetCommand(): Command {
       readonly bodyFile: string;
       readonly messageId?: string;
       readonly inReplyTo?: string;
+      readonly bot?: string;
     }) => {
       try {
         if (options.scope !== 'task' && options.scope !== 'claim') throw new Error('--scope must be task or claim');
@@ -447,6 +460,8 @@ export function buildFleetCommand(): Command {
         const taskId = optionalStringOption(options.taskId, 'task-id');
         const bodyFile = optionalStringOption(options.bodyFile, 'body-file');
         if (!taskId || !bodyFile) throw new Error('--task-id and --body-file must be non-empty strings');
+        const botId = optionalStringOption(options.bot, 'bot') ?? null;
+        const sender = taskMessageSender(botId, botId === null ? [] : readBotRegistry());
         const context = admittedInboxContext(process.cwd(), taskId, options.context);
         const event = buildTaskMessageEvent(messageInput({
           taskId,
@@ -455,6 +470,7 @@ export function buildFleetCommand(): Command {
           body: readMessageBody(bodyFile),
           messageId: optionalStringOption(options.messageId, 'message-id'),
           inReplyTo: optionalStringOption(options.inReplyTo, 'in-reply-to'),
+          sender,
         }, context));
         const result = sendTaskMessage({
           repo_root: process.cwd(),

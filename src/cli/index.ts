@@ -38,6 +38,7 @@ import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
+import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildCatchUpCommand } from './commands/catch-up';
@@ -841,6 +842,7 @@ export function buildProgram(): Command {
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
+  program.addCommand(buildBotsCommand());
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildCatchUpCommand());
   program.addCommand(buildRefactorCommand());

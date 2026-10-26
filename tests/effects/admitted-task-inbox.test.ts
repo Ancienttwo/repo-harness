@@ -4,6 +4,7 @@ import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, readHistoricalTaskActivity, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
 import { buildTaskMessageEvent, validateTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
+import { taskMessageSender } from '../../src/cli/commands/fleet';
 
 const time = '2026-10-25T01:00:00Z';
 const budget = { max_scan: 100, max_bytes: 1024 * 1024, deadline_ms: 5000 };
@@ -46,5 +47,21 @@ test('bounded admitted activity pages stored events and receipts without legacy 
     expect(next.entries[0]?.receipts).toEqual([]);
     expect(readHistoricalTaskActivity(query).entries).toHaveLength(0);
     expect(readAdmittedTaskActivity({ ...query, budget: { ...budget, max_scan: 0 } }).coverage.reason).toBe('scan');
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('a message sent for a registered Bot keeps local operator trust and names the Bot as sender', async () => {
+  const f = await admittedInboxFixture();
+  try {
+    const hermes = { protocol: 1, kind: 'repo-harness-bot', bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: null, slack_bot_id: null, herdr_agent: 'hermes', registered_at: time.replace('Z', '.000Z') } as const;
+    expect(taskMessageSender(null, [hermes])).toEqual({ sender_kind: 'user', sender_id: null, sender_trust: 'local_operator' });
+    expect(() => taskMessageSender('ghost', [hermes])).toThrow('--bot ghost is not a registered Bot');
+    const event = buildTaskMessageEvent({ ...f.event, ...taskMessageSender('hermes', [hermes]) });
+    expect(event).toMatchObject({ sender_kind: 'operator', sender_id: 'hermes', sender_trust: 'local_operator' });
+    sendTaskMessage({ repo_root: f.root, source: f.source, event });
+    deliverTaskInbox({ ...f.input, delivery_channel: 'manual', delivered_at: time });
+    const activity = readAdmittedTaskActivity({ repo_root: f.root, task_id: f.task, limit: 1, after: null, message_id: null, budget });
+    expect(activity.entries[0]?.event).toMatchObject({ sender_kind: 'operator', sender_id: 'hermes' });
+    expect(activity.entries[0]?.receipts.map(receipt => receipt.delivery_state)).toEqual(['delivered']);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
