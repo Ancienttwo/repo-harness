@@ -528,6 +528,25 @@ describe('notify plugin status', () => {
         rmSync(join(f.root, 'state'), { recursive: true, force: true });
         const odd = await run(f, { worktree: { repo_key: 'k', repo_name: '/Users/someone/demo-repo' } });
         expect(JSON.stringify(odd.sent)).not.toContain('/Users/someone');
+        expect(odd.sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+      } finally { f.cleanup(); }
+    });
+
+    test('an unreadable newest request file leaves the request id out instead of using an earlier round', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        const newest = join(repoRoot, '.ai/harness/runs/task-agents/key-1/started-2.json');
+        for (const broken of ['{not json', JSON.stringify({ request_id: 'bad id with spaces' }), JSON.stringify({})]) {
+          writeFileSync(newest, broken);
+          rmSync(join(f.root, 'state'), { recursive: true, force: true });
+          const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+          const bot = sent.find(item => item.url.includes('bot.example'))!;
+          expect(bot.body).toMatchObject({ task: 'task-1019' });
+          expect(bot.body).not.toHaveProperty('request_id');
+          expect(JSON.stringify(sent)).not.toContain('req-1');
+        }
       } finally { f.cleanup(); }
     });
 

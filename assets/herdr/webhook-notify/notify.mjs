@@ -99,14 +99,15 @@ function taskIdentity(data, context, session) {
     }
     if (matches.length !== 1) return identity;
     const { dir, binding } = matches[0];
-    let latest = 0, requestId;
-    for (const name of readdirSync(dir)) {
-      const round = Number(name.match(/^started-(\d+)\.json$/)?.[1]);
-      if (!Number.isSafeInteger(round) || round <= latest) continue;
+    // Only the highest round names the current request. If it cannot be read, no request id is
+    // reported: an earlier round would be a stale value.
+    const rounds = readdirSync(dir).map((name) => Number(name.match(/^started-(\d+)\.json$/)?.[1])).filter(Number.isSafeInteger);
+    let requestId;
+    if (rounds.length) {
       try {
-        const started = readIdentityFile(join(dir, name));
-        if (typeof started?.request_id === 'string' && ID_PATTERN.test(started.request_id)) { latest = round; requestId = started.request_id; }
-      } catch { /* An unreadable round leaves the earlier request id. */ }
+        const started = readIdentityFile(join(dir, `started-${Math.max(...rounds)}.json`));
+        if (typeof started?.request_id === 'string' && ID_PATTERN.test(started.request_id)) requestId = started.request_id;
+      } catch { /* Unreadable: leave the request id out. */ }
     }
     return { ...identity, task: binding.task, ...(requestId ? { request_id: requestId } : {}) };
   } catch { /* No readable session: report the repository alone. */ }
