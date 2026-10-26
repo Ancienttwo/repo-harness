@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rename
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
-import { canonicalClaimActorReceiptBytes, validateClaimActorReceipt, validateEngineerPrincipalMapping } from '../../src/core/engineers/principal-claim';
+import { validateClaimActorReceipt, validateEngineerPrincipalMapping } from '../../src/core/engineers/principal-claim';
 import { buildTaskMessageEvent, buildTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, canonicalTaskMessageEventBytes, transitionTaskMessageDeliveryReceipt } from '../../src/core/fleet/task-message';
 import { buildTaskReplyIntent, buildTaskReplyCommit, canonicalTaskReplyIntentBytes, canonicalTaskReplyCommitBytes } from '../../src/core/fleet/task-reply';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES } from '../../src/core/operator/task-activity';
@@ -43,7 +43,7 @@ function fixture(replyBody = '  Exact old reply.\n') {
   put(join(replyDir,'intent.json'),canonicalTaskReplyIntentBytes(intent)+'\n'); put(join(replyDir,'commit.json'),canonicalTaskReplyCommitBytes(commit)+'\n');
   // Residue of the retired claim-actor store. Activity must not read it.
   const actorPath=join(root,'.git/repo-harness/engineers/v1/claim-actors',task,`${id(3)}.json`);
-  put(actorPath,canonicalClaimActorReceiptBytes(actor));
+  put(actorPath,canonicalEngineerJson(actor));
   const input={repository_id:repo,task_id:task,limit:50,after:null,message_id:null,env:{REPO_HARNESS_HOME:home}};
   return {root,home,inbox,input,parent,intent,commit,actor,actorPath,replyDir,event};
 }

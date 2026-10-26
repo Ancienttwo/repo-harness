@@ -5,12 +5,11 @@ import {
 import { describe, expect, test } from 'bun:test';
 
 import {
-  canonicalClaimActorReceiptBytes,
   EngineerPrincipalError,
   validateClaimActorReceipt,
   validateEngineerPrincipalMapping,
 } from '../../src/core/engineers/principal-claim';
-import { engineerSha256, type EngineerBindingV1 } from '../../src/core/engineers/profile-binding';
+import { canonicalEngineerJson, engineerSha256, type EngineerBindingV1 } from '../../src/core/engineers/profile-binding';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const binding: EngineerBindingV1 = {
@@ -86,7 +85,7 @@ describe('ME-0B principal and claim actor protocols', () => {
       session_id: null,
       bound_at: '2026-08-25T00:02:00.000Z',
     });
-    expect(validateClaimActorReceipt(JSON.parse(canonicalClaimActorReceiptBytes(receipt)))).toEqual(receipt);
+    expect(validateClaimActorReceipt(JSON.parse(canonicalEngineerJson(receipt)))).toEqual(receipt);
     expect(() => validateClaimActorReceipt({ ...receipt, branch: 'codex/other' })).toThrow('receipt digest is invalid');
   });
 

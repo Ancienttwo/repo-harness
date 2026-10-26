@@ -162,7 +162,3 @@ export function validateClaimActorReceipt(value: unknown): ClaimActorReceiptV1 {
   if (digest !== engineerSha256(canonicalEngineerJson(receiptBasis(basis)))) throw new EngineerPrincipalError(code, 'claim actor receipt digest is invalid');
   return Object.freeze({ ...basis, receipt_sha256: digest });
 }
-
-export function canonicalClaimActorReceiptBytes(value: ClaimActorReceiptV1): string {
-  return canonicalEngineerJson(validateClaimActorReceipt(value));
-}
