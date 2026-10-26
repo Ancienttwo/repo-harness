@@ -397,18 +397,28 @@ Full playbook:
 
 ## Local Human Control Board
 
-Run the observe-only operator view on the same machine as the adopted
-repositories:
+Run the operator console on the same machine as the adopted repositories:
 
 ```bash
 repo-harness operator serve
 ```
 
-The command binds to loopback only and prints the local URL. The browser shows
-the canonical Fleet summary, an attention-first worklist, a resident task
-detail pane, and degraded snapshot states. The board is read-only. It does not
-send messages, acquire tasks, change workflow state, start agents, or show
-repository paths.
+The command binds to loopback only and prints the local URL. The console has
+these pages: the development board with its task drawer, repositories, Agents,
+Skills, Hooks, tools, architecture and system status. The theme follows the
+system. The language follows your saved choice, then the browser language.
+
+The console is read-only today. The approved design allows three bounded writes
+and nothing else. They open in this order: local agent config in
+`~/.repo-harness/config.json`, docs sessions that return changes as a Draft PR,
+and worktree cleanup. Each write passes an origin check, a write token and a
+precondition check, and is audited before it runs. Host projection (install,
+update, profile switch), registry cleanup and CLI uninstall stay commands that
+you run in a terminal. The console does not send messages to coding sessions,
+stop them or dispatch work; dispatch stays Bot → CLI → herdr. Browser payloads
+do not contain secrets or absolute paths. Product scope:
+[`plans/prds/20261026-2310-operator-console-uiux.prd.md`](plans/prds/20261026-2310-operator-console-uiux.prd.md);
+UX: [`docs/design/DESIGN-operator-console-uiux.md`](docs/design/DESIGN-operator-console-uiux.md).
 
 Read committed architecture facts or export a module review prompt:
 

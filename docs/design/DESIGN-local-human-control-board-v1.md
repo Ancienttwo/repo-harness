@@ -5,6 +5,25 @@
 > **Owner**: repo-harness maintainers
 > **Date**: 2026-08-24
 
+> **Superseded for the operator console (2026-10-27)** by
+> [`DESIGN-operator-console-uiux.md`](DESIGN-operator-console-uiux.md), which the
+> user confirmed on 2026-10-27 (issue
+> [#1004](https://github.com/Ancienttwo/repo-harness/issues/1004)). This brief no
+> longer governs the console UX. Its Forbidden extras and Anti-patterns are
+> replaced as follows:
+> - Mutation: the console allows three bounded writes and nothing else — local
+>   agent config, docs sessions and worktree cleanup, opened in that order
+>   (PRD decision D1).
+> - Agent process start: a docs session starts an agent through OAR, only inside
+>   a verified OS boundary (D3); the console never starts, messages or stops
+>   coding sessions.
+> - SSE/WebSocket: still not built; docs session events use cursor polling.
+> - Layout (U4): below 760px the side rail becomes a drawer; there are no
+>   phone-specific pages. Language (U5): the current browser-based language
+>   resolution stays. Theme (U1): follows the system; light is Paper.
+>
+> The text below is kept as v1 history and is not the current contract.
+
 > **Superseded in part by v2** (`plans/plan-20260828-2326-operator-board-redesign.md`):
 > the board is no longer read-only. v2 exposes the existing `fleet message` effect
 > as a task-addressed message channel, so the v1 read-only invariant is replaced by
