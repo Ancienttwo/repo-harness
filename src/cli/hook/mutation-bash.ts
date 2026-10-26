@@ -1,7 +1,9 @@
-/** A literal-write tripwire, not a shell interpreter. No state or process reads. */
-import { isAbsolute, relative, resolve } from 'path';
+/** A literal tripwire, not a shell interpreter. No state or process reads; `git worktree add` also reads the managed root. */
+import { realpathSync } from 'fs';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
+import { isManagedWorktreePath, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { payloadString } from './hook-input';
-import { runMutationPathGuard, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
+import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
 import { protectedRepoDir } from './mutation-protected-dirs';
 
 interface Word { value: string; literal: boolean; operator?: true }
@@ -84,37 +86,27 @@ function commandTargets(tokens: readonly Word[], heredoc: string): string[] {
   return paths.filter(word => (word.literal || !/[$`{}~]/.test(word.value)) && word.value).map(word => word.value);
 }
 
-/** Only destinations in the supported literal forms reach filesystem validation. */
-export function bashWriteTargets(command: string, repoRoot: string, cwd: string): readonly string[] {
-  if (command.length > 65_536 || !/(?:>|\b(?:rm|mv|cp|tee|sed|python\d*|node)\b)/.test(command)) return [];
-  const candidates: string[] = [];
+interface CommandVisitor {
+  /** `cwd` is null once a command could have moved the shell to an unknown directory. */
+  command?(segment: readonly Word[], body: string, cwd: string | null): void;
+  redirect?(target: string, cwd: string | null): void;
+}
+
+/** Visits each literal command segment and output redirect, tracking the working directory the same way for every caller. */
+function walkCommands(command: string, cwd: string, visit: CommandVisitor): void {
+  if (command.length > 65_536) return;
   let commandCwd: string | null = cwd;
-  const add = (candidate: string) => {
-    if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
-      || /^\/dev\/fd\/\d+$/.test(candidate)) return;
-    // A glob under a known literal directory can only mutate that directory.
-    if (/[*?\[]/.test(candidate)) {
-      const prefix = candidate.split(/[*?\[]/, 1)[0]!;
-      const slash = prefix.lastIndexOf('/');
-      if (slash < 0) return;
-      candidate = prefix.slice(0, slash + 1);
-    }
-    if (!isAbsolute(candidate) && !commandCwd) return;
-    const target = resolve(commandCwd ?? cwd, candidate);
-    const rel = relative(repoRoot, target);
-    if (isAbsolute(rel) || rel === '..' || rel.startsWith('../') || protectedRepoDir(rel)) candidates.push(target);
-  };
   const lines = command.split('\n');
   for (let line = 0; line < lines.length; line++) {
     const tokens = words(lines[line]!);
     // A later physical line can still be inside this command's quoted argument.
-    if (!tokens) return [...new Set(candidates)];
+    if (!tokens) return;
     let body = '';
     const here = tokens.findIndex(token => token.operator && token.value.startsWith('<<'));
     if (here >= 0) {
       const delimiter = tokens[here + 1];
       if (!delimiter?.literal || delimiter.operator
-        || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) return [...new Set(candidates)];
+        || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) return;
       const content: string[] = [];
       while (++line < lines.length) {
         const current = tokens[here]!.value === '<<-' ? lines[line]!.replace(/^\t+/, '') : lines[line]!;
@@ -125,7 +117,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     }
     let segment: Word[] = [];
     const flush = (separator = '\n') => {
-      for (const target of commandTargets(segment, body)) add(target);
+      visit.command?.(segment, body, commandCwd);
       if (segment[0]?.value === 'cd') {
         const target = segment[1];
         commandCwd = separator === '&&' && commandCwd && segment.length === 2 && target?.literal && !target.value.startsWith('-')
@@ -144,14 +136,99 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
           i++; // Descriptor duplication/closure, such as 2>&1, has no file operand.
           continue;
         }
-        if ((token.value === '>' || token.value === '>>') && target?.literal && !target.operator) add(target.value);
+        if ((token.value === '>' || token.value === '>>') && target?.literal && !target.operator) visit.redirect?.(target.value, commandCwd);
         continue;
       }
       segment.push(token);
     }
     flush();
   }
+}
+
+/** Only destinations in the supported literal forms reach filesystem validation. */
+export function bashWriteTargets(command: string, repoRoot: string, cwd: string): readonly string[] {
+  if (!/(?:>|\b(?:rm|mv|cp|tee|sed|python\d*|node)\b)/.test(command)) return [];
+  const candidates: string[] = [];
+  const add = (candidate: string, commandCwd: string | null) => {
+    if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
+      || /^\/dev\/fd\/\d+$/.test(candidate)) return;
+    // A glob under a known literal directory can only mutate that directory.
+    if (/[*?\[]/.test(candidate)) {
+      const prefix = candidate.split(/[*?\[]/, 1)[0]!;
+      const slash = prefix.lastIndexOf('/');
+      if (slash < 0) return;
+      candidate = prefix.slice(0, slash + 1);
+    }
+    if (!isAbsolute(candidate) && !commandCwd) return;
+    const target = resolve(commandCwd ?? cwd, candidate);
+    const rel = relative(repoRoot, target);
+    if (isAbsolute(rel) || rel === '..' || rel.startsWith('../') || protectedRepoDir(rel)) candidates.push(target);
+  };
+  walkCommands(command, cwd, {
+    command: (segment, body, commandCwd) => { for (const target of commandTargets(segment, body)) add(target, commandCwd); },
+    redirect: add,
+  });
   return [...new Set(candidates)];
+}
+
+// Options of `git worktree add` that take no operand, and those that take one.
+const WORKTREE_ADD_FLAGS = new Set(['-f', '--force', '-q', '--quiet', '-d', '--detach', '--lock', '--checkout', '--no-checkout',
+  '--guess-remote', '--no-guess-remote', '--track', '--no-track']);
+const WORKTREE_ADD_VALUE_OPTIONS = new Set(['-b', '-B', '--reason']);
+
+/** The literal target of `git [-C <dir>] worktree add ...`, or null when any part is not certain. */
+function worktreeAddTarget(segment: readonly Word[], cwd: string | null): string | null {
+  const args = segment.filter(word => !word.operator);
+  if (args[0]?.value !== 'git' || !args[0].literal) return null;
+  let dir = cwd;
+  let i = 1;
+  for (; args[i]?.value === '-C'; i += 2) {
+    const next = args[i + 1];
+    if (!next?.literal || !next.value) return null;
+    dir = isAbsolute(next.value) ? next.value : dir && resolve(dir, next.value);
+  }
+  if (args[i]?.value !== 'worktree' || args[i + 1]?.value !== 'add') return null;
+  const operands: Word[] = [];
+  for (i += 2; i < args.length; i++) {
+    const value = args[i]!.value;
+    if (WORKTREE_ADD_FLAGS.has(value)) continue;
+    if (WORKTREE_ADD_VALUE_OPTIONS.has(value)) {
+      if (++i >= args.length) return null;
+      continue;
+    }
+    if (value.startsWith('-')) return null;
+    operands.push(args[i]!);
+  }
+  // Operands are `<path> [<commit-ish>]`.
+  const path = operands[0];
+  if (operands.length > 2 || !path?.literal || !path.value) return null;
+  if (isAbsolute(path.value)) return resolve(path.value);
+  return dir ? resolve(dir, path.value) : null;
+}
+
+const WORKTREE_ADD_DENIAL = (target: string, root: string): Denial => ({
+  guard: 'WorktreeCreateGuard',
+  reason: `git worktree add target ${target} is outside the managed worktree root ${root}.`,
+  fix: `Create the worktree under ${root} as <repo>-wt-<slug>, or run \`repo-harness run contract-worktree start --plan <plan-file>\`.`,
+});
+
+/** Only a literal `git worktree add` target that resolves outside the managed root is denied. */
+function worktreeAddDenial(command: string, cwd: string): Denial | null {
+  if (!/\bworktree\b/.test(command)) return null;
+  let denial: Denial | null = null;
+  walkCommands(command, cwd, {
+    command: (segment, _body, commandCwd) => {
+      const target = denial ? null : worktreeAddTarget(segment, commandCwd);
+      if (!target) return;
+      let root: string;
+      // The leaf does not exist yet. Its parent resolves symlinks such as macOS /tmp.
+      let parent = dirname(target);
+      try { root = managedWorktreeRoot(); } catch { return; }
+      try { parent = realpathSync(parent); } catch { /* A missing parent cannot be the managed root. */ }
+      if (!isManagedWorktreePath(join(parent, basename(target)), root)) denial = WORKTREE_ADD_DENIAL(target, root);
+    },
+  });
+  return denial;
 }
 
 export function runBashMutationGuard(opts: MutationGuardInput): MutationGuardResult {
@@ -160,6 +237,10 @@ export function runBashMutationGuard(opts: MutationGuardInput): MutationGuardRes
   // A missing or non-absolute host cwd gives no reliable destination authority.
   if (!isAbsolute(cwd)) return { exitCode: 0, stdout: '', stderr: '' };
   const paths = bashWriteTargets(command, opts.repoRoot, cwd);
-  if (!paths.length) return { exitCode: 0, stdout: '', stderr: '' };
-  return runMutationPathGuard(opts, paths);
+  if (paths.length) {
+    const result = runMutationPathGuard(opts, paths);
+    if (result.exitCode !== 0) return result;
+  }
+  const denial = worktreeAddDenial(command, cwd);
+  return denial ? runMutationDenial(opts, denial) : { exitCode: 0, stdout: '', stderr: '' };
 }

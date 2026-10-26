@@ -98,6 +98,54 @@ describe('Bash write tripwire host route', () => {
       expect(existsSync(join(cwd, '_ops'))).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
+
+  test('git worktree add outside the managed root is denied with the start command; literal managed targets and unresolved forms pass', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'bash-worktree-guard-')));
+    const cwd = join(root, 'repo');
+    const home = join(root, 'home');
+    const managed = join(root, 'managed');
+    try {
+      mkdirSync(cwd); mkdirSync(home); mkdirSync(managed); mkdirSync(join(cwd, 'src'));
+      initRepo(cwd);
+      const invokeBash = (command: string, hookCwd = cwd) => spawnSync(process.execPath,
+        [HOOK_ENTRY, 'PreToolUse', '--route', 'bash'], {
+          cwd: hookCwd, encoding: 'utf8',
+          input: JSON.stringify({ tool_name: 'Bash', cwd: hookCwd, tool_input: { command } }),
+          env: { PATH: process.env.PATH, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd, REPO_HARNESS_WORKTREE_ROOT: managed },
+        });
+      for (const command of [
+        'git worktree add ../x', 'git worktree add -b task/x ../x main', 'git worktree add --detach ../x HEAD',
+        'git worktree add -f -q --lock --reason "task" --no-checkout ../x', `git worktree add ${root}/x`,
+        `git worktree add ${managed}/nested/x`, `git worktree add ${join(managed, '..')}/x`,
+        `git -C ${cwd} worktree add ../x`, `git -C src worktree add ../../x`, 'git -C src worktree add ../x',
+        'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
+      ]) {
+        const result = invokeBash(command);
+        expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
+        expect(result.stderr).toContain('[WorktreeCreateGuard]');
+        expect(result.stderr).toContain('repo-harness run contract-worktree start --plan <plan-file>');
+      }
+      for (const command of [
+        `git worktree add ${managed}/repo-wt-x`, `git worktree add -b task/x ${managed}/repo-wt-x main`,
+        `git -C ${cwd} worktree add ${managed}/repo-wt-x`, `git -C src worktree add ../../managed/repo-wt-x`,
+        `git worktree add "${managed}/repo-wt-x"`, `cd ${managed} && git worktree add repo-wt-x`,
+        // The target or its directory is not certain, so the guard does not guess.
+        'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x', 'git worktree add "$(mktemp -d)"',
+        'git worktree add "$HOME/x"', 'git worktree add ../x*', 'git worktree add', 'git worktree add a b c',
+        'git worktree add --orphan ../x', 'git worktree add -fq ../x', 'git -c core.x=1 worktree add ../x',
+        'git -C "$D" worktree add ../x', 'cd "$D" && git worktree add ../x', 'cd src; git worktree add ../x',
+        'cd src\ngit worktree add ../x', 'git worktree add ../x $(date)\n(', 'git worktree list', 'git worktree remove ../x',
+        'git worktree prune', 'echo "git worktree add ../x"', 'git log --grep "worktree add ../x"',
+        'command git worktree add ../x', 'FOO=1 git worktree add ../x',
+      ]) {
+        const result = invokeBash(command);
+        expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
+      }
+      // The literal-write boundary is unchanged next to a worktree command.
+      expect(invokeBash(`git worktree add ${managed}/repo-wt-x && echo value > _ops/a.env`).status).toBe(2);
+      expect(invokeBash('echo value > src/file.txt').status).toBe(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 });
 
 /** The installed host path: `repo-harness-hook PreToolUse --route edit` in a child process with an isolated HOME. */
