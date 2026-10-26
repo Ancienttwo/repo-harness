@@ -37,12 +37,17 @@ export interface LegacyWorktreeOutcome {
 }
 
 export interface LegacyWorktreeCleanupOptions {
+  /** Used only under apply; preview never queries the provider. */
   readonly ghBin?: string;
   /** Runs before each removal, so the rebuild data is out before any deletion. */
   readonly beforeRemove?: (candidate: LegacyWorktreeCandidate) => void;
 }
 
 type Limits = { readonly gitBin: string; readonly ghBin?: string };
+
+/** Preview reason for a branch that only the provider can prove merged. */
+export const LEGACY_WORKTREE_PROVIDER_DEFERRED = 'merge proof needs the provider; checked only with --apply';
+
 interface PlannedCandidate {
   readonly candidate: LegacyWorktreeCandidate;
   readonly expected?: ExactWorktreeCleanup;
@@ -85,7 +90,7 @@ function resolvedParentPath(path: string): string | null {
  * Candidates come only from this clone's Git inventory, never from directory
  * names. The managed root belongs to the sweep, so it is never a candidate here.
  */
-function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, options: LegacyWorktreeCleanupOptions) {
+function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, apply: boolean, options: LegacyWorktreeCleanupOptions) {
   const limits: Limits = { gitBin: configuredGitBinary(env), ...(options.ghBin ? { ghBin: options.ghBin } : {}) };
   const topology = entries(cwd, limits);
   const primary = topology[0];
@@ -103,6 +108,10 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, options: L
   let target: ReturnType<typeof mergeBackTarget> | undefined;
   let targetError = '';
   try { target = mergeBackTarget(main, limits); } catch (error) { targetError = message(error); }
+  // Preview runs on every `repo-harness update`, so it stays offline. An empty
+  // gh binary turns off the provider step of mergeProof; the local ancestor and
+  // absorbed proofs still apply.
+  const proofLimits: Limits = apply ? limits : { ...limits, ghBin: '' };
   const planned = candidates.map(({ entry, path }): PlannedCandidate => {
     const branch = entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : null;
     const head = entry.head;
@@ -113,7 +122,7 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, options: L
       if (!branch || !head) return keep('no local branch');
       if (!existsSync(path)) return keep('checkout is missing');
       if (checkoutPath(path) !== path) return keep('checkout path is not canonical');
-      // Ownership precedes the merge proof, because that proof can query the provider.
+      // Ownership precedes the merge proof, because under apply that proof can query the provider.
       assertNoOwner(main, path, limits);
       if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) return keep('runtime is open');
       const status = gitExecFileSync(['status', '--porcelain', '--untracked-files=all'], {
@@ -127,7 +136,12 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, options: L
       if (!target) return keep(targetError);
       // The integration branch is never a task branch, even when it holds direct commits.
       if (protectsIntegrationBranch(main, target.targetRef, branch, limits)) return keep('integration branch');
-      const proof = mergeProof(main, branch, head, target.targetRef, target.target, limits);
+      let proof: ReturnType<typeof mergeProof>;
+      try { proof = mergeProof(main, branch, head, target.targetRef, target.target, proofLimits); }
+      catch (error) {
+        if (!apply && message(error) === 'cleanup merge is unproven') return keep(LEGACY_WORKTREE_PROVIDER_DEFERRED);
+        throw error;
+      }
       return {
         candidate: {
           path, branch, head, verdict: 'remove',
@@ -143,9 +157,10 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, options: L
 
 /**
  * One-shot, operator-run cleanup of linked worktrees beside the primary
- * checkout. Preview is read-only. Apply removes only `remove` candidates
- * through the closeout barrier, which proves every condition again under the
- * topology lock; a candidate that changed is kept and reported. `cwd` selects
+ * checkout. Preview is read-only and never queries the provider. Apply
+ * removes only `remove` candidates through the closeout barrier, which proves
+ * every condition again under the topology lock, with the provider; a
+ * candidate that changed is kept and reported. `cwd` selects
  * the repository; `callerCwd` and everything below it are never removed.
  */
 export function runLegacyWorktreeCleanup(
@@ -156,7 +171,7 @@ export function runLegacyWorktreeCleanup(
   options: LegacyWorktreeCleanupOptions = {},
 ): LegacyWorktreeOutcome {
   let result;
-  try { result = plan(cwd, callerCwd, env, options); }
+  try { result = plan(cwd, callerCwd, env, apply, options); }
   catch (error) { return { candidates: [], error: message(error) }; }
   const { main, common, limits, planned } = result;
   if (!apply) return { candidates: planned.map((item) => item.candidate) };

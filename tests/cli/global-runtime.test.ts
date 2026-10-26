@@ -139,6 +139,19 @@ describe('update leftover summary', () => {
     });
   });
 
+  test('reports a removable legacy sibling worktree as pending, not failed', () => {
+    const candidates = [
+      { path: '/fixture/repo-old', branch: 'feat/old', head: 'a'.repeat(40), verdict: 'remove', reason: 'merged into origin/main', rebuild: 'git worktree add -b feat/old /fixture/repo-old aaa' },
+      { path: '/fixture/repo-squash', branch: 'feat/squash', head: 'b'.repeat(40), verdict: 'keep', reason: 'merge proof needs the provider; checked only with --apply', rebuild: null },
+    ];
+    const payload = JSON.stringify({ items: [], apply: false, exitCode: 1, legacyWorktrees: { candidates } });
+    withFakeUpgrade(`${payload}\n`, '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe(
+        '0 leftovers (0 removable). Run: repo-harness upgrade; 1 legacy sibling worktree can be removed; run repo-harness upgrade --scope project --apply',
+      );
+    });
+  });
+
   test('a bare array payload is a failed check', () => {
     withFakeUpgrade('[]\n', '', () => {
       expect(updateLeftoverSummary(tmpdir(), false))
