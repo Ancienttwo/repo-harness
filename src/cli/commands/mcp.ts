@@ -293,7 +293,7 @@ export function buildMcpCommand(): Command {
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
     .option('--server-name <name>', 'ChatGPT Connector/MCP server name to record in ignored local config')
     .option('--profile <profile>', 'MCP profile to configure: planner|executor|orchestrator|coding')
-    .option('--grant-read-write <path>', 'Explicitly grant one adopted repo read_write access for coding; may be repeated', collectOption, [])
+    .option('--grant-read-write <path>', 'Explicitly grant one adopted repo read_write access for coding or orchestrator; may be repeated', collectOption, [])
     .option('--enable-reader', 'Enable read-only workspace tools in the same ChatGPT MCP Connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
     .option('--allow-full-disk-read', 'Deprecated: use --enable-reader with explicit --allow-root paths')

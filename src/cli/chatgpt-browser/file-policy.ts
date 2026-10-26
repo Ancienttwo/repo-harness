@@ -62,6 +62,7 @@ const BROWSER_READ_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     workspaceCoder: false,
+    taskDispatch: false,
   },
   execution: { fixedWorkflowCheck: false, codingShell: false },
 };
@@ -77,6 +78,7 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     workspaceCoder: false,
+    taskDispatch: false,
   },
   execution: { fixedWorkflowCheck: false, codingShell: false },
 };
@@ -98,6 +100,7 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     workspaceCoder: false,
+    taskDispatch: false,
   },
   execution: { fixedWorkflowCheck: false, codingShell: false },
 };

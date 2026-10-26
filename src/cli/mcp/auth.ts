@@ -26,6 +26,7 @@ export interface McpLocalConfig {
     workflowPlanner?: boolean;
     workflowExecutor?: boolean;
     workspaceCoder?: boolean;
+    taskDispatch?: boolean;
     /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
     reader?: boolean;
   };
@@ -38,7 +39,6 @@ export interface McpLocalConfig {
   profile?: string;
   authorizationRevision?: number;
   coding?: {
-    enabled?: boolean;
     environmentAllowlist?: string[];
     worktreeRoot?: string;
   };

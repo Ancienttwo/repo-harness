@@ -9,12 +9,12 @@ import {
   repoHarnessAuthorizationRevision,
 } from '../../effects/repo-registry';
 import { mcpAuditBotForClient, runWithMcpAuditBot } from './audit';
-import { assertNoLegacyRepoScopeMcpConfig, loadMcpLocalConfig } from './auth';
+import { assertNoLegacyRepoScopeMcpConfig, loadMcpLocalConfig, type McpLocalConfig } from './auth';
 import { recordCodingProcessCompletion } from './coding-tools';
 import { createCodeGraphCliAdapter } from './codegraph-adapter';
 import { CodingWorkspaceManager } from './coding-workspaces';
 import { buildMcpServerInstructions } from './instructions';
-import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
+import { authorizationProfile, getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
 import type { McpPolicy } from './types';
@@ -94,7 +94,7 @@ function uniqueRoots(rawRoots: string[]): string[] {
 function buildCodingRuntime(
   repoRoot: string,
   policy: McpPolicy,
-  config: ReturnType<typeof loadMcpLocalConfig>,
+  config: McpLocalConfig | null,
   ownerId: string,
 ): McpCodingRuntime {
   const codingEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -144,11 +144,30 @@ function attachCodingRuntime(ctx: McpToolContext, runtime: McpCodingRuntime): vo
 export function createMcpCodingRuntime(opts: McpServerOptions, ownerId: string): McpCodingRuntime {
   if (!ownerId.trim()) throw new Error('coding MCP runtime owner is required');
   const ctx = createMcpToolContext({ ...opts, codingRuntime: null });
-  if (ctx.policy.profile !== 'coding') throw new Error('coding MCP runtime requires the coding profile');
+  if (!ctx.policy.capabilities.workspaceCoder) throw new Error('coding MCP runtime requires the coding profile');
   const config = loadMcpLocalConfig();
   const runtime = buildCodingRuntime(ctx.repoRoot, ctx.policy, config, ownerId);
   activeCodingRuntimes.add(runtime);
   return runtime;
+}
+
+/**
+ * The live preconditions of an authorization-scoped profile: v3 setup for this
+ * profile, an adopted read_write grant, and a current authorization revision.
+ * Returns the reason the profile may not serve, or null.
+ */
+export function authorizationProfileBlocker(profile: string, config: McpLocalConfig | null): string | null {
+  if (authorizationProfile(profile) === null) return null;
+  if (config?.version !== 3 || config.profile !== profile) {
+    return `${profile} MCP is disabled; run setup with profile ${profile} and an explicit read-write grant`;
+  }
+  if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
+    return `${profile} MCP requires at least one adopted repo with an explicit read_write grant`;
+  }
+  if (config.authorizationRevision !== repoHarnessAuthorizationRevision()) {
+    return `${profile} MCP authorization revision is stale; rerun ${profile} setup`;
+  }
+  return null;
 }
 
 export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
@@ -157,19 +176,8 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const config = loadMcpLocalConfig();
   const requestedProfile = opts.profile ?? config?.profile ?? 'planner';
   const profile = parseMcpProfile(requestedProfile === 'reader' ? 'planner' : requestedProfile);
-  const authorizationScoped = profile === 'coding';
-  if (authorizationScoped) {
-    const enabled = config?.coding?.enabled === true;
-    if (config?.version !== 3 || config.profile !== profile || !enabled) {
-      throw new Error(`${profile} MCP is disabled; run setup with profile ${profile} and an explicit read-write grant`);
-    }
-    if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
-      throw new Error(`${profile} MCP requires at least one adopted repo with an explicit read_write grant`);
-    }
-    if (config.authorizationRevision !== repoHarnessAuthorizationRevision()) {
-      throw new Error(`${profile} MCP authorization revision is stale; rerun ${profile} setup`);
-    }
-  }
+  const blocker = authorizationProfileBlocker(profile, config);
+  if (blocker !== null) throw new Error(blocker);
   const configuredAllowedRoots = Array.from(new Set([
     ...(opts.allowedRoots ?? []),
     ...(config?.permissions?.allowedRoots ?? []),
@@ -214,11 +222,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
-  if (profile === 'coding') {
-    if (opts.codingRuntime !== null) {
-      const runtime = opts.codingRuntime ?? buildCodingRuntime(repoRoot, policy, config, `mcp_${randomUUID()}`);
-      attachCodingRuntime(ctx, runtime);
-    }
+  if (policy.capabilities.workspaceCoder && opts.codingRuntime !== null) {
+    const runtime = opts.codingRuntime ?? buildCodingRuntime(repoRoot, policy, config, `mcp_${randomUUID()}`);
+    attachCodingRuntime(ctx, runtime);
   }
   return ctx;
 }
@@ -235,6 +241,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
       instructions: buildMcpServerInstructions({
         readerEnabled: ctx.policy.capabilities.workspaceReader,
         codingEnabled: ctx.policy.capabilities.workspaceCoder,
+        taskDispatchEnabled: ctx.policy.capabilities.taskDispatch,
       }),
     },
   );

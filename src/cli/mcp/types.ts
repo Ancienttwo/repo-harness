@@ -10,6 +10,7 @@ export interface McpPolicy {
     workflowPlanner: boolean;
     workflowExecutor: boolean;
     workspaceCoder: boolean;
+    taskDispatch: boolean;
   };
   readGlobs: string[];
   writeGlobs: string[];
