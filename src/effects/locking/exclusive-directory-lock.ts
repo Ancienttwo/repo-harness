@@ -90,15 +90,21 @@ export interface ExclusiveDirectoryLockHandle {
 export interface ExclusiveDirectoryLockOwner {
   readonly lockPath: string;
   readonly pid: number;
-  /** OS process start time of the owner; see readProcessStartTime. */
-  readonly startTime: string;
+  /**
+   * OS process start time of the owner; see readProcessStartTime. It is null
+   * when the record has none: records published before start times were
+   * recorded (#934), such as the lock a 0.24.1 parent holds during `update`.
+   * Without it, liveness is never proven and the record is never reclaimed.
+   */
+  readonly startTime: string | null;
   readonly token: string;
 }
 
 /**
  * `dead` means no process now runs as the recorded owner: the PID is free, or
  * a process with a different start time has it. `unverified` means the PID is
- * in use but the process table could not be read.
+ * in use but the process table could not be read, or the record has no start
+ * time to compare.
  */
 export type ExclusiveDirectoryLockOwnerLiveness = 'live' | 'dead' | 'unverified';
 
@@ -142,7 +148,10 @@ function ownerTokenFromFileName(entry: string): { readonly token: string; readon
 
 let lastLiveOwner: { readonly pid: number; readonly startTime: string; readonly checkedAt: number } | null = null;
 
-function ownerLiveness(pid: number, startTime: string): ExclusiveDirectoryLockOwnerLiveness {
+function ownerLiveness(pid: number, startTime: string | null): ExclusiveDirectoryLockOwnerLiveness {
+  // Without a start time, a live PID may be a reuse, so neither verdict is
+  // proven; this matches the reclaim rule that never treats such a record as stale.
+  if (startTime === null) return 'unverified';
   try {
     process.kill(pid, 0);
   } catch (error) {
@@ -166,7 +175,7 @@ function ownerLiveness(pid: number, startTime: string): ExclusiveDirectoryLockOw
 }
 
 /** Only a proven dead owner is stale; an unverified owner keeps the lock. */
-function ownerIsAlive(pid: number, startTime: string): boolean {
+function ownerIsAlive(pid: number, startTime: string | null): boolean {
   return ownerLiveness(pid, startTime) !== 'dead';
 }
 
@@ -342,7 +351,7 @@ export function readExclusiveDirectoryLockOwner(
     return null;
   }
   const startTime = recordedStartTime(parsed);
-  if (parsed.pid !== owner.pid || parsed.token !== owner.token || startTime === null) return null;
+  if (parsed.pid !== owner.pid || parsed.token !== owner.token) return null;
   assertLockAncestors(location);
   const currentDirectory = lstatSync(location.lockPath);
   const currentOwner = lstatSync(ownerPath);
