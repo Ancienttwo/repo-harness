@@ -26,6 +26,7 @@ import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../proce
 import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
 import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -167,6 +168,12 @@ export interface OperatorServerOptions {
   readonly read_repository_snapshot?: (
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
+  /**
+   * Write routes admitted for POST. Production passes none: no business write
+   * is open yet, and a production write route must also be listed in
+   * OPERATOR_ROUTES with `write: true`. Tests inject routes to exercise the channel.
+   */
+  readonly write_routes?: readonly OperatorWriteRoute[];
 }
 
 export interface OperatorServerHandle {
@@ -250,8 +257,9 @@ function jsonHeaders(): Record<string, string> {
  */
 export const OPERATOR_STATIC_CONTENT_SECURITY_POLICY = "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'" as const;
 
-/** Every method the server implements, on every resource that refuses one. */
+/** The methods a read resource implements; a write route implements POST only. */
 const OPERATOR_ALLOWED_METHODS = 'GET, HEAD' as const;
+const OPERATOR_WRITE_ALLOWED_METHODS = 'POST' as const;
 
 function staticHeaders(contentType: string): Record<string, string> {
   return {
@@ -1421,6 +1429,16 @@ export async function startOperatorServer(
     void completion.finally(()=>activeTaskReadCompletions.delete(completion));
   };
 
+  const writeToken = createOperatorWriteToken();
+  const writeRoutes = options.write_routes ?? [];
+  const matchWriteRoute = (pathname: string): { readonly route: OperatorWriteRoute; readonly params: readonly string[] } | null => {
+    for (const route of writeRoutes) {
+      const match = route.path.exec(pathname);
+      if (match !== null && match[0] === pathname) return { route, params: match.slice(1) };
+    }
+    return null;
+  };
+
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? 'GET';
     const headOnly = method === 'HEAD';
@@ -1436,7 +1454,18 @@ export async function startOperatorServer(
       sendRefusal(request, response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
       return;
     }
-    if (method !== 'GET' && method !== 'HEAD') {
+    // A write is identified before it is routed: it must name this service as
+    // its Origin and come from a same-origin fetch, whatever path it targets.
+    const write = method === 'POST';
+    if (write && requestOrigin === undefined) {
+      sendRefusal(request, response, 403, errorBody('origin_required', 'A write request must send the Origin of this service.', 'Send the request from the operator page.'));
+      return;
+    }
+    if (write && request.headers['sec-fetch-site'] !== 'same-origin') {
+      sendRefusal(request, response, 403, errorBody('fetch_site_not_allowed', 'A write request must be a same-origin fetch.', 'Send the request from the operator page.'));
+      return;
+    }
+    if (!write && method !== 'GET' && method !== 'HEAD') {
       sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only GET and HEAD are supported.'), false, {
         Allow: OPERATOR_ALLOWED_METHODS,
       });
@@ -1455,6 +1484,33 @@ export async function startOperatorServer(
       return;
     }
     const pathname = url.pathname;
+    const writeMatch = matchWriteRoute(pathname);
+    if (write) {
+      if (writeMatch === null) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only GET and HEAD are supported.'), false, {
+          Allow: OPERATOR_ALLOWED_METHODS,
+        });
+        return;
+      }
+      const reply = await handleOperatorWrite({
+        request,
+        route: writeMatch.route,
+        params: writeMatch.params,
+        token: writeToken,
+        port: request.socket.localPort!,
+        env: options.env,
+      });
+      const replyHeaders: Readonly<Record<string, string>> = reply.close ? { Connection: 'close' } : {};
+      if (reply.refused) sendRefusal(request, response, reply.status, reply.body as unknown as OperatorErrorResponseV1, false, replyHeaders);
+      else sendJson(response, reply.status, reply.body, false, replyHeaders);
+      return;
+    }
+    if (writeMatch !== null) {
+      sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only POST is supported.'), headOnly, {
+        Allow: OPERATOR_WRITE_ALLOWED_METHODS,
+      });
+      return;
+    }
     const fetchSite = request.headers['sec-fetch-site'];
     if (pathname.startsWith('/api/') && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
       sendJson(response, 403, { code: 'fetch_site_not_allowed' }, headOnly); return;
@@ -1654,9 +1710,12 @@ export async function startOperatorServer(
       sendRefusal(request, response, 503, errorBody('operator_assets_unavailable', 'Operator UI assets are unavailable.', OPERATOR_ASSET_ACTION), headOnly);
       return;
     }
+    const fileType = contentType(file);
     const headers = {
-      ...staticHeaders(contentType(file)),
+      ...staticHeaders(fileType),
       'Content-Length': body.byteLength.toString(),
+      // The page response is the only place the write token is handed out.
+      ...(fileType.startsWith('text/html') ? { 'Set-Cookie': operatorWriteTokenCookie(request.socket.localPort!, writeToken) } : {}),
     };
     response.writeHead(200, headers);
     if (headOnly) response.end();

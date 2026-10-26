@@ -319,7 +319,7 @@ test('GET and HEAD use only the injected cache; no subprocess or canonical state
     expect(await response.json()).toEqual(overlay);
     const head = await fetch(`${server.url}/api/v1/runtime/status`, { method: 'HEAD' }); expect(head.status).toBe(200); expect(await head.text()).toBe('');
     expect((await fetch(`${server.url}/api/v1/runtime/status?host=fixture`)).status).toBe(400);
-    expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
+    expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
     const pipeline = await fetch(`${server.url}/api/v1/pipelines`);
     expect(pipeline.status).toBe(404);
     expect(await pipeline.json()).toMatchObject({ error: { code: 'not_found' } });
@@ -626,7 +626,7 @@ describe('native runtime observation cache', () => {
       expect(open).not.toHaveBeenCalled(); expect(lstat).not.toHaveBeenCalled();
       expect(spawn).not.toHaveBeenCalled(); expect(spawnSync).not.toHaveBeenCalled();
       expect(readdirSync(root).map(name => [name, readFileSync(join(root, name), 'utf8')])).toEqual(before);
-      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
+      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
       expect(JSON.stringify(first)).not.toContain(root);
     } finally { for (const spy of spies) spy.mockRestore(); await server?.close(); rmSync(root, { recursive: true, force: true }); }
   });

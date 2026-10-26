@@ -285,7 +285,7 @@ test('the existing context GET explicitly serves archived history with all selec
     expect((await fetch(url+'?view=history&task_revision='+'f'.repeat(64))).status).toBe(404);
     for(const q of ['view=history&view=history','view=history&ref=HEAD','view=history&path=/private','view=unknown','view=history&task_revision=invalid'])expect((await fetch(url+'?'+q)).status).toBe(400);
     expect((await fetch(url+'?view=history',{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
-    expect((await fetch(url+'?view=history',{method:'POST',headers:{Origin:server.url}})).status).toBe(405);
+    expect((await fetch(url+'?view=history',{method:'POST',headers:{Origin:server.url,'Sec-Fetch-Site':'same-origin'}})).status).toBe(405);
     expect(tree(f.root)).toBe(before);
   } finally {await server.close();}
 });
