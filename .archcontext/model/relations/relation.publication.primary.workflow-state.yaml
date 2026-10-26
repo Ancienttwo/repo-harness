@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.publication.primary.workflow-state
-kind: calls
-source: component.publication.primary
-target: capability.workflow-engine.workflow-state
-intent: "Validate historical publication task identifiers with the shared canonical task digest pattern"
