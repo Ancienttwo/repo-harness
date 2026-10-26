@@ -123,7 +123,7 @@ export function collectBaseline(f: Fixture) {
       let value: unknown;
       let status = 0;
       if (args[0] === 'repo' && args[1] === 'view') value = { id: 'R_fixture', nameWithOwner: 'fixture/offline' };
-      else if (args[0] === 'api' && args[1] === 'repos/fixture/offline') value = { id: 1001, node_id: 'R_fixture', full_name: 'fixture/offline' };
+      else if (args[0] === 'api' && args[1] === 'repos/fixture/offline') value = { id: 1001, node_id: 'R_fixture', full_name: 'fixture/offline', default_branch: 'main' };
       else if (args[0] === 'pr' && args[1] === 'view') {
         current = source.readIdentity();
         value = current;
