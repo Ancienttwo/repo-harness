@@ -9,17 +9,17 @@
  *    (`archctx resolve`) and the tests a capability declares in
  *    `extensions.verification`.
  *
- * The committed projection is a generated file. `--check` fails when a fresh
- * generation differs from it; `--write` replaces it.
+ * The projection is generated on demand, never committed: it follows every
+ * import edit, so a committed copy would go stale with each merge. CI generates
+ * it on the commit it tests and uploads it next to the JUnit reports.
  */
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeAffectedTests } from './select-ci-coverage';
 import { resolveArchcontextCapabilityPaths } from '../src/effects/architecture/archcontext-owners';
 
-export const PROJECTION_PATH = 'scripts/test-capability-projection.json';
 const MODEL_NODES = '.archcontext/model/nodes';
 const TEST_FILE = /^tests\/.*\.test\.tsx?$/;
 const SOURCE_MODULE = /\.([cm]?[jt]sx?|sh)$/;
@@ -154,18 +154,14 @@ export async function generateProjection(root: string): Promise<string> {
 }
 
 if (import.meta.main) {
-  const mode = process.argv.slice(2);
-  if (mode.length !== 1 || !['--check', '--write'].includes(mode[0]!)) {
-    process.stderr.write('Usage: bun scripts/project-test-capabilities.ts [--check|--write]\n');
+  const args = process.argv.slice(2);
+  if (args.length !== 2 || args[0] !== '--out' || !args[1] || args[1].startsWith('-')) {
+    process.stderr.write('Usage: bun scripts/project-test-capabilities.ts --out <file>\n');
     process.exit(2);
   }
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const generated = await generateProjection(root);
-  const target = join(root, PROJECTION_PATH);
-  if (mode[0] === '--write') {
-    writeFileSync(target, generated);
-  } else if (!existsSync(target) || readFileSync(target, 'utf8') !== generated) {
-    process.stderr.write(`${PROJECTION_PATH} is out of date. Run: bun scripts/project-test-capabilities.ts --write\n`);
-    process.exit(1);
-  }
+  const target = resolve(args[1]);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, generated);
 }

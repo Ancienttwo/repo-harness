@@ -14,12 +14,13 @@ _ci_run_bun_tests_in_temporary_home() {
     const divider = args.indexOf("--harness-options");
     const runs = batch < 0 ? [args] : args.slice(batch + 1, divider).map(file => [...args.slice(0, batch), file, ...args.slice(divider + 1)]);
     let status = 0;
-    // The caller owns the run directory; the child process never sees it.
+    // The caller owns the run directory. A nested gate inside a test inherits a
+    // directory in the disposable root, so it never writes into the checkout.
     const junitDir = process.env.BUN_TEST_JUNIT_DIR;
     const testFiles = batch >= 0 ? args.slice(batch + 1, divider) : args.filter(arg => /[.](test|spec)[.][cm]?[jt]sx?$/.test(arg));
     for (const [index, baseArgs] of runs.entries()) {
       const { env, home, temp } = createTemporaryTestEnvironment(process.env);
-      delete env.BUN_TEST_JUNIT_DIR;
+      env.BUN_TEST_JUNIT_DIR = require("node:path").join(temp, "junit");
       // One report per Bun process, named by its test file so a rerun replaces the report. Options go first so the file stays last.
       const name = (batch >= 0 ? testFiles[index] : testFiles.length === 1 ? testFiles[0] : undefined) ?? "run-" + index;
       const runArgs = junitDir
@@ -90,7 +91,10 @@ _ci_run_bun_tests_in_temporary_home() {
 # ignored .ai/harness/runs/. Runs older than a week are removed; CI uploads the
 # directory. Age, not count, decides: concurrent and nested runs keep their own.
 _ci_prepare_junit_dir() {
-  [[ -z "${BUN_TEST_JUNIT_DIR:-}" ]] || return 0
+  if [[ -n "${BUN_TEST_JUNIT_DIR:-}" ]]; then
+    mkdir -p "$BUN_TEST_JUNIT_DIR"
+    return
+  fi
   local base
   base="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.ai/harness/runs/junit"
   mkdir -p "$base" || return 1

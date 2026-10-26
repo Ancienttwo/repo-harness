@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { buildProjection, PROJECTION_PATH, readModelVerification, serializeProjection } from '../scripts/project-test-capabilities';
+import { join, resolve } from 'node:path';
+import { buildProjection, readModelVerification, serializeProjection } from '../scripts/project-test-capabilities';
 
 const sources = new Map([
   ['bunfig.toml', ''],
@@ -71,7 +72,12 @@ describe('test capability projection', () => {
     }
   });
 
-  test('the committed projection lives at the declared path', () => {
-    expect(PROJECTION_PATH).toBe('scripts/test-capability-projection.json');
+  test('the command line takes exactly one output path', () => {
+    const script = resolve(import.meta.dir, '../scripts/project-test-capabilities.ts');
+    for (const args of [[], ['--out'], ['--out', '--write'], ['--check'], ['--out', 'a.json', 'b.json']]) {
+      const result = spawnSync('bun', [script, ...args], { encoding: 'utf8' });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('Usage: bun scripts/project-test-capabilities.ts --out <file>');
+    }
   });
 });
