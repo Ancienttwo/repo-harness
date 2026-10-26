@@ -799,8 +799,9 @@ export function runMcpMigrateScope(opts: { repo?: string }): McpMigrateScopeResu
   }
 
   const legacyConfig = readMcpLocalConfigFile(legacy.config);
-  if (authorizationProfile(legacyConfig?.profile) !== null) {
-    throw new Error(`refusing to migrate ${legacy.config}: the ${legacyConfig.profile} profile was never valid in repo scope; run repo-harness mcp setup chatgpt --profile ${legacyConfig.profile} with an explicit --grant-read-write instead`);
+  const legacyProfile = legacyConfig?.profile;
+  if (authorizationProfile(legacyProfile) !== null) {
+    throw new Error(`refusing to migrate ${legacy.config}: the ${legacyProfile} profile was never valid in repo scope; run repo-harness mcp setup chatgpt --profile ${legacyProfile} with an explicit --grant-read-write instead`);
   }
 
   const changed: string[] = [];
