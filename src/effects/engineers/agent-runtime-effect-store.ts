@@ -70,13 +70,12 @@ import { readTaskMessageDelivery, observeTaskInboxContext, readAdmittedTaskActiv
 import type { RuntimeDeliveryState, RuntimeReachability } from '../../core/fleet/board';
 
 export const AGENT_RUNTIME_EFFECT_RELATIVE_ROOT = 'repo-harness/agent-runtime-effects/admitted-v2';
-export const PROVIDER_THREAD_EFFECT_V1_RELATIVE_ROOT = 'repo-harness/provider-thread-effects/v1';
 
 export type AgentRuntimeEffectStoreErrorCode =
   | 'agent_runtime_effect_invalid' | 'agent_runtime_effect_unreadable' | 'agent_runtime_effect_persistence_failed'
   | 'agent_runtime_effect_not_found' | 'agent_runtime_effect_conflict' | 'agent_runtime_effect_binding_stale'
   | 'agent_runtime_effect_claim_stale' | 'agent_runtime_effect_capability_unsupported'
-  | 'agent_runtime_effect_transition_invalid' | 'agent_runtime_effect_migration_required'
+  | 'agent_runtime_effect_transition_invalid'
   | 'agent_runtime_effect_authorization_stale'
   | 'agent_runtime_effect_wake_superseded' | 'agent_runtime_effect_wake_coalescing';
 
