@@ -1,12 +1,9 @@
-import { serializeHistoricalLease } from '../helpers/sprint-fixture';
-import { leaseOwnerPath } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants, closeSync, openSync, renameSync, writeSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 
@@ -27,7 +24,6 @@ function fixture() {
   const root=join(base,'repo'), home=join(base,'home');mkdirSync(root);mkdirSync(home);
   git(root,'init','-q','-b','main');git(root,'config','user.name','Test');git(root,'config','user.email','test@example.invalid');
   const task='Inspect current task',taskId='a'.repeat(64),sprint='plans/sprints/context.sprint.md';
-  const taskRevision=deriveTaskRevision({taskId,taskCell:task,modeCell:'contract',acceptanceCell:'read only'});
   const sprintText=`# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${taskId} | [ ] | ${task} | contract | read only | plans/plan-false.md |\n`;
   put(join(root,sprint),sprintText);put(join(root,'.ai/harness/sprint/active-sprint'),sprint+'\n');
   git(root,'add','.');git(root,'commit','-qm','canonical task');

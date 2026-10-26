@@ -1,38 +1,31 @@
 /**
- * Pure coordination identity: sprint rows -> task identity, task revision, and
- * the lease owner record schema. No clock, PID, randomness, or filesystem
- * input reaches this layer. Canonical task history and historical message
- * fixtures retain these parsers; lease records do not authorize current work.
+ * Pure coordination identity: sprint rows -> task identity and task revision.
+ * No clock, PID, randomness, or filesystem input reaches this layer.
  *
  * Identity is read, not derived:
  *
  * - `task_id` is the backlog row's persisted `ID` cell, verbatim, validated
  *   against `TASK_DIGEST_PATTERN`. It was previously a digest of the exact Task
  *   cell text, which made a title clarification indistinguishable from deleting
- *   one task and creating another: live leases were orphaned, claim-scoped
- *   messages lost their subject, and the renamed row became freshly claimable.
- *   Display text and identity are two data and no longer share one field. The
- *   row index is still not identity -- reordering must not rewrite anything --
- *   and neither is a slug, which collapses "Fix auth bug" and "Fix auth-bug".
+ *   one task and creating another. Display text and identity are two data and
+ *   no longer share one field. The row index is still not identity --
+ *   reordering must not rewrite anything -- and neither is a slug, which
+ *   collapses "Fix auth bug" and "Fix auth-bug".
  * - `task_revision = digest(task_id + Task cell + Mode cell + Acceptance cell)`.
- *   The Task cell is now part of the preimage directly, so a title edit still
- *   drifts every offer and claim taken before it even though identity survives.
- *   The Status cell is excluded on purpose: a sibling row completing rewrites
- *   the sprint file, and a revision that moved with it would invalidate every
- *   other live claim, making parallel execution impossible.
+ *   The Task cell is part of the preimage directly, so a title edit drifts the
+ *   revision even though identity survives. The Status cell is excluded on
+ *   purpose: a sibling row completing rewrites the sprint file, and a revision
+ *   that moved with it would invalidate every other task's revision.
  *
- * The revision preimage carries `SPRINT_IDENTITY_PROTOCOL_V2`, not
- * `COORDINATION_PROTOCOL`. The latter versions the lease owner record and its
- * on-disk plane; bumping it to version an identity derivation would silently
- * reject every persisted record written by an older build. The two version
- * domains are deliberately separate.
+ * The revision preimage carries `SPRINT_IDENTITY_PROTOCOL_V2`, a domain token
+ * that separates schema 2 revision digests from every schema 1 digest.
  *
  * The digest is `sha256` hex with no `sha256:` prefix, unlike the house
  * `progress_token`/`state_revision` shape. `task_id` is used verbatim as a
- * single path component under the coordination root, and a bare 64-character
- * hex string is a safe path component on every filesystem this repo targets.
- * `TASK_DIGEST_PATTERN` is the validator the effects layer applies before any
- * derived value reaches `join()`.
+ * single path component, and a bare 64-character hex string is a safe path
+ * component on every filesystem this repo targets. `TASK_DIGEST_PATTERN` is
+ * the validator the effects layer applies before any derived value reaches
+ * `join()`.
  *
  * Schema 1 sprints carry no `ID` cell and therefore cannot mint identity here
  * at all. These records remain readable Markdown.
@@ -46,21 +39,8 @@ import {
   type BacklogRow,
 } from './sprint-backlog-rows';
 
-/**
- * Lease-plane protocol version. Part of every lease owner record and of the
- * legacy v1 identity preimage; deliberately NOT part of the schema-2 revision
- * preimage, which versions itself through `SPRINT_IDENTITY_PROTOCOL_V2`.
- */
-export const COORDINATION_PROTOCOL = 1;
-
-/**
- * Domain token distinguishing schema-2 revision digests from every v1 digest.
- * A literal, not a number derived from `COORDINATION_PROTOCOL`, so the two
- * version axes can never be accidentally coupled again.
- */
-export const SPRINT_IDENTITY_PROTOCOL_V2 = 'protocol-v2';
-
-export const LEASE_OWNER_KIND = 'repo-harness-lease-owner';
+/** Domain token distinguishing schema-2 revision digests from every v1 digest. */
+const SPRINT_IDENTITY_PROTOCOL_V2 = 'protocol-v2';
 
 /** Shape every `task_id` and `task_revision` must have before it is trusted. */
 export const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
@@ -72,11 +52,11 @@ const TASK_REVISION_DOMAIN = 'repo-harness-task-revision';
  * string array is the canonical encoding: every field is quoted and escaped,
  * so no field value can forge a separator into another field's position.
  */
-export function identityDigest(fields: readonly string[]): string {
+function identityDigest(fields: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify(fields), 'utf-8').digest('hex');
 }
 
-export interface TaskRevisionInput {
+interface TaskRevisionInput {
   /** The row's persisted `ID` cell. */
   readonly taskId: string;
   /** The row's Task cell, verbatim and untransformed. */
@@ -107,7 +87,6 @@ export function unmigratedSprintRefusal(sprintPath: string): string {
     + `run 'repo-harness sprint migrate-schema --sprint ${sprintPath} --target-ref <ref>' first`;
 }
 
-/** One backlog row resolved to its coordination identity. */
 /**
  * The backlog row as a canonical task carries it: every cell except `id`.
  *
@@ -118,7 +97,7 @@ export function unmigratedSprintRefusal(sprintPath: string): string {
  * identical to schema 1's, which is what lets a byte-freeze over this
  * projection move for exactly one reason -- the revision -- rather than two.
  */
-export type CanonicalTaskRow = Omit<BacklogRow, 'id'>;
+type CanonicalTaskRow = Omit<BacklogRow, 'id'>;
 
 export interface CanonicalTask {
   readonly task_id: string;
@@ -127,7 +106,7 @@ export interface CanonicalTask {
   readonly row: CanonicalTaskRow;
 }
 
-export interface CanonicalSprintInput {
+interface CanonicalSprintInput {
   readonly repoIdentity: string;
   readonly sprintPath: string;
   readonly sprintText: string;
@@ -139,8 +118,8 @@ export interface CanonicalSprintInput {
  * Fails closed on a schema 1 sprint, on an `ID` cell that is not a bare
  * 64-character lowercase hex string, and on a duplicate id. A duplicate is the
  * copy-paste failure the contract names explicitly: two rows claiming one
- * identity would share a lease directory, so the whole projection is refused
- * rather than one of the two rows being picked.
+ * identity would make every id-addressed read ambiguous, so the whole
+ * projection is refused rather than one of the two rows being picked.
  */
 export function projectCanonicalTasks(input: CanonicalSprintInput): CanonicalTask[] {
   if (sprintBacklogSchema(input.sprintText) !== SPRINT_BACKLOG_SCHEMA_V2) {
@@ -180,11 +159,11 @@ export function projectCanonicalTasks(input: CanonicalSprintInput): CanonicalTas
 }
 
 /**
- * Prove that the shared coordination plane has one owner for every task id.
+ * Prove that the live canonical Sprints have one owner for every task id.
  *
  * `projectCanonicalTasks` protects one file.  Callers that read a set of live
- * canonical Sprint carriers use this small composition guard before any lease
- * or task-subject operation can address the id.  Completed rows remain in
+ * canonical Sprint carriers use this small composition guard before any
+ * task-subject operation can address the id.  Completed rows remain in
  * their live Sprint on purpose: changing a row's status never releases its
  * persisted identity for another row to reuse.
  */
@@ -201,416 +180,4 @@ export function assertUniqueCanonicalTaskIds(inputs: readonly CanonicalSprintInp
       owners.set(task.task_id, input.sprintPath);
     }
   }
-}
-
-export type CanonicalTaskLookup =
-  | { readonly ok: true; readonly task: CanonicalTask }
-  | { readonly ok: false; readonly error: string };
-
-/**
- * Resolve one `task_id` against a canonical sprint. Duplicate Task cells fail
- * closed rather than picking the first match: the identity contract requires a
- * Task cell to be unique within a sprint, and historical task-ref
- * resolution already refuses ambiguous references.
- */
-export function lookupCanonicalTask(
-  input: CanonicalSprintInput,
-  taskId: string,
-): CanonicalTaskLookup {
-  if (!TASK_DIGEST_PATTERN.test(taskId)) {
-    return { ok: false, error: `malformed task id: ${taskId}` };
-  }
-  let projected: CanonicalTask[];
-  try {
-    projected = projectCanonicalTasks(input);
-  } catch (error) {
-    if (error instanceof SprintSchemaError) return { ok: false, error: error.message };
-    throw error;
-  }
-  const matches = projected.filter((task) => task.task_id === taskId);
-  if (matches.length === 0) {
-    return { ok: false, error: `no backlog row in ${input.sprintPath} has task id ${taskId}` };
-  }
-  if (matches.length > 1) {
-    return {
-      ok: false,
-      error: `ambiguous task id ${taskId} (${matches.length} backlog rows match) in ${input.sprintPath}`,
-    };
-  }
-  return { ok: true, task: matches[0] };
-}
-
-/**
- * States a lease owner record may carry on disk. `available` is deliberately
- * not one of them -- it is the absence of a lease, classified by the store.
- *
- * `released` is written durably before the lease directory is removed, so a
- * crash inside `release` leaves a record that proves the transfer finished;
- * `reconcile` can then clear it without guessing. `completing` is written by
- * the completion split once the publication transaction has passed its claim,
- * binding, and revision gates, so a crash inside the publication window is a
- * named state rather than an ambiguous `bound`.
- */
-export const PERSISTED_LEASE_STATES = [
-  'reserving',
-  'bound',
-  'completing',
-  'reviewing',
-  'released',
-] as const;
-
-export type PersistedLeaseState = (typeof PERSISTED_LEASE_STATES)[number];
-export type NonReviewingPersistedLeaseState = Exclude<PersistedLeaseState, 'reviewing'>;
-
-export interface LeaseClaimedBy {
-  readonly session_id: string;
-  readonly source_worktree: string;
-}
-
-/** Provenance of a preemption; null on a first claim. */
-export interface LeaseStolenFrom {
-  readonly claim_id: string;
-  readonly reason: string;
-}
-
-/** The first `generation` a fresh claim mints; every steal increments it. */
-export const FIRST_LEASE_GENERATION = 1;
-
-interface LeaseOwnerRecordFields {
-  readonly protocol: typeof COORDINATION_PROTOCOL;
-  readonly kind: typeof LEASE_OWNER_KIND;
-  readonly claim_id: string;
-  readonly task_id: string;
-  readonly task_revision: string;
-  readonly sprint_path: string;
-  /**
-   * The canonical ref the claim was validated against. Every later verb that
-   * re-reads canonical compares its own `--target-ref` against this value, so a
-   * completion validated on a different ref than the claim was taken on fails
-   * closed instead of proving pendingness against the wrong authority.
-   */
-  readonly target_ref: string;
-  /**
-   * Fencing history. `claim_id` alone says who owns the lease now; `generation`
-   * says how many owners preceded them, which is what a preemption chain needs
-   * and what a stale reader cannot forge by re-minting a uuid.
-   */
-  readonly generation: number;
-  readonly claimed_by: LeaseClaimedBy;
-  readonly execution_worktree: string | null;
-  readonly branch: string | null;
-  readonly unit_ref: string | null;
-  /**
-   * The closeout journal key the publication window runs under, set when the
-   * lease enters `completing`. Null in every other state: outside that window
-   * there is no finish transaction to recover, and inventing one would name a
-   * journal entry that does not exist.
-   */
-  readonly finish_transaction_key: string | null;
-  /** Who this lease was taken from, and why. Never inferred; only `steal` sets it. */
-  readonly stolen_from: LeaseStolenFrom | null;
-}
-
-/** Schema 1 deliberately has no review lifecycle fields. */
-export interface LeaseOwnerRecordV1 extends LeaseOwnerRecordFields {
-  readonly state: NonReviewingPersistedLeaseState;
-}
-
-/**
- * The record schema is independent from `COORDINATION_PROTOCOL`: the latter
- * contributes to task-identity digest preimages and must never be bumped to
- * version an owner record. Schema 2 adds the only authority for "current"
- * publication identity.
- */
-export const LEASE_OWNER_RECORD_SCHEMA_V2 = 2 as const;
-
-export interface CurrentPublicationPointerV1 {
-  readonly publication_id: string;
-  readonly receipt_sha256: string;
-  readonly head_sha: string;
-  /** Ship closeout journal key, never the contract-finish journal key. */
-  readonly ship_transaction_key: string;
-}
-
-interface LeaseOwnerRecordV2Base extends Omit<LeaseOwnerRecordFields, 'finish_transaction_key'> {
-  readonly record_schema: typeof LEASE_OWNER_RECORD_SCHEMA_V2;
-}
-
-/**
- * Schema 2 is deliberately a discriminated tuple. A review pointer cannot be
- * represented without clearing the unrelated finish transaction domain, and
- * a non-review record cannot retain publication authority.
- */
-export type LeaseOwnerRecordV2 =
-  | (LeaseOwnerRecordV2Base & {
-    readonly state: 'reviewing';
-    readonly finish_transaction_key: null;
-    readonly current_publication: CurrentPublicationPointerV1;
-  })
-  | (LeaseOwnerRecordV2Base & {
-    readonly state: NonReviewingPersistedLeaseState;
-    readonly finish_transaction_key: string | null;
-    readonly current_publication: null;
-  });
-
-export type LeaseOwnerRecord = LeaseOwnerRecordV1 | LeaseOwnerRecordV2;
-
-export interface BuildLeaseOwnerInput {
-  readonly claimId: string;
-  readonly taskId: string;
-  readonly taskRevision: string;
-  readonly sprintPath: string;
-  readonly targetRef: string;
-  readonly generation: number;
-  readonly sessionId: string;
-  readonly sourceWorktree: string;
-  readonly stolenFrom?: LeaseStolenFrom | null;
-}
-
-/** The record a fresh claim (or a steal) publishes: always `reserving`. */
-export function buildLeaseOwnerRecord(input: BuildLeaseOwnerInput): LeaseOwnerRecordV1 {
-  return {
-    protocol: COORDINATION_PROTOCOL,
-    kind: LEASE_OWNER_KIND,
-    claim_id: input.claimId,
-    task_id: input.taskId,
-    task_revision: input.taskRevision,
-    sprint_path: input.sprintPath,
-    target_ref: input.targetRef,
-    generation: input.generation,
-    state: 'reserving',
-    claimed_by: { session_id: input.sessionId, source_worktree: input.sourceWorktree },
-    execution_worktree: null,
-    branch: null,
-    unit_ref: null,
-    finish_transaction_key: null,
-    stolen_from: input.stolenFrom ?? null,
-  };
-}
-
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-
-function nullableString(value: unknown): value is string | null {
-  return value === null || nonEmptyString(value);
-}
-
-const LEASE_OWNER_RECORD_V1_FIELDS = [
-  'protocol', 'kind', 'claim_id', 'task_id', 'task_revision', 'sprint_path',
-  'target_ref', 'generation', 'state', 'claimed_by', 'execution_worktree',
-  'branch', 'unit_ref', 'finish_transaction_key', 'stolen_from',
-] as const;
-const LEASE_OWNER_RECORD_V2_FIELDS = [
-  ...LEASE_OWNER_RECORD_V1_FIELDS,
-  'record_schema', 'current_publication',
-] as const;
-
-function hasExactFields(value: Record<string, unknown>, fields: readonly string[]): boolean {
-  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...fields].sort());
-}
-
-/**
- * True when any JSON object in `raw` declares the same key twice.
- *
- * `JSON.parse` keeps the last value for a duplicated key while a line-oriented
- * reader keeps the first, so a record carrying `"claim_id"` twice means two
- * readers of the same bytes can disagree about who owns a lease. There is no
- * correct resolution -- one of them is wrong and neither has the authority to
- * say which -- so the bytes are refused instead of interpreted.
- *
- * The scan is a small state machine over the raw text because a parsed object
- * has already collapsed the duplicate: by then the evidence is gone.
- */
-export function hasDuplicateJsonKeys(raw: string): boolean {
-  const stack: Set<string>[] = [];
-  let inString = false;
-  let escaped = false;
-  let current = '';
-  let lastString: string | null = null;
-
-  for (let index = 0; index < raw.length; index += 1) {
-    const character = raw[index]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') {
-        inString = false;
-        lastString = current;
-      } else current += character;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      current = '';
-      continue;
-    }
-    if (character === '{') {
-      stack.push(new Set());
-      lastString = null;
-      continue;
-    }
-    if (character === '}' || character === ']') {
-      if (character === '}') stack.pop();
-      lastString = null;
-      continue;
-    }
-    if (character === '[') {
-      lastString = null;
-      continue;
-    }
-    if (character === ':') {
-      const keys = stack[stack.length - 1];
-      if (keys !== undefined && lastString !== null) {
-        if (keys.has(lastString)) return true;
-        keys.add(lastString);
-      }
-      lastString = null;
-      continue;
-    }
-    if (character === ',') lastString = null;
-  }
-  return false;
-}
-
-/**
- * Parse one owner record. `null` means the bytes are not a valid record, which
- * the store classifies `unknown`; it never means "assume a default". Every
- * field is checked, so a truncated or hand-edited record fails closed instead
- * of being partially trusted -- including bytes that declare one key twice,
- * which two readers would otherwise resolve differently.
- */
-export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecord | null {
-  if (hasDuplicateJsonKeys(raw)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
-  const value = parsed as Record<string, unknown>;
-
-  const schema2 = value.record_schema === LEASE_OWNER_RECORD_SCHEMA_V2;
-  if (value.record_schema !== undefined && !schema2) return null;
-  if (!hasExactFields(value, schema2 ? LEASE_OWNER_RECORD_V2_FIELDS : LEASE_OWNER_RECORD_V1_FIELDS)) return null;
-
-  if (value.protocol !== COORDINATION_PROTOCOL) return null;
-  if (value.kind !== LEASE_OWNER_KIND) return null;
-  if (!nonEmptyString(value.claim_id)) return null;
-  if (typeof value.task_id !== 'string' || !TASK_DIGEST_PATTERN.test(value.task_id)) return null;
-  if (
-    typeof value.task_revision !== 'string'
-    || !TASK_DIGEST_PATTERN.test(value.task_revision)
-  ) return null;
-  if (!nonEmptyString(value.sprint_path)) return null;
-  // Absent is rejected, not defaulted: a record written by a build that did not
-  // carry these fields cannot be distinguished from one whose fields were
-  // stripped, and inventing either value would forge fencing or canonical
-  // authority. The store classifies such a record `unknown`.
-  if (!nonEmptyString(value.target_ref)) return null;
-  if (typeof value.generation !== 'number'
-    || !Number.isInteger(value.generation)
-    || value.generation < FIRST_LEASE_GENERATION) return null;
-  if (!nullableString(value.finish_transaction_key)) return null;
-  if (
-    typeof value.state !== 'string'
-    || !(PERSISTED_LEASE_STATES as readonly string[]).includes(value.state)
-  ) return null;
-
-  if (!schema2 && value.state === 'reviewing') return null;
-
-  const claimedBy = value.claimed_by;
-  if (typeof claimedBy !== 'object' || claimedBy === null || Array.isArray(claimedBy)) return null;
-  const claimedByValue = claimedBy as Record<string, unknown>;
-  if (!nonEmptyString(claimedByValue.session_id)) return null;
-  if (!nonEmptyString(claimedByValue.source_worktree)) return null;
-
-  if (!nullableString(value.execution_worktree)) return null;
-  if (!nullableString(value.branch)) return null;
-  if (!nullableString(value.unit_ref)) return null;
-
-  const boundExecution = nonEmptyString(value.execution_worktree)
-    && nonEmptyString(value.branch)
-    && nonEmptyString(value.unit_ref);
-  const clearedExecution = value.execution_worktree === null
-    && value.branch === null
-    && value.unit_ref === null;
-  if (schema2) {
-    if (!boundExecution && !clearedExecution) return null;
-    if (value.state === 'reserving' && (!clearedExecution || value.finish_transaction_key !== null)) return null;
-    if ((value.state === 'bound' || value.state === 'completing' || value.state === 'reviewing') && !boundExecution) return null;
-    if (value.state === 'released' && value.finish_transaction_key !== null) return null;
-  }
-
-  let stolenFrom: LeaseStolenFrom | null = null;
-  if (value.stolen_from !== null && value.stolen_from !== undefined) {
-    const candidate = value.stolen_from;
-    if (typeof candidate !== 'object' || Array.isArray(candidate)) return null;
-    const candidateValue = candidate as Record<string, unknown>;
-    if (!nonEmptyString(candidateValue.claim_id)) return null;
-    if (!nonEmptyString(candidateValue.reason)) return null;
-    stolenFrom = { claim_id: candidateValue.claim_id, reason: candidateValue.reason };
-  }
-
-  const common: LeaseOwnerRecordFields & { readonly state: PersistedLeaseState } = {
-    protocol: COORDINATION_PROTOCOL,
-    kind: LEASE_OWNER_KIND,
-    claim_id: value.claim_id,
-    task_id: value.task_id,
-    task_revision: value.task_revision,
-    sprint_path: value.sprint_path,
-    target_ref: value.target_ref,
-    generation: value.generation,
-    state: value.state as PersistedLeaseState,
-    claimed_by: {
-      session_id: claimedByValue.session_id,
-      source_worktree: claimedByValue.source_worktree,
-    },
-    execution_worktree: value.execution_worktree as string | null,
-    branch: value.branch as string | null,
-    unit_ref: value.unit_ref as string | null,
-    finish_transaction_key: value.finish_transaction_key as string | null,
-    stolen_from: stolenFrom,
-  };
-  if (!schema2) return { ...common, state: value.state as NonReviewingPersistedLeaseState };
-
-  const pointer = value.current_publication;
-  if (value.state === 'reviewing') {
-    if (value.finish_transaction_key !== null) return null;
-    const parsedPointer = parseCurrentPublicationPointer(pointer);
-    if (parsedPointer === null) return null;
-    return {
-      ...common,
-      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
-      state: 'reviewing',
-      finish_transaction_key: null,
-      current_publication: parsedPointer,
-    };
-  }
-  if (pointer !== null) return null;
-  return {
-    ...common,
-    record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
-    state: value.state as Exclude<PersistedLeaseState, 'reviewing'>,
-    current_publication: null,
-  };
-}
-
-function parseCurrentPublicationPointer(value: unknown): CurrentPublicationPointerV1 | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const pointer = value as Record<string, unknown>;
-  if (!nonEmptyString(pointer.publication_id) || !/^sha256:[0-9a-f]{64}$/.test(pointer.publication_id)) return null;
-  if (!nonEmptyString(pointer.receipt_sha256) || !/^sha256:[0-9a-f]{64}$/.test(pointer.receipt_sha256)) return null;
-  if (!nonEmptyString(pointer.head_sha) || !/^[0-9a-f]{40,64}$/.test(pointer.head_sha)) return null;
-  if (!nonEmptyString(pointer.ship_transaction_key)) return null;
-  const expected = ['publication_id', 'receipt_sha256', 'head_sha', 'ship_transaction_key'].sort();
-  if (JSON.stringify(Object.keys(pointer).sort()) !== JSON.stringify(expected)) return null;
-  return {
-    publication_id: pointer.publication_id,
-    receipt_sha256: pointer.receipt_sha256,
-    head_sha: pointer.head_sha,
-    ship_transaction_key: pointer.ship_transaction_key,
-  };
 }
