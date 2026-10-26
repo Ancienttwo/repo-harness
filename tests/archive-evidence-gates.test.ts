@@ -28,6 +28,7 @@ import { recordFixtureAcceptance } from "./helpers/acceptance-fixture";
 
 const ROOT = join(import.meta.dir, "..");
 const ARCHIVE_REPORT = ".ai/harness/runs/archive.report.json";
+const MISSING_REPORT = "verification report validation failed";
 
 type AdmissionFixture = ReturnType<typeof seedReviewAdmissionFixture>;
 const authorities = new Map<string, AdmissionFixture>();
@@ -453,23 +454,23 @@ describe("archive evidence gates", () => {
 
       let result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowContract(cwd, "Partial");
       writeWorkflowReview(cwd, "fail");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowContract(cwd, "Fulfilled");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowReview(cwd, "pass");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("verification");
+      expect(result.stderr).toContain(MISSING_REPORT);
 
       writeWorkflowChecks(cwd);
       result = archiveWorkflow(cwd);
@@ -485,50 +486,29 @@ describe("archive evidence gates", () => {
     });
   }, 30_000);
 
-  test("sealed-terminal mode requires live admission even with a Fulfilled historical projection", () => {
+  // Historical contract status and review projections are archived as data;
+  // only the native report and live protected admission gate Completed.
+  test("sealed-terminal mode requires a native report and live admission even with a Fulfilled historical projection", () => {
     withTempRepo("sealed-terminal-archive", (cwd) => {
       installWorkflowArchiveFixture(cwd);
       writeWorkflowContract(cwd, "Fulfilled");
       writeSealedWorkflowReview(cwd);
+      const args = ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"];
 
-      const archived = run(
-        "scripts/archive-workflow.sh",
-        ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
-        cwd,
-      );
-      expect(archived.status, archived.stderr).toBe(1);
-      expect(archived.stderr).toContain('verification');
+      const missingReport = run(args[0]!, args.slice(1), cwd);
+      expect(missingReport.status, missingReport.stderr).toBe(1);
+      expect(missingReport.stderr).toContain(MISSING_REPORT);
+
+      // No selection arguments: the empty admission list must reach the gate,
+      // not abort on nounset expansion (bash 3.2).
+      writeWorkflowChecks(cwd);
+      const unselected = runProcess("bash", [...args, "--verification", ARCHIVE_REPORT], cwd, { REPO_HARNESS_BUN_BIN: process.execPath });
+      expect(unselected.status, unselected.stderr).toBe(1);
+      expect(unselected.stderr).toContain("Completed AcceptanceReceipt gate failed");
+      expect(unselected.stderr).not.toContain("unbound variable");
       expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"))).toBe(true);
     });
-
-    for (const [name, contractStatus, reviewText] of [
-      ["active-contract", "Active", null, "contract status is Active, not Fulfilled"],
-      ["missing-receipt", "Fulfilled", "# Review\n\n> **Recommendation**: pass\n", "typed Acceptance Receipt Projection missing or incomplete"],
-      ["failed-review", "Fulfilled", writeSealedWorkflowReview, "review recommendation is fail, not pass"],
-    ] as const) {
-      withTempRepo(`sealed-terminal-${name}`, (cwd) => {
-        installWorkflowArchiveFixture(cwd);
-        writeWorkflowContract(cwd, contractStatus);
-        if (typeof reviewText === "function") {
-          reviewText(cwd);
-          const file = join(cwd, "tasks/reviews/20260711-1200-demo.review.md");
-          writeFileSync(file, readFileSync(file, "utf8").replace("> **Recommendation**: pass", "> **Recommendation**: fail"));
-        } else if (reviewText === null) {
-          writeSealedWorkflowReview(cwd);
-        } else {
-          writeFileSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"), reviewText);
-        }
-        const rejected = run(
-          "scripts/archive-workflow.sh",
-          ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
-          cwd,
-        );
-        expect(rejected.status).toBe(1);
-        expect(rejected.stderr).toContain("verification");
-        expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
-      });
-    }
   }, 30_000);
 
   test.each(["main", "origin/main"])("predict-manifest preserves live evidence and exact review base %s", (reviewBase) => {
