@@ -176,6 +176,15 @@ test('an internal worktree symlink inside docs is readable and marked as differi
   expect(result.worktree_differs).toBe(true);
 });
 
+test('a worktree FIFO in place of a committed file is marked as differing without blocking', async () => {
+  const { root } = fixture({ 'docs/a.md': 'a\n' });
+  unlinkSync(join(root, 'docs/a.md'));
+  execFileSync('mkfifo', [join(root, 'docs/a.md')]);
+  const result = await reader(root).file('docs/a.md');
+  expect(result.text).toBe('a\n');
+  expect(result.worktree_differs).toBe(true);
+});
+
 test('size, encoding and missing paths have their own refusals', async () => {
   const { root } = fixture({ 'docs/big.md': 'x'.repeat(DOCS_FILE_MAX_BYTES + 1), 'docs/image.bin': Buffer.from([0xff, 0xfe]), 'docs/dir/a.md': 'a\n' });
   const docs = reader(root);

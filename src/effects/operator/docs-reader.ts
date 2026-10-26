@@ -376,7 +376,8 @@ export class DocsReader {
 
   private sameBytes(absolute: string, expected: Buffer): boolean {
     let fd: number;
-    try { fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); } catch { return false; }
+    // O_NONBLOCK: opening a FIFO or device would otherwise block the event loop before fstat can reject it.
+    try { fd = openSync(absolute, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); } catch { return false; }
     try {
       const stat = fstatSync(fd);
       if (!stat.isFile() || stat.size !== expected.length) return false;
