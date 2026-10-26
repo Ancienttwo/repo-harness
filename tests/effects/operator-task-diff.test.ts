@@ -3,7 +3,7 @@ import { buildTaskMessageEvent, canonicalTaskMessageEventBytes } from '../../src
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -19,6 +19,8 @@ import { taskRepository } from '../../src/effects/git/task-repository';
 import { observeTaskSessionAdmission, ensureSessionDirectory, taskSessionDirectory, writeSessionArtifact, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
 import { readReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
+import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/profiles/profile-store';
+import { projectProviderEngineerScheduling } from '../../src/core/engineers/scheduling';
 
 const cleanup: string[] = [];
 const restoreWorkerFixtures: (() => void)[] = [];
@@ -42,14 +44,21 @@ afterEach(() => {
 afterEach(() => { for (const path of cleanup.splice(0)) rmSync(path, { recursive: true, force: true }); });
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const digest = (value: unknown) => 'sha256:' + createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex');
-function fixture(linkedOwner = false, task = 'review-diff') {
+function fixture(linkedOwner = false, task = 'review-diff', engineers = false) {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'operator-diff-'))); cleanup.push(parent);
   const root = join(parent, 'repo'), worktree = join(parent, 'worktree'), home = join(parent, 'home');
   mkdirSync(root); mkdirSync(home, { mode: 0o700 });
   git(root, 'init', '-b', 'main'); git(root, 'config', 'user.name', 'Test'); git(root, 'config', 'user.email', 'test@example.invalid');
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
   writeFileSync(join(root, '.gitignore'), '.ai/\n');
-  writeFileSync(join(root, 'file.txt'), 'base\n'); git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
+  writeFileSync(join(root, 'file.txt'), 'base\n');
+  if (engineers) {
+    mkdirSync(join(root, '.archcontext/model'), { recursive: true }); mkdirSync(join(root, 'agents'));
+    cpSync(join(import.meta.dir, '../../.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+    cpSync(join(import.meta.dir, '../../.archcontext/manifest.yaml'), join(root, '.archcontext/manifest.yaml'));
+    cpSync(join(import.meta.dir, '../../agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
+  }
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
   const base = git(root, 'rev-parse', 'HEAD');
   git(root, 'worktree', 'add', '-b', 'codex/diff', worktree);
   const repositoryId = repoHarnessRepoIdFor(root), now = new Date().toISOString();
@@ -369,6 +378,44 @@ test('discovery returns current protected selection, requires explicit sessions,
   f.approved.issue.body = 'Migrate review authority.';
   writeFileSync(join(next.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 3, grant_sha256: null }), { mode: 0o600 });
   expect(discover().sessions).toEqual([]);
+});
+
+test('engineer profile drift stays on its own session in discovery and still blocks execution', async () => {
+  const { readAdmittedTaskSessions } = await import('../../src/effects/sessions/task-sessions');
+  const { readCurrentReviewAdmissionSource } = await import('../../src/effects/admission/admission-source');
+  const f = fixture(false, 'review-diff', true);
+  const claim = { reference: f.selector.claim_ref, revision: f.selector.claim_revision };
+  const resolved = loadEngineerProfile(f.root, 'engineer:capability.verification.evals-checks');
+  const healthy = { engineer_id: resolved.profile.engineer_id, engineer_contract_revision: resolved.engineer_contract_revision };
+  const changed = { ...healthy, engineer_contract_revision: 'sha256:' + '0'.repeat(64) };
+  const missing = { engineer_id: 'engineer:capability.retired.profile', engineer_contract_revision: resolved.engineer_contract_revision };
+  const bindings: Record<string, HerdrTaskBinding> = {};
+  for (const [task, profile] of [['review-healthy', healthy], ['review-changed', changed], ['review-missing', missing]] as const) {
+    const spec = { task, role: f.binding.role, harness_kind: f.binding.harness_kind };
+    // Only the healthy selection is valid at bind time; the others model a profile that drifted after binding.
+    const admission = observeTaskSessionAdmission(f.worktree, spec, 'herdr', { source: f.approved.source, claim, ...(profile === healthy ? { engineer_profile: healthy } : {}) });
+    const binding: HerdrTaskBinding = { ...f.binding, task, task_admission: { ...admission, identity: { ...admission.identity, engineer_profile: profile } } };
+    const dir = taskSessionDirectory(f.root, task, spec.role); ensureSessionDirectory(f.root, dir);
+    writeSessionArtifact(join(dir, 'binding.json'), binding);
+    bindings[task] = binding;
+  }
+  const currentSource: typeof readCurrentReviewAdmissionSource = input => readCurrentReviewAdmissionSource(input, { authorityHome: f.home, runner: f.approved.source.runner });
+  const discovered = readAdmittedTaskSessions({ repository_id: f.selector.repository_id, env: f.input.env }, { currentSource });
+  expect(Object.fromEntries(discovered.sessions.map(session => [session.selector.task, session.profile_selection]))).toEqual({
+    'review-diff': { state: 'unassigned' }, 'review-healthy': { state: 'selected', ...healthy },
+    'review-changed': { state: 'selected', ...changed }, 'review-missing': { state: 'selected', ...missing } });
+  const scheduling = projectProviderEngineerScheduling({ repository_id: f.selector.repository_id, sessions: discovered,
+    issues: { protocol: 1, kind: 'repo-harness-external-source-projection', registered_repository_id: f.selector.repository_id, latest_attempt: null, latest_complete_refresh: null, issues: [] },
+    profiles: listEngineerProfiles(f.root).map(item => ({ engineer_id: item.profile.engineer_id, capability_id: item.profile.capability_id, engineer_contract_revision: item.engineer_contract_revision })) });
+  expect(Object.fromEntries(scheduling.tasks.flatMap(task => task.sessions).map(row => [row.session.selector.task, row.selection.state]))).toEqual({
+    'review-diff': 'unassigned', 'review-healthy': 'selected', 'review-changed': 'profile_revision_changed', 'review-missing': 'profile_missing' });
+  const drifted = discovered.sessions.find(session => session.selector.task === 'review-changed')!;
+  expect(f.read({ ...drifted.selector, env: f.input.env }).patch).toBe('');
+  const execute = (task: string) => observeTaskSessionAdmission(f.worktree, bindings[task]!, 'herdr',
+    { source: f.approved.source, claim, engineer_profile: bindings[task]!.task_admission!.identity.engineer_profile });
+  expect(execute('review-healthy').identity.engineer_profile).toEqual(healthy);
+  expect(() => execute('review-changed')).toThrow('task_agent_engineer_profile_stale');
+  expect(() => execute('review-missing')).toThrow('expected exactly one Profile');
 });
 
 test('discovery refuses directory overflow instead of presenting a partial list', async () => {
