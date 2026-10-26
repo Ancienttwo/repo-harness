@@ -364,8 +364,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     let collected;
     let bindingCheckedAt = 0;
     let inboxSettled = false;
+    const commitInbox = () => commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }).status !== 'pending';
     for (;;) {
-      if (!inboxSettled) inboxSettled = commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }).status !== 'pending';
+      if (!inboxSettled) inboxSettled = commitInbox();
       // A cancel request wins over a pending Result; the final decision is the
       // re-check below, after the loop, before any acceptance is recorded.
       if (existsSync(join(dir, 'close.request'))) throw new Error('review_round_cancelled; no acceptance recorded');
@@ -382,6 +383,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       if (Date.now() >= deadline) throw new Error('review_round_timeout; inspect the same request; do not resend');
       await Bun.sleep(100);
     }
+    // The host can write its inbox receipt after this round's commit check and
+    // before its observed check. Commit that delivery under this round's grant now.
+    if (!inboxSettled) commitInbox();
     // Linearization point for accept-versus-cancel: the Result is collected
     // and observed, and no acceptance exists yet. A request written after this
     // read cannot un-record the acceptance below, so closeReview reports it to
