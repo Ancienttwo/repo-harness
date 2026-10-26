@@ -54,6 +54,7 @@ import {
   bunVersionIsSupported,
   runGlobalRuntimeSetup,
   updateLeftoverSummary,
+  updateRegisteredUpgradeSummary,
   type GlobalRuntimeOptions,
   type GlobalRuntimeResult,
 } from './commands/global-runtime';
@@ -745,7 +746,10 @@ export function buildProgram(): Command {
         brainRoot: rawOpts.brainRoot,
         reportLanguage: rawOpts.reportLanguage as ReportLanguageFlag | undefined,
       });
-      if (result.exitCode === 0) result.lines.push(updateLeftoverSummary(process.cwd(), rawOpts.cli !== false));
+      if (result.exitCode === 0) {
+        result.lines.push(updateLeftoverSummary(process.cwd(), rawOpts.cli !== false));
+        result.lines.push(updateRegisteredUpgradeSummary(process.cwd(), rawOpts.cli !== false));
+      }
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {

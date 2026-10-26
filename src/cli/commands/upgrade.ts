@@ -42,6 +42,7 @@ import {
 import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
 import { gitExecFileSync } from '../../effects/git/runner';
+import { formatRegisteredUpgradeResult, runRegisteredUpgrade } from './upgrade-registered';
 
 /** The audit file is rewritten whole on each cleanup, so it keeps the newest records only. */
 export const UPGRADE_AUDIT_MAX_RECORDS = 100;
@@ -565,6 +566,24 @@ function buildUpgradeDecideCommand(): Command {
     });
 }
 
+type UpgradeCommandOptions = UpgradeOptions & { json?: boolean; registered?: boolean; expectedRevision?: string };
+
+function runRegisteredUpgradeCommand(opts: UpgradeCommandOptions, command: Command): void {
+  // Each registered repo always runs at project scope; the global surfaces belong to plain `upgrade`.
+  const conflict = command.getOptionValueSource('scope') === 'cli' ? '--scope'
+    : opts.includeStateArtifacts === true ? '--include-state-artifacts' : undefined;
+  if (conflict) {
+    process.stderr.write(`repo-harness upgrade --registered: ${conflict} is not supported; each registered repo runs at project scope\n`);
+    process.exitCode = 2;
+    return;
+  }
+  const result = runRegisteredUpgrade({ apply: opts.apply, expectedRevision: opts.expectedRevision,
+    migrateWorktreeTemplate: opts.migrateWorktreeTemplate, callerCwd: process.cwd() });
+  process.stdout.write(formatRegisteredUpgradeResult(result, opts.json));
+  if (result.error && opts.json) process.stderr.write(`${result.error}\n`);
+  process.exitCode = result.exitCode;
+}
+
 export function buildUpgradeCommand(): Command {
   return new Command('upgrade')
     .description('Check retired repo-harness surfaces and remove only verified owned copies')
@@ -572,8 +591,19 @@ export function buildUpgradeCommand(): Command {
     .option('--apply', 'Back up and remove verified owned leftovers')
     .option('--include-state-artifacts', 'Include proven owned obsolete state artifacts with --apply')
     .option('--migrate-worktree-template', 'With --apply, rewrite a legacy policy worktree template to {{system_tmp}}')
+    .option('--registered', 'Preview init refresh and project upgrade for every registered repo; never commits')
+    .option('--expected-revision <digest>', 'With --registered --apply: exact registry revision from the preview')
     .option('--json', 'Print JSON')
-    .action((opts: UpgradeOptions & { json?: boolean }) => {
+    .action((opts: UpgradeCommandOptions, command: Command) => {
+      if (opts.registered === true) {
+        runRegisteredUpgradeCommand(opts, command);
+        return;
+      }
+      if (opts.expectedRevision !== undefined) {
+        process.stderr.write('repo-harness upgrade: --expected-revision needs --registered\n');
+        process.exitCode = 2;
+        return;
+      }
       const result = runUpgrade(opts);
       process.stdout.write(formatUpgradeResult(result, opts.json));
       if (result.error && opts.json && !result.apply) process.stderr.write(`${result.error}\n`);
