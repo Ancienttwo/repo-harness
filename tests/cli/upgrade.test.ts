@@ -565,7 +565,7 @@ describe('policy worktree template migration', () => {
     expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(legacy));
   }, false));
 
-  test.each(['../custom-{{repo}}-{{slug}}', '/var/work/{{repo}}-wt-{{slug}}', '../{{repo}}-wt-{{slug}}/'])('keeps custom template %s and reports it', (custom) => sandbox((opts) => {
+  test.each(['../custom-{{repo}}-{{slug}}', '/var/work/{{repo}}-wt-{{slug}}', '../{{repo}}-wt-{{slug}}/', '{{system_tmp}}/custom-{{repo}}-{{slug}}'])('keeps custom template %s and reports it', (custom) => sandbox((opts) => {
     put(policyPath(opts.cwd), policyText(custom));
     const before = tree(opts.cwd);
     const preview = runUpgrade({ ...opts, scope: 'project' });
@@ -627,6 +627,18 @@ describe('policy worktree template migration', () => {
     const result = apply(opts);
     expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report', current: LEGACY[0] } });
     expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a policy edit between planning and writing fails the template write closed', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const edited = policyText(LEGACY[0]!).replace('"codex/"', '"edited/"');
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true, migrateWorktreeTemplate: true },
+      { beforeTemplateWrite: () => put(policyPath(opts.cwd), edited) });
+    expect(result.exitCode).toBe(1);
+    expect(result.worktreeTemplate?.applied).toBe(false);
+    expect(result.worktreeTemplate?.error).toBeTruthy();
+    expect(result.error).toBe(result.worktreeTemplate?.error);
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(edited);
   }, false));
 
   test('global scope never reads the project policy', () => sandbox((opts) => {

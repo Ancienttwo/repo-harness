@@ -123,9 +123,32 @@ describe('update leftover summary', () => {
   });
 
   test('reports a failed check as a warning with redacted error text', () => {
-    withFakeUpgrade('{"items":[]}\n', 'catalog failed token=hunter2', () => {
+    withFakeUpgrade('{"items":[],"error":"catalog failed"}\n', 'catalog failed token=hunter2', () => {
       expect(updateLeftoverSummary(tmpdir(), false))
         .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
+    });
+  });
+
+  test('reports a pending template rewrite with no leftover items as pending, not failed', () => {
+    const payload = JSON.stringify({ items: [], apply: false, exitCode: 1, worktreeTemplate: { applied: false, item: { path: '.ai/harness/policy.json', action: 'rewrite', current: '../{{repo}}-wt-{{slug}}', replacement: '{{system_tmp}}/{{repo}}-wt-{{slug}}', reason: 'Legacy template.' } } });
+    withFakeUpgrade(`${payload}\n`, '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe(
+        '0 leftovers (0 removable). Run: repo-harness upgrade; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template',
+      );
+    });
+  });
+
+  test('a bare array payload is a failed check', () => {
+    withFakeUpgrade('[]\n', '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: upgrade --json returned no leftover list. Run: repo-harness upgrade');
+    });
+  });
+
+  test('an object with an error field is a failed check', () => {
+    withFakeUpgrade('{"items":[],"apply":false,"exitCode":1,"error":"project upgrade needs a git repository"}\n', '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: project upgrade needs a git repository. Run: repo-harness upgrade');
     });
   });
 });

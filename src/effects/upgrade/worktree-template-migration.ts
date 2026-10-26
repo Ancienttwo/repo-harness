@@ -10,7 +10,6 @@ const POLICY_PATH = '.ai/harness/policy.json';
 const TEMPLATE_KEY = 'worktree_dir_template';
 /** Exact pre-#600 values. Any other template is a deliberate choice and is never rewritten. */
 const LEGACY_TEMPLATES: readonly string[] = ['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'];
-const PORTABLE_ROOT = '{{system_tmp}}';
 
 export interface WorktreeTemplateItem {
   readonly path: string;
@@ -68,7 +67,7 @@ export function planWorktreeTemplate(repoRoot: string): WorktreeTemplatePlan {
   const current = isRecord(strategy) ? strategy[TEMPLATE_KEY] : undefined;
   if (current === undefined) return {};
   if (typeof current !== 'string') return report(undefined, `${TEMPLATE_KEY} is not a string.`);
-  if (current.startsWith(PORTABLE_ROOT)) return {};
+  if (current === DEFAULT_WORKTREE_TEMPLATE) return {};
   if (!LEGACY_TEMPLATES.includes(current)) return report(current, 'Custom template kept; change it by hand if the old location is not wanted.');
 
   const replacement = DEFAULT_WORKTREE_TEMPLATE;
@@ -113,10 +112,11 @@ function applyWorktreeTemplate(repoRoot: string, write: NonNullable<WorktreeTemp
 }
 
 /** The single entry point: plan, and write only when `write` is true. */
-export function runWorktreeTemplateMigration(repoRoot: string, write: boolean): WorktreeTemplateOutcome {
+export function runWorktreeTemplateMigration(repoRoot: string, write: boolean, beforeWrite?: () => void): WorktreeTemplateOutcome {
   try {
     const plan = planWorktreeTemplate(repoRoot);
     if (!write || !plan.write) return { item: plan.item, applied: false };
+    beforeWrite?.();
     return { item: plan.item, ...applyWorktreeTemplate(repoRoot, plan.write) };
   } catch (error) {
     return { applied: false, error: error instanceof Error ? error.message : String(error) };

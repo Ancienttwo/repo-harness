@@ -50,6 +50,8 @@ export interface UpgradeDependencies {
   readonly beforeRemove?: (item: LeftoverItem) => void;
   /** Runs after the real copy, before staging and source fences. */
   readonly afterStage?: (item: LeftoverItem, staging: string) => void;
+  /** Runs after the policy template is planned and before it is written. */
+  readonly beforeTemplateWrite?: () => void;
 }
 
 export interface UpgradeResult {
@@ -414,8 +416,10 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const items = supportedItems(planLegacyLeftovers(options).items);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))] };
+    // A failed leftover apply leaves the policy untouched: the template item is reported, not written.
     const finish = (result: UpgradeResult) => withWorktreeTemplate(result,
-      scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true));
+      scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true && !result.error,
+        dependencies.beforeTemplateWrite));
     if (!apply || !items.some(removable)) return finish(emptyResult);
     return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
       const underHostLock = supportedItems(planLegacyLeftovers(options).items);
