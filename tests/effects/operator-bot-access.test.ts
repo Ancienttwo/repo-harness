@@ -275,6 +275,27 @@ describe('Bot access collector', () => {
     } finally { f.cleanup(); }
   });
 
+  test('the first cycle waits for the notify collector\'s first cycle, so it never caches notify as pending', async () => {
+    const f = fixture();
+    try {
+      let notify: NotifyCacheV1 = { state: 'pending' };
+      let release!: () => void;
+      const notifyFirstCycle = new Promise<void>(resolve => { release = resolve; });
+      let runs = 0;
+      const handle = startBotAccessCollector({ env: f.env, session: 'bots', now: () => NOW, interval_ms: 60_000, first_cycle_after: notifyFirstCycle,
+        run_command: async () => { runs++; return { ok: false, code: 'failed' }; }, read_notify: () => notify });
+      await Bun.sleep(20);
+      expect(runs).toBe(0);
+      expect(handle.read()).toEqual({ state: 'pending' });
+      notify = notifyOk();
+      release();
+      await handle.settled();
+      const cache = handle.read();
+      expect(cache.state === 'ok' && cache.snapshot.notify.state).toBe('ok');
+      await handle.close();
+    } finally { f.cleanup(); }
+  });
+
   test('the collector serves its cache and starts no work on read', async () => {
     const f = fixture();
     try {

@@ -272,7 +272,16 @@ export interface BotAccessCollectorHandle {
 }
 
 /** Collect at startup, then every interval after the previous cycle settles. Cycles never overlap. */
-export function startBotAccessCollector(options: BotAccessReadInput & { readonly interval_ms?: number }): BotAccessCollectorHandle {
+export interface BotAccessCollectorOptions extends BotAccessReadInput {
+  readonly interval_ms?: number;
+  /**
+   * The first cycle starts after this settles. The server passes the notify
+   * collector's first cycle, so the first snapshot does not read its cache while it is still pending.
+   */
+  readonly first_cycle_after?: Promise<void>;
+}
+
+export function startBotAccessCollector(options: BotAccessCollectorOptions): BotAccessCollectorHandle {
   const session = herdrSession(options, { ...process.env, ...options.env });
   let cache: BotAccessCacheV1 = session === null ? { state: 'failed', reason: 'herdr_session_invalid' } : { state: 'pending' };
   let closed = session === null;
@@ -292,7 +301,10 @@ export function startBotAccessCollector(options: BotAccessReadInput & { readonly
       });
     return inflight;
   };
-  if (!closed) void cycle();
+  if (!closed) {
+    if (options.first_cycle_after === undefined) void cycle();
+    else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
+  }
   return Object.freeze({
     read: () => cache,
     settled: () => inflight ?? Promise.resolve(),

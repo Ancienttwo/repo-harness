@@ -4,13 +4,26 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { startNotifyCollector } from '../../src/effects/operator/notify-collector';
+import { startNotifyCollector, type NotifyCacheV1 } from '../../src/effects/operator/notify-collector';
 import { NotifyStatusUnavailableError, readNotifyChannelStatus, type NotifyStatusReadInput } from '../../src/effects/operator/notify-status';
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
 const SECRET = 'fixture-secret-key-must-not-leak';
+
+const validDelivery = {
+  status: {
+    protocol: 1, kind: 'operator_notify_status', plugin_id: 'aimpact.webhook-notify', linked: 'linked', enabled: 'enabled',
+    config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
+    last_delivery: { at: null, result: 'succeeded' }, observed_at: '2026-10-27T00:00:00.000Z',
+  },
+  channels: { webhook: 'configured', slack: 'configured', discord: 'configured', telegram: 'configured' },
+  deliveries: {
+    webhook: { at: null, result: 'succeeded' }, slack: { at: null, result: 'succeeded' },
+    discord: { at: null, result: 'succeeded' }, telegram: { at: null, result: 'succeeded' },
+  },
+} as const;
 
 /** The plugin status part of one read; most cases here assert only that part. */
 const readNotifyStatus = async (input: NotifyStatusReadInput) => (await readNotifyChannelStatus(input)).status;
@@ -158,6 +171,14 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
+  test.skipIf(process.getuid?.() === 0)('an .env that exists but cannot be read is unavailable, never missing', async () => {
+    const f = fixture();
+    try {
+      chmodSync(join(f.config, '.env'), 0);
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_config_unavailable');
+    } finally { chmodSync(join(f.config, '.env'), 0o600); f.cleanup(); }
+  });
+
   test('the collector runs one probe set per cycle, keeps its cache, and replaces it with a code on failure', async () => {
     const f = fixture();
     const calls = () => readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => (JSON.parse(line) as { argv: string[] }).argv.slice(2, 4).join(' '));
@@ -296,8 +317,10 @@ describe('notify plugin status', () => {
       [{ state: 'unavailable', reason: 'herdr_unavailable' }, 'herdr_unavailable'],
       [{ state: 'unavailable', reason: 'notify_config_unavailable' }, 'notify_config_unavailable'],
       [{ state: 'unavailable', reason: 'herdr_session_invalid' }, 'herdr_session_invalid'],
+      // A cached status that fails the decoder is refused, not sent.
+      [{ state: 'ok', value: { ...validDelivery, status: { ...validDelivery.status, linked: 'bogus' } } }, 'notify_status_invalid'],
     ] as const) {
-      const server = await startOperatorServer({ port: 0, static_root: tmpdir(), read_notify: () => cache });
+      const server = await startOperatorServer({ port: 0, static_root: tmpdir(), read_notify: () => cache as NotifyCacheV1 });
       try {
         const response = await fetch(`${server.url}/api/v1/notify/status`);
         expect(response.status).toBe(503);

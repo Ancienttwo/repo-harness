@@ -1931,7 +1931,7 @@ export async function startOperatorServer(
   const botAccessCollects = options.bot_access_collector === true && !options.read_bot_access;
   const notify = (options.notify_collector || botAccessCollects) && !options.read_notify ? startNotifyCollector({ env: options.env }) : null;
   const botAccess = botAccessCollects
-    ? startBotAccessCollector({ env: options.env, read_notify: options.read_notify ?? notify!.read })
+    ? startBotAccessCollector({ env: options.env, read_notify: options.read_notify ?? notify!.read, first_cycle_after: notify?.settled() })
     : null;
   const docs = options.docs_collector && !options.read_docs
     ? startDocsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
