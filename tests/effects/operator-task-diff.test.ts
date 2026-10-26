@@ -500,7 +500,7 @@ test('production context worker exposes approved bytes only and refuses ambiguou
   try{
     const response=await fetch(url+'?'+query);expect(response.status).toBe(200);
     const value=decodeAdmittedTaskContext(await response.json(),f.selector);expect(value.goal).toEqual(f.approved.admission.goal);expect(JSON.stringify(value)).not.toContain(f.root);
-    expect((await fetch(url+'?'+query,{method:'POST'})).status).toBe(405);
+    expect((await fetch(url+'?'+query,{method:'POST',headers:{Origin:server.url,'Sec-Fetch-Site':'same-origin'}})).status).toBe(405);
     query.append('source_root',f.root);expect((await fetch(url+'?'+query)).status).toBe(400);
     expect((await fetch(`${server.url}/api/v1/fleet/tasks/${f.selector.repository_id}/${'a'.repeat(64)}/context`)).status).toBe(400);
   }finally{try{await server.close();}finally{worker.restore();}}

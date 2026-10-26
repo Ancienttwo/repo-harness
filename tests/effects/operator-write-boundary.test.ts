@@ -64,13 +64,16 @@ describe('operator structural write boundary', () => {
     expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['get_write']);
   });
 
-  test('the dispatcher only admits GET and HEAD before routing any request', async () => {
+  test('the dispatcher admits only GET, HEAD and, for a write route, POST', async () => {
     const source = await Bun.file(new URL('../../src/effects/operator/server.ts', import.meta.url)).text();
     // Scan executable method comparisons as well as the declared inventory.
     // This catches a mutation branch omitted from OPERATOR_ROUTES.
     const methods = [...source.matchAll(/\bmethod\s*(?:!==|===|!=|==)\s*['"]([A-Z]+)['"]/gu)].map(match => match[1]);
     expect(methods.length).toBeGreaterThan(0);
-    expect([...new Set(methods)].sort()).toEqual(['GET', 'HEAD']);
+    expect([...new Set(methods)].sort()).toEqual(['GET', 'HEAD', 'POST']);
+    // POST has one branch, and it reaches only a matched write route.
+    expect(source.match(/handleOperatorWrite\(/gu)).toHaveLength(1);
+    expect(source).toMatch(/if \(write\) \{\n\s+if \(writeMatch === null\) \{/u);
   });
 
   test('pins every inventory pattern to the value the dispatcher matches on', () => {

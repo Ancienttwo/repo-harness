@@ -97,7 +97,7 @@ describe('official Herdr socket observation', () => {
       f.setPanes([{ ...pane, agent_session: null, program_status: { ...envelope, record: { state: 'error' } } }]); f.event('pane_updated');
       await until(() => owner!.observer.read().pane_observations[0]?.state === 'error');
       expect(owner.observer.read()).toMatchObject({ badges: [], unclaimed: 1, pane_observations: [{ binding: null, pane: { agent_session: null } }] });
-      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST' })).status).toBe(405);
+      expect((await fetch(`${server.url}/api/v1/runtime/status`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
     } finally { await server?.close(); owner?.close(); await f.close(); }
   });
 

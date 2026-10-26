@@ -224,7 +224,7 @@ describe('notify plugin status', () => {
       expect(body).toContain('"WEBHOOK_KEY":"configured"');
       expect(body).not.toContain(SECRET);
       expect(body).not.toContain(SLACK);
-      const denied = await fetch(`${server.url}/api/v1/notify/status`, { method: 'POST' });
+      const denied = await fetch(`${server.url}/api/v1/notify/status`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } });
       expect(denied.status).toBe(405);
     } finally { await server.close(); f.cleanup(); }
   });

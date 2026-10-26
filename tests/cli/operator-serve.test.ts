@@ -248,9 +248,21 @@ describe('operator serve command and HTTP boundary', () => {
         for (const path of paths) {
           for (const headers of [new Headers(), new Headers({ Origin: server.url })]) {
             const response = await fetch(server.url + path, { method, headers, body: 'ignored' });
+            if (method === 'POST') {
+              // A write is identified before it is routed: Origin, then Sec-Fetch-Site.
+              expect(response.status).toBe(403);
+              expect(await response.json()).toMatchObject({ error: { code: headers.has('origin') ? 'fetch_site_not_allowed' : 'origin_required' } });
+              continue;
+            }
             expect(response.status).toBe(405);
             expect(response.headers.get('allow')).toBe('GET, HEAD');
             expect(await response.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
+          }
+          if (method === 'POST') {
+            const identified = await fetch(server.url + path, { method, headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' }, body: 'ignored' });
+            expect(identified.status).toBe(405);
+            expect(identified.headers.get('allow')).toBe('GET, HEAD');
+            expect(await identified.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
           }
         }
       }
@@ -823,7 +835,7 @@ describe('operator serve command and HTTP boundary', () => {
       try {
         const refused = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain', Origin: server.url },
+          headers: { 'Content-Type': 'text/plain', Origin: server.url, 'Sec-Fetch-Site': 'same-origin' },
           body: 'confidential-operator-body',
         });
         expect(refused.status).toBe(405);
@@ -974,7 +986,7 @@ describe('read-only task diff route', () => {
       expect((await fetch(server.url+path+'&root=/tmp')).status).toBe(400);
       expect((await fetch(server.url+path+'&actor_id=other')).status).toBe(400);
       expect((await fetch(server.url+path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
-      expect((await fetch(server.url+path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
+      expect((await fetch(server.url+path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
       expect(calls).toBe(2);
     } finally { await server.close(); }
   });
@@ -1032,7 +1044,7 @@ describe('historical task activity route', () => {
       const head=await fetch(server.url+path,{method:'HEAD'}); expect(head.status).toBe(200); expect(await head.text()).toBe('');
       for(const query of ['?root=/tmp','?ref=main','?after=invalid','?limit=1&limit=2','?message_id='+CLAIM_ID+'&limit=1']) expect((await fetch(server.url+path+query)).status).toBe(400);
       expect((await fetch(server.url+path,{headers:{Origin:'https://example.com'}})).status).toBe(403);
-      expect((await fetch(server.url+path,{method:'POST',headers:{Origin:server.url}})).status).toBe(405);
+      expect((await fetch(server.url+path,{method:'POST',headers:{Origin:server.url,'Sec-Fetch-Site':'same-origin'}})).status).toBe(405);
       expect(calls).toBe(2);
     } finally {await server.close();}
   });
@@ -1380,7 +1392,7 @@ test('architecture rejects F-01 query injections before any child and refuses cr
     expect(architectureArgv(git.log)).toEqual([]); expect(processSpy.mock.calls).toHaveLength(0);
     expect(existsSync(join(root, 'output'))).toBe(false);
     expect((await fetch(server.url + '/', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(200);
-    expect((await fetch(server.url + path + '?shard=1', { method: 'POST', headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(405);
+    expect((await fetch(server.url + path + '?shard=1', { method: 'POST', headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
     for (const site of ['none', 'same-origin']) expect((await fetch(server.url + path + '?shard=1', { headers: { 'Sec-Fetch-Site': site } })).status).toBe(200);
     expect((await fetch(server.url + '/healthz', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(200);
     const missing = await fetch(server.url + path + `?shard=1&mode=diff&base=${'0'.repeat(40)}&head=${'0'.repeat(40)}`);
@@ -1493,7 +1505,7 @@ test('session discovery is bounded read-only transport with a closed repository 
     const path = server.url + '/api/v1/fleet/task-sessions/repo-a';
     const response = await fetch(path); expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
     expect((await fetch(path + '?root=/tmp')).status).toBe(400);
-    expect((await fetch(path, { method: 'POST', headers: { Origin: server.url } })).status).toBe(405);
+    expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
     expect((await fetch(path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
     expect(calls).toBe(1);
   } finally { await server.close(); }
