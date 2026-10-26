@@ -152,6 +152,23 @@ describe('update leftover summary', () => {
     });
   });
 
+  test('counts a deferred legacy sibling worktree as pending and names the provider proof', () => {
+    const candidate = (name: string, verdict: string) => ({ path: `/fixture/${name}`, branch: `feat/${name}`, head: 'c'.repeat(40), verdict, reason: 'fixture', rebuild: null });
+    const hint = (candidates: unknown[]) => {
+      let summary = '';
+      withFakeUpgrade(`${JSON.stringify({ items: [], apply: false, exitCode: 1, legacyWorktrees: { candidates } })}\n`, '', () => {
+        summary = updateLeftoverSummary(tmpdir(), false);
+      });
+      return summary;
+    };
+    expect(hint([candidate('old', 'remove'), candidate('squash', 'deferred'), candidate('dirty', 'keep')])).toBe(
+      '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (1 needs provider proof); run repo-harness upgrade --scope project --apply',
+    );
+    expect(hint([candidate('a', 'deferred'), candidate('b', 'deferred')])).toBe(
+      '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (2 need provider proof); run repo-harness upgrade --scope project --apply',
+    );
+  });
+
   test('a bare array payload is a failed check', () => {
     withFakeUpgrade('[]\n', '', () => {
       expect(updateLeftoverSummary(tmpdir(), false))

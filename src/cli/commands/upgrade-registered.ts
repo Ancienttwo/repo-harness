@@ -50,7 +50,7 @@ export interface RegisteredRepoResult {
   readonly status: 'ready' | 'applied' | 'skipped' | 'failed';
   readonly reason?: RegisteredRepoSkipReason;
   readonly detail?: string;
-  /** Preview only: the repo has init operations or pending project upgrade work, including a removable legacy worktree. */
+  /** Preview only: the repo has init operations or pending project upgrade work, including a removable or deferred legacy worktree. */
   readonly pending?: boolean;
   readonly init?: RegisteredInitPreview | RegisteredInitApply;
   readonly upgrade?: UpgradeResult;
@@ -155,7 +155,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
   if (errors.length > 0) {
     return { path, status: 'failed', ...(init ? { init } : {}), upgrade, sweep: SWEEP_PREVIEW, error: errors.join('; ') };
   }
-  // A preview upgrade exits 1 for every pending item: leftovers, a template rewrite and a removable legacy worktree.
+  // A preview upgrade exits 1 for every pending item: leftovers, a template rewrite and a removable or deferred legacy worktree.
   return { path, status: 'ready', pending: init!.planned > 0 || upgrade.exitCode !== 0, init, upgrade, sweep: SWEEP_PREVIEW };
 }
 

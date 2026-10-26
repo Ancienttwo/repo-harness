@@ -881,7 +881,7 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
     items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } }; legacyWorktrees?: { candidates?: unknown };
   } | null;
   // The check exits 1 when anything is pending, including a policy rewrite or a
-  // removable legacy worktree with no leftover items.
+  // removable or deferred legacy worktree with no leftover items.
   // Only a missing items list or an error field is a failed check.
   const items = payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload.items : undefined;
   const reportedError = typeof payload?.error === 'string' ? payload.error : '';
@@ -893,10 +893,13 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
     parts.push('policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template');
   }
   const candidates = payload?.legacyWorktrees?.candidates;
-  const removable = Array.isArray(candidates)
-    ? candidates.filter((candidate) => (candidate as { verdict?: unknown } | null)?.verdict === 'remove').length : 0;
-  if (removable > 0) {
-    parts.push(`${removable} legacy sibling worktree${removable === 1 ? '' : 's'} can be removed; run repo-harness upgrade --scope project --apply`);
+  const count = (verdict: string) => Array.isArray(candidates)
+    ? candidates.filter((candidate) => (candidate as { verdict?: unknown } | null)?.verdict === verdict).length : 0;
+  const deferred = count('deferred');
+  const total = count('remove') + deferred;
+  if (total > 0) {
+    const proof = deferred > 0 ? ` (${deferred} need${deferred === 1 ? 's' : ''} provider proof)` : '';
+    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run repo-harness upgrade --scope project --apply`);
   }
   return parts.join('; ');
 }

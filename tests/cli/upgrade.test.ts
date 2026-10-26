@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
+import { localMergeMode } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
@@ -968,7 +969,7 @@ describe('legacy sibling worktree cleanup', () => {
       reason: 'merged into refs/remotes/origin/main', rebuild: `git worktree add -b feat/merged ${merged} ${mergedHead}`,
     });
     expect(byPath.get(dirty)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'dirty worktree', rebuild: null }));
-    expect(byPath.get(unmerged)).toEqual(expect.objectContaining({ verdict: 'keep', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED }));
+    expect(byPath.get(unmerged)).toEqual(expect.objectContaining({ verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED }));
     expect(byPath.get(locked)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'locked' }));
     expect(byPath.get(owned)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'cleanup has an active-worktree marker reference' }));
     expect(byPath.get(detached)).toEqual(expect.objectContaining({ branch: null, verdict: 'keep', reason: 'no local branch' }));
@@ -987,6 +988,14 @@ describe('legacy sibling worktree cleanup', () => {
       expect(f.git(f.main, 'branch', '--list', branch)).not.toBe('');
     }
     expect(readFileSync(join(dirty, 'scratch.txt'), 'utf8')).toBe('uncommitted\n');
+  }));
+
+  test('the local merge proof throws on unknown merge-library output instead of reading it as unmerged', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const target = f.git(f.main, 'rev-parse', 'refs/remotes/origin/main');
+    expect(localMergeMode(f.main, f.git(merged, 'rev-parse', 'HEAD'), target, {})).toBe('ancestor');
+    // The library skips an empty branch argument, so its output names no mode.
+    expect(() => localMergeMode(f.main, '', target, {})).toThrow('cleanup merge is unproven');
   }));
 
   test('a sibling inside the managed root is left to the sweep', () => legacyWorktreeSandbox((f) => {
@@ -1154,7 +1163,7 @@ describe('legacy sibling worktree cleanup', () => {
     expect(after.exitCode, after.error).toBe(0);
   }));
 
-  test('preview keeps a squash-merged sibling without querying the provider; apply proves it there and removes it', () => legacyWorktreeSandbox((f) => {
+  test('preview defers a squash-merged sibling as pending without querying the provider; apply proves it there and removes it', () => legacyWorktreeSandbox((f) => {
     const squashed = f.worktree(join(f.projects, 'squashed'), 'feat/squashed', false);
     const head = f.git(f.main, 'rev-parse', 'refs/heads/feat/squashed');
     f.git(f.main, 'merge', '-q', '--squash', 'feat/squashed');
@@ -1171,11 +1180,17 @@ describe('legacy sibling worktree cleanup', () => {
     chmodSync(gh, 0o755);
 
     const preview = runLegacyWorktreeCleanup(f.main, f.main, f.env, false, { ghBin: gh });
-    expect(preview).toEqual({ candidates: [{ path: squashed, branch: 'feat/squashed', head, verdict: 'keep', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED, rebuild: null }] });
+    const rebuild = `git worktree add -b feat/squashed ${squashed} ${head}`;
+    expect(preview).toEqual({ candidates: [{ path: squashed, branch: 'feat/squashed', head, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED, rebuild }] });
     expect(existsSync(log)).toBe(false);
     const upgradePreview = runUpgrade({ cwd: f.main, home: f.home, packageRoot: ROOT, scope: 'project', env: { REPO_HARNESS_WORKTREE_ROOT: f.managed } });
-    expect(upgradePreview.exitCode, upgradePreview.error).toBe(0);
-    expect(upgradePreview.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: squashed, verdict: 'keep', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED })]);
+    expect(upgradePreview.exitCode, upgradePreview.error).toBe(1);
+    expect(upgradePreview.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: squashed, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED })]);
+    const text = formatUpgradeResult(upgradePreview);
+    expect(text).toContain(`  ${squashed}: branch=feat/squashed; head=${head}; deferred; ${LEGACY_WORKTREE_PROVIDER_DEFERRED}`);
+    expect(text).toContain(`    rebuild: ${rebuild}`);
+    expect(text).toContain('  note: removal also deletes ignored files in the checkout (for example .env); commit or copy anything you need first.');
+    expect(existsSync(log)).toBe(false);
     expect(existsSync(squashed)).toBe(true);
 
     const applied = runLegacyWorktreeCleanup(f.main, f.main, f.env, true, { ghBin: gh });

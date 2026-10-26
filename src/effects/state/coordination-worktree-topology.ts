@@ -91,15 +91,22 @@ export interface ExactWorktreeCleanup {
 
 type MergeProof = { readonly provider: boolean; readonly merge_commit_sha: string };
 
-/** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
-export function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
+export type LocalMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
+
+/** The offline merge-library verdict for `head` against the target OID. Any other library output throws. */
+export function localMergeMode(root: string, head: string, target: string, limits: Limits): LocalMergeMode {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
-  if (mode === 'ancestor' || mode === 'absorbed') return { provider: false, merge_commit_sha: target };
-  if (mode !== 'unmerged') throw new Error('cleanup merge is unproven');
+  if (mode === 'ancestor' || mode === 'absorbed' || mode === 'unmerged') return mode;
+  throw new Error('cleanup merge is unproven');
+}
+
+/** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
+export function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
+  if (localMergeMode(root, head, target, limits) !== 'unmerged') return { provider: false, merge_commit_sha: target };
   // A fresh branch at the target head is also linked to the PR that made that head. It must never reach the provider.
   assertBranchHasCommits(root, branch, limits);
   const base = /^refs\/(?:heads\/|remotes\/[^/]+\/)(.+)$/.exec(git(root, ['rev-parse', '--symbolic-full-name', targetRef], limits))?.[1];

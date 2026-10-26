@@ -433,7 +433,7 @@ function withWorktreeTemplate(result: UpgradeResult, outcome: WorktreeTemplateOu
 
 function withLegacyWorktrees(result: UpgradeResult, outcome: LegacyWorktreeOutcome | undefined): UpgradeResult {
   if (!outcome || (outcome.candidates.length === 0 && !outcome.error)) return result;
-  const pending = !result.apply && outcome.candidates.some((candidate) => candidate.verdict === 'remove');
+  const pending = !result.apply && outcome.candidates.some((candidate) => candidate.verdict === 'remove' || candidate.verdict === 'deferred');
   const error = result.error ?? outcome.error;
   return { ...result, legacyWorktrees: outcome, exitCode: result.exitCode === 1 || pending || outcome.error ? 1 : 0, ...(error ? { error } : {}) };
 }

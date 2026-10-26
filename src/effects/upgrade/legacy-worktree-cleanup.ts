@@ -10,6 +10,7 @@ import {
   assertNoSubmodules,
   checkoutPath,
   entries,
+  localMergeMode,
   mergeBackTarget,
   mergeProof,
   protectsCwd,
@@ -18,8 +19,12 @@ import {
 } from '../state/coordination-worktree-topology';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 
-/** `remove` and `keep` are preview verdicts; `removed` and `failed` are apply outcomes. */
-export type LegacyWorktreeVerdict = 'remove' | 'keep' | 'removed' | 'failed';
+/**
+ * `remove`, `deferred` and `keep` are preview verdicts; `removed` and `failed`
+ * are apply outcomes. `deferred` is a candidate that only the provider can prove
+ * merged, so apply decides it.
+ */
+export type LegacyWorktreeVerdict = 'remove' | 'deferred' | 'keep' | 'removed' | 'failed';
 
 export interface LegacyWorktreeCandidate {
   readonly path: string;
@@ -45,7 +50,7 @@ export interface LegacyWorktreeCleanupOptions {
 
 type Limits = { readonly gitBin: string; readonly ghBin?: string };
 
-/** Preview reason for a branch that only the provider can prove merged. */
+/** Reason for a `deferred` preview candidate. */
 export const LEGACY_WORKTREE_PROVIDER_DEFERRED = 'merge proof needs the provider; checked only with --apply';
 
 interface PlannedCandidate {
@@ -108,10 +113,6 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, apply: boo
   let target: ReturnType<typeof mergeBackTarget> | undefined;
   let targetError = '';
   try { target = mergeBackTarget(main, limits); } catch (error) { targetError = message(error); }
-  // Preview runs on every `repo-harness update`, so it stays offline. An empty
-  // gh binary turns off the provider step of mergeProof; the local ancestor and
-  // absorbed proofs still apply.
-  const proofLimits: Limits = apply ? limits : { ...limits, ghBin: '' };
   const planned = candidates.map(({ entry, path }): PlannedCandidate => {
     const branch = entry.branch?.startsWith('refs/heads/') ? entry.branch.slice('refs/heads/'.length) : null;
     const head = entry.head;
@@ -136,17 +137,19 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, apply: boo
       if (!target) return keep(targetError);
       // The integration branch is never a task branch, even when it holds direct commits.
       if (protectsIntegrationBranch(main, target.targetRef, branch, limits)) return keep('integration branch');
-      let proof: ReturnType<typeof mergeProof>;
-      try { proof = mergeProof(main, branch, head, target.targetRef, target.target, proofLimits); }
-      catch (error) {
-        if (!apply && message(error) === 'cleanup merge is unproven') return keep(LEGACY_WORKTREE_PROVIDER_DEFERRED);
-        throw error;
+      const rebuild = `git worktree add -b ${shellQuote(branch)} ${shellQuote(path)} ${head}`;
+      // Preview runs on every `repo-harness update`, so it uses only the local proof.
+      if (!apply) {
+        const mode = localMergeMode(main, head, target.target, limits);
+        if (mode === 'unmerged') return { candidate: { path, branch, head, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED, rebuild } };
+        return { candidate: { path, branch, head, verdict: 'remove', reason: `merged into ${target.targetRef}`, rebuild } };
       }
+      const proof = mergeProof(main, branch, head, target.targetRef, target.target, limits);
       return {
         candidate: {
           path, branch, head, verdict: 'remove',
           reason: `${proof.provider ? 'provider-proven merge' : 'merged'} into ${target.targetRef}`,
-          rebuild: `git worktree add -b ${shellQuote(branch)} ${shellQuote(path)} ${head}`,
+          rebuild,
         },
         expected: { worktree: path, branch, head_sha: head, target_ref: target.targetRef, target_oid: target.target, merge_commit_sha: proof.merge_commit_sha },
       };
@@ -204,7 +207,7 @@ export function formatLegacyWorktreeOutcome(outcome: LegacyWorktreeOutcome): str
     lines.push(`  ${item.path}: branch=${item.branch ?? 'none'}; head=${item.head ?? 'none'}; ${item.verdict}; ${item.reason}`);
     if (item.rebuild) lines.push(`    rebuild: ${item.rebuild}`);
   }
-  if (outcome.candidates.some((item) => item.verdict === 'remove')) {
+  if (outcome.candidates.some((item) => item.verdict === 'remove' || item.verdict === 'deferred')) {
     lines.push('  note: removal also deletes ignored files in the checkout (for example .env); commit or copy anything you need first.');
   }
   if (outcome.error) lines.push(`  error: ${outcome.error}`);
