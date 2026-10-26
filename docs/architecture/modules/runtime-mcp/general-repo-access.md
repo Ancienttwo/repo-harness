@@ -86,7 +86,7 @@ sequenceDiagram
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" -->
 ## 3. P3：设计决策与不变量
 
-设计出处见 `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`（Sprint 0 contract freeze，2026-06-22）。该 ADR 的核心判断——「不要把授权和索引搅在一起」——在当前源码里逐条可验证。
+设计出处见 `docs/adr/ADR-0001-general-repo-codegraph-access.md`（Sprint 0 contract freeze，2026-06-22）。该 ADR 的核心判断——「不要把授权和索引搅在一起」——在当前源码里逐条可验证。
 
 ### 3.1 必须保持的不变量
 

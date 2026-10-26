@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.herdr-server.spawns.oar-review-host"
+kind: "spawns"
+source: "process.herdr-server"
+target: "process.oar-review-host"
+intent: "Run the review host bundle in a pane."

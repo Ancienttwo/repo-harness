@@ -3,6 +3,7 @@ id: "capability.runtime-harness.engineer-bindings"
 kind: "capability"
 name: "Engineer Bindings"
 status: "active"
+layer: "core"
 summary: "Resolves tracked capability-backed Engineer Profile and SOP contracts and retains historical principal mapping and Claim Actor codecs."
 responsibilities:
   - "Validate capability-backed Engineer Profile and SOP contracts without copying capability authority."

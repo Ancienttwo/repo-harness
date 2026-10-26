@@ -142,14 +142,14 @@ export interface RepoHarnessCheckoutRejection {
 type GitLines = { readonly ok: true; readonly lines: string[] } | { readonly ok: false; readonly detail: string };
 
 // The probe must read the checkout at repoRoot, not the repository an outer git hook selected.
-function probeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+export function repoCheckoutProbeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   const probe = { ...(env ?? process.env) };
   for (const key of [...REPOSITORY_SELECTING_GIT_ENV, "GIT_COMMON_DIR"]) delete probe[key];
   return probe;
 }
 
 function gitLines(repoRoot: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined): GitLines {
-  const result = gitSpawnSync(args, { cwd: repoRoot, env: probeEnv(env), encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = gitSpawnSync(args, { cwd: repoRoot, env: repoCheckoutProbeEnv(env), encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
   if (result.error) return { ok: false, detail: result.error.message };
   if (result.status !== 0) return { ok: false, detail: result.stderr.trim() || `git exited with status ${result.status}` };
   return { ok: true, lines: result.stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0) };
@@ -804,6 +804,23 @@ export function backfillRepoHarnessRegistry(
 
 export type RepoHarnessPruneReason = "path_missing" | "not_primary_checkout";
 
+/**
+ * A registry apply names the exact revision its preview printed. Without a
+ * snapshot only the presence and format are checked; with one, any other
+ * revision refuses the whole apply.
+ */
+export function assertRegistryRevisionFence(
+  opts: { readonly apply?: boolean; readonly expectedRevision?: string },
+  snapshot?: RepoHarnessRegistryStrictSnapshot,
+): void {
+  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
+    throw new Error('--apply requires --expected-revision from the preview');
+  }
+  if (snapshot && opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {
+    throw new Error('registry revision changed; preview again before applying');
+  }
+}
+
 /** Explicit operator cleanup; unreadable paths are not proof of absence. */
 export function pruneRepoHarnessRegistry(opts: {
   readonly env?: NodeJS.ProcessEnv;
@@ -811,13 +828,9 @@ export function pruneRepoHarnessRegistry(opts: {
   readonly expectedRevision?: string;
   readonly repoIds?: readonly string[];
 } = {}) {
-  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
-    throw new Error('--apply requires --expected-revision from the preview');
-  }
+  assertRegistryRevisionFence(opts);
   const inspect = (snapshot: RepoHarnessRegistryStrictSnapshot) => {
-    if (opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {
-      throw new Error('registry revision changed; preview again before applying');
-    }
+    assertRegistryRevisionFence(opts, snapshot);
     const selected = opts.repoIds === undefined ? null : new Set(opts.repoIds);
     for (const id of selected ?? []) {
       if (!snapshot.repos.some(repo => repo.id === id)) throw new Error(`unknown registered repo id: ${id}`);

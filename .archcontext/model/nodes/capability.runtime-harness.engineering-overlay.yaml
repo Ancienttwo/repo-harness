@@ -3,6 +3,7 @@ id: "capability.runtime-harness.engineering-overlay"
 kind: "capability"
 name: "Engineering Overlay"
 status: "active"
+layer: "effects"
 summary: "Projects provider scheduling, independently selected engineer profiles and exact admitted runtime evidence into read-only engineering and organization attention views."
 responsibilities:
   - "Build content-addressed EngineeringOverlaySnapshotV2 and OrganizationAttentionSnapshotV2 from explicit provider scheduling and admitted session evidence."

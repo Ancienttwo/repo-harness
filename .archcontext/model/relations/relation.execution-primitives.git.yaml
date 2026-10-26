@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.execution-primitives.git"
+kind: "calls"
+source: "capability.workflow-engine.execution-primitives"
+target: "external.git"
+intent: "Run git for refs, worktrees and the common directory."

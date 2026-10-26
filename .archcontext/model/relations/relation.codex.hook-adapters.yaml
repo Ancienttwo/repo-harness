@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.codex.hook-adapters"
+kind: "calls"
+source: "external.codex"
+target: "capability.runtime-harness.hook-adapters"
+intent: "Codex runs the installed repo-harness hook command for each hook event."

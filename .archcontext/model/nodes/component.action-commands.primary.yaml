@@ -4,6 +4,7 @@ kind: component
 name: "Command Facades and Manifest"
 status: active
 parent: capability.public-surface.action-commands
+layer: "assets"
 summary: "Holds the skill package manifest and the thin command facade skills that it projects."
 responsibilities:
   - Keep manifest.json as the single discovery authority for packages, profiles and host placements.

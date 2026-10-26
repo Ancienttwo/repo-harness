@@ -3,6 +3,7 @@ id: capability.verification.evals-checks
 kind: capability
 name: Evals And Checks
 status: active
+layer: scripts
 summary: Runs repository verification, contract gates, benchmarks, and evaluation suites.
 responsibilities:
   - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.

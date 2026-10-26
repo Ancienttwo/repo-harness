@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.herdr"
+kind: "external-system"
+name: "Herdr"
+status: "active"
+layer: "external"
+summary: "Terminal multiplexer server that hosts task-agent and review panes."

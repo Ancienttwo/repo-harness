@@ -4,6 +4,7 @@ kind: component
 name: Continuation Ledger
 status: active
 parent: capability.workflow-engine.workflow-state
+layer: core
 summary: Routes the next loop action from read-only Effective State and stops a loop that makes no progress.
 responsibilities:
   - Project one continuation envelope from Effective State and the active Sprint text with a first-match route table.

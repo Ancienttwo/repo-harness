@@ -3,6 +3,7 @@ id: capability.public-surface.action-commands
 kind: capability
 name: Action Commands
 status: active
+layer: assets
 summary: Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them.
 responsibilities:
   - Own action command assets and their behavior/evaluation contracts.

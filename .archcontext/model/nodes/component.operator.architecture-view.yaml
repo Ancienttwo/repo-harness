@@ -4,6 +4,7 @@ kind: component
 name: Architecture View
 status: active
 parent: capability.runtime-harness.operator
+layer: cli
 summary: Committed architecture module views and the module CLI command.
 responsibilities:
   - Build the module index, module detail and graph shapes from the committed architecture model.

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.hook.spawns.process-supervisor"
+kind: "spawns"
+source: "process.hook"
+target: "process.process-supervisor"
+intent: "Run archctx and node probes through the bundled supervisor entry."

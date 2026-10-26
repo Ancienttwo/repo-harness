@@ -3,6 +3,7 @@ id: "capability.organization.publication"
 kind: "capability"
 name: "Publication Observations"
 status: "active"
+layer: "effects"
 summary: "Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and records admitted manual feedback."
 responsibilities:
   - "Provide the canonical publication JSON and SHA-256 helpers that integration evidence digests use; no publication receipt or lifecycle store reader or writer remains."

@@ -4,4 +4,5 @@ kind: component
 name: "Adoption Transaction"
 status: active
 parent: capability.public-surface.adoption
+layer: "core"
 summary: "Executes the reviewed apply repository adoption boundary."

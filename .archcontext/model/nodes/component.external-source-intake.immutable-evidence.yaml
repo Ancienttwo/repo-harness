@@ -4,6 +4,7 @@ kind: "component"
 name: "Immutable External Evidence Store"
 status: "active"
 parent: "capability.runtime-harness.external-source-intake"
+layer: "effects"
 summary: "Creates immutable provider observations, refresh receipts and admitted-session binding receipts under the Git common directory, rewrites the receipt head under the store lock and serves the bounded newest snapshot; keeps historical binding bytes separate from current evidence."
 source:
   include:

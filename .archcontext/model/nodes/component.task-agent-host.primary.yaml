@@ -5,6 +5,7 @@
   "name": "Herdr Task Session Host",
   "status": "active",
   "parent": "capability.runtime-harness.task-agent-host",
+  "layer": "effects",
   "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands and the installed persona and plugin assets. Owns the pure pane-status contract, its plugin projection, and local blind-label I/O.",
   "source": {
     "include": [

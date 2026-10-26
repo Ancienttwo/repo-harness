@@ -1,9 +1,22 @@
-# General Repo Access Through CodeGraph
+---
+schemaVersion: archcontext.adr/v1
+title: General Repo Access Through CodeGraph
+status: accepted
+date: 2026-06-22
+appliesTo:
+  - capability.runtime-mcp.general-repo-access
+  - capability.verification.codegraph-readiness
+---
 
-> Status: Accepted for Sprint 0 contract freeze
-> Source PRD: `plans/prds/20260622-1700-gpt-codegraph.prd.md`
-> Source sprint: `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`
-> Date: 2026-06-22
+# ADR-0001: General Repo Access Through CodeGraph
+
+- Status: Accepted for the Sprint 0 contract freeze.
+- Date: 2026-06-22
+- Sources: `plans/prds/20260622-1700-gpt-codegraph.prd.md` and
+  `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`. Commit
+  `07a5d63a5` removed both files; read them at `07a5d63a5^`.
+- Moved from `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`
+  on 2026-10-27 (#1015). The decision text is unchanged.
 
 ## Context
 

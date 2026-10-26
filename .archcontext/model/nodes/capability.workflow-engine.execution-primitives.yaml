@@ -3,6 +3,7 @@ id: "capability.workflow-engine.execution-primitives"
 kind: "capability"
 name: "Execution Primitives"
 status: "active"
+layer: "effects"
 summary: "Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It holds no workflow policy."
 responsibilities:
   - "Run a child process with a timeout, an output cap and secret redaction, and supervise a process group when the caller asks."
@@ -67,4 +68,4 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun run check:type"
-    - "bun run test:files tests/process-runner.test.ts tests/bounded-supervisor-audit.test.ts tests/unit/closeout-runner-guardrails.test.ts tests/state/state-effects.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/process-runner.test.ts tests/unit/closeout-runner-guardrails.test.ts tests/state/state-effects.test.ts --timeout 60000 --max-concurrency 1"

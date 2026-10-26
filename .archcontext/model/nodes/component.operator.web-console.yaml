@@ -4,6 +4,7 @@ kind: component
 name: Operator Web Console
 status: active
 parent: capability.runtime-harness.operator
+layer: web
 summary: Prebuilt read-only browser console that renders operator JSON observations.
 responsibilities:
   - Fetch observations with GET only and decode each body with the shared core decoder before render.

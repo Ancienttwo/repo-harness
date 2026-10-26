@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.global-runtime-reconciliation.npm-registry"
+kind: "reads"
+source: "capability.runtime-harness.global-runtime-reconciliation"
+target: "external.npm-registry"
+intent: "Check that a release version is published on the npm registry."

@@ -3,6 +3,7 @@ id: capability.runtime-harness.global-runtime-reconciliation
 kind: capability
 name: Global Runtime Reconciliation
 status: active
+layer: effects
 summary: Reconciles the installed repo-harness runtime, its mandatory ArchContext closure, and profile-owned external tooling.
 responsibilities:
   - Install and read back the exact repo-harness, archctx, archctx-contracts, and package-local CodeGraph versions.

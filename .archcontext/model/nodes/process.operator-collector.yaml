@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.operator-collector"
+kind: "process"
+name: "Operator collector"
+status: "active"
+layer: "effects"
+summary: "Detached fleet, task-read and setup-check child processes; GET handlers read only their cached results."

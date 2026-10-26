@@ -3,6 +3,7 @@ id: "capability.workflow-engine.workflow-state"
 kind: "capability"
 name: "Workflow State"
 status: "active"
+layer: "effects"
 summary: "Resolves deterministic Effective State, provider issue and admitted session board observations, historical task identity, worktree safety and the continuation ledger."
 responsibilities:
   - "Project repository workflow artifacts into one deterministic Effective State. The tasks/current.md snapshot stays a replaceable read model."

@@ -4,6 +4,7 @@ kind: "component"
 name: "Agent Runtime Effect Journal"
 status: "active"
 parent: "capability.runtime-harness.agent-runtime-effects"
+layer: "effects"
 summary: "Owns immutable admitted-v2 effect intent and observation chains, deterministic current repair and exact session, profile, admission and claim fences."
 source:
   include:

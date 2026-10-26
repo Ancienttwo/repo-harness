@@ -4,6 +4,7 @@ kind: component
 name: "Edit Guard Handlers"
 status: active
 parent: capability.runtime-harness.hook-adapters
+layer: "cli"
 summary: "The typed handler that guards edit paths, and the circuit breaker store."
 responsibilities:
   - Decide PreToolUse.edit with the mutation guard from the repository, _ref, _ops and target path boundaries.

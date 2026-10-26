@@ -4,6 +4,7 @@ kind: component
 name: Template Projection
 status: active
 parent: capability.workflow-engine.contract-assets
+layer: assets
 summary: Projects the standalone capability resolver, reference configs and template assets and drives repository init.
 responsibilities:
   - Write the standalone capability resolver and reference config copies atomically with the source bytes and mode and report drift in check mode.

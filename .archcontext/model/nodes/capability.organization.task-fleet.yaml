@@ -3,6 +3,7 @@ id: "capability.organization.task-fleet"
 kind: "capability"
 name: "Task Fleet"
 status: "active"
+layer: "core"
 summary: "Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage."
 responsibilities:
   - "Join registered repositories to canonical provider issue observations and nullable exact admitted sessions; local task labels never establish provider identity."
