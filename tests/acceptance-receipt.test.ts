@@ -8,7 +8,7 @@ import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as impo
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
-import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
@@ -759,25 +759,35 @@ darwinTest('generic review cancel that lands between the final check and the acc
 });
 
 
-darwinTest('Codex credential copy cleanup follows owner close/cancel/start-failure/timeout and reports refusal', async () => {
-  const { existsSync, unlinkSync } = await import('node:fs');
-  const copied = (f: ReturnType<typeof reviewFixture>) => {
-    const session = readSessionArtifact<{task:string}>(join(reviewLocation(f.root,f.options.authority).dir,'session.json'));
-    return join(f.reviewerRepo,'.ai/harness/runs/task-agent-outbox',importedTaskDir(f.reviewerRepo,session.task,'deep-reasoner').split('/').pop()!,'.codex-home','auth.json');
-  };
-  for (const cancel of [false,true]) {
-    const f=reviewFixture();f.verdict('PASS');await runReviewRound({...f.options,harness:'codex'},f.effects);
-    expect(existsSync(copied(f))).toBe(true);await closeReview(f.root,f.options.authority,cancel,f.home,f.effects);expect(existsSync(copied(f))).toBe(false);
-  }
+const copied = (f: ReturnType<typeof reviewFixture>) => {
+  const session = readSessionArtifact<{task:string}>(join(reviewLocation(f.root,f.options.authority).dir,'session.json'));
+  return join(f.reviewerRepo,'.ai/harness/runs/task-agent-outbox',importedTaskDir(f.reviewerRepo,session.task,'deep-reasoner').split('/').pop()!,'.codex-home','auth.json');
+};
+
+for (const cancel of [false,true]) darwinTest(`Codex credential copy cleanup follows owner ${cancel ? 'cancel' : 'close'}`, async () => {
+  const f=reviewFixture();f.verdict('PASS');await runReviewRound({...f.options,harness:'codex'},f.effects);
+  expect(existsSync(copied(f))).toBe(true);await closeReview(f.root,f.options.authority,cancel,f.home,f.effects);expect(existsSync(copied(f))).toBe(false);
+});
+
+darwinTest('Codex credential copy cleanup follows start failure', async () => {
   const start=reviewFixture();
   await expect(runReviewRound({...start.options,harness:'codex'},{...start.effects,start:async()=>{throw new Error('fixture_start_failure')}})).rejects.toThrow('fixture_start_failure');
   expect(existsSync(copied(start))).toBe(false);
+});
+
+darwinTest('Codex credential copy cleanup follows a missing Result', async () => {
   const missing=reviewFixture();
   await expect(runReviewRound({...missing.options,harness:'codex',timeoutMs:1},{...missing.effects,collect:async()=>null})).rejects.toThrow('review_result_missing');
   expect(existsSync(copied(missing))).toBe(false);
+});
+
+darwinTest('Codex credential copy cleanup follows round timeout', async () => {
   const timed=reviewFixture();
   await expect(runReviewRound({...timed.options,harness:'codex',timeoutMs:1},pendingTurnEffects(timed,async()=>null))).rejects.toThrow('review_round_timeout');
   expect(existsSync(copied(timed))).toBe(false);
+});
+
+darwinTest('Codex credential copy cleanup reports a refused delete', async () => {
   const refused=reviewFixture();refused.verdict('PASS');await runReviewRound({...refused.options,harness:'codex'},refused.effects);
   unlinkSync(copied(refused));mkdirSync(copied(refused));
   await expect(closeReview(refused.root,refused.options.authority,true,refused.home,refused.effects)).rejects.toThrow('cleanup_pending: review_auth_copy_delete_failed');
