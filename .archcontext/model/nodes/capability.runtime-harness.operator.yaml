@@ -3,6 +3,7 @@ id: "capability.runtime-harness.operator"
 kind: "capability"
 name: "Operator Board"
 status: "active"
+layer: "web"
 summary: "Provides bounded read-only HTTP views of registered provider issues, admitted sessions, planning and explicit task history."
 responsibilities:
   - "Serve public observations through GET and HEAD routes."

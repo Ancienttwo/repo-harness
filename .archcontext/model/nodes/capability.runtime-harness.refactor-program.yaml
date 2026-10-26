@@ -3,6 +3,7 @@ id: capability.runtime-harness.refactor-program
 kind: capability
 name: Refactor Recommendations
 status: active
+layer: effects
 summary: Shows measured ArchContext refactor suggestions with their evidence and records the user decision; it never executes a refactor.
 responsibilities:
   - Keep ArchContext as the sole authority for structural observations, recommendation identity and lifecycle state.

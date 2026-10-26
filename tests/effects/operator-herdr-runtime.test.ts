@@ -5,7 +5,8 @@ import { hostname } from 'node:os';
 import { join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { requestHerdrObservation, herdrAgentSessionKey, herdrProgramStatus, HERDR_OBSERVATION_REVISION } from '../../src/effects/terminal/herdr-observation';
+import { requestHerdrObservation, herdrAgentSessionKey, herdrProgramStatus, herdrVersionCheck, HerdrVersionMismatchError, verifyHerdrVersion, HERDR_OBSERVATION_REVISION,
+  HERDR_OBSERVATION_VERSION, HERDR_OBSERVATION_PROTOCOL } from '../../src/effects/terminal/herdr-observation';
 import { createHerdrRuntimeTransport } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
@@ -174,6 +175,28 @@ describe('official Herdr socket observation', () => {
       try { f.setVersion(version, protocol); await expect(owner.transport.capabilities(new AbortController().signal)).rejects.toThrow('version'); }
       finally { owner.close(); await f.close(); }
     }
+  });
+
+  test('a version mismatch names the expected pin and the observed server version', async () => {
+    const expected = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
+    expect(expected).toEqual({ version: '0.9.3', protocol: 22, revision: 'add5f99a8351e66464f9abec0920778303f0e885' });
+    expect(herdrVersionCheck({ version: '0.9.3', protocol: 22 })).toEqual({ state: 'aligned', expected, actual: { version: '0.9.3', protocol: 22 } });
+    expect(herdrVersionCheck({ version: '0.9.5', protocol: 23 })).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.5', protocol: 23 } });
+    // An unreadable value is reported as unknown, never echoed.
+    expect(herdrVersionCheck({ version: '/Users/me/herdr 0.9.5', protocol: '23' }).actual).toEqual({ version: null, protocol: null });
+    let error: unknown;
+    try { verifyHerdrVersion({ version: '0.9.5', protocol: 23 }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(HerdrVersionMismatchError);
+    expect((error as HerdrVersionMismatchError).check).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.5', protocol: 23 } });
+    expect((error as Error).message).toBe('herdr_observation_version: expected 0.9.3 protocol 22 (revision add5f99a); actual 0.9.5 protocol 23');
+
+    const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
+    try {
+      f.setVersion('0.9.5', 23);
+      const failure = await owner.transport.capabilities(new AbortController().signal).then(() => null, (caught: unknown) => caught);
+      expect(failure).toBeInstanceOf(HerdrVersionMismatchError);
+      expect((failure as HerdrVersionMismatchError).check.actual).toEqual({ version: '0.9.5', protocol: 23 });
+    } finally { owner.close(); await f.close(); }
   });
 
   test('lost events resubscribe before resnapshot and advance source epoch; reused panes stay unclaimed', async () => {

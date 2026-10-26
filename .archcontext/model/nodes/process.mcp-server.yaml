@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.mcp-server"
+kind: "process"
+name: "MCP server"
+status: "active"
+layer: "cli"
+summary: "Long-running repo-harness mcp serve process on stdio or loopback HTTP."

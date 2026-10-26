@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.npm-registry"
+kind: "external-system"
+name: "npm Registry"
+status: "active"
+layer: "external"
+summary: "Public package registry that publishes and serves the repo-harness release package."

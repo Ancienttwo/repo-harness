@@ -4,6 +4,7 @@ kind: component
 name: "Strategy Context Collector"
 status: active
 parent: capability.public-surface.strategy-reflection
+layer: "effects"
 summary: "Reads strategy sources through one bounded request reader and validates proposals against the digest-bound packet."
 responsibilities:
   - Parse the strategy document and select active memory by revision, expiry and topic.

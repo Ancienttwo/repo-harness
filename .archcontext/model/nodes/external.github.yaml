@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.github"
+kind: "external-system"
+name: "GitHub"
+status: "active"
+layer: "external"
+summary: "Provider of issues, pull requests, checks, releases and CI runs; reached through the gh CLI and the REST API."

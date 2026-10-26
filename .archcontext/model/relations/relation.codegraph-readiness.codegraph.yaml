@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.codegraph-readiness.codegraph"
+kind: "calls"
+source: "capability.verification.codegraph-readiness"
+target: "external.codegraph"
+intent: "Run codegraph to check index readiness and read code facts."

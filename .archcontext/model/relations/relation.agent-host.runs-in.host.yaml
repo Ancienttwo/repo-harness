@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.agent-host.runs-in.host"
+kind: "runs-in"
+source: "process.agent-host"
+target: "namespace.host.developer"
+intent: "Runs on the developer host."

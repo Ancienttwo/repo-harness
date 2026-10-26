@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.cli.spawns.process-supervisor"
+kind: "spawns"
+source: "process.cli"
+target: "process.process-supervisor"
+intent: "Run a bounded command through runProcess with a process group."

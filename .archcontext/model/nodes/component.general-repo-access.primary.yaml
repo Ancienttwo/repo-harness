@@ -4,4 +4,5 @@ kind: component
 name: "Stable File Reader"
 status: active
 parent: capability.runtime-mcp.general-repo-access
+layer: "cli"
 summary: "Executes the reviewed read a repository file boundary."

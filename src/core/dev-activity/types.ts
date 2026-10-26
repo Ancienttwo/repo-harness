@@ -88,7 +88,17 @@ export interface DevActivityItem {
   cleanup_pending: boolean;
 }
 
-export type DevActivityAttentionKind = 'ready_to_merge';
+export const DEV_ACTIVITY_ATTENTION_KINDS = ['ready_to_merge', 'changes_requested', 'merge_conflict', 'checks_failed'] as const;
+export type DevActivityAttentionKind = typeof DEV_ACTIVITY_ATTENTION_KINDS[number];
+
+/**
+ * GitHub source reason for a PR category (open, merged, closed) that returned
+ * more rows than one query may carry. Only that category is dropped; the
+ * other categories stay in the snapshot.
+ */
+export const DEV_ACTIVITY_TRUNCATED_REASON_PREFIX = 'github_truncated_';
+export const isTruncatedDevActivityReason = (reason: string | null): boolean =>
+  reason !== null && reason.startsWith(DEV_ACTIVITY_TRUNCATED_REASON_PREFIX);
 
 export interface DevActivityAttention {
   kind: DevActivityAttentionKind;
@@ -97,7 +107,8 @@ export interface DevActivityAttention {
   repository_id: string;
   summary: string;
   /**
-   * From the authority for the kind: PR createdAt (ready_to_merge).
+   * PR createdAt for every kind: GitHub reports no time for a review decision,
+   * merge state or check result. The longest wait comes first.
    */
   waiting_since: string;
   /** Link out (e.g. the PR) or null. */
@@ -114,6 +125,9 @@ export interface DevActivitySnapshotV2 {
   /** Registry rows whose path is gone; shown folded with the prune command. */
   unreadable_registrations: number;
   items: DevActivityItem[];
-  /** Sorted by waiting_since ascending. Its length is the single "needs you" count. */
+  /**
+   * One row per item, sorted by waiting_since ascending. Its length is the
+   * single "needs you" count.
+   */
   attention: DevActivityAttention[];
 }

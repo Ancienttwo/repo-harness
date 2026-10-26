@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.agent-host.spawns.mcp-server"
+kind: "spawns"
+source: "process.agent-host"
+target: "process.mcp-server"
+intent: "Start the stdio MCP server as an MCP client."

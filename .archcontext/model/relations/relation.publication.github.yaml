@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.publication.github"
+kind: "calls"
+source: "capability.organization.publication"
+target: "external.github"
+intent: "Read pull request readiness and post provider feedback through gh."

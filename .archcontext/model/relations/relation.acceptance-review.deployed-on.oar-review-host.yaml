@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.acceptance-review.deployed-on.oar-review-host"
+kind: "deployed-on"
+source: "capability.verification.acceptance-review"
+target: "process.oar-review-host"
+intent: "Acceptance review runs review sessions in the OAR review host."

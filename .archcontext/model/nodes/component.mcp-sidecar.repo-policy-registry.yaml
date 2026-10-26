@@ -4,6 +4,7 @@ kind: component
 name: "Config Policy and Repository Registry"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
+layer: "cli"
 summary: "Holds the user-level MCP config and credentials, the profile path policy, redaction, audit and the registered repository grants."
 responsibilities:
   - Read and write the single user-level MCP config and credential store.

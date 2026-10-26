@@ -4,6 +4,7 @@ kind: component
 name: Effective State Resolver
 status: active
 parent: capability.workflow-engine.workflow-state
+layer: core
 summary: Projects plan, worktree and capability facts into Effective State and commits the shared version owner.
 responsibilities:
   - Parse workflow artifacts and resolve the deterministic risk profile in the pure core.

@@ -151,6 +151,69 @@ describe('dev activity attention queue (§3.4)', () => {
   });
 });
 
+describe('dev activity attention kinds (G19)', () => {
+  test('raises changes_requested, merge_conflict and checks_failed from review, merge_state and ci, longest wait first', () => {
+    const snapshot = project(repo({
+      pull_requests: [
+        pr('feat/ci', { ci: 'failure', created_at: iso(2 * DAY) }),
+        pr('feat/review', { review: 'changes_requested', created_at: iso(5 * DAY) }),
+        pr('feat/conflict', { merge_state: 'DIRTY', created_at: iso(4 * DAY) }),
+        pr('feat/ready', { merge_state: 'CLEAN', ci: 'success', review: 'approved', created_at: iso(3 * DAY) }),
+        pr('feat/waiting', { ci: 'pending', created_at: iso(6 * DAY) }),
+      ],
+    }));
+    expect(snapshot.attention.map(entry => [entry.kind, entry.waiting_since, itemFor(snapshot, entry.subject_id.split(':')[1]!).branch])).toEqual([
+      ['changes_requested', iso(5 * DAY), 'feat/review'],
+      ['merge_conflict', iso(4 * DAY), 'feat/conflict'],
+      ['ready_to_merge', iso(3 * DAY), 'feat/ready'],
+      ['checks_failed', iso(2 * DAY), 'feat/ci'],
+    ]);
+    for (const entry of snapshot.attention) expect(entry.url).toMatch(/^https:\/\/github\.com\//u);
+    expect(decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot))).attention).toHaveLength(4);
+  });
+
+  test('one item raises one row; blockers outrank the merge ask', () => {
+    const snapshot = project(repo({
+      pull_requests: [
+        pr('feat/all', { review: 'changes_requested', merge_state: 'DIRTY', ci: 'failure' }),
+        pr('feat/conflict-ci', { merge_state: 'DIRTY', ci: 'failure' }),
+        pr('feat/clean-red', { merge_state: 'CLEAN', ci: 'failure', review: 'approved' }),
+      ],
+    }));
+    expect(Object.fromEntries(snapshot.attention.map(entry => [entry.subject_id.split(':')[1], entry.kind]))).toEqual({
+      'feat/all': 'changes_requested', 'feat/conflict-ci': 'merge_conflict', 'feat/clean-red': 'checks_failed',
+    });
+    expect(snapshot.attention).toHaveLength(3);
+  });
+
+  test('drafts, closed PRs, merged PRs and PR-less branches raise nothing', () => {
+    const snapshot = project(repo({
+      worktrees: [worktree('feat/local')],
+      pull_requests: [
+        pr('feat/draft', { is_draft: true, ci: 'failure', review: 'changes_requested', merge_state: 'DIRTY' }),
+        pr('feat/closed', { state: 'closed', closed_at: iso(DAY), review: 'changes_requested', merge_state: 'DIRTY' }),
+        pr('feat/merged', { state: 'merged', merged_at: iso(DAY), closed_at: iso(DAY), review: 'changes_requested', merge_state: 'DIRTY' }),
+      ],
+    }));
+    expect(snapshot.attention).toEqual([]);
+  });
+
+  test('breaks equal waits by kind then subject, and the decoder accepts the order', () => {
+    const created_at = iso(DAY);
+    const snapshot = project(repo({
+      pull_requests: [
+        pr('feat/b', { ci: 'failure', created_at }),
+        pr('feat/a', { ci: 'failure', created_at }),
+        pr('feat/c', { review: 'changes_requested', created_at }),
+      ],
+    }));
+    expect(snapshot.attention.map(entry => `${entry.kind}:${entry.subject_id.split(':')[1]}`)).toEqual([
+      'changes_requested:feat/c', 'checks_failed:feat/a', 'checks_failed:feat/b',
+    ]);
+    expect(() => decodeDevActivitySnapshot(JSON.parse(JSON.stringify(snapshot)))).not.toThrow();
+  });
+});
+
 describe('dev activity public text and health', () => {
   test('shows a PR title verbatim through projection and decode', () => {
     const title = 'drop the /start double header';

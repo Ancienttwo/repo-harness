@@ -4,6 +4,7 @@ kind: component
 name: "Verification Check Execution"
 status: active
 parent: capability.verification.evals-checks
+layer: "scripts"
 summary: "Executes the Verification Plan of the current review admission with exact snapshot, process result and evidence binding."
 responsibilities:
   - Run the admitted Verification Plan through the verification-plan CLI; the migration helper converts legacy contract criteria to a plan.

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.acceptance-review.claude-code"
+kind: "calls"
+source: "capability.verification.acceptance-review"
+target: "external.claude-code"
+intent: "Run Claude Code as a sandboxed reviewer in the OAR review host."

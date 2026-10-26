@@ -3,6 +3,7 @@ id: capability.runtime-harness.evidence-ledger
 kind: capability
 name: Evidence Ledger
 status: active
+layer: effects
 summary: Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports attested evidence and materializes handoff and resume recovery views.
 responsibilities:
   - Require a genesis record before the first append and build every event through the single writer construction path.

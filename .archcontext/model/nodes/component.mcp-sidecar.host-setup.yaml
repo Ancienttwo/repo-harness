@@ -4,6 +4,7 @@ kind: component
 name: "CLI and Host Setup"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
+layer: "cli"
 summary: "Owns the mcp CLI command, host setup for ChatGPT and Codex, the doctors and owned uninstall."
 responsibilities:
   - Parse mcp serve, doctor, set, list, cleanup, setup and uninstall commands.

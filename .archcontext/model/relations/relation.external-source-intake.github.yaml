@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.external-source-intake.github"
+kind: "reads"
+source: "capability.runtime-harness.external-source-intake"
+target: "external.github"
+intent: "Read GitHub issues and comments as immutable intake evidence through gh."

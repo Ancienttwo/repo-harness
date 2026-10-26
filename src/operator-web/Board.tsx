@@ -39,6 +39,9 @@ const RUNTIME_CONFIG_COMMAND = 'repo-harness operator serve --runtime-status-con
 
 const ATTENTION_ICON: Readonly<Record<DevActivityAttention['kind'], ReactNode>> = {
   ready_to_merge: <GitMergeIcon size={16} />,
+  changes_requested: <PencilSimpleIcon size={16} />,
+  merge_conflict: <GitBranchIcon size={16} />,
+  checks_failed: <XCircleIcon size={16} />,
 };
 
 function AttentionRow({ row, snapshot, now, onOpen, t }: {

@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.cli"
+kind: "process"
+name: "CLI process"
+status: "active"
+layer: "cli"
+summary: "One short bun process per repo-harness command from a user shell or Bot."

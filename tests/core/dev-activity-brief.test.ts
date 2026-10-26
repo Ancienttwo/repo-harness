@@ -48,6 +48,28 @@ describe('development activity brief', () => {
     expect(formatDevActivityBrief(snapshot())).toBe('Nothing needs you.\n\nwidgets (0 active)');
   });
 
+  test('names the cause of each attention kind', () => {
+    const data = snapshot({ pull_requests: [
+      pr({ number: 1, head_branch: 'feat/a', review: 'changes_requested', merge_state: 'BLOCKED', created_at: '2026-10-10T00:00:00.000Z' }),
+      pr({ number: 2, head_branch: 'feat/b', merge_state: 'DIRTY', created_at: '2026-10-11T00:00:00.000Z' }),
+      pr({ number: 3, head_branch: 'feat/c', ci: 'failure', merge_state: 'BLOCKED', created_at: '2026-10-12T00:00:00.000Z' }),
+    ] });
+    expect(formatDevActivityBrief(data).split('\n').slice(0, 6)).toEqual([
+      '3 item(s) need you.', '', 'Needs you',
+      'widgets: PR #1 - changes requested', 'widgets: PR #2 - merge conflict', 'widgets: PR #3 - checks failed',
+    ]);
+  });
+
+  test('a dropped PR category adds a source line and keeps the other item lines', () => {
+    const data = snapshot({ pull_requests: [pr()] });
+    const github = data.repositories[0]!.sources.find(source => source.kind === 'github')!;
+    github.status = 'unavailable';
+    github.reason = 'github_truncated_merged';
+    expect(formatDevActivityBrief(data).split('\n').slice(-2)).toEqual(['  source github unavailable', '  [open PR #7] feat/widgets - Add widgets']);
+    github.reason = 'gh_failed';
+    expect(formatDevActivityBrief(data).split('\n').slice(-2)).toEqual(['widgets (1 active)', '  source github unavailable']);
+  });
+
   test('uses snapshot attention in its order and does not cap it', () => {
     const data = snapshot({ pull_requests: [pr(), pr({ number: 8, head_branch: 'feat/next', title: 'Next' })] });
     expect(formatDevActivityBrief(data, 1)).toBe([

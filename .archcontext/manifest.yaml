@@ -3,7 +3,7 @@ codeFacts:
   provider: "codegraph"
   required: true
 content:
-  decisions: ".archcontext/decisions"
+  decisions: "docs/adr"
   generated: ".archcontext/generated"
   policies: ".archcontext/policies"
   projections: ".archcontext/projections"
