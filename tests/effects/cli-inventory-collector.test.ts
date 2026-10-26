@@ -94,6 +94,16 @@ describe('cli inventory collector', () => {
     expect(calls.some(call => call.includes('history'))).toBe(false);
   });
 
+  test('a gh full_name that is not owner/repo is not used', async () => {
+    const { env, probe: base } = machine();
+    const probe: CliProbe = async (argv) => (argv[0] === 'gh'
+      ? '{"archived":false,"full_name":"../../etc passwd","stars":1}\n'
+      : base(argv));
+    const snapshot = await collectCliInventory({ env, probe, now: () => NOW });
+    expect(() => decodeCliInventory(snapshot)).not.toThrow();
+    expect(snapshot.entries.find(entry => entry.id === 'brew:gh')?.github).toMatchObject({ repo: 'cli/cli', stars: null, moved: false });
+  });
+
   test('network lookups are cached for 24 hours', async () => {
     const { env, probe, calls } = machine();
     const cache = createCliInventoryCache();

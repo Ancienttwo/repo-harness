@@ -17,6 +17,7 @@ import {
   CLI_SEED,
   CLI_SYSTEM_DIRS,
   CLI_UNUSED_DAYS,
+  GITHUB_REPO,
   githubLookups,
   projectCliInventory,
   unavailableCliInventory,
@@ -275,7 +276,9 @@ export interface CliInventoryOptions {
 
 async function githubFacts(probe: CliProbe, repo: string): Promise<CliGithubFacts | null> {
   const facts = record(json(await probe(['gh', 'api', `repos/${repo}`, '--jq', '{full_name: .full_name, stars: .stargazers_count, archived: .archived}'])));
-  return typeof facts.full_name === 'string' && typeof facts.stars === 'number' && typeof facts.archived === 'boolean'
+  // gh output is external: a name that is not `owner/repo` is no fact.
+  return typeof facts.full_name === 'string' && GITHUB_REPO.test(facts.full_name)
+    && typeof facts.stars === 'number' && Number.isSafeInteger(facts.stars) && facts.stars >= 0 && typeof facts.archived === 'boolean'
     ? { full_name: facts.full_name, stars: facts.stars, archived: facts.archived }
     : null;
 }
