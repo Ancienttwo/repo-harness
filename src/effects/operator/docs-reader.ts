@@ -26,6 +26,7 @@ export type DocsReadErrorCode =
   | 'too_large'
   | 'not_text'
   | 'branch_invalid'
+  | 'repo_unavailable'
   | 'branch_missing'
   | 'timeout'
   | 'git_read_failed'
@@ -71,12 +72,13 @@ const HEX_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const SAFE_NAME = /^[^\x00-\x1f\x7f\\]+$/;
 
 /** Secret-bearing names. Every segment of the logical and the physical path is checked. */
+// Case-insensitive: macOS and Windows file systems fold case, so `.ENV` opens `.env`.
 const DENIED_SEGMENTS: readonly RegExp[] = [
-  /^\.git$/,
-  /^\.env/,
-  /^\.(?:ssh|aws|gnupg|docker|kube)$/,
-  /^\.(?:npmrc|yarnrc|yarnrc\.yml|pypirc|netrc|pgpass|git-credentials)$/,
-  /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/,
+  /^\.git$/i,
+  /^\.env/i,
+  /^\.(?:ssh|aws|gnupg|docker|kube)$/i,
+  /^\.(?:npmrc|yarnrc|yarnrc\.yml|pypirc|netrc|pgpass|git-credentials)$/i,
+  /^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/i,
   /\.(?:pem|key|p12|pfx|jks|keystore)$/i,
   /^(?:credentials|secrets)(?:\.(?:json|ya?ml|toml|ini))?$/i,
 ];
@@ -238,7 +240,8 @@ export class DocsReader {
 
   constructor(options: DocsReaderOptions) {
     if (!validBranch(options.defaultBranch)) throw new DocsReadError('branch_invalid');
-    this.root = realpathSync(options.root);
+    // The native error names the absolute root; only the code may leave this module.
+    try { this.root = realpathSync(options.root); } catch { throw new DocsReadError('repo_unavailable'); }
     this.ref = `refs/heads/${options.defaultBranch}^{commit}`;
     this.worker = new CatFileWorker(this.root, options.timeoutMs ?? DOCS_GIT_TIMEOUT_MS, options.gitBin, options.env ?? process.env);
   }
