@@ -1,6 +1,6 @@
 import type { RequiredPullRequestV2 } from '../../src/core/integration/product-acceptance';
 import { observeSelectedPullRequest, observeSelectedPullRequestState, type IntegrationAcceptanceEnvironment } from '../../src/effects/integration/product-acceptance';
-import { acceptanceReceiptRecordPath } from '../../src/effects/review/acceptance-receipt';
+import { acceptanceReceiptRecordPath, readAcceptanceReceiptRecord } from '../../src/effects/review/acceptance-receipt';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { observeActiveReviewAdmission } from '../../src/effects/admission/issue-goal';
 import { createReviewAdmission } from '../../src/core/review/authority-context';
@@ -17,7 +17,9 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
@@ -994,6 +996,19 @@ describe('issue #284 closed dependency authority', () => {
     expect(misfiledResult.evidence_refs.some((entry) => entry.ref.startsWith('acceptance-observation:'))).toBe(false);
   });
 
+  test('the receipt record stores the receipt being recorded, never a re-read latest file', () => {
+    const subject = fixture();
+    // Another acceptance in the same checkout replaced acceptance.latest.json.
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, { summary: 'another acceptance replaced latest' }));
+    const receipt = acceptanceReceipt(subject);
+    const observation = writeAcceptanceVerificationObservation({ root: subject.root, authorityHome: subject.home, receipt });
+    const written = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
+    expect(observation.acceptance_receipt_sha256).toBe(engineerSha256(written));
+    const record = readAcceptanceReceiptRecord(subject.root, subject.home, observation.acceptance_receipt_sha256);
+    expect(record.bytes.equals(written)).toBe(true);
+    expect(record.receipt.summary).toBe(receipt.summary);
+  });
+
   test('verifyAcceptance keeps the acceptance policy rule set this branch extracted', () => {
     const subject = fixture();
     const valid = acceptanceReceipt(subject);
@@ -1143,16 +1158,16 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`product-acceptance-projection:${projection.projection_sha256}`);
 
-    // No projection persisted under the selected digest yet: product acceptance is pending.
+    // A selector names a projection digest only after it was persisted, so an
+    // absent projection is lost local evidence, never pending work.
     const stored = join(resolveGitCommonDirectory(subject.root), 'repo-harness/integration/v2/products',
       `${projection.projection_sha256.slice('sha256:'.length)}.json`);
     const storedBytes = readFileSync(stored);
     rmSync(stored);
-    const withoutProduct = resolveDependencyAuthority(exact);
-    expect(withoutProduct.status).toBe('unsatisfied');
-    expect(withoutProduct.authority_revision).not.toBeNull();
+    const lostProduct = resolveDependencyAuthority(exact);
+    expect(lostProduct.status).toBe('authority_unavailable');
+    expect(lostProduct.authority_revision).toBeNull();
     writeFileSync(stored, storedBytes);
-    expect(accepted.authority_revision).not.toBe(withoutProduct.authority_revision);
     expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
 
     // The exact selected PR is still open: the product dependency is pending work.
@@ -1168,6 +1183,20 @@ describe('issue #284 closed dependency authority', () => {
     writeFileSync(record, '{"substituted":true}\n');
     expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
     rmSync(record);
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+    writeFileSync(record, recordBytes);
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+    // A symlink to the exact record bytes and an oversized record both fail
+    // before the digest check, so the bound guard itself refuses them.
+    const relocated = `${record}.target`;
+    renameSync(record, relocated);
+    symlinkSync(relocated, record);
+    expect(() => readAcceptanceReceiptRecord(subject.root, subject.home, projection.acceptance_receipt_sha256)).toThrow('at most 1 MiB');
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+    rmSync(record);
+    renameSync(relocated, record);
+    writeFileSync(record, Buffer.concat([recordBytes, Buffer.alloc(1024 * 1024, 0x20)]));
+    expect(() => readAcceptanceReceiptRecord(subject.root, subject.home, projection.acceptance_receipt_sha256)).toThrow('at most 1 MiB');
     expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
     writeFileSync(record, recordBytes);
     expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
