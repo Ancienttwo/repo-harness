@@ -119,6 +119,19 @@ describe('herdr task dispatch tools', () => {
     expect(auditEntries()).toEqual([expect.objectContaining({ tool: 'list_task_agents', status: 'ok' })]);
   });
 
+  test('an inherited GIT_DIR does not pull other panes into the granted repo', () => {
+    const previousGitDir = process.env.GIT_DIR;
+    process.env.GIT_DIR = join(fixture.granted, '.git');
+    try {
+      const result = callHerdrTool(context(fakeHerdr(fixture)), 'list_task_agents', {});
+      expect((result.structuredContent as { agents: Array<{ pane_id: string }> }).agents.map((agent) => agent.pane_id))
+        .toEqual(['w1:p1', 'w1:p2']);
+    } finally {
+      if (previousGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDir;
+    }
+  });
+
   test('the Herdr session follows HERDR_SESSION', () => {
     const herdr = fakeHerdr(fixture);
     callHerdrTool(context(herdr, { HERDR_SESSION: 'work' }), 'list_task_agents', {});

@@ -9,7 +9,7 @@
 import { realpathSync } from 'fs';
 import { isAbsolute } from 'path';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
-import { readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
+import { readRegisteredRepoHarnessRepos, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { herdrCommand, herdrMutation, herdrResult, spawnHerdr, type HerdrEndpoint, type HerdrSpawn } from '../../effects/terminal/herdr';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
@@ -126,7 +126,8 @@ function runHerdr(ctx: HerdrToolContext, args: readonly string[]) {
 function commonDirectory(path: string): string | null {
   if (!isAbsolute(path)) return null;
   try {
-    return resolveGitCommonDirectory(realpathSync(path), undefined, GIT_PROBE_TIMEOUT_MS);
+    // An inherited GIT_DIR would resolve every pane to one repository and widen the scope.
+    return resolveGitCommonDirectory(realpathSync(path), undefined, GIT_PROBE_TIMEOUT_MS, repoCheckoutProbeEnv(process.env));
   } catch {
     return null;
   }
