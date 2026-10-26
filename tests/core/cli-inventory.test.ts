@@ -120,6 +120,17 @@ describe('cli inventory projection', () => {
     expect(JSON.stringify([...entries.values()])).not.toContain('evil;');
   });
 
+  test('a Go uninstall removes every grouped binary and quotes an unsafe ~ path', () => {
+    const go = (files: string[]) => projectCliInventory(input({
+      packages: [{ source: 'go', dependency: false, name: 'example.com/tools', version: 'v1.0.0', roots: [], files, deprecated: false, urls: [] }],
+      path_executables: files.map(path => exe(path)),
+    })).entries[0]?.uninstall?.steps;
+    expect(go([`${HOME}/go/bin/toolone`, `${HOME}/go/bin/tooltwo`])).toEqual(['rm ~/go/bin/toolone ~/go/bin/tooltwo']);
+    expect(go([`${HOME}/my tools/bin/toolone`])).toEqual([`rm ~/'my tools/bin/toolone'`]);
+    expect(go([`${HOME}/a;touch x'b/bin/toolone`])).toEqual([`rm ~/'a;touch x'\\''b/bin/toolone'`]);
+    expect(go(['/opt/go/bin/toolone'])).toBeUndefined();
+  });
+
   test('shows local paths only as ~ paths or [private path]', () => {
     const snapshot = projectCliInventory(input());
     const entries = byId(snapshot);

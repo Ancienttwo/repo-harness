@@ -258,6 +258,22 @@ function uninstallCommand(record: CliPackageRecord): string | null {
   }
 }
 
+/**
+ * `rm` of every binary of a go module: go install has no uninstall, the files
+ * are the whole install. Only `~/` paths make a usable command; a path with
+ * text outside a plain set keeps tilde expansion and single-quotes the rest.
+ */
+function removeFiles(paths: readonly string[], home: string): string | null {
+  const args: string[] = [];
+  for (const path of paths) {
+    const shown = displayPath(path, home);
+    if (!shown.startsWith('~/')) return null;
+    const rest = shown.slice(2);
+    args.push(/^[A-Za-z0-9._/+-]+$/u.test(rest) ? shown : `~/'${rest.replaceAll("'", "'\\''")}'`);
+  }
+  return `rm ${args.join(' ')}`;
+}
+
 interface Claimed { readonly record: CliPackageRecord | null; readonly seed: CliSeedTool | null; readonly files: CliPathExecutable[] }
 
 export function projectCliInventory(input: CliInventoryInput): CliInventorySnapshotV1 {
@@ -299,8 +315,7 @@ export function projectCliInventory(input: CliInventoryInput): CliInventorySnaps
     const github = resolveGithub(record, seedTool, commands, input);
     const removal = record !== null ? uninstallCommand(record)
       : source === 'script' && seedTool!.script_uninstall.length > 0 ? seedTool!.script_uninstall.join(' && ') : null;
-    // A go binary is removed by deleting it; only a `~/` location makes a usable command.
-    const goRemoval = record?.source === 'go' && displayPath(files[0]!.path, home).startsWith('~/') ? `rm ${displayPath(files[0]!.path, home)}` : null;
+    const goRemoval = record?.source === 'go' ? removeFiles(files.map(file => file.path), home) : null;
     const steps = removal ?? goRemoval;
     const root = record?.roots[0];
     return {

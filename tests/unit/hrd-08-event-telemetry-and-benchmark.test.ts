@@ -79,6 +79,17 @@ describe('HRD-08 event telemetry authority', () => {
     expect(commandNames('')).toEqual([]);
   });
 
+  test('command names never come from quoted data or heredoc bodies', () => {
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz123456';
+    expect(commandNames(`cat <<EOF\n${secret}\nEOF`)).toEqual(['cat']);
+    expect(commandNames(`cat <<-'END' > out\n\t${secret}\n\tEND\nls -la`)).toEqual(['cat', 'ls']);
+    expect(commandNames(`echo "a; ${secret}" && git status`)).toEqual(['echo', 'git']);
+    expect(commandNames(`printf 'x|${secret}' | wc -l`)).toEqual(['printf', 'wc']);
+    expect(commandNames(`echo \\; ${secret}`)).toEqual(['echo']);
+    expect(commandNames(`echo "unterminated; ${secret}`)).toEqual(['echo']);
+    expect(commandNames(`git log <<< "x; ${secret}"; jq .`)).toEqual(['git', 'jq']);
+  });
+
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
     const repoRoot = tempDir('hrd08-event-fingerprint-');
     const run = (reason: string) => createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'edit' }).finalize({
