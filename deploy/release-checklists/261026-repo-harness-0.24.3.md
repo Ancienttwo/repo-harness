@@ -49,7 +49,20 @@ Result:
 
 ## Hosted daily CI
 
-PENDING. The orchestrator records the daily CI run on the release base.
+- Dispatch: `gh workflow run ci.yml --repo Ancienttwo/repo-harness --ref
+  main` at 2026-10-26T10:05:45Z. Daily mode requires `refs/heads/main`.
+- Run 40304692089, head `5bc79eea4c6024478ce1415e1fc9414efa66fd61` (#975),
+  attempt 1: conclusion `success`. Read with `gh run watch` and
+  `gh run view`.
+- Daily jobs, each `success`: Select test coverage, Daily full tests and
+  package, Daily architecture freshness, Daily governance, Daily MCP path
+  matrix (macos-latest), Daily MCP path matrix (windows-latest), Native OAR
+  acceptance (macOS), Test HOME isolation (ubuntu-latest), Test HOME
+  isolation (macos-latest) and Test HOME isolation (windows-latest).
+- Skipped by design in daily mode: PR architecture freshness (advisory),
+  Affected tests and Required / CI.
+- The CI subject is the release base. The release branch adds only the
+  version bump and release documentation. The PR CI covers its head.
 
 ## Acceptance environment
 
@@ -109,12 +122,19 @@ PENDING. The orchestrator records the daily CI run on the release base.
 ### Subject and commands
 
 - Candidate: the release worktree at `a33d1d926`, after
-  `bun install --frozen-lockfile` and
-  `bash scripts/ensure-codegraph.sh --init` (a worktree-local index).
+  `bun install --frozen-lockfile`.
 - Real HOME, read-only by contract, with `CLAUDECODE`, `AI_AGENT`, `AGENT`,
   `REPL_ID` and `REPO_HARNESS_SOURCE_ROOT` removed and `TMPDIR=/tmp`:
   - `bun src/cli/index.ts setup check --target both --check-updates --json`:
-    `status: attention`; 31 ok, 4 warn, 0 fail, 1 n/a, 2 needs_agent.
+    exit 1, `status: blocked`; 28 ok, 4 warn, 1 fail, 1 n/a, 4 needs_agent.
+    The fail is `doctor.codegraph-index`: `index=not-initialized` in the new
+    release worktree.
+  - Repair: `bash scripts/ensure-codegraph.sh --init` in the worktree
+    (`init-index: changed`). The index is worktree-local and not in the
+    package.
+  - The same `setup check` after the repair: exit 0, `status: attention`;
+    31 ok, 4 warn, 0 fail, 1 n/a, 2 needs_agent. `doctor.codegraph-index`
+    is `ok` with `index=up-to-date`.
   - `bash scripts/check-agent-tooling.sh --json --host both
     --check-updates`: exit 0.
   - `bun src/cli/index.ts security scan --json`: exit 0, `status: warn`.
@@ -122,12 +142,14 @@ PENDING. The orchestrator records the daily CI run on the release base.
     because leftovers exist; 36 items. With a temporary HOME: 0 items.
 - Temporary HOME: `bun src/cli/index.ts run check-deploy-sql-order`:
   exit 0, `[deploy-sql] OK`.
-- `_ops/` is ignored, with 0 tracked files.
+- `git check-ignore -v _ops/`: `.gitignore:45:_ops/`. `git ls-files _ops`:
+  0 tracked files.
 
 ### Yellow flags
 
-The signals are the same as for 0.24.2. Each flag needs the owner's decision
-for 0.24.3.
+The 7 yellow flags are the same as for 0.24.2. The CodeGraph index signal
+differs: it was `stale` for 0.24.2 and `not-initialized` here, and the
+repair above cleared it. Each flag needs the owner's decision for 0.24.3.
 
 1. Global rules managed blocks are stale (`global-rules.claude`,
    `global-rules.codex`). Repair after publication:
