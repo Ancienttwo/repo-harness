@@ -1,16 +1,6 @@
-import { mkdirSync, writeFileSync, appendFileSync } from 'fs';
+import { mkdirSync, appendFileSync } from 'fs';
 import { dirname } from 'path';
-import { canonicalPublicationReceiptBytes, publicationReceiptDigest, publicationSha256, stablePublicationJson, type PublicationReceiptV3 } from '../../src/core/publication/publication-receipt';
-import { publicationReceiptPath } from '../../src/effects/publication/publication-receipt';
-
-/** Seed an immutable historical record before testing its production reader. */
-export function seedPublicationReceipt(root: string, receipt: PublicationReceiptV3, gitBin = 'git'): string {
-  const path = publicationReceiptPath(root, receipt.publication_id, gitBin);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${canonicalPublicationReceiptBytes(receipt)}\n`);
-  return path;
-}
-
+import { publicationSha256, stablePublicationJson } from '../../src/core/publication/publication-receipt';
 import { canonicalReactionAttemptReceiptBytes, type ReactionAttemptReceiptV1 } from '../../src/core/publication/feedback';
 import { feedbackReactionLedgerPath } from '../../src/effects/publication/feedback-store';
 
@@ -19,13 +9,6 @@ export function seedReactionReceipt(root: string, publicationId: string, receipt
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${canonicalReactionAttemptReceiptBytes(receipt)}\n`);
   return path;
-}
-
-import type { CurrentPublicationPointerV1 } from '../../src/core/state/coordination-identity';
-
-export function historicalPublicationPointer(receipt: PublicationReceiptV3, key: string): CurrentPublicationPointerV1 {
-  return { publication_id: receipt.publication_id, receipt_sha256: publicationReceiptDigest(receipt),
-    head_sha: receipt.head_sha, ship_transaction_key: key };
 }
 
 export interface HistoricalRepairProof {
