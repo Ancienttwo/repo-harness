@@ -264,7 +264,6 @@ export const OPERATOR_REPOSITORY_ERROR_CODES = [
   'repo_collection_timeout',
 ] as const;
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
-const LEASE_STATES = ['available', 'reserving', 'bound', 'completing', 'reviewing', 'released', 'unknown'] as const;
 const MERGE_BLOCKERS = [
   'provider_unavailable',
   'provider_data_incomplete',

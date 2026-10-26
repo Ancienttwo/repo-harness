@@ -230,14 +230,6 @@ const en = {
   'stage.preparation': 'preparation',
   'stage.alternate_workflow': 'inline workflow',
 
-  'lease.available': 'available',
-  'lease.reserving': 'reserving',
-  'lease.bound': 'bound',
-  'lease.completing': 'completing',
-  'lease.reviewing': 'reviewing',
-  'lease.released': 'released',
-  'lease.unknown': 'unknown',
-
   'execution.execution_ready': 'execution ready',
   'execution.planning_required': 'planning required',
   'execution.inline_ready': 'inline ready',
@@ -1120,14 +1112,6 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'stage.unclassified': '未分类',
   'stage.preparation': '待准备',
   'stage.alternate_workflow': 'inline 流程',
-
-  'lease.available': '空闲',
-  'lease.reserving': '预留中',
-  'lease.bound': '已绑定',
-  'lease.completing': '收尾中',
-  'lease.reviewing': '审查中',
-  'lease.released': '已释放',
-  'lease.unknown': '未知',
 
   'execution.execution_ready': '可以执行',
   'execution.planning_required': '要先规划',
