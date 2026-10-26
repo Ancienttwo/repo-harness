@@ -122,7 +122,8 @@ V2 graph adds work package metadata. It does not supply task status or execution
 permission. Each package selects canonical REST repository and issue IDs. The
 reader refuses V1 Sprint mappings instead of guessing a provider task.
 
-The board reads `.ai/harness/work-graph.v2.json` at the policy target commit.
+The board reads the default carrier path `PROVIDER_WORK_GRAPH_PATH`
+(`src/effects/engineers/scheduling.ts:16`) at the policy target commit.
 For an explicit carrier, use:
 
 ```sh

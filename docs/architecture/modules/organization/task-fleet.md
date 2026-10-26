@@ -122,7 +122,7 @@ sequenceDiagram
 
 ### 从无 owner 到 organization 域的独立能力 (2026-10-11)
 
-- P1：本能力的文件此前没有 capability owner。`capability-resolver match` 对 `src/effects/fleet/acquire.ts` 返回 `root`。
+- P1：本能力的文件此前没有 capability owner。`capability-resolver match` 对当时的 fleet acquire 模块返回 `root`（该模块已由 #959 删除）。
 - P2：功能来自 PRD `fleet-acquire-publication-readiness`（2026-08-22 Approved）。主要提交：`1978de69`（fleet acquisition）、`38b91a39`（cross-repo board）、#265（消息与并发加固）、`4c466996`（Inbox 可移植存储路径）。
 - P3：用户决定新建 `organization` 域，只放 task-fleet 与 publication。现有 engineer-* 能力留在 runtime-harness。现有 capability id 不改名，因为 id 是数据中的持久键。
 

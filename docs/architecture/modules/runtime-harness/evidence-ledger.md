@@ -152,6 +152,6 @@ sequenceDiagram
 ## Optimization Backlog
 
 - **After arch-context#296：拆出 verification-plan。** 把 `src/core/evidence/verification-plan.ts` 与 `src/effects/evidence/verification-execution.ts` 移给 evals-checks（ownership proposal §4.6）。pipeline-ledger 已由 #769 退役。
-- **与 workflow-state 的依赖方向（重构证据）。** #907 之前，`event-log.ts` 通过 `src/effects/state/readonly-observation.ts` 读文件，State 代码通过 `src/effects/evidence/atomic-append.ts` 持久写。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。#907 把这两个原语移到 execution-primitives（`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`）。现在只剩 evidence → state 一条边：`recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。声明的方向需要复审。
+- **与 workflow-state 的依赖方向（重构证据）。** #907 之前，`event-log.ts` 通过 state 目录中的只读观察原语读文件，State 代码通过 evidence 目录中的原子追加原语持久写。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。#907 把这两个原语移到 execution-primitives（`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`）。现在只剩 evidence → state 一条边：`recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。声明的方向需要复审。
 - **共享的 path-safety 原语。** `src/effects/path-safety.ts` 属于 adoption，本能力有 6 个导入。候选：移到 execution-primitives。
 - **到 hook-adapters 的回边。** `scripts/evidence-gc.ts:22`、`:190` 动态导入 `src/effects/run-summary-retention.ts`。这是一个版本的一次性清理，下一个版本删除。hook-adapters 的 session-lifecycle 调用本 capability。模型不声明本方向。

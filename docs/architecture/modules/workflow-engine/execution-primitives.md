@@ -132,7 +132,7 @@ sequenceDiagram
 5. **只凭死 PID 不能回收 expensive-run 锁。** 回收要求 owner 记录中登记的进程组 PID，并且该进程组已排空（`src/effects/expensive-run-lock.ts:42-56`）。Windows 无法证明进程组为空，所以那里从不回收（`:31-40`）。
 6. **目录锁逐级校验祖先。** 锁目录的每一级祖先都要是真实目录，身份（dev/ino）不能变化，符号链接直接失败（`src/effects/locking/exclusive-directory-lock.ts:139-197`）。
 7. **锁争用是可分类的错误。** 等待超时与失去所有权都抛 `ExclusiveLockContentionError`，调用方按类型决定是否重试（`exclusive-directory-lock.ts:29-40`）。
-8. **Git 是 worktree 拓扑的唯一权威。** `readWorktreeTopology` 只读 `git worktree list --porcelain`（`src/effects/git/worktree-topology.ts:102-111`）。`resolveGitCommonDirectory` 返回 realpath（`src/effects/git/common-directory.ts:9-19`）。
+8. **Git 是 worktree 拓扑的唯一权威。** `readWorktreeTopology` 只读 `git worktree list --porcelain`（`src/effects/git/worktree-topology.ts:102-111`）。`resolveGitCommonDirectory` 返回 realpath（`src/effects/git/common-directory.ts:6-17`）。
 
 ### 3.2 关键权衡
 
@@ -163,7 +163,7 @@ sequenceDiagram
 
 ### 2026-10-25 Observation and durable-write primitives moved in (#907)
 
-- `src/effects/state/readonly-observation.ts` 移到 `src/effects/readonly-observation.ts`。`src/effects/evidence/atomic-append.ts` 移到 `src/effects/atomic-append.ts`。两个文件只导入 Node 内置模块。
+- state 目录中的只读观察原语移到 `src/effects/readonly-observation.ts`。evidence 目录中的原子追加原语移到 `src/effects/atomic-append.ts`。两个文件只导入 Node 内置模块。
 - 结果：git、capabilities、evidence、review 与 state 目录之间的 4 对层内目录环消失。`bun run check:state-boundaries` 现在检查层内目录环。
 - `relation.execution-primitives.imports.workflow-state` 不再有源码边。
 
