@@ -36,6 +36,10 @@ const CREDENTIAL_FILES = '/(auth\\.json|\\.?credentials\\.json|secrets\\.json|to
 const FORBIDDEN_WRITE_FILES = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json|\\.env(rc|\\.[^/]+)?|\\.git)$';
 const FORBIDDEN_WRITE_DIRECTORIES = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins|\\.?commands|\\.?prompts|\\.git)(/|$)';
 const KEYCHAIN_SERVICES = ['com.apple.SecurityServer', 'com.apple.securityd', 'com.apple.securityd.xpc'];
+const DESKTOP_SERVICES = [
+  'com.apple.coreservices.launchservicesd', 'com.apple.lsd.mapdb', 'com.apple.lsd.modifydb',
+  'com.apple.coreservices.appleevents', 'com.apple.pasteboard.1',
+];
 
 /** Operator input. A session request cannot supply or change it. */
 export interface DocsHostAdmission {
@@ -166,8 +170,9 @@ const sub = (path: string) => `(subpath ${JSON.stringify(path)})`;
 /**
  * Seatbelt owns enforcement. Writes open only for human-written docs and the
  * session scratch; credential reads, every network peer except the host proxy
- * port, keychain lookups and unlisted programs are denied. Children inherit
- * the profile. Last matching rule wins, so each deny follows its allowance.
+ * port, keychain and desktop service lookups, AppleEvents and unlisted programs
+ * are denied. Children inherit the profile. Last matching rule wins, so each
+ * deny follows its allowance.
  */
 export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Platform = process.platform): string {
   assertDocsHostAdmission(admission, platform);
@@ -190,6 +195,11 @@ export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Pl
     '(deny process-exec)',
     `(allow process-exec ${[...new Set(programs)].map(lit).join(' ')})`,
     `(deny mach-lookup ${KEYCHAIN_SERVICES.map(name => `(global-name ${JSON.stringify(name)})`).join(' ')})`,
+    // A native add-on already on disk (koffi) gives node FFI under (allow default),
+    // so close what FFI could reach past the profile: AppleEvents to other apps,
+    // LaunchServices app and URL opens, and the pasteboard.
+    '(deny appleevent-send)',
+    `(deny mach-lookup ${DESKTOP_SERVICES.map(name => `(global-name ${JSON.stringify(name)})`).join(' ')})`,
     '(deny network*)',
     `(allow network-outbound (remote ip "localhost:${admission.proxyPort}"))`,
     '(deny signal)',

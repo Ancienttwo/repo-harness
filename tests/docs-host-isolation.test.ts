@@ -407,3 +407,34 @@ console.log(JSON.stringify({manifest:code(()=>fs.writeFileSync(docs+'/architectu
   expect(JSON.parse(result.stdout)).toEqual({ manifest: 'EPERM', rename: 'EPERM', guide: 'ok' });
   expect(existsSync(join(f.worktree, 'docs', 'architecture', '.projection-manifest.json'))).toBe(false);
 }, 60_000);
+
+// Under (allow default) a native add-on already on disk gives node FFI, so the
+// profile must close the desktop services that FFI could reach.
+darwinTest('docs host denies the pasteboard and LaunchServices lookups and AppleEvent sending', async () => {
+  const f = await seedFixture();
+  const policy = readFileSync(writeDocsHostPolicy(f.admission), 'utf8');
+  // A behavioral AppleEvent probe needs FFI or a TCC prompt, so the generated rule is checked instead.
+  expect(policy).toContain('(deny appleevent-send)');
+  // Test-only profile copies. `extra` rules come last, so they win over the generated profile.
+  const run = (tag: string, extra: string, ...command: string[]) => {
+    const profile = join(f.root, `${tag}.sb`);
+    writeFileSync(profile, `${policy}${extra}\n`);
+    const result = spawnSync('/usr/bin/sandbox-exec', ['-f', profile, ...command], { encoding: 'utf8', timeout: 15_000, env: { PATH: '/usr/bin:/bin' } });
+    return { status: result.status, stdoutBytes: result.stdout.length, stderr: result.stderr };
+  };
+  const exec = '(allow process-exec (literal "/usr/bin/pbpaste") (literal "/usr/bin/lsappinfo"))';
+  const lookup = (name: string) => `(allow mach-lookup (global-name "${name}"))`;
+  // Without the exec allowance sandbox-exec itself fails with status 71 and an execvp error.
+  const execDenied = run('exec-denied', '', '/usr/bin/pbpaste');
+  expect(execDenied.status).toBe(71);
+  expect(execDenied.stderr).toContain('execvp');
+  // With exec open, the lookup deny alone stops each tool; re-allowing that one lookup restores it.
+  const pasteboard = run('pasteboard', exec, '/usr/bin/pbpaste');
+  expect(pasteboard.stderr).not.toContain('execvp');
+  expect(pasteboard).toMatchObject({ status: 1, stdoutBytes: 0 });
+  expect(run('pasteboard-control', `${exec}\n${lookup('com.apple.pasteboard.1')}`, '/usr/bin/pbpaste').status).toBe(0);
+  const launchServices = run('launchservices', exec, '/usr/bin/lsappinfo', 'list');
+  expect(launchServices.stderr).not.toContain('execvp');
+  expect(launchServices).toMatchObject({ status: 0, stdoutBytes: 0 });
+  expect(run('launchservices-control', `${exec}\n${lookup('com.apple.coreservices.launchservicesd')}`, '/usr/bin/lsappinfo', 'list').stdoutBytes).toBeGreaterThan(0);
+}, 60_000);
