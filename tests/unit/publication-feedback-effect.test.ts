@@ -3,7 +3,8 @@ import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { admittedFeedbackFixture } from '../helpers/admitted-feedback-fixture';
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent } from '../../src/core/publication/feedback';
-import { FeedbackError, intakeGitHubFeedback, observeGitHubFeedback, showGitHubFeedback, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
+import { FeedbackError, intakeGitHubFeedback, observeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery, type FeedbackSubject, type FeedbackObservationInput } from '../../src/effects/fleet/provider-feedback';
+import { commitAll } from '../helpers/repo-fixture';
 import { readFeedbackDeliveryReceipt, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../../src/effects/publication/feedback-store';
 
 const HEAD = 'a'.repeat(40);
@@ -345,6 +346,45 @@ process.stderr.write('unexpected fixture arguments'); process.exit(7);
   } finally {
     if (originalHost === undefined) delete process.env.GH_HOST;
     else process.env.GH_HOST = originalHost;
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+test('a local commit before push blocks only intake, not show, offers or ack', async () => {
+  const fixture = await admittedFeedbackFixture(12);
+  const reviewUrl = 'https://github.com/acme/widgets/pull/12#pullrequestreview-2';
+  const gh_runner: NonNullable<FeedbackObservationInput['gh_runner']> = args => {
+    const json = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
+    if (args[0] === 'repo') return json({ id: 'R_feedback', nameWithOwner: 'acme/widgets' });
+    if (args[0] === 'pr') return json({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
+      headRefOid: fixture.head, baseRefOid: fixture.base, headRefName: 'work', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+    if (args[1] === 'repos/acme/widgets') return json({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
+    const query = args.find(arg => arg.startsWith('query=')) ?? '';
+    const pageInfo = { hasNextPage: false, endCursor: null };
+    if (query.includes('checkSuites')) return json({ data: { node: { pullRequest: { commits: { nodes: [{ commit: { oid: fixture.head, checkSuites: { pageInfo, nodes: [] } } }] } } } } });
+    if (query.includes('reviewThreads')) return json({ data: { node: { pullRequest: { reviewThreads: { pageInfo, nodes: [] } } } } });
+    if (query.includes('reviews(first:100')) return json({ data: { node: { pullRequest: { reviews: { pageInfo, nodes: [
+      { id: 'REVIEW_LOCAL', state: 'CHANGES_REQUESTED', submittedAt: '2026-10-25T00:00:00Z' }] } } } } });
+    if (query.includes('on PullRequestReview')) return json({ data: { node: { id: 'REVIEW_LOCAL', state: 'CHANGES_REQUESTED',
+      url: reviewUrl, submittedAt: '2026-10-25T00:00:00Z', body: 'please fix' } } });
+    return { status: 2, stdout: '', stderr: `unexpected gh arguments: ${args.join(' ')}` };
+  };
+  const input = { ...fixture.input, gh_runner };
+  try {
+    expect(intakeGitHubFeedback(input).event_count).toBe(1);
+    writeFileSync(join(fixture.root, 'local-fix.txt'), 'fix\n');
+    commitAll(fixture.root, 'local fix before push');
+
+    expect(showGitHubFeedback({ ...input, provider_event_id: 'REVIEW_LOCAL' }).body).toContain('please fix');
+    expect(projectPendingFeedbackOffer(input)).toMatchObject({ state: 'offered', offer: { publication_id: fixture.publication_id, expected_head_sha: fixture.head } });
+    const acknowledged = transitionFeedbackDelivery({ ...input, provider_event_id: 'REVIEW_LOCAL',
+      transition: { delivery_state: 'acknowledged', delivery_channel: 'manual', transitioned_at: '2026-10-25T00:01:00Z' } });
+    expect(acknowledged.delivery_state).toBe('acknowledged');
+
+    expect(() => intakeGitHubFeedback(input)).toThrow('feedback intake requires the execution HEAD to equal the selected PR head');
+    try { intakeGitHubFeedback(input); throw new Error('expected intake to refuse a local-only HEAD'); }
+    catch (error) { expect((error as FeedbackError).code).toBe('head_moved'); }
+  } finally {
     rmSync(fixture.directory, { recursive: true, force: true });
   }
 });

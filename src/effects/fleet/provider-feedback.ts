@@ -650,7 +650,6 @@ export function prepareFeedbackSubject(input: Omit<FeedbackIntakeInput, 'publica
   const selection = validatePullRequestSelection(input.selection);
   const session = observeTaskInboxContext({ repo_root: input.repo_root, source: input.source, task_id: input.source.session.task });
   if (selection.provider_repository_id !== session.identity.repository_id) throw new FeedbackError('publication_claim_mismatch', 'selected PR repository differs from admitted issue repository');
-  if (selection.expected_head_sha !== session.head_revision) throw new FeedbackError('head_moved', 'selected PR head differs from current execution HEAD');
   const basis = { protocol: 2, kind: 'repo-harness-admitted-feedback-subject', selection,
     task_id: session.identity.task, repository_id: session.identity.repository_id, issue_id: session.identity.issue_id,
     campaign_id: session.identity.campaign_id, claim: session.identity.claim,
@@ -661,19 +660,32 @@ export function prepareFeedbackSubject(input: Omit<FeedbackIntakeInput, 'publica
     head_sha: selection.expected_head_sha, base_sha: selection.expected_base_sha, pr_number: selection.pr_number });
 }
 
-function currentPublication(input: FeedbackIntakeInput): CurrentPublicationSnapshot {
+function executionHead(input: FeedbackIntakeInput, executionRoot: string): string | null {
+  const head = spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'], { cwd: executionRoot, encoding: 'utf8' });
+  return head.status === 0 ? head.stdout.trim() : null;
+}
+
+/**
+ * Only intake binds the local execution HEAD: it records provider feedback as
+ * feedback on the commit the admitted session is executing. Show, ack and
+ * offer projection read events already bound to the PR head, so a local fix
+ * commit made before push must not block them.
+ */
+function currentPublication(input: FeedbackIntakeInput, bindExecutionHead = false): CurrentPublicationSnapshot {
   const receipt = prepareFeedbackSubject(input);
   if (receipt.publication_id !== input.publication_id) throw new FeedbackError('publication_claim_mismatch', 'feedback subject differs from the explicit current admission and PR selection');
+  const binding = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
+  if (bindExecutionHead && executionHead(input, binding.binding.execution_root) !== receipt.head_sha) {
+    throw new FeedbackError('head_moved', 'feedback intake requires the execution HEAD to equal the selected PR head; push local commits and select the new PR head');
+  }
   assertStableIdentity(observeIdentity(receipt, input), receipt);
   const active = observeActiveReviewAdmission(input.source.authority.source);
   if (active.admission.admission_sha256 !== receipt.admission_sha256) throw new TornReadError('admission changed during feedback observation');
-  const binding = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
   const sessionBytes = stablePublicationJson({ binding: binding.binding, grant_sha256: active.grant_sha256 });
   const assertCurrent = () => {
     const current = readActiveReviewAdmission({ ...input.source.authority.source, expectedGoal: active.admission.goal });
     const latest = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
-    const head = spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'], { cwd: latest.binding.execution_root, encoding: 'utf8' });
-    if (head.status !== 0 || head.stdout.trim() !== receipt.head_sha) throw new TornReadError('execution HEAD changed during feedback observation');
+    if (bindExecutionHead && executionHead(input, latest.binding.execution_root) !== receipt.head_sha) throw new TornReadError('execution HEAD changed during feedback intake');
     if (current.grant_sha256 !== active.grant_sha256 || current.admission.admission_sha256 !== receipt.admission_sha256
       || existsSync(join(latest.dir, 'closed.json')) || stablePublicationJson({ binding: latest.binding, grant_sha256: current.grant_sha256 }) !== sessionBytes) throw new TornReadError('admitted feedback session changed');
   };
@@ -732,7 +744,7 @@ export function intakeGitHubFeedback(input: FeedbackIntakeInput): FeedbackIntake
     let before: CurrentPublicationSnapshot;
     let events: readonly FeedbackEventV1[];
     try {
-      before = currentPublication(input);
+      before = currentPublication(input, true);
       events = observeGitHubFeedback(before.receipt, input);
     } catch (error) {
       if (error instanceof TornReadError) {
