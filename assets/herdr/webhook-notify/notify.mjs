@@ -63,6 +63,7 @@ function isTemporary(path, managedRoot) {
 }
 
 const ID_PATTERN = /^[\w.:@/-]{1,128}$/;
+const NAME_PATTERN = /^[\w.-]{1,128}$/;
 
 function readIdentityFile(path) {
   const stat = lstatSync(path);
@@ -71,16 +72,19 @@ function readIdentityFile(path) {
 }
 
 // Herdr's context names the repository only. The task and the request live in the
-// repo-harness task-agent session that owns this pane. A value that cannot be read
-// stays null: this notice never guesses a task.
+// repo-harness task-agent session that owns this pane. A value that cannot be read, or
+// that two open sessions both claim, is left out: this notice never guesses a task.
+// `repository` is Herdr's repo_key, the same value as the session's repository_id.
 function taskIdentity(data, context, session) {
-  const repository = typeof context.worktree?.repo_key === 'string' && ID_PATTERN.test(context.worktree.repo_key) ? context.worktree.repo_key : null;
-  const none = { repository, task: null, request_id: null };
+  const key = context.worktree?.repo_key;
+  const repository = typeof key === 'string' && key.length <= 1024 && !/[\u0000-\u001f]/.test(key) ? key : undefined;
+  const identity = { ...(repository ? { repository } : {}) };
   const root = context.worktree?.repo_root;
-  if (typeof root !== 'string' || !isAbsolute(root)) return none;
+  if (typeof root !== 'string' || !isAbsolute(root)) return identity;
   try {
     const agents = join(root, '.ai/harness/runs/task-agents');
-    if (!lstatSync(agents).isDirectory() || lstatSync(agents).isSymbolicLink()) return none;
+    if (!lstatSync(agents).isDirectory() || lstatSync(agents).isSymbolicLink()) return identity;
+    const matches = [];
     for (const entry of readdirSync(agents, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const dir = join(agents, entry.name);
@@ -89,19 +93,28 @@ function taskIdentity(data, context, session) {
       if (binding?.runtime !== 'herdr' || binding.pane_id !== data.pane_id || binding.workspace_id !== data.workspace_id
         || binding.endpoint?.session !== session || (repository && binding.repository_id !== repository)
         || typeof binding.task !== 'string' || !ID_PATTERN.test(binding.task) || existsSync(join(dir, 'closed.json'))) continue;
-      let latest = 0, requestId = null;
-      for (const name of readdirSync(dir)) {
-        const round = Number(name.match(/^started-(\d+)\.json$/)?.[1]);
-        if (!Number.isSafeInteger(round) || round <= latest) continue;
-        try {
-          const started = readIdentityFile(join(dir, name));
-          if (typeof started?.request_id === 'string' && ID_PATTERN.test(started.request_id)) { latest = round; requestId = started.request_id; }
-        } catch { /* An unreadable round leaves the earlier request id. */ }
-      }
-      return { repository: repository ?? (ID_PATTERN.test(binding.repository_id) ? binding.repository_id : null), task: binding.task, request_id: requestId };
+      matches.push({ dir, binding });
     }
+    if (matches.length !== 1) return identity;
+    const { dir, binding } = matches[0];
+    let latest = 0, requestId;
+    for (const name of readdirSync(dir)) {
+      const round = Number(name.match(/^started-(\d+)\.json$/)?.[1]);
+      if (!Number.isSafeInteger(round) || round <= latest) continue;
+      try {
+        const started = readIdentityFile(join(dir, name));
+        if (typeof started?.request_id === 'string' && ID_PATTERN.test(started.request_id)) { latest = round; requestId = started.request_id; }
+      } catch { /* An unreadable round leaves the earlier request id. */ }
+    }
+    return { ...identity, task: binding.task, ...(requestId ? { request_id: requestId } : {}) };
   } catch { /* No readable session: report the repository alone. */ }
-  return none;
+  return identity;
+}
+
+// repo_key is a path. Human channels get the repository name Herdr gives, never the path.
+function repoName(context) {
+  const name = context.worktree?.repo_name;
+  return typeof name === 'string' && NAME_PATTERN.test(name) ? name : undefined;
 }
 
 export async function notify(env = process.env, send = fetch, options = {}) {
@@ -130,11 +143,12 @@ export async function notify(env = process.env, send = fetch, options = {}) {
     state_labels: data.state_labels ?? null, workspace_label: context.workspace_label ?? null,
     tab_label: context.tab_label ?? null, ...taskIdentity(data, context, config.NOTIFY_SESSION), ts: new Date(now).toISOString(),
   };
+  const trace = [repoName(context) && `repo ${repoName(context)}`, payload.task && `task ${payload.task}`,
+    payload.request_id && `request ${payload.request_id}`].filter(Boolean).join(' · ');
   const where = [payload.workspace_label, payload.tab_label].filter(Boolean).join(' / ') || payload.workspace_id;
   const text = `Herdr ${payload.agent_status}: ${payload.display_agent || payload.agent || 'agent'} @ ${where}` +
     (payload.title ? `\n${payload.title}` : '') + `\npane ${payload.pane_id} · ${payload.host}` +
-    (payload.repository || payload.task ? `\n${[payload.repository && `repo ${payload.repository}`, payload.task && `task ${payload.task}`,
-      payload.request_id && `request ${payload.request_id}`].filter(Boolean).join(' · ')}` : '');
+    (trace ? `\n${trace}` : '');
   const targets = [
     { channel: 'WEBHOOK', url: config.WEBHOOK_URL, body: payload,
       headers: { authorization: `Bearer ${config.WEBHOOK_KEY}`, 'x-webhook-key': config.WEBHOOK_KEY } },

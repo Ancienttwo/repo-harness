@@ -69,7 +69,8 @@ The receiving routine must check the key before it acts on an event.
 The payload names the repository from the Herdr workspace context.
 It names the task and the latest request id when the pane belongs to a repo-harness task agent.
 The plugin reads them from that agent's session files in the repository.
-Without a readable session, `task` and `request_id` are `null`. The plugin never guesses them.
+Without exactly one readable open session for the pane, the payload leaves out `task` and `request_id`. The plugin never guesses them.
+The `repository` field is Herdr's repository key, which is a path. Human channels get the repository name instead.
 The payload does not name the branch.
 On `done`, the Bot assesses the worker's checks with `repo-harness-check`.
 When the branch changed source files, the Bot also reads the architecture evidence in that skill.
@@ -150,7 +151,7 @@ Inspect delivery results with `herdr plugin log list --plugin aimpact.webhook-no
 Each attempt writes one log line that names its channel.
 The operator console reads the newest result for each channel from those lines.
 A failed channel does not change the result of another channel.
-Slack, Discord, and Telegram messages end with the repository, task, and request id when known.
+Slack, Discord, and Telegram messages end with the repository name, task, and request id when known.
 HTTP success shows that the endpoint accepted a request.
 Check the Bot routine or human channel to confirm receipt.
 To stop delivery, run `herdr plugin disable aimpact.webhook-notify`.

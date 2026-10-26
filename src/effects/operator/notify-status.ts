@@ -13,8 +13,6 @@ import {
   type NotifyStatusV1,
 } from '../../core/operator/notify-status';
 
-export type { NotifyChannel };
-
 const runFile = promisify(execFile);
 
 export interface NotifyStatusReadInput {

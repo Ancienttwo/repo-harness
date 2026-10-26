@@ -368,21 +368,45 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
-  test('an unknown log line makes only the channels it could belong to unsupported, and the 0.1.0 lines map to their channel', async () => {
+  test('an unknown log line makes only the channels it could belong to unsupported', async () => {
     const f = fixture();
     try {
       f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
-        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n[webhook-notify] SLACK wA:p4:done -> 200\n' },
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] SLACK: HTTP 200\n[webhook-notify] WEBHOOK: HTTP 200\n' },
         { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] DISCORD sent private-identity ok\n' },
-        { finished_unix_ms: 1_700_000_200_000, status: 'succeeded', stderr: '[webhook-notify] SLACK failed: fetch failed\n' },
       ] } });
       const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
       expect(read.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
-      expect(read.deliveries.slack).toEqual({ at: '2023-11-14T22:16:40.000Z', result: 'failed' });
+      expect(read.deliveries.slack).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
       expect(read.deliveries.discord).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
       expect(read.deliveries.telegram).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
       expect(JSON.stringify(read)).not.toContain('private-identity');
+    } finally { f.cleanup(); }
+  });
+
+  test('0.1.0 lines name no proven channel: each channel is unsupported while the combined record still reads them', async () => {
+    const f = fixture();
+    try {
+      // Line shapes copied from a real 0.1.0 install; the identity tokens are placeholders.
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n[webhook-notify] SLACK wA:p4:done -> 200\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] SLACK failed: fetch failed\n' },
+      ] } });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) {
+        expect(read.deliveries[channel]).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      }
+      expect(read.status.last_delivery).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'failed' });
       expect(JSON.stringify(read)).not.toContain('wA:p4');
+
+      // A later entry in the current format gives its channel a result again; the others stay unsupported.
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+      ] } });
+      const later = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      expect(later.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
+      expect(later.deliveries.slack).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'unsupported' });
     } finally { f.cleanup(); }
   });
 
@@ -422,11 +446,12 @@ describe('notify plugin status', () => {
       return { sent, stderr, state };
     }
 
-    function binding(repoRoot: string, extra: { readonly started?: readonly string[]; readonly closed?: boolean; readonly pane?: string } = {}) {
-      const dir = join(repoRoot, '.ai/harness/runs/task-agents/key-1');
+    function binding(repoRoot: string, extra: { readonly started?: readonly string[]; readonly closed?: boolean; readonly pane?: string;
+      readonly key?: string; readonly task?: string } = {}) {
+      const dir = join(repoRoot, '.ai/harness/runs/task-agents', extra.key ?? 'key-1');
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'binding.json'), JSON.stringify({
-        protocol: 2, repository_id: 'repo-key-1', runtime: 'herdr', task: 'task-1019', role: 'worker',
+        protocol: 2, repository_id: 'repo-key-1', runtime: 'herdr', task: extra.task ?? 'task-1019', role: 'worker',
         pane_id: extra.pane ?? 'pane-1', workspace_id: 'workspace-1', endpoint: { session: 'notify-test' },
       }));
       (extra.started ?? ['req-1', 'req-2']).forEach((id, index) => writeFileSync(join(dir, `started-${index + 1}.json`), JSON.stringify({ request_id: id })));
@@ -443,14 +468,14 @@ describe('notify plugin status', () => {
         const bot = sent.find(item => item.url.includes('bot.example'))!;
         expect(bot.body).toMatchObject({ repository: 'repo-key-1', task: 'task-1019', request_id: 'req-2' });
         const slack = sent.find(item => item.url === SLACK)!;
-        expect(String(slack.body.text)).toContain('repo repo-key-1 · task task-1019 · request req-2');
+        expect(String(slack.body.text)).toContain('task task-1019 · request req-2');
         for (const item of sent.filter(item => !item.url.includes('bot.example'))) {
           expect(JSON.stringify(item.body)).toContain('task-1019');
         }
       } finally { f.cleanup(); }
     });
 
-    test('ids the plugin cannot read are null or left out, never invented', async () => {
+    test('ids the plugin cannot read are left out of the payload, never invented', async () => {
       const f = fixture();
       try {
         const repoRoot = join(f.root, 'repo');
@@ -461,12 +486,67 @@ describe('notify plugin status', () => {
           rmSync(join(f.root, 'state'), { recursive: true, force: true });
           const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot } });
           const bot = sent.find(item => item.url.includes('bot.example'))!;
-          expect(bot.body).toMatchObject({ repository: 'repo-key-1', task: null, request_id: null });
+          expect(bot.body).toMatchObject({ repository: 'repo-key-1' });
+          expect(bot.body).not.toHaveProperty('task');
+          expect(bot.body).not.toHaveProperty('request_id');
           expect(String(sent.find(item => item.url === SLACK)!.body.text)).not.toContain('task ');
         }
         rmSync(join(f.root, 'state'), { recursive: true, force: true });
         const { sent } = await run(f);
-        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: null, task: null, request_id: null });
+        const bare = sent.find(item => item.url.includes('bot.example'))!.body;
+        for (const key of ['repository', 'task', 'request_id']) expect(bare).not.toHaveProperty(key);
+      } finally { f.cleanup(); }
+    });
+
+    test('human channels name the repository, not the repo_key path', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        const key = '/Users/someone/Projects/demo-repo/.git';
+        const { sent } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
+        // The session was written for another repository id, so only the repository is known here.
+        const bot = sent.find(item => item.url.includes('bot.example'))!;
+        expect(bot.body).toMatchObject({ repository: key });
+        for (const item of sent.filter(item => !item.url.includes('bot.example'))) {
+          expect(JSON.stringify(item.body)).not.toContain('/Users/someone');
+          expect(JSON.stringify(item.body)).not.toContain('.git');
+          expect(JSON.stringify(item.body)).toContain('repo demo-repo');
+        }
+      } finally { f.cleanup(); }
+    });
+
+    test('a repo_key path is the repository in the payload and matches the session repository id', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        const key = '/Users/some one/Projects/demo-repo/.git';
+        binding(repoRoot);
+        const path = join(repoRoot, '.ai/harness/runs/task-agents/key-1/binding.json');
+        writeFileSync(path, readFileSync(path, 'utf8').replace('"repo-key-1"', JSON.stringify(key)));
+        const { sent } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: key, task: 'task-1019', request_id: 'req-2' });
+      } finally { f.cleanup(); }
+    });
+
+    test('two open sessions for the same pane report no task and no request id', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        binding(repoRoot, { key: 'key-2', task: 'task-other', started: ['req-9'] });
+        const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+        const bot = sent.find(item => item.url.includes('bot.example'))!;
+        expect(bot.body).toMatchObject({ repository: 'repo-key-1' });
+        expect(bot.body).not.toHaveProperty('task');
+        expect(bot.body).not.toHaveProperty('request_id');
+        expect(JSON.stringify(sent)).not.toContain('task-other');
+        expect(JSON.stringify(sent)).not.toContain('task-1019');
+        // Closing one of the two leaves a single open session, which is reported.
+        writeFileSync(join(repoRoot, '.ai/harness/runs/task-agents/key-2/closed.json'), '{}');
+        rmSync(join(f.root, 'state'), { recursive: true, force: true });
+        const single = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(single.sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ task: 'task-1019', request_id: 'req-2' });
       } finally { f.cleanup(); }
     });
 
