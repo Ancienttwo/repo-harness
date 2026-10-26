@@ -38,7 +38,7 @@ import {
   readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import type { AcceptanceReceipt } from '../../scripts/acceptance-receipt';
+import { acceptanceReceiptPath, writeAcceptanceVerificationObservation, type AcceptanceReceipt } from '../../scripts/acceptance-receipt';
 
 const SUBJECT = `sha256:${'5'.repeat(64)}`;
 const DIGEST = `sha256:${'6'.repeat(64)}`;
@@ -434,6 +434,49 @@ describe('ME-4C integration product acceptance', () => {
         read_acceptance_receipt_bytes: () => Buffer.from('{"changed":true}\n'),
       },
     )).rejects.toMatchObject({ code: 'acceptance_unavailable' });
+  });
+
+  test('the default receipt reader requires the immutable record a dependency later reads by digest', async () => {
+    const value = fixture();
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'product-receipt-record-'))); roots.push(home);
+    const acceptance = {
+      protocol: 3,
+      kind: 'repo-harness-acceptance-receipt',
+      repository_root: realpathSync(value.root),
+      campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
+      goal_sha256: DIGEST,
+      verification_file: '.ai/harness/runs/fixture.json',
+      verification_evidence_sha256: DIGEST,
+      benchmark_evidence_sha256: 'not-applicable',
+      subject_sha256: SUBJECT,
+      subject_scope: 'normalized-final-content',
+      target_ref: 'main',
+      target_revision: value.base,
+      reviewed_paths: [],
+      disposition: 'external_pass',
+      expected_reviewer: 'Codex',
+      reviewer: 'Codex',
+      source: 'generic-review',
+      request_id: 'fixture-request', context_sha256: `sha256:${'1'.repeat(64)}`, result_sha256: `sha256:${'2'.repeat(64)}`, actual_harness: 'codex', actual_role: 'deep-reasoner', actual_model: 'fixture-model',
+      actor: null,
+      summary: 'recorded receipt',
+      findings: [],
+      waiver_grant_sha256: null,
+      issued_at: '2026-08-26T00:00:00.000Z',
+    } satisfies AcceptanceReceipt;
+    const create = () => createProductAcceptanceProjection(
+      { ...value.environment, authority_home: home },
+      { contract_sha256: value.contract.contract_sha256, envelope_sha256: value.envelope.envelope_sha256,
+        matrix_sha256: value.matrix.matrix_sha256, review_authority: fixtureAuthority(value.root) },
+      { verify_acceptance: async () => acceptance },
+    );
+    const latest = acceptanceReceiptPath(value.root, home, true);
+    writeFileSync(latest, `${JSON.stringify(acceptance, null, 2)}\n`);
+    await expect(create()).rejects.toMatchObject({ code: 'acceptance_unavailable' });
+
+    writeAcceptanceVerificationObservation({ root: value.root, authorityHome: home, receipt: acceptance });
+    const projection = await create();
+    expect(projection.acceptance_receipt_sha256).toBe(publicationSha256(readFileSync(latest)));
   });
 
   test('rejects incomplete, failing and extra matrix constraints', () => {

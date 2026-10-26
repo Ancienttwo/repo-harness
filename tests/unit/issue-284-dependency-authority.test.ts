@@ -1,5 +1,6 @@
 import type { RequiredPullRequestV2 } from '../../src/core/integration/product-acceptance';
-import { observeSelectedPullRequest, type IntegrationAcceptanceEnvironment } from '../../src/effects/integration/product-acceptance';
+import { observeSelectedPullRequest, observeSelectedPullRequestState, type IntegrationAcceptanceEnvironment } from '../../src/effects/integration/product-acceptance';
+import { acceptanceReceiptRecordPath } from '../../src/effects/review/acceptance-receipt';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { observeActiveReviewAdmission } from '../../src/effects/admission/issue-goal';
 import { createReviewAdmission } from '../../src/core/review/authority-context';
@@ -325,7 +326,8 @@ function gitShow(root: string, commit: string, path: string): string | null {
   }
 }
 
-function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2; merge: string; tree: string }>): NonNullable<IntegrationAcceptanceEnvironment['gh_runner']> {
+type ProviderPullRequest = { selection: RequiredPullRequestV2; merge: string; tree: string; state: 'OPEN' | 'MERGED' };
+function providerRunner(provider: Map<number, ProviderPullRequest>): NonNullable<IntegrationAcceptanceEnvironment['gh_runner']> {
   const response = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
   return args => {
     const command = `${args[0]} ${args[1]}`;
@@ -346,8 +348,9 @@ function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2
     if (!item) throw new Error(`unexpected provider args: ${args.join(' ')}`);
     const selection = item.selection;
     if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
-      state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
-      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
+      state: item.state, isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED',
+      mergeable: item.state === 'MERGED' ? 'UNKNOWN' : 'MERGEABLE' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
     if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
       number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
@@ -357,7 +360,7 @@ function providerRunner(provider: Map<number, { selection: RequiredPullRequestV2
     if (args[1]?.includes('/actions/runs/')) return response({ path: '.github/workflows/ci.yml', event: 'pull_request',
       head_sha: selection.expected_head_sha, pull_requests: [{ number, head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha } }],
       status: 'completed', conclusion: 'success' });
-    if (args[1]?.includes('/pulls/')) return response({ number, merged: true, merge_commit_sha: item.merge,
+    if (args[1]?.includes('/pulls/')) return response({ number, merged: item.state === 'MERGED', merge_commit_sha: item.merge,
       head: { sha: selection.expected_head_sha }, base: { sha: selection.expected_base_sha, ref: 'main', repo: { id: 1001, node_id: 'R_me4c_fixture' } } });
     throw new Error(`unexpected provider args: ${args.join(' ')}`);
   };
@@ -367,7 +370,7 @@ function providerFixture(subject: Fixture, head: string, base: string) {
   const selection: RequiredPullRequestV2 = { provider_repository_id: '1001', repository: 'example/product',
     issue_id: '2001', issue_number: 903, pr_number: 1, expected_head_sha: head, expected_base_sha: base };
   const tree = git(subject.root, 'rev-parse', `${head}^{tree}`);
-  const provider = new Map([[1, { selection, merge: head, tree }]]);
+  const provider = new Map<number, ProviderPullRequest>([[1, { selection, merge: head, tree, state: 'MERGED' }]]);
   const environment = { repo_root: subject.root, gh_runner: providerRunner(provider) };
   return { selection, tree, provider, environment };
 }
@@ -384,7 +387,9 @@ function integrationInput(subject: Fixture, state: 'publication_integrated' | 'p
   return input(subject, state, { dependency: { ...dependency(state), acceptance_authority: {
     authority_kind: state === 'publication_integrated' ? 'provider_integration' : 'product_acceptance', subject_ref: path, subject_revision: engineerSha256(bytes) } },
     reads: subject.reads.map(read => ({ ...read, commit, graph: projectFixtureGraph(read.repo.path, read.repo.id, commit) })),
-    readers: { ...admissionReaders(subject.root, subject.home), observeIntegration: (_env, ...args) => observeSelectedPullRequest(provider.environment, ...args) } });
+    readers: { ...admissionReaders(subject.root, subject.home),
+      observeIntegrationState: (_env, selection) => observeSelectedPullRequestState(provider.environment, selection),
+      observeIntegration: (_env, ...args) => observeSelectedPullRequest(provider.environment, ...args) } });
 }
 
 function input(
@@ -509,6 +514,15 @@ function observationPathFor(subject: Fixture, receipt: AcceptanceReceipt = accep
     receipt.campaign_sha256,
     receipt.admission_sha256,
   );
+}
+
+/** A later review for another admission in the same checkout replaces acceptance.latest.json. */
+function recordLaterReview(subject: Fixture): void {
+  const latest = acceptanceReceiptPath(subject.root, subject.home);
+  const before = readFileSync(latest);
+  recordAcceptanceObservation(subject, acceptanceReceipt(subject, { campaign_sha256: engineerSha256('later campaign'),
+    admission_sha256: engineerSha256('later admission'), summary: 'later review in the same checkout' }));
+  expect(readFileSync(latest).equals(before)).toBe(false);
 }
 
 const ENGINEER = `engineer:${CAPABILITY}`;
@@ -847,10 +861,19 @@ describe('issue #284 closed dependency authority', () => {
     const grant = waiverGrant(subject);
     const grantPath = userWaiverGrantPath(subject.root, subject.home, true);
     writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
-    recordAcceptanceObservation(subject, waivedReceipt(subject, grant));
+    const waivedObservation = recordAcceptanceObservation(subject, waivedReceipt(subject, grant));
     const waived = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(waived.status).toBe('satisfied');
     expect(waived.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:user_waiver');
+    // The waived observation reads its pinned receipt record, not the latest file a later review replaced.
+    recordLaterReview(subject);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+    const waivedRecord = acceptanceReceiptRecordPath(subject.root, subject.home, waivedObservation.acceptance_receipt_sha256);
+    const waivedRecordBytes = readFileSync(waivedRecord);
+    rmSync(waivedRecord);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
+    writeFileSync(waivedRecord, waivedRecordBytes);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
     const clock = spyOn(Date, 'now').mockReturnValue(grant.authorization.expires_at + 1);
     try {
       const expired = resolveDependencyAuthority(input(subject, 'module_accepted'));
@@ -1011,12 +1034,24 @@ describe('issue #284 closed dependency authority', () => {
     const head = git(subject.root, 'rev-parse', 'HEAD');
     const provider = providerFixture(subject, head, base);
     const exact = integrationInput(subject, 'publication_integrated', provider);
+    // The exact selected PR is still under review: a readable negative, not missing authority.
+    provider.provider.get(1)!.state = 'OPEN';
+    const reviewing = resolveDependencyAuthority(exact);
+    expect(reviewing.status).toBe('unsatisfied');
+    expect(reviewing.authority_revision).not.toBeNull();
+    expect(reviewing.evidence_refs.map(entry => entry.ref)).toEqual([
+      'integration-selection:plans/integration/wp-a.json',
+      'provider-pull-requests:plans/integration/wp-a.json',
+    ]);
+    provider.provider.get(1)!.state = 'MERGED';
     const integrated = resolveDependencyAuthority(exact);
     expect(integrated.status).toBe('satisfied');
     expect(integrated.evidence_refs.map(entry => entry.ref)).toContain(`provider-integration:${head}`);
+    expect(integrated.authority_revision).not.toBe(reviewing.authority_revision);
+    // The committed selection still names the old task, so it does not prove the moved target.
     const movedTarget = retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } });
     const moved = resolveDependencyAuthority({ ...exact, ...movedTarget, reads: movedTarget.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
-    expect(moved.status).toBe('authority_unavailable');
+    expect(moved.status).toBe('unsatisfied');
     provider.provider.get(1)!.tree = 'f'.repeat(40);
     const unreadable = resolveDependencyAuthority(exact);
     expect(unreadable.status).toBe('authority_unavailable');
@@ -1045,8 +1080,6 @@ describe('issue #284 closed dependency authority', () => {
 
     recordAcceptanceObservation(subject);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
-    const withoutProduct = resolveDependencyAuthority(input(subject, 'product_accepted'));
-    expect(withoutProduct.status).toBe('authority_unavailable');
 
     const contract = createIntegrationContract({ repo_root: subject.root }, {
       approved_prd_ref: PRD_REF,
@@ -1071,69 +1104,96 @@ describe('issue #284 closed dependency authority', () => {
     const grantPath = userWaiverGrantPath(subject.root, subject.home, true);
     if (disposition === 'user_waiver') writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
     const receipt = disposition === 'user_waiver' ? waivedReceipt(subject, grant, { target_revision: base }) : acceptanceReceipt(subject, { target_revision: base });
-    const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
+    // The real writer keeps the immutable receipt record that the projection pins.
+    recordAcceptanceObservation(subject, receipt);
+    const receiptBytes = readFileSync(acceptanceReceiptPath(subject.root, subject.home));
     const projection = await createProductAcceptanceProjection(
-      { ...provider.environment, authority_home: subject.root },
+      { ...provider.environment, authority_home: subject.home },
       {
         contract_sha256: contract.contract_sha256,
         envelope_sha256: envelope.envelope_sha256,
         matrix_sha256: matrix.matrix_sha256,
         review_authority: approvals.get(subject.root)!.source,
       },
-      { verify_acceptance: async () => receipt, read_acceptance_receipt_bytes: () => receiptBytes },
+      { verify_acceptance: async () => receipt },
     );
+    expect(projection.acceptance_receipt_sha256).toBe(publicationSha256(receiptBytes));
     expect(listProductAcceptanceProjections(subject.root)).toEqual([projection]);
 
     const exact = integrationInput(subject, 'product_accepted', provider, { projection_sha256: projection.projection_sha256,
       approved_prd_ref: PRD_REF, approved_prd_sha256: engineerSha256(PRD_TEXT), review_authority: selector(subject.root) });
-    const withReceipt = { ...exact, readers: { ...exact.readers, readAcceptanceReceiptBytes: () => receiptBytes } };
-    const accepted = resolveDependencyAuthority(withReceipt);
+    const accepted = resolveDependencyAuthority(exact);
     expect(accepted.status).toBe('satisfied');
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`product-acceptance-projection:${projection.projection_sha256}`);
+
+    // No projection persisted under the selected digest yet: product acceptance is pending.
+    const stored = join(resolveGitCommonDirectory(subject.root), 'repo-harness/integration/v2/products',
+      `${projection.projection_sha256.slice('sha256:'.length)}.json`);
+    const storedBytes = readFileSync(stored);
+    rmSync(stored);
+    const withoutProduct = resolveDependencyAuthority(exact);
+    expect(withoutProduct.status).toBe('unsatisfied');
+    expect(withoutProduct.authority_revision).not.toBeNull();
+    writeFileSync(stored, storedBytes);
     expect(accepted.authority_revision).not.toBe(withoutProduct.authority_revision);
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+
+    // The exact selected PR is still open: the product dependency is pending work.
+    provider.provider.get(1)!.state = 'OPEN';
+    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
+    provider.provider.get(1)!.state = 'MERGED';
+
+    // A later review replaces acceptance.latest.json; the projection reads its pinned receipt record.
+    recordLaterReview(subject);
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+    const record = acceptanceReceiptRecordPath(subject.root, subject.home, projection.acceptance_receipt_sha256);
+    const recordBytes = readFileSync(record);
+    writeFileSync(record, '{"substituted":true}\n');
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+    rmSync(record);
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+    writeFileSync(record, recordBytes);
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+
     if (disposition === 'user_waiver') {
       const clock = spyOn(Date, 'now').mockReturnValue(grant.authorization.expires_at + 1);
-      try { expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable'); }
+      try { expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable'); }
       finally { clock.mockRestore(); }
-      expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+      expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
       rmSync(grantPath);
-      expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+      expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
       writeFileSync(grantPath, `${JSON.stringify(grant)}\n`);
-      expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+      expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
     }
     const goal = approval(subject.root).issue.body;
     approval(subject.root).issue.body = 'Changed product goal';
-    expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
     approval(subject.root).issue.body = goal;
-    expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
     const activePath = join(approval(subject.root).directory, 'active.json');
     const activeBytes = readFileSync(activePath);
     writeFileSync(activePath, JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }), { mode: 0o600 });
-    expect(resolveDependencyAuthority(withReceipt).status).toBe('authority_unavailable');
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
     writeFileSync(activePath, activeBytes);
-    expect(resolveDependencyAuthority(withReceipt).status).toBe('satisfied');
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
 
-
+    // The committed selection still names the old task, so it does not prove the moved target.
     const moved = retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } });
-    const movedTarget = resolveDependencyAuthority({ ...withReceipt, ...moved, reads: moved.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
-    expect(movedTarget.status).toBe('authority_unavailable');
+    const movedTarget = resolveDependencyAuthority({ ...exact, ...moved, reads: moved.reads.map(read => ({ ...read, commit: exact.reads[0]!.commit })) });
+    expect(movedTarget.status).toBe('unsatisfied');
 
-    const otherRequirement = resolveDependencyAuthority(input(subject, 'product_accepted', {
-      dependency: {
-        ...dependency('product_accepted'),
-        acceptance_authority: { authority_kind: 'product_acceptance', subject_ref: 'docs/spec.md', subject_revision: engineerSha256('# Source spec\n') },
-      },
-    }));
-    expect(otherRequirement.status).toBe('authority_unavailable');
-
-    const unreadable = resolveDependencyAuthority({ ...withReceipt,
-      readers: { ...withReceipt.readers, readProductAcceptanceProjection: () => { throw new Error('product store unavailable'); } },
+    const unreadable = resolveDependencyAuthority({ ...exact,
+      readers: { ...exact.readers, readProductAcceptanceProjection: () => { throw new Error('product store unavailable'); } },
     });
-    expect(resolveDependencyAuthority({ ...withReceipt, readers: { ...withReceipt.readers,
-      readAcceptanceReceiptBytes: () => Buffer.from('{"substituted":true}\n') } }).status).toBe('authority_unavailable');
     expect(unreadable.status).toBe('authority_unavailable');
     expect(unreadable.authority_revision).toBeNull();
+
+    // A valid projection accepted for another requirement does not prove this one.
+    const otherRequirement = resolveDependencyAuthority(integrationInput(subject, 'product_accepted', provider, {
+      projection_sha256: projection.projection_sha256, approved_prd_ref: 'docs/spec.md',
+      approved_prd_sha256: engineerSha256('# Source spec\n'), review_authority: selector(subject.root) }));
+    expect(otherRequirement.status).toBe('unsatisfied');
   });
 
   test('cross-repository dependencies bind repository identity and never read a same-named local path', () => {
