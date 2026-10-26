@@ -1,9 +1,20 @@
 import { approveDelegatedReviewAdmission } from '../../effects/admission/control-admission';
 import { readReviewAdmissionSource } from '../../effects/admission/admission-source';
+import { revokeActiveReviewAdmission } from '../../effects/admission/admission-store';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';
 import { recordCircuitAttempt } from '../hook/circuit-breaker';
+
+/** Both control operations accept only a closed JSON object from the trusted Bot. */
+function readControlRequest(file: string, fields: readonly string[]): Record<string, any> {
+  const request = JSON.parse(readFileSync(file, 'utf8'));
+  if (!request || typeof request !== 'object' || Array.isArray(request)
+    || JSON.stringify(Object.keys(request).sort()) !== JSON.stringify([...fields].sort())) {
+    throw new Error('review_control_request_invalid');
+  }
+  return request;
+}
 
 export function buildReviewCommand(): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
@@ -12,15 +23,25 @@ export function buildReviewCommand(): Command {
     .option('--repo <path>', 'Execution repository', process.cwd())
     .action(opts => {
       try {
-        const request = JSON.parse(readFileSync(opts.request, 'utf8'));
-        if (!request || typeof request !== 'object' || Array.isArray(request)
-          || JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(['admission', 'approval', 'expectedRevision'])) {
-          throw new Error('review_control_request_invalid');
-        }
+        const request = readControlRequest(opts.request, ['admission', 'approval', 'expectedRevision']);
         console.log(JSON.stringify(approveDelegatedReviewAdmission({ repoRoot: opts.repo,
           admission: request.admission, approval: request.approval, expectedRevision: request.expectedRevision })));
       } catch (error) {
         console.error(`review admit: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
+    });
+  command.command('revoke').description('Apply an upstream Bot revocation to the exact active grant (trusted integration only)')
+    .requiredOption('--request <file>', 'JSON {repository_id, issue_id, campaign_id, expectedGrantSha256, expectedRevision}')
+    .option('--repo <path>', 'Execution repository', process.cwd())
+    .action(opts => {
+      try {
+        const request = readControlRequest(opts.request, ['repository_id', 'issue_id', 'campaign_id', 'expectedGrantSha256', 'expectedRevision']);
+        console.log(JSON.stringify(revokeActiveReviewAdmission({ repoRoot: opts.repo, repository_id: request.repository_id,
+          issue_id: request.issue_id, campaign_id: request.campaign_id,
+          expectedGrantSha256: request.expectedGrantSha256, expectedRevision: request.expectedRevision })));
+      } catch (error) {
+        console.error(`review revoke: ${error instanceof Error ? error.message : String(error)}`);
         process.exitCode = 1;
       }
     });

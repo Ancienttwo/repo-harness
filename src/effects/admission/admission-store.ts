@@ -122,6 +122,25 @@ export function revokeReviewAdmission(input: StoreInput & CampaignIdentity & { e
   }, { reclaimStaleOwner: true });
 }
 
+/** Revoke one exact active grant for a trusted upstream request. Revision and
+ * grant digest together form the CAS. An unknown campaign, an absent or
+ * replaced grant, or a stale revision fails without a state change. */
+export function revokeActiveReviewAdmission(input: StoreInput & CampaignIdentity & {
+  expectedRevision: number; expectedGrantSha256: string;
+}): { revision: number; revoked_grant_sha256: string } {
+  if (currentReadonlyObservation()) rejectObservation('Observation cannot revoke a review admission');
+  if (typeof input.expectedGrantSha256 !== 'string' || !HASH.test(input.expectedGrantSha256)) fail('revocation_request_invalid');
+  const loc = location(input, input, false);
+  return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
+    const previous = active(loc.active);
+    if (previous.revision !== input.expectedRevision || previous.revision === Number.MAX_SAFE_INTEGER) fail('revision_changed');
+    if (previous.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
+    const next = { protocol: 1 as const, revision: previous.revision + 1, grant_sha256: null };
+    publishActive(loc.active, next);
+    return { revision: next.revision, revoked_grant_sha256: input.expectedGrantSha256 };
+  }, { reclaimStaleOwner: true });
+}
+
 /** Read a bound current record for provider observation. Its stored goal is not
  * fresh provider evidence; execution consumers must use observeActiveReviewAdmission. */
 export function readReviewAdmissionForObservation(input: StoreInput & CampaignIdentity & {

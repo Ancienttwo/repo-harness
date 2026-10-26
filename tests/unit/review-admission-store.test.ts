@@ -11,7 +11,7 @@ import { hashVerificationPlan } from '../../src/core/evidence/verification-plan'
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { approveReviewAdmission, readActiveReviewAdmission, readReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
+import { approveReviewAdmission, readActiveReviewAdmission, readCurrentReviewAdmissionSelection, readReviewAdmission, revokeActiveReviewAdmission, revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -173,6 +173,27 @@ test('control admission binds upstream trace data and later reads observe normal
   expect(result.authorization_ref).toBe(approval.authorization_ref);
   revokeReviewAdmission({ ...f.args(result.grant_sha256), expectedRevision: 1 });
   expect(() => readReviewAdmission(f.args(result.grant_sha256))).toThrow('revoked_or_replaced');
+});
+
+test('active revocation requires the exact grant digest and current revision', () => {
+  const f = fixture();
+  const first = approveDelegatedReviewAdmission({ repoRoot: f.root, authorityHome: f.home,
+    admission: f.input, approval: controlApprovalFixture(f.root, f.admission, 0), expectedRevision: 0 });
+  const identity = { repoRoot: f.root, authorityHome: f.home, repository_id: f.input.repository_id,
+    issue_id: f.input.issue_id, campaign_id: f.input.campaign_id };
+  const activePath = join(f.directory, 'active.json'), before = readFileSync(activePath, 'utf8');
+  expect(() => revokeActiveReviewAdmission({ ...identity, expectedRevision: 1, expectedGrantSha256: hash('stale grant') })).toThrow('revoked_or_replaced');
+  expect(() => revokeActiveReviewAdmission({ ...identity, expectedRevision: 0, expectedGrantSha256: first.grant_sha256 })).toThrow('revision_changed');
+  expect(() => revokeActiveReviewAdmission({ ...identity, expectedRevision: 1, expectedGrantSha256: 'not-a-digest' })).toThrow('revocation_request_invalid');
+  expect(() => revokeActiveReviewAdmission({ ...identity, campaign_id: 'unknown', expectedRevision: 1,
+    expectedGrantSha256: first.grant_sha256 })).toThrow('review_admission_missing');
+  expect(readFileSync(activePath, 'utf8')).toBe(before);
+  expect(readReviewAdmission(f.args(first.grant_sha256)).revision).toBe(1);
+  expect(revokeActiveReviewAdmission({ ...identity, expectedRevision: 1, expectedGrantSha256: first.grant_sha256 }))
+    .toEqual({ revision: 2, revoked_grant_sha256: first.grant_sha256 });
+  expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
+  expect(readCurrentReviewAdmissionSelection(identity)).toBeNull();
+  expect(() => revokeActiveReviewAdmission({ ...identity, expectedRevision: 2, expectedGrantSha256: first.grant_sha256 })).toThrow('revoked_or_replaced');
 });
 
 test('read rejects missing upstream request bindings even when the record digest matches', () => {
