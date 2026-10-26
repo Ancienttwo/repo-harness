@@ -9,7 +9,7 @@
 2. Open a branch; isolate a worktree when concurrent edits overlap. Preserve unrelated work.
 3. Make small, bounded commits. Ordinary tasks live in the PR description: goal, changes, verification, risk and rollback.
 4. Freeze the candidate and verify once: typecheck plus affected tests. Reviewers and closeout consume the same evidence.
-5. A model may squash-merge into main only when the current task explicitly authorizes main publication, automatic checks pass, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
+5. A model may squash-merge into main only when the current task explicitly authorizes main publication, the branch is in sync with main, the required checks pass on that exact head, and GitHub has no outstanding change requests or unresolved review threads. An explicit no-merge instruction always wins. The next merge does not wait for the main push CI of the previous merge. Main push CI is an alarm: when it fails, revert or fix forward before the next merge. Record the GitHub merge SHA and parent SHA. Record `git revert --no-edit <squash-commit>`. Do not create rollback tags.
 6. Run the full suite daily, automatically open a repair task on failure, and produce the daily merge/check/rollback report. Run the [Lessons Retro](#lessons-retro) in the same nightly window.
 7. Use the [Report SOP](#report-sop) for formal progress, phase and final reports to the user, including the daily user summary. Raw automated CI reports are evidence inputs; they do not replace that summary and do not require this format.
 
@@ -123,6 +123,9 @@ Rules for every tier:
 - From the second round, the reviewer reads only the hunks that changed after the previous round. The three-round limit stays.
 - When an independent review ran, the PR description lists each finding with its disposition: fixed, or closed with the reason.
 - A low tier adds no review. A new test file or a rebase does not raise the tier.
+- A coordinator reuses the recorded independent review of a lane for the same diff. It does not review that diff again. Only a changed diff needs a new review.
+- A downstream repository maps its own release surfaces, for example public API, wire format, DDL/SQL and permissions, to the High tier.
+
 A worker gets Goal, Scope, Context, Acceptance, Verify, Rollback, Timebox, Forbidden, Report and Standing as defined in [the delegation brief](sprint-contracts.md#delegation-brief), then loads concrete techniques on demand. Do not put routing catalogs or every technology guide in its brief.
 
 A coding session that spawns sub-agents is their parent. Investigate first, then split work by write ownership. Give each parallel writer its own worktree from a clean source. Implementation sub-agents edit only their scope. They do not run build, typecheck or tests. They commit early in their own worktree and return early. In a shared checkout they do not commit; the parent commits. An evidence role whose task is a named check, such as a root-cause reproduction or an evaluation profile, still runs that check and does not commit. The brief's Verify section names the checks that the parent runs after integration. The parent owns task management, conflict resolution, build, typecheck, tests and integration. After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.

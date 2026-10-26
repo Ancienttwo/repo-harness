@@ -21,6 +21,9 @@ separate rollback surface, needs independent verification, needs its own
 review/acceptance boundary, touches a high-risk surface, or cannot remain a
 checklist row in the active plan or sprint backlog.
 
+Slices that write the same files in sequence go into one PR. Split a slice
+into its own PR only when it runs in parallel with disjoint write ownership.
+
 Inline sprint rows stay in the sprint backlog or the active plan's
 `## Task Breakdown`. Contract rows may expand through the full plan -> contract
 -> review -> notes flow.

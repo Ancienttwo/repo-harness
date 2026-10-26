@@ -20,6 +20,10 @@ adds the stop rules, the evidence handoff and the write rules.
 ## Writes
 
 - One coordinator posts to GitHub. Workers are read-only and never post.
+- The GitHub issue and its PR are the coordination state.
+- A run tracker is an append-only event log. Derive an owner summary from the
+  tracker, or write the summary once at closeout.
+- Approval text goes in the PR description, not in a separate file.
 - Posting follows the GitHub Issue Claims rule in root `AGENTS.md`: claim
   first, read back after every post, and never retry an uncertain post without
   a read.
