@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
@@ -29,6 +29,8 @@ type GateOptions = {
   /** Prepended to PATH so a case can substitute a deterministic fake `bun`. */
   binDir?: string;
   nodeOptions?: string;
+  /** Directory that receives the per-file JUnit reports; unset means the lib picks its own run directory. */
+  junitDir?: string;
 };
 
 function writeTestFile(dir: string, name: string, passing: boolean): string {
@@ -62,6 +64,7 @@ function runIsolatedGate(files: string[], options: GateOptions = {}): RunResult 
       ...(options.nodeOptions ? { NODE_OPTIONS: options.nodeOptions } : {}),
       ...(options.binDir ? { PATH: `${options.binDir}${delimiter}${process.env.PATH ?? ""}` } : {}),
       ...(options.jobs === undefined ? {} : { BUN_TEST_JOBS: options.jobs }),
+      ...(options.junitDir ? { BUN_TEST_JUNIT_DIR: options.junitDir } : {}),
       BUN_TEST_ISOLATE_FILES: "1",
       BUN_TEST_FILES: files.join(" "),
       BUN_TEST_TIMEOUT_MS: "60000",
@@ -201,6 +204,73 @@ describe("ci isolate-mode test loop", () => {
       expect(result.status).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("writes one JUnit report per test file, failures included", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rh-ci-junit-"));
+    const reports = join(dir, "reports");
+    mkdirSync(reports);
+    try {
+      const failing = writeTestFile(dir, "junit-failing.test.ts", false);
+      const passing = writeTestFile(dir, "junit-passing.test.ts", true);
+
+      const result = runIsolatedGate([failing, passing], { junitDir: reports });
+
+      expect(result.status).toBe(1);
+      const names = readdirSync(reports).sort();
+      expect(names).toEqual([
+        `${failing.replace(/[\\/]/g, "__")}.xml`,
+        `${passing.replace(/[\\/]/g, "__")}.xml`,
+      ].sort());
+      const failed = readFileSync(join(reports, names.find((name) => name.includes("junit-failing"))!), "utf-8");
+      expect(failed).toContain('failures="1"');
+      expect(failed).toContain("<failure");
+      const passed = readFileSync(join(reports, names.find((name) => name.includes("junit-passing"))!), "utf-8");
+      expect(passed).toContain('<testcase name="passes"');
+      expect(passed).toContain('failures="0"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a gate run that nests the gate leaves one JUnit run directory and none of the nested reports", () => {
+    // The gate resolves its repository root from the library location, so a copy under a throwaway root keeps the real checkout untouched.
+    const root = mkdtempSync(join(tmpdir(), "rh-ci-junit-nest-"));
+    try {
+      mkdirSync(join(root, "scripts"), { recursive: true });
+      cpSync(join(REPO_ROOT, "scripts/lib"), join(root, "scripts/lib"), { recursive: true });
+      const lib = join(root, "scripts/lib/ci-run-tests.sh");
+      const inner = writeTestFile(root, "inner-passing.test.ts", true);
+      const outer = join(root, "outer-nesting.test.ts");
+      writeFileSync(outer, [
+        'import { expect, test } from "bun:test";',
+        'import { spawnSync } from "node:child_process";',
+        'test("nested gate", () => {',
+        '  const result = spawnSync("bash", ["-c", "set -euo pipefail; source \\"$1\\"; run_bun_tests", "nested", process.env.NESTED_LIB!], {',
+        '    cwd: process.env.NESTED_ROOT, encoding: "utf-8",',
+        '    env: { ...process.env, BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: process.env.NESTED_FILE },',
+        '  });',
+        '  expect(result.status).toBe(0);',
+        '});',
+        '',
+      ].join("\n"), "utf-8");
+      const result = spawnSync("bash", ["-c", `set -euo pipefail; source ${JSON.stringify(lib)}; run_bun_tests`], {
+        cwd: root,
+        encoding: "utf-8",
+        env: gateEnv({
+          BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: outer, BUN_TEST_TIMEOUT_MS: "60000", BUN_TEST_MAX_CONCURRENCY: "1",
+          NESTED_LIB: lib, NESTED_ROOT: root, NESTED_FILE: inner, BUN_TEST_JUNIT_DIR: "",
+        }),
+      });
+      expect(result.status).toBe(0);
+      const runs = readdirSync(join(root, ".ai/harness/runs/junit"));
+      expect(runs).toHaveLength(1);
+      const reports = readdirSync(join(root, ".ai/harness/runs/junit", runs[0]!));
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toContain("outer-nesting.test.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

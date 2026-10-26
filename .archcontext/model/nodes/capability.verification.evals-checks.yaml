@@ -32,6 +32,7 @@ source:
     - "scripts/replay-ci-coverage.ts"
     - "scripts/report-ci.ts"
     - "scripts/select-test-suite.ts"
+    - "scripts/project-test-capabilities.ts"
     - "scripts/ci-documentation-consumers.ts"
     - "scripts/harness-trace-grade.sh"
   exclude:

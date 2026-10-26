@@ -22,3 +22,4 @@ source:
     - "scripts/report-ci.ts"
     - "scripts/ci-documentation-consumers.ts"
     - "scripts/test-file-durations.json"
+    - "scripts/project-test-capabilities.ts"

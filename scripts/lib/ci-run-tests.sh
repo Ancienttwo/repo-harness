@@ -14,8 +14,18 @@ _ci_run_bun_tests_in_temporary_home() {
     const divider = args.indexOf("--harness-options");
     const runs = batch < 0 ? [args] : args.slice(batch + 1, divider).map(file => [...args.slice(0, batch), file, ...args.slice(divider + 1)]);
     let status = 0;
-    for (const runArgs of runs) {
+    // The caller owns the run directory. A nested gate inside a test inherits a
+    // directory in the disposable root, so it never writes into the checkout.
+    const junitDir = process.env.BUN_TEST_JUNIT_DIR;
+    const testFiles = batch >= 0 ? args.slice(batch + 1, divider) : args.filter(arg => /[.](test|spec)[.][cm]?[jt]sx?$/.test(arg));
+    for (const [index, baseArgs] of runs.entries()) {
       const { env, home, temp } = createTemporaryTestEnvironment(process.env);
+      env.BUN_TEST_JUNIT_DIR = require("node:path").join(temp, "junit");
+      // One report per Bun process, named by its test file so a rerun replaces the report. Options go first so the file stays last.
+      const name = (batch >= 0 ? testFiles[index] : testFiles.length === 1 ? testFiles[0] : undefined) ?? "run-" + index;
+      const runArgs = junitDir
+        ? ["--reporter=junit", "--reporter-outfile=" + require("node:path").join(junitDir, name.replace(/[\\/]/g, "__") + ".xml"), ...baseArgs]
+        : baseArgs;
       // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
       const roots = [...new Set((process.platform === "win32" ? [require("node:os").tmpdir(), "/tmp", "/private/tmp"] : ["/tmp", "/private/tmp"]).filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
       const snapshot = () => roots.flatMap(root => fs.readdirSync(root).filter(name => /-wt-/.test(name) && !name.startsWith(".repo-harness-wt-trash-")).map(name => require("node:path").join(root, name)));
@@ -75,6 +85,23 @@ _ci_run_bun_tests_in_temporary_home() {
     }
     process.exit(status);
   ' "$isolation_module" --timeout "${BUN_TEST_TIMEOUT_MS:-60000}" --max-concurrency "${BUN_TEST_MAX_CONCURRENCY:-4}" "$@"
+}
+
+# Bun writes one JUnit report per test process into a run directory under the
+# ignored .ai/harness/runs/. Runs older than a week are removed; CI uploads the
+# directory. Age, not count, decides: concurrent and nested runs keep their own.
+_ci_prepare_junit_dir() {
+  if [[ -n "${BUN_TEST_JUNIT_DIR:-}" ]]; then
+    mkdir -p "$BUN_TEST_JUNIT_DIR"
+    return
+  fi
+  local base
+  base="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/.ai/harness/runs/junit"
+  mkdir -p "$base" || return 1
+  find "$base" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + || return 1
+  BUN_TEST_JUNIT_DIR="$base/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mkdir -p "$BUN_TEST_JUNIT_DIR" || return 1
+  export BUN_TEST_JUNIT_DIR
 }
 
 run_bun_test_file() {
@@ -226,6 +253,7 @@ _ci_build_hook_bundle_if_selected() {
 }
 
 run_bun_tests() {
+  _ci_prepare_junit_dir || return $?
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
     local argument
     for argument in "$@"; do
