@@ -1,5 +1,5 @@
 import { initGitRepo } from '../helpers/repo-fixture';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
@@ -94,5 +94,11 @@ test.each(['labels', 'issue_numbers'] as const)('approved locator works through 
     expect(() => observeActiveReviewAdmission({ ...source, runner: (args: readonly string[]) => ({ stdout: JSON.stringify(
       args.includes('repos/acme/widgets/issues/903') ? { ...fixture.issue, id: 'OTHER' }
         : { id: fixture.admission.repository_id, full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' }) }) })).toThrow('review_goal_identity_changed');
+    let providerReads = 0;
+    expect(() => observeActiveReviewAdmission({ ...source, runner: (args, options) => {
+      const value = fixture.source.runner!(args, options);
+      if (++providerReads === 1) writeFileSync(join(fixture.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
+      return value;
+    } })).toThrow('review_admission_revoked_or_replaced');
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });

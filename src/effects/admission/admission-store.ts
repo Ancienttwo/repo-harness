@@ -122,12 +122,10 @@ export function revokeReviewAdmission(input: StoreInput & CampaignIdentity & { e
   }, { reclaimStaleOwner: true });
 }
 
-/** Read the active protected record, then compare fresh goal/actor/plan inputs.
- * Prior approvals stay on disk as history. Only the current activation can bind
- * a round. Re-read this before recording acceptance and when verifying it.
- */
-export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity & {
-  expectedGrantSha256: string; expectedPolicySha256: string; expectedGoal: ReviewAdmissionInput['goal']; expectedActor: string;
+/** Read a bound current record for provider observation. Its stored goal is not
+ * fresh provider evidence; execution consumers must use observeActiveReviewAdmission. */
+export function readReviewAdmissionForObservation(input: StoreInput & CampaignIdentity & {
+  expectedGrantSha256: string; expectedPolicySha256: string; expectedActor: string;
 }) {
   const loc = location(input, input, false), before = active(loc.active);
   if (!HASH.test(input.expectedGrantSha256) || before.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
@@ -145,11 +143,22 @@ export function readActiveReviewAdmission(input: StoreInput & CampaignIdentity &
     validateControlApproval(proof, Date.now(), admitted, loc.root, before.revision - 1);
   }
   if (admitted.repository_id !== input.repository_id || admitted.issue_id !== input.issue_id || admitted.campaign_id !== input.campaign_id
-    || admitted.actor_id !== input.expectedActor || admitted.goal.revision !== input.expectedGoal.revision
-    || admitted.goal.content !== input.expectedGoal.content) fail('goal_or_actor_changed');
+    || admitted.actor_id !== input.expectedActor) fail('goal_or_actor_changed');
   if (admitted.policy.policy_sha256 !== input.expectedPolicySha256) fail('policy_changed');
   if (!bytes(before).equals(bytes(active(loc.active)))) fail('changed_during_read');
   return { admission: admitted, grant_sha256: input.expectedGrantSha256, revision: before.revision };
+}
+
+export function assertReviewAdmissionGoal(admission: ReviewAdmission, expectedGoal: ReviewAdmissionInput['goal']): void {
+  if (admission.goal.revision !== expectedGoal.revision || admission.goal.content !== expectedGoal.content) fail('goal_or_actor_changed');
+}
+
+export function readActiveReviewAdmission(input: Parameters<typeof readReviewAdmissionForObservation>[0] & {
+  expectedGoal: ReviewAdmissionInput['goal'];
+}) {
+  const current = readReviewAdmissionForObservation(input);
+  assertReviewAdmissionGoal(current.admission, input.expectedGoal);
+  return current;
 }
 
 /** Discover only the protected current selection. The caller must freshly

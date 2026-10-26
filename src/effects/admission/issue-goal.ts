@@ -1,4 +1,4 @@
-import { readActiveReviewAdmission, readCurrentReviewAdmissionSelection } from './admission-store';
+import { readActiveReviewAdmission, readReviewAdmissionForObservation, assertReviewAdmissionGoal } from './admission-store';
 import { bindReviewAdmission, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -46,21 +46,18 @@ export function observeActiveReviewAdmission(input: Omit<Parameters<typeof readA
   // Discovery selection is not the approved task locator. Read the locator from
   // the current, validated approval, then freshly observe that exact provider
   // issue. This preliminary read grants no execution authority by itself.
-  const selected = readCurrentReviewAdmissionSelection(input);
-  if (!selected || selected.expectedGrantSha256 !== input.expectedGrantSha256
-    || selected.expectedActor !== input.expectedActor
-    || selected.expectedPolicySha256 !== input.expectedPolicySha256) throw new Error('review_admission_revoked_or_replaced');
+  const selected = readReviewAdmissionForObservation(input);
   const discovery = requireManualGithubPolicy(input.issuePolicy);
   const policy = parseExternalSourcesPolicy({ version: discovery.version, mode: discovery.mode,
-    github: { ...discovery.github, selection: { kind: 'issue_numbers', issue_numbers: [selected.issue_number] } } });
+    github: { ...discovery.github, selection: { kind: 'issue_numbers', issue_numbers: [selected.admission.issue_number] } } });
   const observe = () => observeReviewIssueGoal({ policy, repository_id: input.repository_id,
     issue_id: input.issue_id, runner: input.runner });
   const before = observe();
-  const result = readActiveReviewAdmission({ ...input, expectedGoal: before });
+  assertReviewAdmissionGoal(selected.admission, before);
   const after = observe();
   if (after.revision !== before.revision || after.content !== before.content) throw new Error('review_goal_changed_during_read');
   const current = readActiveReviewAdmission({ ...input, expectedGoal: after });
-  if (current.revision !== result.revision) throw new Error('review_admission_changed_during_read');
+  if (current.revision !== selected.revision) throw new Error('review_admission_changed_during_read');
   return current;
 }
 
