@@ -147,9 +147,15 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
     return withExclusiveDirectoryLock(realpathSync(dirname(this.path)), `${basename(this.path)}.lock`, () => {
       this.sync();
-      const result = run();
-      if (result !== false) this.flush();
-      return result;
+      try {
+        const result = run();
+        if (result !== false) this.flush();
+        return result;
+      } catch (error) {
+        // `run` may have changed the maps before it threw; the next operation reads the file again.
+        this.synced = false;
+        throw error;
+      }
     }, { waitTimeoutMs: 10_000, reclaimStaleEmptyDirectory: true });
   }
 
@@ -264,13 +270,24 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   }
 
   load(): void {
-    this.mutate(() => {
-      const changed = this.removeExpiredClients();
-      if (this.clients.size > this.maxDynamicClients) {
-        throw new ServerError('Dynamic OAuth client capacity reached');
-      }
-      return changed;
-    });
+    try {
+      this.mutate(() => {
+        const changed = this.removeExpiredClients();
+        if (this.clients.size > this.maxDynamicClients) {
+          throw new ServerError('Dynamic OAuth client capacity reached');
+        }
+        return changed;
+      });
+    } catch (error) {
+      if (!(error instanceof ServerError)) throw error;
+      // An over-cap persisted set is rejected as a whole: this file version serves no client.
+      this.accessTokens = new Map();
+      this.refreshTokens = new Map();
+      this.clients = new Map();
+      this.fileIdentity = this.currentFileIdentity();
+      this.synced = true;
+      throw error;
+    }
   }
 
   flush(): void {
