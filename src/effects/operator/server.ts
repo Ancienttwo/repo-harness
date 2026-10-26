@@ -169,11 +169,13 @@ export interface OperatorServerOptions {
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
   /**
-   * Write routes admitted for POST. Production passes none: no business write
-   * is open yet, and a production write route must also be listed in
-   * OPERATOR_ROUTES with `write: true`. Tests inject routes to exercise the channel.
+   * Write routes admitted for POST. Each one must match a `POST`, `write: true`
+   * entry of the route inventory, or the server does not start. Production
+   * passes none: no business write is open yet.
    */
   readonly write_routes?: readonly OperatorWriteRoute[];
+  /** The route inventory write routes bind to. Production uses OPERATOR_ROUTES; only tests inject another. */
+  readonly route_inventory?: readonly OperatorRouteV1[];
 }
 
 export interface OperatorServerHandle {
@@ -1431,6 +1433,15 @@ export async function startOperatorServer(
 
   const writeToken = createOperatorWriteToken();
   const writeRoutes = options.write_routes ?? [];
+  // The inventory is the one write authority: a handler it does not declare
+  // as a POST write route is a second authority, so the server refuses to start.
+  const routeInventory = options.route_inventory ?? OPERATOR_ROUTES;
+  for (const route of writeRoutes) {
+    const entry = routeInventory.find(candidate => candidate.id === route.id);
+    if (entry?.method !== 'POST' || entry.write !== true || entry.pattern !== route.path.source) {
+      throw new OperatorServerError('invalid_argument', `write route ${JSON.stringify(route.id)} has no matching POST write entry in the route inventory`, 400);
+    }
+  }
   const matchWriteRoute = (pathname: string): { readonly route: OperatorWriteRoute; readonly params: readonly string[] } | null => {
     for (const route of writeRoutes) {
       const match = route.path.exec(pathname);
