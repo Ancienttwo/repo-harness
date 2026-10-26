@@ -2,6 +2,29 @@
 
 All notable changes to this skill are documented here.
 
+## [0.24.3] - 2026-10-26
+
+This patch fixes `repo-harness update` from 0.24.1. In 0.24.2 that update
+failed at candidate reconciliation and rolled back to 0.24.1. If you upgrade
+from 0.24.1, read the [0.24.2](#0242---2026-10-26) section first and do its
+upgrade steps; this release has no new ones.
+
+### Fixed
+
+- `repo-harness update` from 0.24.1 completes. A 0.24.1 parent publishes its
+  global runtime lock owner record without `start_time`, and the 0.24.2
+  candidate refused it as "parent does not own the active global runtime
+  lock". The lock owner read now reports identity only, with a null start
+  time for such a record. A pid or token mismatch is still refused. A record
+  without a start time is never reclaimed as stale. Its liveness is `dead`
+  when its PID is free and `unverified` otherwise. (#974, #973)
+
+### Documentation
+
+- Record the 0.24.2 publication. (#972)
+- Refresh generated architecture outputs through the archctx rolling writer
+  for main `7310993bc` (#969) and main `882817207` (#975).
+
 ## [0.24.2] - 2026-10-26
 
 This release has breaking changes. #959 moves review and task authority from
