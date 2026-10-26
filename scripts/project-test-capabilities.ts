@@ -92,7 +92,7 @@ export async function buildProjection(input: ProjectionInput): Promise<TestCapab
   return { schemaVersion: SCHEMA, tests: entries, declared, missing };
 }
 
-/** One line per record keeps the committed file small and each change a one-line diff. */
+/** One line per record keeps each change a one-line diff. */
 export function serializeProjection(projection: TestCapabilityProjection): string {
   const lines = (records: readonly unknown[]) => records.map(record => `    ${JSON.stringify(record)}`).join(',\n');
   return [
