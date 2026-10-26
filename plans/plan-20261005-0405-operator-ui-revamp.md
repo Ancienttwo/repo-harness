@@ -1,6 +1,6 @@
 # Plan: Operator UI 改版（Architecture / Docs / Pipeline / Agent config）
 
-> **Status**: Draft（§11 的 13 项默认值按 Dot 的 13 条建议锁定：Aimpact 2026-10-06 03:22 接受，Dot 03:23 无异议。#1 是第一版用轻量 SVG，不引入 xyflow + dagre。#2、#4 核对完成之前 D0 不验收。默认值不等于部署或切换完成。写代码前仍需 Aimpact 批准本 plan）
+> **Status**: Draft（§11 的 13 项默认值按 Dot 的 13 条建议锁定：Aimpact 2026-10-06 03:22 接受，Dot 03:23 无异议。#1 是第一版用轻量 SVG，不引入 xyflow + dagre〔2026-10-27 已修订：D7，见文首「修订记录」〕。#2、#4 核对完成之前 D0 不验收。默认值不等于部署或切换完成。写代码前仍需 Aimpact 批准本 plan）
 > **Created**: 20261005-0405
 > **Slug**: operator-ui-revamp
 > **Planning Source**: claude-plan
@@ -16,6 +16,22 @@
 本文件位置说明：任务简报建议 `docs/plans/operator-ui-revamp.md`。仓库已有 plan 位置 `plans/`，命名规则是 `plan-YYYYMMDD-HHMM-<slug>.md`。所以本 plan 放在 `plans/`。
 
 事实核对说明：下文的文件路径和行号最初在 `39d4e9ed` 上核对，2026-10-05 在 `ac21fbdd` 上复核。`39d4e9ed..ac21fbdd` 的 5 个提交（#527、#528、#530、#531、#532）没有改动 operator、pipeline、review 和前端源码。没有核对的内容标为 **unverified**。从代码推断但没有运行的内容标为 **inferred**。
+
+## 修订记录（2026-10-27）
+
+用户 2026-10-27 批准控制台改版 PRD 的 10 项待决问题（[#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)），并确认设计稿 [`DESIGN-operator-console-uiux.md`](../docs/design/DESIGN-operator-console-uiux.md)。下表的约束按 [PRD](prds/20261026-2310-operator-console-uiux.prd.md)「写入与权限边界」的约束表修订（切片 0.2，[#1004](https://github.com/Ancienttwo/repo-harness/issues/1004)）。本 plan 是历史记录，正文不改写；被修订的位置加了「2026-10-27 已修订」标记，以下表为准。
+
+| 位置 | 原约束 | 修订后 |
+| --- | --- | --- |
+| §1 目标 7；§1 非目标第 1 条；§2 I1 | Operator 只读，没有写路由，不在 UI 里改文档或配置 | 只允许三种有界写入：本机配置 `~/.repo-harness/config.json`（第三期）、文档会话（第四期）、worktree 清理（第五期）。默认仍只读，按这个顺序逐项开放。其余一律只读。每个写入请求先过 Origin、`Sec-Fetch-Site`、写 token、封闭 schema、幂等、锁和前置条件，先写意图审计再执行（PRD「写入 API」） |
+| §2 I9；§1 目标 7「动作按钮改成复制 Bot 命令」 | UI 不触发动作 | UI 只触发上面三种写入。宿主投影（install、update、profile 切换）、registry 清理、卸载 CLI 仍只给命令。控制台不向编码会话发消息、停止或注入内容 |
+| §2 I2 | 唯一指令通道 Bot → CLI → herdr | 已修订：派活（编码工作）仍只走 Bot → CLI → herdr，不经 MCP（D9）；UI 另外只触发三种有界写入，包括给控制台自己启动的文档会话和清理会话发说明、停止本轮（D1、D3，PRD「写入 API」） |
+| §4.3 末条「文档内容不在 UI 里渲染」；§6.8「服务端只返回纯文本」 | 文档只显示路径，服务端只回纯文本 | 浏览器渲染 markdown，不开原始 HTML，不执行脚本。服务端仍只回原文；不用 innerHTML，现有扫描测试继续有效。见 PRD「文档读取（G7）」 |
+| §11 #1；§1 目标 7；§1 非目标「不新增 markdown 渲染库」 | 不引入 `@xyflow/react`、`@dagrejs/dagre`，不新增 markdown 渲染库 | 用户批准 `@xyflow/react`、`@dagrejs/dagre`（架构画布）和 `react-markdown`、`remark-gfm`、`mermaid`（文档阅读），只用在这两处；实施时核实版本和许可证（D7） |
+
+代码事实（`main@f1a3d72f9`）：生产路由表 `OPERATOR_ROUTES` 仍然全是 `write: false`（`src/effects/operator/server.ts:107`）。服务端已有 POST 写路由的接入点，但生产不传写路由（`server.ts:171-176`）。`tests/effects/operator-write-boundary.test.ts:59` 仍要求写路由集合为空。写入在切片 3.1 才开放。
+
+§11 #12（不做 SSE）不变：文档会话的事件先用游标轮询（PRD「项目现状」刷新一行）。
 
 ---
 
@@ -53,16 +69,16 @@
 4. **Pipeline 数据（D0）**：让 ledger 有真实数据。内容包括 Bot 事件接入、task/run 身份、幂等、一台在线主机上的一个权威 ledger、存储健康状态。
 5. **Pipeline 可视化（D1）**：阶段轨道、门禁缺口和时间线。
 6. **Agent config 页面**：一个只读页面，不是一个工作区。内容包括 CLAUDE.md/AGENTS.md 共享规则块的比较、capability 本地合约文件、fleet 角色、engineer profile、skill、硬规则来源和 herdr dispatch 规则。
-7. **整体方向（§11 #1、#12，Dot 的默认值，Aimpact 2026-10-06 接受）**：前端用 React。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`，不新增依赖。diff 的 `@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 ETag 和退避，页面隐藏时暂停（现有 hook 的行为，比降频更省）。ETag 是新增工作，在 Phase B 交付（§6.1）。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。
+7. **整体方向（§11 #1、#12，Dot 的默认值，Aimpact 2026-10-06 接受）**：前端用 React。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`，不新增依赖。diff 的 `@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估。不做只读 xterm，终端输出改为脱敏后的文本日志。服务端只提供 GET，不做 SSE；前端 30 秒轮询，带 ETag 和退避，页面隐藏时暂停（现有 hook 的行为，比降频更省）。ETag 是新增工作，在 Phase B 交付（§6.1）。没有任何修改类端点，只读由架构保证。UI 上每一个「动作」按钮都改成「复制 Bot 命令」。〔2026-10-27 已修订：三种有界写入和新依赖，见文首「修订记录」〕
 
 ### 非目标
-- 不加写路由，不在 UI 里派任务，不在 UI 里改文档或配置。
+- 不加写路由，不在 UI 里派任务，不在 UI 里改文档或配置。〔2026-10-27 已修订：只允许三种有界写入，派任务仍不进 UI，见文首「修订记录」〕
 - 不嵌入 archctx Explorer，不启动 archctx daemon。
 - 不做统一额度 tab。交互式会话没有 quota 或 token 账本（`docs/reference-configs/long-run-continuation.md:5`），不伪造数字。
 - 不做 GPT Pro / MCP 配置面板（P2，最低优先级）。
 - 不做桌面壳或菜单栏应用。
 - 不做按 Bot 分开的数据库，不做 ledger 双写。
-- 不新增 markdown 渲染库，也不新增前端 router 库。
+- 不新增 markdown 渲染库，也不新增前端 router 库。〔2026-10-27 已修订：markdown 渲染库已批准（D7）；router 库仍不加〕
 - 不嵌入任何工作流引擎（Temporal、Argo、Dagster、Trigger.dev 等）。只借用它们的展示方式。
 - 不复制 AGPL、无 license 或 source-available 项目的代码（见 §5A 的 license 注意事项）。
 - 配置不做自动同步，不做自动修复。不一致只做标记。
@@ -73,12 +89,12 @@
 
 | # | 不变量 | 当前的强制点 | 本 plan 的义务 |
 |---|---|---|---|
-| I1 | Operator 只读 | `operator-write-boundary.test.ts:54`、:62-68；`server.ts:1444-1445` 返回 405 | 新路由都用 `method:'GET', write:false`。不改这两条断言 |
-| I2 | 唯一指令通道：Bot → CLI → herdr | `pipeline.ts:20` 描述「never dispatches, merges or cleans」 | CLI `module review-prompt` 只输出文本，不派发 pane。UI 只显示和复制 |
+| I1 | Operator 只读〔2026-10-27 已修订：只允许三种有界写入，见文首「修订记录」〕 | `operator-write-boundary.test.ts:54`、:62-68；`server.ts:1444-1445` 返回 405 | 新路由都用 `method:'GET', write:false`。不改这两条断言 |
+| I2 | 唯一指令通道：Bot → CLI → herdr〔2026-10-27 已修订：派活仍只走 Bot → CLI → herdr；UI 另可触发三种有界写入，见文首「修订记录」〕 | `pipeline.ts:20` 描述「never dispatches, merges or cleans」 | CLI `module review-prompt` 只输出文本，不派发 pane。UI 只显示和复制 |
 | I3 | GET 白名单 | `OPERATOR_ROUTES`（`server.ts:93-109`），顺序在测试 :74-85 固定 | 每条新路由都登记在 `OPERATOR_ROUTES` 里。路径参数先匹配正则，再按索引查找，不能直接拼成文件路径 |
 | I4 | GET 永远不建库、不迁移、不探测、不派发、不写文件 | pipeline 读取器只打开已发布的只读快照（`store.ts:131-134,174-187`） | 新读取器不打开 live DB，不创建目录，不调用 `herdr agent` 或 `pane` 写类动词，不运行会启动外部进程或 daemon 的探测（例如 `browser-doctor`）。请求里的值永远不能变成子进程的选项（§6.8 argv 规则，例如 `git diff --output=<file>` 会写文件） |
 | I5 | 不泄露 secret 和私有路径 | `notify-status.ts:48-68` 只报告是否存在；`projection.ts:26` 用 `publicText` 替换路径 | 服务端按字段白名单输出（§6.8）。只用仓库相对路径。token、webhook URL 和连接串一律隐藏。prompt 先经过脱敏 |
-| I9 | UI 不触发动作 | 新增 | 每个「动作」只显示一条可以复制的 Bot 命令。UI 不发出任何请求去执行它 |
+| I9 | UI 不触发动作〔2026-10-27 已修订：UI 只触发三种有界写入，见文首「修订记录」〕 | 新增 | 每个「动作」只显示一条可以复制的 Bot 命令。UI 不发出任何请求去执行它 |
 | I6 | 每个数据只有一个权威来源 | 模型以 `.archcontext/model` 为准；ledger 以单一 SQLite 为准 | UI 不重新推导权威值。权威值缺失时显示 `unknown`，不合成替代值 |
 | I7 | CLI 和 UI 输出一致 | 新增 | 同一个确定性 builder，输出带 digest。用测试比较 CLI 和 GET 的 digest |
 | I8 | 写入失败必须可见 | `pipeline.ts:14-17` 输出 JSON 错误和退出码 2-7 | 补上唯一的静默路径：快照导出失败（`store.ts:172` 只写 stderr） |
@@ -248,7 +264,7 @@
 - **`updated` 的来源**：头部有 `**Updated**:` 时用它；没有时用该文件自己的最后一次 commit 时间。都没有时是 `null`。阈值见上一条（§11 #8）。
   - 取 commit 时间时，每个 HEAD 只运行**一次** `git --no-optional-locks log --name-only --format=%H%x00%cI -- <范围内目录>`，不逐个文件运行 `git log -1`。同一个 HEAD 上「路径 → 最后 commit 时间」不会变，所以按 HEAD commit 缓存（属于 §6.3 允许的不可变数据，只在内存里）。
 - 归档（`plans/archive`、`tasks/archive`）默认不画，只显示数量。可以用白名单参数 `?scope=all` 切换，结果有节点上限。
-- 文档内容不在 UI 里渲染。UI 显示仓库相对路径并提供复制。
+- 文档内容不在 UI 里渲染。UI 显示仓库相对路径并提供复制。〔2026-10-27 已修订：浏览器渲染 markdown，不开原始 HTML，不执行脚本〕
 
 ### 4.4 Pipeline 工作区（D1）
 - **阶段轨道**：10 个阶段横向排开。高亮当前阶段。显示 `fix_loops`、`review_rounds` 和 `infra_retries`。
@@ -312,7 +328,7 @@ npm registry 数据在 2026-10-05 用 `npm view` 查询（verified）。gzip 后
 | D2 | MPL-2.0 | — | Go 二进制 | 需要外部工具链，在服务端渲染 | 不选 |
 | LikeC4（参考） | MIT | 13.19 MB（likec4 1.59.4） | — | 它本身就用 xyflow + dagre + xstate。一个模型投影成多个视图，还有动态 flow 视图。archctx 已经能导出 `architecture.likec4` | **只借用模型/视图的思路**，不引入这个包 |
 
-**第一版方案（§11 #1，Dot 的默认值，Aimpact 2026-10-06 接受）**：自己写轻量 SVG。不引入 `@xyflow/react` 和 `@dagrejs/dagre`。`package.json` 和 `bun.lock` 不变。这个默认值取代了 2026-10-05 11:18 HKT 选 xyflow + dagre 的决定，也取代了任务附录「不用自绘 SVG」的要求。
+**第一版方案（§11 #1，Dot 的默认值，Aimpact 2026-10-06 接受）**：自己写轻量 SVG。不引入 `@xyflow/react` 和 `@dagrejs/dagre`〔2026-10-27 已修订：D7，见文首「修订记录」〕。`package.json` 和 `bun.lock` 不变。这个默认值取代了 2026-10-05 11:18 HKT 选 xyflow + dagre 的决定，也取代了任务附录「不用自绘 SVG」的要求。
 - **画法**：`ModuleGraph.tsx` 直接渲染 `<svg>`。一跳图固定三列：左列是调用方，中列是中心模块和它的子 component，右列是被调用方。每侧折叠后最多 8 个节点加一个「N more」节点（§11 #13），所以列内按顺序等距排列。`calls` 边画成带箭头的线；非 `calls` 关系画成无箭头的虚线并标出种类（§4.2）。节点用现有的 CSS token 和 i18n 文本。
 - **测试位置**：happy-dom 不做布局，所以边、折叠和端点的断言放在 core 投影测试里；UI 测试断言邻居列表。一跳视图同时提供邻居列表（也就是「N more」展开后的列表），作为键盘可访问的替代视图。
 - **重新评估的条件**：以后需要全图、自动布局，或者交互超出轻量 SVG 的能力时，再单独批准一次 xyflow + dagre 的评估。上表的数据和下面的依赖成本留作那次评估的起点。
@@ -527,7 +543,7 @@ type DocsGraphV1 = { schema_version: 'repo-harness.docs-graph.v1'; commit: strin
   - 仓库只能用注册表 id 指定。
   - 文件路径只来自模型或文档头部，读取前先做 realpath，必须在仓库根目录以内。
   - 请求里的任何值都不会直接拼成路径。
-- **Markdown/HTML 清洗**：服务端只返回纯文本。前端用 React 的文本节点渲染，不用 `dangerouslySetInnerHTML`。这条规则用一个源码扫描测试固定下来，写法和现有的 GET/HEAD 扫描一样。
+- **Markdown/HTML 清洗**〔2026-10-27 已修订：浏览器渲染 markdown，不开原始 HTML，不执行脚本〕：服务端只返回纯文本。前端用 React 的文本节点渲染，不用 `dangerouslySetInnerHTML`。这条规则用一个源码扫描测试固定下来，写法和现有的 GET/HEAD 扫描一样。
 - **编辑器链接**：默认只提供仓库相对路径的复制。如果以后要加 `vscode://` 这类链接，只能由服务端从白名单前缀和已校验的相对路径生成，并且不暴露绝对路径。不接受客户端拼出来的链接。
 - **隐藏的值**：token、webhook URL、带凭据的连接串（`scheme://user:pass@`）、`url-token` 形式的 endpoint，一律替换成 `configured` 或 `[redacted]`。用一份带假值的 fixture 扫描所有新路由的输出。
 - **GET 不做的事**：不建库，不迁移，不探测，不派发（I4）。pipeline 相关路由只读已发布的快照，或者调用只读 CLI。
@@ -779,7 +795,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。A 和轻量 B 与 D0 并行。P1 其余�
   - 源码扫描：`src/operator-web` 里没有 `dangerouslySetInnerHTML`。
   - 用带假 token 和 webhook URL 的 fixture，断言输出里只有 `[redacted]` 或 `configured`。
 - 写边界测试：`toEqual([])` 和 GET/HEAD 扫描的断言不变。
-- **没有新依赖**：PR 的 diff 里没有 `package.json` 和 `bun.lock`。第一版不引入 xyflow 和 dagre，所以不需要新的 license 清单（§11 #1）。
+- **没有新依赖**：PR 的 diff 里没有 `package.json` 和 `bun.lock`。第一版不引入 xyflow 和 dagre，所以不需要新的 license 清单（§11 #1）。〔2026-10-27 已修订：D7，见文首「修订记录」〕
 
 ### Phase C：Docs 工作区 + Agent config 页面
 **范围**
@@ -952,7 +968,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。A 和轻量 B 与 D0 并行。P1 其余�
 
 ## 10. 依赖、文件和抽象的理由
 
-- **新依赖**：没有。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`（§11 #1）。一跳图是固定三列，节点数有上限，不需要布局库。§5 按固定版本比较了各个选项，数据留作以后重新评估的起点。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准；只读 xterm（`@xterm/xterm`）已取消（§5A.4）。gray-matter 和 velite 不需要，因为现有解析器已经够用（§5A.2）。
+- **新依赖**：没有。第一版的图用自己写的轻量 SVG，不引入 `@xyflow/react` 和 `@dagrejs/dagre`（§11 #1）。〔2026-10-27 已修订：D7，见文首「修订记录」〕一跳图是固定三列，节点数有上限，不需要布局库。§5 按固定版本比较了各个选项，数据留作以后重新评估的起点。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准；只读 xterm（`@xterm/xterm`）已取消（§5A.4）。gray-matter 和 velite 不需要，因为现有解析器已经够用（§5A.2）。
 - **新抽象**：
   - `REVIEW_FINDING_RULES`（只含 `generic-review.ts:251` 的 verdict 和 finding 规则）：有两个真实使用方，`review round` 和 `module review-prompt`。
   - 门禁条件表（只放判断）：有两个真实使用方，`advanceRecord` 和 `explainGate`。
@@ -971,7 +987,7 @@ D0 不阻塞 A、B、C，只阻塞 D1。A 和轻量 B 与 D0 并行。P1 其余�
 
 **范围**：这些是默认值，不等于部署或切换已经完成。A 和轻量 B 与 D0 并行。
 
-1. **图和新依赖**：第一版用自己写的轻量 SVG。**不引入** `@xyflow/react` 和 `@dagrejs/dagre`，不改 `package.json`。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准。只读 xterm 取消，终端输出改用脱敏后的文本日志。（§1、§5、§5A、Phase B、Phase C、§8、§10）
+1. **图和新依赖**〔2026-10-27 已修订：架构画布可以引入 `@xyflow/react` 和 `@dagrejs/dagre`（D7），见文首「修订记录」〕：第一版用自己写的轻量 SVG。**不引入** `@xyflow/react` 和 `@dagrejs/dagre`，不改 `package.json`。`@git-diff-view/react` 是可选项，Phase C 可以做一次小范围评估，引入要单独批准。只读 xterm 取消，终端输出改用脱敏后的文本日志。（§1、§5、§5A、Phase B、Phase C、§8、§10）
 2. **权威 ledger 主机**：ledger 放在常开的 Mac mini 上。DB 路径是 `/Volumes/D/repo-harness/pipeline/ledger.sqlite`，通过配置指定。启用前要核对挂载、卷身份、权限和备份。`/Volumes/D` 没有挂载时，ledger 显示 `unavailable`。任何情况下都不自动创建第二个 DB。（§7 D0「权威 ledger 主机」、完成标准第 9 条、§8、§9）
    - 落地方式（第三轮复核，F-03）：配置的值写进代码默认值（`store.ts:25`），生产环境不再靠环境变量选位置，所以没带环境变量的进程也写到同一个 ledger。环境变量只留给测试覆盖。SQLite 库仍然用 `REPO_HARNESS_PIPELINES_SQLITE_LIBRARY` 设置，缺失时写入在建目录之前失败（F-02）。
 3. **notify 插件 v0.3.0**：payload 带 `delivery_id`。先在一台主机试点，再逐台升级。`delivery_id` 只用于去重，重试时复用同一个值。升级前先备份，升级后核对没有重复发送。旧 payload 视为 incomplete。（§7 D0、§9）

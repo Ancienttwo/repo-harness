@@ -6,9 +6,25 @@
 > **Artifact Level**: work-package
 > **Baseline**: `main@5f6065b4`
 > **Branch**: `feat/kanban-human-redesign`，worktree `/tmp/repo-harness-wt-kanban-redesign`
-> **Supersedes**: `plan-20261005-0405-operator-ui-revamp.md` 的 §4.1 导航和 §4.4 Pipeline 工作区的 UI 部分。该计划 §2 的不变量 I1–I9 继续有效。
+> **Supersedes**: `plan-20261005-0405-operator-ui-revamp.md` 的 §4.1 导航和 §4.4 Pipeline 工作区的 UI 部分。该计划 §2 的不变量 I1–I9 继续有效。〔2026-10-27 已修订：I1、I2、I9 已修订，I3–I8 继续有效，见「修订记录」〕
 > **Verification Boundary**: `bun run check:type`；受影响测试；`bun run build:operator-web`；`bun run smoke:tarball-install`；真实浏览器截图（亮/暗，1440 与 390 宽），真实数据与 fixture 各一组。
 > **Rollback Surface**: 一个 PR，`git revert <squash-commit>`。新快照文件只在 ignored 目录，删除即可。
+
+## 修订记录（2026-10-27）
+
+本 plan 已执行（PR #609、PR #611），正文是历史记录，不改写。用户 2026-10-27 批准控制台改版 PRD 的 10 项待决问题（[#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)），并确认设计稿 [`DESIGN-operator-console-uiux.md`](../docs/design/DESIGN-operator-console-uiux.md) 和它的 U1–U5。下表按 [PRD](prds/20261026-2310-operator-console-uiux.prd.md)「写入与权限边界」的约束表修订（切片 0.2，[#1004](https://github.com/Ancienttwo/repo-harness/issues/1004)）。被修订的位置加了「2026-10-27 已修订」标记，以下表为准。
+
+| 位置 | 原约束 | 修订后 |
+| --- | --- | --- |
+| 页头 Supersedes；§2「继续有效」 | 旧计划 I1–I9 全部继续有效 | I1（只读）、I2（唯一指令通道）和 I9（UI 不触发动作）已修订，见 [`plan-20261005-0405-operator-ui-revamp.md`](plan-20261005-0405-operator-ui-revamp.md)「修订记录」。I3–I8 继续有效 |
+| §1 非目标「不做写入」「不做审批按钮」 | 没有写入，没有审批按钮 | 只为三种有界写入加按钮：本机配置（第三期）、文档会话（第四期）、worktree 清理（第五期）。拖拽仍不做。其余动作仍只给链接或可复制命令 |
+| §2 N4 | 不显示终端文本、prompt、工具参数 | 文档会话显示消息正文、工具类别、仓库相对路径和执行状态；原始工具参数、完整命令、终端输出和环境变量仍不显示，用结构化操作摘要代替，落盘前脱敏（D2、G3）。文档会话以外的页面仍按原 N4 |
+| §7 第三期「确认后调用现有 CLI。hook 和权限改动逐项确认」 | 第三期写入包括 hook 和权限改动 | 第三期的写入只改 `~/.repo-harness/config.json`。宿主投影（install、update、profile 切换）、hook 和权限改动仍只给命令，由用户在终端执行 |
+| §4.1 亮/暗「默认跟随系统」 | — | U1 确认：主题跟随系统，系统是亮色时就是 Paper（亮），暗色是 Ink |
+| §4.3「点卡片打开右侧抽屉」 | — | U3 确认：任务视图保留抽屉，不新增详情页路由 |
+| §4.2 外框、§8.3 导航 | 左侧窄导航的页面清单 | 由设计稿的侧栏（工作、接入、观测三组，设置在底部）取代。U4：760px 以下侧栏变抽屉，不为手机单独设计页面。U5：保持现有语言解析 |
+
+代码事实：N3 和 §3.3 的 ledger `owner_bot` 已在 #785 删除。开发活动现在只投影 Git、GitHub 事实，不输出任务级 agent 状态。按设计稿，agent 身份只来自已验证的会话绑定（PRD G2，切片 1.3），没有绑定时写「agent 未知」。生产路由表仍然没有写路由（`src/effects/operator/server.ts:107`），写入在切片 3.1 才开放。
 
 ## 0. P1 / P2 / P3
 
@@ -40,21 +56,21 @@
 3. 新外框可以继续承载第二期的配置页（Agents / Skills / Hooks）。
 
 **非目标**
-- 不做写入。不做拖拽。不做审批按钮。所有「动作」只给链接（如 GitHub PR）或一条可复制的命令。
+- 不做写入。不做拖拽。不做审批按钮。所有「动作」只给链接（如 GitHub PR）或一条可复制的命令。〔2026-10-27 已修订：只为三种有界写入加按钮，见「修订记录」〕
 - 不做 Tauri/桌面打包。
 - 不改 ledger 的写入路径，不改 `pipeline` CLI 语义。
-- 不在 GET 里调用 `gh`、`git` 或任何外部进程。
+- 不在 GET 里调用 `gh`、`git` 或任何外部进程。〔2026-10-27 已修订：文档读取（G7）在服务启动时为每个仓库起常驻 `git cat-file --batch` worker，文档 GET 只向它要一个对象，不另起子进程〕
 - 本期不做 Agents / Skills / Hooks 页面。导航里不放没有数据的占位项。
 
 ## 2. 不变量
 
-继续有效：旧计划的 I1–I9（只读、单一指令通道、GET 白名单、GET 不探测、不泄露 secret/私有路径、单一权威、CLI/UI 一致、写入失败可见、UI 不触发动作）。
+继续有效：旧计划的 I1–I9（只读、单一指令通道、GET 白名单、GET 不探测、不泄露 secret/私有路径、单一权威、CLI/UI 一致、写入失败可见、UI 不触发动作）。〔2026-10-27 已修订：I1、I2、I9 已修订，I3–I8 继续有效，见「修订记录」〕
 
 新增：
 - **N1 collector 边界**：collector 只在 `operator serve` 进程内的后台定时器里运行，不在请求路径上。argv 是代码里的常量加经过校验的仓库路径，请求里的值不进入 argv。每个子进程有超时。并发有上限。
 - **N2 权威表**：每个显示值只有一个来源（见 §3.3）。来源缺失时显示「未知」，不推断。
 - **N3 不推断 agent 身份**：agent 只来自 ledger 的 `owner_bot` 或已验证的 runtime 绑定。不从分支前缀、PR 作者、提交信息推断。
-- **N4 隐私**：worktree 只显示目录名，不显示绝对路径。不显示终端文本、prompt、工具参数。PR 标题和分支名照 GitHub 原样显示（它们本身是公开协作数据）。
+- **N4 隐私**：worktree 只显示目录名，不显示绝对路径。不显示终端文本、prompt、工具参数〔2026-10-27 已修订：文档会话的可见范围见「修订记录」〕。PR 标题和分支名照 GitHub 原样显示（它们本身是公开协作数据）。
 - **N5 fixture 只在开发构建**：fixture 数据只能在 `import.meta.env.DEV` 下加载，不进入生产包。
 
 ## 3. 数据：Dev Activity 快照
@@ -173,7 +189,7 @@
 
 ## 7. 后续（不在本 PR）
 - 第二期：见 §8。
-- 第三期：写入。界面先展示确切 diff，确认后调用现有 CLI。hook 和权限改动逐项确认。
+- 第三期：写入。界面先展示确切 diff，确认后调用现有 CLI。hook 和权限改动逐项确认。〔2026-10-27 已修订：第三期只写本机配置，hook 和权限改动只给命令，见「修订记录」〕
 - runtime 与工作项的正式绑定（让卡片上 agent 不再是「未关联」）。
 
 ## 8. 第二期：Agents / Skills / Hooks 只读页
