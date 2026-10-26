@@ -873,7 +873,9 @@ describe('upgrade operator decisions', () => {
     expect(invoke(['decide', 'workflow-state.sh']).status).toBe(2);
     const check = invoke(['--scope', 'project', '--json']);
     expect(check.status, check.stderr).toBe(0);
-    expect(JSON.parse(check.stdout)).toEqual([]);
+    const checked = JSON.parse(check.stdout);
+    expect(checked.items).toEqual([]);
+    expect(checked.operatorKept.map((item: { path: string }) => item.path)).toEqual([expect.stringMatching(/\.ai\/hooks\/lib\/workflow-state\.sh$/)]);
     const text = invoke(['--scope', 'project']);
     expect(text.status).toBe(0);
     expect(text.stdout).toContain(`Operator kept (${decisionsFile}):`);
