@@ -17,6 +17,7 @@ import {
 import { mcpOAuthDoctorClientPath, mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import { registerBot } from '../../src/effects/bot-registry';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -808,7 +809,7 @@ describe('mcp http transport', () => {
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
       const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase;
 
-      proc = Bun.spawn(
+      const serve = () => Bun.spawn(
         [
           'bun',
           'src/cli/index.ts',
@@ -827,6 +828,7 @@ describe('mcp http transport', () => {
         ],
         { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } },
       );
+      proc = serve();
       await waitForHealth(port);
 
       const health = await fetch(`http://127.0.0.1:${port}/health`);
@@ -948,6 +950,45 @@ describe('mcp http transport', () => {
       });
       expect(refreshedInitialized.status).toBe(200);
       expect(await refreshedInitialized.text()).toContain('repo-harness-mcp');
+
+      // The audit row names the registered Bot that owns the OAuth client.
+      registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: client.client_id });
+      const sessionHeaders = {
+        authorization: `Bearer ${refreshedJson.access_token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-session-id': refreshedInitialized.headers.get('mcp-session-id') ?? '',
+      };
+      await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST', headers: sessionHeaders, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
+      const listCall = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST', headers: sessionHeaders, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_workflow_files', arguments: {} } }),
+      });
+      expect(listCall.status).toBe(200);
+      const auditRows = readFileSync(join(repoRoot, '.ai/harness/mcp/audit.log'), 'utf-8').trim().split('\n').map(line => JSON.parse(line));
+      expect(auditRows.at(-1)).toMatchObject({ tool: 'list_workflow_files', status: 'ok', botId: 'hermes' });
+
+      // `mcp clients revoke` in another process invalidates the running server's access and refresh tokens.
+      const revoke = Bun.spawnSync(['bun', 'src/cli/index.ts', 'mcp', 'clients', 'revoke', client.client_id, '--json'], { cwd: process.cwd(), env: { ...process.env } });
+      expect(revoke.exitCode).toBe(0);
+      expect(JSON.parse(revoke.stdout.toString())).toEqual({ clientId: client.client_id, revoked: true, accessTokens: 1, refreshTokens: 1 });
+      // A clean shutdown right after the revoke, with no request between, must not write the revoked grant back.
+      proc.kill('SIGTERM');
+      await proc.exited;
+      const afterShutdown = readFileSync(mcpOAuthTokenStorePath(), 'utf-8');
+      for (const revoked of [client.client_id, refreshedJson.access_token, refreshedJson.refresh_token]) expect(afterShutdown).not.toContain(revoked);
+      proc = serve();
+      await waitForHealth(port);
+      const revokedCall = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST', headers: sessionHeaders, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_workflow_files', arguments: {} } }),
+      });
+      expect(revokedCall.status).toBe(401);
+      const revokedRefresh = await fetch(`http://127.0.0.1:${port}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', client_id: client.client_id, refresh_token: refreshedJson.refresh_token }),
+      });
+      expect(revokedRefresh.ok).toBe(false);
+      expect(JSON.stringify(JSON.parse(readFileSync(mcpOAuthTokenStorePath(), 'utf-8')))).not.toContain(client.client_id);
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);

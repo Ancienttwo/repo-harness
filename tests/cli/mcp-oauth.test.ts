@@ -395,9 +395,11 @@ describe('mcp oauth provider', () => {
       const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
       const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', 'http://localhost/callback');
 
-      const flush = store.flush.bind(store);
+      // `flush` is private; the spy counts the store's persisted writes.
+      const writable = store as unknown as { flush: () => void };
+      const flush = writable.flush.bind(store);
       let flushes = 0;
-      store.flush = () => {
+      writable.flush = () => {
         flushes += 1;
         flush();
       };
@@ -535,6 +537,60 @@ describe('mcp oauth provider', () => {
       storeC.load();
       expect(storeC.getClient(active.client_id)).toBeTruthy();
       expect(storeC.getClient(idle.client_id)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('revoking a client in another process invalidates its access and refresh tokens and is never overwritten', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revoke-'));
+    try {
+      const tokensPath = join(root, 'tokens.json');
+      const serving = new McpOAuthTokenStore(tokensPath);
+      serving.load();
+      const provider = createMcpOAuthProvider(serving);
+      const registration = {
+        redirect_uris: ['http://localhost/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      };
+      const issue = async (client: ReturnType<McpOAuthTokenStore['registerClient']>, challenge: string) => {
+        const redirect = redirectRecorder();
+        await provider.authorize(client, { scopes: ['repo-harness', 'offline_access'], redirectUri: 'http://localhost/callback', codeChallenge: challenge }, redirect.response as never);
+        const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+        return provider.exchangeAuthorizationCode(client, code, 'verifier', 'http://localhost/callback');
+      };
+      const revokedClient = serving.registerClient({ ...registration, client_name: 'hermes-connector' });
+      const keptClient = serving.registerClient({ ...registration, client_name: 'grok-connector' });
+      const revokedTokens = await issue(revokedClient, 'revoked-challenge');
+      const keptTokens = await issue(keptClient, 'kept-challenge');
+
+      const listed = new McpOAuthTokenStore(tokensPath).listClients();
+      expect(listed.map(client => [client.clientId, client.clientName, client.profiles, client.liveGrants])).toEqual([
+        [revokedClient.client_id, 'hermes-connector', ['planner'], 1],
+        [keptClient.client_id, 'grok-connector', ['planner'], 1],
+      ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+      expect(JSON.stringify(listed)).not.toContain(revokedTokens.access_token);
+      expect(JSON.stringify(listed)).not.toContain(revokedTokens.refresh_token ?? 'no-refresh');
+
+      // The operator's command runs in its own process with its own store over the same file.
+      expect(new McpOAuthTokenStore(tokensPath).revokeClient(revokedClient.client_id)).toEqual({ revoked: true, accessTokens: 1, refreshTokens: 1 });
+      expect(new McpOAuthTokenStore(tokensPath).revokeClient(revokedClient.client_id)).toEqual({ revoked: false, accessTokens: 0, refreshTokens: 0 });
+
+      await expect(provider.verifyAccessToken(revokedTokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(provider.exchangeRefreshToken(revokedClient, revokedTokens.refresh_token ?? '')).rejects.toBeInstanceOf(InvalidGrantError);
+      expect(serving.getClient(revokedClient.client_id)).toBeUndefined();
+
+      // A later write by the serving process keeps the revocation and the other client's grant.
+      const rotated = await provider.exchangeRefreshToken(keptClient, keptTokens.refresh_token ?? '');
+      expect(await provider.verifyAccessToken(rotated.access_token)).toMatchObject({ clientId: keptClient.client_id });
+      const persisted = readFileSync(tokensPath, 'utf-8');
+      expect(persisted).not.toContain(revokedClient.client_id);
+      expect(persisted).not.toContain(revokedTokens.access_token);
+      expect(persisted).not.toContain(revokedTokens.refresh_token ?? 'no-refresh');
+      // A grant raced against the revocation is refused instead of written for an unknown client.
+      expect(() => serving.setAccessToken('late-token', { token: 'late-token', clientId: revokedClient.client_id, scopes: ['repo-harness'] })).toThrow(InvalidGrantError);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

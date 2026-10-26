@@ -52,6 +52,19 @@ repo-harness mcp access set --repo "$HOME/Projects/my-repo" --mode read_write
 repo-harness mcp access set --repo "$HOME/Projects/my-repo" --mode read_only
 ```
 
+To cut off one OAuth client, list the clients and revoke one. The revoke
+removes the client and invalidates its access and refresh tokens, also in a
+running `mcp serve` process:
+
+```bash
+repo-harness mcp clients list
+repo-harness mcp clients revoke <client-id>
+```
+
+`repo-harness bots register --id <bot-id> --name <name> --host <host>
+--mcp-client-id <client-id>` attributes that client's MCP audit rows to a Bot.
+A Bot record grants no access.
+
 ## Four network values
 
 Do not interchange these values:

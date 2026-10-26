@@ -7,6 +7,8 @@ import { startMcpStdio } from '../mcp/transports/stdio';
 import { callMcpTool } from '../mcp/tools';
 import { cleanupManagedCodingWorkspace, listManagedCodingWorkspaces } from '../mcp/coding-workspaces';
 import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
+import { mcpOAuthTokenStorePath } from '../mcp/auth';
+import { McpOAuthTokenStore } from '../mcp/oauth';
 import {
   runMcpDoctor,
   runMcpLiveDoctor,
@@ -202,6 +204,36 @@ export function buildMcpCommand(): Command {
       });
     });
   mcp.addCommand(access);
+
+  const clients = new Command('clients').description('Inspect or revoke OAuth clients of the HTTP MCP server');
+  clients
+    .command('list')
+    .option('--json', 'Output JSON')
+    .action((rawOpts: { json?: boolean }) => {
+      void runMcpAction(() => {
+        const rows = new McpOAuthTokenStore(mcpOAuthTokenStorePath()).listClients();
+        console.log(rawOpts.json ? JSON.stringify({ clients: rows }, null, 2) : rows.map((row) => [
+          row.clientId,
+          row.clientName ?? '-',
+          row.issuedAt === null ? '-' : new Date(row.issuedAt * 1000).toISOString(),
+          row.profiles.join(',') || '-',
+          `${row.liveGrants} live grant(s)`,
+        ].join('\t')).join('\n'));
+      });
+    });
+  clients
+    .command('revoke <client-id>')
+    .description('Remove one client and invalidate its access and refresh tokens')
+    .option('--json', 'Output JSON')
+    .action((clientId: string, rawOpts: { json?: boolean }) => {
+      void runMcpAction(() => {
+        const result = new McpOAuthTokenStore(mcpOAuthTokenStorePath()).revokeClient(clientId);
+        if (!result.revoked) throw new Error(`OAuth client ${clientId} is not registered`);
+        console.log(rawOpts.json ? JSON.stringify({ clientId, ...result }, null, 2)
+          : `[repo-harness mcp] revoked ${clientId}: ${result.accessTokens} access and ${result.refreshTokens} refresh token(s)`);
+      });
+    });
+  mcp.addCommand(clients);
 
   const workspaces = new Command('workspaces').description('Inspect or clean locally managed coding worktrees');
   workspaces

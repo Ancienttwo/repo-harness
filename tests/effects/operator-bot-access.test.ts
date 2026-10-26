@@ -15,7 +15,8 @@ import {
 import type { NotifyChannelStatus } from '../../src/effects/operator/notify-status';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { projectMcpDoctor, projectOAuthClients } from '../../src/core/operator/bot-access';
+import { projectMcpAuditEntry, projectMcpDoctor, projectOAuthClients } from '../../src/core/operator/bot-access';
+import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
 const NOW_S = Math.floor(NOW.getTime() / 1000);
@@ -60,8 +61,9 @@ function fixture() {
   }] }));
   writeFileSync(join(repo, MCP_AUDIT_LOG_RELATIVE_PATH), [
     { timestamp: '2026-10-25T00:00:00.000Z', tool: 'read_file', status: 'ok', actor: 'mcp:planner', relativePaths: ['docs/a.md'] },
-    { timestamp: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', actor: 'mcp:executor', targetPath: join(repo, 'plans/x.md'), error: 'stderr-secret' },
+    { timestamp: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', actor: 'mcp:executor', botId: 'hermes', targetPath: join(repo, 'plans/x.md'), error: 'stderr-secret' },
   ].map(row => JSON.stringify(row)).join('\n') + '\n{"torn":');
+  registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a', slack_bot_id: 'B012ABC', herdr_agent: 'hermes', now: NOW }, { REPO_HARNESS_HOME: home });
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), REPO_HARNESS_HOME: home, REPO_HARNESS_MCP_OAUTH_PASSPHRASE: PASSPHRASE, HERDR_SESSION: 'bots', HERDR_SOCKET_PATH: join(root, 'pane.sock') };
   return { root, home, repo, env, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
@@ -115,13 +117,16 @@ describe('Bot access collector', () => {
 
       expect(snapshot.mcp).toMatchObject({ state: 'ok', doctor: { status: 'ready_user', auth_mode: 'oauth', registered_repo_count: 1, allowed_root_count: 1, unsafe_allowed_root_count: 1,
         chatgpt: { server_name_configured: true, public_endpoint_configured: true }, authorization_revision: 3 } });
+      expect(snapshot.bots).toEqual({ state: 'ok', bots: [
+        { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a', slack_bot_id: 'B012ABC', herdr_agent: 'hermes' },
+      ] });
       expect(snapshot.oauth).toEqual({ state: 'ok', unreadable_clients: 1, clients: [
-        { client_id: 'client-a', issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: ['planner'], expires_at: new Date((NOW_S + 30 * 86400) * 1000).toISOString() },
-        { client_id: 'client-b', issued_at: new Date((NOW_S - 2 * 86400) * 1000).toISOString(), profiles: [], expires_at: null },
+        { client_id: 'client-a', bot: { state: 'registered', bot_id: 'hermes' }, issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: ['planner'], expires_at: new Date((NOW_S + 30 * 86400) * 1000).toISOString() },
+        { client_id: 'client-b', bot: { state: 'unregistered' }, issued_at: new Date((NOW_S - 2 * 86400) * 1000).toISOString(), profiles: [], expires_at: null },
       ] });
       expect(snapshot.registry).toEqual({ state: 'ok', authorization_revision: 3, registry_revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u), repos: [{
         repo_id: repoHarnessRepoIdFor(f.repo), label: 'demo-repo', access_mode: 'read_write',
-        last_audit: { state: 'ok', entry: { at: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', actor: 'mcp:executor' } },
+        last_audit: { state: 'ok', entry: { at: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', bot: { state: 'registered', bot_id: 'hermes' } } },
       }] });
       expect(snapshot.herdr).toEqual({
         session: 'bots',
@@ -176,7 +181,7 @@ describe('Bot access collector', () => {
           tabs: [{ tab_id: 't1', label: 'private-tab-label' }, { tab_id: 't2', label: 'x' }],
           panes: [{ pane_id: 'w1:p1', cwd: join(f.root, 'cwd') }, { pane_id: 'w1:p2', cwd: join(f.root, 'cwd') }],
           agents: [
-            { pane_id: 'w1:p2', agent: 'codex', agent_status: 'working', cwd: join(f.root, 'cwd'), terminal_title: 'private-terminal-title', agent_session: { value: 'session-secret' } },
+            { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', cwd: join(f.root, 'cwd'), terminal_title: 'private-terminal-title', agent_session: { value: 'session-secret' } },
             { pane_id: 'w1:p1', agent: 'claude', agent_status: 'blocked', foreground_cwd: join(f.root, 'fg') },
           ],
         } } }) + '\n');
@@ -189,8 +194,8 @@ describe('Bot access collector', () => {
         : { ok: false, code: 'timeout' });
       const snapshot = await collectBotAccess({ env: f.env, cwd: f.repo, session: 'bots', now: () => NOW, run_command: run, read_notify: async () => { throw new Error('stderr-secret'); } });
       expect(snapshot.herdr.snapshot).toEqual({ state: 'ok', value: { workspaces: 1, tabs: 2, panes: 2, agents: [
-        { pane_id: 'w1:p1', agent: 'claude', agent_status: 'blocked' },
-        { pane_id: 'w1:p2', agent: 'codex', agent_status: 'working' },
+        { pane_id: 'w1:p1', agent: 'claude', name: null, agent_status: 'blocked', bot: { state: 'unregistered' } },
+        { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', bot: { state: 'registered', bot_id: 'hermes' } },
       ] } });
       expect(snapshot.mcp).toEqual({ state: 'unavailable', reason: 'mcp_doctor_timeout' });
       expect(snapshot.notify).toEqual({ state: 'unavailable', reason: 'notify_status_failed' });
@@ -238,11 +243,25 @@ describe('Bot access collector', () => {
       writeFileSync(log, '');
       mkdirSync(`${log}.archive`);
       writeFileSync(join(`${log}.archive`, '1700000000000-00000000-0000-4000-8000-000000000001.jsonl'), JSON.stringify({ timestamp: '2026-10-01T00:00:00.000Z', tool: 'old_tool', status: 'ok' }) + '\n');
-      writeFileSync(join(`${log}.archive`, '1700000000001-00000000-0000-4000-8000-000000000002.jsonl'), JSON.stringify({ timestamp: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', actor: '/abs/actor' }) + '\n');
+      writeFileSync(join(`${log}.archive`, '1700000000001-00000000-0000-4000-8000-000000000002.jsonl'), JSON.stringify({ timestamp: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', actor: '/abs/actor', botId: 'ghost' }) + '\n');
       const { run } = recorder(async () => ({ ok: false, code: 'failed' }));
       const snapshot = await collectBotAccess({ env: f.env, cwd: f.repo, session: 'bots', now: () => NOW, run_command: run, read_notify: async () => notifyStatus });
-      expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'ok', entry: { at: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', actor: null } });
+      // A Bot id that is no longer registered shows as unregistered.
+      expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'ok', entry: { at: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', bot: { state: 'unregistered' } } });
       expect(snapshot.herdr.status).toEqual({ state: 'unavailable', reason: 'herdr_status_failed' });
+    } finally { f.cleanup(); }
+  });
+
+  test('an invalid Bot registry makes every attribution unavailable, never unregistered', async () => {
+    const f = fixture();
+    try {
+      writeFileSync(join(botRegistryPath(f.env), 'broken.json'), '{"protocol":1');
+      const { run } = recorder(async () => ({ ok: false, code: 'failed' }));
+      const snapshot = await collectBotAccess({ env: f.env, cwd: f.repo, session: 'bots', now: () => NOW, run_command: run, read_notify: async () => notifyStatus });
+      expect(snapshot.bots).toEqual({ state: 'unavailable', reason: 'bot_registry_invalid' });
+      expect(snapshot.oauth.state === 'ok' && snapshot.oauth.clients.map(client => client.bot)).toEqual([{ state: 'unavailable' }, { state: 'unavailable' }]);
+      expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toMatchObject({ state: 'ok', entry: { bot: { state: 'unavailable' } } });
+      expectNoLeak(snapshot, f.root);
     } finally { f.cleanup(); }
   });
 
@@ -273,12 +292,21 @@ describe('Bot access collector', () => {
         'dead-refresh-secret': { accessToken: 'dead-access-secret', expiresAt: NOW_S - 1 },
       },
       clients: { 'client-c': { client_id: 'client-c', client_id_issued_at: NOW_S - 86400 }, 'client-d': { client_id: 'client-d', client_id_issued_at: NOW_S - 86400 } },
-    }, NOW_S);
+    }, NOW_S, { state: 'ok', bots: [] });
     expect(projection.clients).toEqual([
-      { client_id: 'client-c', issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: ['executor'], expires_at: new Date((NOW_S + 7 * 86400) * 1000).toISOString() },
-      { client_id: 'client-d', issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: [], expires_at: null },
+      { client_id: 'client-c', bot: { state: 'unregistered' }, issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: ['executor'], expires_at: new Date((NOW_S + 7 * 86400) * 1000).toISOString() },
+      { client_id: 'client-d', bot: { state: 'unregistered' }, issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: [], expires_at: null },
     ]);
     expect(JSON.stringify(projection)).not.toContain('secret');
+  });
+
+  test('an audit row whose registry lookup failed is unavailable; a row without a Bot field is unregistered', () => {
+    const directory = { state: 'ok' as const, bots: [{ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a', slack_bot_id: null, herdr_agent: null }] };
+    const row = { timestamp: '2026-10-27T00:00:00.000Z', tool: 'read_file', status: 'ok' };
+    expect(projectMcpAuditEntry({ ...row, botId: null, botLookup: 'unavailable' }, directory)?.bot).toEqual({ state: 'unavailable' });
+    expect(projectMcpAuditEntry({ ...row, botId: null }, directory)?.bot).toEqual({ state: 'unregistered' });
+    expect(projectMcpAuditEntry(row, directory)?.bot).toEqual({ state: 'unregistered' });
+    expect(projectMcpAuditEntry({ ...row, botId: 'hermes' }, directory)?.bot).toEqual({ state: 'registered', bot_id: 'hermes' });
   });
 
   test('local constants match the writers they read after', async () => {

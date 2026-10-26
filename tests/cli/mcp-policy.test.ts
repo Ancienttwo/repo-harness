@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { hashMcpInput, mcpAuditLogPath, tryWriteMcpAuditEntry, writeMcpAuditEntry } from '../../src/cli/mcp/audit';
+import { hashMcpInput, mcpAuditBotForClient, mcpAuditLogPath, runWithMcpAuditBot, tryWriteMcpAuditEntry, writeMcpAuditEntry } from '../../src/cli/mcp/audit';
+import { registerBot } from '../../src/effects/bot-registry';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
@@ -277,6 +278,32 @@ describe('mcp redaction and audit', () => {
       expect(line).toContain('Authorization: Bearer [REDACTED]');
       expect(line).not.toContain('secret body');
       expect(line).not.toContain('token-value');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('audit rows carry the Bot of the calling OAuth client, or null', () => {
+    const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-audit-bot-')));
+    try {
+      const env = { REPO_HARNESS_HOME: join(tmp, 'home') };
+      registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a' }, env);
+      expect(mcpAuditBotForClient('client-a', env)).toEqual({ state: 'resolved', botId: 'hermes' });
+      expect(mcpAuditBotForClient('client-z', env)).toEqual({ state: 'resolved', botId: null });
+      expect(mcpAuditBotForClient(undefined, env)).toEqual({ state: 'resolved', botId: null });
+      writeFileSync(join(tmp, 'home', 'bots', 'broken.json'), '{');
+      // An unreadable registry makes the Bot unknown; it never blocks the call.
+      const unknown = mcpAuditBotForClient('client-a', env);
+      expect(unknown).toEqual({ state: 'unavailable' });
+
+      const entry = (tool: string) => ({ timestamp: '2026-10-27T00:00:00.000Z', tool, status: 'ok' as const, inputHash: hashMcpInput({}) });
+      runWithMcpAuditBot({ state: 'resolved', botId: 'hermes' }, () => writeMcpAuditEntry(tmp, entry('from_bot')));
+      runWithMcpAuditBot(unknown, () => writeMcpAuditEntry(tmp, entry('registry_unreadable')));
+      writeMcpAuditEntry(tmp, entry('outside_call'));
+      const rows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map(line => JSON.parse(line));
+      expect(rows.map(row => [row.tool, row.botId, row.botLookup])).toEqual([
+        ['from_bot', 'hermes', undefined], ['registry_unreadable', null, 'unavailable'], ['outside_call', null, undefined],
+      ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

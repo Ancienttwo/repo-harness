@@ -8,6 +8,7 @@ import {
   registeredRepoHarnessRoots,
   repoHarnessAuthorizationRevision,
 } from '../../effects/repo-registry';
+import { mcpAuditBotForClient, runWithMcpAuditBot } from './audit';
 import { assertNoLegacyRepoScopeMcpConfig, loadMcpLocalConfig } from './auth';
 import { recordCodingProcessCompletion } from './coding-tools';
 import { createCodeGraphCliAdapter } from './codegraph-adapter';
@@ -242,10 +243,10 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
     tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
   }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-    return callMcpTool(ctx, name, args) as any;
+    return runWithMcpAuditBot(mcpAuditBotForClient(extra.authInfo?.clientId), () => callMcpTool(ctx, name, args)) as any;
   });
 
   server.onclose = () => {
