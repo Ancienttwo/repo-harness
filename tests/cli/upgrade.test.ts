@@ -1158,7 +1158,7 @@ describe('upgrade --registered', () => {
     const staleResult = byPath(result.repos, stale);
     expect(staleResult).toMatchObject({ status: 'ready', pending: true });
     expect((staleResult.init as { planned: number }).planned).toBeGreaterThan(0);
-    expect((staleResult.init as { operations: unknown[] }).operations).toContainEqual(expect.objectContaining({ path: '.ai/hooks/README.md' }));
+    expect((staleResult.init as { operations: readonly unknown[] }).operations).toContainEqual(expect.objectContaining({ path: '.ai/hooks/README.md' }));
     expect(staleResult.upgrade).toMatchObject({ apply: false, operatorKept: [] });
     const reasons = Object.fromEntries(result.repos.filter((repo) => repo.status === 'skipped').map((repo) => [repo.path, repo.reason]));
     expect(reasons).toEqual({
