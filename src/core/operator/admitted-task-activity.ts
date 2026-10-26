@@ -1,6 +1,4 @@
-import type { TaskMessageClaim } from '../messages/task-message-claim';
 import type { TaskMessageEventV2, TaskMessageDeliveryReceiptV2 } from '../fleet/admitted-task-message';
-import type { TaskReplySession, TaskReplyChainObservation } from '../fleet/admitted-task-reply';
 import { isAdmittedSessionSelector, SESSION_SELECTOR_KEYS, type AdmittedSessionSelector } from '../sessions/session-selector';
 import { parseTaskDiffRequest } from './task-diff';
 import { isTaskActivityRequest, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN, type OperatorTaskActivity } from './task-activity';
@@ -14,7 +12,6 @@ export interface AdmittedTaskActivityRequest {
 export interface AdmittedActivityEntry {
   readonly event: TaskMessageEventV2;
   readonly receipts: readonly TaskMessageDeliveryReceiptV2[];
-  readonly replies: readonly { readonly claim: TaskMessageClaim; readonly reply_message_id: string | null; readonly observation: TaskReplyChainObservation; readonly session: TaskReplySession | null }[];
 }
 export interface AdmittedTaskActivity extends AdmittedTaskActivityRequest {
   readonly protocol: 2;
@@ -34,7 +31,6 @@ const timestamp = (v: unknown): boolean => text(v, 64) && Number.isFinite(Date.p
 const nullable = (v: unknown, valid: (v: unknown) => boolean): boolean => v === null || valid(v);
 const one = (v: unknown, choices: readonly unknown[]): boolean => choices.includes(v);
 const claim = (v: unknown): boolean => exact(v, ['reference', 'revision']) && text(v.reference) && !/[\x00-\x1f\x7f]/u.test(v.reference as string) && sha(v.revision);
-const sameClaim = (a: TaskMessageClaim, b: TaskMessageClaim): boolean => a.reference === b.reference && a.revision === b.revision;
 export function isAdmittedTaskActivityRequest(value: unknown): value is AdmittedTaskActivityRequest {
   return exact(value, ['selector', 'limit', 'after', 'message_id']) && isAdmittedSessionSelector(value.selector)
     && isTaskActivityRequest({ repository_id: value.selector.repository_id, task_id: value.selector.task, limit: value.limit, after: value.after, message_id: value.message_id });
@@ -64,21 +60,6 @@ function receiptValid(v: unknown, event: TaskMessageEventV2): boolean {
     && one(v.delivery_state, ['pending','delivered','acknowledged','superseded']) && one(v.delivery_channel, ['hook_session','manual','agent_runtime_effect','controlled_request'])
     && nullable(v.delivery_ref, text) && nullable(v.delivered_at, timestamp) && nullable(v.acknowledged_at, timestamp);
 }
-function replyValid(v: unknown): boolean {
-  if (!exact(v, ['claim','reply_message_id','observation','session']) || !claim(v.claim) || !nullable(v.reply_message_id, uuid)) return false;
-  const o = v.observation;
-  if (!o || typeof o !== 'object') return false;
-  const state = (o as { state?: unknown }).state;
-  if (state === 'inconsistent') {
-    if (!exact(o, ['state','reason']) || !one(o.reason, ['commit_missing_records','source_mismatch','event_mismatch','commit_mismatch']) || v.session !== null) return false;
-  } else if (!exact(o, ['state']) || !one(state, ['absent','intent_only','event_uncommitted','orphan_event','complete'])) return false;
-  if (state === 'absent' && v.reply_message_id !== null) return false;
-  if (one(state, ['intent_only','event_uncommitted','complete']) && !uuid(v.reply_message_id)) return false;
-  if (v.session === null) return true;
-  const s = v.session;
-  return one(state, ['intent_only','event_uncommitted','complete']) && exact(s, ['execution_actor','claim','grant_sha256','session_binding_sha256'])
-    && text(s.execution_actor) && claim(s.claim) && sameClaim(s.claim as TaskMessageClaim, v.claim as TaskMessageClaim) && sha(s.grant_sha256) && sha(s.session_binding_sha256);
-}
 /** Browser-safe transport validation. The inbox reader validates canonical record bytes. */
 export function decodeAdmittedTaskActivity(value: unknown, request: AdmittedTaskActivityRequest): AdmittedTaskActivity {
   const invalid = (): never => { throw new Error('Invalid admitted activity response'); };
@@ -93,8 +74,8 @@ export function decodeAdmittedTaskActivity(value: unknown, request: AdmittedTask
     || c.complete !== (c.reason === null) || !Number.isSafeInteger(c.scanned) || c.scanned < 0 || c.scanned > TASK_ACTIVITY_MAX_SCAN || !Number.isSafeInteger(c.bytes) || c.bytes < 0 || c.bytes > TASK_ACTIVITY_MAX_BYTES) return invalid();
   let previous = r.after;
   for (const entry of r.entries) {
-    if (!exact(entry, ['event','receipts','replies']) || !eventValid(entry.event, r.selector) || !Array.isArray(entry.receipts) || !Array.isArray(entry.replies)
-      || entry.receipts.length > TASK_ACTIVITY_MAX_SCAN || entry.replies.length > TASK_ACTIVITY_MAX_SCAN || !entry.replies.every(replyValid)) return invalid();
+    if (!exact(entry, ['event','receipts']) || !eventValid(entry.event, r.selector) || !Array.isArray(entry.receipts)
+      || entry.receipts.length > TASK_ACTIVITY_MAX_SCAN) return invalid();
     const event = entry.event;
     if (!entry.receipts.every(v => receiptValid(v, event))) return invalid();
     if ((previous !== null && entry.event.message_id <= previous) || (r.message_id !== null && entry.event.message_id !== r.message_id)) return invalid();

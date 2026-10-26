@@ -31,9 +31,8 @@ export function readOperatorTaskActivity(input: OperatorTaskActivityRequest & { 
       const receipts = fact.receipts.map(r => ({ message_id:r.message_id, recipient_kind:r.recipient_kind, recipient_id:r.recipient_id, recipient_task_revision:r.recipient_task_revision,
         recipient_claim_id:r.recipient_claim_id, recipient_generation:r.recipient_generation, delivery_state:r.delivery_state, delivery_channel:r.delivery_channel, delivery_ref:r.delivery_ref, delivered_at:r.delivered_at, acknowledged_at:r.acknowledged_at }));
       const replies = fact.replies.map(r => ({ claim_id:r.claim_id, generation:r.generation, reply_message_id:r.reply_message_id, state:r.observation.state,
-        reason:r.observation.state === 'inconsistent' ? r.observation.reason : null,
-        actor:r.actor ? { engineer_id:r.actor.engineer_id,binding_id:r.actor.binding_id,binding_generation:r.actor.binding_generation,engineer_contract_revision:r.actor.engineer_contract_revision,claim_id:r.actor.claim_id,lease_generation:r.actor.lease_generation,receipt_sha256:r.actor.receipt_sha256 } : null }));
-      const entry: ActivityEntry = { event, receipts, replies, provenance:e.in_reply_to === null ? 'not_reply' : replies.some(r => r.actor?.receipt_sha256 === e.sender_id && r.reply_message_id === e.message_id) ? 'recorded_claim_actor' : 'unverified' };
+        reason:r.observation.state === 'inconsistent' ? r.observation.reason : null }));
+      const entry: ActivityEntry = { event, receipts, replies, provenance:e.in_reply_to === null ? 'not_reply' : 'unverified' };
       outputBytes += Buffer.byteLength(JSON.stringify(entry));
       if (outputBytes > TASK_ACTIVITY_MAX_OUTPUT_BYTES) { outputExhausted = true; break; }
       entries.push(entry);

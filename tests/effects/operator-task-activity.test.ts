@@ -41,6 +41,7 @@ function fixture(replyBody = '  Exact old reply.\n') {
   put(join(inbox,'delivery',id(1),`${key}.json`),canonicalTaskMessageDeliveryReceiptBytes(ack)+'\n');
   const replyDir=join(inbox,'reply-effects',id(1),key);
   put(join(replyDir,'intent.json'),canonicalTaskReplyIntentBytes(intent)+'\n'); put(join(replyDir,'commit.json'),canonicalTaskReplyCommitBytes(commit)+'\n');
+  // Residue of the retired claim-actor store. Activity must not read it.
   const actorPath=join(root,'.git/repo-harness/engineers/v1/claim-actors',task,`${id(3)}.json`);
   put(actorPath,canonicalClaimActorReceiptBytes(actor));
   const input={repository_id:repo,task_id:task,limit:50,after:null,message_id:null,env:{REPO_HARNESS_HOME:home}};
@@ -59,7 +60,8 @@ function withFixedActivityClock<T>(read: () => T): T {
 test('historical exact reply needs no active sprint, Lease or Binding and never changes stored records', () => {
   const f=fixture(), before=tree(f.root);
   const r=withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1}));
-  expect(r.entries[0]).toMatchObject({provenance:'recorded_claim_actor',event:{body:'  Exact old reply.\n',task_revision:f.parent.task_revision},replies:[{state:'complete',actor:{binding_generation:1,claim_id:id(3)}}]});
+  expect(r.entries[0]).toMatchObject({provenance:'unverified',event:{body:'  Exact old reply.\n',task_revision:f.parent.task_revision},replies:[{state:'complete',claim_id:id(3),generation:1}]});
+  expect(r.entries[0]?.replies[0]).not.toHaveProperty('actor');
   expect(r.coverage).toMatchObject({scope:'message',complete:true});
   expect(JSON.stringify(r)).not.toContain(f.root); expect(JSON.stringify(r)).not.toContain('private-session'); expect(JSON.stringify(r)).not.toContain('work_envelope');
   put(join(f.root,'plans/sprints/current.md'),'different current task revision');
@@ -67,13 +69,13 @@ test('historical exact reply needs no active sprint, Lease or Binding and never 
   expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1})).entries).toEqual(r.entries);
   expect(tree(f.root)).toBe(changed); expect(before).not.toBe(changed);
 });
-test('old recipient channel and interrupted chain stay explicit; absent actor cannot authenticate a raw reply', () => {
+test('old recipient channel and interrupted chain stay explicit; a retired actor record cannot authenticate a raw reply', () => {
   const f=fixture(); unlinkSync(join(f.replyDir,'commit.json'));
-  let r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
+  const r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(r.entries[0]?.receipts[0]).toMatchObject({delivery_channel:'hook_session',delivery_state:'acknowledged'});
-  expect(r.entries[1]).toMatchObject({provenance:'recorded_claim_actor',replies:[{state:'event_uncommitted'}]});
-  unlinkSync(f.actorPath); r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
-  expect(r.entries[1]).toMatchObject({provenance:'unverified',replies:[{actor:null}]});
+  expect(r.entries[1]).toMatchObject({provenance:'unverified',replies:[{state:'event_uncommitted'}]});
+  unlinkSync(f.actorPath);
+  expect(withFixedActivityClock(() => readOperatorTaskActivity(f.input)).entries).toEqual(r.entries);
   unlinkSync(join(f.replyDir,'intent.json'));
   expect(withFixedActivityClock(() => readOperatorTaskActivity(f.input)).entries[1]?.provenance).toBe('unverified');
 });
@@ -92,9 +94,9 @@ test('paging is exclusive and hard scan exhaustion remains partial while exact h
   const scan=withFixedActivityClock(() => readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes:TASK_ACTIVITY_MAX_BYTES,deadline_ms:60000}}));
   expect(scan.coverage).toMatchObject({complete:false,reason:'scan',scanned:1000});
   const r=withFixedActivityClock(() => readOperatorTaskActivity(f.input)); expect(r.coverage.complete).toBe(false); expect(r.coverage.reason).toBe('scan'); expect(r.next_cursor).toBeNull();
-  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:1,message_id:id(2)})).entries[0]?.provenance).toBe('recorded_claim_actor');
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,limit:1,message_id:id(2)})).entries[0]?.provenance).toBe('unverified');
 });
-test('byte ceilings include nested reply/actor reads and never report an empty complete inbox', () => {
+test('byte ceilings include nested reply reads and never report an empty complete inbox', () => {
   const f=fixture();
   const read=(max_bytes:number)=>withFixedActivityClock(() => readHistoricalTaskActivity({repo_root:f.root,task_id:f.input.task_id,limit:50,after:null,message_id:null,budget:{max_scan:1000,max_bytes,deadline_ms:250}}));
   expect(read(100).coverage).toMatchObject({complete:false,reason:'bytes'});
@@ -102,7 +104,7 @@ test('byte ceilings include nested reply/actor reads and never report an empty c
   for(let n=100;n<400;n++) f.event(buildTaskMessageEvent({...f.parent,message_id:id(n),body:'x'.repeat(8000)}));
   const r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(r.coverage.reason).toBe('bytes'); expect(JSON.stringify(r).length).toBeLessThan(TASK_ACTIVITY_MAX_OUTPUT_BYTES);
-  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1})).entries[0]?.provenance).toBe('recorded_claim_actor');
+  expect(withFixedActivityClock(() => readOperatorTaskActivity({...f.input,message_id:id(2),limit:1})).entries[0]?.provenance).toBe('unverified');
 });
 test('unsafe and mismatched event/receipt paths are unavailable, with no path disclosure', () => {
   const f=fixture();
@@ -114,12 +116,12 @@ test('unsafe and mismatched event/receipt paths are unavailable, with no path di
 test('strict decoder binds scope and rejects injected fields, duplicate entries and false provenance', () => {
   const f=fixture(), r=withFixedActivityClock(() => readOperatorTaskActivity(f.input));
   expect(decodeOperatorTaskActivity(r,f.input)).toEqual(r);
-  for(const bad of [{...r,repository_id:'other'},{...r,root:f.root},{...r,entries:[r.entries[0],r.entries[0]]},{...r,entries:[{...r.entries[0],secret:'x'}]},{...r,entries:[{...r.entries[1],provenance:'unverified'}]}]) expect(()=>decodeOperatorTaskActivity(bad,f.input)).toThrow();
+  for(const bad of [{...r,repository_id:'other'},{...r,root:f.root},{...r,entries:[r.entries[0],r.entries[0]]},{...r,entries:[{...r.entries[0],secret:'x'}]},{...r,entries:[{...r.entries[0],provenance:'unverified'}]},{...r,entries:[r.entries[0],{...r.entries[1],provenance:'not_reply'}]},{...r,entries:[r.entries[0],{...r.entries[1],provenance:'recorded_claim_actor'}]}]) expect(()=>decodeOperatorTaskActivity(bad,f.input)).toThrow();
   const reply = r.entries[1]!;
   for (const changed of [
     {...reply, replies:reply.replies.map(chain=>({...chain,state:'absent'}))},
     {...reply, replies:reply.replies.map(chain=>({...chain,reply_message_id:null}))},
-    {...reply, event:{...reply.event,sender_kind:'user'}},
+    {...reply, replies:reply.replies.map(chain=>({...chain,actor:null}))},
   ]) expect(()=>decodeOperatorTaskActivity({...r,entries:[r.entries[0],changed]},f.input)).toThrow();
   for(const params of ['limit=0','limit=101','limit=1&limit=2','message_id=bad','message_id='+id(1)+'&after='+id(2),'root=/tmp','limit=1.0']) expect(()=>parseTaskActivityRequest(f.input.repository_id,f.input.task_id,new URLSearchParams(params))).toThrow();
 });
@@ -128,7 +130,7 @@ test('production HTTP worker reads historical records in a read-only repository'
   try {
     const path=`/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity?message_id=${id(2)}`;
     const response=await fetch(server.url+path); expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({entries:[{provenance:'recorded_claim_actor'}]});
+    expect(await response.json()).toMatchObject({entries:[{provenance:'unverified'}]});
     const missing=await fetch(server.url+path.replace(id(2),id(99))); expect(missing.status).toBe(404); expect(await missing.json()).toEqual({code:'history_unavailable'});
     expect(tree(f.root)).toBe(before);
   } finally { await server.close(); }
@@ -169,7 +171,7 @@ test('activity preserves an empty canonical reply through the production HTTP re
     const path = `/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity?message_id=${id(2)}`;
     const response = await fetch(server.url + path);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ entries: [{ provenance: 'recorded_claim_actor', event: { body: '', body_sha256: f.intent.reply.body_sha256 } }] });
+    expect(await response.json()).toMatchObject({ entries: [{ provenance: 'unverified', event: { body: '', body_sha256: f.intent.reply.body_sha256 } }] });
     expect(tree(f.root)).toBe(before);
   } finally { await server.close(); }
 });

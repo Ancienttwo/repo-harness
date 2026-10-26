@@ -53,9 +53,6 @@ export function AdmittedTaskActivity({ selector, t, read = readActivity }: { sel
         {entry.event.in_reply_to && <button type="button" disabled={view.loading || !!view.error} onClick={() => void load(null,entry.event.in_reply_to)}>{t('evidence.parent')}</button>}
         <h4>{t('evidence.receipts')}</h4>{entry.receipts.length === 0 && <p>{t('evidence.noReceipts')}</p>}
         <ul>{entry.receipts.map((receipt,index) => <li key={index}><code>{receipt.recipient_kind} · {receipt.recipient_id} · {receipt.delivery_state}</code>{original(receipt)}</li>)}</ul>
-        <h4>{t('evidence.replies')}</h4>{entry.replies.length === 0 && <p>{t('evidence.noReplies')}</p>}
-        <ul>{entry.replies.map((reply,index) => <li key={index}><code>{reply.claim.reference} · {reply.claim.revision} · {reply.observation.state}</code>
-          {reply.reply_message_id && reply.reply_message_id !== entry.event.message_id && <button type="button" disabled={view.loading || !!view.error} onClick={() => void load(null,reply.reply_message_id)}>{t('evidence.openReply')}</button>}{original(reply)}</li>)}</ul>
         {original(entry.event)}
       </article>)}
       {value.next_cursor && <button type="button" disabled={view.loading || !!view.error} onClick={() => void load(value.next_cursor)}>{t('evidence.nextPage')}</button>}

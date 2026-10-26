@@ -54,18 +54,12 @@ import {
   validateTaskReplyCommit,
   inspectTaskReplyChain,
 } from '../../core/fleet/task-reply';
-import {
-  canonicalClaimActorReceiptBytes,
-  validateClaimActorReceipt,
-  type ClaimActorReceiptV1,
-} from '../../core/engineers/principal-claim';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readActiveReviewAdmission } from '../admission/admission-store';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
-import * as admittedReply from '../../core/fleet/admitted-task-reply';
 import * as historicalMessage from '../../core/fleet/task-message';
 import { taskInboxRecipientStorageKey as historicalRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { withTaskLock } from '../locking/task-lock';
@@ -953,26 +947,6 @@ export interface TaskActivityCoverage {
   readonly bytes: number;
 }
 
-/** Read the independent historical receipt only. This never creates a store or
- * establishes current execution authority. Actor records have no newline frame. */
-function readHistoricalActorReceipt(common: string, taskId: string, claimId: string, charge: (bytes: number) => void): ClaimActorReceiptV1 | null {
-  assertTaskId(taskId);
-  assertMessageId(claimId);
-  const directory = join(common, 'repo-harness/engineers/v1/claim-actors', taskId);
-  if (!inspectSafeDirectoryChain(common, directory, false, 'historical actor receipt directory')) return null;
-  const path = join(directory, `${claimId}.json`);
-  let stat;
-  try { stat = lstatSync(path); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'historical actor receipt is unsafe or exceeds its byte bound');
-  charge(stat.size);
-  const raw = readFileSync(path, 'utf8');
-  const receipt = validateClaimActorReceipt(JSON.parse(raw));
-  if (canonicalClaimActorReceiptBytes(receipt) !== raw || receipt.task_id !== taskId || receipt.claim_id !== claimId) {
-    fail('task_message_unreadable', 'historical actor receipt bytes or path identity mismatch');
-  }
-  return receipt;
-}
-
 /** Historical observations never acquire a Lease/Binding lock or perform delivery. */
 export function readHistoricalTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
@@ -1025,7 +999,7 @@ export function readHistoricalTaskActivity(input: {
     });
     return receipts.sort((a,b) => historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(a)).localeCompare(historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(b))));
   };
-  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain>; actor: ClaimActorReceiptV1 | null };
+  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain> };
   const repliesAt = (parent: historicalMessage.TaskMessageEventV1, receipts: historicalMessage.TaskMessageDeliveryReceiptV1[]): Reply[] => {
     const replies: Reply[] = [];
     if (!isOriginalSteer(parent)) return replies;
@@ -1033,14 +1007,7 @@ export function readHistoricalTaskActivity(input: {
       const recipient = historicalMessage.recipientFromTaskMessageReceipt(receipt);
       if (recipient.kind !== 'claim') continue;
       const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
-      let actor: ClaimActorReceiptV1 | null = null;
-      if (chain.intent && chain.observation.state !== 'inconsistent') {
-        const recorded = readHistoricalActorReceipt(common, input.task_id, recipient.claim_id, charge);
-        if (recorded && recorded.receipt_sha256 === chain.intent.claim_actor.receipt_sha256
-          && recorded.task_id === input.task_id && recorded.task_revision === parent.task_revision
-          && recorded.claim_id === recipient.claim_id && recorded.lease_generation === recipient.generation) actor = recorded;
-      }
-      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation, actor });
+      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation });
     }
     return replies;
   };
@@ -1094,22 +1061,6 @@ export function readHistoricalTaskMessageDelivery(input: { repo_root: string; ta
   return { event, receipt, globally_satisfied: globallySatisfied };
 }
 
-function readAdmittedReplyChain(input: { repo_root: string; task_id: string; recipient: TaskMessageRecipient }, parent: TaskMessageEventV2, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
-  assertTaskId(input.task_id); assertMessageId(parent.message_id);
-  const taskDirectory = join(commonDirectory, TASK_INBOX_RELATIVE_PATH, input.task_id, 'admitted');
-  const recipientKey = taskInboxRecipientStorageKey(input.recipient);
-  const directory = join(taskDirectory, 'reply-effects', parent.message_id, recipientKey);
-  const intent = optionalReplyRecord(commonDirectory, join(directory, 'intent.json'), admittedReply.validateTaskReplyIntent, admittedReply.canonicalTaskReplyIntentBytes, charge);
-  const commit = optionalReplyRecord(commonDirectory, join(directory, 'commit.json'), admittedReply.validateTaskReplyCommit, admittedReply.canonicalTaskReplyCommitBytes, charge);
-  const effectId = intent?.effect_id ?? commit?.effect_id;
-  const event = effectId ? optionalReplyRecord(commonDirectory, join(taskDirectory, 'events', `${effectId}.json`), validateTaskMessageEvent, canonicalTaskMessageEventBytes, charge) : null;
-  const acknowledgement = optionalReplyRecord(commonDirectory, join(taskDirectory, 'delivery', parent.message_id, `${recipientKey}.json`), validateTaskMessageDeliveryReceipt, canonicalTaskMessageDeliveryReceiptBytes, charge);
-  if (intent && (intent.parent.message_id !== parent.message_id || input.recipient.kind !== 'claim'
-    || !sameTaskMessageClaim(intent.session.claim, input.recipient.claim))) replyInconsistent('reply record is in a different parent/recipient slot');
-  return { intent, event, commit, acknowledgement, observation: admittedReply.inspectTaskReplyChain({ parent, acknowledgement, intent, event, commit }) };
-}
-
-
 /** Read-only admitted-wire activity; recorded provenance is not current authorization. */
 export function readAdmittedTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
@@ -1162,33 +1113,15 @@ export function readAdmittedTaskActivity(input: {
     });
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(b))));
   };
-  type Reply = { claim: TaskMessageClaim; reply_message_id: string | null; observation: ReturnType<typeof admittedReply.inspectTaskReplyChain>; session: admittedReply.TaskReplySession | null };
-  const repliesAt = (parent: TaskMessageEventV2, receipts: TaskMessageDeliveryReceiptV2[]): Reply[] => {
-    const replies: Reply[] = [];
-    if (!(parent.audience === 'owner' && parent.in_reply_to === null && parent.sender_trust === 'local_operator'
-      && (parent.sender_kind === 'user' || parent.sender_kind === 'operator'))) return replies;
-    for (const receipt of receipts) {
-      const recipient = recipientFromTaskMessageReceipt(receipt);
-      if (recipient.kind !== 'claim') continue;
-      const chain = readAdmittedReplyChain({ ...input, recipient }, parent, charge, common);
-      replies.push({ claim: recipient.claim, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null,
-        observation: chain.observation, session: chain.observation.state === 'inconsistent' ? null : chain.intent?.session ?? null });
-    }
-    return replies;
-  };
   const events: TaskMessageEventV2[] = [];
-  const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[]; replies: Reply[] }[] = [];
+  const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
   let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
   try {
     if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
     else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); events.push(event); });
     events.sort((a,b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0);
     for (const event of events.filter(e => input.after === null || e.message_id > input.after).slice(0,input.limit)) {
-      const receipts = receiptsAt(event);
-      const parent = event.in_reply_to === null ? event : eventAt(event.in_reply_to);
-      const parentReceipts = parent === event ? receipts : parent ? receiptsAt(parent) : [];
-      const replies = parent ? repliesAt(parent, parentReceipts).filter(r => parent === event || r.reply_message_id === event.message_id) : [];
-      entries.push({ event, receipts, replies });
+      entries.push({ event, receipts: receiptsAt(event) });
     }
   } catch (error) { if (!exhausted) throw error; }
   const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
