@@ -185,6 +185,56 @@ describe('mcp oauth provider', () => {
     }
   });
 
+  test('orchestrator tokens require the orchestrator scope and never cross to or from coding', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-orchestrator-'));
+    try {
+      const now = 30_000;
+      const authorizationRevision = 3;
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
+      const orchestrator = createMcpOAuthProvider(store, { nowSeconds: () => now, profile: 'orchestrator', authorizationRevision: () => authorizationRevision });
+      const coding = createMcpOAuthProvider(store, { nowSeconds: () => now, profile: 'coding', authorizationRevision: () => authorizationRevision });
+      const client = store.registerClient({
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      });
+      const redirectUri = client.redirect_uris[0]!;
+      const tokensFor = async (provider: typeof orchestrator, scopes: string[]) => {
+        const redirect = redirectRecorder();
+        await provider.authorize(client, { scopes, redirectUri, codeChallenge: 'challenge' }, redirect.response as never);
+        const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+        return provider.exchangeAuthorizationCode(client, code, 'verifier', redirectUri);
+      };
+
+      for (const scopes of [['repo-harness', 'offline_access'], ['repo-harness', 'repo-harness.coding', 'offline_access']]) {
+        await expect(tokensFor(orchestrator, scopes)).rejects.toBeInstanceOf(InvalidScopeError);
+      }
+      await expect(tokensFor(coding, ['repo-harness', 'repo-harness.orchestrator', 'offline_access'])).rejects.toBeInstanceOf(InvalidScopeError);
+
+      const orchestratorTokens = await tokensFor(orchestrator, ['repo-harness', 'repo-harness.orchestrator', 'repo-harness.coding', 'offline_access']);
+      expect(orchestratorTokens.scope).toBe('repo-harness repo-harness.orchestrator offline_access');
+      expect(await orchestrator.verifyAccessToken(orchestratorTokens.access_token)).toMatchObject({ profile: 'orchestrator', authorizationRevision: 3 });
+      const codingTokens = await tokensFor(coding, ['repo-harness', 'repo-harness.coding', 'offline_access']);
+
+      await expect(coding.verifyAccessToken(orchestratorTokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(orchestrator.verifyAccessToken(codingTokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(coding.exchangeRefreshToken(client, orchestratorTokens.refresh_token ?? '')).rejects.toBeInstanceOf(InvalidGrantError);
+
+      store.setAccessToken('orchestrator-without-scope', {
+        token: 'orchestrator-without-scope',
+        clientId: client.client_id,
+        scopes: ['repo-harness'],
+        profile: 'orchestrator',
+        authorizationRevision: 3,
+        authorizationId: 'missing-scope',
+      });
+      await expect(orchestrator.verifyAccessToken('orchestrator-without-scope')).rejects.toBeInstanceOf(InvalidTokenError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('coding code exchange keeps consent revision when authority changes after validation', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-revision-race-'));
     try {

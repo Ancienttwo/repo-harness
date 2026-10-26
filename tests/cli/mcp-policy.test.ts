@@ -152,7 +152,7 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('executor and orchestrator profiles keep reader and planner writes out of their regression surface', async () => {
+  test('executor profile keeps reader and planner writes out of its regression surface', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-profile-regression-'));
     try {
       mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
@@ -184,23 +184,40 @@ describe('mcp policy and paths', () => {
         body: '# Executor Write\n',
       });
       expect(executorWrite.error.code).toBe('POLICY_DENIED');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 
-      const orchestrator = getMcpPolicy('orchestrator');
-      const orchestratorTools = buildMcpToolDefinitions(orchestrator).map((tool) => tool.name);
-      expect(orchestrator.capabilities).toMatchObject({
+  test('orchestrator profile exposes exactly the Herdr dispatch tools and nothing else', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
+    try {
+      mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
+      mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
+      writeFileSync(join(tmp, 'plans/prds/existing.prd.md'), '# Existing\n');
+      writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
+
+      const orchestrator = getMcpPolicy('orchestrator', { enableReader: true });
+      expect(orchestrator.capabilities).toEqual({
         workspaceReader: false,
+        workflowPlanner: false,
         workflowExecutor: false,
+        workspaceCoder: false,
+        taskDispatch: true,
       });
-      expect(orchestratorTools).not.toContain('run_workflow_check');
-      expect(orchestratorTools).not.toContain('reader_status');
-      expect(orchestratorTools).not.toContain('run_agent_goal');
-      const orchestratorWrite = await jsonTool(tmp, orchestrator, 'write_prd', {
-        title: 'Orchestrator Write',
-        slug: 'orchestrator-write',
-        body: '# Orchestrator Write\n',
-      });
-      expect(orchestratorWrite.error.code).toBe('POLICY_DENIED');
+      expect(orchestrator.execution).toEqual({ fixedWorkflowCheck: false, codingShell: false });
+      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent'];
+      expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
+      expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
+      for (const profile of ['planner', 'executor', 'coding'] as const) {
+        const names = buildMcpToolDefinitions(getMcpPolicy(profile)).map((tool) => tool.name);
+        expect(names.filter((name) => dispatchTools.includes(name))).toEqual([]);
+      }
 
+      for (const name of ['write_prd', 'read_workflow_file', 'harness_status', 'exec_command', 'open_workspace', 'read_text', 'publication_readiness']) {
+        const denied = await jsonTool(tmp, orchestrator, name, { path: 'plans/prds/existing.prd.md' });
+        expect(denied.error.code).toBe('TOOL_NOT_AVAILABLE');
+      }
       expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {
