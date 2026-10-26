@@ -4,7 +4,7 @@
 > **Slug**: operator-console-uiux
 > **Created**: 2026-10-26 23:10
 > **Updated**: 2026-10-26
-> **Source of truth**: [Claude 文档](https://claude.ai/artifact/6nK8dssBnBGMEB74CnvZHa)，rev 209。本文件是这一版的快照；两者不一致时以文档为准，文档改动后重新导出本文件。
+> **Source of truth**: [Claude 文档](https://claude.ai/artifact/6nK8dssBnBGMEB74CnvZHa)，rev 212。本文件是这一版的快照；两者不一致时以文档为准，文档改动后重新导出本文件。
 > **Design**: [设计画布](https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw)，Version 38；画布和文档都是私有链接，要 owner 分享后才能打开。
 > **Baseline**: `origin/main@e551f3e672085e6d50e91afdd06614be0530b7da`（package `0.24.3`）；Worktree 根目录的说法已对齐 `9b5a15f`（#983、#985）
 > **Tier**: standard
@@ -215,7 +215,7 @@
 | G19 | P1 | 等你处理的种类 | attention 只有 ready\_to\_merge 一种；planned 列已声明但没有代码设置 | 在 dev-activity 投影里增加 changes\_requested、merge\_conflict、checks\_failed 三类，按等待时长排序 | 首页、看板 |
 | G20 | P1 | 逐用例测试结果 | CI 只有日志和 artifact；本机跑测试不留记录 | ci-run-tests.sh 打开 bun 的 JUnit reporter，CI 上传 artifact；collector 读最近一次 | 测试 |
 | G21 | P1 | 测试到能力的映射 | 只有 26 个 model 节点写了 verification 命令，其中 1 条引用的文件已不存在 | 从 model 与 import 反向图生成投影，带 drift 检查，不另立权威 | 测试、架构 |
-| G22 | P1 | 架构图层数据 | 控制台只有模块列表和一跳依赖图；没有变更、违规、PR 影响面、测试、决策图层 | 见「架构」一节；上游 archctx #407、#408、#409 | 架构 |
+| G22 | P1 | 架构图层数据 | 控制台只有模块列表和一跳依赖图；没有变更、违规、PR 影响面、测试、决策图层 | 见「架构」一节；上游 arch-context#407、#408、#409 | 架构 |
 | G23 | P1 | Worktree 清单与磁盘占用 | Dev Activity 已列出登记仓库的 linked worktree，PR 合并后标 cleanup\_pending；但没有大小、来源和占用进程，残留目录不在列表里 | 后台 collector 加合并判定、来源归类、进程检查和低频 du；每个 worktree 一个稳定 id；浏览器不拿绝对路径；看板的「worktree 还没清理」改用它，退役 cleanup\_pending | Worktree、首页 |
 | G24 | P1 | 清理写入与统一 CLI | contract-worktree sweep 只管 repo-harness 自己开的；MCP 另有 cleanup；没有覆盖所有来源的入口 | 新增 repo-harness worktrees list 与 clean，clean 对绿色项直接删，非绿色项要带授权并在终端确认；HTTP 只做薄封装；执行前重核、拓扑锁、审计 | Worktree |
 | G25 | P1 | Worktree 清理会话 | 没有 | 复用文档会话的宿主与事件；agent 只读调查非绿色项、给建议和归档计划；你逐项授权后，服务端先归档进 docs/archive/ 再删 | Worktree |
@@ -403,7 +403,7 @@ Bots 页读这三条路的状态；三条路里只有 CLI → herdr 能派活。
 | 决策 | 哪些模块受哪条决策约束 | ADR frontmatter 的 `appliesTo` | [#407](https://github.com/Ancienttwo/arch-context/issues/407)；导出之前不显示，控制台不另写解析器 |
 
 - **底图**：节点和连线来自 `export native`；节点大小按节点名下文件的行数（git 文件列表加 `resolve --paths-from` 归属）；能力之间的连线粗细按 `deps --json` 的 import 次数，component 之间不分粗细，archctx 也还不出调用次数；布局由控制台算（G11）。默认打开模块底图和「今日变更」。
-- **分层底图等 #408**：0.9.3 按 ADR-0049（[#402](https://github.com/Ancienttwo/arch-context/issues/402)）只按名字排序，core 会画在 effects 上面，层方向也查不了。
+- **分层底图等 arch-context#408**：0.9.3 按 ADR-0049（[#402](https://github.com/Ancienttwo/arch-context/issues/402)）只按名字排序，core 会画在 effects 上面，层方向也查不了。
 - **页面只读**：点亮的节点点开是抽屉，列出改动、PR、违规项和修复命令。模型改动由 agent 在用户自己的 harness 里走 ChangeSet 流程，控制台只显示缺口（待决问题 4）。
 - **刷新**：collector 只调无状态的命令：`export native`、`resolve`、`deps`、`debt`、`flows check`、`docs anchors`，main 前进后跑一次，GET 只读缓存。`refactor scan` 和 `docs drift` 会起 archctxd 守护进程、写本地状态，collector 不调。`deps` 和 `flows check` 读 CodeGraph 索引；索引缺失或过期时图层显示「未知」，collector 不建索引。
 - **模型补全（G27）**：给节点填 `layer`；补 GitHub、npm、各 agent CLI 等外部系统节点；按 `current-architecture.md` 的存储与进程拓扑一节和代码补拓扑节点；用 `archctx manifest plan --id <id> --decisions docs/adr` 生成 ChangeSet，再用 `archctx apply` 应用，并把 `docs/architecture/decisions/` 里那篇决策改成 ADR 格式。
@@ -494,7 +494,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 
 1. **第〇期 · 定约束**：写并确认 `docs/design/DESIGN-<slug>.md`（UX Feature Guard 加 Given/When/Then 场景）；按「写入与权限边界」的约束表一次改完。只改文档。
 2. **第一期 · 只读首版**：先做首页待办、文档阅读、环境状态（Agents、Skills、Hooks、CLI、Bots、系统）和 Worktree 只读清单；再把看板与任务抽屉（执行状态和跟进命令，只读）、仓库、工具、测试页换到新外框（G2、G7、G12、G13、G14、G15、G16–G21、G23、G26、G28、G29、G32）。无新写入。
-3. **第二期 · 架构画布**：从 model 生成底图，叠加五个图层，补全模型（G11、G22、G27）。门槛：布局依赖已批准；分层底图等 archctx #408，决策图层等 #407，步骤级影响等 #409。无新写入。
+3. **第二期 · 架构画布**：从 model 生成底图，叠加五个图层，补全模型（G11、G22、G27）。门槛：布局依赖已批准；分层底图等 arch-context#408，决策图层等 arch-context#407，步骤级影响等 arch-context#409。无新写入。
 4. **第三期 · 写入通道与本机配置**：写入 API、设置页、安装探测与能力表（G1、G6、G9）；Bot 登记与归属、Slack 渠道与通知负载（G30、G31）。第一个新写入只改本机配置。门槛：G1 已批准。
 5. **第四期 · 文档会话**：引用协议、docs host、事件推送、worktree 与 Draft PR（G3、G4、G5、G8）。门槛：G3 已批准；G5 的 OS 边界有零模型的拒写、拒读、拒连测试证明。
 6. **第五期 · Worktree 清理**：一键清理绿色项；清理会话复用文档会话的宿主，agent 只读调查非绿色项、给建议和归档计划，你逐项授权后先归档再删（G24、G25）。门槛：带授权的删除模式有测试，归档推送成功前不删。
