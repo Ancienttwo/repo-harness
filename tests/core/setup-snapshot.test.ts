@@ -2,10 +2,44 @@ import { describe, expect, test } from 'bun:test';
 
 import { ROUTES } from '../../src/cli/hook/route-registry';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
+import { summarizeHookUsage } from '../../src/core/setup/hook-usage';
 import { projectSetupSnapshot, type SetupProjectionInput } from '../../src/core/setup/projection';
 import { SETUP_HOSTS, type SetupSnapshotV1 } from '../../src/core/setup/types';
 
 const FAKE_SECRETS = ['sk-proj-FAKEFAKEFAKEFAKEFAKEFAKE0001', 'ghp_FAKEFAKEFAKEFAKEFAKEFAKE0002', 'hunter2-fake-password'];
+
+const NOW = Date.parse('2026-10-10T12:00:00.000Z');
+const telemetry = (host: string, event: string, route_id: string, started_at: string, blocked = false, protocol = 'loop-engine-hook-event/v2') =>
+  JSON.stringify({ protocol, event_id: 'e', started_at, completed_at: started_at, host, session_id: null, run_id: null, turn_id: null,
+    event, route_id, exit_code: blocked ? 2 : 0, blocked, reason: blocked ? 'blocked' : 'ok', elapsed_ms: 1, fingerprint: 'sha256:x' });
+const failure = (ts: string, guard: string, reason: string) =>
+  JSON.stringify({ ts, guard, action: 'block', reason, fix: 'Use /Users/alice/repo/x', failure_class: 'state_violation', run_id: null });
+
+function usage() {
+  return summarizeHookUsage({
+    now_ms: NOW,
+    routes: ROUTES,
+    telemetry_lines: [
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z'),
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T09:00:00.000Z', true),
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T10:00:00.000Z', true),
+      telemetry('codex', 'Stop', 'default', '2026-10-10T11:30:00.000Z'),
+      // Outside the window, in the future, a retired route, a host the route is not installed on, another protocol, not JSON.
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-09T11:59:59.000Z'),
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T12:00:01.000Z'),
+      telemetry('claude', 'SubagentStop', 'default', '2026-10-10T11:00:00.000Z'),
+      telemetry('codex', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z'),
+      telemetry('claude', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z', false, 'loop-engine-hook-event/v1'),
+      '{not json',
+    ],
+    failure_lines: [
+      failure('2026-10-10T17:00:00+0800', 'RepoScopeGuard', '/Users/alice/Projects/app/.env is not a canonical path contained by the current repository.'),
+      failure('2026-10-10T18:00:00+0800', 'EditScopeGuard', `token=${FAKE_SECRETS[1]} in edit`),
+      failure('2026-10-10T18:30:00+0800', 'Bad Guard', 'dropped'),
+      JSON.stringify({ ts: '2026-10-10T10:00:00Z', guard: 'RepoScopeGuard', action: 'warn', reason: 'not a block' }),
+    ],
+  });
+}
 
 function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionInput {
   return {
@@ -47,6 +81,7 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
       { name: undefined, description: 'nameless', model: undefined, effort: undefined },
     ],
     fleet_hosts: { claude: { installed_agents: ['explorer'], missing_agents: ['gatekeeper'] }, codex: { installed_agents: ['explorer', 'gatekeeper'], missing_agents: [] } },
+    hook_usage: usage(),
     ...overrides,
   };
 }
@@ -112,6 +147,35 @@ describe('setup snapshot projection', () => {
   });
 });
 
+describe('hook usage summary', () => {
+  test('counts declared routes per host inside the 24 hour window', () => {
+    const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input()));
+    expect(snapshot.hook_usage?.window_hours).toBe(24);
+    expect(snapshot.hook_usage?.routes).toEqual([
+      { host: 'claude', event: 'PreToolUse', route_id: 'bash', calls: 3, blocked: 2, last_blocked_at: '2026-10-10T10:00:00.000Z' },
+      { host: 'codex', event: 'Stop', route_id: 'default', calls: 1, blocked: 0, last_blocked_at: null },
+    ]);
+  });
+
+  test('lists block denials newest first with redacted paths and credentials', () => {
+    const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input()));
+    expect(snapshot.hook_usage?.recent_denials).toEqual([
+      { at: '2026-10-10T10:00:00.000Z', guard: 'EditScopeGuard', reason: '[configured]' },
+      { at: '2026-10-10T09:00:00.000Z', guard: 'RepoScopeGuard', reason: '[private path] is not a canonical path contained by the current repository.' },
+    ]);
+    const text = JSON.stringify(snapshot.hook_usage);
+    expect(text).not.toContain('/Users/');
+    expect(text).not.toContain(FAKE_SECRETS[1]);
+  });
+
+  test('keeps only the newest ten denials', () => {
+    const lines = Array.from({ length: 12 }, (_, index) => failure(`2026-10-10T${String(index).padStart(2, '0')}:00:00Z`, 'RepoScopeGuard', `denial ${index}`));
+    const summary = summarizeHookUsage({ now_ms: NOW, routes: ROUTES, telemetry_lines: [], failure_lines: lines });
+    expect(summary.recent_denials.map(denial => denial.reason)).toEqual(Array.from({ length: 10 }, (_, index) => `denial ${11 - index}`));
+    expect(summary.routes).toEqual([]);
+  });
+});
+
 describe('setup snapshot decoder', () => {
   const ready = (): SetupSnapshotV1 => projectSetupSnapshot(input());
   const rejects = (mutate: (snapshot: any) => void) => {
@@ -124,6 +188,7 @@ describe('setup snapshot decoder', () => {
     expect(decodeSetupSnapshot(unavailableSetupSnapshot())).toMatchObject({ status: 'unavailable', reason: 'collection_pending' });
     expect(decodeSetupSnapshot(unavailableSetupSnapshot('setup_check_timeout')).reason).toBe('setup_check_timeout');
     expect(decodeSetupSnapshot({ ...ready(), status: 'stale', reason: 'setup_check_failed' }).status).toBe('stale');
+    expect(decodeSetupSnapshot({ ...ready(), hook_usage: null }).hook_usage).toBeNull();
   });
 
   test('rejects unredacted text, extra keys and inconsistent facts', () => {
@@ -146,5 +211,13 @@ describe('setup snapshot decoder', () => {
     rejects(s => { s.checks.push({ ...s.checks[0] }); });
     rejects(s => { s.hosts[1].cli_version = 'codex-cli 0.1'; });
     rejects(s => { Object.assign(s, unavailableSetupSnapshot(), { hooks: s.hooks }); });
+    rejects(s => { Object.assign(s, unavailableSetupSnapshot(), { hook_usage: s.hook_usage }); });
+    rejects(s => { s.hook_usage.recent_denials[1].reason = 'at /Users/alice/repo'; });
+    rejects(s => { s.hook_usage.routes[0].route_id = 'retired'; });
+    rejects(s => { s.hook_usage.routes[1].host = 'claude'; s.hook_usage.routes[1].event = 'PreToolUse'; s.hook_usage.routes[1].route_id = 'bash'; });
+    rejects(s => { s.hook_usage.routes[1].calls = 0; });
+    rejects(s => { s.hook_usage.routes[0].last_blocked_at = null; });
+    rejects(s => { s.hook_usage.window_hours = 48; });
+    rejects(s => { s.hook_usage.recent_denials[0].command = 'rm -rf x'; });
   });
 });

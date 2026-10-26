@@ -11,11 +11,14 @@ import { fileURLToPath } from 'node:url';
 
 import { skillProjectionSourceRoot } from './doctor';
 import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
+import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
 import { ROUTES } from '../hook/route-registry';
+import { resolveRepoRoot } from '../hook/runtime';
 import { PROFILE_COMPONENTS } from '../installer/install-profile';
 import { projectSetupSnapshot, type SetupRawFleetRole } from '../../core/setup/projection';
-import type { SetupSnapshotV1 } from '../../core/setup/types';
+import type { SetupHookUsage, SetupSnapshotV1 } from '../../core/setup/types';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { readHookUsage } from '../../effects/setup/hook-usage';
 import { parseFrontmatter } from '../../effects/terminal/task-role-profiles';
 
 /** The packaged fleet source, the same package-relative path the tooling check reads. */
@@ -42,7 +45,12 @@ function skillSummaries(env: NodeJS.ProcessEnv): Map<string, string> {
   }
 }
 
-export function projectSetupBuild(build: SetupCheckBuild, options: { readonly env: NodeJS.ProcessEnv; readonly collected_at: string; readonly fleet_dir?: string }): SetupSnapshotV1 {
+export function projectSetupBuild(build: SetupCheckBuild, options: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly collected_at: string;
+  readonly fleet_dir?: string;
+  readonly hook_usage?: SetupHookUsage | null;
+}): SetupSnapshotV1 {
   const doctorCheck = (id: string) => build.doctor.checks.find(check => check.id === id);
   const codexVersion = doctorCheck('codex-cli-version')?.version;
   const tools = build.tooling?.tools as Record<string, { hosts?: unknown }> | undefined;
@@ -59,12 +67,25 @@ export function projectSetupBuild(build: SetupCheckBuild, options: { readonly en
     routes: ROUTES,
     fleet_roles: readFleetRoles(options.fleet_dir),
     fleet_hosts: tools?.agent_fleet?.hosts ?? null,
+    hook_usage: options.hook_usage ?? null,
   });
+}
+
+/** Hook usage of the repository that contains `cwd`; null outside a repository or when a log is unreadable. */
+function hookUsageAt(cwd: string, nowMs: number): SetupHookUsage | null {
+  const repoRoot = resolveRepoRoot(cwd);
+  if (repoRoot === null) return null;
+  try {
+    return readHookUsage(repoRoot, HOOK_EVENT_TELEMETRY_PATH, ROUTES, nowMs);
+  } catch {
+    return null;
+  }
 }
 
 /** Run the setup check builder exactly as `repo-harness setup check --target both` does (no --check-updates). */
 export function collectSetupSnapshotNow(options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV1 {
   const env = options.env ?? process.env;
   const build = buildSetupCheck({ cwd: options.cwd, target: 'both', checkUpdates: false });
-  return projectSetupBuild(build, { env, collected_at: new Date((options.now ?? Date.now)()).toISOString() });
+  const now = (options.now ?? Date.now)();
+  return projectSetupBuild(build, { env, collected_at: new Date(now).toISOString(), hook_usage: hookUsageAt(options.cwd ?? process.cwd(), now) });
 }
