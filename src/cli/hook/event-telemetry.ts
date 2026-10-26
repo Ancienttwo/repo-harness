@@ -65,12 +65,20 @@ const COMMAND_PREFIXES = new Set(['sudo', 'env', 'exec', 'time', 'command', 'noh
 /** A word that held quoted or escaped text; it can never pass COMMAND_NAME. */
 const QUOTED = '\u0000';
 
+/** A heredoc delimiter the scanner can match line by line. */
+const HEREDOC_DELIMITER = /^[A-Za-z0-9_.-]+$/u;
+/** `NAME=(`: an array assignment, whose body is data. */
+const ARRAY_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=$/u;
+
 /**
  * Words of each simple command in a shell line. Separators (`;`, `|`, `&`,
- * `(`, `)`, backtick, newline) split only outside quotes. Quoted text and
- * heredoc bodies never start a segment, so argument data cannot reach a
- * command position. An unterminated quote or heredoc ends the scan: the rest
- * is data.
+ * `(`, `)`, backtick, newline) split only outside quotes, `#` at a word start
+ * comments out the rest of the line, and heredoc bodies are skipped. The scan
+ * fails closed: at an unterminated quote or heredoc, and at a construct it
+ * does not model (`$(`, `${` or a backtick inside double quotes; `${`, `$((`
+ * and `$'` outside them; `NAME=(`; a heredoc delimiter with expansion), it
+ * stops and drops the rest of the text, because a heredoc body or a quoted
+ * value can continue past the next newline. Names found before the stop stay.
  */
 function shellSegments(command: string): string[][] {
   const segments: string[][] = [];
@@ -88,17 +96,36 @@ function shellSegments(command: string): string[][] {
     if (words.length > 0) segments.push(words);
     words = [];
   };
+  const stop = () => {
+    word = '';
+    quoted = false;
+  };
   let i = 0;
   scan: while (i < command.length) {
     const c = command[i]!;
-    if (c === '\\') {
+    if (c === '$' && (command.startsWith('${', i) || command.startsWith('$((', i) || command.startsWith("$'", i))) {
+      stop();
+      break;
+    } else if (c === '#' && word === '' && !quoted) {
+      const lineEnd = command.indexOf('\n', i);
+      i = lineEnd === -1 ? command.length : lineEnd;
+    } else if (c === '(' && !quoted && ARRAY_ASSIGNMENT.test(word)) {
+      stop();
+      break;
+    } else if (c === '\\') {
       word += command[i + 1] ?? '';
       quoted = true;
       i += 2;
     } else if (c === "'" || c === '"') {
       let j = i + 1;
-      while (j < command.length && command[j] !== c) j += c === '"' && command[j] === '\\' ? 2 : 1;
-      if (j >= command.length) { quoted = true; break; }
+      while (j < command.length && command[j] !== c) {
+        if (c === '"' && (command.startsWith('$(', j) || command.startsWith('${', j) || command[j] === '`')) {
+          stop();
+          break scan;
+        }
+        j += c === '"' && command[j] === '\\' ? 2 : 1;
+      }
+      if (j >= command.length) { stop(); break; }
       word += command.slice(i + 1, j);
       quoted = true;
       i = j + 1;
@@ -115,6 +142,10 @@ function shellSegments(command: string): string[][] {
       while (j < command.length && !/[\s;|&()<>]/u.test(command[j]!)) {
         if (command[j] !== "'" && command[j] !== '"' && command[j] !== '\\') delimiter += command[j];
         j += 1;
+      }
+      if (!HEREDOC_DELIMITER.test(delimiter)) {
+        stop();
+        break;
       }
       heredocs.push({ delimiter, strip });
       i = j;

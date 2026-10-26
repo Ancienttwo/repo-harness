@@ -66,11 +66,11 @@ describe('HRD-08 event telemetry authority', () => {
       exitCode: 0,
       blocked: false,
       reason: 'ok',
-      commandNames: commandNames('cd /Users/alice/repo && GH_TOKEN=ghp_FAKE gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"'),
+      commandNames: commandNames('cd /Users/alice/repo && GH_TOKEN=sk-proj-FAKE0123456789abc gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"'),
     });
     expect(record.command_names).toEqual(['cd', 'gh', 'jq', 'brew', 'bun']);
     const line = readFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), 'utf8');
-    for (const secret of ['/Users/alice', 'ghp_FAKE', 'pr view', '.title']) expect(line).not.toContain(secret);
+    for (const secret of ['/Users/alice', 'sk-proj-FAKE0123456789abc', 'pr view', '.title']) expect(line).not.toContain(secret);
   });
 
   test('command names keep at most sixteen unique names', () => {
@@ -80,7 +80,8 @@ describe('HRD-08 event telemetry authority', () => {
   });
 
   test('command names never come from quoted data or heredoc bodies', () => {
-    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz123456';
+    // A secret that passes COMMAND_NAME, so only the scanner keeps it out.
+    const secret = 'sk-proj-AbCdEf0123456789xyz';
     expect(commandNames(`cat <<EOF\n${secret}\nEOF`)).toEqual(['cat']);
     expect(commandNames(`cat <<-'END' > out\n\t${secret}\n\tEND\nls -la`)).toEqual(['cat', 'ls']);
     expect(commandNames(`echo "a; ${secret}" && git status`)).toEqual(['echo', 'git']);
@@ -88,6 +89,31 @@ describe('HRD-08 event telemetry authority', () => {
     expect(commandNames(`echo \\; ${secret}`)).toEqual(['echo']);
     expect(commandNames(`echo "unterminated; ${secret}`)).toEqual(['echo']);
     expect(commandNames(`git log <<< "x; ${secret}"; jq .`)).toEqual(['git', 'jq']);
+  });
+
+  test('the scan stops at a construct it does not model and keeps the names before it', () => {
+    const s = 'sk-proj-AbCdEf0123456789xyz';
+    const cases: [string, string[]][] = [
+      [`git commit -m "$(cat <<'EOF'\nFix "x; ${s} y" now\nEOF\n)"`, ['git']],
+      [`gh pr create --body "$(cat <<'EOF'\nSet "| ${s} | b |" here\nEOF\n)"`, ['gh']],
+      [`gh pr create --body "$(cat <<'EOF'\nSet "| ${s}\n| b |" here\nEOF\n)"`, ['gh']],
+      [`echo "$(jq -r ".a | ${s} x" f)"`, ['echo']],
+      [`echo "a \`${s}\` b"`, ['echo']],
+      [`echo "\${A:-x; ${s} }"`, ['echo']],
+      [`git status # then; ${s}`, ['git']],
+      [`# check (docs) here\nls`, ['ls']],
+      [`echo \${A:-x; ${s} }`, ['echo']],
+      [`KEYS=(${s} other)`, []],
+      [`echo $((1<<2))\nls; ${s}`, ['echo']],
+      [`echo $'x\\'; ${s}'`, ['echo']],
+      [`cat <<EOF\na; ${s}\n| b\nc\nEOF\nls`, ['cat', 'ls']],
+      [`cat <<$X\n${s}\n$X`, ['cat']],
+    ];
+    for (const [command, names] of cases) {
+      const result = commandNames(command);
+      expect(result).not.toContain(s);
+      expect([command, result]).toEqual([command, names]);
+    }
   });
 
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
