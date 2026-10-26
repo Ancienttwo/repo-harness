@@ -11,9 +11,9 @@ import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-messag
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
 import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 
-/** Real public session admission and binding, with an explicit in-process transport double.
- * The test process is the observed provider; this does not start a model or service. */
-export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, taskAuthority: TaskSessionAuthority) {
+/** In-process Herdr transport double for one task agent. The test process is the
+ * observed provider. The caller restores the returned spy. */
+export function mockOfflineHerdr(root: string, spec: TaskAgentSpec) {
   const repository = taskRepository(root);
   const primary = { workspace_id: 'fixture-primary-workspace', worktree: {
     repo_key: repository.repository_id, checkout_path: repository.primary_root, repo_root: repository.primary_root,
@@ -56,9 +56,16 @@ export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, t
     else throw new Error(`unexpected offline Herdr call: ${args.join(' ')}`);
     return { pid: process.pid, status: 0, signal: null, stdout: Buffer.from(JSON.stringify({ id: 'fixture', result })), stderr: Buffer.alloc(0), output: [] };
   });
+  return { transport, nameAgent: (name: string) => { agentName = name; } };
+}
+
+/** Real public session admission and binding, with an explicit in-process transport double.
+ * The test process is the observed provider; this does not start a model or service. */
+export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, taskAuthority: TaskSessionAuthority) {
+  const offline = mockOfflineHerdr(root, spec);
   try {
-    return await startTaskAgent(root, spec, { taskAuthority, start: async (_endpoint, name) => { agentName = name; } });
-  } finally { transport.mockRestore(); }
+    return await startTaskAgent(root, spec, { taskAuthority, start: async (_endpoint, name) => { offline.nameAgent(name); } });
+  } finally { offline.transport.mockRestore(); }
 }
 
 export interface EngineerRuntimeFixtureOptions {

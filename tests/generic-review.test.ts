@@ -15,8 +15,14 @@ import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
-import { observeTaskSessionAdmission, ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
+import { observeTaskSessionAdmission, ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact, sendTaskRequest, taskSessionDirectory, type TaskAgentSpec, type TaskPaneBinding, type TaskRequest, type TaskSessionAuthority } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
+import { randomUUID } from 'crypto';
+import { mockOfflineHerdr, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
+import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
+import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
+import { recordPrePromptInboxAccepted } from '../src/effects/review/pre-prompt-inbox-consumer';
+import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -731,3 +737,59 @@ test('same content with a new approved context consumes the next campaign round'
   expect(readFileSync(f.packetPath(2), 'utf8')).toContain(acceptanceReviewContextDigest(current));
   expect(existsSync(join(f.dir, 'request-1.json'))).toBe(true);
 });
+
+darwinTest('a round records acceptance only after its accepted inbox delivery is committed', async () => {
+  const f = packetRoundFixture();
+  let binding: TaskPaneBinding | undefined, authority: TaskSessionAuthority | undefined, agentSpec: TaskAgentSpec | undefined, messageId = '';
+  const nativeSessionId = 'fixture-native-session';
+  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, model: () => 'fixture-model',
+    start: async (repo, spec, _command, _ready, _guard, taskAuthority) => {
+      if (!taskAuthority) throw new Error('fixture_task_authority_missing');
+      authority = taskAuthority; agentSpec = spec;
+      binding = await startOfflineTaskAgent(repo, spec, taskAuthority);
+      // The test process is the observed provider; the real native binding reads this ready file.
+      writeFileSync(join(f.dir, 'ready.json'), JSON.stringify({ pid: binding.provider.pid, session_id: nativeSessionId, fixture: false }));
+      const admission = binding.task_admission!;
+      messageId = randomUUID();
+      sendTaskMessage({ repo_root: f.root, source: { authority: taskAuthority, session: { task: spec.task, role: spec.role } },
+        event: buildTaskMessageEvent({ message_id: messageId, task_id: spec.task,
+          task_identity: { repository_id: admission.identity.repository_id, issue_id: admission.identity.issue_id, campaign_id: admission.identity.campaign_id },
+          admission_sha256: admission.approval.admission_sha256, scope: 'claim', target_claim: admission.identity.claim,
+          sender_kind: 'operator', sender_id: 'fixture-owner', sender_trust: 'local_operator', audience: 'owner',
+          body: 'Untrusted message: recheck the fence.', created_at: new Date().toISOString(), in_reply_to: null }) });
+      return binding;
+    },
+    // The real send publishes the request and reserves the inbox companion.
+    send: async (...args) => {
+      const offline = mockOfflineHerdr(args[0], agentSpec!);
+      try { return await sendTaskRequest(...args); } finally { offline.transport.mockRestore(); }
+    },
+    // Transport ACK: the host turn already ended, so the loop's first observed check succeeds.
+    ready: async path => { const ack = /ack-(\d+)\.json$/.exec(path); if (ack) writeFileSync(join(f.dir, `observed-${ack[1]}.json`), '{}'); },
+    // The host writes inbox-accepted after the loop's commit check and before its observed check.
+    collect: async (_repo, task, role, round) => {
+      const taskDir = taskSessionDirectory(f.root, task, role);
+      const request = readSessionArtifact<TaskRequest>(join(taskDir, `request-${round}.json`));
+      const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id: request.request_id, round,
+        host: { pid: binding!.provider.pid, identity: binding!.provider.identity }, session_id: nativeSessionId, input_id: request.request_id,
+        seq: 2, status: 'idle', phase: null, since_seq: null, last_event_at: null, outcome: null, failure: null, control: 'accepted', rejection: null };
+      writeFileSync(join(taskDir, oarObservationFile(round)), JSON.stringify(observation));
+      recordPrePromptInboxAccepted({ request, requestDirectory: taskDir, native_session_id: nativeSessionId, host: 'claude',
+        consumed_at: Date.now(), observation });
+      expect(existsSync(join(taskDir, `inbox-accepted-${round}.json`))).toBe(true);
+      const domain = JSON.parse(readFileSync(f.packetPath(round), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      return { request_id: request.request_id, context_sha256: request.context_sha256,
+        value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
+          verdict: 'FAIL', summary: '[fixture opinion] recheck the fence', findings: [finding] } };
+    } };
+  const result = await runReviewRound(f.options, effects);
+  expect(result.round).toBe(1);
+  expect(existsSync(join(f.dir, 'accepted-1.json'))).toBe(true);
+  // runReviewRound commits nothing after it records acceptance, so a receipt
+  // here was committed before accepted-1.json.
+  const receipt = readTaskMessageDelivery({ repo_root: f.root, execution_worktree: binding!.execution_root,
+    source: { authority: authority!, session: { task: binding!.task, role: binding!.role } }, task_id: binding!.task,
+    recipient: { kind: 'claim', claim: authority!.claim }, message_id: messageId }).receipt;
+  expect(receipt?.delivery_channel).toBe('controlled_request');
+  expect(receipt?.delivery_ref).toContain('controlled-request:');
+}, 60_000);
