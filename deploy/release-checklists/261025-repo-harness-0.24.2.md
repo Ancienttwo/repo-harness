@@ -2,19 +2,19 @@
 
 ## Scope and authority
 
-- Base: `f3a240492b71930086a379e2954dd5b54aa92d8f` (#968) on `origin/main`.
-  Its parent is `197126377c9d74e07b41c2ff3c36fe0cb27467e0` (#966). This is
+- Base: `65d34c20ed1caa3e1151fc86dfe27c6cb4776321` (#971) on `origin/main`.
+  Its parent is `f3a240492b71930086a379e2954dd5b54aa92d8f` (#968). This is
   the final release base.
 - Previous release: 0.24.1 on npm and in Git. Tag `v0.24.1`, annotated tag
   object `72805d5553d6d6f475ada875d5a01b81c1576bae`, target
   `c21aa3079495bdefb163e0ebaf9a79062abfe7da` (#885 squash).
-- Merged range: `v0.24.1..f3a240492`. `git rev-list --count` is 48.
-  Each of the 48 subjects ends with a PR number.
-- The 48 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
+- Merged range: `v0.24.1..65d34c20e`. `git rev-list --count` is 49.
+  Each of the 49 subjects ends with a PR number.
+- The 49 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
   #923, #926, #930, #929, #931, #932, #935, #936, #937, #941, #943, #946,
   #944, #940, #897, #899, #938, #933, #934, #939, #942, #949, #945, #952,
   #953, #954, #955, #951, #957, #950, #958, #959, #962, #963, #895, #964,
-  #966 and #968.
+  #966, #968 and #971.
 - The npm package goes from 0.24.1 to 0.24.2. `package.json`,
   `assets/skill-version.json` (version and template version) and README show
   0.24.2. `bun.lock` records no root package version, so it does not change.
@@ -70,6 +70,7 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
 | 10 anchor findings and partial practices coverage | #964, squash `f7f502792cb97445c736e05de625d51bf6de57ff`, fixed all 11 current anchor findings (anchors: 1,100 citations, 0 findings) and deleted the unread `content.practices` and `review.failOn` manifest keys (archctx `validate`: no warnings). The repo defines no practices, so practice evaluation stays advisory and debt coverage reports `practices:not-enabled`; see the readiness flags. |
 | #967 CI repair, daily MCP path matrix (windows-latest) | Found by the daily run 40285900137 on `f7f502792`: 35 failures from #959. #968 fixed them, squash `f3a240492b71930086a379e2954dd5b54aa92d8f`. Admitted task sessions are POSIX-only. See "Hosted daily CI" for the proof run. |
 | #966 rolling writer PR for main `f7f502792` | `verify-pr`: generated-only, render-equivalent, no human-edited paths. Squash `197126377c9d74e07b41c2ff3c36fe0cb27467e0`, parent `f7f502792cb97445c736e05de625d51bf6de57ff`, head `5b6a107e4b3bd2fff9e5f8ea7f858a36ff50590a`. |
+| #970 CI repair, Native OAR acceptance (macOS) | The test "Codex credential copy cleanup" ran six review fixtures under one 60 s limit and timed out on 3 of 6 runs, including the daily run on `f3a240492` (run 40290119507, green on attempt 2). #971 split it into six tests with the same assertions, squash `65d34c20ed1caa3e1151fc86dfe27c6cb4776321`. On CI each takes 2.5 s to 6.8 s. |
 
 ## Upgrade steps for users
 
@@ -149,11 +150,11 @@ PENDING. The orchestrator records the daily CI run on the release base.
 - The package build reports a Vite chunk-size warning above 500 kB, as for
   0.24.1. It does not fail the gate.
 - Version and changelog coverage check:
-  - `git rev-list --count v0.24.1..origin/main` is 48, and 48 subjects end
+  - `git rev-list --count v0.24.1..origin/main` is 49, and 49 subjects end
     with a PR number.
-  - All 48 PR numbers, the 8 issues that the merged commits close (#902,
-    #904, #908, #910, #912, #913, #916 and #922) and #967 are in the 0.24.2
-    section.
+  - All 49 PR numbers, the 8 issues that the merged commits close (#902,
+    #904, #908, #910, #912, #913, #916 and #922), #967 and #970 are in the
+    0.24.2 section.
   - `package.json`, `assets/skill-version.json` (version and template
     version) and README show 0.24.2. `package.json` and `bun.lock` pin
     `archctx` and `archctx-contracts` at exact 0.9.3.

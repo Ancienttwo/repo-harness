@@ -194,6 +194,9 @@ from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
   task sessions start only in a Herdr pane, so they and their Task Inbox and
   operator diff consumers are POSIX-only. On Windows, session start fails
   closed with `herdr_endpoint_platform_unsupported`. (#968, #967)
+- Split the Codex credential copy cleanup test into one test per scenario.
+  The six fixtures in one test passed the 60 s limit on loaded CI runners.
+  (#971, #970)
 
 ### Documentation
 
