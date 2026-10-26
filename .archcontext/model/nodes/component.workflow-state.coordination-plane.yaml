@@ -4,6 +4,7 @@ kind: "component"
 name: "Provider Board Observations and Historical Worktree Safety"
 status: "active"
 parent: "capability.workflow-engine.workflow-state"
+layer: "effects"
 summary: "Joins provider issue observations and exact admitted sessions, retains historical canonical task parsers and guards exact worktree cleanup."
 responsibilities:
   - "Project provider boards by exact canonical REST repository and issue identities; preserve all admitted session bindings and typed unavailable rows."

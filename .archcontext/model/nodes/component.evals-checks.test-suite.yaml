@@ -4,6 +4,7 @@ kind: component
 name: "Test Suite"
 status: active
 parent: capability.verification.evals-checks
+layer: "tests"
 summary: "The repository test files and the Bun test configuration; expandable by runtime boundary."
 responsibilities:
   - Hold every test file of the repository under one owner.

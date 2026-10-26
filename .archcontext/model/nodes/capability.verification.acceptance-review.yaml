@@ -3,6 +3,7 @@ id: "capability.verification.acceptance-review"
 kind: "capability"
 name: "Acceptance Review"
 status: "active"
+layer: "effects"
 summary: "Runs the generic acceptance review through a persistent reviewer task agent and records one structured acceptance receipt."
 responsibilities:
   - "Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host."

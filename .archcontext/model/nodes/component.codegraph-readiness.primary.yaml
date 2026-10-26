@@ -4,4 +4,5 @@ kind: component
 name: "CodeGraph Readiness Check"
 status: active
 parent: capability.verification.codegraph-readiness
+layer: "cli"
 summary: "Executes the reviewed verify codegraph readiness boundary."

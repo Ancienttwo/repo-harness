@@ -4,6 +4,7 @@ kind: component
 name: "Transport and Authorization"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
+layer: "cli"
 summary: "Serves MCP over stdio or HTTP and binds each HTTP session to a verified OAuth authorization."
 responsibilities:
   - Start the stdio and HTTP transports and pin HTTP sessions to the startup profile.

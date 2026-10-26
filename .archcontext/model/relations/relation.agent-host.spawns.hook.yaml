@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.agent-host.spawns.hook"
+kind: "spawns"
+source: "process.agent-host"
+target: "process.hook"
+intent: "Execute the hook adapter command with the event JSON on stdin."

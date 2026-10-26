@@ -3,6 +3,7 @@ id: capability.public-surface.adoption
 kind: capability
 name: Adoption
 status: active
+layer: core
 summary: Plans and applies repository adoption through the canonical filesystem transaction boundary.
 responsibilities:
   - Own adoption planning, path safety, transaction apply, and rollback behavior.

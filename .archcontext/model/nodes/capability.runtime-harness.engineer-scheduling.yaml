@@ -3,6 +3,7 @@ id: "capability.runtime-harness.engineer-scheduling"
 kind: "capability"
 name: "Engineer Scheduling"
 status: "active"
+layer: "effects"
 summary: "Projects explicitly selected immutable provider WorkGraph V2 and exact dependency evidence for operator observations."
 responsibilities:
   - "Validate the provider graph at an explicit commit and graph path, including exact referenced policy and rollback bytes."

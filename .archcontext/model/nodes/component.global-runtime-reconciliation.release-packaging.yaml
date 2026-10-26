@@ -4,6 +4,7 @@ kind: component
 name: Release Packaging
 status: active
 parent: capability.runtime-harness.global-runtime-reconciliation
+layer: scripts
 summary: Owns the package manifest, the npm release gates, the tarball install smoke and the runtime evidence receipt.
 responsibilities:
   - Keep the package manifest, lockfile and TypeScript configuration.

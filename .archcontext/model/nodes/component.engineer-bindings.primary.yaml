@@ -5,5 +5,6 @@
   "name": "Engineer Profile Resolver",
   "status": "active",
   "parent": "capability.runtime-harness.engineer-bindings",
+  "layer": "core",
   "summary": "Resolves tracked Engineer Profile and SOP contracts and derives the exact engineer contract revision without mutation."
 }

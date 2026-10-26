@@ -4,6 +4,7 @@ kind: component
 name: "Workflow Contract And Policy"
 status: active
 parent: capability.workflow-engine.contract-assets
+layer: "scripts"
 summary: "Holds the package workflow contract, the opt-in marker, the harness policy and the context map, and loads the contract fail closed."
 responsibilities:
   - "Keep assets/workflow-contract.v1.json as the only inventory of directories, helpers, legacy paths and upgrade actions."

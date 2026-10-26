@@ -4,4 +4,5 @@ kind: component
 name: "Root Adoption Router"
 status: active
 parent: capability.public-surface.root-router
+layer: "cli"
 summary: "Executes the reviewed route root initialization boundary."

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.process-group-launcher.runs-in.host"
+kind: "runs-in"
+source: "process.process-group-launcher"
+target: "namespace.host.developer"
+intent: "Runs on the developer host."

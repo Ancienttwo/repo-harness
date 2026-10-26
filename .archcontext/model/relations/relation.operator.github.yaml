@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.github"
+kind: "reads"
+source: "capability.runtime-harness.operator"
+target: "external.github"
+intent: "Collect pull request and CI activity through gh in the background collector."

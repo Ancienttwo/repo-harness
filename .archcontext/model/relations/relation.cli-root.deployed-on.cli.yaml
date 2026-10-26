@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.cli-root.deployed-on.cli"
+kind: "deployed-on"
+source: "component.global-runtime-reconciliation.cli-root"
+target: "process.cli"
+intent: "The CLI root dispatches commands in the per-command process."

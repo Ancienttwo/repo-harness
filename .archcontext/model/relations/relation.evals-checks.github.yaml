@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.evals-checks.github"
+kind: "calls"
+source: "capability.verification.evals-checks"
+target: "external.github"
+intent: "Report daily CI failures as repair issues through the GitHub API."

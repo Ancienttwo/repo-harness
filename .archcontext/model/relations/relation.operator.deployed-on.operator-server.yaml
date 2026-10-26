@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.deployed-on.operator-server"
+kind: "deployed-on"
+source: "capability.runtime-harness.operator"
+target: "process.operator-server"
+intent: "The operator board runs in the operator server process."

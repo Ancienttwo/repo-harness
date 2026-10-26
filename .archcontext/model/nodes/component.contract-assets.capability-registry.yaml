@@ -4,6 +4,7 @@ kind: component
 name: Capability Registry
 status: active
 parent: capability.workflow-engine.contract-assets
+layer: scripts
 summary: Maps capability authorities to registry metadata and resolves path owners through the selected authority.
 responsibilities:
   - Map archcontext capability nodes to registry metadata and literal include anchors.

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.mcp-server.spawns.process-supervisor"
+kind: "spawns"
+source: "process.mcp-server"
+target: "process.process-supervisor"
+intent: "Run workflow helpers through the helper runner."

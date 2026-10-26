@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator-server.spawns.operator-collector"
+kind: "spawns"
+source: "process.operator-server"
+target: "process.operator-collector"
+intent: "Spawn bounded collector children that exchange JSON on stdin and stdout."

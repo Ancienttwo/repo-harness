@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.process-supervisor.spawns.process-group-launcher"
+kind: "spawns"
+source: "process.process-supervisor"
+target: "process.process-group-launcher"
+intent: "Spawn the detached launcher behind the fd 3 start barrier."

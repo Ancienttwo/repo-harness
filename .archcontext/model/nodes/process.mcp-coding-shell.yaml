@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.mcp-coding-shell"
+kind: "process"
+name: "MCP coding shell"
+status: "active"
+layer: "external"
+summary: "Detached sh -c session that the MCP server starts for coding tools; at most four run, each for at most 30 minutes."

@@ -4,6 +4,7 @@ kind: "component"
 name: "Provider Feedback"
 status: "active"
 parent: "capability.organization.publication"
+layer: "effects"
 summary: "Owns admitted provider feedback orchestration, immutable feedback facts, delivery receipts and read-only repair projections; its fleet-layer location does not transfer Publication ownership."
 responsibilities:
   - "Observe explicit provider PR identity against the exact current admitted claim before recording immutable manual feedback events."

@@ -4,6 +4,7 @@ kind: component
 name: "Hook Route Runtime"
 status: active
 parent: capability.runtime-harness.hook-adapters
+layer: "cli"
 summary: "Resolves a host hook route to its one typed handler, shapes the host output and writes one telemetry record."
 responsibilities:
   - Keep the ordered ROUTES registry and the one typed handler binding per route.

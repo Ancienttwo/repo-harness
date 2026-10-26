@@ -4,6 +4,7 @@ kind: component
 name: "Skill Surface Catalog"
 status: active
 parent: capability.public-surface.action-commands
+layer: "scripts"
 summary: "Parses the manifest into a closed catalog and computes the facade, external skill and host placement projections per profile."
 responsibilities:
   - Parse and validate manifest.json without file or process access.

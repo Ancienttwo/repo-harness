@@ -3,6 +3,7 @@ id: "capability.runtime-harness.external-source-intake"
 kind: "capability"
 name: "External Source Intake"
 status: "active"
+layer: "effects"
 summary: "Owns immutable provider issue evidence and exact admitted-session provenance bindings without scheduling authority."
 responsibilities:
   - "Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence."

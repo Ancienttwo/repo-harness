@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.codex"
+kind: "external-system"
+name: "Codex CLI"
+status: "active"
+layer: "external"
+summary: "Agent host CLI that runs repo-harness hooks and the MCP server, and runs as a review or task agent."
