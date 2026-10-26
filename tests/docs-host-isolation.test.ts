@@ -34,7 +34,8 @@ function write(path: string, content: string): void {
 }
 
 async function listen(reply: string): Promise<{ server: Server; port: number }> {
-  const server = createServer(socket => socket.end(reply));
+  // Drain the input: a tunnel forwards the ClientHello here, and unread bytes keep the socket from closing.
+  const server = createServer(socket => { socket.resume(); socket.end(reply); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   closers.push(() => new Promise<void>(resolve => server.close(() => resolve())));
   return { server, port: (server.address() as { port: number }).port };
@@ -179,7 +180,7 @@ test('docs host proxy opens a tunnel only to an allowed endpoint and never forwa
   const { port: allowedPort } = await listen('MODEL-API');
   const { port: deniedPort } = await listen('CONSOLE');
   const { proxy } = await startLocalProxy(allowedPort);
-  const ask = (request: string, hello = Buffer.alloc(0)) => new Promise<string>(resolve => {
+  const ask = (request: string, hello: Buffer = Buffer.alloc(0)) => new Promise<string>(resolve => {
     const socket = connect(proxy.port, '127.0.0.1'); let out = '';
     socket.on('connect', () => socket.write(Buffer.concat([Buffer.from(request), hello]))); socket.on('data', data => { out += data; }); socket.on('end', () => resolve(out));
   });
@@ -207,7 +208,7 @@ test('docs host proxy closes a tunnel whose TLS server name differs from the CON
 test('docs host proxy forwards a split ClientHello byte for byte when the server name matches', async () => {
   const hello = clientHello('Model-API.Test'), appData = Buffer.from('PING');
   const received: Buffer[] = [];
-  const upstream = createServer(socket => socket.on('data', data => {
+  const upstream = createServer(socket => socket.on('data', (data: Buffer) => {
     received.push(data);
     if (Buffer.concat(received).length >= hello.length + appData.length) socket.end('PONG');
   }));
