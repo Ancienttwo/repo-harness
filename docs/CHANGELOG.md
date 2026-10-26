@@ -188,12 +188,18 @@ from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
   (#953)
 - Publish the PID files of a closeout test fixture atomically. This removes
   a CI race. (#894)
+- Fix the Windows regressions from #959. The admission store applies its
+  owner and mode checks only on POSIX. The external-source store uses the
+  shared directory sync, which skips directory fsync on Windows. Admitted
+  task sessions start only in a Herdr pane, so they and their Task Inbox and
+  operator diff consumers are POSIX-only. On Windows, session start fails
+  closed with `herdr_endpoint_platform_unsupported`. (#968, #967)
 
 ### Documentation
 
 - Refresh generated architecture outputs through the archctx rolling writer
-  for main `c21aa3079` (#887) and main `bbf18043e`, with the observed major
-  change that the owner accepted. (#895, #898)
+  for main `c21aa3079` (#887), main `bbf18043e`, with the observed major
+  change that the owner accepted (#895, #898), and main `f7f502792` (#966).
 - Add layered, process and namespace topology views with 22 remarks. Each
   remark has a tracking issue, #901 to #922. (#900)
 - Separate current architecture authority from historical views.

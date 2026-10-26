@@ -2,18 +2,19 @@
 
 ## Scope and authority
 
-- Base: `f7f502792cb97445c736e05de625d51bf6de57ff` (#964) on `origin/main`.
-  Its parent is `90c9e7ec0e7f888aaf44acc68e9b6af117e70691` (#895). This is
+- Base: `f3a240492b71930086a379e2954dd5b54aa92d8f` (#968) on `origin/main`.
+  Its parent is `197126377c9d74e07b41c2ff3c36fe0cb27467e0` (#966). This is
   the final release base.
 - Previous release: 0.24.1 on npm and in Git. Tag `v0.24.1`, annotated tag
   object `72805d5553d6d6f475ada875d5a01b81c1576bae`, target
   `c21aa3079495bdefb163e0ebaf9a79062abfe7da` (#885 squash).
-- Merged range: `v0.24.1..f7f502792`. `git rev-list --count` is 46.
-  Each of the 46 subjects ends with a PR number.
-- The 46 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
+- Merged range: `v0.24.1..f3a240492`. `git rev-list --count` is 48.
+  Each of the 48 subjects ends with a PR number.
+- The 48 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
   #923, #926, #930, #929, #931, #932, #935, #936, #937, #941, #943, #946,
   #944, #940, #897, #899, #938, #933, #934, #939, #942, #949, #945, #952,
-  #953, #954, #955, #951, #957, #950, #958, #959, #962, #963, #895 and #964.
+  #953, #954, #955, #951, #957, #950, #958, #959, #962, #963, #895, #964,
+  #966 and #968.
 - The npm package goes from 0.24.1 to 0.24.2. `package.json`,
   `assets/skill-version.json` (version and template version) and README show
   0.24.2. `bun.lock` records no root package version, so it does not change.
@@ -24,8 +25,8 @@
 - Changelog rules for this release:
   - The release preparation commits have no PR number. The version bump, the
     changelog and this record have no changelog entry, as for 0.24.1.
-  - The rolling PRs #887 and #895 are under "Documentation", as #886 is in
-    the 0.24.1 section.
+  - The rolling PRs #887, #895 and #966 are under "Documentation", as #886
+    is in the 0.24.1 section.
   - The release records #889, #954 and #958 are under "Documentation", as
     #828 is in the 0.24.0 section.
   - Breaking removals are under "Breaking", as in 0.23.1. User steps are
@@ -67,6 +68,8 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
 | #898 CI repair, daily architecture freshness | Closed as completed at 2026-10-26T07:09:05Z, after the #895 merge. |
 | 17 projection major actions (measured at #957 head `24633552040b45739e7dccec79017ac7ed1ed435`) | Resolved by the owner's acceptance of the observed major change and the #895 publication. |
 | 10 anchor findings and partial practices coverage | #964, squash `f7f502792cb97445c736e05de625d51bf6de57ff`, fixed all 11 current anchor findings (anchors: 1,100 citations, 0 findings) and deleted the unread `content.practices` and `review.failOn` manifest keys (archctx `validate`: no warnings). The repo defines no practices, so practice evaluation stays advisory and debt coverage reports `practices:not-enabled`; see the readiness flags. |
+| #967 CI repair, daily MCP path matrix (windows-latest) | Found by the daily run 40285900137 on `f7f502792`: 35 failures from #959. #968 fixed them, squash `f3a240492b71930086a379e2954dd5b54aa92d8f`. Admitted task sessions are POSIX-only. See "Hosted daily CI" for the proof run. |
+| #966 rolling writer PR for main `f7f502792` | `verify-pr`: generated-only, render-equivalent, no human-edited paths. Squash `197126377c9d74e07b41c2ff3c36fe0cb27467e0`, parent `f7f502792cb97445c736e05de625d51bf6de57ff`, head `5b6a107e4b3bd2fff9e5f8ea7f858a36ff50590a`. |
 
 ## Upgrade steps for users
 
