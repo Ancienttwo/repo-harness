@@ -24,11 +24,13 @@ Owner's words:
 > Prepare and release 0.24.3 with the #973 fix, same flow as 0.24.2; I will
 > run npm publish.
 
+> Accept all 7 yellow flags for 0.24.3, same as for 0.24.2.
+
 Result:
 
 - GO for the 0.24.3 patch release. The owner runs `npm publish`.
-- The 0.24.2 yellow flag acceptances do not carry over. The 0.24.3 readiness
-  flags need the owner's decision. See "Readiness check".
+- The owner accepts all 7 readiness yellow flags for 0.24.3 for this
+  release. The repairs stay the owner's actions. See "Readiness check".
 
 ### Cause of the patch
 
@@ -130,7 +132,7 @@ Result:
     The fail is `doctor.codegraph-index`: `index=not-initialized` in the new
     release worktree.
   - Repair: `bash scripts/ensure-codegraph.sh --init` in the worktree
-    (`init-index: changed`). The index is worktree-local and not in the
+   . The index is worktree-local and not in the
     package.
   - The same `setup check` after the repair: exit 0, `status: attention`;
     31 ok, 4 warn, 0 fail, 1 n/a, 2 needs_agent. `doctor.codegraph-index`
@@ -149,7 +151,8 @@ Result:
 
 The 7 yellow flags are the same as for 0.24.2. The CodeGraph index signal
 differs: it was `stale` for 0.24.2 and `not-initialized` here, and the
-repair above cleared it. Each flag needs the owner's decision for 0.24.3.
+repair above cleared it. On 2026-10-26 the owner accepted all 7 flags for
+0.24.3. The repairs stay the owner's actions.
 
 1. Global rules managed blocks are stale (`global-rules.claude`,
    `global-rules.codex`). Repair after publication:
