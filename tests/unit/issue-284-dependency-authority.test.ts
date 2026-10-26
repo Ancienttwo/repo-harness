@@ -54,7 +54,7 @@ import {
   createIntegrationContract,
   createIntegrationEnvelope,
   createProductAcceptanceProjection,
-  listProductAcceptanceProjections,
+  readProductAcceptanceProjection,
 } from '../../src/effects/integration/product-acceptance';
 import { repoHarnessRegisteredReposPath, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
@@ -1149,7 +1149,7 @@ describe('issue #284 closed dependency authority', () => {
       { verify_acceptance: async () => receipt },
     );
     expect(projection.acceptance_receipt_sha256).toBe(publicationSha256(receiptBytes));
-    expect(listProductAcceptanceProjections(subject.root)).toEqual([projection]);
+    expect(readProductAcceptanceProjection(subject.root, projection.projection_sha256)).toEqual(projection);
 
     const exact = integrationInput(subject, 'product_accepted', provider, { projection_sha256: projection.projection_sha256,
       approved_prd_ref: PRD_REF, approved_prd_sha256: engineerSha256(PRD_TEXT), review_authority: selector(subject.root) });
