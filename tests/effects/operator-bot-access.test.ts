@@ -15,7 +15,7 @@ import {
 import type { NotifyChannelStatus } from '../../src/effects/operator/notify-status';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { projectMcpDoctor } from '../../src/core/operator/bot-access';
+import { projectMcpDoctor, projectOAuthClients } from '../../src/core/operator/bot-access';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
 const NOW_S = Math.floor(NOW.getTime() / 1000);
@@ -260,6 +260,25 @@ describe('Bot access collector', () => {
       expect(runs).toBe(2);
       await handle.close();
     } finally { f.cleanup(); }
+  });
+
+  test('a grant with an expired access token and a live refresh token keeps its profile, like listAuthorizations', () => {
+    const projection = projectOAuthClients({
+      accessTokens: {
+        'stale-access-secret': { token: 'stale-access-secret', clientId: 'client-c', scopes: [], expiresAt: NOW_S - 60, profile: 'executor' },
+        'dead-access-secret': { token: 'dead-access-secret', clientId: 'client-d', scopes: [], expiresAt: NOW_S - 60, profile: 'coding' },
+      },
+      refreshTokens: {
+        'live-refresh-secret': { accessToken: 'stale-access-secret', expiresAt: NOW_S + 7 * 86400 },
+        'dead-refresh-secret': { accessToken: 'dead-access-secret', expiresAt: NOW_S - 1 },
+      },
+      clients: { 'client-c': { client_id: 'client-c', client_id_issued_at: NOW_S - 86400 }, 'client-d': { client_id: 'client-d', client_id_issued_at: NOW_S - 86400 } },
+    }, NOW_S);
+    expect(projection.clients).toEqual([
+      { client_id: 'client-c', issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: ['executor'], expires_at: new Date((NOW_S + 7 * 86400) * 1000).toISOString() },
+      { client_id: 'client-d', issued_at: new Date((NOW_S - 86400) * 1000).toISOString(), profiles: [], expires_at: null },
+    ]);
+    expect(JSON.stringify(projection)).not.toContain('secret');
   });
 
   test('local constants match the writers they read after', async () => {

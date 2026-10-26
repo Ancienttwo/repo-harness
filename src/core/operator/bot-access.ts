@@ -160,20 +160,26 @@ export function projectOAuthClients(value: unknown, nowSeconds: number): { reado
     const entry = grant(clientId);
     if (expires !== null && expires > nowSeconds && (entry.expires === null || expires > entry.expires)) entry.expires = expires;
   };
-  const access = new Map<string, string>();
+  // Live refresh tokens by access token, with their known expiries. A refresh record without an expiry is live.
+  const refresh = new Map<string, number[]>();
+  for (const raw of Object.values(object(store.refreshTokens) ?? {})) {
+    const record = object(raw);
+    const accessToken = typeof raw === 'string' ? raw : typeof record?.accessToken === 'string' ? record.accessToken : null;
+    const expires = record?.expiresAt === undefined ? null : integer(record.expiresAt);
+    if (accessToken === null || (record?.expiresAt !== undefined && (expires === null || expires <= nowSeconds))) continue;
+    refresh.set(accessToken, [...refresh.get(accessToken) ?? [], ...expires === null ? [] : [expires]]);
+  }
+  // A grant is live while its access token or one of its refresh tokens is live, as in `listAuthorizations`.
   for (const [token, raw] of Object.entries(object(store.accessTokens) ?? {})) {
     const info = object(raw), clientId = text(info?.clientId, CLIENT_ID_TEXT);
     if (!info || clientId === null) continue;
-    access.set(token, clientId);
-    const expires = integer(info.expiresAt);
-    if (expires !== null && expires <= nowSeconds) continue;
+    const expires = info.expiresAt === undefined ? null : integer(info.expiresAt);
+    const accessLive = info.expiresAt === undefined || (expires !== null && expires > nowSeconds);
+    const refreshes = refresh.get(token);
+    if (!accessLive && refreshes === undefined) continue;
     grant(clientId).profiles.add(text(info.profile, PROFILE_TEXT) ?? 'planner');
-    extend(clientId, expires);
-  }
-  for (const raw of Object.values(object(store.refreshTokens) ?? {})) {
-    const record = object(raw);
-    const clientId = access.get(typeof raw === 'string' ? raw : typeof record?.accessToken === 'string' ? record.accessToken : '');
-    if (clientId !== undefined) extend(clientId, integer(record?.expiresAt));
+    if (accessLive) extend(clientId, expires);
+    for (const end of refreshes ?? []) extend(clientId, end);
   }
   const clients: OAuthClientProjection[] = [];
   let unreadable = 0;
