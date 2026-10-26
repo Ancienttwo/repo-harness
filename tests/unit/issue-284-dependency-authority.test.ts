@@ -1167,6 +1167,9 @@ describe('issue #284 closed dependency authority', () => {
     const lostProduct = resolveDependencyAuthority(exact);
     expect(lostProduct.status).toBe('authority_unavailable');
     expect(lostProduct.authority_revision).toBeNull();
+    // A subject that is not a selection is malformed authority.
+    const malformedSelector = resolveDependencyAuthority(input(subject, 'product_accepted'));
+    expect(malformedSelector.status).toBe('authority_unavailable');
     writeFileSync(stored, storedBytes);
     expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
 
@@ -1239,6 +1242,14 @@ describe('issue #284 closed dependency authority', () => {
       projection_sha256: projection.projection_sha256, approved_prd_ref: 'docs/spec.md',
       approved_prd_sha256: engineerSha256('# Source spec\n'), review_authority: selector(subject.root) }));
     expect(otherRequirement.status).toBe('unsatisfied');
+    // A subject that is not a selection is malformed authority.
+    const malformedRequirement = resolveDependencyAuthority(input(subject, 'product_accepted', {
+      dependency: {
+        ...dependency('product_accepted'),
+        acceptance_authority: { authority_kind: 'product_acceptance', subject_ref: 'docs/spec.md', subject_revision: engineerSha256('# Source spec\n') },
+      },
+    }));
+    expect(malformedRequirement.status).toBe('authority_unavailable');
   });
 
   test('cross-repository dependencies bind repository identity and never read a same-named local path', () => {
