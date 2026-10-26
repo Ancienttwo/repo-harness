@@ -2,19 +2,18 @@
 
 ## Scope and authority
 
-- Base: `CANDIDATE_BASE` on `origin/main`. The orchestrator records the final
-  release base after the ANCHOR_PR merge.
+- Base: `f7f502792cb97445c736e05de625d51bf6de57ff` (#964) on `origin/main`.
+  Its parent is `90c9e7ec0e7f888aaf44acc68e9b6af117e70691` (#895). This is
+  the final release base.
 - Previous release: 0.24.1 on npm and in Git. Tag `v0.24.1`, annotated tag
   object `72805d5553d6d6f475ada875d5a01b81c1576bae`, target
   `c21aa3079495bdefb163e0ebaf9a79062abfe7da` (#885 squash).
-- Merged range at preparation: `v0.24.1..origin/main` with `origin/main` at
-  `90c9e7ec0e7f888aaf44acc68e9b6af117e70691` (#895). `git rev-list --count`
-  is 45. Each of the 45 subjects ends with a PR number. The ANCHOR_PR adds
-  one more commit before the release base.
-- The 45 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
+- Merged range: `v0.24.1..f7f502792`. `git rev-list --count` is 46.
+  Each of the 46 subjects ends with a PR number.
+- The 46 PRs: #887, #889, #892, #893, #894, #896, #900, #927, #925, #928,
   #923, #926, #930, #929, #931, #932, #935, #936, #937, #941, #943, #946,
   #944, #940, #897, #899, #938, #933, #934, #939, #942, #949, #945, #952,
-  #953, #954, #955, #951, #957, #950, #958, #959, #962, #963 and #895.
+  #953, #954, #955, #951, #957, #950, #958, #959, #962, #963, #895 and #964.
 - The npm package goes from 0.24.1 to 0.24.2. `package.json`,
   `assets/skill-version.json` (version and template version) and README show
   0.24.2. `bun.lock` records no root package version, so it does not change.
@@ -31,8 +30,8 @@
     #828 is in the 0.24.0 section.
   - Breaking removals are under "Breaking", as in 0.23.1. User steps are
     under "Upgrade", as in 0.24.0.
-  - The ANCHOR_PR line under "Documentation" is a placeholder. The
-    orchestrator fills it with the anchor PR number and its text.
+  - #964 (anchor citations and dead archctx manifest keys) is under
+    "Documentation".
 
 ### Owner decisions (2026-10-26)
 
@@ -67,7 +66,7 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
 | #895 rolling writer PR | The writer published with the accepted major change. `verify-pr`: generated-only, render-equivalent. Merged 2026-10-26T07:08:48Z, squash `90c9e7ec0e7f888aaf44acc68e9b6af117e70691`, parent `bbf18043e43ee9c2d073eb54ddb5e41f71e957ae` (#963), head `28ac5cb05fe68f3f295ccf247ba83bb26f1fdc8d`. |
 | #898 CI repair, daily architecture freshness | Closed as completed at 2026-10-26T07:09:05Z, after the #895 merge. |
 | 17 projection major actions (measured at #957 head `24633552040b45739e7dccec79017ac7ed1ed435`) | Resolved by the owner's acceptance of the observed major change and the #895 publication. |
-| 10 anchor findings and partial practices coverage | Resolved by ANCHOR_PR: anchor citations and dead archctx manifest keys. |
+| 10 anchor findings and partial practices coverage | #964, squash `f7f502792cb97445c736e05de625d51bf6de57ff`, fixed all 11 current anchor findings (anchors: 1,100 citations, 0 findings) and deleted the unread `content.practices` and `review.failOn` manifest keys (archctx `validate`: no warnings). The repo defines no practices, so practice evaluation stays advisory and debt coverage reports `practices:not-enabled`; see the readiness flags. |
 
 ## Upgrade steps for users
 

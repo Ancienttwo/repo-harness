@@ -185,7 +185,10 @@ from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
 - Add CI cost guidance for diff-sized PR checks. (#897)
 - Record the 0.24.1 publication (#889) and the 0.24.2 release holds
   (#954, #958).
-- ANCHOR_PR
+- Fix 11 stale code citations in the architecture module docs. Delete two
+  archctx manifest keys that archctx does not enforce: `content.practices`
+  and `review.failOn`. `.archcontext/policies/review.yaml` stays the review
+  policy source. (#964)
 
 ## [0.24.1] - 2026-10-23
 
