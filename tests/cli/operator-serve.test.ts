@@ -388,6 +388,10 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await pending.json()).toEqual({ error: { code: 'bot_access_pending', message: expect.any(String), next_action: expect.any(String) } });
       botCache = { state: 'failed', reason: 'herdr_session_invalid' };
       expect(await (await get('/api/v1/bot-access')).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
+      botCache = { state: 'failed', reason: 'bot_access_failed' };
+      const failed = await get('/api/v1/bot-access');
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toEqual({ error: { code: 'bot_access_unavailable', message: expect.any(String), next_action: expect.any(String) } });
       botCache = { state: 'ok', snapshot: bots };
       const ready = await get('/api/v1/bot-access');
       expect(ready.status).toBe(200);
@@ -420,7 +424,8 @@ describe('operator serve command and HTTP boundary', () => {
       expect(spawnSpy).not.toHaveBeenCalled();
       expect(spawnSyncSpy).not.toHaveBeenCalled();
       expect(execFileSpy).not.toHaveBeenCalled();
-      expect(reads).toBe(8);
+      // One read per GET above, including the bot_access_unavailable case.
+      expect(reads).toBe(9);
     } finally {
       spawnSpy.mockRestore();
       spawnSyncSpy.mockRestore();
