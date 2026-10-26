@@ -1,3 +1,4 @@
+import { readReviewAdmissionSource } from '../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
@@ -13,8 +14,8 @@ import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
-import { executeAdmittedVerification } from '../src/effects/evidence/verification-execution';
-import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
+import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
+import { observeTaskSessionAdmission, ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -56,6 +57,73 @@ test('generic review refuses tampered empty and missing approved plans before an
     expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
   }
 }, 60_000);
+// The shared fixture supplies explicit synthetic upstream approval. These cases
+// retain the production CLI source loader; only account-home/provider transport
+// are offline boundaries. A runtime sentinel stops before any agent is launched.
+for (const selection of [
+  { kind: 'labels' as const, labels_all: ['review'], assignees_any: [] },
+  { kind: 'issue_numbers' as const, issue_numbers: [903, 904] },
+]) {
+  test(`review, verification and linked session admission resolve the approved issue under ${selection.kind} discovery`, async () => {
+    const f = seedAcceptanceFixture('selected-issue'); roots.push(f.root, f.home);
+    const policyPath = join(f.root, '.ai/harness/policy.json');
+    const existing = JSON.parse(readFileSync(policyPath, 'utf8'));
+    const policy = f.admissionFixture.policy;
+    if (policy.mode !== 'manual') throw new Error('expected manual fixture policy');
+    writeFileSync(policyPath, JSON.stringify({ ...existing, external_sources: { version: 1, mode: 'manual',
+      github: { ...policy.github, selection, limits: { ...policy.github.limits, max_issues: 2 } } } }));
+    const admission = f.admissionFixture.admission;
+    const loaded = readReviewAdmissionSource(f.root, { 'repository-id': admission.repository_id, 'issue-id': admission.issue_id,
+      'campaign-id': admission.campaign_id, 'grant-sha256': f.admissionFixture.grant,
+      'policy-sha256': admission.policy.policy_sha256, actor: admission.actor_id });
+    expect(loaded.issuePolicy.mode).toBe('manual');
+    if (loaded.issuePolicy.mode !== 'manual') throw new Error('expected loaded manual policy');
+    // The loader must not rewrite discovery policy to manufacture an admission.
+    expect(loaded.issuePolicy.github.selection).toEqual(selection);
+    const endpoints: string[] = [];
+    const runner: NonNullable<typeof loaded.runner> = (args, options) => {
+      const endpoint = args.find(arg => arg.startsWith('repos/'))!;
+      endpoints.push(endpoint);
+      expect(['repos/acme/widgets', 'repos/acme/widgets/issues/903']).toContain(endpoint);
+      return f.authority.runner!(args, options);
+    };
+    const authority = { ...loaded, authorityHome: f.home, runner };
+    const verification = executeAdmittedVerification({ repoRoot: f.root, authority, reportFile: f.verification });
+    expect(verification.passed).toBe(true);
+    expect(verification.results[0]!.execution).toBe('executed');
+    const evaluated = evaluateAdmittedVerification({ repoRoot: f.root, authority });
+    expect(evaluated.passed).toBe(true);
+    expect(evaluated.results[0]!.execution).toBe('reused');
+    expect(evaluated.results[0]!.execution_id).toBe(verification.results[0]!.execution_id);
+    const prepared = prepareChangeAssessment({ repoRoot: f.root, authority });
+    const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment: prepared.assessment, selection_packet: prepared.packet };
+    writeFileSync(join(f.root, '.ai/harness/checks/change-assessment.latest.json'), JSON.stringify({ ...basis,
+      evidence_sha256: 'sha256:' + createHash('sha256').update(canonicalize(basis as unknown as JsonValue)).digest('hex') }));
+    const reviewerRepo = join(f.home, 'reviewer');
+    execFileSync('git', ['-C', f.root, 'worktree', 'add', '-qb', 'selected-issue-reviewer', reviewerRepo]);
+    const taskClaim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) };
+    const session = observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: authority, claim: taskClaim });
+    expect(session.identity.issue_id).toBe(admission.issue_id);
+    expect(session.identity.execution_root).toBe(reviewerRepo);
+    expect(session.approval.grant_sha256).toBe(f.admissionFixture.grant);
+    let ownerCalls = 0;
+    await expect(runReviewRound({ repoRoot: f.root, authority, verification: f.verification, reviewerRepo, authorityHome: f.home,
+      endpoint: { session: 'offline-selected-issue', home: f.home }, parentPane: 'fixture-owner', taskClaim,
+      admitSession: () => { throw new Error('must not launch'); } }, {
+      owner: () => { ownerCalls++; throw new Error('offline-runtime-boundary-reached'); },
+    })).rejects.toThrow('offline-runtime-boundary-reached');
+    expect(ownerCalls).toBe(1);
+    expect(endpoints.filter(endpoint => endpoint.endsWith('/issues/903')).length).toBeGreaterThan(1);
+    for (const patch of [{ id: 'replacement-issue' }, { body: 'unapproved goal change' }]) {
+      const changed = { ...authority, runner: ((args, options) => args.includes('repos/acme/widgets/issues/903')
+        ? { stdout: JSON.stringify({ ...f.admissionFixture.issue, ...patch }) } : runner(args, options)) as typeof runner };
+      const refusal = 'id' in patch ? 'review_goal_identity_changed' : 'review_admission_goal_or_actor_changed';
+      expect(() => evaluateAdmittedVerification({ repoRoot: f.root, authority: changed })).toThrow(refusal);
+      expect(() => observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: changed, claim: taskClaim })).toThrow(refusal);
+    }
+  }, 60_000);
+}
+
 const identity = { request_id: 'r', context_sha256: 'domain-context', subject_sha256: 'subject', actual_harness: 'claude' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-model' };
 const finding = { id: 'f', severity: 'P1' as const, status: 'new' as const, message: '[fixture opinion] fix the fence' };
 const fail = { ...identity, verdict: 'FAIL', summary: '[fixture opinion] revise', findings: [finding] };
