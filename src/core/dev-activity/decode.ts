@@ -2,6 +2,7 @@
 // vocabularies, and no absolute-path-looking text outside `url`.
 
 import {
+  DEV_ACTIVITY_ATTENTION_KINDS,
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,
   type DevActivitySnapshotV2,
@@ -13,7 +14,6 @@ const HIDDEN_REASONS = ['closed_unmerged'];
 const CI_STATES = ['success', 'failure', 'pending', 'none'];
 const REVIEW_STATES = ['approved', 'changes_requested', 'review_required', 'none'];
 const PR_STATES = ['open', 'merged', 'closed'];
-const ATTENTION_KINDS = ['ready_to_merge'];
 const SNAPSHOT_STATUSES = ['ready', 'partial', 'unavailable'];
 
 export function unavailableDevActivitySnapshot(): DevActivitySnapshotV2 {
@@ -154,7 +154,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
   let previous = Number.NEGATIVE_INFINITY;
   for (const raw of array(v.attention, 'attention')) {
     const a = obj(raw, ['kind', 'subject_id', 'repository_id', 'summary', 'waiting_since', 'url', 'command'], 'attention');
-    oneOf(a.kind, ATTENTION_KINDS, 'attention kind');
+    oneOf(a.kind, DEV_ACTIVITY_ATTENTION_KINDS, 'attention kind');
     const repo = repositoryId(a.repository_id);
     if (!repositoryIds.has(repo)) fail('attention repository');
     const subject = nonEmpty(a.subject_id, 'subject_id');
