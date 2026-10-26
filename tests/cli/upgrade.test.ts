@@ -674,7 +674,7 @@ describe('legacy workflow-state upgrade report', () => {
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
     expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
-    const items = JSON.parse(json.stdout);
+    const { items } = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
     expect(items[0].reason).toContain('manual removal');

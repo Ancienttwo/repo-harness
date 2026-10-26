@@ -254,6 +254,8 @@ describe('task worktree location', () => {
       const migrated = runUpgrade({ cwd, home, packageRoot: ROOT, scope: 'project', apply: true, migrateWorktreeTemplate: true });
       expect(migrated.exitCode, migrated.error).toBe(0);
       expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
+      // Upgrade apply removes the owned helper copies; restore the fixture the start command runs from.
+      copyHelpers(cwd);
       commitAll(cwd, 'migrated location');
       run('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd);
       const env = { REPO_HARNESS_WORKTREE_ROOT: managed };
