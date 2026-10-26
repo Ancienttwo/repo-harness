@@ -380,7 +380,7 @@ git -C "$TARGET_REPO" commit -qm "initialize smoke repository"
 INSTALLED_ROOT="$APP_DIR/node_modules/$PACKAGE_NAME"
 ADMISSION_FIXTURE="$TMP_DIR/admission-fixture"
 mkdir -p "$TARGET_REPO/.smoke" "$ADMISSION_FIXTURE"
-bun "$ROOT/scripts/fixtures/tarball-review-admission.ts" "$INSTALLED_ROOT" "$TARGET_REPO" "$SMOKE_HOME" "$ADMISSION_FIXTURE"
+bun "$ROOT/tests/fixtures/tarball-review-admission.ts" "$INSTALLED_ROOT" "$TARGET_REPO" "$SMOKE_HOME" "$ADMISSION_FIXTURE"
 export PATH="$ADMISSION_FIXTURE/bin:$PATH"
 bun --preload "$ADMISSION_FIXTURE/bootstrap.ts" "$INSTALLED_ROOT/src/cli/index.ts" \
   review admit --repo "$TARGET_REPO" --request "$ADMISSION_FIXTURE/request.json" >"$ADMISSION_FIXTURE/grant.json"
