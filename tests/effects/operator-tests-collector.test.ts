@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import type { DevActivityProcessRunner } from '../../src/effects/dev-activity/collector';
@@ -51,10 +51,14 @@ function activity(id: string, github: string | null = 'owner/repo', branch: stri
   } as unknown as DevActivitySnapshotV2;
 }
 
+/** A completed scheduled run of ci.yml on main, as the runs query returns it. */
+const scheduled = (fields: Record<string, unknown>): Record<string, unknown> =>
+  ({ head_sha: SHA, event: 'schedule', head_branch: 'main', path: '.github/workflows/ci.yml', status: 'completed', ...fields });
+
 /** A fake gh: GitHub state is plain data; `run download` writes the artifact into -D like gh does. */
 function github() {
   const state = {
-    runs: [{ id: 100, run_attempt: 2, head_sha: SHA, created_at: '2026-10-25T21:35:21Z', conclusion: 'failure' }] as Record<string, unknown>[],
+    runs: [scheduled({ id: 100, run_attempt: 2, created_at: '2026-10-25T21:35:21Z', conclusion: 'failure' })],
     artifacts: [
       { name: 'junit-daily-1', size_in_bytes: 10, expired: false },
       { name: 'junit-daily-2', size_in_bytes: 10, expired: false },
@@ -67,6 +71,8 @@ function github() {
       { number: 3, title: '[CI repair] daily full run incomplete in /Users/someone/x', html_url: 'https://github.com/owner/repo/issues/3', body: '<!-- ci-daily-missing:2026-10-24 -->', is_pull_request: false },
     ] as Record<string, unknown>[],
     fail: null as RegExp | null,
+    /** Extra files the next download writes: path relative to -D -> content, a sparse size, or a symlink target. */
+    extra: {} as Record<string, string | { size: number } | { link: string }>,
   };
   const calls: { argv: string; cwd: string }[] = [];
   const run: DevActivityProcessRunner = async (command, argv, options) => {
@@ -82,6 +88,14 @@ function github() {
       if (name.startsWith('junit-daily-')) {
         writeFileSync(join(dir, '20261025T220000Z-1', 'tests__a.test.ts.xml'), REPORT('tests/a.test.ts', `attempt ${name}`));
       } else writeFileSync(join(dir, 'test-capability-projection.json'), PROJECTION);
+      for (const [path, content] of Object.entries(state.extra)) {
+        if (!path.startsWith(name.startsWith('junit-daily-') ? 'junit/' : 'projection/')) continue;
+        const target = join(dir, path.slice(path.indexOf('/') + 1));
+        mkdirSync(dirname(target), { recursive: true });
+        if (typeof content === 'string') writeFileSync(target, content);
+        else if ('size' in content) { writeFileSync(target, ''); truncateSync(target, content.size); }
+        else symlinkSync(content.link, target);
+      }
       return { ok: true, stdout: '' };
     }
     return { ok: false, code: 'failed' };
@@ -143,7 +157,7 @@ test('the same run is not downloaded again; a newer run replaces the old downloa
   for (let attempt = 0; attempt < 200 && repairs() < 2; attempt++) await Bun.sleep(10);
   expect(downloads()).toBe(2);
 
-  gh.state.runs = [{ id: 101, run_attempt: 1, head_sha: SHA, created_at: '2026-10-26T21:35:21Z', conclusion: 'success' }];
+  gh.state.runs = [scheduled({ id: 101, run_attempt: 1, created_at: '2026-10-26T21:35:21Z', conclusion: 'success' })];
   gh.state.artifacts = [{ name: 'junit-daily-1', size_in_bytes: 10, expired: false }, { name: 'test-projection-1', size_in_bytes: 10, expired: false }];
   for (let attempt = 0; attempt < 200 && (tests.read(f.id) as { snapshot?: { run: { id: number } } }).snapshot?.run.id !== 101; attempt++) await Bun.sleep(10);
   await tests.settled();
@@ -250,4 +264,104 @@ test('close aborts a running gh and leaves no later call', async () => {
   expect(aborted).toBe(true);
   expect(calls).toBe(1);
   expect(existsSync(join(testsArtifactRoot(f.env, f.id), '100-2'))).toBe(false);
+});
+
+test('a run response that is not the scheduled ci.yml run of the branch is refused; a value the decoder rejects is tests_invalid', async () => {
+  const f = fixture();
+  for (const fields of [{ event: 'push' }, { head_branch: 'feature' }, { path: '.github/workflows/other.yml' }, { status: 'in_progress' }]) {
+    const gh = github();
+    gh.state.runs = [scheduled({ id: 100, run_attempt: 2, created_at: '2026-10-25T21:35:21Z', conclusion: 'failure', ...fields })];
+    const tests = collect(f, gh, () => activity(f.id));
+    await tests.settled();
+    expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_unavailable' });
+    expect(gh.calls.filter(call => call.argv.startsWith('gh run download'))).toEqual([]);
+  }
+  const gh = github();
+  gh.state.runs = [scheduled({ id: 100, run_attempt: 2, created_at: 'yesterday', conclusion: 'failure' })];
+  const tests = collect(f, gh, () => activity(f.id));
+  await tests.settled();
+  expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'tests_invalid' });
+});
+
+test('a test with an empty name makes the results junit_invalid, not a download failure', async () => {
+  const f = fixture(), gh = github();
+  gh.state.extra = { 'junit/20261025T220000Z-1/tests__c.test.ts.xml': REPORT('tests/c.test.ts', '') };
+  const tests = collect(f, gh, () => activity(f.id));
+  await tests.settled();
+  const cache = tests.read(f.id);
+  expect(cache.state === 'ready' && cache.snapshot.results).toEqual({ state: 'unavailable', reason: 'junit_invalid' });
+  expect(cache.state === 'ready' && cache.snapshot.projection.state).toBe('ok');
+});
+
+test('a repository that leaves the registry loses its parsed result and its download', async () => {
+  const f = fixture(), gh = github();
+  const tests = collect(f, gh, () => activity(f.id), 20);
+  await tests.settled();
+  expect(tests.read(f.id).state).toBe('ready');
+  expect(existsSync(testsArtifactRoot(f.env, f.id))).toBe(true);
+  writeFileSync(join(f.home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 2, repos: [] }));
+  for (let attempt = 0; attempt < 300 && tests.read(f.id).state !== 'unavailable'; attempt++) await Bun.sleep(10);
+  await tests.settled();
+  expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
+  expect(existsSync(testsArtifactRoot(f.env, f.id))).toBe(false);
+});
+
+test('size and count caps are checked from lstat before any read; a symlink in the download is skipped', async () => {
+  const f = fixture();
+  const MiB = 1024 * 1024;
+  for (const extra of [
+    { 'junit/big/tests__big.test.ts.xml': { size: 9 * MiB } },
+    { 'projection/test-capability-projection.json': { size: 33 * MiB } },
+    // Not a report, but it counts toward the extracted total.
+    { 'junit/blob.bin': { size: 257 * MiB } },
+    Object.fromEntries(Array.from({ length: 5_001 }, (_, index) => [`junit/many/f${index}.txt`, ''])),
+  ] as Record<string, string | { size: number }>[]) {
+    const gh = github();
+    gh.state.extra = extra;
+    const tests = collect(f, gh, () => activity(f.id));
+    await tests.settled();
+    expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'artifact_too_large' });
+  }
+
+  const outside = join(f.home, '..', 'outside.xml');
+  writeFileSync(outside, REPORT('tests/outside.test.ts', 'outside'));
+  const gh = github();
+  gh.state.extra = { 'junit/20261025T220000Z-1/tests__outside.test.ts.xml': { link: outside } };
+  const tests = collect(f, gh, () => activity(f.id));
+  await tests.settled();
+  const cache = tests.read(f.id);
+  expect(cache.state === 'ready' && cache.snapshot.results.state === 'ok' && cache.snapshot.results.files.map(file => file.file)).toEqual(['tests/a.test.ts']);
+});
+
+test('a projection artifact with two files is projection_invalid for that section only', async () => {
+  const f = fixture(), gh = github();
+  gh.state.extra = { 'projection/second.json': '{}' };
+  const tests = collect(f, gh, () => activity(f.id));
+  await tests.settled();
+  const cache = tests.read(f.id);
+  expect(cache.state === 'ready' && cache.snapshot.projection).toEqual({ state: 'unavailable', reason: 'projection_invalid' });
+  expect(cache.state === 'ready' && cache.snapshot.results.state).toBe('ok');
+});
+
+test('a failed download of a newer run keeps the older parsed result and its directory', async () => {
+  const f = fixture(), gh = github();
+  const tests = collect(f, gh, () => activity(f.id), 20);
+  await tests.settled();
+  expect(tests.read(f.id).state).toBe('ready');
+  const downloads = () => gh.calls.filter(call => call.argv.startsWith('gh run download')).length;
+  gh.state.runs = [scheduled({ id: 101, run_attempt: 1, created_at: '2026-10-26T21:35:21Z', conclusion: 'success' })];
+  gh.state.artifacts = [{ name: 'junit-daily-1', size_in_bytes: 10, expired: false }];
+  gh.state.fail = /run download 101/u;
+  for (let attempt = 0; attempt < 300 && tests.read(f.id).state === 'ready'; attempt++) await Bun.sleep(10);
+  expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'artifact_download_failed' });
+  expect(existsSync(join(testsArtifactRoot(f.env, f.id), '100-2'))).toBe(true);
+  // GitHub names run 100 again (for example after the newer run is deleted): the held result serves without a download.
+  const before = downloads();
+  gh.state.fail = null;
+  gh.state.runs = [scheduled({ id: 100, run_attempt: 2, created_at: '2026-10-25T21:35:21Z', conclusion: 'failure' })];
+  for (let attempt = 0; attempt < 300 && tests.read(f.id).state !== 'ready'; attempt++) await Bun.sleep(10);
+  await tests.settled();
+  const cache = tests.read(f.id);
+  expect(cache.state === 'ready' && cache.snapshot.run.id).toBe(100);
+  expect(downloads()).toBe(before);
 });

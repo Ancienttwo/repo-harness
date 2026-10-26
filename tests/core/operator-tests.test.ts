@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  CI_DAILY_MISSING_KEY_PREFIX,
+  CI_REPAIR_KEY_PREFIX,
+  ciRepairIssueMarker,
   decodeTestsSnapshot,
   isCiRepairIssueBody,
   parseJUnitReport,
@@ -70,6 +73,9 @@ describe('JUnit report', () => {
       REPORT.replace('time="0.25"', 'time="-1"'),
       REPORT.replace('&quot;days', '&bogus;days'),
       REPORT.replace('</testcase>\n      </testsuite>', '</testsuite>\n      </testcase>'),
+      // Bun writes an empty name for test('') and describe(''); the snapshot has no empty name.
+      REPORT.replace('name="top level case"', 'name=""'),
+      REPORT.replace('<testsuite name="inner"', '<testsuite name=" "'),
       '<testsuites></testsuites>',
     ]) expect(() => parseJUnitReport(broken)).toThrow('junit invalid');
   });
@@ -129,5 +135,8 @@ describe('tests snapshot decoder', () => {
     expect(isCiRepairIssueBody('<!-- ci-repair:run-1 -->\n\nevidence')).toBe(true);
     expect(isCiRepairIssueBody('<!-- ci-daily-missing:2026-10-25 -->')).toBe(true);
     expect(isCiRepairIssueBody('[CI repair] in the title only')).toBe(false);
+    // The writer's keys and the reader's markers come from the same prefixes.
+    for (const prefix of [CI_REPAIR_KEY_PREFIX, CI_DAILY_MISSING_KEY_PREFIX]) expect(isCiRepairIssueBody(ciRepairIssueMarker(`${prefix}x`))).toBe(true);
+    expect(isCiRepairIssueBody(ciRepairIssueMarker('ci-repair-evidence:1:1'))).toBe(false);
   });
 });

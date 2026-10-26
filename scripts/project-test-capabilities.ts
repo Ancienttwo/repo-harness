@@ -19,17 +19,17 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeAffectedTests } from './select-ci-coverage';
 import { resolveArchcontextCapabilityPaths } from '../src/effects/architecture/archcontext-owners';
+import { TEST_PROJECTION_SCHEMA } from '../src/core/operator/tests';
 
 const MODEL_NODES = '.archcontext/model/nodes';
 const TEST_FILE = /^tests\/.*\.test\.tsx?$/;
 const SOURCE_MODULE = /\.([cm]?[jt]sx?|sh)$/;
 const VERIFICATION_TEST = /tests\/[\w/.-]+\.test\.tsx?/g;
-const SCHEMA = 'repo-harness.test-capability-projection/v1';
 
 export type TestCapabilityLink = { id: string; via: Array<'import' | 'verification'> };
 export type TestProjectionEntry = { file: string; sources: string[]; capabilities: TestCapabilityLink[] };
 export type TestCapabilityProjection = {
-  schemaVersion: typeof SCHEMA;
+  schemaVersion: typeof TEST_PROJECTION_SCHEMA;
   tests: TestProjectionEntry[];
   /** Capabilities that declare tests in `extensions.verification`. */
   declared: Array<{ id: string; tests: string[] }>;
@@ -89,7 +89,7 @@ export async function buildProjection(input: ProjectionInput): Promise<TestCapab
       .map(([id, ways]): TestCapabilityLink => ({ id, via: [...ways].sort(byteOrder) }));
     return { file, sources: modules, capabilities };
   });
-  return { schemaVersion: SCHEMA, tests: entries, declared, missing };
+  return { schemaVersion: TEST_PROJECTION_SCHEMA, tests: entries, declared, missing };
 }
 
 /** One line per record keeps each change a one-line diff. */

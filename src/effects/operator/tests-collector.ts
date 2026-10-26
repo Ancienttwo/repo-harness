@@ -38,6 +38,8 @@ const ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
 const REPORT_MAX_BYTES = 8 * 1024 * 1024;
 const PROJECTION_MAX_BYTES = 32 * 1024 * 1024;
 const REPORT_MAX_FILES = 5_000;
+/** Extracted bytes of one artifact, from lstat sizes, checked before any file is read. */
+const EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
 const GITHUB_REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
 const BRANCH = /^[A-Za-z0-9._/-]{1,255}$/u;
 
@@ -80,9 +82,10 @@ function json(text: string): unknown {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-/** Regular files under `dir`, depth first. A symlink is never followed. */
+/** Regular files under `dir`, depth first, within the count and total size caps. A symlink is skipped, never followed. */
 async function regularFiles(dir: string, limit: number): Promise<string[]> {
   const out: string[] = [];
+  let bytes = 0;
   const stack = [dir];
   while (stack.length > 0) {
     const current = stack.pop()!;
@@ -91,7 +94,8 @@ async function regularFiles(dir: string, limit: number): Promise<string[]> {
       const stat = await lstat(path);
       if (stat.isDirectory()) stack.push(path);
       else if (stat.isFile()) {
-        if (out.length >= limit) throw new Unavailable('artifact_too_large');
+        bytes += stat.size;
+        if (out.length >= limit || bytes > EXTRACTED_MAX_BYTES) throw new Unavailable('artifact_too_large');
         out.push(path);
       }
     }
@@ -132,6 +136,10 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     if (!body || !Array.isArray(body.workflow_runs)) throw new Unavailable('github_unavailable');
     const raw = body.workflow_runs[0] as Record<string, unknown> | undefined;
     if (raw === undefined) throw new Unavailable('no_daily_run');
+    // The response must be the run the query asked for; anything else is not this collector's authority.
+    if (raw.event !== 'schedule' || raw.head_branch !== branch || raw.path !== '.github/workflows/ci.yml' || raw.status !== 'completed') {
+      throw new Unavailable('github_unavailable');
+    }
     const value = {
       id: raw.id, attempt: raw.run_attempt, head_sha: raw.head_sha,
       created_at: typeof raw.created_at === 'string' ? raw.created_at : null, conclusion: raw.conclusion ?? null, channel: TESTS_CHANNEL,
@@ -188,8 +196,10 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     if (projection !== null && projection.expired !== true) {
       await download(github, run_, projection.name as string, join(dir, 'projection'));
       try {
-        const [file] = await regularFiles(join(dir, 'projection'), 1);
-        if (file === undefined) throw new Error('test projection invalid: empty');
+        const files = await regularFiles(join(dir, 'projection'), REPORT_MAX_FILES);
+        // The artifact holds exactly one JSON file; anything else is not the projection.
+        if (files.length !== 1) throw new Error('test projection invalid: file count');
+        const file = files[0]!;
         projected = { state: 'ok', files: parseTestProjection(JSON.parse(await readCapped(file, PROJECTION_MAX_BYTES))) };
       } catch (error) { if (error instanceof Unavailable) throw error; projected = { state: 'unavailable', reason: 'projection_invalid' }; }
     }
@@ -237,11 +247,18 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
         downloads.set(repo.id, held);
       }
       const repairs = await readRepairs(github, cwd);
-      return { state: 'ready', snapshot: decodeTestsSnapshot({
+      let snapshot: TestsSnapshotV1;
+      try {
+        snapshot = decodeTestsSnapshot({
         protocol: 1, kind: OPERATOR_TESTS_KIND, repository_id: repo.id, collected_at: now().toISOString(),
-        run: newest, projection: held.parsed.projection, results: held.parsed.results, repairs,
-      }) };
+          run: newest, projection: held.parsed.projection, results: held.parsed.results, repairs,
+        });
+      } catch {
+        return { state: 'unavailable', reason: 'tests_invalid' };
+      }
+      return { state: 'ready', snapshot };
     } catch (error) {
+      // Only a failure this module classified has a reason; any other one is a local download or file error.
       return { state: 'unavailable', reason: error instanceof Unavailable ? error.reason : 'artifact_download_failed' };
     }
   };

@@ -388,6 +388,7 @@ const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly stat
   artifacts_expired: { status: 503, message: 'The artifacts of the newest daily CI run have expired.', next_action: 'Wait for the next scheduled CI run.' },
   artifact_too_large: { status: 503, message: 'A test artifact is larger than the collector reads.', next_action: 'Check the size of the junit-daily and test-projection artifacts.' },
   artifact_download_failed: { status: 503, message: 'A test artifact could not be downloaded.', next_action: 'Check `gh auth status`, then wait for the next collection.' },
+  tests_invalid: { status: 503, message: 'The test results failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
 };
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {

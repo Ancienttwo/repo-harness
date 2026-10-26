@@ -14,10 +14,15 @@ export const TEST_PROJECTION_SCHEMA = 'repo-harness.test-capability-projection/v
 export const TESTS_CHANNEL = 'daily_full' as const;
 
 /**
- * Body markers of the repair issues that `scripts/report-ci.ts` opens and
- * reads back as unresolved repairs. An open issue with one of them is a repair.
+ * Repair issue identity. `scripts/report-ci.ts` builds each repair key from
+ * one of these prefixes and writes it into the issue body with
+ * `ciRepairIssueMarker`; the tests route and the report's unresolved-repair
+ * readback both find open repairs with `isCiRepairIssueBody`.
  */
-export const CI_REPAIR_MARKERS = ['<!-- ci-repair:', '<!-- ci-daily-missing:'] as const;
+export const CI_REPAIR_KEY_PREFIX = 'ci-repair:' as const;
+export const CI_DAILY_MISSING_KEY_PREFIX = 'ci-daily-missing:' as const;
+export const ciRepairIssueMarker = (key: string): string => `<!-- ${key} -->`;
+export const CI_REPAIR_MARKERS: readonly string[] = [CI_REPAIR_KEY_PREFIX, CI_DAILY_MISSING_KEY_PREFIX].map(prefix => `<!-- ${prefix}`);
 
 /** Why a repository's tests cannot be served. Each maps to one HTTP status in the route. */
 export const TESTS_UNAVAILABLE_REASONS = [
@@ -31,6 +36,7 @@ export const TESTS_UNAVAILABLE_REASONS = [
   'artifacts_expired',
   'artifact_too_large',
   'artifact_download_failed',
+  'tests_invalid',
 ] as const;
 export type TestsUnavailableReason = typeof TESTS_UNAVAILABLE_REASONS[number];
 
@@ -75,7 +81,10 @@ export interface TestsSnapshotV1 {
   };
   /** `projection_missing`: the run has no projection artifact ("no projection for this run"). */
   readonly projection: Section<{ readonly files: readonly TestProjectionFileV1[] }, 'projection_missing' | 'projection_invalid'>;
-  /** `junit_missing`: the run has no JUnit artifact, so every case is "no result" while the file list still shows. */
+  /**
+   * `junit_missing`: the run has no JUnit artifact, so every case is "no result" while the file list still shows.
+   * A projection file with no entry in `files` has no result either; it never counts as passed.
+   */
   readonly results: Section<{ readonly files: readonly TestFileResultV1[] }, 'junit_missing' | 'junit_invalid'>;
   readonly repairs: Section<{ readonly issues: readonly { readonly number: number; readonly title: string; readonly url: string }[] }, 'repairs_unavailable'>;
 }
@@ -169,8 +178,10 @@ export function parseJUnitReport(xml: string): TestFileResultV1 {
     } else if (name === 'testcase') {
       if (file === null || current !== null) throw new Error('junit invalid: testcase');
       const caseName = attrs.get('name');
-      if (caseName === undefined) throw new Error('junit invalid: testcase name');
+      // Bun writes `name=""` for `test('')`; the snapshot has no empty name, so the report is not servable.
+      if (caseName === undefined || publicTestText(caseName) === '') throw new Error('junit invalid: testcase name');
       const suites = stack.filter(entry => entry.name === 'testsuite').slice(1).map(entry => entry.attrs.get('name') ?? '');
+      if (suites.some(suite => publicTestText(suite) === '')) throw new Error('junit invalid: suite name');
       current = { suite: suites.length ? publicTestText(suites.join(' > ')) : null, name: publicTestText(caseName), duration_ms: milliseconds(attrs.get('time')), result: 'passed' };
     } else if (name === 'failure' || name === 'error') {
       if (current === null) throw new Error('junit invalid: failure');
