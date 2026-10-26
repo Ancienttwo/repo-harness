@@ -7,7 +7,7 @@ the PRD is
 
 | Material | Where |
 | --- | --- |
-| Design canvas (17 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared) |
+| Design canvas (19 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared) |
 | Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared) |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
 
@@ -22,6 +22,8 @@ sidebar labels.
 | Work | Board (看板) | `Main` | none |
 | Work | Task drawer | `Task` | none (follow-up is copyable commands; inbox is read-only) |
 | Work | Repositories (仓库) | `Repositories` | none |
+| Work | Worktrees (Worktree) | `Worktrees` | cleans green (reclaimable) worktrees after a server-side recheck |
+| Work | Worktree cleanup session | `WorktreeCleanup` | none by the agent; the user ticks items and the server deletes them |
 | Work | Docs (文档) | `Docs` | starts a docs session |
 | Work | Docs session | `DocsSession` | `docs/` files, branch, Draft PR |
 | Setup | Agents | `Agents` | none (commands only) |
@@ -36,6 +38,19 @@ sidebar labels.
 
 The "Task · agent session" artboard was dropped: the console does not message
 or stop coding sessions.
+
+## Worktree page
+
+A disk chart splits every worktree on the machine into three classes:
+reclaimable (merged, clean, not in use; green), needs your decision (yellow)
+and keep (open PR, running process, unpushed or uncommitted source; red). Age
+is never a reason to delete. Each row states the reason and what a delete
+loses. Only green rows can be ticked for one-click cleanup. "Let the agent
+clean up" opens a `worktree_cleanup` session: the agent investigates the
+yellow rows read-only and returns a plan with evidence; the user ticks items;
+the server rechecks each item under the topology lock, deletes it and writes
+an audit entry. Leftover directories that git no longer registers are listed
+by directory name only. PRD gaps G23–G26.
 
 ## Repository switcher
 

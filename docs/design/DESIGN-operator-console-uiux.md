@@ -15,7 +15,7 @@
 
 ## Purpose & Audience
 
-- Page/surface: the localhost `repo-harness operator serve` console, extended from a read-only board into a local management console with 17 designed pages (home, board, task drawer, repositories, docs, docs session, Agents, Skills, Hooks, CLI, architecture layers/sequence/topology, tests, system, tools, settings).
+- Page/surface: the localhost `repo-harness operator serve` console, extended from a read-only board into a local management console with 19 designed pages (home, board, task drawer, repositories, worktrees, worktree cleanup session, docs, docs session, Agents, Skills, Hooks, CLI, architecture layers/sequence/topology, tests, system, tools, settings).
 - Primary audience: one maintainer who runs several adopted repositories and several coding agents (Claude Code, Codex, others through OAR) on one machine.
 - Job to be done: see in one window what is waiting for them, what each task is doing and which agent owns it; keep the development environment (hooks, skills, CLIs, agents) healthy; read, quote and update `docs/` through an agent, getting the change back as a Draft PR.
 
@@ -125,4 +125,4 @@
 
 ## Preview Attachment
 
-- Preview path/link: the design canvas in Claude (17 artboards, light and dark themes), listed with every page in [`operator-console/README.md`](operator-console/README.md). The link is private until shared from the canvas.
+- Preview path/link: the design canvas in Claude (19 artboards, light and dark themes), listed with every page in [`operator-console/README.md`](operator-console/README.md). The link is private until shared from the canvas.
