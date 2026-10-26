@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
@@ -330,6 +330,270 @@ describe('notify plugin status', () => {
       f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
       expect((await readNotifyStatus({ env: f.env })).last_delivery).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
     } finally { f.cleanup(); }
+  });
+
+  test('each channel reports its own newest delivery, and a failed channel does not hide the others', async () => {
+    const f = fixture();
+    try {
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] SLACK: HTTP 200\n[webhook-notify] DISCORD: HTTP 204\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] SLACK: delivery failed.\n[webhook-notify] WEBHOOK: HTTP 200\n' },
+        { finished_unix_ms: 1_700_000_200_000, status: 'succeeded', stderr: '[webhook-notify] TELEGRAM: HTTP 200 app-failed\n' },
+        { finished_unix_ms: 1_700_000_300_000, status: 'succeeded', stderr: '' },
+      ] } });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      expect(read.deliveries).toEqual({
+        webhook: { at: '2023-11-14T22:15:00.000Z', result: 'succeeded' },
+        slack: { at: '2023-11-14T22:15:00.000Z', result: 'failed' },
+        discord: { at: '2023-11-14T22:13:20.000Z', result: 'succeeded' },
+        telegram: { at: '2023-11-14T22:16:40.000Z', result: 'failed' },
+      });
+      // The combined record stays as it was: the newest event with an attempt.
+      expect(read.status.last_delivery).toEqual({ at: '2023-11-14T22:16:40.000Z', result: 'failed' });
+    } finally { f.cleanup(); }
+  });
+
+  test('a channel with no recorded attempt is missing, and an unreadable log is unavailable for every channel', async () => {
+    const f = fixture();
+    try {
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+      ] } });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      expect(read.deliveries.webhook).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
+      for (const channel of ['slack', 'discord', 'telegram'] as const) expect(read.deliveries[channel]).toEqual({ at: null, result: 'missing' });
+      f.env.FIXTURE_LOGS = 'not json';
+      const unreadable = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) expect(unreadable.deliveries[channel]).toEqual({ at: null, result: 'unavailable' });
+    } finally { f.cleanup(); }
+  });
+
+  test('an unknown log line makes only the channels it could belong to unsupported', async () => {
+    const f = fixture();
+    try {
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] SLACK: HTTP 200\n[webhook-notify] WEBHOOK: HTTP 200\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] DISCORD sent private-identity ok\n' },
+      ] } });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      expect(read.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
+      expect(read.deliveries.slack).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      expect(read.deliveries.discord).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      expect(read.deliveries.telegram).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      expect(JSON.stringify(read)).not.toContain('private-identity');
+    } finally { f.cleanup(); }
+  });
+
+  test('0.1.0 lines name no proven channel: each channel is unsupported while the combined record still reads them', async () => {
+    const f = fixture();
+    try {
+      // Line shapes copied from a real 0.1.0 install; the identity tokens are placeholders.
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n[webhook-notify] SLACK wA:p4:done -> 200\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] SLACK failed: fetch failed\n' },
+      ] } });
+      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) {
+        expect(read.deliveries[channel]).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
+      }
+      expect(read.status.last_delivery).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'failed' });
+      expect(JSON.stringify(read)).not.toContain('wA:p4');
+
+      // A later entry in the current format gives its channel a result again; the others stay unsupported.
+      f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
+        { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n' },
+        { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
+      ] } });
+      const later = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      expect(later.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
+      expect(later.deliveries.slack).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'unsupported' });
+    } finally { f.cleanup(); }
+  });
+
+  describe('shipped plugin', () => {
+    const pluginPath = join(import.meta.dir, '../../assets/herdr/webhook-notify/notify.mjs');
+    const TELEGRAM = '123456:telegram-token-must-not-leak';
+    const DISCORD = 'https://discord.example/api/webhooks/discord-secret-must-not-leak';
+    type Notify = (env: NodeJS.ProcessEnv, send: typeof fetch) => Promise<void>;
+
+    interface Sent { readonly url: string; readonly body: Record<string, unknown> }
+
+    async function run(f: ReturnType<typeof fixture>, options: {
+      readonly worktree?: Record<string, unknown>; readonly failing?: readonly string[]; readonly status?: 'blocked' | 'done';
+    } = {}) {
+      const { notify } = await import(pluginPath) as { notify: Notify };
+      const state = join(f.root, 'state');
+      mkdirSync(state, { recursive: true });
+      writeFileSync(join(f.config, '.env'), [
+        `WEBHOOK_URL='https://bot.example/routine'`, `WEBHOOK_KEY='${SECRET}'`, `NOTIFY_SESSION='notify-test'`,
+        `SLACK_WEBHOOK_URL='${SLACK}'`, `DISCORD_WEBHOOK_URL='${DISCORD}'`,
+        `TELEGRAM_BOT_TOKEN='${TELEGRAM}'`, `TELEGRAM_CHAT_ID='-42'`,
+      ].join('\n') + '\n', { mode: 0o600 });
+      const sent: Sent[] = [];
+      const stderr: string[] = [];
+      const spy = spyOn(console, 'error').mockImplementation((line: unknown) => { stderr.push(String(line)); });
+      try {
+        await notify({ ...f.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: f.config, HERDR_PLUGIN_STATE_DIR: state,
+          HERDR_PLUGIN_EVENT_JSON: JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', agent_status: options.status ?? 'blocked', agent: 'claude' } }),
+          HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_cwd: dirname(realpathSync('/tmp')), ...(options.worktree ? { worktree: options.worktree } : {}) }),
+        }, (async (url: string | URL | Request, init?: RequestInit) => {
+          const target = String(url);
+          sent.push({ url: target, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+          if (options.failing?.some(part => target.includes(part))) throw new Error(`refused ${target}`);
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }) as typeof fetch);
+      } finally { spy.mockRestore(); }
+      return { sent, stderr, state };
+    }
+
+    function binding(repoRoot: string, extra: { readonly started?: readonly string[]; readonly closed?: boolean; readonly pane?: string;
+      readonly key?: string; readonly task?: string } = {}) {
+      const dir = join(repoRoot, '.ai/harness/runs/task-agents', extra.key ?? 'key-1');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'binding.json'), JSON.stringify({
+        protocol: 2, repository_id: 'repo-key-1', runtime: 'herdr', task: extra.task ?? 'task-1019', role: 'worker',
+        pane_id: extra.pane ?? 'pane-1', workspace_id: 'workspace-1', endpoint: { session: 'notify-test' },
+      }));
+      (extra.started ?? ['req-1', 'req-2']).forEach((id, index) => writeFileSync(join(dir, `started-${index + 1}.json`), JSON.stringify({ request_id: id })));
+      if (extra.closed) writeFileSync(join(dir, 'closed.json'), '{}');
+    }
+
+    test('the payload and the human messages carry the repository, task and latest request id', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(sent).toHaveLength(4);
+        const bot = sent.find(item => item.url.includes('bot.example'))!;
+        expect(bot.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
+        const slack = sent.find(item => item.url === SLACK)!;
+        expect(String(slack.body.text)).toContain('task task-1019 · request req-2');
+        expect(String(slack.body.text)).not.toContain('repo-key-1');
+        for (const item of sent.filter(item => !item.url.includes('bot.example'))) {
+          expect(JSON.stringify(item.body)).toContain('task-1019');
+        }
+      } finally { f.cleanup(); }
+    });
+
+    test('ids the plugin cannot read are left out of the payload, never invented', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        // A closed session, another pane, or no binding: the task and request id stay unknown.
+        for (const setup of [() => binding(repoRoot, { closed: true }), () => rmSync(join(repoRoot, '.ai'), { recursive: true, force: true }),
+          () => binding(repoRoot, { pane: 'pane-9' })]) {
+          setup();
+          rmSync(join(f.root, 'state'), { recursive: true, force: true });
+          const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+          const bot = sent.find(item => item.url.includes('bot.example'))!;
+          expect(bot.body).toMatchObject({ repository: 'demo-repo' });
+          expect(bot.body).not.toHaveProperty('task');
+          expect(bot.body).not.toHaveProperty('request_id');
+          expect(String(sent.find(item => item.url === SLACK)!.body.text)).not.toContain('task ');
+        }
+        rmSync(join(f.root, 'state'), { recursive: true, force: true });
+        const { sent } = await run(f);
+        const bare = sent.find(item => item.url.includes('bot.example'))!.body;
+        for (const key of ['repository', 'task', 'request_id']) expect(bare).not.toHaveProperty(key);
+      } finally { f.cleanup(); }
+    });
+
+    test('every payload names the repository by name, never by the repo_key path', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        const key = '/Users/some one/Projects/demo-repo/.git';
+        binding(repoRoot);
+        // The session carries the same path as its repository id, with a space in it.
+        const path = join(repoRoot, '.ai/harness/runs/task-agents/key-1/binding.json');
+        writeFileSync(path, readFileSync(path, 'utf8').replace('"repo-key-1"', JSON.stringify(key)));
+        const { sent, stderr, state } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
+        const everything = JSON.stringify(sent.map(item => item.body)) + stderr.join('\n')
+          + readdirSync(state).map(name => readFileSync(join(state, name), 'utf8')).join('\n');
+        expect(everything).not.toContain('/Users/some one');
+        expect(everything).not.toContain('Projects/demo-repo');
+        for (const item of sent.filter(item => !item.url.includes('bot.example'))) expect(JSON.stringify(item.body)).toContain('repo demo-repo');
+      } finally { f.cleanup(); }
+    });
+
+    test('without a repo_name the repository is left out, even when a repo_key path is given', async () => {
+      const f = fixture();
+      try {
+        const { sent } = await run(f, { worktree: { repo_key: '/Users/someone/Projects/demo-repo/.git' } });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+        expect(JSON.stringify(sent)).not.toContain('/Users/someone');
+        // A repo_name that is not a plain name is not forwarded.
+        rmSync(join(f.root, 'state'), { recursive: true, force: true });
+        const odd = await run(f, { worktree: { repo_key: 'k', repo_name: '/Users/someone/demo-repo' } });
+        expect(JSON.stringify(odd.sent)).not.toContain('/Users/someone');
+        expect(odd.sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+      } finally { f.cleanup(); }
+    });
+
+    test('an unreadable newest request file leaves the request id out instead of using an earlier round', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        const newest = join(repoRoot, '.ai/harness/runs/task-agents/key-1/started-2.json');
+        for (const broken of ['{not json', JSON.stringify({ request_id: 'bad id with spaces' }), JSON.stringify({})]) {
+          writeFileSync(newest, broken);
+          rmSync(join(f.root, 'state'), { recursive: true, force: true });
+          const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+          const bot = sent.find(item => item.url.includes('bot.example'))!;
+          expect(bot.body).toMatchObject({ task: 'task-1019' });
+          expect(bot.body).not.toHaveProperty('request_id');
+          expect(JSON.stringify(sent)).not.toContain('req-1');
+        }
+      } finally { f.cleanup(); }
+    });
+
+    test('two open sessions for the same pane report no task and no request id', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        binding(repoRoot, { key: 'key-2', task: 'task-other', started: ['req-9'] });
+        const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+        const bot = sent.find(item => item.url.includes('bot.example'))!;
+        expect(bot.body).toMatchObject({ repository: 'demo-repo' });
+        expect(bot.body).not.toHaveProperty('task');
+        expect(bot.body).not.toHaveProperty('request_id');
+        expect(JSON.stringify(sent)).not.toContain('task-other');
+        expect(JSON.stringify(sent)).not.toContain('task-1019');
+        // Closing one of the two leaves a single open session, which is reported.
+        writeFileSync(join(repoRoot, '.ai/harness/runs/task-agents/key-2/closed.json'), '{}');
+        rmSync(join(f.root, 'state'), { recursive: true, force: true });
+        const single = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(single.sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ task: 'task-1019', request_id: 'req-2' });
+      } finally { f.cleanup(); }
+    });
+
+    test('no payload, log line, or state file holds a webhook URL or token', async () => {
+      const f = fixture();
+      try {
+        const repoRoot = join(f.root, 'repo');
+        binding(repoRoot);
+        const { sent, stderr, state } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot }, failing: ['hooks.slack.example'] });
+        const everything = JSON.stringify(sent.map(item => item.body)) + stderr.join('\n')
+          + readdirSync(state).map(name => readFileSync(join(state, name), 'utf8')).join('\n');
+        for (const secret of [SECRET, SLACK, 'bot.example', DISCORD, 'discord-secret', TELEGRAM, 'telegram-token']) expect(everything).not.toContain(secret);
+      } finally { f.cleanup(); }
+    });
+
+    test('one failing channel is recorded for that channel only, and the others keep their result', async () => {
+      const f = fixture();
+      try {
+        const { stderr } = await run(f, { failing: ['hooks.slack.example'] });
+        f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
+        const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+        expect(read.deliveries.slack.result).toBe('failed');
+        for (const channel of ['webhook', 'discord', 'telegram'] as const) expect(read.deliveries[channel].result).toBe('succeeded');
+        expect(read.status.last_delivery.result).toBe('failed');
+      } finally { f.cleanup(); }
+    });
   });
 
   test('the reader performs no synchronous filesystem or process call on the server request path', async () => {
