@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.hook-adapters.deployed-on.hook"
+kind: "deployed-on"
+source: "capability.runtime-harness.hook-adapters"
+target: "process.hook"
+intent: "Hook adapters run in the per-event hook process."

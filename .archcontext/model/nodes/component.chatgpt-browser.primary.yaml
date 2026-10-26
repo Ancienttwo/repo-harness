@@ -4,6 +4,7 @@ kind: component
 name: "Browser Consult Engine"
 status: active
 parent: capability.runtime-mcp.chatgpt-browser
+layer: "cli"
 summary: "Assembles the prompt bundle, scans it, runs the Oracle or native provider and writes the session record."
 responsibilities:
   - Resolve the browser binding and the provider and refuse an unbound or unsafe profile.

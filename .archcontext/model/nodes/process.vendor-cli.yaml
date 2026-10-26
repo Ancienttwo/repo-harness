@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.vendor-cli"
+kind: "process"
+name: "Vendor reviewer CLI"
+status: "active"
+layer: "external"
+summary: "Claude or Codex reviewer runtime under sandbox-exec, started by the OAR review host."

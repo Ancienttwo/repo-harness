@@ -97,6 +97,7 @@ export function readySetup(now: number): SetupSnapshotV1 {
     ],
     skills: readySkills(),
     hooks: HOOKS,
+    hook_usage: null,
     fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed' } })),
   };
 }
@@ -150,6 +151,7 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
     ],
     skills,
     hooks: HOOKS,
+    hook_usage: null,
     fleet: FLEET.map(role => ({
       ...role,
       hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed' },

@@ -1,5 +1,5 @@
 import { publicDevActivityText } from './decode';
-import type { DevActivityItem, DevActivitySnapshotV2 } from './types';
+import { isTruncatedDevActivityReason, type DevActivityAttentionKind, type DevActivityItem, type DevActivitySnapshotV2 } from './types';
 
 /**
  * Text tags, in priority order. The snapshot owns placement and attention.
@@ -18,11 +18,20 @@ import type { DevActivityItem, DevActivitySnapshotV2 } from './types';
  * | No PR, clean, other column | [in flight <branch>] |
  *
  * Active counts exclude hidden, closed and shipped items. A non-ok Git or
- * GitHub source replaces item lines with source status lines. Runtime health
+ * GitHub source replaces item lines with source status lines, except a
+ * source that dropped one PR category: it adds its status line and keeps the
+ * item lines of the other categories. Runtime health
  * does not change Git or GitHub facts. The item cap does not cap attention.
  */
 
 const LINE_LIMIT = 99;
+
+const ATTENTION_CAUSE: Readonly<Record<DevActivityAttentionKind, string>> = {
+  ready_to_merge: 'ready to merge',
+  changes_requested: 'changes requested',
+  merge_conflict: 'merge conflict',
+  checks_failed: 'checks failed',
+};
 
 function shortText(value: string, limit: number): string {
   const text = publicDevActivityText(value)
@@ -72,7 +81,7 @@ export function formatDevActivityBrief(snapshot: DevActivitySnapshotV2, maxItems
       const repo = snapshot.repositories.find(entry => entry.repository_id === attention.repository_id)!;
       const item = snapshot.items.find(entry => entry.id === attention.subject_id)!;
       const name = shortText(repo.display_name, 40);
-      const cause = 'ready to merge';
+      const cause = ATTENTION_CAUSE[attention.kind];
       const subject = item.pull_request ? `PR #${item.pull_request.number}` : item.branch;
       lines.push(`${name}: ${shortText(subject, LINE_LIMIT - name.length - cause.length - 5)} - ${cause}`);
     }
@@ -83,10 +92,8 @@ export function formatDevActivityBrief(snapshot: DevActivitySnapshotV2, maxItems
     const suffix = ` (${active} active)`;
     lines.push('', `${shortText(repo.display_name, LINE_LIMIT - suffix.length)}${suffix}`);
     const sources = repo.sources.filter(source => source.kind !== 'runtime' && source.status !== 'ok');
-    if (sources.length) {
-      for (const source of sources) lines.push(`  source ${source.kind} ${source.status}`);
-      continue;
-    }
+    for (const source of sources) lines.push(`  source ${source.kind} ${source.status}`);
+    if (sources.some(source => !isTruncatedDevActivityReason(source.reason))) continue;
     for (const item of items.slice(0, maxItems)) lines.push(itemLine(item));
     if (items.length > maxItems) lines.push(`  +${items.length - maxItems} more`);
   }

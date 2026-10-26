@@ -14,7 +14,7 @@ import { basename, isAbsolute, sep } from 'node:path';
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
-import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
   projectDevActivity,
@@ -54,23 +54,48 @@ export const DEV_ACTIVITY_GH_CLOSED_PR_FIELDS = DEV_ACTIVITY_GH_PR_BASE_FIELDS;
  * Fetch only what the board displays. Open PRs carry CI (statusCheckRollup);
  * merged and closed-unmerged PRs are bounded to the shipped window by a GitHub
  * search date and carry no CI. The day-granular date is a superset bound; the
- * projection applies the exact window. There is no retry or fallback query.
- * A query that returns more than DEV_ACTIVITY_GH_PR_LIMIT rows marks the
- * GitHub source unavailable, because a partial PR set misplaces cards.
+ * projection applies the exact window.
+ *
+ * Each category (open, merged, closed) is one query of at most
+ * DEV_ACTIVITY_GH_PR_LIMIT rows; one extra row is requested to detect
+ * truncation. A merged or closed window query that is truncated is replaced by
+ * one query per UTC day, so a busy week still fits. A category that is still
+ * truncated (open, or one day) is dropped whole, because a partial PR set
+ * misplaces cards, and it marks the GitHub source unavailable with a reason
+ * that names the category. The other categories stay in the snapshot.
  * The only variable argv element is the window date, computed from the
  * collector clock.
  */
 /** Rows each PR query may return. One extra row is requested to detect truncation. */
 export const DEV_ACTIVITY_GH_PR_LIMIT = 200;
 
+export type DevActivityPrCategory = 'open' | 'merged' | 'closed';
+
+const prListArgv = (state: DevActivityPrCategory, search: string | null, fields: string): readonly string[] =>
+  Object.freeze(['pr', 'list', '--state', state, '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1),
+    ...(search === null ? [] : ['--search', search]), '--json', fields]);
+
+// `--state closed` alone also matches merged PRs; `is:unmerged` keeps the closed query to closed-unmerged.
+const closedOrMergedSearch = (category: 'merged' | 'closed', date: string): string =>
+  category === 'merged' ? `merged:${date}` : `closed:${date} is:unmerged`;
+
 export function devActivityGhPrListArgv(nowMs: number): readonly (readonly string[])[] {
   const since = new Date(nowMs - DEV_ACTIVITY_SHIPPED_WINDOW_MS).toISOString().slice(0, 10);
   return Object.freeze([
-    Object.freeze(['pr', 'list', '--state', 'open', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--json', DEV_ACTIVITY_GH_OPEN_PR_FIELDS]),
-    Object.freeze(['pr', 'list', '--state', 'merged', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--search', `merged:>=${since}`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
-    // `--state closed` alone also matches merged PRs; `is:unmerged` keeps this query to closed-unmerged.
-    Object.freeze(['pr', 'list', '--state', 'closed', '--author', '@me', '--limit', String(DEV_ACTIVITY_GH_PR_LIMIT + 1), '--search', `closed:>=${since} is:unmerged`, '--json', DEV_ACTIVITY_GH_CLOSED_PR_FIELDS]),
+    prListArgv('open', null, DEV_ACTIVITY_GH_OPEN_PR_FIELDS),
+    prListArgv('merged', closedOrMergedSearch('merged', `>=${since}`), DEV_ACTIVITY_GH_CLOSED_PR_FIELDS),
+    prListArgv('closed', closedOrMergedSearch('closed', `>=${since}`), DEV_ACTIVITY_GH_CLOSED_PR_FIELDS),
   ]);
+}
+
+/** One query per UTC day from the window start day through today, for a truncated window query. */
+export function devActivityGhPrDayArgvs(category: 'merged' | 'closed', nowMs: number): readonly (readonly string[])[] {
+  const argvs: (readonly string[])[] = [];
+  const start = Date.parse(new Date(nowMs - DEV_ACTIVITY_SHIPPED_WINDOW_MS).toISOString().slice(0, 10));
+  for (let day = start; day <= nowMs; day += 24 * 60 * 60 * 1000) {
+    argvs.push(prListArgv(category, closedOrMergedSearch(category, new Date(day).toISOString().slice(0, 10)), DEV_ACTIVITY_GH_CLOSED_PR_FIELDS));
+  }
+  return Object.freeze(argvs);
 }
 
 export type DevActivityProcessFailure = 'timeout' | 'not_found' | 'failed' | 'aborted';
@@ -286,21 +311,41 @@ Promise<{ health: DevActivitySourceHealth; github: string | null; default_branch
   if (!/github\.com[:/]/u.test(remotes.stdout)) return unavailable('no_github_remote', 'not_configured');
   const view = await ctx.run('gh', DEV_ACTIVITY_GH_REPO_VIEW_ARGV, options);
   if (!view.ok) return unavailable(failureReason('gh', view.code));
-  const outputs: string[] = [];
-  for (const argv of devActivityGhPrListArgv(ctx.now())) {
+  const [openArgv, mergedArgv, closedArgv] = devActivityGhPrListArgv(ctx.now()) as [readonly string[], readonly string[], readonly string[]];
+  const truncated: DevActivityPrCategory[] = [];
+  // A list is null when the category exceeds the query limit.
+  const list = async (argv: readonly string[], withCi: boolean): Promise<DevActivityRawPullRequest[] | null> => {
     const prs = await ctx.run('gh', argv, options);
-    if (!prs.ok) return unavailable(failureReason('gh', prs.code));
-    outputs.push(prs.stdout);
-  }
+    if (!prs.ok) throw Object.assign(new Error('gh_failed'), { code: prs.code });
+    const rows = parseGhPullRequests(prs.stdout, withCi);
+    return rows.length > DEV_ACTIVITY_GH_PR_LIMIT ? null : rows;
+  };
+  const category = async (name: DevActivityPrCategory, argv: readonly string[]): Promise<DevActivityRawPullRequest[]> => {
+    let rows = await list(argv, name === 'open');
+    if (rows === null && name !== 'open') {
+      rows = [];
+      for (const day of devActivityGhPrDayArgvs(name, ctx.now())) {
+        const dayRows = await list(day, false);
+        if (dayRows === null) { rows = null; break; }
+        rows.push(...dayRows);
+      }
+    }
+    if (rows === null) truncated.push(name);
+    return rows ?? [];
+  };
   try {
     const repository = parseGhRepoView(view.stdout);
     const byNumber = new Map<number, DevActivityRawPullRequest>();
-    const lists = outputs.map((stdout, index) => parseGhPullRequests(stdout, index === 0));
-    if (lists.some(list => list.length > DEV_ACTIVITY_GH_PR_LIMIT)) return unavailable('github_truncated');
-    for (const list of lists) for (const pr of list) if (!byNumber.has(pr.number)) byNumber.set(pr.number, pr);
-    return { health: { kind: 'github', status: 'ok', reason: null, observed_at: at() }, ...repository, pull_requests: [...byNumber.values()] };
-  } catch {
-    return unavailable('gh_output_invalid');
+    for (const [name, argv] of [['open', openArgv], ['merged', mergedArgv], ['closed', closedArgv]] as const) {
+      for (const pr of await category(name, argv)) if (!byNumber.has(pr.number)) byNumber.set(pr.number, pr);
+    }
+    const health: DevActivitySourceHealth = truncated.length === 0
+      ? { kind: 'github', status: 'ok', reason: null, observed_at: at() }
+      : { kind: 'github', status: 'unavailable', reason: `${DEV_ACTIVITY_TRUNCATED_REASON_PREFIX}${truncated.join('_')}`, observed_at: at() };
+    return { health, ...repository, pull_requests: [...byNumber.values()] };
+  } catch (error) {
+    const code = (error as { code?: DevActivityProcessFailure }).code;
+    return unavailable(code === undefined ? 'gh_output_invalid' : failureReason('gh', code));
   }
 }
 
@@ -315,7 +360,7 @@ async function gitDefaultBranch(repo: RepoHarnessRegisteredRepo, ctx: Collection
 async function collectRepository(repo: RepoHarnessRegisteredRepo, runtime: DevActivitySourceHealth,
   ctx: CollectionContext): Promise<DevActivityRawRepository> {
   const github = await collectGitHub(repo, ctx);
-  const defaultBranch = github.health.status === 'ok' ? github.default_branch : await gitDefaultBranch(repo, ctx);
+  const defaultBranch = github.github !== null ? github.default_branch : await gitDefaultBranch(repo, ctx);
   const git = await collectGit(repo, defaultBranch, ctx);
   return {
     repository_id: repo.id,

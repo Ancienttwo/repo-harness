@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.process-group-launcher"
+kind: "process"
+name: "Process group launcher"
+status: "active"
+layer: "effects"
+summary: "Detached process group leader that starts the supervised helper, archctx, node probe or verification command."

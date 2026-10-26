@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.codegraph"
+kind: "external-system"
+name: "CodeGraph"
+status: "active"
+layer: "external"
+summary: "Code index CLI that supplies symbol, call and import facts."

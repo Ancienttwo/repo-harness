@@ -4,6 +4,7 @@ kind: component
 name: "Host Adapter Installer"
 status: active
 parent: capability.runtime-harness.hook-adapters
+layer: "cli"
 summary: "Projects the route registry into user-level Claude and Codex adapter entries."
 responsibilities:
   - Build and compare managed hook entries for each host from the route registry.

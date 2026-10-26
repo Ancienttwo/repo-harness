@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.operator-server"
+kind: "process"
+name: "Operator server"
+status: "active"
+layer: "effects"
+summary: "Long-running repo-harness operator serve process with a read-only loopback HTTP API."

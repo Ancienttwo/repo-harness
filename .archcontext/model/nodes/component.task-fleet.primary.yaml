@@ -4,6 +4,7 @@ kind: "component"
 name: "Fleet Task Observations and Board"
 status: "active"
 parent: "capability.organization.task-fleet"
+layer: "cli"
 summary: "Owns registry-scoped provider fleet commands and board projection with exact admitted session evidence."
 responsibilities:
   - "Build provider issue cards with zero or more exact admitted session associations; no Sprint, lease or plan-offer reader remains."

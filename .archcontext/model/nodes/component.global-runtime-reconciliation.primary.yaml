@@ -4,6 +4,7 @@ kind: component
 name: Global Runtime Reconciler
 status: active
 parent: capability.runtime-harness.global-runtime-reconciliation
+layer: effects
 summary: Executes bounded install, exact dependency readback, runtime handshake, and profile-tool refresh.
 responsibilities:
   - Run the ordered setup steps and stop at the first failed mandatory step.

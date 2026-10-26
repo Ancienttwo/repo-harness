@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.herdr-server"
+kind: "process"
+name: "Herdr server"
+status: "active"
+layer: "external"
+summary: "External Herdr server that owns panes and runs pane commands."

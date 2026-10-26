@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fcc4f91b4440c30e7919d3c8b2709444398bdd3f9c127bd040b7fda31e7c4bdd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c7a05b59e55f190ccd99c45fcc724613e6b0d6935c3e6b7f4383237d31254259" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/migrate-verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -107,7 +107,7 @@ flowchart LR
 | `component.evals-checks.ci-selection` | CI Selection And Report | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks` | Evals And Benchmarks | `100–200` 個文件 / `10k–20k` 行 | 未宣告 |
 | `component.evals-checks.primary` | Verification Check Execution | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.evals-checks.test-suite` | Test Suite | `200–500` 個文件 / `100k–200k` 行 | 未宣告 |
+| `component.evals-checks.test-suite` | Test Suite | `500–1000` 個文件 / `100k–200k` 行 | 未宣告 |
 | `component.evals-checks.workflow-gates` | Workflow Gates | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流

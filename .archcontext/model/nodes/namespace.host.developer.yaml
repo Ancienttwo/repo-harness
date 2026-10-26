@@ -1,0 +1,9 @@
+schemaVersion: "archcontext.node/v2"
+id: "namespace.host.developer"
+kind: "namespace"
+name: "Developer host"
+status: "active"
+layer: "external"
+summary: "The user machine that runs every repo-harness process. repo-harness installs no launchd, systemd or cron unit and creates no container or mount."
+namespace:
+  type: "host"

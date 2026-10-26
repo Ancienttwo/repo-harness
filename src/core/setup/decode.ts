@@ -8,9 +8,11 @@
 import { publicAgentConfigText } from '../operator/agent-config';
 import {
   SETUP_CHECK_STATUSES,
+  SETUP_HOOK_DENIAL_LIMIT,
   SETUP_HOOK_EVENTS,
   SETUP_HOOK_MISMATCH_FIELDS,
   SETUP_HOOK_MISMATCH_KINDS,
+  SETUP_HOOK_USAGE_WINDOW_HOURS,
   SETUP_HOSTS,
   SETUP_PROJECTION,
   SETUP_REASONS,
@@ -23,7 +25,7 @@ import {
 export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV1 {
   return {
     projection_version: SETUP_PROJECTION, status: 'unavailable', reason, collected_at: null,
-    setup_status: null, summary: null, checks: [], hosts: [], skills: [], hooks: [], fleet: [],
+    setup_status: null, summary: null, checks: [], hosts: [], skills: [], hooks: [], hook_usage: null, fleet: [],
   };
 }
 
@@ -59,7 +61,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
   };
 
   const v = obj(value, ['projection_version', 'status', 'reason', 'collected_at', 'setup_status', 'summary', 'checks',
-    'hosts', 'skills', 'hooks', 'fleet'], 'snapshot');
+    'hosts', 'skills', 'hooks', 'hook_usage', 'fleet'], 'snapshot');
   if (v.projection_version !== SETUP_PROJECTION) fail('projection_version');
   const status = oneOf(v.status, SETUP_SNAPSHOT_STATUSES, 'status');
   const reason = nullable(v.reason, x => oneOf(x, SETUP_REASONS, 'reason'));
@@ -154,6 +156,33 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
     }
   }
 
+  const declaredRoutes = new Set((v.hooks as { event: string; routes: { route_id: string; hosts: string[] }[] }[])
+    .flatMap(e => e.routes.flatMap(r => r.hosts.map(host => `${host}.${e.event}.${r.route_id}`))));
+  const hookUsage = nullable(v.hook_usage, x => {
+    const u = obj(x, ['window_hours', 'routes', 'recent_denials'], 'hook usage');
+    if (u.window_hours !== SETUP_HOOK_USAGE_WINDOW_HOURS) fail('hook usage window');
+    const seen = new Set<string>();
+    for (const rawUsage of array(u.routes, 'hook usage routes')) {
+      const r = obj(rawUsage, ['host', 'event', 'route_id', 'calls', 'blocked', 'last_blocked_at'], 'route usage');
+      const usageKey = `${oneOf(r.host, SETUP_HOSTS, 'usage host')}.${oneOf(r.event, SETUP_HOOK_EVENTS, 'usage event')}.${id(r.route_id, 'usage route_id')}`;
+      if (!declaredRoutes.has(usageKey) || seen.has(usageKey)) fail('usage route');
+      seen.add(usageKey);
+      const calls = count(r.calls, 'usage calls');
+      const blocked = count(r.blocked, 'usage blocked');
+      const last = nullable(r.last_blocked_at, y => time(y, 'last_blocked_at'));
+      if (calls === 0 || blocked > calls || (blocked === 0) !== (last === null)) fail('usage counts');
+    }
+    const denials = array(u.recent_denials, 'recent denials');
+    if (denials.length > SETUP_HOOK_DENIAL_LIMIT) fail('recent denials');
+    for (const rawDenial of denials) {
+      const d = obj(rawDenial, ['at', 'guard', 'reason'], 'denial');
+      time(d.at, 'denial at');
+      if (typeof d.guard !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/u.test(d.guard)) fail('denial guard');
+      text(d.reason, 'denial reason');
+    }
+    return u;
+  });
+
   const roles = new Set<string>();
   for (const raw of array(v.fleet, 'fleet')) {
     const r = obj(raw, ['name', 'description', 'model', 'effort', 'hosts'], 'fleet role');
@@ -167,7 +196,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
   }
 
   if (!hasData && ((v.checks as unknown[]).length || (v.skills as unknown[]).length
-    || (v.hooks as unknown[]).length || (v.fleet as unknown[]).length)) {
+    || (v.hooks as unknown[]).length || hookUsage !== null || (v.fleet as unknown[]).length)) {
     fail('unavailable snapshot carries data');
   }
   return v as unknown as SetupSnapshotV1;

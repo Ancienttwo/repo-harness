@@ -7,7 +7,16 @@
       "kind": "local_tool",
       "category": "agent_skills",
       "url": "https://github.com/tw93/Waza",
+      "author": "tw93",
       "license": "MIT",
+      "tags": [
+        "planning",
+        "debugging",
+        "review"
+      ],
+      "install_profiles": [
+        "full"
+      ],
       "summary": {
         "en": "Agent skills for planning, debugging, review and project health: think, hunt, check and health.",
         "zh": "规划、排查、审查和项目体检的 agent skill：think、hunt、check 和 health。"
@@ -21,7 +30,16 @@
       "kind": "local_tool",
       "category": "code_navigation",
       "url": "https://github.com/colbymchenry/codegraph",
+      "author": "colbymchenry",
       "license": "MIT",
+      "tags": [
+        "code-index",
+        "mcp"
+      ],
+      "install_profiles": [
+        "minimal",
+        "full"
+      ],
       "summary": {
         "en": "A local code index and MCP server. Agents use it to find symbols and call paths faster.",
         "zh": "本机代码索引和 MCP server。Agent 用它更快地找到符号和调用路径。"
@@ -35,7 +53,13 @@
       "kind": "local_tool",
       "category": "orchestration",
       "url": "https://github.com/herdrdev/herdr",
+      "author": "herdrdev",
       "license": "Apache-2.0",
+      "tags": [
+        "terminal",
+        "multi-agent"
+      ],
+      "install_profiles": [],
       "summary": {
         "en": "The skill text from herdr --skill. The repo-harness skill needs it to control Herdr panes on Claude and Codex.",
         "zh": "来自 herdr --skill 的 skill 文本。repo-harness skill 在 Claude 和 Codex 上要用它控制 Herdr pane。"
@@ -49,7 +73,12 @@
       "kind": "local_tool",
       "category": "agent_skills",
       "url": "https://github.com/hylarucoder/hai-stack",
+      "author": "hylarucoder",
       "license": null,
+      "tags": [
+        "direction-judgment"
+      ],
+      "install_profiles": [],
       "summary": {
         "en": "Optional agent skills. repo-harness recommends the geju skill for direction judgments.",
         "zh": "可选的 agent skill。repo-harness 推荐其中的 geju skill，用于方向判断。"
@@ -63,7 +92,13 @@
       "kind": "resource",
       "category": "frontend",
       "url": "https://github.com/shader-effects-inc/shaders",
+      "author": "shader-effects-inc",
       "license": "MIT",
+      "tags": [
+        "webgpu",
+        "react"
+      ],
+      "install_profiles": [],
       "summary": {
         "en": "WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer",
         "zh": "WebGPU shader 组件，支持 React、Vue、Svelte、Solid、原生 JavaScript 和 Framer"
@@ -77,7 +112,13 @@
       "kind": "resource",
       "category": "design",
       "url": "https://github.com/VoltAgent/awesome-design-md",
+      "author": "VoltAgent",
       "license": "MIT",
+      "tags": [
+        "design-system",
+        "ui"
+      ],
+      "install_profiles": [],
       "summary": {
         "en": "DESIGN.md files from popular brand design systems. Put one in a project, and coding agents make UI that matches it",
         "zh": "来自知名品牌设计系统的 DESIGN.md 文件。把一份放进项目，coding agent 做出的 UI 就会和它一致"
@@ -91,7 +132,13 @@
       "kind": "resource",
       "category": "agent_reference",
       "url": "https://github.com/anthropics/claude-quickstarts",
+      "author": "anthropics",
       "license": "MIT",
+      "tags": [
+        "claude-api",
+        "agents"
+      ],
+      "install_profiles": [],
       "summary": {
         "en": "Anthropic reference projects for the Claude API: agents, computer use, browser use, autonomous coding and managed agents",
         "zh": "Anthropic 的 Claude API 参考项目：agent、computer use、browser use、autonomous coding 和 managed agents"

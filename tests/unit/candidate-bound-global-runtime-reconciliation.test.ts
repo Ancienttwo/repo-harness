@@ -717,7 +717,9 @@ describe('candidate-bound global runtime reconciliation', () => {
 
       expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
       const runtime = JSON.parse(result.stdout) as { lines: string[] };
-      expect(runtime.lines.at(-1)).toMatch(/^\d+ leftovers \(\d+ removable\)\. Run: repo-harness upgrade$/);
+      expect(runtime.lines.filter((line) => /^\d+ leftovers \(\d+ removable\)\. Run: repo-harness upgrade$/.test(line))).toHaveLength(1);
+      // The registered-repo line follows the leftover summary.
+      expect(runtime.lines.at(-1)).toMatch(/^Registered repos: \d+ of \d+ have pending project upgrade work\..* Preview: repo-harness upgrade --registered$/);
       expect(readFileSync(bunLog, 'utf-8')).toContain(`${candidateRoot}/src/cli/index.ts upgrade --json`);
     } finally {
       rmSync(root, { recursive: true, force: true });

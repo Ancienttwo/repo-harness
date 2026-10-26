@@ -8,10 +8,10 @@ status; `--rollback` first reprojects the previous protocol-2 profile's managed
 Skills and host routes, then commits the restored state only if that runtime
 transaction passes.
 
-| Profile | Codex hooks | Components and discovery |
-|---|---:|---|
-| `minimal` | 4 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, the repo-owned `obsidian-memory` facade, and `windows-python-first` |
-| `full` | 6 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
+| Profile | Claude hooks | Codex hooks | Components and discovery |
+|---|---:|---:|---|
+| `minimal` | 5 | 4 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, the repo-owned `obsidian-memory` facade, and `windows-python-first` |
+| `full` | 6 | 5 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
 
 `windows-python-first` is a package-owned toolbox Skill. Both profiles project
 it to Codex and Claude. Use it for native Windows file and text operations. It
@@ -20,8 +20,9 @@ not apply Windows shell rules to macOS, Linux, or WSL. Installation adds the
 Skill only; it does not install Python or change PowerShell settings.
 
 Fresh global installs and adapter-only installs both default to `full`.
-`minimal` installs four routes on Claude and Codex. The full profile installs
-five on Claude and five on Codex.
+`minimal` installs five routes on Claude and four on Codex. The full profile
+installs six on Claude and five on Codex. `src/cli/hook/route-registry.ts` is
+the authority for these counts.
 Profile switching removes only package-owned surfaces. Unknown or modified
 canonical/facade directories fail closed before mutation; user-authored
 content is preserved. ChatGPT remains an explicit setup surface and is not

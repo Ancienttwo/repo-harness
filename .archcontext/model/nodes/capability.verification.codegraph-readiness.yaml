@@ -3,6 +3,7 @@ id: capability.verification.codegraph-readiness
 kind: capability
 name: CodeGraph Readiness
 status: active
+layer: cli
 summary: Resolves and verifies the repository CodeGraph runtime and index readiness.
 responsibilities:
   - Own CodeGraph installation detection, status normalization, and readiness diagnostics.

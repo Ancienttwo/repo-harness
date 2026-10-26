@@ -4,6 +4,7 @@ kind: "component"
 name: "Operator View Projections"
 status: "active"
 parent: "capability.runtime-harness.operator"
+layer: "core"
 summary: "Pure projections, route parsers and strict decoders for every operator observation schema."
 responsibilities:
   - "Project Fleet, planning, organization, decision and task reads into public snapshot shapes."

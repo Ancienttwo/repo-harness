@@ -4,6 +4,7 @@ kind: component
 name: "CI Selection And Report"
 status: active
 parent: capability.verification.evals-checks
+layer: "scripts"
 summary: "GitHub workflows, CI coverage selection, the local CI gate and the CI report."
 responsibilities:
   - Select full or documentation coverage from the event, the checked-out subject and the complete Git diff.

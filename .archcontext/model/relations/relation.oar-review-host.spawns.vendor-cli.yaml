@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.oar-review-host.spawns.vendor-cli"
+kind: "spawns"
+source: "process.oar-review-host"
+target: "process.vendor-cli"
+intent: "Start the reviewer runtime under sandbox-exec."

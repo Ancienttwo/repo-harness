@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.mcp-sidecar.deployed-on.mcp-server"
+kind: "deployed-on"
+source: "capability.runtime-harness.mcp-sidecar"
+target: "process.mcp-server"
+intent: "The MCP sidecar runs in the MCP server process."

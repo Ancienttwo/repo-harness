@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.vendor-cli.runs-in.host"
+kind: "runs-in"
+source: "process.vendor-cli"
+target: "namespace.host.developer"
+intent: "Runs on the developer host."

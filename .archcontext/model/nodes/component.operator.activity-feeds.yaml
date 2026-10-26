@@ -4,6 +4,7 @@ kind: component
 name: Setup and Activity Feeds
 status: active
 parent: capability.runtime-harness.operator
+layer: core
 summary: Background collectors and projections for the development activity board and the setup pages.
 responsibilities:
   - Collect Git worktrees, the user's GitHub pull requests and runtime source health into one development activity snapshot.

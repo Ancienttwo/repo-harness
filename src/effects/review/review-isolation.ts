@@ -11,7 +11,7 @@ export interface ReviewIsolationPaths {
   readonly output: string;
 }
 
-function inside(path: string, directory: string): boolean {
+export function inside(path: string, directory: string): boolean {
   const rest = relative(directory, path);
   return rest === '' || (!isAbsolute(rest) && rest !== '..' && !rest.startsWith(`..${sep}`));
 }

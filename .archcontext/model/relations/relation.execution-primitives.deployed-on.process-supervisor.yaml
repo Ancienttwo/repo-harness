@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.execution-primitives.deployed-on.process-supervisor"
+kind: "deployed-on"
+source: "capability.workflow-engine.execution-primitives"
+target: "process.process-supervisor"
+intent: "Execution primitives own the supervisor protocol."

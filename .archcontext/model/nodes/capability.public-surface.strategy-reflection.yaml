@@ -3,6 +3,7 @@ id: capability.public-surface.strategy-reflection
 kind: capability
 name: Strategy Reflection
 status: active
+layer: effects
 summary: Collects a bounded strategy context packet and validates inert strategic proposals on explicit request.
 responsibilities:
   - Read the human-owned strategy document and its hash-and-revision evidence under fixed byte and time budgets.

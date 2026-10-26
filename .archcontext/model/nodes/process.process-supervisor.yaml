@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.process-supervisor"
+kind: "process"
+name: "Process supervisor"
+status: "active"
+layer: "effects"
+summary: "Bounded supervisor that publishes the process group id before it starts the target and terminates the group on timeout, signal or parent exit."

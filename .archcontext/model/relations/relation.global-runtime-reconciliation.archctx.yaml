@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.global-runtime-reconciliation.archctx"
+kind: "calls"
+source: "capability.runtime-harness.global-runtime-reconciliation"
+target: "external.archctx"
+intent: "Run the package-local archctx for model reads, ownership resolution and projections."

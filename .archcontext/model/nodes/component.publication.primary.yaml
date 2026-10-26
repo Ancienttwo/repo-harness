@@ -4,6 +4,7 @@ kind: "component"
 name: "PR Readiness and Integration Evidence"
 status: "active"
 parent: "capability.organization.publication"
+layer: "core"
 summary: "Observes canonical provider PR readiness and actual merge commit/tree evidence, and provides the canonical publication JSON and SHA-256 digest helpers."
 responsibilities:
   - "Provide stablePublicationJson and publicationSha256 for integration evidence digests; no publication receipt reader or writer remains."
