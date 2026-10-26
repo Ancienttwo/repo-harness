@@ -118,7 +118,7 @@ jobs:
             daily) set -- ;;
             *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;
           esac
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts "$@" --timeout 60000 --max-concurrency 1
+          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts "$@" --timeout 60000 --max-concurrency 1
 
   verify:
     name: Affected tests (shard ${{ matrix.shard }}/3)
