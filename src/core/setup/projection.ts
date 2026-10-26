@@ -15,6 +15,7 @@ import {
   type SetupFleetRole,
   type SetupHookEvent,
   type SetupHookMismatch,
+  type SetupHookUsage,
   type SetupHost,
   type SetupHostFacts,
   type SetupOverallStatus,
@@ -83,6 +84,8 @@ export interface SetupProjectionInput {
   readonly fleet_roles: readonly SetupRawFleetRole[];
   /** `tooling.tools.agent_fleet.hosts` exactly as the tooling report gave it. */
   readonly fleet_hosts: unknown;
+  /** `summarizeHookUsage` output; null when the collector found no repository root. */
+  readonly hook_usage: SetupHookUsage | null;
 }
 
 const redact = (text: string): string => publicAgentConfigText(text);
@@ -207,6 +210,7 @@ export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshot
     hosts: SETUP_HOSTS.map(host => hostFacts(host, input, checks)),
     skills: skills(input),
     hooks: hooks(input.routes),
+    hook_usage: input.hook_usage,
     fleet: fleet(input),
   };
 }
