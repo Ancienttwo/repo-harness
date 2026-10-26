@@ -179,7 +179,7 @@ sequenceDiagram
 
 1. **只有三种有界写入，其余只读。** 用户 2026-10-27 批准三种写入（[#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)，D1）：本机配置 `~/.repo-harness/config.json`（第三期）、文档会话（第四期）、worktree 清理（第五期）。默认仍只读，按这个顺序逐项开放。每个写入请求先过 Origin、`Sec-Fetch-Site`、写 token、封闭 schema、幂等、锁和前置条件，先写意图审计再执行（[PRD](../../../../plans/prds/20261026-2310-operator-console-uiux.prd.md)「写入与权限边界」「写入 API」）。代码现状：生产还没有写入。`OPERATOR_ROUTES` 是冻结的生产路由表，每条路由都是 `write: false`（`src/effects/operator/server.ts:107`）。`startOperatorServer` 只为路由清单里 `method: 'POST'`、`write: true` 的条目启动写入处理，不匹配就拒绝启动；生产不传写路由（`server.ts:1435-1444`）。`handleRequest` 只在 POST 带本服务的 Origin 和 `Sec-Fetch-Site: same-origin` 并命中写路由时放行；GET 和 HEAD 不变，其他方法返回 405（`server.ts:1469-1483`）。`tests/effects/operator-write-boundary.test.ts:59` 要求写路由集合为空，切片 3.1 把它改成三种写入的端点清单。PR #482 删除了旧的浏览器写入口（composer）。
 2. **请求先过身份检查，再进路由。** Host 必须等于 loopback authority，否则返回 421（`server.ts:1458`）。Origin 不匹配返回 403（`server.ts:1464`）。`/api/*` 的 `Sec-Fetch-Site` 只接受 `same-origin` 和 `none`（`server.ts:1526`）。
-3. **GET 不启动工作。** 开发活动和 setup 数据来自后台 collector 的内存缓存。`startOperatorServer` 只在启动时创建 collector（`server.ts:1690`、`server.ts:1695`）。collector 的 `read` 只读缓存（`src/effects/dev-activity/collector.ts:384`）。周期不重叠（`src/effects/dev-activity/collector.ts:372-381`）。docs 树也只读 collector 缓存（`src/effects/operator/docs-collector.ts`）。docs 文件读取向 docs collector 持有的常驻 `git cat-file` 进程发一个对象请求（PRD G7）。GET 不启动也不重启这个进程。进程不在时返回 503 `docs_reader_unavailable`。这个请求有并发上限（503 `docs_busy`）和期限（504 `docs_timeout`），客户端断开时服务端放弃它。
+3. **GET 不启动工作。** 开发活动、setup、CLI 清单、Bot access、notify 状态、docs 和每日测试结果都来自后台 collector 的内存缓存。`startOperatorServer` 只在启动时创建这些 collector（`server.ts:1969-1987`）。Bot access 读 notify collector 的缓存，不自己调用 herdr 的 notify 探针。docs 和 tests collector 只从开发活动缓存取每个仓库的 GitHub 名称和默认分支。collector 的 `read` 只读缓存（`src/effects/dev-activity/collector.ts:384`）。周期不重叠（`src/effects/dev-activity/collector.ts:372-381`）。docs 树也只读 collector 缓存（`src/effects/operator/docs-collector.ts`）。docs 文件读取向 docs collector 持有的常驻 `git cat-file` 进程发一个对象请求（PRD G7）。GET 不启动也不重启这个进程。进程不在时返回 503 `docs_reader_unavailable`。这个请求有并发上限（503 `docs_busy`）和期限（504 `docs_timeout`），客户端断开时服务端放弃它。
 4. **一个 schema 只有一个 decoder。** `src/core/**` 下的严格 decoder 同时服务服务端和浏览器。服务端在发送前重新 decode 缓存（`server.ts:1547`）。浏览器在渲染前用同一个函数 decode（`src/operator-web/dev-activity.ts:20`）。decode 失败时服务端返回 unavailable 快照，不合成替代值（`server.ts:1549`）。
 5. **CLI 和 HTTP 输出一致。** `module review-prompt` 与 architecture 路由使用同一个 `ArchitectureModelReader`。`tests/cli/operator-serve.test.ts:1270` 比较 GET、HEAD 与 CLI 的 digest。来源：PR #590、plan-20261005-0405 不变量 I7。
 6. **UI 只触发第 1 条的三种写入。** 其他动作只显示链接或可复制的命令。宿主投影（install、update、profile 切换）、registry 清理和卸载 CLI 只给命令。派活保持 Bot → CLI → herdr，不经 MCP（D9）。控制台不向用户 harness 里的编码会话发消息、停止或注入内容。来源：PR #609、plan-20261005-0405 不变量 I9（2026-10-27 修订）。
@@ -191,7 +191,8 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| 后台 collector 加内存缓存，GET 只读缓存 | GET 延迟固定，也不会因为请求启动 git 或 gh。代价是数据有延迟：开发活动最多 60 秒（`src/effects/dev-activity/collector.ts:31`），setup 最多 10 分钟（`src/effects/setup/collector.ts:19`）。快照里的 `collected_at` 显示数据年龄。 |
+| 后台 collector 加内存缓存，GET 只读缓存 | GET 延迟固定，也不会因为请求启动 git 或 gh。代价是数据有延迟：开发活动最多 60 秒（`src/effects/dev-activity/collector.ts:31`），setup 最多 10 分钟（`src/effects/setup/collector.ts:19`），notify 和 docs 最多 60 秒，Bot access 最多 5 分钟，每日测试结果最多 15 分钟，CLI 清单最多 6 小时。快照里的 `collected_at` 显示数据年龄。 |
+| tests collector 只为新的每日运行下载 artifact | `gh run download` 把 JUnit 和测试投影写到 repo-harness home 下，GET 只读解析后的内存值。代价是数据只到最新一次完成的每日运行，每个文件的 channel 都是 `daily_full`。 |
 | setup check builder 在子进程里运行 | builder 是同步代码。子进程让服务端事件循环保持空闲（PR #611）。代价是每个周期启动一个进程。子进程是新进程组的组长。90 秒期限或服务关闭时，整个进程组被 kill（`setup/collector.ts:8`）。 |
 | 慢读取放进受监督的 worker 进程 | 慢 git 不阻塞事件循环（PR #590 有对应测试）。代价是进程管理代码集中在 `server.ts`。该文件现在有 1766 行。 |
 | 严格 decoder 放在 core，前后端共用 | 一个契约，没有漂移。代价是 schema 版本升级时前后端必须同时修改，旧 schema 被拒绝（PR #606 的 overlay v4）。 |
@@ -205,12 +206,13 @@ sequenceDiagram
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
 | `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 24 / 4726 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
+| `component.operator.console-collectors`（2026-10-27） | `src/effects/operator/` 下的 `bot-access.ts`、`notify-collector.ts`、`notify-status.ts`、`docs-collector.ts`、`docs-reader.ts`、`tests-collector.ts`；primary 用 `source.exclude` 排除这 6 个文件 | 6 / 1488 | Bot access、notify、docs 和 tests collector，每个仓库一个常驻 `git cat-file` 进程 |
 | `component.operator.view-projections` | `src/core/operator/**` | 16 / 2112 | 纯投影、请求解析、严格 decoder |
 | `component.operator.activity-feeds` | `src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**` | 10 / 1948 | 开发活动和 setup 的 collector 与投影 |
 | `component.operator.architecture-view` | `module-view.ts`、`src/cli/commands/module.ts` | 2 / 182 | 模块视图、module CLI |
 | `component.operator.web-console` | `src/operator-web/**`、`vite.operator.config.ts` | 45 / 9902 | 只读浏览器控制台 |
 
-依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用 view-projections 和 activity-feeds，不调用 architecture-view。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
+依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用 view-projections、activity-feeds 和 console-collectors，不调用 architecture-view。console-collectors 读 activity-feeds 的开发活动缓存，用 view-projections 的 decoder 构建缓存值。CLI 清单 collector 在 activity-feeds 里（`src/effects/setup/cli-inventory.ts`）。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
 
 ### 3.4 开放问题
 
@@ -218,6 +220,12 @@ sequenceDiagram
 - `src/operator-web/fixture.ts` import `src/core/publication/merge-readiness.ts`。该文件的归属由 publication 范围决定。
 
 ## 4. 歷史決策記錄(append-only)
+
+### Console collectors (2026-10-27, PR #1047, #1048, #1049, #1051, #1054)
+
+- Add the Bot access, CLI inventory, notify, docs and tests GET routes. Each route reads only a collector cache.
+- Add `component.operator.console-collectors` for the Bot access, notify, docs and tests collectors. The CLI inventory collector stays in `component.operator.activity-feeds`.
+- Add five collector sinks to `startOperatorServer` and seven relations: from primary, to activity-feeds, view-projections, the MCP sidecar, Herdr, Git and GitHub.
 
 ### Retire the docs graph reader (2026-10-25, issue #910)
 

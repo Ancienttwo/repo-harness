@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.verification.evals-checks",
   "target": "capability.runtime-harness.operator",
-  "intent": "Test Operator Board behavior through its source modules."
+  "intent": "Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract."
 }

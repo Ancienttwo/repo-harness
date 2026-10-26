@@ -8,7 +8,7 @@ summary: "Provides bounded read-only HTTP views of registered provider issues, a
 responsibilities:
   - "Serve public observations through GET and HEAD routes."
   - "Read architecture facts through the shared model reader in a bounded worker."
-  - "Collect setup and development activity in bounded background collectors; GET reads only their cache."
+  - "Collect setup, development activity, CLI inventory, Bot access, notify status, docs and daily test results in bounded background collectors; GET reads only their cache, except that a docs file GET asks the resident cat-file worker of the docs collector for one object."
   - "Keep commands in the Bot and CLI channel."
   - "Expose bounded shared admitted-session discovery over HTTP; closed, revoked or unavailable selections never become implicit current tasks. Task Agent Host owns the shared selector and discovery effects."
   - "Serve exact-selector diff, activity and protected goal/verification context with live admission reobservation and closed response decoding."
