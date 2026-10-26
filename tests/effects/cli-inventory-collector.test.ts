@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -76,7 +76,7 @@ describe('cli inventory collector', () => {
     mkdirSync(repo);
     appendSegmentedLog(join(repo, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify({ started_at: '2026-10-25T00:00:00.000Z', command_names: ['gh'] })}\n`, repo);
     const snapshot = decodeCliInventory(await collectCliInventory({
-      env, probe, now: () => NOW, usage_sources: [{ repo_root: repo, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }],
+      env, probe, now: () => NOW, usage_sources: () => [{ repo_root: repo, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }],
     }));
     const entries = new Map(snapshot.entries.map(entry => [entry.id, entry]));
     expect([...entries.keys()]).toEqual(['npm:@openai/codex', 'brew:gh']);
@@ -128,5 +128,20 @@ describe('cli inventory collector', () => {
     } finally {
       await collector.close();
     }
+  });
+
+  test('closing kills a running probe instead of waiting for its deadline', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cli-inventory-close-')));
+    scratch.push(root);
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'brew'), `#!/bin/sh\ntouch ${JSON.stringify(join(root, 'started'))}\nexec sleep 30\n`);
+    chmodSync(join(bin, 'brew'), 0o755);
+    const collector = startCliInventoryCollector({ env: { HOME: join(root, 'home'), PATH: `${bin}:/usr/bin:/bin` }, now: () => NOW });
+    for (let attempt = 0; attempt < 200 && !existsSync(join(root, 'started')); attempt++) await Bun.sleep(10);
+    expect(existsSync(join(root, 'started'))).toBe(true);
+    const started = Date.now();
+    await collector.close();
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

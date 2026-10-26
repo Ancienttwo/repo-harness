@@ -48,11 +48,13 @@ function probeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
-export function createCliProbe(env: NodeJS.ProcessEnv): CliProbe {
+/** An aborted `signal` kills the running probe and makes every later one return null at once. */
+export function createCliProbe(env: NodeJS.ProcessEnv, signal?: AbortSignal): CliProbe {
   const childEnv = probeEnv(env);
   return argv => new Promise((settle) => {
+    if (signal?.aborted) { settle(null); return; }
     execFile(argv[0]!, argv.slice(1), {
-      env: childEnv, timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_STDOUT_LIMIT, windowsHide: true, encoding: 'utf8',
+      env: childEnv, timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_STDOUT_LIMIT, windowsHide: true, encoding: 'utf8', signal, killSignal: 'SIGKILL',
     }, (error, stdout) => settle(error ? null : stdout));
   });
 }
@@ -269,7 +271,12 @@ export interface CliInventoryOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly probe?: CliProbe;
   readonly seed?: CliSeedCatalog;
-  readonly usage_sources?: readonly CliUsageSource[];
+  /**
+   * The repositories whose hook telemetry gives agent use, read once per
+   * cycle so a registry change applies without a restart. A throw fails the
+   * cycle: without a source, no tool is known to be unused.
+   */
+  readonly usage_sources?: () => readonly CliUsageSource[];
   readonly cache?: CliInventoryCache;
   readonly now?: () => number;
 }
@@ -313,7 +320,7 @@ export async function collectCliInventory(options: CliInventoryOptions = {}): Pr
     packages,
     path_executables: pathExecutables,
     seed: options.seed ?? CLI_SEED,
-    last_used: readCommandUsage(options.usage_sources ?? [], now),
+    last_used: readCommandUsage(options.usage_sources?.() ?? [], now),
     sizes,
   };
   const local = projectCliInventory({ ...input, github: new Map(), registry_deprecated: new Map() });
@@ -357,13 +364,16 @@ export interface CliInventoryCollectorHandle {
  */
 export function startCliInventoryCollector(options: CliInventoryOptions & { readonly interval_ms?: number } = {}): CliInventoryCollectorHandle {
   const cache = options.cache ?? createCliInventoryCache();
+  // Closing aborts the probes, so a server shutdown does not wait for a cycle of network lookups.
+  const abort = new AbortController();
+  const probe = options.probe ?? createCliProbe(options.env ?? process.env, abort.signal);
   let current = unavailableCliInventory('collection_pending');
   let lastGood: CliInventorySnapshotV1 | null = null;
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
-    inflight = collectCliInventory({ ...options, cache })
+    inflight = collectCliInventory({ ...options, cache, probe })
       .then((snapshot) => {
         if (closed) return;
         lastGood = snapshot;
@@ -387,6 +397,7 @@ export function startCliInventoryCollector(options: CliInventoryOptions & { read
     close: async () => {
       closed = true;
       clearTimeout(timer);
+      abort.abort();
       await inflight;
     },
   });

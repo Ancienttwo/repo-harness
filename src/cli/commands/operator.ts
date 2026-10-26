@@ -5,6 +5,9 @@ import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runti
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
 import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operator/runtime-capture';
+import { readRepoHarnessRegistryStrictSnapshot } from '../../effects/repo-registry';
+import type { CliUsageSource } from '../../effects/setup/cli-inventory';
+import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
 
 import {
   OPERATOR_DEFAULT_HOST,
@@ -90,12 +93,24 @@ function outputOperatorError(error: unknown): void {
   process.exitCode = invalid ? 2 : 1;
 }
 
+/** Agent use for the CLI inventory: the hook telemetry of every registered repository. An invalid registry fails the cycle. */
+function registeredHookTelemetry(): readonly CliUsageSource[] {
+  return readRepoHarnessRegistryStrictSnapshot().repos.map(repo => ({ repo_root: repo.path, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }));
+}
+
 /**
  * Start the local server and keep the CLI alive until an interrupt signal.
- * `serve` owns the background Dev Activity and setup collectors; the server stops them on close.
+ * `serve` owns the background Dev Activity, setup, Bot access and CLI inventory
+ * collectors; the server stops them on close.
  */
 export async function runOperatorServe(options: OperatorServeOptions): Promise<void> {
-  const server = await startOperatorServer({ ...options, dev_activity_collector: true, setup_collector: true });
+  const server = await startOperatorServer({
+    ...options,
+    dev_activity_collector: true,
+    setup_collector: true,
+    bot_access_collector: true,
+    cli_inventory_collector: { usage_sources: registeredHookTelemetry },
+  });
   process.stdout.write(`${server.url}\n`);
   let shutdown: (() => void) | undefined;
   try {
