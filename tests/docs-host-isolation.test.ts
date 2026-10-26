@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
-import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Server } from 'node:net';
 import { dirname, join } from 'node:path';
 import { darwinTest } from './helpers/darwin-test';
@@ -237,6 +237,31 @@ darwinTest('docs host admission fails closed before any profile exists', async (
   writeFileSync(policyFile, '(version 1)\n(allow default)\n');
   expect(() => writeDocsHostPolicy(f.admission)).toThrow('docs_host_profile_changed');
   expect(() => proveDocsHostBoundary(f.admission, policyFile, prepareDocsHostScratch(f.admission, 60_000))).toThrow('docs_host_profile_changed');
+  // Seatbelt checks the resolved path, so a symlink on a protected path would
+  // route a write to an open docs/ file. Each alias is restored after its check.
+  const docs = join(f.worktree, 'docs'), target = join(docs, 'architecture', 'index.md'), manifest = join(docs, 'architecture', '.projection-manifest.json');
+  rmSync(target); symlinkSync('../guide.md', target);
+  expect(() => docsHostPolicy(f.admission)).toThrow('docs_host_projection_symlink_unsupported');
+  rmSync(target); writeFileSync(target, 'GENERATED');
+  renameSync(join(docs, 'architecture'), join(docs, 'real-architecture')); symlinkSync('real-architecture', join(docs, 'architecture'));
+  expect(() => docsHostPolicy(f.admission)).toThrow('docs_host_projection_symlink_unsupported');
+  rmSync(join(docs, 'architecture')); renameSync(join(docs, 'real-architecture'), join(docs, 'architecture'));
+  renameSync(manifest, join(docs, 'manifest-source.json')); symlinkSync('../manifest-source.json', manifest);
+  expect(() => docsHostPolicy(f.admission)).toThrow('docs_host_projection_symlink_unsupported');
+  rmSync(manifest); renameSync(join(docs, 'manifest-source.json'), manifest);
+  expect(() => docsHostPolicy(f.admission)).not.toThrow();
   linkSync(join(f.worktree, 'src', 'app.ts'), join(f.worktree, 'docs', 'source-alias.ts'));
   expect(() => docsHostPolicy(f.admission)).toThrow('docs_host_docs_hardlink_unsupported');
+}, 60_000);
+
+darwinTest('docs host keeps the projection manifest path and its directories protected when no manifest exists', async () => {
+  const f = await seedFixture();
+  rmSync(join(f.worktree, 'docs', 'architecture', '.projection-manifest.json'));
+  const policyFile = writeDocsHostPolicy(f.admission);
+  const probe = `const fs=require('node:fs'),docs=process.argv[1];const code=fn=>{try{fn();return 'ok'}catch(e){return e.code}};
+console.log(JSON.stringify({manifest:code(()=>fs.writeFileSync(docs+'/architecture/.projection-manifest.json','{}')),rename:code(()=>fs.renameSync(docs+'/architecture',docs+'/moved')),guide:code(()=>fs.writeFileSync(docs+'/guide.md','CHANGED'))}))`;
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, f.admission.node, '-e', probe, join(f.worktree, 'docs')], { encoding: 'utf8', timeout: 15_000, env: { PATH: '/usr/bin:/bin' } });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ manifest: 'EPERM', rename: 'EPERM', guide: 'ok' });
+  expect(existsSync(join(f.worktree, 'docs', 'architecture', '.projection-manifest.json'))).toBe(false);
 }, 60_000);

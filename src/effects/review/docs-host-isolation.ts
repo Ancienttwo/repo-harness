@@ -106,26 +106,36 @@ function assertDocsTreeFiles(root: string): void {
   }
 }
 
-/** Generated projection targets, the manifest itself, and every directory above them inside docs/ (no rename or removal). */
+/**
+ * The manifest path, generated projection targets, and every directory above
+ * them inside docs/ (no rename or removal). The manifest path stays protected
+ * when the file is absent, so a session cannot create one. Seatbelt checks the
+ * resolved path, so a symlink on any protected path would route a write to an
+ * open docs/ file; such a symlink fails admission.
+ */
 export function docsHostProtectedProjection(worktree: string): readonly string[] {
-  const manifestPath = join(worktree, DOCS_HOST_PROJECTION_MANIFEST);
-  if (!existsSync(manifestPath)) return [];
-  let targets: unknown;
-  try { targets = (JSON.parse(readFileSync(manifestPath, 'utf8')) as { targets?: unknown }).targets; }
-  catch { throw new Error('docs_host_projection_manifest_invalid'); }
-  if (!targets || typeof targets !== 'object' || Array.isArray(targets)) throw new Error('docs_host_projection_manifest_invalid');
-  const protectedPaths = new Set<string>([DOCS_HOST_PROJECTION_MANIFEST]);
-  for (const target of Object.values(targets)) {
-    const path = (target as { path?: unknown } | null)?.path;
-    if (typeof path !== 'string' || path === '' || isAbsolute(path) || posix.normalize(path) !== path || path.startsWith('../') || /[\r\n\0"]/.test(path)) {
-      throw new Error('docs_host_projection_manifest_invalid');
+  const protectedPaths = new Set<string>(['docs']);
+  const protect = (path: string) => {
+    for (let entry = path; entry.startsWith('docs/'); entry = posix.dirname(entry)) {
+      if (lstatSync(join(worktree, entry), { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`docs_host_projection_symlink_unsupported: ${entry}`);
+      protectedPaths.add(entry);
     }
-    protectedPaths.add(path);
+  };
+  protect(DOCS_HOST_PROJECTION_MANIFEST);
+  const manifestPath = join(worktree, DOCS_HOST_PROJECTION_MANIFEST);
+  if (existsSync(manifestPath)) {
+    let targets: unknown;
+    try { targets = (JSON.parse(readFileSync(manifestPath, 'utf8')) as { targets?: unknown }).targets; }
+    catch { throw new Error('docs_host_projection_manifest_invalid'); }
+    if (!targets || typeof targets !== 'object' || Array.isArray(targets)) throw new Error('docs_host_projection_manifest_invalid');
+    for (const target of Object.values(targets)) {
+      const path = (target as { path?: unknown } | null)?.path;
+      if (typeof path !== 'string' || path === '' || isAbsolute(path) || posix.normalize(path) !== path || path.startsWith('../') || /[\r\n\0"]/.test(path)) {
+        throw new Error('docs_host_projection_manifest_invalid');
+      }
+      if (path.startsWith('docs/')) protect(path); else protectedPaths.add(path);
+    }
   }
-  for (const path of [...protectedPaths]) {
-    for (let parent = posix.dirname(path); parent.startsWith('docs/'); parent = posix.dirname(parent)) protectedPaths.add(parent);
-  }
-  protectedPaths.add('docs');
   return [...protectedPaths].sort().map(path => join(worktree, path));
 }
 
@@ -173,7 +183,7 @@ export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Pl
     `(deny file-write* (require-all (require-not ${sub(docs)}) (require-not ${sub(scratch)}) (require-not ${lit('/dev/null')})))`,
     `(deny file-write* (regex #"${FORBIDDEN_WRITE_FILES}"))`,
     `(deny file-write* (regex #"${FORBIDDEN_WRITE_DIRECTORIES}"))`,
-    ...(projection.length ? [`(deny file-write* ${projection.map(lit).join(' ')})`] : []),
+    `(deny file-write* ${projection.map(lit).join(' ')})`,
     `(deny file-read* ${CREDENTIAL_SUBPATHS.map(path => sub(join(home, path))).join(' ')} ${CREDENTIAL_LITERALS.map(path => lit(join(home, path))).join(' ')})`,
     `(deny file-read* (require-all (regex #"${CREDENTIAL_FILES}") (require-not ${lit(privateAuth)})))`,
     `(deny file-map-executable ${sub(docs)} ${sub(scratch)})`,
