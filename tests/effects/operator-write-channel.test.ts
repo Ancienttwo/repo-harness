@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as fs from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { createConnection } from 'node:net';
@@ -75,8 +75,8 @@ function echoRoute(harness: () => Harness): OperatorWriteRoute {
   };
 }
 
-async function startHarness(): Promise<Harness> {
-  const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-'));
+async function startHarness(homeOf: () => string = () => mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-'))): Promise<Harness> {
+  const home = homeOf();
   const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-ui-'));
   writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
   let current: Harness | null = null;
@@ -397,6 +397,33 @@ describe('operator write channel', () => {
     // The torn tail is cut, so the next write still finds a readable log.
     expect(auditRecords(harness)).toEqual([]);
     expect((await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v2' })).status).toBe(200);
+  });
+
+  test('a symlinked operator directory still audits, runs once and replays', async () => {
+    const harness = await startHarness();
+    const realDir = mkdtempSync(join(tmpdir(), 'repo-harness-operator-real-'));
+    cleanups.push(() => rmSync(realDir, { recursive: true, force: true }));
+    symlinkSync(realDir, join(harness.home, 'operator'));
+    const requestId = randomUUID();
+    const first = await post(harness, { request_id: requestId, mode: 'ok', value: 'v1' });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ echoed: 'v1' });
+    expect(auditRecords(harness).map(record => record.phase)).toEqual(['intent', 'result']);
+    const retry = await post(harness, { request_id: requestId, mode: 'ok', value: 'v1' });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toEqual({ echoed: 'v1' });
+    expect(harness.executions).toEqual(['v1']);
+  });
+
+  test('a fresh home under a symlinked parent accepts the first write', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'repo-harness-operator-parent-'));
+    cleanups.push(() => rmSync(parent, { recursive: true, force: true }));
+    mkdirSync(join(parent, 'real'));
+    symlinkSync(join(parent, 'real'), join(parent, 'link'));
+    const harness = await startHarness(() => join(parent, 'link', 'home'));
+    const response = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v1' });
+    expect(response.status).toBe(200);
+    expect(harness.executions).toEqual(['v1']);
   });
 
   test('a result the audit reader would refuse is not appended and the log stays usable', async () => {
