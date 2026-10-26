@@ -1,18 +1,23 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs';
 import type { IncomingMessage } from 'node:http';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
-import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
+import { OPERATOR_ROUTES, OperatorServerError, startOperatorServer, type OperatorRouteV1, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 import { handleOperatorWrite, operatorWriteTokenCookieName, type OperatorWriteRoute } from '../../src/effects/operator/write-channel';
 import { OperatorWriteRefusal } from '../../src/effects/operator/write-run';
 
-type Mode = 'ok' | 'refuse' | 'break_result_audit' | 'hold';
+type Mode = 'ok' | 'refuse' | 'break_result_audit' | 'hold' | 'undecodable_result';
+const ECHO_PATH = /^\/api\/v1\/test-echo\/([a-z]+)$/u;
+/** The inventory entry that binds the test route; production OPERATOR_ROUTES has none. */
+const ECHO_INVENTORY: OperatorRouteV1 = { id: 'test_echo', method: 'POST', pattern: ECHO_PATH.source, write: true };
 
 interface Harness {
   readonly server: OperatorServerHandle;
@@ -37,12 +42,12 @@ afterEach(async () => {
 function echoRoute(harness: () => Harness): OperatorWriteRoute {
   return {
     id: 'test_echo',
-    path: /^\/api\/v1\/test-echo\/([a-z]+)$/u,
+    path: ECHO_PATH,
     decode(fields, params) {
       const keys = Object.keys(fields).sort();
       if (keys.join(',') !== 'mode,value' || typeof fields.value !== 'string') throw new Error('closed decoder');
       const mode = fields.mode as Mode;
-      if (!['ok', 'refuse', 'break_result_audit', 'hold'].includes(mode)) throw new Error('closed decoder');
+      if (!['ok', 'refuse', 'break_result_audit', 'hold', 'undecodable_result'].includes(mode)) throw new Error('closed decoder');
       const value = fields.value;
       return {
         operation: 'test_echo',
@@ -60,6 +65,8 @@ function echoRoute(harness: () => Harness): OperatorWriteRoute {
             mkdirSync(audit);
           }
           if (mode === 'hold') await new Promise<void>(resolveHold => { current.release = resolveHold; });
+          // A body the audit reader would refuse must never reach the log.
+          if (mode === 'undecodable_result') return { status: 200, body: undefined as never };
           return { status: 200, body: { echoed: value } };
         },
       };
@@ -73,7 +80,11 @@ async function startHarness(): Promise<Harness> {
   writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
   let current: Harness | null = null;
   const env = { REPO_HARNESS_HOME: home };
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [echoRoute(() => current!)] });
+  const server = await startOperatorServer({
+    port: 0, static_root: staticRoot, env,
+    route_inventory: [...OPERATOR_ROUTES, ECHO_INVENTORY],
+    write_routes: [echoRoute(() => current!)],
+  });
   const page = await fetch(`${server.url}/`);
   const setCookie = page.headers.get('set-cookie') ?? '';
   current = { server, env, home, executions: [], cookie: setCookie.split(';')[0]!, release: () => {}, auditAtBreak: '' };
@@ -307,5 +318,117 @@ describe('operator write channel', () => {
     const reply = await handleOperatorWrite({ request: stream, route, params: [], token: 't', port: 1, body_deadline_ms: 20 });
     expect(reply).toMatchObject({ status: 408, refused: true, close: true });
     expect(executed).toBe(false);
+  });
+
+  test('a slow client over a real socket gets 408 and a closed connection', async () => {
+    const harness = await startHarness();
+    const { port } = new URL(harness.server.url);
+    const partial = `{"request_id":"${randomUUID()}",`;
+    const raw = await new Promise<string>((resolveRaw, rejectRaw) => {
+      const socket = createConnection({ host: '127.0.0.1', port: Number(port) });
+      let received = '';
+      socket.setEncoding('utf8');
+      socket.on('data', chunk => { received += chunk; });
+      socket.on('end', () => resolveRaw(received));
+      socket.on('error', rejectRaw);
+      socket.write([
+        'POST /api/v1/test-echo/alpha HTTP/1.1',
+        `Host: 127.0.0.1:${port}`,
+        `Origin: ${harness.server.url}`,
+        'Sec-Fetch-Site: same-origin',
+        'Content-Type: application/json',
+        `Cookie: ${harness.cookie}`,
+        'Content-Length: 100',
+        '', partial,
+      ].join('\r\n'));
+    });
+    expect(raw.startsWith('HTTP/1.1 408 ')).toBe(true);
+    expect(raw.toLowerCase()).toContain('connection: close');
+    expect(raw).toContain('"body_timeout"');
+    expect(harness.executions).toEqual([]);
+    expect(auditRecords(harness)).toEqual([]);
+  }, 20_000);
+
+  test('a server refuses to start when a write route has no matching POST write inventory entry', async () => {
+    const route = echoRoute(() => { throw new Error('unused'); });
+    const inventories: (readonly OperatorRouteV1[] | undefined)[] = [
+      undefined,
+      OPERATOR_ROUTES,
+      [...OPERATOR_ROUTES, { ...ECHO_INVENTORY, method: 'GET' }],
+      [...OPERATOR_ROUTES, { ...ECHO_INVENTORY, write: false }],
+      [...OPERATOR_ROUTES, { ...ECHO_INVENTORY, pattern: '^\\/api\\/v1\\/other$' }],
+      [...OPERATOR_ROUTES, { ...ECHO_INVENTORY, id: 'other_id' }],
+    ];
+    for (const inventory of inventories) {
+      let thrown: unknown;
+      try {
+        const server = await startOperatorServer({ port: 0, write_routes: [route], ...(inventory ? { route_inventory: inventory } : {}) });
+        await server.close();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(OperatorServerError);
+      expect((thrown as OperatorServerError).code).toBe('invalid_argument');
+    }
+  });
+
+  test('the CLI serve path passes no write routes and no route inventory', async () => {
+    const { parseOperatorServeOptions } = await import('../../src/cli/commands/operator');
+    const parsed = parseOperatorServeOptions({ port: '0', write_routes: [echoRoute(() => { throw new Error('unused'); })], route_inventory: [] } as never);
+    expect(Object.keys(parsed)).not.toContain('write_routes');
+    expect(Object.keys(parsed)).not.toContain('route_inventory');
+    const cliSource = readFileSync(new URL('../../src/cli/commands/operator.ts', import.meta.url), 'utf-8');
+    expect(cliSource).not.toMatch(/write_routes|route_inventory/u);
+  });
+
+  test('a short audit write is not taken as a written intent record', async () => {
+    const harness = await startHarness();
+    const original = fs.writeSync;
+    const spy = spyOn(fs, 'writeSync').mockImplementation(((fd: number, data: string) => original(fd, data.slice(0, 10))) as typeof fs.writeSync);
+    try {
+      const response = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v1' });
+      expect(response.status).toBe(503);
+      expect((await response.json()).error.code).toBe('audit_unavailable');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(harness.executions).toEqual([]);
+  });
+
+  test('a result the audit reader would refuse is not appended and the log stays usable', async () => {
+    const harness = await startHarness();
+    const response = await post(harness, { request_id: randomUUID(), mode: 'undecodable_result', value: 'v1' });
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe('reconcile_required');
+    expect(auditRecords(harness).map(record => record.phase)).toEqual(['intent']);
+    const next = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v2' });
+    expect(next.status).toBe(200);
+    expect(harness.executions).toEqual(['v1', 'v2']);
+  });
+
+  test('busy, audit_unavailable and reconcile_required each log one stderr line without the body', async () => {
+    const harness = await startHarness();
+    const captured: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const ids = { busy: randomUUID(), reconcile: randomUUID(), audit: randomUUID() };
+    try {
+      process.stderr.write = ((chunk: unknown) => { captured.push(String(chunk)); return true; }) as typeof process.stderr.write;
+      const held = post(harness, { request_id: randomUUID(), mode: 'hold', value: 'held-body' });
+      for (let attempt = 0; attempt < 200 && harness.executions.length === 0; attempt += 1) await Bun.sleep(5);
+      expect((await post(harness, { request_id: ids.busy, mode: 'ok', value: 'busy-body' })).status).toBe(503);
+      harness.release();
+      await held;
+      expect((await post(harness, { request_id: ids.reconcile, mode: 'break_result_audit', value: 'reconcile-body' }, {}, '/api/v1/test-echo/beta')).status).toBe(409);
+      expect((await post(harness, { request_id: ids.audit, mode: 'ok', value: 'audit-body' }, {}, '/api/v1/test-echo/gamma')).status).toBe(503);
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    const lines = captured.join('').split('\n').filter(line => line.includes(' write ') && line.includes('request_id='));
+    expect(lines).toEqual([
+      `repo-harness-operator write code=busy request_id=${ids.busy}`,
+      `repo-harness-operator write code=reconcile_required request_id=${ids.reconcile}`,
+      `repo-harness-operator write code=audit_unavailable request_id=${ids.audit}`,
+    ]);
+    expect(captured.join('')).not.toMatch(/-body/u);
   });
 });
