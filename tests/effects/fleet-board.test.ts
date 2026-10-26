@@ -154,7 +154,7 @@ function createReviewingProviderFixture(
     'trap cleanup EXIT INT TERM', 'printf "%s\\n" "$*" >> "$counter/calls"', 'sleep 0.04',
     'if [ "$1" = "repo" ] && [ "$2" = "view" ]; then printf "%s\\n" \'{"id":"R_fleet_provider","nameWithOwner":"example/fleet"}\'; exit 0; fi',
     'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then case "$3" in', ...providerCases, '  *) exit 2 ;;', 'esac; exit 0; fi',
-    'if [ "$1" = "api" ] && [ "$2" = "repos/example/fleet" ]; then printf "%s\\n" \'{"id":1001,"node_id":"R_fleet_provider","full_name":"example/fleet"}\'; exit 0; fi',
+    'if [ "$1" = "api" ] && [ "$2" = "repos/example/fleet" ]; then printf "%s\\n" \'{"id":1001,"node_id":"R_fleet_provider","full_name":"example/fleet","default_branch":"main"}\'; exit 0; fi',
     ...taskNames.flatMap((_, index) => {
       const number = index + 1;
       const checks = [{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/fleet/actions/runs/${number}/job/1` }];
