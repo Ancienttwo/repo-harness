@@ -6,11 +6,13 @@ import { REPOSITORY_SELECTING_GIT_ENV, spawnGit } from '../git/runner';
 
 /**
  * Read-only `docs/**` reader for the operator console (PRD G7).
- * Content comes from the default branch tip through one long-lived
- * `git cat-file --batch-command` process per repository. A read spawns no
- * other process. The worktree is used only to check the physical path and to
- * tell if the worktree copy differs from the served blob; its bytes are never
- * returned. Errors carry only repo-relative paths.
+ * Content comes from one ref's tip through one long-lived
+ * `git cat-file --batch-command` process per repository. Only the owner
+ * (the docs collector) starts that process and builds the listing; a read
+ * sends one object request to it and starts no process. The worktree is used
+ * only to check the physical path and to tell if the worktree copy differs
+ * from the served blob; its bytes are never returned. Errors carry only
+ * repo-relative paths.
  */
 export const DOCS_ROOT = 'docs';
 export const DOCS_FILE_MAX_BYTES = 512 * 1024;
@@ -25,11 +27,13 @@ export type DocsReadErrorCode =
   | 'not_a_file'
   | 'too_large'
   | 'not_text'
-  | 'branch_invalid'
+  | 'ref_invalid'
   | 'repo_unavailable'
   | 'branch_missing'
   | 'timeout'
   | 'git_read_failed'
+  | 'worker_unavailable'
+  | 'pending'
   | 'closed';
 
 export class DocsReadError extends Error {
@@ -54,14 +58,17 @@ export interface DocsFile {
 export interface DocsReaderOptions {
   /** Repository root of a registered primary checkout. */
   root: string;
-  /** Default branch name, for example `main`. The caller owns how it is found. */
-  defaultBranch: string;
+  /** The full ref to read, for example `refs/remotes/origin/main`. The caller owns how it is found. */
+  ref: string;
   timeoutMs?: number;
   gitBin?: string;
   env?: NodeJS.ProcessEnv;
 }
 
 type GitObject = { oid: string; type: string; size: number; bytes: Buffer | null };
+/** A committed path that is not a listed file: a directory, a symlink or submodule (`escape`), or another mode. */
+type PathKind = 'dir' | 'escape' | 'other';
+type Listing = { commit: string; files: Map<string, { oid: string; facts: BlobFacts }>; kinds: Map<string, PathKind>; tree: DocsTree };
 type TreeEntry = { mode: string; name: string; oid: string };
 type BlobFacts = { size: number; sha256: string; text: boolean };
 type Pending = { resolve: (value: GitObject | null) => void; reject: (error: DocsReadError) => void; contents: boolean; timer: ReturnType<typeof setTimeout> };
@@ -102,9 +109,11 @@ export function normalizeDocsPath(input: unknown): string {
   return input;
 }
 
-function validBranch(name: string): boolean {
-  return /^[A-Za-z0-9._/-]+$/.test(name) && !name.startsWith('-') && !name.startsWith('/') && !name.endsWith('/')
-    && !name.includes('..') && !name.includes('//') && !name.endsWith('.lock');
+/** A local branch or remote-tracking ref with a safe name: `refs/heads/<branch>` or `refs/remotes/<remote>/<branch>`. */
+export function validDocsRef(ref: string): boolean {
+  const name = /^refs\/(?:heads|remotes)\/(.+)$/.exec(ref)?.[1];
+  return name !== undefined && /^[A-Za-z0-9._/-]+$/.test(name) && !name.startsWith('-') && !name.startsWith('/') && !name.endsWith('/')
+    && !name.includes('..') && !name.includes('//') && !name.endsWith('.lock') && !name.split('/').some(part => part.startsWith('.'));
 }
 
 function sha256(bytes: Buffer): string {
@@ -118,7 +127,7 @@ function utf8(bytes: Buffer): string | null {
 /**
  * One `git cat-file --batch-command` process. Requests are answered in order.
  * A timeout or an unexpected exit fails every pending request and ends the
- * process; the next request starts a new one.
+ * process; only `ensure` starts a new one.
  */
 class CatFileWorker {
   private child: ChildProcess | null = null;
@@ -131,6 +140,13 @@ class CatFileWorker {
   info(name: string): Promise<GitObject | null> { return this.request(name, false); }
   contents(name: string): Promise<GitObject | null> { return this.request(name, true); }
 
+  get running(): boolean { return this.child !== null; }
+
+  /** Starts the process when none runs. Only the owner calls this; a read never does. */
+  ensure(): void {
+    if (!this.closed && this.child === null) this.start();
+  }
+
   close(): void {
     this.closed = true;
     this.fail(new DocsReadError('closed'));
@@ -138,7 +154,8 @@ class CatFileWorker {
 
   private request(name: string, contents: boolean): Promise<GitObject | null> {
     if (this.closed) return Promise.reject(new DocsReadError('closed'));
-    const child = this.child ?? this.start();
+    const child = this.child;
+    if (child === null) return Promise.reject(new DocsReadError('worker_unavailable'));
     return new Promise((resolvePromise, rejectPromise) => {
       const timer = setTimeout(() => this.fail(new DocsReadError('timeout')), this.timeoutMs);
       this.pending.push({ resolve: resolvePromise, reject: rejectPromise, contents, timer });
@@ -233,80 +250,92 @@ function parseTree(bytes: Buffer, oidBytes: number): TreeEntry[] {
 
 export class DocsReader {
   readonly root: string;
-  private readonly ref: string;
+  readonly ref: string;
   private readonly worker: CatFileWorker;
   private readonly facts = new Map<string, BlobFacts>();
-  private listing: { commit: string; files: { path: string; oid: string; facts: BlobFacts }[] } | null = null;
+  private listing: Listing | null = null;
 
   constructor(options: DocsReaderOptions) {
-    if (!validBranch(options.defaultBranch)) throw new DocsReadError('branch_invalid');
+    if (!validDocsRef(options.ref)) throw new DocsReadError('ref_invalid');
     // The native error names the absolute root; only the code may leave this module.
     try { this.root = realpathSync(options.root); } catch { throw new DocsReadError('repo_unavailable'); }
-    this.ref = `refs/heads/${options.defaultBranch}^{commit}`;
+    this.ref = options.ref;
     this.worker = new CatFileWorker(this.root, options.timeoutMs ?? DOCS_GIT_TIMEOUT_MS, options.gitBin, options.env ?? process.env);
   }
 
   close(): void { this.worker.close(); }
 
-  /** Readable files under `docs/` at the default branch tip. */
-  async tree(): Promise<DocsTree> {
+  /** True while the cat-file process runs. */
+  get running(): boolean { return this.worker.running; }
+
+  /** Owner only: starts the cat-file process when it is not running. */
+  start(): void { this.worker.ensure(); }
+
+  /**
+   * Owner only: reads the ref tip and, for a new commit, lists and hashes
+   * every docs blob and checks each physical path. The result is cached for
+   * `tree` and `file`.
+   */
+  async refresh(): Promise<DocsTree> {
     const { commit, tree } = await this.tip();
-    let listing = this.listing;
-    if (listing?.commit !== commit) {
-      const files: { path: string; oid: string; facts: BlobFacts }[] = [];
-      const docs = (await this.treeEntries(tree, commit.length)).find(entry => entry.name === DOCS_ROOT);
-      if (docs?.mode === TREE_MODE) await this.walk(docs.oid, DOCS_ROOT, commit.length, files);
-      files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-      // Facts of blobs that left the tree are dropped, so the cache follows one commit.
-      const keep = new Set(files.map(file => file.oid));
-      for (const oid of this.facts.keys()) if (!keep.has(oid)) this.facts.delete(oid);
-      listing = this.listing = { commit, files };
+    if (this.listing?.commit === commit) return this.listing.tree;
+    const files = new Map<string, { oid: string; facts: BlobFacts }>();
+    const kinds = new Map<string, PathKind>();
+    const docs = (await this.treeEntries(tree, commit.length)).find(entry => entry.name === DOCS_ROOT);
+    if (docs?.mode === TREE_MODE) {
+      kinds.set(DOCS_ROOT, 'dir');
+      await this.walk(docs.oid, DOCS_ROOT, commit.length, files, kinds);
+    } else if (docs) kinds.set(DOCS_ROOT, docs.mode === '120000' || docs.mode === '160000' ? 'escape' : 'other');
+    // Facts of blobs that left the tree are dropped, so the cache follows one commit.
+    const keep = new Set([...files.values()].map(file => file.oid));
+    for (const oid of this.facts.keys()) if (!keep.has(oid)) this.facts.delete(oid);
+    const listed: DocsTreeFile[] = [];
+    for (const path of [...files.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+      const { facts } = files.get(path)!;
+      if (!facts.text || facts.size > DOCS_FILE_MAX_BYTES) continue;
+      try { this.physical(path); } catch (error) { if (error instanceof DocsReadError) continue; throw error; }
+      listed.push({ path, size: facts.size, sha256: facts.sha256 });
     }
-    const files: DocsTreeFile[] = [];
-    for (const file of listing.files) {
-      if (!file.facts.text || file.facts.size > DOCS_FILE_MAX_BYTES) continue;
-      try { this.physical(file.path); } catch (error) { if (error instanceof DocsReadError) continue; throw error; }
-      files.push({ path: file.path, size: file.facts.size, sha256: file.facts.sha256 });
-    }
-    return { commit, files };
+    this.listing = { commit, files, kinds, tree: { commit, files: listed } };
+    return this.listing.tree;
   }
 
-  /** One file's committed text, commit and digest, and whether the worktree copy differs. */
+  /** The cached listing; null before the first refresh. Starts no work. */
+  tree(): DocsTree | null { return this.listing?.tree ?? null; }
+
+  /**
+   * One file of the cached listing: one object request to the running
+   * process, and the worktree check for `worktree_differs`.
+   */
   async file(input: unknown): Promise<DocsFile> {
     const path = normalizeDocsPath(input);
     const worktree = this.physical(path);
-    const { commit, tree } = await this.tip();
+    const listing = this.listing;
+    if (listing === null) throw new DocsReadError('pending');
+    // A committed symlink or submodule on the path can point anywhere.
     const parts = path.split('/');
-    let current = tree;
-    for (let index = 0; index < parts.length; index++) {
-      const entry = (await this.treeEntries(current, commit.length)).find(item => item.name === parts[index]);
-      if (!entry) throw new DocsReadError('not_found', path);
-      // A committed symlink or submodule on the path can point anywhere.
-      if (entry.mode === '120000' || entry.mode === '160000') throw new DocsReadError('path_escape', path);
-      const last = index === parts.length - 1;
-      if (!last) {
-        if (entry.mode !== TREE_MODE) throw new DocsReadError('not_found', path);
-        current = entry.oid;
-        continue;
-      }
-      if (!REGULAR_FILE.has(entry.mode)) throw new DocsReadError('not_a_file', path);
-      const info = await this.worker.info(entry.oid);
-      if (!info || info.type !== 'blob') throw new DocsReadError('git_read_failed', path);
-      if (info.size > DOCS_FILE_MAX_BYTES) throw new DocsReadError('too_large', path);
-      const blob = await this.worker.contents(entry.oid);
-      if (!blob?.bytes || blob.type !== 'blob') throw new DocsReadError('git_read_failed', path);
-      const text = utf8(blob.bytes);
-      if (text === null) throw new DocsReadError('not_text', path);
-      return {
-        path, commit, size: blob.size, sha256: sha256(blob.bytes), text,
-        worktree_differs: worktree === null || worktree.path !== path || !this.sameBytes(worktree.absolute, blob.bytes),
-      };
+    for (let count = 1; count < parts.length; count++) {
+      const kind = listing.kinds.get(parts.slice(0, count).join('/'));
+      if (kind === 'escape') throw new DocsReadError('path_escape', path);
+      if (kind !== 'dir') throw new DocsReadError('not_found', path);
     }
-    throw new DocsReadError('not_found', path);
+    const kind = listing.kinds.get(path);
+    if (kind === 'escape') throw new DocsReadError('path_escape', path);
+    if (kind === 'dir' || kind === 'other') throw new DocsReadError('not_a_file', path);
+    const entry = listing.files.get(path);
+    if (!entry) throw new DocsReadError('not_found', path);
+    if (entry.facts.size > DOCS_FILE_MAX_BYTES) throw new DocsReadError('too_large', path);
+    if (!entry.facts.text) throw new DocsReadError('not_text', path);
+    const blob = await this.worker.contents(entry.oid);
+    if (!blob?.bytes || blob.type !== 'blob' || sha256(blob.bytes) !== entry.facts.sha256) throw new DocsReadError('git_read_failed', path);
+    return {
+      path, commit: listing.commit, size: blob.size, sha256: entry.facts.sha256, text: utf8(blob.bytes)!,
+      worktree_differs: worktree === null || worktree.path !== path || !this.sameBytes(worktree.absolute, blob.bytes),
+    };
   }
 
   private async tip(): Promise<{ commit: string; tree: string }> {
-    const object = await this.worker.contents(this.ref);
+    const object = await this.worker.contents(`${this.ref}^{commit}`);
     if (!object) throw new DocsReadError('branch_missing');
     if (object.type !== 'commit' || !object.bytes) throw new DocsReadError('git_read_failed');
     const tree = /^tree ([0-9a-f]{40}|[0-9a-f]{64})\n/.exec(object.bytes.toString('latin1'))?.[1];
@@ -321,16 +350,21 @@ export class DocsReader {
     return parseTree(object.bytes, hexLength / 2);
   }
 
-  private async walk(oid: string, prefix: string, hexLength: number, files: { path: string; oid: string; facts: BlobFacts }[]): Promise<void> {
+  private async walk(oid: string, prefix: string, hexLength: number, files: Listing['files'], kinds: Listing['kinds']): Promise<void> {
     for (const entry of await this.treeEntries(oid, hexLength)) {
       const path = `${prefix}/${entry.name}`;
+      if (docsPathDenied(path)) continue;
       if (entry.mode === TREE_MODE) {
-        if (!docsPathDenied(path)) await this.walk(entry.oid, path, hexLength, files);
-        continue;
+        kinds.set(path, 'dir');
+        await this.walk(entry.oid, path, hexLength, files, kinds);
+      } else if (entry.mode === '120000' || entry.mode === '160000') {
+        kinds.set(path, 'escape');
+      } else if (!REGULAR_FILE.has(entry.mode)) {
+        kinds.set(path, 'other');
+      } else {
+        if (files.size >= DOCS_TREE_MAX_FILES) throw new DocsReadError('too_large', DOCS_ROOT);
+        files.set(path, { oid: entry.oid, facts: await this.blobFacts(entry.oid) });
       }
-      if (!REGULAR_FILE.has(entry.mode) || docsPathDenied(path)) continue;
-      if (files.length >= DOCS_TREE_MAX_FILES) throw new DocsReadError('too_large', DOCS_ROOT);
-      files.push({ path, oid: entry.oid, facts: await this.blobFacts(entry.oid) });
     }
   }
 

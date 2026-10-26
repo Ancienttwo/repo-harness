@@ -19,6 +19,8 @@ import {
   OPERATOR_SETUP_PATH,
   OPERATOR_BOT_ACCESS_PATH,
   OPERATOR_CLI_INVENTORY_PATH,
+  OPERATOR_DOCS_TREE_ROUTE,
+  OPERATOR_DOCS_FILE_ROUTE,
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
@@ -97,6 +99,8 @@ describe('operator structural write boundary', () => {
       'setup',
       'bot_access',
       'cli_inventory',
+      'docs_tree',
+      'docs_file',
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
@@ -121,6 +125,9 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'bot_access')).toEqual({ id: 'bot_access', method: 'GET', pattern: '/api/v1/bot-access', write: false });
     expect(patterns.get('cli_inventory')).toBe(OPERATOR_CLI_INVENTORY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'cli_inventory')).toEqual({ id: 'cli_inventory', method: 'GET', pattern: '/api/v1/cli-inventory', write: false });
+    expect(patterns.get('docs_tree')).toBe(OPERATOR_DOCS_TREE_ROUTE.source);
+    expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
+    expect(OPERATOR_ROUTES.filter(route => route.id.startsWith('docs_')).every(route => route.method === 'GET' && !route.write)).toBe(true);
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);

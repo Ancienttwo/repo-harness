@@ -24,6 +24,9 @@ import { ROUTES } from '../../src/cli/hook/route-registry';
 import type { BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import type { BotAccessCacheV1 } from '../../src/effects/operator/bot-access';
 import { CLI_INVENTORY_PROJECTION, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
+import { DocsReader } from '../../src/effects/operator/docs-reader';
+import type { DocsRepositoryCache } from '../../src/effects/operator/docs-collector';
+import type { DocsTreeV1 } from '../../src/core/operator/docs';
 
 import {
   startOperatorServer,
@@ -441,6 +444,98 @@ describe('operator serve command and HTTP boundary', () => {
     try {
       expect(await (await fetch(`${collecting.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
     } finally { await collecting.close(); }
+  });
+
+  test('serves the docs tree from the cache and a file from the resident reader, with typed refusals', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-docs-')));
+    const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    const gitIn = (...args: string[]) => spawnSync('git', args, { cwd: root, env: gitEnv, encoding: 'utf8' }).stdout.trim();
+    mkdirSync(join(root, 'docs'));
+    writeFileSync(join(root, 'docs/guide.md'), '# Guide\n');
+    writeFileSync(join(root, '.env'), 'TOKEN=secret\n');
+    gitIn('init', '-q', '-b', 'main'); gitIn('add', 'docs'); gitIn('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'seed');
+    gitIn('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const commit = gitIn('rev-parse', 'HEAD');
+    const reader = new DocsReader({ root, ref: 'refs/remotes/origin/main', env: gitEnv });
+    reader.start();
+    const listing = await reader.refresh();
+    const tree: DocsTreeV1 = { protocol: 1, kind: 'operator_docs_tree', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
+      collected_at: '2026-10-27T00:00:00.000Z', files: listing.files };
+    let pending: DocsRepositoryCache | null = null;
+    const hung = { file: () => new Promise(() => {}) } as unknown as DocsReader;
+    const read_docs = (id: string): DocsRepositoryCache => pending ?? (id === 'repo-a' ? { state: 'ready', tree, reader }
+      : id === 'repo-b' ? { state: 'unavailable', reason: 'default_branch_unknown' }
+        : id === 'repo-hung' ? { state: 'ready', tree: { ...tree, repository_id: 'repo-hung' }, reader: hung }
+          : { state: 'unavailable', reason: 'repository_not_found' });
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1_000, collect_fleet_board: async () => snapshot(), read_docs });
+    const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
+    const file = (repo: string, query: string, init?: RequestInit) => get(`/api/v1/repositories/${repo}/docs/file?${query}`, init);
+    const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
+    try {
+      const treeResponse = await get('/api/v1/repositories/repo-a/docs/tree');
+      expect(treeResponse.status).toBe(200);
+      expect(await treeResponse.json()).toEqual(tree);
+      const ok = await file('repo-a', 'path=docs/guide.md');
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
+        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n', worktree_differs: false });
+      const head = await file('repo-a', 'path=docs/guide.md', { method: 'HEAD' });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe('');
+
+      for (const [query, status, expected] of [
+        ['path=.env', 403, 'path_denied'], ['path=docs/.env', 403, 'path_denied'], ['path=docs/../.env', 400, 'path_invalid'],
+        ['path=' + encodeURIComponent(join(root, 'docs/guide.md')), 400, 'path_invalid'], ['path=docs/none.md', 404, 'not_found'],
+        ['', 400, 'invalid_request'], ['path=docs/guide.md&path=docs/guide.md', 400, 'invalid_request'], ['path=docs/guide.md&ref=main', 400, 'invalid_request'],
+      ] as const) {
+        const response = await file('repo-a', query);
+        expect([query, response.status]).toEqual([query, status]);
+        const text = await response.text();
+        expect(JSON.parse(text).error.code).toBe(expected);
+        expect(text).not.toContain(root);
+      }
+      expect((await get('/api/v1/repositories/repo-a/docs/tree?ref=main')).status).toBe(400);
+      const missing = await get('/api/v1/repositories/repo-x/docs/tree');
+      expect([missing.status, await code(missing)]).toEqual([404, 'repository_not_found']);
+      const branch = await file('repo-b', 'path=docs/guide.md');
+      expect([branch.status, await code(branch)]).toEqual([503, 'default_branch_unknown']);
+
+      // One read in flight fills the cap; it times out, and a client that leaves frees its slot.
+      const slow = file('repo-hung', 'path=docs/guide.md');
+      await Bun.sleep(50);
+      const busy = await file('repo-a', 'path=docs/guide.md');
+      expect([busy.status, await code(busy)]).toEqual([503, 'docs_busy']);
+      const late = await slow;
+      expect([late.status, await code(late)]).toEqual([504, 'docs_timeout']);
+      const leaving = new AbortController();
+      const abandoned = file('repo-hung', 'path=docs/guide.md', { signal: leaving.signal }).catch(() => null);
+      await Bun.sleep(50);
+      leaving.abort();
+      await abandoned;
+      await Bun.sleep(50);
+      expect((await file('repo-a', 'path=docs/guide.md')).status).toBe(200);
+
+      for (const path of ['/api/v1/repositories/repo-a/docs/tree', '/api/v1/repositories/repo-a/docs/file?path=docs/guide.md']) {
+        expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+        expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+        for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+        expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      }
+      pending = { state: 'unavailable', reason: 'docs_pending' };
+      const notYet = await get('/api/v1/repositories/repo-a/docs/tree');
+      expect([notYet.status, await code(notYet)]).toEqual([503, 'docs_pending']);
+      // The resident process already ran: no GET started a process.
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+    } finally {
+      spawnSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+      reader.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('bounds repository reads and permits a healthy retry after timeout', async () => {

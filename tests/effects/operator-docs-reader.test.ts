@@ -48,9 +48,17 @@ function fixture(files: Record<string, string | Buffer>, links: Record<string, s
   return { root, outside, commit: git(root, 'rev-parse', 'HEAD') };
 }
 
-function reader(root: string, options: Partial<ConstructorParameters<typeof DocsReader>[0]> = {}): DocsReader {
-  const value = new DocsReader({ root, defaultBranch: 'main', ...options });
+function created(root: string, options: Partial<ConstructorParameters<typeof DocsReader>[0]> = {}): DocsReader {
+  const value = new DocsReader({ root, ref: 'refs/heads/main', ...options });
   readers.push(value);
+  return value;
+}
+
+/** A reader as its owner leaves it: worker started and listing built. */
+async function reader(root: string, options: Partial<ConstructorParameters<typeof DocsReader>[0]> = {}): Promise<DocsReader> {
+  const value = created(root, options);
+  value.start();
+  await value.refresh();
   return value;
 }
 
@@ -64,7 +72,7 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 
 test('file returns the default branch blob with commit, digest and a clean worktree', async () => {
   const { root, commit } = fixture({ 'docs/guide.md': '# Guide\n', 'README.md': 'root\n' });
-  const result = await reader(root).file('docs/guide.md');
+  const result = await (await reader(root)).file('docs/guide.md');
   expect(result).toEqual({ path: 'docs/guide.md', commit, size: 8, sha256: hash('# Guide\n'), text: '# Guide\n', worktree_differs: false });
 });
 
@@ -72,7 +80,7 @@ test('file serves the commit while it marks an edited or deleted worktree copy',
   const { root } = fixture({ 'docs/a.md': 'committed\n', 'docs/b.md': 'b\n' });
   writeFileSync(join(root, 'docs/a.md'), 'edited\n');
   unlinkSync(join(root, 'docs/b.md'));
-  const docs = reader(root);
+  const docs = await reader(root);
   const a = await docs.file('docs/a.md');
   expect(a.text).toBe('committed\n');
   expect(a.worktree_differs).toBe(true);
@@ -81,12 +89,16 @@ test('file serves the commit while it marks an edited or deleted worktree copy',
 
 test('file follows the branch tip, not the checked-out HEAD', async () => {
   const { root } = fixture({ 'docs/a.md': 'v1\n' });
-  const docs = reader(root);
+  const docs = await reader(root);
   git(root, 'checkout', '-q', '-b', 'feature');
   write(root, 'docs/a.md', 'feature\n'); git(root, 'commit', '-q', '-am', 'feature');
+  await docs.refresh();
   expect((await docs.file('docs/a.md')).text).toBe('v1\n');
   git(root, 'checkout', '-q', 'main');
   write(root, 'docs/a.md', 'v2\n'); git(root, 'commit', '-q', '-am', 'v2');
+  // A read serves the cached listing; only the owner's refresh moves it.
+  expect((await docs.file('docs/a.md')).text).toBe('v1\n');
+  await docs.refresh();
   const next = await docs.file('docs/a.md');
   expect(next.text).toBe('v2\n');
   expect(next.commit).toBe(git(root, 'rev-parse', 'main'));
@@ -102,7 +114,7 @@ test('tree lists readable docs files with size and sha256 only', async () => {
     'docs/image.bin': Buffer.from([0xff, 0xfe, 0x00]),
     'src/code.ts': 'export {};\n',
   }, { 'docs/link.md': '../src/code.ts', 'docs/out.md': '../../outside/secret.md' });
-  const result = await reader(root).tree();
+  const result = (await reader(root)).tree();
   expect(result).toEqual({ commit, files: [
     { path: 'docs/a.md', size: 2, sha256: hash('a\n') },
     { path: 'docs/nested/b.md', size: 3, sha256: hash('bb\n') },
@@ -113,12 +125,12 @@ test('tree drops a file whose worktree path escapes through a symlink', async ()
   const { root, outside } = fixture({ 'docs/a.md': 'a\n', 'docs/b.md': 'b\n' });
   unlinkSync(join(root, 'docs/b.md'));
   symlinkSync(join(outside, 'secret.md'), join(root, 'docs/b.md'));
-  expect((await reader(root).tree()).files.map(file => file.path)).toEqual(['docs/a.md']);
+  expect((await reader(root)).tree()!.files.map(file => file.path)).toEqual(['docs/a.md']);
 });
 
 test('reads outside docs, of .env and of .git are refused', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n', 'docs/.env': 'TOKEN=x\n', 'docs/.env.local': 'TOKEN=y\n', '.env': 'TOKEN=z\n', 'src/code.ts': 'x\n' });
-  const docs = reader(root);
+  const docs = await reader(root);
   expect(await refusal(docs.file('.env'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/.env'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/.env.local'))).toBe('path_denied');
@@ -141,7 +153,7 @@ test('a committed symlink is refused whether it points inside or outside the rep
     'docs/code.md': '../src/code.ts',
     'docs/git.md': '../.git/config',
   });
-  const docs = reader(root);
+  const docs = await reader(root);
   expect(await refusal(docs.file('docs/out.md'))).toBe('path_escape');
   expect(await refusal(docs.file('docs/code.md'))).toBe('path_escape');
   expect(await refusal(docs.file('docs/git.md'))).toBe('path_escape');
@@ -154,7 +166,7 @@ test('a worktree symlink that escapes docs is refused on the physical path', asy
   swap('docs/b.md', '../.git/config');
   swap('docs/c.md', join(outside, 'missing.md'));
   swap('docs/d.md', 'd.md');
-  const docs = reader(root);
+  const docs = await reader(root);
   expect(await refusal(docs.file('docs/a.md'))).toBe('path_escape');
   expect(await refusal(docs.file('docs/b.md'))).toBe('path_escape');
   expect(await refusal(docs.file('docs/c.md'))).toBe('path_escape');
@@ -165,18 +177,18 @@ test('a docs directory symlinked out of the repository is refused', async () => 
   const { root, outside } = fixture({ 'docs/secret.md': 'committed\n', 'docs/credentials.json': '{}\n', 'docs/secrets/a.md': 'a\n' });
   rmSync(join(root, 'docs'), { recursive: true });
   symlinkSync(outside, join(root, 'docs'));
-  const docs = reader(root);
+  const docs = await reader(root);
   expect(await refusal(docs.file('docs/secret.md'))).toBe('path_escape');
   expect(await refusal(docs.file('docs/credentials.json'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/secrets/a.md'))).toBe('path_denied');
-  expect((await docs.tree()).files).toEqual([]);
+  expect(docs.tree()!.files).toEqual([]);
 });
 
 test('an internal worktree symlink inside docs is readable and marked as differing', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n', 'docs/b.md': 'a\n' });
   unlinkSync(join(root, 'docs/b.md'));
   symlinkSync('a.md', join(root, 'docs/b.md'));
-  const result = await reader(root).file('docs/b.md');
+  const result = await (await reader(root)).file('docs/b.md');
   expect(result.text).toBe('a\n');
   expect(result.worktree_differs).toBe(true);
 });
@@ -185,14 +197,14 @@ test('a worktree FIFO in place of a committed file is marked as differing withou
   const { root } = fixture({ 'docs/a.md': 'a\n' });
   unlinkSync(join(root, 'docs/a.md'));
   execFileSync('mkfifo', [join(root, 'docs/a.md')]);
-  const result = await reader(root).file('docs/a.md');
+  const result = await (await reader(root)).file('docs/a.md');
   expect(result.text).toBe('a\n');
   expect(result.worktree_differs).toBe(true);
 });
 
 test('size, encoding and missing paths have their own refusals', async () => {
   const { root } = fixture({ 'docs/big.md': 'x'.repeat(DOCS_FILE_MAX_BYTES + 1), 'docs/image.bin': Buffer.from([0xff, 0xfe]), 'docs/dir/a.md': 'a\n' });
-  const docs = reader(root);
+  const docs = await reader(root);
   expect(await refusal(docs.file('docs/big.md'))).toBe('too_large');
   expect(await refusal(docs.file('docs/image.bin'))).toBe('not_text');
   expect(await refusal(docs.file('docs/none.md'))).toBe('not_found');
@@ -203,19 +215,40 @@ test('a removed repository root is refused without an absolute path', () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });
   rmSync(root, { recursive: true, force: true });
   let error: unknown;
-  try { new DocsReader({ root, defaultBranch: 'main' }); } catch (caught) { error = caught; }
+  try { new DocsReader({ root, ref: 'refs/heads/main' }); } catch (caught) { error = caught; }
   expect(error).toBeInstanceOf(DocsReadError);
   expect((error as DocsReadError).code).toBe('repo_unavailable');
   expect((error as DocsReadError).message).not.toContain(root);
 });
 
-test('a missing default branch and an unsafe branch name are refused', async () => {
+test('a missing branch and an unsafe or non-branch ref are refused', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });
-  expect(await refusal(reader(root, { defaultBranch: 'trunk' }).file('docs/a.md'))).toBe('branch_missing');
-  expect(() => new DocsReader({ root, defaultBranch: '--output=x' })).toThrow(DocsReadError);
+  const trunk = created(root, { ref: 'refs/remotes/origin/trunk' });
+  trunk.start();
+  expect(await refusal(trunk.refresh())).toBe('branch_missing');
+  for (const ref of ['main', '--output=x', 'refs/heads/--x', 'refs/tags/v1', 'refs/remotes/origin/../x', 'refs/heads/.hidden', 'HEAD']) {
+    let error: unknown;
+    try { new DocsReader({ root, ref }); } catch (caught) { error = caught; }
+    expect((error as DocsReadError).code).toBe('ref_invalid');
+  }
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  expect((await (await reader(root, { ref: 'refs/remotes/origin/main' })).file('docs/a.md')).text).toBe('a\n');
 });
 
-test('one cat-file worker serves every read, and a hung worker times out and is replaced', async () => {
+test('a read never starts the worker, and needs the owner\'s listing', async () => {
+  const { root } = fixture({ 'docs/a.md': 'a\n' });
+  const docs = created(root);
+  expect(docs.running).toBe(false);
+  expect(docs.tree()).toBeNull();
+  expect(await refusal(docs.file('docs/a.md'))).toBe('pending');
+  expect(docs.running).toBe(false);
+  expect(await refusal(docs.refresh())).toBe('worker_unavailable');
+  docs.start();
+  await docs.refresh();
+  expect((await docs.file('docs/a.md')).text).toBe('a\n');
+});
+
+test('one cat-file worker serves every read; a hung worker times out and only the owner replaces it', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });
   const bin = join(root, '..', 'bin'); mkdirSync(bin);
   const log = join(bin, 'spawns.log');
@@ -223,17 +256,22 @@ test('one cat-file worker serves every read, and a hung worker times out and is 
   // The shim hangs on its first start, then runs the real git.
   writeFileSync(shim, `#!/bin/sh\necho start >> '${log}'\nif [ "$(wc -l < '${log}')" -eq 1 ]; then exec sleep 30; fi\nexec '${execFileSync('which', ['git'], { encoding: 'utf8' }).trim()}' "$@"\n`);
   chmodSync(shim, 0o755);
-  const docs = reader(root, { gitBin: shim, timeoutMs: 3_000 });
-  expect(await refusal(docs.file('docs/a.md'))).toBe('timeout');
+  const docs = created(root, { gitBin: shim, timeoutMs: 3_000 });
+  docs.start();
+  expect(await refusal(docs.refresh())).toBe('timeout');
+  expect(docs.running).toBe(false);
+  expect(await refusal(docs.file('docs/a.md'))).toBe('pending');
+  docs.start();
+  await docs.refresh();
   expect((await docs.file('docs/a.md')).text).toBe('a\n');
-  await docs.tree();
+  docs.tree();
   await docs.file('docs/a.md');
   expect(readFileSync(log, 'utf8').trim().split('\n')).toHaveLength(2);
 });
 
 test('close ends the worker and refuses later reads', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });
-  const docs = reader(root);
+  const docs = await reader(root);
   await docs.file('docs/a.md');
   docs.close();
   expect(await refusal(docs.file('docs/a.md'))).toBe('closed');
