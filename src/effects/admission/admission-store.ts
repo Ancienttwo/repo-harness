@@ -29,8 +29,8 @@ function safeStat(path: string, directory: boolean): void {
   assertObservationPath(path);
   const stat = lstatSync(path);
   if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())
-    || typeof process.getuid === 'function' && stat.uid !== process.getuid()
-    || (stat.mode & 0o022) !== 0 || !directory && stat.nlink !== 1) fail('unsafe_authority');
+    || process.platform !== 'win32' && (typeof process.getuid === 'function' && stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0)
+    || !directory && stat.nlink !== 1) fail('unsafe_authority');
 }
 function location(input: StoreInput, identity: CampaignIdentity, create: boolean) {
   const repository = resolveRepositoryIdentity(input.repoRoot);
@@ -62,7 +62,7 @@ function readProtected(path: string): Buffer {
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.nlink !== 1 || stat.size > 1024 * 1024
-      || typeof process.getuid === 'function' && stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) fail('unsafe_authority');
+      || process.platform !== 'win32' && (typeof process.getuid === 'function' && stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0)) fail('unsafe_authority');
     return readFileSync(fd);
   } finally { closeSync(fd); }
 }

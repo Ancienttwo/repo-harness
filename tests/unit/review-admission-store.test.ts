@@ -2,7 +2,7 @@ import { approveDelegatedReviewAdmission } from '../../src/effects/admission/con
 import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
 import { observeReviewIssueGoal, observeActiveReviewAdmission, observeAdmittedReviewContext } from '../../src/effects/admission/issue-goal';
@@ -70,6 +70,16 @@ test('protected read refuses a candidate-local authority home and linked grant f
   expect(() => readReviewAdmission({ ...f.args(grant), authorityHome: f.root })).toThrow('authority_inside_candidate');
   const file = join(f.directory, `${grant.slice(7)}.json`), alternate = join(f.home, 'copied.json');
   writeFileSync(alternate, readFileSync(file), { mode: 0o600 }); rmSync(file); symlinkSync(alternate, file);
+  expect(() => readReviewAdmission(f.args(grant))).toThrow('unsafe_authority');
+});
+
+// Windows reports synthetic permission bits, so the group/other write check only applies on POSIX.
+test.skipIf(process.platform === 'win32')('protected read refuses group- or world-writable authority on POSIX', () => {
+  const f = fixture(), grant = f.seed(), file = join(f.directory, `${grant.slice(7)}.json`);
+  expect(readReviewAdmission(f.args(grant)).context.authorization.grant_sha256).toBe(grant);
+  chmodSync(file, 0o620);
+  expect(() => readReviewAdmission(f.args(grant))).toThrow('unsafe_authority');
+  chmodSync(file, 0o600); chmodSync(f.directory, 0o702);
   expect(() => readReviewAdmission(f.args(grant))).toThrow('unsafe_authority');
 });
 
