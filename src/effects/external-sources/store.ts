@@ -343,9 +343,12 @@ export interface LatestExternalSourceSnapshot {
 }
 
 /**
- * Bounded read of the newest refresh receipt and the one observation per issue it
- * names. The cost does not grow with refresh history. Over any limit, it fails
- * closed instead of truncating.
+ * Reads the newest refresh receipt and the one observation per issue it names.
+ * Content reads are bounded by `max_bytes` and `max_observations`, and the
+ * issue directory count by `max_issue_directories`. File name listings are not
+ * bounded: every receipt file name and every observation file name in each issue
+ * directory is still listed, so listing cost grows with refresh history. Over
+ * any limit, it fails closed instead of truncating.
  */
 export function readLatestExternalSourceSnapshot(repoRoot: string, limits: ExternalSourceSnapshotLimits): LatestExternalSourceSnapshot | null {
   const paths = pathsFor(repoRoot);
