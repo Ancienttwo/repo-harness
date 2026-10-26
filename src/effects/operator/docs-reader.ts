@@ -273,12 +273,16 @@ export class DocsReader {
 
   /**
    * Owner only: reads the ref tip and, for a new commit, lists and hashes
-   * every docs blob and checks each physical path. The result is cached for
-   * `tree` and `file`.
+   * every docs blob. Every call checks each physical path again, because a
+   * worktree symlink can appear or go away while the commit stays. The result
+   * is cached for `tree` and `file`.
    */
   async refresh(): Promise<DocsTree> {
     const { commit, tree } = await this.tip();
-    if (this.listing?.commit === commit) return this.listing.tree;
+    if (this.listing?.commit === commit) {
+      this.listing = { ...this.listing, tree: { commit, files: this.listed(this.listing.files) } };
+      return this.listing.tree;
+    }
     const files = new Map<string, { oid: string; facts: BlobFacts }>();
     const kinds = new Map<string, PathKind>();
     const docs = (await this.treeEntries(tree, commit.length)).find(entry => entry.name === DOCS_ROOT);
@@ -289,6 +293,12 @@ export class DocsReader {
     // Facts of blobs that left the tree are dropped, so the cache follows one commit.
     const keep = new Set([...files.values()].map(file => file.oid));
     for (const oid of this.facts.keys()) if (!keep.has(oid)) this.facts.delete(oid);
+    this.listing = { commit, files, kinds, tree: { commit, files: this.listed(files) } };
+    return this.listing.tree;
+  }
+
+  /** The servable files: text, within the size cap, and with a physical path that passes the checks now. */
+  private listed(files: Listing['files']): DocsTreeFile[] {
     const listed: DocsTreeFile[] = [];
     for (const path of [...files.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
       const { facts } = files.get(path)!;
@@ -296,8 +306,7 @@ export class DocsReader {
       try { this.physical(path); } catch (error) { if (error instanceof DocsReadError) continue; throw error; }
       listed.push({ path, size: facts.size, sha256: facts.sha256 });
     }
-    this.listing = { commit, files, kinds, tree: { commit, files: listed } };
-    return this.listing.tree;
+    return listed;
   }
 
   /** The cached listing; null before the first refresh. Starts no work. */

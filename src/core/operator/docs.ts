@@ -16,6 +16,7 @@ export const DOCS_UNAVAILABLE_REASONS = [
   'github_remote_missing',
   'github_remote_ambiguous',
   'branch_missing',
+  'ref_invalid',
   'docs_too_large',
   'docs_reader_unavailable',
 ] as const;

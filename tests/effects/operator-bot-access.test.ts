@@ -339,6 +339,8 @@ describe('Bot access collector', () => {
       const ok = await collectBotAccess({ env: f.env, session: 'bots', now: () => NOW,
         run_command: async (file) => file === 'herdr' ? { ok: false, code: 'failed' } : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) },
         read_notify: notifyOk });
+      expect(ok.notify.state).toBe('ok');
+      expect(decodeBotAccessSnapshot(ok)).toEqual(ok);
       const mutations: ((value: BotAccessSnapshotV1) => unknown)[] = [
         value => ({ ...value, extra: true }),
         value => ({ ...value, observed_at: 'yesterday' }),
@@ -347,6 +349,12 @@ describe('Bot access collector', () => {
         value => ({ ...value, oauth: { state: 'pending' } }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, deliveries: { ...value.notify.deliveries, slack: { at: null, result: 'sent' } } } : null }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, channels: { ...value.notify.channels, email: 'configured' } } : null }),
+        // The notify status is checked in place: an extra key at any level or a path-shaped time never reaches the response.
+        value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, status: { ...value.notify.status, webhook_url: 'https://hooks.example/secret' } } : null }),
+        value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, status: { ...value.notify.status, config: { ...value.notify.status.config, EXTRA_URL: 'configured' } } } : null }),
+        value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, status: { ...value.notify.status, last_delivery: { ...value.notify.status.last_delivery, stderr: 'boom' } } } : null }),
+        value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, status: { ...value.notify.status, observed_at: '/Users/someone/.config' } } : null }),
+        value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, status: { ...value.notify.status, last_delivery: { at: '/var/log/notify', result: 'failed' } } } : null }),
       ];
       for (const mutate of mutations) expect(() => decodeBotAccessSnapshot(mutate(ok))).toThrow('bot access invalid');
     } finally { f.cleanup(); }

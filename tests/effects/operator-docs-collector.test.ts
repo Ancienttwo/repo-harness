@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { decodeDocsTree, githubRemoteRepository } from '../../src/core/operator/docs';
@@ -102,6 +102,7 @@ test('a branch GitHub did not name, a missing first Dev Activity cycle and a mis
     [activity(f.id, 'owner/repo', null), 'default_branch_unknown'],
     [activity(f.id, 'owner/repo', 'main', null), 'docs_pending'],
     [activity(f.id, 'owner/repo', 'trunk'), 'branch_missing'],
+    [activity(f.id, 'owner/repo', 'main/../x'), 'ref_invalid'],
     [activity(f.id, 'owner/other', 'main'), 'github_remote_missing'],
   ] as const) {
     const docs = collect(f, snapshot);
@@ -139,6 +140,31 @@ test('a dead cat-file process stays dead for reads until the next cycle restarts
   const again = docs.read(f.id);
   if (again.state !== 'ready') throw new Error('not ready again');
   expect((await again.reader.file('docs/a.md')).text).toBe('remote\n');
+});
+
+test('a close during the remote lookup starts no cat-file process and no scan', async () => {
+  const f = fixture();
+  const slow = join(dirname(f.gitBin), 'git-slow');
+  writeFileSync(slow, `#!/bin/sh\ncase "$*" in config*) sleep 1;; esac\nexec '${f.gitBin}' "$@"\n`);
+  chmodSync(slow, 0o755);
+  const docs = startDocsCollector({ env: f.env, read_dev_activity: () => activity(f.id, 'owner/repo', 'main'), git_bin: slow, interval_ms: 60_000 });
+  await Bun.sleep(100);
+  await docs.close();
+  await Bun.sleep(1_300);
+  expect(readFileSync(f.log, 'utf8').trim().split('\n')).toEqual(['config --local --get-regexp ^remote\\..*\\.url$']);
+  expect(existsSync(f.pids)).toBe(false);
+});
+
+test('the docs follow the first Dev Activity cycle without waiting a full interval', async () => {
+  const f = fixture();
+  let snapshot = activity(f.id, 'owner/repo', 'main', null);
+  const docs = startDocsCollector({ env: f.env, read_dev_activity: () => snapshot, git_bin: f.gitBin, interval_ms: 60_000 });
+  collectors.push(docs);
+  await docs.settled();
+  expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason: 'docs_pending' });
+  snapshot = activity(f.id, 'owner/repo', 'main');
+  for (let attempt = 0; attempt < 300 && docs.read(f.id).state !== 'ready'; attempt++) await Bun.sleep(10);
+  expect(docs.read(f.id).state).toBe('ready');
 });
 
 test('closing ends every resident process', async () => {

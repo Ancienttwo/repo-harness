@@ -128,6 +128,22 @@ test('tree drops a file whose worktree path escapes through a symlink', async ()
   expect((await reader(root)).tree()!.files.map(file => file.path)).toEqual(['docs/a.md']);
 });
 
+test('every refresh checks the worktree again, even when the commit has not moved', async () => {
+  const { root, outside, commit } = fixture({ 'docs/a.md': 'a\n', 'docs/b.md': 'b\n' });
+  const docs = await reader(root);
+  const paths = () => docs.tree()!.files.map(file => file.path);
+  expect(paths()).toEqual(['docs/a.md', 'docs/b.md']);
+  unlinkSync(join(root, 'docs/b.md'));
+  symlinkSync(join(outside, 'secret.md'), join(root, 'docs/b.md'));
+  expect((await docs.refresh()).files.map(file => file.path)).toEqual(['docs/a.md']);
+  expect(docs.tree()!.commit).toBe(commit);
+  unlinkSync(join(root, 'docs/b.md'));
+  writeFileSync(join(root, 'docs/b.md'), 'b\n');
+  await docs.refresh();
+  expect(paths()).toEqual(['docs/a.md', 'docs/b.md']);
+  expect(docs.tree()!.files[1]).toEqual({ path: 'docs/b.md', size: 2, sha256: hash('b\n') });
+});
+
 test('reads outside docs, of .env and of .git are refused', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n', 'docs/.env': 'TOKEN=x\n', 'docs/.env.local': 'TOKEN=y\n', '.env': 'TOKEN=z\n', 'src/code.ts': 'x\n' });
   const docs = await reader(root);

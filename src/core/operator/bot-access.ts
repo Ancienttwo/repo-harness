@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { decodeNotifyStatus, NOTIFY_CHANNELS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -438,7 +438,18 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
 
   const notify = section(v.notify, 'notify', ['status', 'channels', 'deliveries'], ['notify_status_pending', ...NOTIFY_UNAVAILABLE_REASONS]);
   if (notify.status !== undefined) {
-    decodeNotifyStatus(notify.status);
+    // Checked in place, like every other section: the decoder returns `value`, so a key it does not name must fail here.
+    const status = obj(notify.status, ['protocol', 'kind', 'plugin_id', 'linked', 'enabled', 'config', 'last_delivery', 'observed_at'], 'notify status');
+    if (status.protocol !== 1) fail('notify status protocol');
+    oneOf(status.kind, ['operator_notify_status'] as const, 'notify status kind');
+    oneOf(status.plugin_id, [NOTIFY_PLUGIN_ID] as const, 'notify plugin_id');
+    oneOf(status.linked, ['linked', 'missing'] as const, 'notify linked');
+    oneOf(status.enabled, ['enabled', 'disabled', 'missing'] as const, 'notify enabled');
+    for (const presence of Object.values(obj(status.config, NOTIFY_STATUS_KEYS, 'notify config'))) oneOf(presence, ['configured', 'missing'] as const, 'notify config presence');
+    const last = obj(status.last_delivery, ['at', 'result'], 'notify last_delivery');
+    nullable(last.at, x => match(x, ISO_TIME, 'notify last_delivery at'));
+    oneOf(last.result, DELIVERY_STATES, 'notify last_delivery result');
+    match(status.observed_at, ISO_TIME, 'notify observed_at');
     const channels = obj(notify.channels, NOTIFY_CHANNELS, 'notify channels');
     for (const presence of Object.values(channels)) oneOf(presence, ['configured', 'missing'] as const, 'notify channel');
     const deliveries = obj(notify.deliveries, NOTIFY_CHANNELS, 'notify deliveries');

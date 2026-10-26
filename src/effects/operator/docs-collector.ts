@@ -19,6 +19,8 @@ import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo }
 import { DocsReadError, DocsReader, validDocsRef } from './docs-reader';
 
 export const DOCS_COLLECT_INTERVAL_MS = 60_000;
+/** Retry delay while Dev Activity has no first cycle, so the docs do not wait a full interval for it. */
+const DOCS_PENDING_RETRY_MS = 1_000;
 const REMOTE_TIMEOUT_MS = 5_000;
 const REMOTE_STDOUT_LIMIT = 64 * 1024;
 
@@ -108,13 +110,14 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     // Only GitHub names the default branch; Dev Activity's local fallback is not used.
     if (!source?.github || !source.default_branch) return unavailable('default_branch_unknown');
     const urls = await remoteUrls(repo.path, env, options.git_bin);
-    if (urls === null) return unavailable('docs_reader_unavailable');
+    // close() ran during the await: start no process and no scan. No later await comes before reader.start().
+    if (closed || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
     const remotes = [...urls].filter(([, url]) => githubRemoteRepository(url) === github).map(([name]) => name);
     if (remotes.length === 0) return unavailable('github_remote_missing');
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;
-    if (!validDocsRef(ref)) return unavailable('branch_missing');
+    if (!validDocsRef(ref)) return unavailable('ref_invalid');
     let reader = readers.get(repo.id);
     if (reader && (reader.ref !== ref || reader.root !== safeRealpath(repo.path))) { retire(repo.id); reader = undefined; }
     if (!reader) {
@@ -133,12 +136,14 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     }
   };
 
+  let activityPending = false;
   const cycle = (): Promise<void> => {
     inflight = (async () => {
       let repos: readonly RepoHarnessRegisteredRepo[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
       catch { registryFailed = true; return; }
       const activity = options.read_dev_activity();
+      activityPending = activity.collected_at === null;
       const next = new Map<string, DocsRepositoryCache>();
       await Promise.all(repos.map(async repo => { next.set(repo.id, await collectRepository(repo, activity)); }));
       for (const id of [...readers.keys()]) if (closed || !next.has(id)) retire(id);
@@ -149,7 +154,8 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     })().catch(() => { /* every repository failure is a state; keep the last cache */ }).finally(() => {
       inflight = null;
       if (closed) return;
-      timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS);
+      const interval = options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS;
+      timer = setTimeout(() => { void cycle(); }, activityPending ? Math.min(interval, DOCS_PENDING_RETRY_MS) : interval);
       timer.unref?.();
     });
     return inflight;

@@ -59,6 +59,11 @@ function machine() {
     ['gh api repos/cli/cli --jq {full_name: .full_name, stars: .stargazers_count, archived: .archived}', '{"archived":false,"full_name":"cli/cli","stars":46700}\n'],
     ['gh api repos/openai/codex --jq {full_name: .full_name, stars: .stargazers_count, archived: .archived}', '{"archived":false,"full_name":"openai/codex","stars":128100}\n'],
     ['npm view @openai/codex deprecated --json', '"Use the standalone installer."\n'],
+    // Empty listings, so a manager the host has on PATH reads as present with nothing installed.
+    ['pnpm ls -g --json --depth=0', '[]\n'],
+    ['pipx list --json', '{"venvs":{}}\n'],
+    ['cargo install --list', ''],
+    ['mise ls --installed --json', '{}\n'],
   ]);
   const calls: string[] = [];
   const probe: CliProbe = async (argv) => {
@@ -95,6 +100,34 @@ describe('cli inventory collector', () => {
     // Only read-only listings and lookups; no uninstall and no shell history.
     expect(calls.every(call => /^(brew (--prefix|info)|npm (root|ls|view)|pnpm ls|pipx list|uv tool (dir|list)|cargo install --list|mise ls|go env|gh api)(?: |$)/u.test(call))).toBe(true);
     expect(calls.some(call => call.includes('history'))).toBe(false);
+  });
+
+  test('a present manager whose listing fails fails the cycle, so the collector never shows a partial list as ready', async () => {
+    const { env, probe: base } = machine();
+    let brewInfo: 'ok' | 'fail' = 'fail';
+    const probe: CliProbe = async (argv) => (argv.join(' ') === 'brew info --json=v2 --installed' && brewInfo === 'fail' ? null : base(argv));
+    await expect(collectCliInventory({ env, probe, now: () => NOW })).rejects.toThrow('cli_listing_failed: brew');
+
+    const collector = startCliInventoryCollector({ env, probe, now: () => NOW, interval_ms: 20 });
+    try {
+      await collector.settled();
+      expect(collector.read()).toMatchObject({ status: 'unavailable', reason: 'collection_failed', entries: [] });
+      brewInfo = 'ok';
+      for (let attempt = 0; attempt < 200 && collector.read().status !== 'ready'; attempt++) await Bun.sleep(10);
+      expect(collector.read().entries.map(entry => entry.id)).toEqual(['npm:@openai/codex', 'brew:gh']);
+      brewInfo = 'fail';
+      for (let attempt = 0; attempt < 200 && collector.read().status === 'ready'; attempt++) await Bun.sleep(10);
+      // The last good list stays, marked stale; it is never replaced by a list without brew.
+      expect(collector.read()).toMatchObject({ status: 'stale', reason: 'collection_failed' });
+      expect(collector.read().entries.map(entry => entry.id)).toEqual(['npm:@openai/codex', 'brew:gh']);
+    } finally { await collector.close(); }
+
+    // A manager found on PATH whose listing returns nothing is the same failure; one absent from PATH is not.
+    const pnpmBin = join(dirname(env.HOME), 'pnpm-bin');
+    executable(join(pnpmBin, 'pnpm'));
+    const silent: CliProbe = async (argv) => (argv[0] === 'pnpm' ? null : base(argv));
+    await expect(collectCliInventory({ env: { ...env, PATH: `${env.PATH}:${pnpmBin}` }, probe: silent, now: () => NOW })).rejects.toThrow('cli_listing_failed: pnpm');
+    expect((await collectCliInventory({ env, probe: silent, now: () => NOW })).status).toBe('ready');
   });
 
   test('a gh full_name that is not owner/repo is not used', async () => {
