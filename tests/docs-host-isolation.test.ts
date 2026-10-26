@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -9,7 +10,7 @@ import {
   assertDocsHostPlatform, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy, prepareDocsHostScratch,
   proveDocsHostBoundary, writeDocsHostPolicy, type DocsHostAdmission,
 } from '../src/effects/review/docs-host-isolation';
-import { startModelApiProxy, type ModelApiProxy } from '../src/effects/review/docs-host-proxy';
+import { admitClientHello, startModelApiProxy, type ModelApiProxy } from '../src/effects/review/docs-host-proxy';
 
 const roots: string[] = [];
 const closers: Array<() => Promise<void> | void> = [];
@@ -49,10 +50,13 @@ function uint(size: number, value: number): Buffer {
 }
 const vector = (size: number, body: Buffer) => Buffer.concat([uint(size, body.length), body]);
 
-/** One TLS record that holds a ClientHello, with a server_name extension when `serverName` is given. */
-function clientHello(serverName?: string, { recordType = 22, handshakeType = 1 } = {}): Buffer {
+/**
+ * One TLS record that holds a ClientHello, with a server_name extension when
+ * `serverName` is given and an opaque extension of each `extraTypes` entry.
+ */
+function clientHello(serverName?: string, { recordType = 22, handshakeType = 1, extraTypes = [] as number[] } = {}): Buffer {
   const extension = (type: number, data: Buffer) => Buffer.concat([uint(2, type), vector(2, data)]);
-  const extensions = [extension(43, vector(1, Buffer.from([3, 4])))];
+  const extensions = [extension(43, vector(1, Buffer.from([3, 4]))), ...extraTypes.map(type => extension(type, Buffer.alloc(8, 1)))];
   if (serverName !== undefined) extensions.unshift(extension(0, vector(2, Buffer.concat([uint(1, 0), vector(2, Buffer.from(serverName, 'latin1'))]))));
   const hello = Buffer.concat([Buffer.from([3, 3]), Buffer.alloc(32, 7), vector(1, Buffer.alloc(32, 9)), vector(2, Buffer.from([0x13, 0x01])), vector(1, Buffer.from([0])), vector(2, Buffer.concat(extensions))]);
   return Buffer.concat([uint(1, recordType), Buffer.from([3, 1]), vector(2, Buffer.concat([uint(1, handshakeType), vector(3, hello)]))]);
@@ -195,14 +199,47 @@ test('docs host proxy opens a tunnel only to an allowed endpoint and never forwa
 test('docs host proxy closes a tunnel whose TLS server name differs from the CONNECT host and never dials upstream', async () => {
   const { port } = await listen('MODEL-API');
   const { proxy, dials } = await startLocalProxy(port);
-  for (const name of ['attacker.workers.dev', 'cloudflare-ech.com', `${MODEL_HOST}.`, `x.${MODEL_HOST}`]) {
+  const hellos: Record<string, Buffer> = Object.fromEntries(['attacker.workers.dev', 'cloudflare-ech.com', `${MODEL_HOST}.`, `x.${MODEL_HOST}`].map(name => [name, clientHello(name)]));
+  // ECH and ESNI carry the real site in an encrypted inner ClientHello, so a matching outer SNI proves nothing.
+  hellos.ech = clientHello(MODEL_HOST, { extraTypes: [0xfe0d] });
+  hellos.esni = clientHello(MODEL_HOST, { extraTypes: [0xffce] });
+  for (const [name, hello] of Object.entries(hellos)) {
     const tunnel = await openTunnel(proxy.port, `${MODEL_HOST}:${port}`);
     expect(tunnel.output(), name).toBe(ESTABLISHED);
-    tunnel.socket.write(clientHello(name));
+    tunnel.socket.write(hello);
     await tunnel.closed;
     expect(tunnel.output(), name).toBe(ESTABLISHED);
   }
   expect(dials).toEqual([]);
+});
+
+test('docs host proxy decides a ClientHello only after its last fragment arrives and keeps the buffered bytes exact', () => {
+  class FakeSocket extends EventEmitter {
+    destroyed = false;
+    destroy() { this.destroyed = true; this.emit('close'); return this; }
+  }
+  const appData = Buffer.from('PING');
+  // Each emit is one read: the first ends inside the record header, the second inside the record body.
+  const deliver = (hello: Buffer) => {
+    const client = new FakeSocket(), admitted: Buffer[] = [];
+    admitClientHello(client as unknown as Socket, Buffer.alloc(0), MODEL_HOST, buffered => admitted.push(buffered));
+    for (const fragment of [hello.subarray(0, 3), hello.subarray(3, 40)]) {
+      client.emit('data', fragment);
+      expect(admitted).toEqual([]);
+      expect(client.destroyed).toBe(false);
+    }
+    client.emit('data', Buffer.concat([hello.subarray(40), appData]));
+    return { client, admitted };
+  };
+  const hello = clientHello(MODEL_HOST);
+  const matched = deliver(hello);
+  expect(matched.admitted.length).toBe(1);
+  expect(matched.admitted[0]!.equals(Buffer.concat([hello, appData]))).toBe(true);
+  expect(matched.client.destroyed).toBe(false);
+  expect(matched.client.listenerCount('data')).toBe(0);
+  const mismatched = deliver(clientHello('attacker.workers.dev'));
+  expect(mismatched.admitted).toEqual([]);
+  expect(mismatched.client.destroyed).toBe(true);
 });
 
 test('docs host proxy forwards a split ClientHello byte for byte when the server name matches', async () => {
@@ -217,7 +254,8 @@ test('docs host proxy forwards a split ClientHello byte for byte when the server
   const port = (upstream.address() as { port: number }).port;
   const { proxy, dials } = await startLocalProxy(port);
   const tunnel = await openTunnel(proxy.port, `${MODEL_HOST}:${port}`);
-  // The first chunk ends inside the record header, the second inside the record body.
+  // End-to-end forwarding only: the pauses make separate reads likely, not certain.
+  // The admitClientHello test proves the partial-read path deterministically.
   tunnel.socket.write(hello.subarray(0, 3)); await Bun.sleep(30);
   tunnel.socket.write(hello.subarray(3, 40)); await Bun.sleep(30);
   expect(dials).toEqual([]);

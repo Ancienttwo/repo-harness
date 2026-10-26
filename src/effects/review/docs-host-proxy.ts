@@ -53,6 +53,9 @@ function clientHelloServerName(record: Buffer): string | undefined {
     let name: string | undefined;
     while (!extensions.done()) {
       const type = extensions.uint(2), data = reader(extensions.vector(2));
+      // ECH (0xfe0d) and the obsolete ESNI (0xffce) hide the real site in an
+      // encrypted inner ClientHello, so the outer SNI cannot pin the peer.
+      if (type === 0xfe0d || type === 0xffce) return undefined;
       if (type !== 0) continue;
       if (name !== undefined) return undefined;
       const list = reader(data.vector(2));
@@ -72,7 +75,7 @@ function clientHelloServerName(record: Buffer): string | undefined {
  * site that the SNI names, so the CONNECT host alone does not pin the peer.
  * Bytes past the record stay buffered and reach the upstream after it.
  */
-function admitClientHello(client: Socket, initial: Buffer, host: string, admit: (buffered: Buffer) => void): void {
+export function admitClientHello(client: Socket, initial: Buffer, host: string, admit: (buffered: Buffer) => void): void {
   let buffered = initial;
   const fail = () => { clearTimeout(timer); client.off('data', onData); client.destroy(); };
   const check = () => {
