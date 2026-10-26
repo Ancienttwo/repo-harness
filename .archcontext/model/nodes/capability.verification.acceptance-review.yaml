@@ -8,7 +8,7 @@ responsibilities:
   - "Run one bounded generic review round per request through the fleet reviewer role on a Herdr task agent and the OAR host."
   - "Isolate the reviewer process and its credentials and fail closed when isolation is unavailable."
   - "Prepare the deterministic final-subject change assessment and review selection packet."
-  - "Record and verify the structured AcceptanceReceipt against the exact live contract. Reject archived contracts and do not search archives for receipt authority."
+  - "Record and verify the structured AcceptanceReceipt against the current protected review admission, a fresh provider issue-goal observation and the exact task-session admission binding. Refuse a round when the admission is missing, expired, revoked or replaced, or when the issue goal changed."
   - "Build bounded module review prompts for the module CLI and the operator architecture view."
   - "Provide shared protected admission storage, exact current source selection and provider goal reobservation to task sessions, evidence and external bindings independently of review execution."
   - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
@@ -40,6 +40,9 @@ source:
       symbols:
         - name: "runReviewRound"
           sinks:
+            - id: "sink.acceptance-review.observe-admission"
+              path: "src/effects/review/acceptance-receipt.ts"
+              symbol: "acceptanceContext"
             - id: "sink.acceptance-review.packet"
               path: "src/core/review/review-packet.ts"
               symbol: "composeReviewPacket"

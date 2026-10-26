@@ -9,7 +9,7 @@ responsibilities:
   - "Project provider boards by exact canonical REST repository and issue identities; preserve all admitted session bindings and typed unavailable rows."
   - "Compare complete board revisions with bounded rereads without task locks or mutation."
   - "Supply hooks with stored local provider observations and explicitly supplied admitted session context; absent trusted self context remains unobserved without network discovery."
-  - "Retain historical canonical task and claim-token parsing, worktree topology, sweep and exact deletion guards; never use historical leases as current authority."
+  - "Retain historical canonical task parsing, worktree topology, sweep and exact deletion guards. Historical leases and claim tokens are not current authority."
 source:
   include:
     - "src/core/state/coordination-identity.ts"

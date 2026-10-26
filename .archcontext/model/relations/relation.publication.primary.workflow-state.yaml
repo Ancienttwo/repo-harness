@@ -3,4 +3,4 @@ id: relation.publication.primary.workflow-state
 kind: calls
 source: component.publication.primary
 target: capability.workflow-engine.workflow-state
-intent: "Read historical leases and the board to validate publication observations"
+intent: "Validate historical publication task identifiers with the shared canonical task digest pattern"
