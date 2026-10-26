@@ -40,7 +40,7 @@ function feedbackRunner(head: string, tornFirstRound = false, graphErrors = fals
   return (args) => {
     const query = args.find((arg) => arg.startsWith('query='));
     if (args[0] === 'repo' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ id: 'R_feedback_concurrency', nameWithOwner: 'acme/widgets' }) };
-    if (args[0] === 'api' && args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback_concurrency', full_name: 'acme/widgets' }) };
+    if (args[0] === 'api' && args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback_concurrency', full_name: 'acme/widgets', default_branch: 'main' }) };
     if (args[0] === 'pr' && args[1] === 'view') {
       prReads += 1;
       const observedHead = tornFirstRound && prReads === 2 ? 'd'.repeat(40) : head;

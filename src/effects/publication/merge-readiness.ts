@@ -414,19 +414,19 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
       throw new MergeReadinessError('provider_data_incomplete', 'parent PR association is incomplete');
     }
     return pr;
-  }).filter(pr => pr.merged_at !== null && (pr.base as Record<string, unknown>).ref === 'main' && pr.merge_commit_sha === identity.base_sha);
+  }).filter(pr => pr.merged_at !== null && (pr.base as Record<string, unknown>).ref === identity.base_ref && pr.merge_commit_sha === identity.base_sha);
   const prNumber = merged[0]?.number;
   if (merged.length !== 1 || typeof prNumber !== 'number' || !Number.isSafeInteger(prNumber) || prNumber < 1) {
     throw new MergeReadinessError('provider_data_incomplete', 'activated reporter parent is not an exact single merged PR');
   }
-  const commit = object(yield `${root}/git/commits/${identity.base_sha}`, 'main parent commit');
+  const commit = object(yield `${root}/git/commits/${identity.base_sha}`, 'base parent commit');
   if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents) || commit.parents.length !== 1
     || !validSha(commit.parents[0]?.sha) || commit.parents[0].sha === identity.base_sha) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit boundary');
   }
   const detail = object(yield `${root}/pulls/${prNumber}`, 'merged parent PR detail');
   if (detail.number !== prNumber || detail.merged !== true || detail.merge_commit_sha !== identity.base_sha
-    || object(detail.base, 'merged parent PR detail base').ref !== 'main') {
+    || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
     throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
   const parentAssociations = yield `${root}/commits/${commit.parents[0].sha}/pulls?per_page=100`;
@@ -499,9 +499,10 @@ function selectionOf(input: PullRequestReadinessInput): PullRequestSelectionV2 {
 
 function confirmRepository(input: PullRequestReadinessInput, identity: ProviderIdentity, rest: unknown): ProviderIdentity {
   const repository = object(rest, 'REST repository');
+  const defaultBranch = string(repository.default_branch, 'REST repository default_branch');
   if (!Number.isSafeInteger(repository.id) || Number(repository.id) < 1 || String(repository.id) !== input.provider_repository_id
     || repository.node_id !== identity.provider_repo_id || repository.full_name !== input.repository
-    || identity.repo_name_with_owner !== input.repository || identity.base_ref !== 'main') throw new MergeReadinessError('provider_data_incomplete', 'provider repository or main target does not match selection');
+    || identity.repo_name_with_owner !== input.repository || identity.base_ref !== defaultBranch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
   return identity;
 }
 
@@ -543,7 +544,7 @@ function stablePullRequestRound<T>(input: PullRequestReadinessInput, observeExtr
   return null;
 }
 
-/** Ordinary main PRs consume the shared provider decoder without a receipt or Lease. */
+/** Ordinary default-branch PRs consume the shared provider decoder without a receipt or Lease. */
 export function collectPullRequestMergeReadiness(input: PullRequestReadinessInput): PullRequestReadinessV2 {
   selectionOf(input);
   try {
@@ -595,7 +596,7 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
     if (identity.state !== 'MERGED' || detail.merged !== true || detail.number !== input.pr_number
       || String(object(base.repo, 'merged PR repository').id) !== input.provider_repository_id
       || object(base.repo, 'merged PR repository').node_id !== identity.provider_repo_id
-      || base.ref !== 'main' || base.sha !== input.expected_base_sha || head.sha !== input.expected_head_sha
+      || base.ref !== identity.base_ref || base.sha !== input.expected_base_sha || head.sha !== input.expected_head_sha
       || !validSha(detail.merge_commit_sha)) throw new MergeReadinessError('provider_data_incomplete', 'exact merged PR identity is unavailable');
     const commit = object(gh(input, ['api', `${root}/git/commits/${detail.merge_commit_sha}`]), 'provider merge commit');
     const tree = object(commit.tree, 'provider merge tree');

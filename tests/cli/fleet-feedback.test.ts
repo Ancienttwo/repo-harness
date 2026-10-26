@@ -26,7 +26,7 @@ let value;
 if (args[0] === 'repo' && args[1] === 'view') {
   value = { id: 'R_feedback_cli', nameWithOwner: 'acme/widgets' };
 } else if (args[0] === 'api' && args[1] === 'repos/acme/widgets') {
-  value = { id: 123, node_id: 'R_feedback_cli', full_name: 'acme/widgets' };
+  value = { id: 123, node_id: 'R_feedback_cli', full_name: 'acme/widgets', default_branch: 'main' };
 } else if (args[0] === 'pr' && args[1] === 'view') {
   value = {
     number: 7,

@@ -51,7 +51,7 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
   };
   return (args) => {
     const command = `${args[0]} ${args[1]}`;
-    if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness' }) };
+    if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness', default_branch: receipt.target_ref }) };
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
     if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pending', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
@@ -197,6 +197,29 @@ test.each([
   const asyncIdentity = await observeProviderReadinessIdentityAbortable(asyncInput);
   await expect(observeProviderReadinessFactsAbortable(asyncIdentity, receipt, asyncInput))
     .rejects.toMatchObject({ code: 'provider_data_incomplete' });
+});
+
+test.each([
+  ['trunk', 'trunk', true], ['trunk', 'main', false], [undefined, 'main', false], ['', 'main', false],
+] as const)('identity binds the PR base to the repository default branch %j (base %s)', async (defaultBranch, baseRef, accepted) => {
+  const source = fakeGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    const observed = source(args);
+    if (args[0] === 'pr' && args[1] === 'view') return { ...observed, stdout: JSON.stringify({ ...JSON.parse(observed.stdout), baseRefName: baseRef }) };
+    if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') {
+      const { default_branch: _ignored, ...repository } = JSON.parse(observed.stdout);
+      return { ...observed, stdout: JSON.stringify(defaultBranch === undefined ? repository : { ...repository, default_branch: defaultBranch }) };
+    }
+    return observed;
+  };
+  const asyncRead = () => observeProviderReadinessIdentityAbortable({ ...input, gh_runner_async: async args => gh_runner(args) });
+  if (accepted) {
+    expect(observeProviderReadinessIdentity({ ...input, gh_runner }).base_ref).toBe(baseRef);
+    expect((await asyncRead()).base_ref).toBe(baseRef);
+  } else {
+    expect(() => observeProviderReadinessIdentity({ ...input, gh_runner })).toThrow(MergeReadinessError);
+    await expect(asyncRead()).rejects.toMatchObject({ code: 'provider_data_incomplete' });
+  }
 });
 
 test('ordinary PR consumer uses trusted CI head/base once and needs no local artifact or marker', () => {

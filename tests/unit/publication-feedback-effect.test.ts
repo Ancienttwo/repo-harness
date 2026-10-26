@@ -34,7 +34,7 @@ function runner(overrides: {
   return (args) => {
     const query = args.find((entry) => entry.startsWith('query='));
     if (args[0] === 'repo' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ id: 'R_feedback', nameWithOwner: 'acme/widgets' }) };
-    if (args[0] === 'api' && args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets' }) };
+    if (args[0] === 'api' && args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' }) };
     if (args[0] === 'pr' && args[1] === 'view') {
       prReads += 1;
       const mergeStateStatus = overrides.mergeability === undefined ? 'MERGEABLE' : overrides.mergeability;
@@ -197,7 +197,7 @@ async function installRepairFixture() {
     if (args[0] === 'pr') return { status: 0, stdout: JSON.stringify({ number: 12, url: receipt.pr_url,
       state: 'OPEN', isDraft: false, headRefOid: receipt.head_sha, baseRefOid: receipt.base_sha,
       headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null }) };
-    if (args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets' }) };
+    if (args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' }) };
     return { status: 2, stdout: '' };
   };
   return { ...fixture, receipt, identityRunner };
@@ -303,7 +303,7 @@ if (args[0] === 'pr') {
     headRefOid: ${JSON.stringify(fixture.head)}, baseRefOid: ${JSON.stringify(fixture.base)},
     headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
 }
-if (args[1] === 'repos/acme/widgets') reply({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets' });
+if (args[1] === 'repos/acme/widgets') reply({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
 const query = args.find(arg => arg.startsWith('query=')) ?? '';
 const pageInfo = { hasNextPage: false, endCursor: null };
 if (query.includes('checkSuites')) reply({ data: { node: { pullRequest: { commits: { nodes: [{ commit: {
