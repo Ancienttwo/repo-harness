@@ -24,6 +24,8 @@ export interface LeftoverItem {
   readonly hookEvent?: string;
   readonly hookCommand?: string;
   readonly reason?: string;
+  /** Set only by upgrade operator decisions; the inventory itself never writes it. */
+  readonly operatorDecision?: { readonly decision: 'keep' | 'remove'; readonly status: 'applied' | 'stale' | 'rejected' };
 }
 
 export interface LegacyInventoryOptions {

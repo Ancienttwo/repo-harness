@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { formatUpgradeResult, runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
@@ -705,6 +705,181 @@ describe('legacy workflow-state upgrade report', () => {
     put(join(opts.home, 'workflow-state.sh'), '# Library outside the repo\n');
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).items.some((item) => item.path === path)).toBe(false);
     expect(readFileSync(join(opts.home, 'workflow-state.sh'), 'utf8')).toBe('# Library outside the repo\n');
+  }, false));
+});
+
+describe('upgrade operator decisions', () => {
+  const decisionsFile = '.ai/harness/upgrade-decisions.json';
+  const library = '.ai/hooks/lib/workflow-state.sh';
+  const libraryBytes = () => readUpgradeFixture('upgrade-v0.10-project', library).toString('utf8');
+  const sha = (path: string) => `sha256:${new Bun.CryptoHasher('sha256').update(readFileSync(path)).digest('hex')}`;
+  const writeDecisions = (cwd: string, decisions: unknown) => put(join(cwd, decisionsFile), JSON.stringify({ version: 1, decisions }));
+  const readDecisions = (cwd: string) => JSON.parse(readFileSync(join(cwd, decisionsFile), 'utf8'));
+
+  test('keep removes the item from the pending list and exit code until the bytes change', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    writeDecisions(opts.cwd, [{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.exitCode, check.error).toBe(0);
+    expect(check.items).toEqual([]);
+    expect(check.operatorKept).toEqual([expect.objectContaining({ path, action: 'report', operatorDecision: { decision: 'keep', status: 'applied' } })]);
+    const before = tree(opts.cwd);
+    const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(apply.exitCode, apply.error).toBe(0);
+    expect(apply.removedPaths).toEqual([]);
+    expect(apply.operatorKept.map((item) => item.path)).toEqual([path]);
+    expect(tree(opts.cwd)).toEqual(before);
+
+    writeFileSync(path, `${libraryBytes()}\n# edited after the decision\n`);
+    const stale = runUpgrade({ ...opts, scope: 'project' });
+    expect(stale.exitCode).toBe(1);
+    expect(stale.operatorKept).toEqual([]);
+    expect(stale.items).toEqual([expect.objectContaining({ path, action: 'report', operatorDecision: { decision: 'keep', status: 'stale' } })]);
+    expect(stale.items[0]?.reason).toContain('decision is stale');
+  }, false));
+
+  test('remove deletes a regular file through the project backup manifest and init rollback restores it', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library] });
+    expect(decided.exitCode, decided.error).toBe(0);
+    expect(readDecisions(opts.cwd)).toEqual({ version: 1, decisions: [{ path: library, decision: 'remove', contentHash: sha(path) }] });
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.exitCode).toBe(1);
+    expect(check.items).toEqual([expect.objectContaining({ path, action: 'remove', ownership: 'unowned', operatorDecision: { decision: 'remove', status: 'applied' } })]);
+    expect(existsSync(path)).toBe(true);
+
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.removedPaths).toEqual([path]);
+    expect(existsSync(path)).toBe(false);
+    const manifest = JSON.parse(readFileSync(result.projectBackupPath!, 'utf8'));
+    expect(manifest.operations).toEqual([expect.objectContaining({ kind: 'remove', path: library, status: 'applied', rollbackStrategy: 'restore-or-delete-file' })]);
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
+    expect(rollback.ok).toBe(true);
+    expect(readFileSync(path, 'utf8')).toBe(libraryBytes());
+  }, false));
+
+  test('remove is rejected for a directory and for a document that refers to a retired path', () => sandbox((opts) => {
+    const directory = join(opts.cwd, library);
+    put(join(directory, 'nested.sh'), '# operator directory\n');
+    const doc = join(opts.cwd, 'CLAUDE.md');
+    put(doc, `Run ${projectHook} for the old setup.\n`);
+    const items = runUpgrade({ ...opts, scope: 'project' }).items;
+    expect(items.find((item) => item.path === directory)).toEqual(expect.objectContaining({ surface: 'directory', action: 'report' }));
+    expect(items.find((item) => item.path === doc)).toEqual(expect.objectContaining({ retiredBy: 'retired-script-reference', action: 'report' }));
+
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library, 'CLAUDE.md'] });
+    expect(decided.exitCode).toBe(1);
+    expect(decided.rejected.map((rejection) => rejection.path)).toEqual([library, 'CLAUDE.md']);
+    expect(decided.rejected[0]?.reason).toContain('regular file');
+    expect(decided.rejected[1]?.reason).toContain('retired path');
+    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+
+    writeDecisions(opts.cwd, [
+      { path: library, decision: 'remove', contentHash: hashManagedTree(directory) },
+      { path: 'CLAUDE.md', decision: 'remove', contentHash: sha(doc) },
+    ]);
+    const before = tree(opts.cwd);
+    const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(apply.exitCode, apply.error).toBe(0);
+    expect(apply.removedPaths).toEqual([]);
+    for (const path of [directory, doc]) {
+      expect(apply.items.find((item) => item.path === path)).toEqual(expect.objectContaining({
+        action: 'report', operatorDecision: { decision: 'remove', status: 'rejected' },
+      }));
+    }
+    expect(tree(opts.cwd)).toEqual(before);
+    expect(runUpgrade({ ...opts, scope: 'project' }).exitCode).toBe(1);
+
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library, 'CLAUDE.md'] }).exitCode).toBe(0);
+    const kept = runUpgrade({ ...opts, scope: 'project' });
+    expect(kept.exitCode, kept.error).toBe(0);
+    expect(kept.operatorKept.map((item) => item.path).sort()).toEqual([directory, doc].sort());
+  }, false));
+
+  const invalidFiles: readonly [string, (cwd: string, hash: string) => void][] = [
+    ['not JSON', (cwd) => put(join(cwd, decisionsFile), '{"version":1,')],
+    ['an unknown version', (cwd, contentHash) => put(join(cwd, decisionsFile), JSON.stringify({ version: 2, decisions: [{ path: library, decision: 'keep', contentHash }] }))],
+    ['an extra top-level key', (cwd) => put(join(cwd, decisionsFile), JSON.stringify({ version: 1, decisions: [], note: 'x' }))],
+    ['an unknown decision', (cwd, contentHash) => writeDecisions(cwd, [{ path: library, decision: 'ignore', contentHash }])],
+    ['a malformed hash', (cwd) => writeDecisions(cwd, [{ path: library, decision: 'keep', contentHash: 'sha256:abc' }])],
+    ['a path outside the repository', (cwd, contentHash) => writeDecisions(cwd, [{ path: '../outside', decision: 'keep', contentHash }])],
+    ['a duplicate path', (cwd, contentHash) => writeDecisions(cwd, [{ path: library, decision: 'keep', contentHash }, { path: library, decision: 'remove', contentHash }])],
+    ['a directory at the decision path', (cwd) => mkdirSync(join(cwd, decisionsFile), { recursive: true })],
+  ];
+  for (const [name, write] of invalidFiles) {
+    test(`a decision file with ${name} fails closed`, () => sandbox((opts) => {
+      const path = join(opts.cwd, library);
+      put(path, libraryBytes());
+      write(opts.cwd, sha(path));
+      const before = tree(opts.cwd);
+      for (const apply of [false, true]) {
+        const result = runUpgrade({ ...opts, scope: 'project', apply });
+        expect(result.exitCode).toBe(1);
+        expect(result.error).toContain('invalid upgrade decision file');
+        expect(result.items).toEqual([]);
+      }
+      const decided = runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] });
+      expect(decided.exitCode).toBe(1);
+      expect(decided.error).toContain('invalid upgrade decision file');
+      expect(tree(opts.cwd)).toEqual(before);
+    }, false));
+  }
+
+  test('decide rejects paths that are not report items and rewrites an existing entry in path order', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    put(join(opts.cwd, 'CLAUDE.md'), `Run ${projectHook} for the old setup.\n`);
+    put(join(opts.cwd, 'README.md'), '# User readme\n');
+
+    const rejected = runUpgradeDecide({ ...opts, decision: 'keep', paths: ['README.md', library, '../outside.md'] });
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.rejected).toEqual([
+      { path: 'README.md', reason: 'Path is not a current project upgrade report item.' },
+      { path: '../outside.md', reason: 'Path is outside the repository.' },
+    ]);
+    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: ['CLAUDE.md'] }).exitCode).toBe(0);
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] }).exitCode).toBe(0);
+    const firstHash = sha(path);
+    expect(readDecisions(opts.cwd).decisions).toEqual([
+      { path: library, decision: 'keep', contentHash: firstHash },
+      { path: 'CLAUDE.md', decision: 'keep', contentHash: sha(join(opts.cwd, 'CLAUDE.md')) },
+    ]);
+
+    writeFileSync(path, `${libraryBytes()}\n# edited\n`);
+    expect(runUpgrade({ ...opts, scope: 'project' }).items[0]?.operatorDecision?.status).toBe('stale');
+    const rewritten = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library] });
+    expect(rewritten.exitCode, rewritten.error).toBe(0);
+    const decisions = readDecisions(opts.cwd).decisions;
+    expect(decisions.map((entry: { path: string }) => entry.path)).toEqual([library, 'CLAUDE.md']);
+    expect(decisions[0]).toEqual({ path: library, decision: 'remove', contentHash: sha(path) });
+    expect(decisions[0].contentHash).not.toBe(firstHash);
+    expect(existsSync(path)).toBe(true);
+  }, false));
+
+  test('CLI decide from a nested cwd records keep and the project check exits 0', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    const invoke = (args: string[]) => spawnSync(process.execPath, [CLI, 'upgrade', ...args], {
+      cwd: dirname(path), env: { ...process.env, HOME: opts.home }, encoding: 'utf8', timeout: 60000,
+    });
+    const decided = invoke(['decide', '--keep', 'workflow-state.sh', '--json']);
+    expect(decided.status, decided.stderr).toBe(0);
+    expect(JSON.parse(decided.stdout).recorded).toEqual([{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    expect(invoke(['decide', 'workflow-state.sh']).status).toBe(2);
+    const check = invoke(['--scope', 'project', '--json']);
+    expect(check.status, check.stderr).toBe(0);
+    const checked = JSON.parse(check.stdout);
+    expect(checked.items).toEqual([]);
+    expect(checked.operatorKept.map((item: { path: string }) => item.path)).toEqual([expect.stringMatching(/\.ai\/hooks\/lib\/workflow-state\.sh$/)]);
+    const text = invoke(['--scope', 'project']);
+    expect(text.status).toBe(0);
+    expect(text.stdout).toContain(`Operator kept (${decisionsFile}):`);
+    expect(text.stdout).toContain(path);
   }, false));
 });
 

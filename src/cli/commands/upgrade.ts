@@ -18,6 +18,19 @@ import {
   runWorktreeTemplateMigration,
   type WorktreeTemplateOutcome,
 } from '../../effects/upgrade/worktree-template-migration';
+import {
+  applyUpgradeDecisions,
+  decisionSnapshot,
+  isRepoRelativeDecisionPath,
+  mergeUpgradeDecisions,
+  readUpgradeDecisions,
+  repoRelativeDecisionPath,
+  upgradeDecisionRejection,
+  UPGRADE_DECISIONS_PATH,
+  type DecidedUpgradePlan,
+  type UpgradeDecision,
+  type UpgradeDecisionKind,
+} from '../../effects/upgrade/operator-decisions';
 import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
@@ -61,6 +74,8 @@ export interface UpgradeResult {
   readonly removedPaths: readonly string[];
   readonly refreshedPaths: readonly string[];
   readonly keptPaths: readonly string[];
+  /** Project report items that a current operator keep decision covers. They do not count as leftovers. */
+  readonly operatorKept: readonly LeftoverItem[];
   readonly transactionId?: string;
   readonly backupPath?: string;
   readonly projectBackupPath?: string;
@@ -71,7 +86,7 @@ export interface UpgradeResult {
 type PlannerOptions = Parameters<typeof planLegacyLeftovers>[0];
 
 function removable(item: LeftoverItem): boolean {
-  return item.ownership === 'owned-clean' && item.action !== 'report';
+  return item.action !== 'report' && (item.ownership === 'owned-clean' || item.operatorDecision?.status === 'applied');
 }
 
 function itemKey(item: LeftoverItem): string {
@@ -83,6 +98,10 @@ function supportedItems(items: readonly LeftoverItem[]): LeftoverItem[] {
     && item.surface !== 'hook-entry' && legacyPathSnapshot(item.path)?.kind !== 'file'
     ? { ...item, action: 'report', reason: 'Project rollback supports regular files only.' }
     : item);
+}
+
+export function planUpgrade(options: PlannerOptions, decisions: readonly UpgradeDecision[]): DecidedUpgradePlan {
+  return applyUpgradeDecisions(supportedItems(planLegacyLeftovers(options).items), decisions, options.cwd);
 }
 
 function unchanged(item: LeftoverItem, options: PlannerOptions): boolean {
@@ -213,8 +232,11 @@ function applyLocked(
   dependencies: UpgradeDependencies,
   assertHostLock: () => void,
   lockedProjectPaths: ReadonlySet<string>,
+  decisions: readonly UpgradeDecision[],
 ): UpgradeResult {
-  const items = supportedItems(planLegacyLeftovers(options).items).map((item): LeftoverItem => (
+  const planned = planUpgrade(options, decisions);
+  const operatorKept = planned.operatorKept;
+  const items = planned.items.map((item): LeftoverItem => (
     item.location === 'project' && removable(item) && !lockedProjectPaths.has(item.path)
       ? { ...item, action: 'report', reason: 'Target appeared after project locks were taken.' }
       : item
@@ -223,7 +245,7 @@ function applyLocked(
   const removedPaths: string[] = [];
   const refreshedPaths: string[] = [];
   const keptPaths = [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))];
-  if (candidates.length === 0) return { items, apply: true, exitCode: 0, removedPaths, refreshedPaths, keptPaths };
+  if (candidates.length === 0) return { items, apply: true, exitCode: 0, removedPaths, refreshedPaths, keptPaths, operatorKept };
   const transactionId = randomUUID();
   const globalPaths = [...new Set(candidates.filter((item) => item.location === 'global').map((item) => item.path))];
   const projectPaths = [...new Set(candidates.filter((item) => item.location === 'project').map((item) => item.path))];
@@ -264,7 +286,7 @@ function applyLocked(
       const targetItems = candidates.filter((item) => item.path === path);
       for (const item of targetItems) dependencies.beforeRemove?.(item);
       assertHostLock();
-      const fresh = planLegacyLeftovers(options).items;
+      const fresh = planUpgrade(options, decisions).items;
       const eligible = targetItems.filter((item) => unchanged(item, options)
         && backupMatches(item, item.location === 'global' ? hostBackup : projectBackup?.transaction)
         && fresh.some((current) => itemKey(current) === itemKey(item) && removable(current)));
@@ -384,7 +406,7 @@ function applyLocked(
     }
     try { audit(); } catch (auditError) { error += `; audit failed: ${String(auditError)}`; }
   }
-  return { items, apply: true, exitCode: error ? 1 : 0, removedPaths, refreshedPaths, keptPaths, transactionId,
+  return { items, apply: true, exitCode: error ? 1 : 0, removedPaths, refreshedPaths, keptPaths, operatorKept, transactionId,
     backupPath: hostBackup?.backup_root ?? projectBackup?.transaction.backup_root,
     projectBackupPath: projectBackup?.manifestPath, ...(error ? { error } : {}) };
 }
@@ -413,21 +435,23 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
       // Raw value on purpose: it matches the shim path the retired installer wrote verbatim, not a resolved home.
       ...(env.REPO_HARNESS_HOME ? { repoHarnessHome: env.REPO_HARNESS_HOME } : {}),
       ...(apply && opts.includeStateArtifacts === true ? { includeStateArtifacts: true } : {}) };
-    const items = supportedItems(planLegacyLeftovers(options).items);
+    // Read once: every later plan in this run uses the same decisions. An invalid file fails the run.
+    const decisions = scope === 'global' ? [] : readUpgradeDecisions(cwd);
+    const { items, operatorKept } = planUpgrade(options, decisions);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
-      removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))] };
+      removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))], operatorKept };
     // A failed leftover apply leaves the policy untouched: the template item is reported, not written.
     const finish = (result: UpgradeResult) => withWorktreeTemplate(result,
       scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true && !result.error,
         dependencies.beforeTemplateWrite));
     if (!apply || !items.some(removable)) return finish(emptyResult);
     return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
-      const underHostLock = supportedItems(planLegacyLeftovers(options).items);
+      const underHostLock = planUpgrade(options, decisions).items;
       const paths = [...new Set(underHostLock.filter((item) => item.location === 'project' && removable(item)).map((item) => item.path))].sort();
-      return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths)));
+      return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths), decisions));
     }));
   } catch (error) {
-    return { items: [], apply, exitCode: 1, removedPaths: [], refreshedPaths: [], keptPaths: [], error: error instanceof Error ? error.message : String(error) };
+    return { items: [], apply, exitCode: 1, removedPaths: [], refreshedPaths: [], keptPaths: [], operatorKept: [], error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -445,10 +469,100 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
   }
   if (result.items.length === 0) lines.push('No leftovers.');
   if (result.worktreeTemplate) lines.push(...formatWorktreeTemplateOutcome(result.worktreeTemplate, result.apply));
+  if (result.operatorKept.length > 0) {
+    lines.push(`Operator kept (${UPGRADE_DECISIONS_PATH}):`);
+    for (const item of result.operatorKept) lines.push(`  ${item.path}`);
+  }
   if (result.backupPath) lines.push(`Backup: ${result.backupPath}`);
   if (result.projectBackupPath) lines.push(`Project rollback: repo-harness init rollback --transaction ${result.projectBackupPath}`);
   if (result.error) lines.push(`Failed: ${result.error}`);
   return `${lines.join('\n')}\n`;
+}
+
+export interface UpgradeDecideOptions {
+  readonly cwd?: string;
+  readonly home?: string;
+  readonly packageRoot?: string;
+  readonly decision: UpgradeDecisionKind;
+  readonly paths: readonly string[];
+}
+
+export interface UpgradeDecideResult {
+  readonly exitCode: 0 | 1;
+  readonly decisionsPath?: string;
+  readonly recorded: readonly UpgradeDecision[];
+  readonly rejected: readonly { readonly path: string; readonly reason: string }[];
+  readonly error?: string;
+}
+
+/**
+ * Record decisions for current project report items. The decision binds the
+ * current content hash. Any rejected path stops the write, and nothing is deleted here.
+ */
+export function runUpgradeDecide(opts: UpgradeDecideOptions): UpgradeDecideResult {
+  try {
+    const start = resolve(opts.cwd ?? process.cwd());
+    let cwd: string;
+    try { cwd = gitExecFileSync(['-C', start, 'rev-parse', '--show-toplevel'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+    catch { throw new Error('upgrade decide needs a git repository'); }
+    if (opts.paths.length === 0) throw new Error('upgrade decide needs at least one path');
+    const home = resolve(opts.home ?? process.env.HOME ?? homedir());
+    const packageRoot = resolve(opts.packageRoot ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
+    const existing = readUpgradeDecisions(cwd);
+    // Decide against the raw report list, so an operator can replace a stale or earlier decision.
+    const reportItems = supportedItems(planLegacyLeftovers({ scope: 'project', cwd, home, packageRoot }).items)
+      .filter((item) => item.location === 'project' && item.action === 'report');
+    const recorded: UpgradeDecision[] = [];
+    const rejected: { path: string; reason: string }[] = [];
+    for (const input of opts.paths) {
+      const path = repoRelativeDecisionPath(cwd, resolve(start, input));
+      if (!isRepoRelativeDecisionPath(path)) { rejected.push({ path: input, reason: 'Path is outside the repository.' }); continue; }
+      const item = reportItems.find((candidate) => repoRelativeDecisionPath(cwd, candidate.path) === path);
+      const snapshot = item ? decisionSnapshot(cwd, item) : null;
+      const reason = item ? upgradeDecisionRejection(item, opts.decision, snapshot) : 'Path is not a current project upgrade report item.';
+      if (reason) rejected.push({ path, reason });
+      else recorded.push({ path, decision: opts.decision, contentHash: snapshot!.contentHash! });
+    }
+    if (rejected.length > 0) return { exitCode: 1, recorded: [], rejected };
+    const target = join(cwd, UPGRADE_DECISIONS_PATH);
+    if (!isLegacyPathSafe(cwd, target, false)) throw new Error(`unsafe upgrade decision path: ${target}`);
+    mkdirSync(dirname(target), { recursive: true });
+    if (!isLegacyPathSafe(cwd, target, false)) throw new Error(`unsafe upgrade decision path: ${target}`);
+    atomicWriteFileSync(target, formatJson({ version: 1, decisions: mergeUpgradeDecisions(existing, recorded) }));
+    return { exitCode: 0, decisionsPath: target, recorded, rejected };
+  } catch (error) {
+    return { exitCode: 1, recorded: [], rejected: [], error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function formatUpgradeDecideResult(result: UpgradeDecideResult, asJson = false): string {
+  if (asJson) return formatJson(result);
+  const lines = result.recorded.map((decision) => `Recorded ${decision.decision}: ${decision.path}`);
+  if (result.decisionsPath) lines.push(`Decisions: ${result.decisionsPath}`);
+  for (const rejection of result.rejected) lines.push(`Rejected ${rejection.path}: ${rejection.reason}`);
+  if (result.rejected.length > 0) lines.push('No decisions were written.');
+  if (result.error) lines.push(`Failed: ${result.error}`);
+  return `${lines.join('\n')}\n`;
+}
+
+function buildUpgradeDecideCommand(): Command {
+  return new Command('decide')
+    .description(`Record keep or remove for project upgrade report items in ${UPGRADE_DECISIONS_PATH}`)
+    .argument('<paths...>', 'Paths that upgrade --scope project reports')
+    .option('--keep', 'Keep the items; upgrade stops reporting them while their bytes stay the same')
+    .option('--remove', 'Remove the regular files on the next upgrade --scope project --apply')
+    .action((paths: string[], opts: { keep?: boolean; remove?: boolean }, command: Command) => {
+      // The parent upgrade command owns --json, and commander gives it options after the subcommand too.
+      const json = command.optsWithGlobals<{ json?: boolean }>().json === true;
+      if (opts.keep === opts.remove) {
+        process.stderr.write('repo-harness upgrade decide: choose exactly one of --keep or --remove\n');
+        process.exitCode = 2;
+        return;
+      }
+      const result = runUpgradeDecide({ decision: opts.keep ? 'keep' : 'remove', paths });
+      process.stdout.write(formatUpgradeDecideResult(result, json));
+      process.exitCode = result.exitCode;
+    });
 }
 
 export function buildUpgradeCommand(): Command {
@@ -464,5 +578,6 @@ export function buildUpgradeCommand(): Command {
       process.stdout.write(formatUpgradeResult(result, opts.json));
       if (result.error && opts.json && !result.apply) process.stderr.write(`${result.error}\n`);
       process.exitCode = result.exitCode;
-    });
+    })
+    .addCommand(buildUpgradeDecideCommand());
 }

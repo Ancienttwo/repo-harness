@@ -20,7 +20,8 @@ import {
   type StatusReport,
 } from './status';
 import type { InstallTargetSpec } from './install';
-import { planLegacyLeftovers } from '../../effects/upgrade/legacy-inventory';
+import { readUpgradeDecisions, type UpgradeDecision } from '../../effects/upgrade/operator-decisions';
+import { planUpgrade } from './upgrade';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../effects/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
@@ -811,7 +812,18 @@ export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
     ...legacyChecks(cwd, target, checkUpdates, actions),
   ];
 
-  const legacyItems = planLegacyLeftovers({ scope: 'all', cwd, home: opts.env?.HOME ?? process.env.HOME ?? os.homedir(), packageRoot: REPO_ROOT }).items;
+  // Same planner as `upgrade`: items a current operator keep decision covers are not leftovers.
+  let decisions: UpgradeDecision[] = [];
+  try { decisions = readUpgradeDecisions(cwd); } catch (error) {
+    checks.push({
+      id: 'legacy.upgrade-decisions',
+      title: 'Operator upgrade decisions',
+      status: 'warn',
+      source: 'legacy',
+      detail: `${error instanceof Error ? error.message : String(error)}. Decisions are ignored until the file is fixed.`,
+    });
+  }
+  const legacyItems = planUpgrade({ scope: 'all', cwd, home: opts.env?.HOME ?? process.env.HOME ?? os.homedir(), packageRoot: REPO_ROOT }, decisions).items;
   const summary = summarize(checks);
   const report: InitHookReport = {
     version: 1,
