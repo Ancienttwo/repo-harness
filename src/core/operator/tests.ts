@@ -95,7 +95,6 @@ const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const COMMIT = /^[0-9a-f]{40}$/u;
 /** GitHub's timestamp form; the collector checks a run's `created_at` with it before any download. */
 export const TESTS_ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/u;
-const ISO_TIME = TESTS_ISO_TIME;
 const CONCLUSION = /^[a-z_]{1,32}$/u;
 const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}\/issues\/[1-9][0-9]{0,9}$/u;
 const TEXT_LIMIT = 500;
@@ -248,12 +247,12 @@ export function decodeTestsSnapshot(value: unknown): TestsSnapshotV1 {
   const root = obj(value, ['protocol', 'kind', 'repository_id', 'collected_at', 'run', 'projection', 'results', 'repairs'], 'snapshot');
   if (root.protocol !== 1 || root.kind !== OPERATOR_TESTS_KIND) fail('kind');
   match(root.repository_id, REPOSITORY_ID, 'repository_id');
-  match(root.collected_at, ISO_TIME, 'collected_at');
+  match(root.collected_at, TESTS_ISO_TIME, 'collected_at');
   const run = obj(root.run, ['id', 'attempt', 'head_sha', 'created_at', 'conclusion', 'channel'], 'run');
   whole(run.id, 'run id', 1);
   whole(run.attempt, 'run attempt', 1);
   match(run.head_sha, COMMIT, 'run head_sha');
-  match(run.created_at, ISO_TIME, 'run created_at');
+  match(run.created_at, TESTS_ISO_TIME, 'run created_at');
   if (run.conclusion !== null) match(run.conclusion, CONCLUSION, 'run conclusion');
   if (run.channel !== TESTS_CHANNEL) fail('run channel');
 
