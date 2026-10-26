@@ -120,9 +120,10 @@ change claim ownership.
   historical inputs. GitHub carries new task authority.
 
 The `flow.publication.readiness` flow replaces the retired lifecycle flow.
-The publication-to-evidence-ledger journal relation is removed. The remaining
-workflow-state relation validates historical task identifiers with the shared
-canonical task digest pattern.
+The publication-to-evidence-ledger journal relation is removed. The
+publication-to-workflow-state relation is removed too: no publication source
+imports workflow-state. `src/core/publication/publication-receipt.ts` keeps only
+the canonical JSON and SHA-256 helpers that integration evidence digests use.
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -146,6 +147,8 @@ The lifecycle behavior below is historical. Slice C retired its writers.
 
 ## Remaining boundary
 
-The receipt reader still obtains the protected Git runtime from
-`scripts/acceptance-receipt.ts`. The packaged worktree merge helper supplies
-integration proof. These shared read boundaries remain in use.
+No publication receipt reader remains. Provider merge commit and tree evidence
+comes from `collectPullRequestIntegration`
+(`src/effects/publication/merge-readiness.ts`). Product acceptance then proves
+locally that the provider merge commit is an ancestor of the final candidate
+(`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`).

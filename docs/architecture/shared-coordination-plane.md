@@ -14,7 +14,7 @@ transfer a claim or complete an issue.
 | Protected admission | `src/effects/admission/` | Read current approval and issue goal with the same authority-root and revocation guards used by review and execution. |
 | Provider and profile inputs | `src/effects/github/`, `src/effects/profiles/profile-store.ts` | Share the GitHub adapter/policy reader and resolve explicitly selected tracked engineer contracts. |
 | Hook slice | `src/effects/state/collect-slice-inputs.ts`, `src/cli/hook/board-slice-context.ts` | Render the newest bounded provider observation snapshot named by `receipt-head.json`, without network or session discovery. Render only the issue reference, state and execution status, never the provider title. A missing or stale head, or a snapshot over its limits, renders no slice. |
-| Historical identity | `src/core/state/coordination-identity.ts` | Retain canonical task and owner-record codecs. Current boards do not read leases or claim tokens. |
+| Historical identity | `src/core/state/coordination-identity.ts` | Derive canonical task identity and task revision from Sprint rows for explicit history. No owner-record codec remains. Current boards do not read leases or claim tokens. |
 | Shared task mutex | `src/effects/locking/task-lock.ts` | Serialize admitted inbox and feedback writes at the existing shared physical path. |
 | Git repository topology | `src/effects/git/task-repository.ts` | Resolve exact primary and execution roots from Git topology. Workflow target policy remains in `src/effects/state/canonical-target.ts`. |
 | Worktree safety | `src/effects/state/coordination-worktree-topology.ts` | Start, inspect and remove exact worktrees under topology, runtime and deletion guards without lease authority. |
@@ -94,9 +94,11 @@ records cannot replace current approval, provider evidence or session selection.
   binding, cancellation, concurrency limits and per-card failure containment.
 - `tests/effects/operator-task-diff.test.ts` covers current admission, exact
   session selection, bounded discovery and explicit history separation.
-- `tests/effects/admitted-task-inbox.test.ts` covers exact recipient fences and
-  delivery/reply evidence. `tests/board-slice.test.ts` covers bounded hook output
-  and cross-host byte equality.
-- `tests/coordination-identity.test.ts` retains historical codec checks.
+- `tests/effects/admitted-task-inbox.test.ts` covers exact recipient fences,
+  retry, delivery and acknowledgement evidence, and bounded admitted activity
+  pages. `tests/board-slice.test.ts` covers bounded hook output and cross-host
+  byte equality.
+- `tests/coordination-identity.test.ts` covers task identity, revision
+  granularity and duplicate task ID refusal.
   `tests/coordination-lease-store.test.ts` retains shared lock and exact worktree
   cleanup tests; its filename does not imply an active lease reader.

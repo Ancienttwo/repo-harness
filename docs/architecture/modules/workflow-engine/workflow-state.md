@@ -217,7 +217,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 1. **同步的 Git 与源收集。** `effective-state-authority.md` Consequences 已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.3 第 5 条。
 2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
-3. **`coordination-identity.ts` 616 行的纯核心。** 任务身份与历史 owner record 解析在一个文件里。
+3. **`coordination-identity.ts` 约 183 行的纯核心。** 它只从 Sprint 行推导任务身份与 task revision。调用方使用 `TASK_DIGEST_PATTERN`、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds`。文件中没有 owner record codec。每次投影读取全部 Sprint 行，行数增加时成本线性增长。
 
 ## 4. 歷史決策記錄(append-only)
 

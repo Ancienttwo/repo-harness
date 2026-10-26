@@ -34,7 +34,7 @@ The domain has 13 capabilities. They are grouped by theme.
 
 ### Module Engineer organization
 
-- `runtime-harness-engineer-bindings` -> `docs/architecture/modules/runtime-harness/engineer-bindings.md`: defines Module Engineer contracts, Binding authority and Claim actor provenance.
+- `runtime-harness-engineer-bindings` -> `docs/architecture/modules/runtime-harness/engineer-bindings.md`: resolves tracked Module Engineer Profile and SOP contracts, derives their exact contract revision and keeps historical principal mapping and Claim Actor validators.
 - `runtime-harness-engineer-scheduling` -> `docs/architecture/modules/runtime-harness/engineer-scheduling.md`: projects Work Package graphs into revision-fenced Engineer offers.
 - `runtime-harness-engineering-overlay` -> `docs/architecture/modules/runtime-harness/engineering-overlay.md`: projects Engineer observations into read-only views.
 
