@@ -38,7 +38,11 @@ const FORBIDDEN_WRITE_DIRECTORIES = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules
 const KEYCHAIN_SERVICES = ['com.apple.SecurityServer', 'com.apple.securityd', 'com.apple.securityd.xpc'];
 const DESKTOP_SERVICES = [
   'com.apple.coreservices.launchservicesd', 'com.apple.lsd.mapdb', 'com.apple.lsd.modifydb',
+  // LaunchServices opens apps and URLs through these two (Apple frameworks.sb lists them for LaunchServices.framework).
+  'com.apple.lsd.open', 'com.apple.lsd.openurl',
   'com.apple.coreservices.appleevents', 'com.apple.pasteboard.1',
+  // Second pasteboard endpoint, published by com.apple.pboard.plist.
+  'com.apple.coreservices.uauseractivitypasteboardclient.xpc',
 ];
 
 /** Operator input. A session request cannot supply or change it. */

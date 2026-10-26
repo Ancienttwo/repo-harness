@@ -415,6 +415,19 @@ darwinTest('docs host denies the pasteboard and LaunchServices lookups and Apple
   const policy = readFileSync(writeDocsHostPolicy(f.admission), 'utf8');
   // A behavioral AppleEvent probe needs FFI or a TCC prompt, so the generated rule is checked instead.
   expect(policy).toContain('(deny appleevent-send)');
+  // An explicit list, not the source constant: a name dropped from the constant must fail here.
+  const deniedServices = [
+    'com.apple.coreservices.launchservicesd', 'com.apple.lsd.mapdb', 'com.apple.lsd.modifydb',
+    'com.apple.lsd.open', 'com.apple.lsd.openurl',
+    'com.apple.coreservices.appleevents', 'com.apple.pasteboard.1',
+    'com.apple.coreservices.uauseractivitypasteboardclient.xpc',
+  ];
+  const machLookupDeny = policy.split('\n').find(line => line.startsWith('(deny mach-lookup ') && line.includes('"com.apple.pasteboard.1"'));
+  expect(machLookupDeny).toBeDefined();
+  for (const name of deniedServices) expect(machLookupDeny).toContain(`(global-name "${name}")`);
+  // The pasteboard and LaunchServices controls need the Aqua session that loads pboard and lsd; a read-only launchctl query detects it.
+  const gui = spawnSync('/bin/launchctl', ['print', `gui/${process.getuid?.() ?? 0}`], { stdio: 'ignore', timeout: 15_000 });
+  if (gui.status !== 0) throw new Error('docs host N2 test needs a GUI (Aqua) login session for the pasteboard and LaunchServices controls');
   // Test-only profile copies. `extra` rules come last, so they win over the generated profile.
   const run = (tag: string, extra: string, ...command: string[]) => {
     const profile = join(f.root, `${tag}.sb`);
