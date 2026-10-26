@@ -209,7 +209,7 @@ function worktreeAddTarget(segment: readonly Word[], cwd: string | null): string
 const WORKTREE_ADD_DENIAL = (target: string, root: string): Denial => ({
   guard: 'WorktreeCreateGuard',
   reason: `git worktree add target ${target} is outside the managed worktree root ${root}.`,
-  fix: 'Create task worktrees with `repo-harness run contract-worktree start --plan <plan-file>`.',
+  fix: `Create the worktree under ${root} as <repo>-wt-<slug>, or run \`repo-harness run contract-worktree start --plan <plan-file>\`.`,
 });
 
 /** Only a literal `git worktree add` target that resolves outside the managed root is denied. */

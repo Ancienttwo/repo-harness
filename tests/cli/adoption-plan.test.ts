@@ -124,7 +124,7 @@ describe("canonical adoption plan", () => {
       for (const name of ["AGENTS.md", "CLAUDE.md"]) {
         const context = readFileSync(join(repo, name), "utf-8");
         expect(context).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
-        expect(context).toContain("Create task worktrees only with `repo-harness run contract-worktree start --plan <plan-file>`.");
+        expect(context).toContain("Create task worktrees only under the system temp directory, as `<tmp>/<repo>-wt-<slug>`");
         expect(context).not.toContain("Keep current execution in the active plan");
       }
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
