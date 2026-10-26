@@ -90,7 +90,7 @@ test('selected-session activity aborts old selection and renders bounded stored 
     protocol:2,kind:'operator_admitted_task_activity',admission_sha256:'sha256:'+'e'.repeat(64),observed_at:'2026-10-25T00:00:00Z',consistency:'observed',
     entries:[{event:{protocol:2,kind:'repo-harness-task-message-event',message_id:'123e4567-e89b-42d3-a456-000000000001',task_id:selected.task,
       task_identity:{repository_id:selected.provider_repository_id,issue_id:selected.issue_id,campaign_id:selected.campaign_id},admission_sha256:'sha256:'+'e'.repeat(64),scope:'task',target_claim:null,
-      sender_kind:'operator',sender_id:'operator',sender_trust:'local_operator',audience:'owner',body:'<script>late-untrusted-activity-body-7f91</script>',body_sha256:'sha256:'+'f'.repeat(64),created_at:'2026-10-25T00:00:00Z',in_reply_to:null,event_digest:'sha256:'+'a'.repeat(64)},receipts:[],replies:[]}],
+      sender_kind:'operator',sender_id:'operator',sender_trust:'local_operator',audience:'owner',body:'<script>late-untrusted-activity-body-7f91</script>',body_sha256:'sha256:'+'f'.repeat(64),created_at:'2026-10-25T00:00:00Z',in_reply_to:null,event_digest:'sha256:'+'a'.repeat(64)},receipts:[]}],
     coverage:{scope:'task',complete:true,reason:null,scanned:1,bytes:512},next_cursor:null});
   let signal!:AbortSignal, finish!: (value:Snapshot) => void, oldRequest!:import('../../src/core/operator/admitted-task-activity').AdmittedTaskActivityRequest;
   await act(async () => root.render(<AdmittedTaskActivity selector={selected} t={t} read={(request,s) => {oldRequest=request;signal=s;return new Promise(resolve=>{finish=resolve;});}} />));

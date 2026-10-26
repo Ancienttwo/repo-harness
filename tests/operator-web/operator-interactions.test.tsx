@@ -1356,13 +1356,13 @@ describe('task detail original evidence', () => {
   const task = fixtureTasks.working;
   const evidenceProps = () => ({ repositoryId: 'repo-harness', taskId: task.task_id, revision: task.task_revision, generation: 0, t: ((key: never, args: never) => translate('en', key, args)) as import('../../src/operator-web/i18n').OperatorTranslate });
 
-  test('shows original context, recipient ACK and recorded actor without interpreting adoption; exact reply and parent lookup', async () => {
+  test('shows original context, recipient ACK and unverified reply provenance without interpreting adoption; exact reply and parent lookup', async () => {
     const { admittedTaskContextFixture: taskContextFixture, taskActivityFixture } = await import('../../src/operator-web/fixture');
     const requests: import('../../src/core/operator/task-activity').OperatorTaskActivityRequest[] = [];
     await mount(<TaskEvidence {...evidenceProps()} readContext={async request => taskContextFixture(request)} readActivity={async request => { requests.push(request); return taskActivityFixture(request); }} />);
     expect(document.body.textContent).toContain(task.task_label);
     expect(document.body.textContent).toContain('acknowledged');
-    expect(document.body.textContent).toContain('recorded_claim_actor');
+    expect(document.body.textContent).toContain('unverified');
     expect(document.body.textContent).toContain('do not prove adoption');
     expect(requests[0]).toEqual({ repository_id: 'repo-harness', task_id: task.task_id, limit: 50, after: null, message_id: null });
     await act(async () => buttonWithText('Read reply message').click());
