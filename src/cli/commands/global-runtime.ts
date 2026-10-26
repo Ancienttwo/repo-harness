@@ -877,18 +877,31 @@ function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installe
 export function updateLeftoverSummary(cwd: string, installedCli: boolean): string {
   const run = runInstalledUpgradeCheck([], cwd, installedCli);
   if ('failure' in run) return leftoverCheckWarning(run.failure);
-  const payload = run.payload as { items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } } } | null;
-  // The check exits 1 when anything is pending, including a policy rewrite with no leftover items.
+  const payload = run.payload as {
+    items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } }; legacyWorktrees?: { candidates?: unknown };
+  } | null;
+  // The check exits 1 when anything is pending, including a policy rewrite or a
+  // removable or deferred legacy worktree with no leftover items.
   // Only a missing items list or an error field is a failed check.
   const items = payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload.items : undefined;
   const reportedError = typeof payload?.error === 'string' ? payload.error : '';
   if (!Array.isArray(items) || reportedError !== '') {
     return leftoverCheckWarning(redactProcessOutput(run.stderr || reportedError.trim()) || 'upgrade --json returned no leftover list');
   }
-  const summary = formatLegacyLeftoverSummary(items as LeftoverItem[]);
-  return payload?.worktreeTemplate?.item?.action === 'rewrite'
-    ? `${summary}; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template`
-    : summary;
+  const parts = [formatLegacyLeftoverSummary(items as LeftoverItem[])];
+  if (payload?.worktreeTemplate?.item?.action === 'rewrite') {
+    parts.push('policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template');
+  }
+  const candidates = payload?.legacyWorktrees?.candidates;
+  const count = (verdict: string) => Array.isArray(candidates)
+    ? candidates.filter((candidate) => (candidate as { verdict?: unknown } | null)?.verdict === verdict).length : 0;
+  const deferred = count('deferred');
+  const total = count('remove') + deferred;
+  if (total > 0) {
+    const proof = deferred > 0 ? ` (${deferred} need${deferred === 1 ? 's' : ''} provider proof)` : '';
+    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run repo-harness upgrade --scope project --apply`);
+  }
+  return parts.join('; ');
 }
 
 function leftoverCheckWarning(reason: string): string {

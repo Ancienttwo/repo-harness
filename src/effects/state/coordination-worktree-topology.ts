@@ -68,7 +68,7 @@ export function checkoutPath(path: string): string {
     return join(realpathSync(dirname(path)), basename(path));
   }
 }
-function entries(root: string, limits: Limits = {}) {
+export function entries(root: string, limits: Limits = {}) {
   return parseWorktreeTopology(git(root, ['-c', 'core.quotePath=false', 'worktree', 'list', '--porcelain'], limits)).worktrees;
 }
 
@@ -91,15 +91,22 @@ export interface ExactWorktreeCleanup {
 
 type MergeProof = { readonly provider: boolean; readonly merge_commit_sha: string };
 
-/** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
-function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
+export type LocalMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
+
+/** The offline merge-library verdict for `head` against the target OID. Any other library output throws. */
+export function localMergeMode(root: string, head: string, target: string, limits: Limits): LocalMergeMode {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
-  if (mode === 'ancestor' || mode === 'absorbed') return { provider: false, merge_commit_sha: target };
-  if (mode !== 'unmerged') throw new Error('cleanup merge is unproven');
+  if (mode === 'ancestor' || mode === 'absorbed' || mode === 'unmerged') return mode;
+  throw new Error('cleanup merge is unproven');
+}
+
+/** A local proof binds the target OID. The provider proof runs only for an own-commit branch that the local proof cannot prove. */
+export function mergeProof(root: string, branch: string, head: string, targetRef: string, target: string, limits: Limits, providerCapMs = 10_000): MergeProof {
+  if (localMergeMode(root, head, target, limits) !== 'unmerged') return { provider: false, merge_commit_sha: target };
   // A fresh branch at the target head is also linked to the PR that made that head. It must never reach the provider.
   assertBranchHasCommits(root, branch, limits);
   const base = /^refs\/(?:heads\/|remotes\/[^/]+\/)(.+)$/.exec(git(root, ['rev-parse', '--symbolic-full-name', targetRef], limits))?.[1];
@@ -112,7 +119,7 @@ function mergeProof(root: string, branch: string, head: string, targetRef: strin
   return { provider: true, merge_commit_sha: merge };
 }
 
-function assertNoOwner(root: string, worktree: string, limits: Limits, allowSelfMarker = false): void {
+export function assertNoOwner(root: string, worktree: string, limits: Limits, allowSelfMarker = false): void {
   for (const entry of entries(root, limits)) {
     const marker = join(entry.path, '.ai/harness/active-worktree');
     timeout(limits);
@@ -290,9 +297,13 @@ function deleteCheckedBranch(root: string, expected: ExactWorktreeCleanup, limit
   });
 }
 
-/** Closeout removes visible data without a deadline. Missing entries share its ref transaction. */
-export function removeExactWorktree(root: string, expected: ExactWorktreeCleanup, limits: Limits = {}): void {
+/**
+ * Closeout removes visible data without a deadline. Missing entries share its ref transaction.
+ * `precondition` runs inside the barrier before any removal; a throw keeps everything.
+ */
+export function removeExactWorktree(root: string, expected: ExactWorktreeCleanup, limits: Limits = {}, precondition?: () => void): void {
   cleanupExactWorktree(root, expected, () => {
+    precondition?.();
     const binding = entries(root, limits).find(entry => entry.branch === `refs/heads/${expected.branch}`);
     if (binding) git(root, ['worktree', 'remove', binding.path], limits);
     deleteCheckedBranch(root, expected, limits);
@@ -309,7 +320,7 @@ interface SweepContext {
   readonly trashDeadline: number;
   readonly options: WorktreeRemovalOptions;
 }
-function protectsCwd(path: string, cwd: string): boolean {
+export function protectsCwd(path: string, cwd: string): boolean {
   return cwd === path || cwd.startsWith(path + sep);
 }
 
@@ -402,7 +413,7 @@ function branchExists(context: SweepContext, branch: string): boolean {
   return git(context.main, ['for-each-ref', '--format=%(refname)', ref], context.limits).split('\n').includes(ref);
 }
 
-function assertBranchHasCommits(root: string, branch: string, limits: Limits): void {
+export function assertBranchHasCommits(root: string, branch: string, limits: Limits): void {
   const ref = `refs/heads/${branch}`;
   let history;
   try {
@@ -415,7 +426,7 @@ function pathExists(path: string): boolean {
   try { lstatSync(path); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }
-function assertNoSubmodules(context: SweepContext, path: string): void {
+export function assertNoSubmodules(context: { readonly main: string; readonly limits: Limits }, path: string): void {
   const directory = git(context.main, ['-C', path, 'rev-parse', '--absolute-git-dir'], context.limits);
   if (pathExists(join(path, '.gitmodules')) || pathExists(join(directory, 'modules'))) throw new Error('submodules present');
 }
@@ -494,6 +505,18 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
   }
 }
 
+/** The policy merge-back target that every worktree merge proof binds. */
+export function mergeBackTarget(main: string, limits: Limits = {}): { readonly targetRef: string; readonly target: string } {
+  let policy: { worktree_strategy?: { merge_back?: { target?: unknown } } } = {};
+  const policyPath = join(main, '.ai/harness/policy.json');
+  if (existsSync(policyPath)) policy = JSON.parse(readFileSync(policyPath, 'utf8'));
+  const configured = policy.worktree_strategy?.merge_back?.target ?? 'main';
+  if (typeof configured !== 'string' || !configured || configured.startsWith('-')) throw new Error('integration target is invalid');
+  const targetRef = configured.startsWith('refs/') || configured.includes('/') ? configured : `refs/remotes/origin/${configured}`;
+  try { return { targetRef, target: git(main, ['rev-parse', '--verify', `${targetRef}^{commit}`], limits) }; }
+  catch { throw new Error(`local integration target is unavailable: ${targetRef}`); }
+}
+
 /**
  * Local refs and this clone's Git inventory are the only live worktree inputs.
  * `contract-worktree start` runs this before it creates a checkout. Every
@@ -535,15 +558,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     if (trashBlocked || trash.length > 8) return `[WorktreeSweep] removed=0 pruned=0 resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
     const candidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
     if (!candidates.length && !readPrunedWorktreeIntents(common).length) return notes.length ? `[WorktreeSweep] removed=${removed} pruned=${pruned} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}` : null;
-    let policy: { worktree_strategy?: { merge_back?: { target?: unknown } } } = {};
-    const policyPath = join(main, '.ai/harness/policy.json');
-    if (existsSync(policyPath)) policy = JSON.parse(readFileSync(policyPath, 'utf8'));
-    const configured = policy.worktree_strategy?.merge_back?.target ?? 'main';
-    if (typeof configured !== 'string' || !configured || configured.startsWith('-')) throw new Error('integration target is invalid');
-    const targetRef = configured.startsWith('refs/') || configured.includes('/') ? configured : `refs/remotes/origin/${configured}`;
-    let target: string;
-    try { target = git(main, ['rev-parse', '--verify', `${targetRef}^{commit}`], limits); }
-    catch { throw new Error(`local integration target is unavailable: ${targetRef}`); }
+    const { targetRef, target } = mergeBackTarget(main, limits);
     // Save every missing registration before global prune, including deferred refs.
     const beforePrune = readPrunedWorktreeIntents(common);
     if (!ignoredTrash && (candidates.some(entry => !pathExists(checkoutPath(entry.path))) || beforePrune.some(entry => pathExists(entry.git_directory)))) {

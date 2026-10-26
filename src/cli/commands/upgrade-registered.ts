@@ -50,7 +50,7 @@ export interface RegisteredRepoResult {
   readonly status: 'ready' | 'applied' | 'skipped' | 'failed';
   readonly reason?: RegisteredRepoSkipReason;
   readonly detail?: string;
-  /** Preview only: the repo has init operations or project upgrade items. */
+  /** Preview only: the repo has init operations or pending project upgrade work, including a removable or deferred legacy worktree. */
   readonly pending?: boolean;
   readonly init?: RegisteredInitPreview | RegisteredInitApply;
   readonly upgrade?: UpgradeResult;
@@ -71,7 +71,7 @@ export interface RegisteredUpgradeOptions {
   readonly expectedRevision?: string;
   readonly migrateWorktreeTemplate?: boolean;
   readonly env?: NodeJS.ProcessEnv;
-  /** The real process cwd. The sweep never removes it or anything below it. */
+  /** The real process cwd. The sweep and the legacy worktree cleanup never remove it or anything below it. */
   readonly callerCwd?: string;
 }
 
@@ -138,7 +138,7 @@ function skipped(path: string, classification: Exclude<Classification, { ready: 
   return { path, status: 'skipped', reason: classification.reason, detail: classification.detail };
 }
 
-function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv): RegisteredRepoResult {
+function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv, callerCwd: string): RegisteredRepoResult {
   const classification = classifyRepo(path, env);
   if (!classification.ready) return skipped(path, classification);
   const planned = planRepoAdoption({ repo: path, mode: 'standard', explicitRepo: true, env });
@@ -147,7 +147,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
     operations: planned.plan.operations.filter((operation) => operation.status === 'planned')
       .map((operation) => ({ kind: operation.kind, ...(operation.path === undefined ? {} : { path: operation.path }) })),
   };
-  const upgrade = runUpgrade({ cwd: path, scope: 'project', apply: false, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: false, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
   const errors = [
     ...(planned.error ? [`init plan failed: ${planned.error.code} - ${planned.error.message}`] : []),
     ...(upgrade.error ? [`project upgrade check failed: ${upgrade.error}`] : []),
@@ -155,6 +155,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
   if (errors.length > 0) {
     return { path, status: 'failed', ...(init ? { init } : {}), upgrade, sweep: SWEEP_PREVIEW, error: errors.join('; ') };
   }
+  // A preview upgrade exits 1 for every pending item: leftovers, a template rewrite and a removable or deferred legacy worktree.
   return { path, status: 'ready', pending: init!.planned > 0 || upgrade.exitCode !== 0, init, upgrade, sweep: SWEEP_PREVIEW };
 }
 
@@ -187,7 +188,8 @@ function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.Pro
   };
   if (!adoption.ok) return { path, status: 'failed', init, error: `init refresh failed: ${errors.join('; ') || 'not ok'}` };
 
-  const upgrade = runUpgrade({ cwd: path, scope: 'project', apply: true, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  // The upgrade also removes provable legacy sibling worktrees; the sweep then handles the managed root.
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
   if (upgrade.error) return { path, status: 'failed', init, upgrade, error: `project upgrade failed: ${upgrade.error}` };
 
   const sweep: RegisteredSweep = { ran: true, report: sweepManagedWorktrees(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS }) };
@@ -212,7 +214,7 @@ export function runRegisteredUpgrade(opts: RegisteredUpgradeOptions = {}): Regis
     const callerCwd = opts.callerCwd ?? process.cwd();
     const repos = snapshot.repos.map((repo): RegisteredRepoResult => {
       try {
-        return apply ? applyRepo(repo.path, opts, env, callerCwd) : previewRepo(repo.path, opts, env);
+        return apply ? applyRepo(repo.path, opts, env, callerCwd) : previewRepo(repo.path, opts, env, callerCwd);
       } catch (error) {
         return { path: repo.path, status: 'failed', error: error instanceof Error ? error.message : String(error) };
       }

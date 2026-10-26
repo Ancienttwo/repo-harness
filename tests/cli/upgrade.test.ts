@@ -4,6 +4,9 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
+import { localMergeMode } from '../../src/effects/state/coordination-worktree-topology';
+import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
@@ -885,6 +888,320 @@ describe('upgrade operator decisions', () => {
   }, false));
 });
 
+interface LegacyWorktreeFixture {
+  readonly main: string;
+  readonly projects: string;
+  readonly managed: string;
+  readonly home: string;
+  readonly ghBin: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly git: (cwd: string, ...args: string[]) => string;
+  /** Add a real linked worktree with one own commit, optionally merged into the target. */
+  readonly worktree: (path: string, branch: string, merge: boolean) => string;
+}
+
+// Real `git worktree add` checkouts beside a primary checkout, with an
+// isolated HOME and managed root. The provider stub knows no merged PR.
+function legacyWorktreeSandbox(run: (f: LegacyWorktreeFixture) => void): void {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'upgrade-legacy-worktrees-')));
+  const projects = join(parent, 'projects');
+  const main = join(projects, 'repo');
+  const managed = join(parent, 'managed');
+  const home = join(parent, 'home');
+  for (const directory of [main, managed, home]) mkdirSync(directory, { recursive: true });
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, REPO_HARNESS_WORKTREE_ROOT: managed };
+  const git = (cwd: string, ...args: string[]) => {
+    const result = spawnSync('git', args, { cwd, env, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
+    return result.stdout.trim();
+  };
+  git(main, 'init', '-q', '-b', 'main');
+  git(main, 'config', 'user.name', 'Test');
+  git(main, 'config', 'user.email', 'test@example.test');
+  writeFileSync(join(main, '.gitignore'), '.ai/\n.claude/\n');
+  writeFileSync(join(main, 'README.md'), '# repo\n');
+  git(main, 'add', '.');
+  git(main, 'commit', '-qm', 'base');
+  git(main, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const ghBin = join(parent, 'gh');
+  writeFileSync(ghBin, '#!/bin/sh\necho "[]"\n');
+  chmodSync(ghBin, 0o755);
+  const worktree = (path: string, branch: string, merge: boolean) => {
+    mkdirSync(dirname(path), { recursive: true });
+    git(main, 'worktree', 'add', '-q', '-b', branch, path);
+    writeFileSync(join(path, `${branch.replaceAll('/', '-')}.txt`), `${branch}\n`);
+    git(path, 'add', '.');
+    git(path, 'commit', '-qm', branch);
+    if (merge) {
+      git(main, 'merge', '-q', '--no-ff', '-m', `merge ${branch}`, branch);
+      git(main, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    }
+    return path;
+  };
+  try { run({ main, projects, managed, home, ghBin, env, git, worktree }); }
+  finally { rmSync(parent, { recursive: true, force: true }); }
+}
+
+describe('legacy sibling worktree cleanup', () => {
+  test('apply removes only the merged, clean, unlocked and unowned sibling and its branch', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const dirty = f.worktree(join(f.projects, 'dirty'), 'feat/dirty', true);
+    writeFileSync(join(dirty, 'scratch.txt'), 'uncommitted\n');
+    const unmerged = f.worktree(join(f.projects, 'unmerged'), 'feat/unmerged', false);
+    const locked = f.worktree(join(f.projects, 'locked'), 'feat/locked', true);
+    f.git(f.main, 'worktree', 'lock', locked);
+    const owned = f.worktree(join(f.projects, 'owned'), 'feat/owned', true);
+    put(join(f.main, '.ai/harness/active-worktree'), `${owned}\n`);
+    const detached = join(f.projects, 'detached');
+    f.git(f.main, 'worktree', 'add', '-q', '--detach', detached, 'HEAD');
+    const nested = f.worktree(join(f.main, '.claude/worktrees/nested'), 'feat/nested', true);
+    const managed = f.worktree(join(f.managed, 'repo-wt-managed'), 'feat/managed', true);
+    const mergedHead = f.git(f.main, 'rev-parse', 'refs/heads/feat/merged');
+
+    const preview = runLegacyWorktreeCleanup(f.main, f.main, f.env, false, { ghBin: f.ghBin });
+    expect(preview.error).toBeUndefined();
+    const byPath = new Map(preview.candidates.map((item) => [item.path, item]));
+    expect([...byPath.keys()].sort()).toEqual([detached, dirty, locked, merged, owned, unmerged].sort());
+    expect(byPath.has(nested)).toBe(false);
+    expect(byPath.has(managed)).toBe(false);
+    expect(byPath.get(merged)).toEqual({
+      path: merged, branch: 'feat/merged', head: mergedHead, verdict: 'remove',
+      reason: 'merged into refs/remotes/origin/main', rebuild: `git worktree add -b feat/merged ${merged} ${mergedHead}`,
+    });
+    expect(byPath.get(dirty)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'dirty worktree', rebuild: null }));
+    expect(byPath.get(unmerged)).toEqual(expect.objectContaining({ verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED }));
+    expect(byPath.get(locked)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'locked' }));
+    expect(byPath.get(owned)).toEqual(expect.objectContaining({ verdict: 'keep', reason: 'cleanup has an active-worktree marker reference' }));
+    expect(byPath.get(detached)).toEqual(expect.objectContaining({ branch: null, verdict: 'keep', reason: 'no local branch' }));
+    for (const path of [merged, dirty, unmerged, locked, owned, detached, nested, managed]) expect(existsSync(path)).toBe(true);
+
+    const announced: string[] = [];
+    const applied = runLegacyWorktreeCleanup(f.main, f.main, f.env, true, { ghBin: f.ghBin, beforeRemove: (item) => announced.push(item.path) });
+    expect(applied.error).toBeUndefined();
+    expect(announced).toEqual([merged]);
+    expect(applied.candidates.find((item) => item.path === merged)).toEqual(expect.objectContaining({ verdict: 'removed', head: mergedHead }));
+    expect(applied.candidates.filter((item) => item.verdict === 'removed')).toHaveLength(1);
+    expect(existsSync(merged)).toBe(false);
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).toBe('');
+    for (const path of [dirty, unmerged, locked, owned, detached, nested, managed]) expect(existsSync(path)).toBe(true);
+    for (const branch of ['feat/dirty', 'feat/unmerged', 'feat/locked', 'feat/owned', 'feat/nested', 'feat/managed']) {
+      expect(f.git(f.main, 'branch', '--list', branch)).not.toBe('');
+    }
+    expect(readFileSync(join(dirty, 'scratch.txt'), 'utf8')).toBe('uncommitted\n');
+  }));
+
+  test('the local merge proof throws on unknown merge-library output instead of reading it as unmerged', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const target = f.git(f.main, 'rev-parse', 'refs/remotes/origin/main');
+    expect(localMergeMode(f.main, f.git(merged, 'rev-parse', 'HEAD'), target, {})).toBe('ancestor');
+    // The library skips an empty branch argument, so its output names no mode.
+    expect(() => localMergeMode(f.main, '', target, {})).toThrow('cleanup merge is unproven');
+  }));
+
+  test('a sibling inside the managed root is left to the sweep', () => legacyWorktreeSandbox((f) => {
+    f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const outcome = runLegacyWorktreeCleanup(f.main, f.main, { ...f.env, REPO_HARNESS_WORKTREE_ROOT: f.projects }, false, { ghBin: f.ghBin });
+    expect(outcome).toEqual({ candidates: [] });
+  }));
+
+  test('a sibling that changes after preview is kept by the locked recheck', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const applied = runLegacyWorktreeCleanup(f.main, f.main, f.env, true, {
+      ghBin: f.ghBin, beforeRemove: () => writeFileSync(join(merged, 'late.txt'), 'late edit\n'),
+    });
+    expect(applied.error).toBeUndefined();
+    expect(applied.candidates).toEqual([expect.objectContaining({ path: merged, verdict: 'keep', reason: 'changed before removal: cleanup_blocked_dirty_worktree' })]);
+    expect(readFileSync(join(merged, 'late.txt'), 'utf8')).toBe('late edit\n');
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).not.toBe('');
+  }));
+
+  test('a sibling on the cloned integration branch is kept while the primary checkout is on another branch', () => legacyWorktreeSandbox((f) => {
+    const clone = join(f.projects, 'clone');
+    f.git(f.projects, 'clone', '-q', f.main, clone);
+    f.git(clone, 'checkout', '-q', '-b', 'develop');
+    const sibling = join(f.projects, 'clone-main');
+    f.git(clone, 'worktree', 'add', '-q', sibling, 'main');
+    const head = f.git(clone, 'rev-parse', 'refs/heads/main');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(clone, clone, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([{ path: sibling, branch: 'main', head, verdict: 'keep', reason: 'branch has no commits of its own', rebuild: null }]);
+    }
+    expect(existsSync(sibling)).toBe(true);
+    expect(f.git(clone, 'rev-parse', 'refs/heads/main')).toBe(head);
+  }));
+
+  test('a sibling on the local integration branch is kept even with a direct commit in its reflog', () => legacyWorktreeSandbox((f) => {
+    f.git(f.main, 'checkout', '-q', '-b', 'develop');
+    const sibling = join(f.projects, 'main-checkout');
+    f.git(f.main, 'worktree', 'add', '-q', sibling, 'main');
+    writeFileSync(join(sibling, 'direct.txt'), 'direct\n');
+    f.git(sibling, 'add', '.');
+    f.git(sibling, 'commit', '-qm', 'direct commit on main');
+    f.git(f.main, 'update-ref', 'refs/remotes/origin/main', 'refs/heads/main');
+    const head = f.git(f.main, 'rev-parse', 'refs/heads/main');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([{ path: sibling, branch: 'main', head, verdict: 'keep', reason: 'integration branch', rebuild: null }]);
+    }
+    expect(existsSync(sibling)).toBe(true);
+    expect(f.git(f.main, 'rev-parse', 'refs/heads/main')).toBe(head);
+  }));
+
+  test('a sibling on a branch named by a slash-named remote target is kept', () => legacyWorktreeSandbox((f) => {
+    put(join(f.main, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { merge_back: { target: 'my/fork/main' } } }));
+    f.git(f.main, 'update-ref', 'refs/remotes/my/fork/main', 'HEAD');
+    f.git(f.main, 'checkout', '-q', '-b', 'develop');
+    const sibling = join(f.projects, 'main-checkout');
+    f.git(f.main, 'worktree', 'add', '-q', sibling, 'main');
+    writeFileSync(join(sibling, 'direct.txt'), 'direct\n');
+    f.git(sibling, 'add', '.');
+    f.git(sibling, 'commit', '-qm', 'direct commit on main');
+    const head = f.git(f.main, 'rev-parse', 'refs/heads/main');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([{ path: sibling, branch: 'main', head, verdict: 'keep', reason: 'integration branch', rebuild: null }]);
+    }
+    expect(existsSync(sibling)).toBe(true);
+    expect(f.git(f.main, 'rev-parse', 'refs/heads/main')).toBe(head);
+  }));
+
+  test('a target that is not a branch keeps every sibling', () => legacyWorktreeSandbox((f) => {
+    f.git(f.main, 'tag', 'v1');
+    put(join(f.main, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { merge_back: { target: 'refs/tags/v1' } } }));
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const head = f.git(f.main, 'rev-parse', 'refs/heads/feat/merged');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([{ path: merged, branch: 'feat/merged', head, verdict: 'keep', reason: 'integration target is not a branch', rebuild: null }]);
+    }
+    expect(existsSync(merged)).toBe(true);
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).not.toBe('');
+  }));
+
+  test('a never-committed branch at the target tip is kept', () => legacyWorktreeSandbox((f) => {
+    const fresh = join(f.projects, 'fresh');
+    f.git(f.main, 'worktree', 'add', '-q', '-b', 'fresh', fresh, 'refs/remotes/origin/main');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([expect.objectContaining({ path: fresh, branch: 'fresh', verdict: 'keep', reason: 'branch has no commits of its own' })]);
+    }
+    expect(existsSync(fresh)).toBe(true);
+    expect(f.git(f.main, 'branch', '--list', 'fresh')).not.toBe('');
+  }));
+
+  test('a sibling with an open task runtime is kept', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    mkdirSync(join(f.main, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(join(f.main, '.git'), merged)), { recursive: true });
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([expect.objectContaining({ path: merged, verdict: 'keep', reason: 'runtime is open' })]);
+    }
+    expect(existsSync(merged)).toBe(true);
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).not.toBe('');
+  }));
+
+  test('a sibling with submodules is kept before removal', () => legacyWorktreeSandbox((f) => {
+    const sibling = f.worktree(join(f.projects, 'submodules'), 'feat/submodules', false);
+    writeFileSync(join(sibling, '.gitmodules'), '');
+    f.git(sibling, 'add', '.gitmodules');
+    f.git(sibling, 'commit', '-qm', 'gitmodules');
+    f.git(f.main, 'merge', '-q', '--no-ff', '-m', 'merge feat/submodules', 'feat/submodules');
+    f.git(f.main, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    for (const apply of [false, true]) {
+      const outcome = runLegacyWorktreeCleanup(f.main, f.main, f.env, apply, { ghBin: f.ghBin });
+      expect(outcome.error).toBeUndefined();
+      expect(outcome.candidates).toEqual([expect.objectContaining({ path: sibling, verdict: 'keep', reason: 'submodules present' })]);
+    }
+    expect(existsSync(sibling)).toBe(true);
+  }));
+
+  test('project upgrade keeps the sibling that holds the caller cwd while cwd selects the repository', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const callerCwd = join(merged, 'sub');
+    mkdirSync(callerCwd);
+    const opts = { cwd: f.main, callerCwd, home: f.home, packageRoot: ROOT, scope: 'project' as const, env: { REPO_HARNESS_WORKTREE_ROOT: f.managed } };
+    for (const apply of [false, true]) {
+      const result = runUpgrade({ ...opts, apply });
+      expect(result.exitCode, result.error).toBe(0);
+      expect(result.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: merged, verdict: 'keep', reason: 'current checkout' })]);
+    }
+    expect(existsSync(merged)).toBe(true);
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).not.toBe('');
+  }));
+
+  test('project upgrade previews path, branch and HEAD with a pending exit, then apply removes the sibling', () => legacyWorktreeSandbox((f) => {
+    const merged = f.worktree(join(f.projects, 'merged'), 'feat/merged', true);
+    const head = f.git(f.main, 'rev-parse', 'refs/heads/feat/merged');
+    const opts = { cwd: f.main, home: f.home, packageRoot: ROOT, scope: 'project' as const, env: { REPO_HARNESS_WORKTREE_ROOT: f.managed } };
+    const preview = runUpgrade(opts);
+    expect(preview.items).toEqual([]);
+    expect(preview.exitCode, preview.error).toBe(1);
+    const text = formatUpgradeResult(preview);
+    expect(text).toContain('project legacy-worktree:');
+    expect(text).toContain(`  ${merged}: branch=feat/merged; head=${head}; remove; merged into refs/remotes/origin/main`);
+    expect(text).toContain(`    rebuild: git worktree add -b feat/merged ${merged} ${head}`);
+    expect(text).toContain('  note: removal also deletes ignored files in the checkout (for example .env); commit or copy anything you need first.');
+    const json = JSON.parse(formatUpgradeResult(preview, true));
+    expect(json.legacyWorktrees.candidates).toEqual([expect.objectContaining({ path: merged, branch: 'feat/merged', head, verdict: 'remove' })]);
+    expect(existsSync(merged)).toBe(true);
+
+    const announced: string[] = [];
+    const applied = runUpgrade({ ...opts, apply: true }, { beforeLegacyWorktreeRemove: (item) => announced.push(item.rebuild!) });
+    expect(applied.exitCode, applied.error).toBe(0);
+    expect(announced).toEqual([`git worktree add -b feat/merged ${merged} ${head}`]);
+    expect(applied.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: merged, verdict: 'removed' })]);
+    expect(existsSync(merged)).toBe(false);
+    expect(f.git(f.main, 'branch', '--list', 'feat/merged')).toBe('');
+    const after = runUpgrade(opts);
+    expect(after.legacyWorktrees).toBeUndefined();
+    expect(after.exitCode, after.error).toBe(0);
+  }));
+
+  test('preview defers a squash-merged sibling as pending without querying the provider; apply proves it there and removes it', () => legacyWorktreeSandbox((f) => {
+    const squashed = f.worktree(join(f.projects, 'squashed'), 'feat/squashed', false);
+    const head = f.git(f.main, 'rev-parse', 'refs/heads/feat/squashed');
+    f.git(f.main, 'merge', '-q', '--squash', 'feat/squashed');
+    f.git(f.main, 'commit', '-qm', 'squash feat/squashed');
+    const squash = f.git(f.main, 'rev-parse', 'HEAD');
+    // A later edit of the same file defeats the local merge-tree proof, so only the provider can prove the merge.
+    writeFileSync(join(f.main, 'feat-squashed.txt'), 'later\n');
+    f.git(f.main, 'commit', '-qam', 'later conflicting edit');
+    f.git(f.main, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const log = join(dirname(f.ghBin), 'gh-merged.log');
+    const gh = join(dirname(f.ghBin), 'gh-merged');
+    const pulls = [{ number: 7, state: 'closed', merged_at: '2026-10-01T00:00:00Z', base: { ref: 'main' }, merge_commit_sha: squash }];
+    writeFileSync(gh, `#!/bin/sh\necho "$*" >> '${log}'\necho '${JSON.stringify(pulls)}'\n`);
+    chmodSync(gh, 0o755);
+
+    const preview = runLegacyWorktreeCleanup(f.main, f.main, f.env, false, { ghBin: gh });
+    const rebuild = `git worktree add -b feat/squashed ${squashed} ${head}`;
+    expect(preview).toEqual({ candidates: [{ path: squashed, branch: 'feat/squashed', head, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED, rebuild }] });
+    expect(existsSync(log)).toBe(false);
+    const upgradePreview = runUpgrade({ cwd: f.main, home: f.home, packageRoot: ROOT, scope: 'project', env: { REPO_HARNESS_WORKTREE_ROOT: f.managed } });
+    expect(upgradePreview.exitCode, upgradePreview.error).toBe(1);
+    expect(upgradePreview.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: squashed, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED })]);
+    const text = formatUpgradeResult(upgradePreview);
+    expect(text).toContain(`  ${squashed}: branch=feat/squashed; head=${head}; deferred; ${LEGACY_WORKTREE_PROVIDER_DEFERRED}`);
+    expect(text).toContain(`    rebuild: ${rebuild}`);
+    expect(text).toContain('  note: removal also deletes ignored files in the checkout (for example .env); commit or copy anything you need first.');
+    expect(existsSync(log)).toBe(false);
+    expect(existsSync(squashed)).toBe(true);
+
+    const applied = runLegacyWorktreeCleanup(f.main, f.main, f.env, true, { ghBin: gh });
+    expect(applied.error).toBeUndefined();
+    expect(applied.candidates).toEqual([expect.objectContaining({ path: squashed, verdict: 'removed', reason: 'provider-proven merge into refs/remotes/origin/main' })]);
+    expect(readFileSync(log, 'utf8')).toContain(`commits/${head}/pulls`);
+    expect(existsSync(squashed)).toBe(false);
+    expect(f.git(f.main, 'branch', '--list', 'feat/squashed')).toBe('');
+  }));
+});
+
 // Use the real v0.10 copy writer to establish ownership. The current writer
 // then stages a real package projection with active worktree residues.
 function projectionSandbox(run: (opts: { cwd: string; home: string; packageRoot: string }, router: string) => void): void {
@@ -1297,6 +1614,30 @@ describe('upgrade --registered', () => {
     const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
     expect(byPath(result.repos, repo)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
     expect(readFileSync(target, 'utf8')).toBe('operator notes\n');
+  }), 120_000);
+
+  test('preview counts a removable legacy sibling worktree as pending and shows it', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'legacy');
+    const sibling = join(f.root, 'legacy-old');
+    git(f, repo, 'worktree', 'add', '-q', '-b', 'feat/old', sibling);
+    writeFileSync(join(sibling, 'old.txt'), 'old work\n');
+    commitAll(f, sibling, 'old work');
+    git(f, repo, 'merge', '-q', '--no-ff', '-m', 'merge feat/old', 'feat/old');
+    git(f, repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const head = git(f, repo, 'rev-parse', 'refs/heads/feat/old');
+    writeRegistry(f, [repo]);
+
+    const result = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    const row = byPath(result.repos, repo);
+    expect(row).toMatchObject({ status: 'ready', pending: true, init: { planned: 0 }, upgrade: { items: [] } });
+    expect(row.upgrade?.worktreeTemplate).toBeUndefined();
+    expect(row.upgrade?.legacyWorktrees?.candidates).toEqual([expect.objectContaining({ path: sibling, branch: 'feat/old', head, verdict: 'remove' })]);
+    expect(result.exitCode).toBe(1);
+    const text = formatRegisteredUpgradeResult(result);
+    expect(text).toContain(`${repo}: ready; pending`);
+    expect(text).toContain('    project legacy-worktree:');
+    expect(text).toContain(`      ${sibling}: branch=feat/old; head=${head}; remove; merged into `);
+    expect(existsSync(sibling)).toBe(true);
   }), 120_000);
 
   test('apply passes the caller cwd to the sweep, which keeps a managed worktree that holds it', () => registeredSandbox((f) => {
