@@ -5,8 +5,6 @@ import type { JsonValue } from '../evidence/types';
 
 export const ENGINEER_PROFILE_PROTOCOL = 1 as const;
 export const ENGINEER_PROFILE_KIND = 'repo-harness-module-engineer-profile' as const;
-export const ENGINEER_BINDING_KIND = 'repo-harness-engineer-binding' as const;
-export const ENGINEER_BINDING_CURRENT_KIND = 'repo-harness-engineer-binding-current' as const;
 
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const ENGINEER_ID_PATTERN = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/u;
@@ -22,8 +20,6 @@ export const ENGINEER_DELEGATION_ROLES = [
 ] as const;
 
 export type EngineerDelegationRole = (typeof ENGINEER_DELEGATION_ROLES)[number];
-export type EngineerBindingState = 'active' | 'retired';
-export type EngineerCurrentState = 'unbound' | EngineerBindingState;
 
 export interface ModuleEngineerProfileV1 {
   readonly protocol: typeof ENGINEER_PROFILE_PROTOCOL;
@@ -41,35 +37,6 @@ export interface ModuleEngineerProfileV1 {
   readonly escalation_policy: {
     readonly acceptance: 'independent_plane';
   };
-}
-
-export interface EngineerBindingV1 {
-  readonly protocol: typeof ENGINEER_PROFILE_PROTOCOL;
-  readonly kind: typeof ENGINEER_BINDING_KIND;
-  readonly binding_id: string;
-  readonly engineer_id: string;
-  readonly binding_generation: number;
-  readonly provider: string;
-  readonly provider_thread_id: string;
-  readonly host_id: string;
-  readonly engineer_contract_revision: string;
-  readonly state: EngineerBindingState;
-  readonly previous_binding_id: string | null;
-  readonly bound_at: string;
-  readonly retired_at: string | null;
-}
-
-export interface EngineerBindingCurrentV1 {
-  readonly protocol: typeof ENGINEER_PROFILE_PROTOCOL;
-  readonly kind: typeof ENGINEER_BINDING_CURRENT_KIND;
-  readonly engineer_id: string;
-  readonly binding_generation: number;
-  readonly state: EngineerCurrentState;
-  readonly current_binding_id: string | null;
-  readonly current_transition_id: string | null;
-  readonly current_event_digest: string | null;
-  readonly engineer_contract_revision: string;
-  readonly current_digest: string;
 }
 
 export type EngineerProfileBindingErrorCode = 'engineer_profile_invalid';

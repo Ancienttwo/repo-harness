@@ -1,6 +1,7 @@
 import {
   claimActorReceiptFixture,
   principalMappingFixture,
+  type EngineerBindingFixture,
 } from '../helpers/engineer-state-fixture';
 import { describe, expect, test } from 'bun:test';
 
@@ -9,23 +10,14 @@ import {
   validateClaimActorReceipt,
   validateEngineerPrincipalMapping,
 } from '../../src/core/engineers/principal-claim';
-import { canonicalEngineerJson, engineerSha256, type EngineerBindingV1 } from '../../src/core/engineers/profile-binding';
+import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
-const binding: EngineerBindingV1 = {
-  protocol: 1,
-  kind: 'repo-harness-engineer-binding',
+const binding: EngineerBindingFixture = {
   binding_id: '11111111-1111-4111-8111-111111111111',
   engineer_id: engineerId,
   binding_generation: 1,
-  provider: 'codex',
-  provider_thread_id: 'thread-1',
-  host_id: 'local',
   engineer_contract_revision: engineerSha256('contract-v1'),
-  state: 'active',
-  previous_binding_id: null,
-  bound_at: '2026-08-25T00:00:00.000Z',
-  retired_at: null,
 };
 
 const authorizationId = '22222222-2222-4222-8222-222222222222';

@@ -14,7 +14,6 @@ import {
   engineerContractRevision,
   engineerSha256,
   validateModuleEngineerProfile,
-  type EngineerBindingCurrentV1,
   type ModuleEngineerProfileV1,
 } from '../../core/engineers/profile-binding';
 import { gitExecFileSync } from '../git/runner';
@@ -31,13 +30,6 @@ export interface ResolvedEngineerProfile {
   readonly capability: Capability;
   readonly capability_revision: string;
   readonly engineer_contract_revision: string;
-}
-
-export interface EngineerBootstrapPrompt {
-  readonly engineer_id: string;
-  readonly engineer_contract_revision: string;
-  readonly estimated_tokens: number;
-  readonly prompt: string;
 }
 
 function invalid(message: string, cause?: unknown): never {
@@ -208,34 +200,4 @@ export function loadEngineerProfile(cwd: string, engineerId: string): ResolvedEn
   const matches = listEngineerProfiles(cwd).filter((candidate) => candidate.profile.engineer_id === engineerId);
   if (matches.length !== 1) invalid(`expected exactly one Profile for ${engineerId}; found ${matches.length}`);
   return matches[0];
-}
-
-export function buildEngineerBootstrapPrompt(
-  resolved: ResolvedEngineerProfile,
-  current: EngineerBindingCurrentV1,
-): EngineerBootstrapPrompt {
-  if (current.engineer_id !== resolved.profile.engineer_id) invalid('binding current engineer_id does not match Profile');
-  if (current.engineer_contract_revision !== resolved.engineer_contract_revision) {
-    invalid('binding current Engineer contract revision is stale');
-  }
-  const prompt = [
-    '[RepoHarnessModuleEngineerV1]',
-    `engineer_id=${resolved.profile.engineer_id}`,
-    `capability_id=${resolved.profile.capability_id}`,
-    `engineer_contract_revision=${resolved.engineer_contract_revision}`,
-    `sop_ref=${resolved.profile.sop_ref}`,
-    `architecture_module=${resolved.capability.architecture_module}`,
-    `workstream_dir=${resolved.capability.workstream_dir}`,
-    `binding_state=${current.state}`,
-    `binding_generation=${current.binding_generation}`,
-    `binding_id=${current.current_binding_id ?? 'none'}`,
-    'authority=read-only bootstrap; no credential, Claim, Lease, Publication, Acceptance, or task mutation authority',
-    '[/RepoHarnessModuleEngineerV1]',
-  ].join('\n');
-  return Object.freeze({
-    engineer_id: resolved.profile.engineer_id,
-    engineer_contract_revision: resolved.engineer_contract_revision,
-    estimated_tokens: Math.ceil(Buffer.byteLength(prompt, 'utf8') / 4),
-    prompt,
-  });
 }

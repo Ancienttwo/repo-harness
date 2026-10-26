@@ -1,8 +1,4 @@
-import {
-  canonicalEngineerJson,
-  engineerSha256,
-  type EngineerBindingV1,
-} from '../../src/core/engineers/profile-binding';
+import { canonicalEngineerJson, engineerSha256 } from '../../src/core/engineers/profile-binding';
 import {
   ENGINEER_PRINCIPAL_PROTOCOL,
   ENGINEER_PRINCIPAL_MAPPING_KIND,
@@ -13,8 +9,16 @@ import {
   type EngineerPrincipalMappingV1,
 } from '../../src/core/engineers/principal-claim';
 
+/** The binding fields that principal mappings and claim actor receipts copy. */
+export interface EngineerBindingFixture {
+  readonly engineer_id: string;
+  readonly binding_id: string;
+  readonly binding_generation: number;
+  readonly engineer_contract_revision: string;
+}
+
 export function principalMappingFixture(input: {
-  repository_id: string; authorization_id: string; binding: EngineerBindingV1; created_at: string;
+  repository_id: string; authorization_id: string; binding: EngineerBindingFixture; created_at: string;
 }): EngineerPrincipalMappingV1 {
   const basis = { protocol: ENGINEER_PRINCIPAL_PROTOCOL, kind: ENGINEER_PRINCIPAL_MAPPING_KIND,
     repository_id: input.repository_id, authorization_id: input.authorization_id,
@@ -32,7 +36,7 @@ export function revokedPrincipalFixture(mapping: EngineerPrincipalMappingV1, rev
 
 /** Build canonical historical data for the retained receipt readers. */
 export function claimActorReceiptFixture(input: {
-  binding: EngineerBindingV1;
+  binding: EngineerBindingFixture;
   envelope: { repo_id: string; task_id: string; task_revision: string; claim_id: string;
     generation: number; authorization_revision: number; worktree_path: string; branch: string; unit_ref: string };
   session_id: string | null;
