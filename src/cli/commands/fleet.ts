@@ -3,7 +3,7 @@ import { readReviewAdmissionSource } from '../../effects/admission/admission-sou
 import { Command } from 'commander';
 import { migrateTaskInboxLayout, TaskInboxMigrationError } from '../../effects/fleet/task-inbox-layout-migration';
 import { TaskInboxLayoutError } from '../../effects/fleet/task-inbox-layout';
-import { pruneRepoHarnessRegistry } from '../../effects/repo-registry';
+import { backfillRepoHarnessRegistry, pruneRepoHarnessRegistry } from '../../effects/repo-registry';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 
@@ -155,9 +155,20 @@ function integerOption(
 
 export function buildFleetCommand(): Command {
   const fleet = new Command('fleet').description('Project fleet workflow views and task acquisition');
+  fleet.command('register')
+    .description('Register explicit adopted primary checkouts with source manual; never scans directories')
+    .argument('<paths...>', 'Repository roots to register; each is checked and reported on its own')
+    .action((paths: string[]) => {
+      try {
+        const result = backfillRepoHarnessRegistry(paths);
+        const ok = result.rejected.length === 0;
+        process.stdout.write(`${JSON.stringify({ ok, ...result }, null, 2)}\n`);
+        if (!ok) process.exitCode = 1;
+      } catch (error) { outputFeedbackValidation(error); }
+    });
   fleet.command('prune')
-    .description('Preview missing repository registrations; --apply removes registry rows only, without backup')
-    .option('--apply', 'Remove confirmed absent paths under the registry mutation lock')
+    .description('Preview missing and linked-worktree repository registrations; --apply removes registry rows only, without backup')
+    .option('--apply', 'Remove confirmed absent paths and linked-worktree rows under the registry mutation lock')
     .option('--expected-revision <digest>', 'Exact registry_revision from the preview; required with --apply')
     .option('--repo-id <id...>', 'Limit inspection/removal to these registered repository IDs')
     .action(options => {
