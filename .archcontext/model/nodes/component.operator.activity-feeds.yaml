@@ -10,7 +10,7 @@ responsibilities:
   - Collect Git worktrees, the user's GitHub pull requests and runtime source health into one development activity snapshot.
   - Run the setup check builder in a child process with a deadline and keep the last good setup snapshot.
   - Keep a failed source local to its own repository or check, with a fixed reason code.
-  - Collect the CLI inventory from read-only package manager listings and agent command use in hook telemetry; a present manager whose listing fails keeps the last good inventory as stale.
+  - Collect the CLI inventory from read-only package manager listings, agent command use in hook telemetry, and cached gh and npm registry lookups; a present manager whose listing fails keeps the last good inventory as stale.
   - Serve the Dev Activity cache, with each repository's GitHub name and default branch, to the docs and tests collectors.
 source:
   include:
