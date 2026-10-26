@@ -62,12 +62,15 @@ Supply all values again. An omitted value removes that channel.
 4. Enter `WEBHOOK_URL` and `WEBHOOK_KEY` during install.
 
 The Bot needs this webhook to receive pushes.
-The plugin sends JSON with the pane, workspace, session, agent, status, and time.
+The plugin sends JSON with the pane, workspace, session, agent, status, repository, task, request id, and time.
 It sends the key in `Authorization: Bearer` and `x-webhook-key` headers.
 The receiving routine must check the key before it acts on an event.
 
-The payload does not name the repository or the branch.
-The routine maps the pane or workspace to the task it assigned.
+The payload names the repository from the Herdr workspace context.
+It names the task and the latest request id when the pane belongs to a repo-harness task agent.
+The plugin reads them from that agent's session files in the repository.
+Without a readable session, `task` and `request_id` are `null`. The plugin never guesses them.
+The payload does not name the branch.
 On `done`, the Bot assesses the worker's checks with `repo-harness-check`.
 When the branch changed source files, the Bot also reads the architecture evidence in that skill.
 On `blocked`, the Bot reads the pane and resolves the blocker.
@@ -144,6 +147,10 @@ There is no background retry queue. Concurrent events can send duplicates.
 Runtime state is in `HERDR_PLUGIN_STATE_DIR`.
 
 Inspect delivery results with `herdr plugin log list --plugin aimpact.webhook-notify`.
+Each attempt writes one log line that names its channel.
+The operator console reads the newest result for each channel from those lines.
+A failed channel does not change the result of another channel.
+Slack, Discord, and Telegram messages end with the repository, task, and request id when known.
 HTTP success shows that the endpoint accepted a request.
 Check the Bot routine or human channel to confirm receipt.
 To stop delivery, run `herdr plugin disable aimpact.webhook-notify`.

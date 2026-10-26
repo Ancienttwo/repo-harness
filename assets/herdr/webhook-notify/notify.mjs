@@ -1,5 +1,5 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
-import { constants, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readSync, rmdirSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, rmdirSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { systemWorktreeRoot } from './worktree-location.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
@@ -62,6 +62,48 @@ function isTemporary(path, managedRoot) {
   });
 }
 
+const ID_PATTERN = /^[\w.:@/-]{1,128}$/;
+
+function readIdentityFile(path) {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024) throw new Error('Invalid identity file.');
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+// Herdr's context names the repository only. The task and the request live in the
+// repo-harness task-agent session that owns this pane. A value that cannot be read
+// stays null: this notice never guesses a task.
+function taskIdentity(data, context, session) {
+  const repository = typeof context.worktree?.repo_key === 'string' && ID_PATTERN.test(context.worktree.repo_key) ? context.worktree.repo_key : null;
+  const none = { repository, task: null, request_id: null };
+  const root = context.worktree?.repo_root;
+  if (typeof root !== 'string' || !isAbsolute(root)) return none;
+  try {
+    const agents = join(root, '.ai/harness/runs/task-agents');
+    if (!lstatSync(agents).isDirectory() || lstatSync(agents).isSymbolicLink()) return none;
+    for (const entry of readdirSync(agents, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const dir = join(agents, entry.name);
+      let binding;
+      try { binding = readIdentityFile(join(dir, 'binding.json')); } catch { continue; }
+      if (binding?.runtime !== 'herdr' || binding.pane_id !== data.pane_id || binding.workspace_id !== data.workspace_id
+        || binding.endpoint?.session !== session || (repository && binding.repository_id !== repository)
+        || typeof binding.task !== 'string' || !ID_PATTERN.test(binding.task) || existsSync(join(dir, 'closed.json'))) continue;
+      let latest = 0, requestId = null;
+      for (const name of readdirSync(dir)) {
+        const round = Number(name.match(/^started-(\d+)\.json$/)?.[1]);
+        if (!Number.isSafeInteger(round) || round <= latest) continue;
+        try {
+          const started = readIdentityFile(join(dir, name));
+          if (typeof started?.request_id === 'string' && ID_PATTERN.test(started.request_id)) { latest = round; requestId = started.request_id; }
+        } catch { /* An unreadable round leaves the earlier request id. */ }
+      }
+      return { repository: repository ?? (ID_PATTERN.test(binding.repository_id) ? binding.repository_id : null), task: binding.task, request_id: requestId };
+    }
+  } catch { /* No readable session: report the repository alone. */ }
+  return none;
+}
+
 export async function notify(env = process.env, send = fetch, options = {}) {
   const event = objectJson(env.HERDR_PLUGIN_EVENT_JSON);
   const context = objectJson(env.HERDR_PLUGIN_CONTEXT_JSON);
@@ -86,11 +128,13 @@ export async function notify(env = process.env, send = fetch, options = {}) {
     pane_id: data.pane_id, workspace_id: data.workspace_id, agent_status: data.agent_status,
     agent: data.agent ?? null, display_agent: data.display_agent ?? null, title: data.title ?? null,
     state_labels: data.state_labels ?? null, workspace_label: context.workspace_label ?? null,
-    tab_label: context.tab_label ?? null, ts: new Date(now).toISOString(),
+    tab_label: context.tab_label ?? null, ...taskIdentity(data, context, config.NOTIFY_SESSION), ts: new Date(now).toISOString(),
   };
   const where = [payload.workspace_label, payload.tab_label].filter(Boolean).join(' / ') || payload.workspace_id;
   const text = `Herdr ${payload.agent_status}: ${payload.display_agent || payload.agent || 'agent'} @ ${where}` +
-    (payload.title ? `\n${payload.title}` : '') + `\npane ${payload.pane_id} · ${payload.host}`;
+    (payload.title ? `\n${payload.title}` : '') + `\npane ${payload.pane_id} · ${payload.host}` +
+    (payload.repository || payload.task ? `\n${[payload.repository && `repo ${payload.repository}`, payload.task && `task ${payload.task}`,
+      payload.request_id && `request ${payload.request_id}`].filter(Boolean).join(' · ')}` : '');
   const targets = [
     { channel: 'WEBHOOK', url: config.WEBHOOK_URL, body: payload,
       headers: { authorization: `Bearer ${config.WEBHOOK_KEY}`, 'x-webhook-key': config.WEBHOOK_KEY } },
