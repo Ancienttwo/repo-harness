@@ -106,11 +106,12 @@ sequenceDiagram
 ## 3. P3: Current boundary after #773 slice C
 
 The GitHub issue and PR own task and publication status. This capability reads
-historical publication records and live provider facts. It does not create
-receipts, edit PR markers or change lease ownership.
+live provider facts. It does not create publication receipts, edit PR markers or
+change claim ownership.
 
 - `publication readiness` and MCP `publication_readiness` remain read-only.
-- Receipt and integration readers keep their exact schema and digest checks.
+- The publication receipt and lifecycle store readers are removed. Stored bytes
+  stay in place. Integration evidence keeps its exact schema and digest checks.
 - Provider readiness remains bound to the observed head, base, checks and reviews.
 - Provider merge proof remains available to guarded worktree cleanup.
 - Manual feedback intake and acknowledgement remain available. Historical repair
@@ -120,7 +121,8 @@ receipts, edit PR markers or change lease ownership.
 
 The `flow.publication.readiness` flow replaces the retired lifecycle flow.
 The publication-to-evidence-ledger journal relation is removed. The remaining
-workflow-state relation reads historical records.
+workflow-state relation validates historical task identifiers with the shared
+canonical task digest pattern.
 
 ## 4. 歷史決策記錄(append-only)
 

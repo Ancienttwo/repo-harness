@@ -178,7 +178,7 @@ flowchart LR
 | task-fleet -> workflow-state | `relation.task-fleet.primary.workflow-state`: read provider issue and admitted session board observations without dispatching tasks. |
 | task-fleet -> publication | `relation.task-fleet.publication`: read explicit provider PR readiness and admitted provider feedback. |
 | task-agent-host -> Herdr | External. The capability hosts persistent task agents in Herdr panes (capability summary). |
-| publication -> GitHub provider | External. Current task/PR authority stays in GitHub. Publication retains receipt readers and provider feedback operations; it does not restore lease publication writers. |
+| publication -> GitHub provider | External. Current task/PR authority stays in GitHub. Publication observes provider PR readiness and keeps provider feedback operations; it has no publication receipt store reader or writer. |
 | Host -> hook-adapters | External. User-level host hooks call the `repo-harness-hook` binary (`package.json` `bin`, [Global Hook Runtime](global-hook-runtime.md)). |
 | hook-adapters -> workflow-state, evidence-ledger, task-fleet | `relation.hook-adapters.primary.workflow-state`, `relation.hook-adapters.session-lifecycle.evidence-ledger`, `relation.hook-adapters.session-lifecycle.task-fleet`. |
 | MCP client -> mcp-sidecar | External. `README.md` "MCP Connector". |
@@ -204,7 +204,7 @@ Each datum has one authority. Every other representation is a projection.
 | Planning context | Repository Markdown under `plans/` and `tasks/` | workflow-state reads retained plan context | Effective State projects local facts. It has no persisted JSON cache. `tasks/current.md` is an orientation snapshot, not task authority. |
 | Current task identity, claim, status and dependency | GitHub issue and PR | Human/Bot decisions | Local boards and retained Sprint readers do not dispatch tasks. |
 | State content and published version | `state_revision` identifies resolved content; `state resolve` alone allocates shared `state_version` | workflow-state | Read-only hooks and MCP can return a version allocated for a different revision. |
-| Historical coordination | Persisted Sprint rows, owner records and claim tokens | workflow-state | Explicit history and retained codecs only. Current boards do not read leases. Retirement does not delete historical bytes. |
+| Historical coordination | Persisted Sprint rows, owner records and claim tokens | workflow-state | Retained codecs read Sprint rows and owner records for explicit history. No reader parses claim tokens. Current boards do not read leases. Retirement does not delete historical bytes. |
 | Current execution admission | Protected approval under the OS account gates root, current provider goal and exact session/claim selection | acceptance-review; task-agent-host binds execution | `effects/admission/` and `effects/sessions/` reobserve authority. A board or native host attribution record cannot grant it. |
 | Task mutex | `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock` | execution-primitives | Inbox and feedback retain the same physical lock path through `effects/locking/task-lock.ts`. |
 | Task messages | Admitted records below `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Exact admission SHA and claim reference/revision fence delivery. Session context renders messages as untrusted data; historical records remain separate. |

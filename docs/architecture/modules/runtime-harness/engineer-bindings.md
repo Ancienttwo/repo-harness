@@ -100,12 +100,9 @@ sequenceDiagram
 ## 3. P3: Retained read invariants
 
 - Profile and SOP files must be tracked. The capability model owns the referenced capability contract.
-- Linked worktrees read the same binding store below the Git common directory.
-- `readEngineerBindingStatus` validates the current record and its immutable event. It never repairs a missing or corrupt record.
-- An absent store returns a generation-zero observation without writing files. An event without its current record remains corrupt.
-- `readClaimActorReceipt` validates canonical historical bytes. Live receipt listing checks the exact claim ID, generation and task revision. An unknown Lease stays unavailable.
-- The operator shows existing bindings only. It cannot create, replace or retire a binding.
-- Engineer CLI, OAuth principal registration, acquisition and binding writers are retired. The runtime endpoint and operator readers remain.
+- A session selects an engineer profile only through explicit admitted metadata: the engineer ID and its exact contract revision.
+- `src/core/engineers/principal-claim.ts` keeps the historical principal mapping and Claim Actor codecs. They validate canonical historical bytes. No reader resolves a lease owner.
+- Engineer CLI, OAuth principal registration, acquisition, the binding store reader, the claim actor store and all binding writers are removed. Stored bytes below the Git common directory stay in place.
 
 ## 4. 歷史決策記錄(append-only)
 

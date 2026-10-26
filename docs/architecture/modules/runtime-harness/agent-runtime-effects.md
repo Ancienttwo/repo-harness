@@ -120,7 +120,7 @@ sequenceDiagram
 5. **wake 是提示，不是授权。** wake 不携带 claim token、Lease、Task 或 offer 正文。醒来的控制器重新读取当前 offers，并只通过普通调度入口获取工作（capability notes；§3.4）。
 6. **每个 Binding 同时最多一个非终态 wake。** 被取代的 wake 写终态 `superseded`（§3.6）。
 7. **所有 wake 变更的锁顺序是 wake → effect。** ledger 读取发生在锁内，是唯一的线性化点（§3.7）。
-8. **V1 存储没有迁移回执时拒绝新写入。** 存在 Provider Thread V1 存储而没有 `migrations/v1.json` 时，capability 记录、prepare 和 offer 快照记录都失败（`agent-runtime-effect-store.ts:215-217`、`:221`、`:277`、`:662`）。
+8. **store 不读取 Provider Thread V1 存储。** capability 记录、prepare 和 offer 快照记录不检查 V1 存储或迁移回执。
 
 ### 3.2 关键权衡
 
@@ -175,16 +175,16 @@ intent 先写，ledger 后发布。两者之间崩溃时，`created_at` 使用�
 
 | 节点 | footprint | 说明 |
 | --- | --- | --- |
-| `component.agent-runtime-effects.journal` | `src/effects/engineers/agent-runtime-effect-store.ts` | 不可变 intent 与 observation 链、current 修复、wake ledger、V1 迁移回执检查 |
+| `component.agent-runtime-effects.journal` | `src/effects/engineers/agent-runtime-effect-store.ts` | 不可变 intent 与 observation 链、current 修复、wake ledger |
 | capability 自身 | `agent-runtime-effect.ts`（core）、`agent-runtime-feature.ts`、`agent-runtime-adapters/**` | schema、feature 开关、Herdr adapter |
 
 对外关系：`engineer-bindings`（当前 Binding）、`engineer-messages`（持久化消息与回执）、`engineer-scheduling`（offers 文档校验，2026-10-11 新增）、`mcp-sidecar`（严格 repo registry 与授权 revision，2026-10-11 新增）。
 
-集成步骤补上的关系：capability → task-agent-host（Herdr adapter 调用 `herdr.ts`）；journal → workflow-state（`reads`，`readLease`）；journal → execution-primitives。没有声明 journal → task-fleet：`relation.task-fleet.agent-runtime-effects` 已经声明反向。见 Backlog。
+集成步骤补上的关系：capability → task-agent-host（Herdr adapter 调用 `herdr.ts`）；journal → execution-primitives。journal 不导入 workflow-state。没有声明 journal → task-fleet：`relation.task-fleet.agent-runtime-effects` 已经声明反向。见 Backlog。
 
 ### 3.11 开放问题
 
-- V1 迁移命令已在 PR #514 删除（`6fa21238`：store 减少 86 行，`engineer.ts` 减少 9 行）。但 `assertMigrationReady` 仍在 V1 存储存在且没有回执时拒绝写入（§3.1 第 8 条）。一个仍有 V1 存储的仓库现在没有命令能生成回执。这种仓库是否还存在？恢复路径是什么？没有记录。
+- V1 迁移命令已在 PR #514 删除（`6fa21238`）。#959 删除了 V1 迁移回执门（§3.1 第 8 条）。2026-10-26 检查的 12 个已登记仓库都没有 `repo-harness/provider-thread-effects/v1`。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -195,7 +195,6 @@ intent 先写，ledger 后发布。两者之间崩溃时，`created_at` 使用�
 ## Optimization Backlog
 
 - 本 capability 的 summary 和 responsibilities 曾在 adapter 退役后仍写着 codex-app-thread 和 V1 迁移命令。2026-10-11 已改正。以后删除 adapter 或命令时，同一个 PR 需要更新 capability 节点。
-- V1 迁移回执检查（§3.11）。如果确认没有仓库还保留 V1 存储，可以删除 `assertMigrationReady` 和 `PROVIDER_THREAD_EFFECT_V1_RELATIVE_ROOT`；否则需要恢复一个迁移入口。
 - `agent-runtime-effect-store.ts` 有 815 行，wake ledger 与通用 effect 链在同一个文件里。wake 部分可以独立成文件，但锁顺序（§3.7）必须保持在一处可见。
 - journal → task-fleet 没有声明。`agent-runtime-effect-store.ts` 导入 `src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`（7 条边）。反向的 `relation.task-fleet.agent-runtime-effects` 有 4 条边。集成不删除分组已声明的关系，也不新增反向关系。是否翻转方向是开放问题。
 

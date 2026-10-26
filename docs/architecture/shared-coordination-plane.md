@@ -14,7 +14,7 @@ transfer a claim or complete an issue.
 | Protected admission | `src/effects/admission/` | Read current approval and issue goal with the same authority-root and revocation guards used by review and execution. |
 | Provider and profile inputs | `src/effects/github/`, `src/effects/profiles/profile-store.ts` | Share the GitHub adapter/policy reader and resolve explicitly selected tracked engineer contracts. |
 | Hook slice | `src/effects/state/collect-slice-inputs.ts`, `src/cli/hook/board-slice-context.ts` | Render stored provider observations and supplied session context without network discovery. Missing trusted self context stays unobserved. |
-| Historical identity and tokens | `src/core/state/coordination-identity.ts`, `src/effects/state/coordination-claim-token.ts` | Retain canonical task and owner-record codecs and explicit historical token reads. Current boards do not use a lease reader. |
+| Historical identity | `src/core/state/coordination-identity.ts` | Retain canonical task and owner-record codecs. Current boards do not read leases or claim tokens. |
 | Shared task mutex | `src/effects/locking/task-lock.ts` | Serialize admitted inbox and feedback writes at the existing shared physical path. |
 | Git repository topology | `src/effects/git/task-repository.ts` | Resolve exact primary and execution roots from Git topology. Workflow target policy remains in `src/effects/state/canonical-target.ts`. |
 | Worktree safety | `src/effects/state/coordination-worktree-topology.ts` | Start, inspect and remove exact worktrees under topology, runtime and deletion guards without lease authority. |
@@ -80,9 +80,10 @@ first bind the selected PR repository to the local GitHub origin. Product
 integration also proves the provider's actual merge commit/tree locally and its
 ancestry into the exact final candidate. A merged PR state alone is not proof.
 
-Historical Sprint documents, owner bytes, publication records and message/reply
-codecs remain available where explicit history uses them. Removing active lease,
-claim-actor and acquire readers does not migrate or delete stored bytes. Historical
+Historical Sprint documents, owner bytes and message/reply codecs remain
+available where explicit history uses them. Removing the lease, claim-token,
+claim-actor, engineer-binding, publication-receipt and acquire readers does not
+migrate or delete stored bytes. Historical
 records cannot replace current approval, provider evidence or session selection.
 
 ## Verification surfaces
@@ -94,8 +95,8 @@ records cannot replace current approval, provider evidence or session selection.
 - `tests/effects/operator-task-diff.test.ts` covers current admission, exact
   session selection, bounded discovery and explicit history separation.
 - `tests/effects/admitted-task-inbox.test.ts` covers exact recipient fences and
-  delivery/reply evidence. `tests/board-slice.test.ts` covers bounded hook output,
-  cross-host byte equality and retained token ambiguity checks.
+  delivery/reply evidence. `tests/board-slice.test.ts` covers bounded hook output
+  and cross-host byte equality.
 - `tests/coordination-identity.test.ts` retains historical codec checks.
   `tests/coordination-lease-store.test.ts` retains shared lock and exact worktree
   cleanup tests; its filename does not imply an active lease reader.

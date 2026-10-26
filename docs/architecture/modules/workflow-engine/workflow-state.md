@@ -176,7 +176,7 @@ sequenceDiagram
 人工权威文档有两份。本文只记录 capability 边界与组件划分，协议细节以它们为准：
 
 - [`effective-state-authority.md`](../../effective-state-authority.md)：Effective State 的决定、冻结不变量与 P2 解析轨迹。
-- [`shared-coordination-plane.md`](../../shared-coordination-plane.md)：lease 协议、board 投影与 hook 层 slice。
+- [`shared-coordination-plane.md`](../../shared-coordination-plane.md)：provider board 投影、hook 层 slice 与 worktree 安全。
 
 ### 3.1 必须保持的不变量
 
@@ -208,7 +208,7 @@ sequenceDiagram
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
 | `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
-| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | 历史 Sprint 身份、lease 和 claim token 读取、cutover、worktree 安全、board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
+| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | 历史 Sprint 身份解析、worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
@@ -216,9 +216,8 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 ### 3.4 10x 规模下先垮的点
 
 1. **同步的 Git 与源收集。** `effective-state-authority.md` Consequences 已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.3 第 5 条。
-2. **board 的 owner worktree 观察。** `collectBoardInputs` 对每个 owner worktree 调一次 `resolveEffectiveStateReadOnly`，再读一次 attempt ledger，而且每轮采样两次。并行 worktree 增加时，读成本按 worktree 数线性增长。
-3. **`coordination-sprint.ts` 1,261 行。** 所有所有权动词都在这一个文件里，`processSprintDependencies` 是它们共享的依赖注入点。
-4. **`coordination-identity.ts` 1,076 行的纯核心。** 身份、lease record 解析与状态转换都在一个文件里。
+2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
+3. **`coordination-identity.ts` 616 行的纯核心。** 任务身份与历史 owner record 解析在一个文件里。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -239,8 +238,8 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** `effective-state-authority.md` 把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
-- **`relation.workflow-state.imports.publication` 没有源码边（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用。它从 `src/effects/publication/publication-receipt.ts` 移到 `src/effects/state/coordination-provider-merge.ts`。本 capability 不再导入 publication。这条 relation 需要删除或改写。
-- **coordination-plane footprint 用文件名 glob。** 它包含 `src/core/state/sprint-*.ts`、`src/core/state/project-board*.ts`、`src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。`src/core/state/coordination-identity.ts` 是这个模式下唯一的文件，所以仍是精确路径。
+- **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。
+- **coordination-plane footprint 用文件名 glob。** 它包含 `src/core/state/sprint-*.ts`、`src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。`src/core/state/coordination-identity.ts` 是这个模式下唯一的文件，所以仍是精确路径。
 - **到 evidence-ledger 的方向（集成决定）。** 本 capability → evidence-ledger 有 28 条边（主要是 `atomic-append.ts`）。evidence-ledger → 本 capability 有 21 条边（`readonly-observation.ts` 与 `artifact-parsers.ts`）。模型声明 coordination-plane、continuation-ledger 与 primary → evidence-ledger。反向记在 evidence-ledger 的 Backlog。#907 把 `atomic-append.ts` 与 `readonly-observation.ts` 移到 execution-primitives。现在 `src/effects/state` 不导入 `src/effects/evidence`；evidence → state 只剩 `src/effects/evidence/recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。这些 relation 需要按新边复审。
 
 ## 2026-10-18: Slice C snapshot boundary

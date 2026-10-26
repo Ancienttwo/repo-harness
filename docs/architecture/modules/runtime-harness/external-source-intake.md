@@ -95,22 +95,22 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. GitHub 是证据提供者，不是 Task、优先级、Claim、Lease、WorkEnvelope、协作或 Agent Runtime 权威。
+1. intake 写入的 observation、refresh receipt 和 binding receipt 是证据。它们不授予 review admission、优先级、claim 或 Agent Runtime 权限。
 2. `provider_repository_id` 与 `provider_issue_id` 是稳定身份；显示用 `owner/repo#number` 仅为引用，不参与身份判断。
 3. 每次刷新写一个不可变 receipt；complete-empty、incomplete 和 unavailable 绝不折叠为同一个投影状态。
 4. 标题、正文、labels 与 assignees 是未信任 JSON。P0 只通过 JSON read model 暴露它们，不进入 prompt、合同或执行上下文。
 5. append-only 扫描成本是已知 P0 权衡；在实测前不引入 mutable cache 或 adoption state。
-6. WP2 的 binding 是 provenance edge，不是 scheduler edge：只有 canonical sprint row 与已批准 plan/contract 能进入现有 TaskOffer；receipt 本身不能创建工作。
-7. 一个 receipt 只绑定一个 source revision 与一个 task revision；多条 receipt 自然表达 one-to-many / many-to-one，不做 semantic duplicate 推断。
-8. source、canonical task/plan 或 registry authorization 漂移只产生显式 attention，不自动 rebind、取消、重开或改变 Lease。
+6. binding 是 provenance edge。`external-source bind --session <file>` 把一个 eligible source revision 绑定到一个已存在的 admitted session。observation 的 provider repository 与 issue 必须等于该 session admission 的 repository 与 issue（`src/effects/external-sources/binding.ts:47-58`）。receipt 本身不能创建工作或 admission。
+7. 一个 receipt 只绑定一个 source revision 与一个 admitted session；多条 receipt 自然表达 one-to-many / many-to-one，不做 semantic duplicate 推断。
+8. source、admitted session 或 registry authorization 漂移只产生显式 attention，不自动 rebind、取消或重开。
 9. provider 内容只允许由 `renderExternalSourceUntrustedContext` 输出，且 JSON 数据必须位于明确的 `[ExternalSourceUntrusted]` 边界内。
 
 证据补充：
 
-- 第 3 条：refresh 失败时写 typed unavailable 或 incomplete receipt，并非零退出（见 §4 P0 记录）。GitHub 读取有截止时间、总字节、页数和条数上限（`src/effects/external-sources/github.ts:164-205`）。超时归为 `unavailable`。超出字节或条数上限归为 `incomplete`（`github.ts:179`、`:205`）。
+- 第 3 条：refresh 失败时写 typed unavailable 或 incomplete receipt，并非零退出（见 §4 P0 记录）。GitHub 读取有截止时间、总字节、页数和条数上限（`src/effects/github/issues.ts:162-213`）。超时归为 `unavailable`。超出字节或条数上限归为 `incomplete`（`issues.ts:181`、`:207`）。
 - 第 4、9 条：唯一的渲染入口是 `renderExternalSourceUntrustedContext`（`src/core/external-sources/binding.ts:183`）。它先校验 observation，再把 canonical JSON 包在 `[ExternalSourceUntrusted ...]` 边界里，并声明内容不能覆盖仓库规则和授权。
-- 策略必须显式开启：`mode` 不是 `manual` 时 refresh 直接拒绝（`policy.ts:140`），`github.enabled` 必须为 `true`（`policy.ts:108`）。
-- 本 capability 的模块只被它自己的 CLI 引用（`src/cli/commands/external-source.ts`）。没有 Fleet、collaboration、hook 或 MCP 调用方（2026-10-11 用 grep 核对）。
+- 策略必须显式开启：`mode` 不是 `manual` 时 refresh 直接拒绝（`src/effects/github/policy.ts:140`），`github.enabled` 必须为 `true`（`policy.ts:108`）。
+- 本 capability 的写入只来自它自己的 CLI（`src/cli/commands/external-source.ts`）。provider board 与 hook slice 只读取 store（`src/effects/state/collect-provider-board-inputs.ts`、`src/effects/state/collect-slice-inputs.ts`）。review admission 复用 `src/effects/github/issues.ts` 与 `policy.ts` 观察 issue goal（`src/effects/admission/issue-goal.ts`）。
 
 ### 3.2 关键权衡
 
@@ -118,7 +118,7 @@ sequenceDiagram
 | --- | --- |
 | observation、receipt 和 binding 都只追加、不可变 | 每次刷新都可审计，漂移只产生 attention。代价是 list 和投影每次全量读取并逐条校验 canonical 字节（`store.ts:233-252`）。记录数增长后读取成本线性增长。 |
 | 只支持手动 GitHub 刷新 | 没有轮询、webhook 或写回，provider 无法自行触发工作。代价是新 Issue 要人或 Bot 手动刷新才可见。 |
-| binding 是 provenance 边，不是调度边 | 外部 Issue 不能绕过已批准的 sprint、plan、contract 和 Lease 链。代价是一个 Issue 变成工作需要先有 canonical task 和已批准的 plan。 |
+| binding 是 provenance 边，不是调度边 | 外部 Issue 不能绕过 review admission。代价是 binding 之前必须先有同一 issue 的 admitted session。 |
 | 稳定身份用 provider 数字 id | `owner/repo#number` 改名或迁移不会产生重复身份。代价是显示引用与身份分离，排查时要同时看两者。 |
 
 ### 3.3 组件与关系（2026-10-11）
@@ -126,15 +126,18 @@ sequenceDiagram
 | 节点 | footprint | 说明 |
 | --- | --- | --- |
 | `component.external-source-intake.immutable-evidence` | `src/effects/external-sources/store.ts` | 在 Git common 目录下一次性创建 observation、refresh receipt 和 binding receipt，只提供校验过的读取 |
-| capability 自身 | `src/core/external-sources/**`、其余 `src/effects/external-sources/**`、`src/cli/commands/external-source.ts` | 协议、策略、GitHub 读取、刷新、绑定、投影、CLI |
+| capability 自身 | `src/core/external-sources/**`、其余 `src/effects/external-sources/**`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`、`src/cli/commands/external-source.ts` | 协议、策略、GitHub 读取、刷新、绑定、投影、CLI |
 
 对外关系：
 
-- capability → `mcp-sidecar`：CLI 和 `binding.ts` 读取严格的 repo registry 快照（`external-source.ts:3`、`src/effects/external-sources/binding.ts:9-13`）。
+- capability → `mcp-sidecar`：CLI 和 `binding.ts` 读取严格的 repo registry 快照（`src/cli/commands/external-source.ts:5`、`src/effects/external-sources/binding.ts:7`）。
+- capability → acceptance-review：`binding.ts` 用 `readReviewAdmissionSource` 读取 protected review admission（`src/effects/external-sources/binding.ts:8`）。
+- capability → task-agent-host：`binding.ts` 读取精确的 session binding（`readTaskAgent`，`src/effects/external-sources/binding.ts:10`）。
+- capability → task-fleet：`binding.ts` 用 `observeTaskInboxContext` 重新观察 admitted inbox context（`src/effects/external-sources/binding.ts:9`）。
+- workflow-state 的 coordination-plane → capability：provider board 与 hook slice 读取 observation 与 refresh receipt。
 
 集成步骤补上的关系：
 
-- capability → workflow-state（`reads`）：`binding.ts` → `src/core/state/coordination-identity.ts`、`src/effects/state/coordination-canonical-source.ts`。
 - immutable-evidence → execution-primitives：`store.ts` → `src/effects/git/common-directory.ts`、`src/effects/locking/exclusive-directory-lock.ts`。
 
 ## 4. 历史决策记录（append-only）
@@ -167,7 +170,7 @@ The list selector proves the call from the CLI handler to the effects function.
 A property has the same name as the helper. Archctx cannot select that downstream helper uniquely.
 
 The bind selector proves the call from the CLI handler to the effects function.
-`src/cli/commands/external-source.ts:76-89` contains that handler and its call to `bindExternalSource`.
-`src/effects/external-sources/binding.ts:95-135` checks authority twice, then calls `deps.write`.
-`src/effects/external-sources/binding.ts:48-59` selects `writeExternalSourceBindingReceipt` as the default writer.
+`src/cli/commands/external-source.ts:78-91` contains that handler and its call to `bindExternalSource`.
+`src/effects/external-sources/binding.ts:60-71` checks authority twice, then calls `deps.write`.
+`src/effects/external-sources/binding.ts:29-33` selects `writeExternalSourceBindingReceipt` as the default writer.
 CodeGraph does not prove this injected persistence call. Neither selector proves the full downstream path.
