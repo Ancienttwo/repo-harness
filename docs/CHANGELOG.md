@@ -60,12 +60,28 @@ from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
   `expected_base_sha`; `publication_id` is removed. Merge readiness compares
   the PR base with the repository default branch, not with `main`. (#959)
 - `state board` requires `--repository-id` and reads provider issues and
-  admitted sessions. `--sprint` is removed. `integration envelope` requires
-  `--tree`. `integration accept` drops `--workflow-contract` and requires the
-  approval identity flags. `external-source bind` replaces `--sprint`,
-  `--task-id` and `--target-ref` with `--session <file>`. The new
-  `external-source historical-bindings` reads retired V1 binding receipts as
-  history. (#959)
+  admitted sessions. `--sprint` and `--target-ref` are removed. It prints
+  ProviderBoardV2, which replaces BoardDocumentV1. (#959)
+- `integration envelope` requires `--tree`. `integration accept` drops
+  `--workflow-contract` and requires `--repository-id`, `--issue-id`,
+  `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor`. The
+  integration commands print IntegrationContractV2, IntegrationEnvelopeV2,
+  AcceptanceMatrixV2 and ProductAcceptanceProjectionV2, which replace the V1
+  documents. (#959)
+- `external-source bind` replaces `--sprint`, `--task-id` and `--target-ref`
+  with `--session <file>`, and prints ExternalSourceBindingReceiptV2.
+  `external-source bindings` prints ExternalSourceBindingProjectionV2. The
+  new `external-source historical-bindings` reads retired V1 binding
+  receipts as history. (#959)
+- The `repo-harness run` helpers `verification-plan
+  validate|evaluate|execute` and `change-assessment
+  prepare|escalate-disagreement|validate` drop `--contract`. They require
+  `--repository-id`, `--issue-id`, `--campaign-id`, `--grant-sha256`,
+  `--policy-sha256` and `--actor`. A Completed `archive-workflow` run passes
+  these six flags. It no longer promotes the contract to Fulfilled and no
+  longer runs the sealed-terminal contract and review gate. The
+  sealed-terminal mode uses the same live acceptance gate as the current
+  mode. Historical contract and review files are archived as data. (#959)
 - No code in `src/` reads the retired stores: leases (`coordination/v1`),
   publications (`publications/v1`), engineer bindings (`engineers/v1`) and
   sprint claims (`.ai/harness/sprint/claims`). The per-task lock keeps its
@@ -77,8 +93,10 @@ from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
   (#936, #917)
 - Remove the `run-bounded-verifier-command` helper. `repo-harness run
   run-bounded-verifier-command` fails closed and names
-  `repo-harness run verification-plan execute`. The process-group supervisor
-  accepts an absolute deadline. (#933, #914)
+  `repo-harness run verification-plan execute`. Since #959 that helper
+  requires `--repository-id`, `--issue-id`, `--campaign-id`,
+  `--grant-sha256`, `--policy-sha256` and `--actor`. The process-group
+  supervisor accepts an absolute deadline. (#933, #914)
 - The package no longer ships `dist/oar-coding-host.js`. PM was its only
   production caller, and 0.23.1 removed PM. (#932, #911)
 

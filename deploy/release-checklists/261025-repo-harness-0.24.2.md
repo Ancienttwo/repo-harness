@@ -86,14 +86,19 @@ The 2026-10-25 HOLD draft named these holds. Each is resolved.
     `review round|status|close|cancel` drop `--contract`; `review admit
     --request` and `review revoke --request` are new; `fleet`,
     `publication readiness`, `state board`, `integration` and
-    `external-source bind` change their inputs. See "Breaking" in the
-    changelog. (#959)
+    `external-source bind` change their inputs. The `repo-harness run`
+    helpers `verification-plan`, `change-assessment` and `archive-workflow`
+    (Completed) drop `--contract` and take `--repository-id`, `--issue-id`,
+    `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor`. See
+    "Breaking" in the changelog. (#959)
   - Check `information_lifecycle.retention.archive_days` in
     `.ai/harness/policy.json` before `repo-harness retention --apply`.
     Retention now deletes archived entries older than that value (default
     90). (#941)
   - Replace `repo-harness run run-bounded-verifier-command` with
-    `repo-harness run verification-plan execute`. (#933)
+    `repo-harness run verification-plan execute --repository-id <id>
+    --issue-id <id> --campaign-id <id> --grant-sha256 <hash>
+    --policy-sha256 <hash> --actor <id>`. (#933, #959)
   - Read the new workflow rules with
     `repo-harness docs show agentic-development-flow`. (#962)
 
