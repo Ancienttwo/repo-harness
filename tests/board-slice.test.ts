@@ -2,7 +2,6 @@ import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from
 import { externalSourceStoreRoot, listExternalSourceRefreshReceipts, writeProviderIssueObservation, writeExternalSourceRefreshReceipt } from '../src/effects/external-sources/store';
 import { collectSliceInputs } from '../src/effects/state/collect-slice-inputs';
 import type { ProviderBoardSliceV2, BoardSliceCollector } from '../src/cli/hook/board-slice-context';
-import { serializeHistoricalLease } from './helpers/sprint-fixture';
 /**
  * WP3's falsifier: the hook board slice.
  *
@@ -12,19 +11,14 @@ import { serializeHistoricalLease } from './helpers/sprint-fixture';
  * byte for byte against real fixture state. A second renderer, a host-
  * dependent field, or a clock would break this.
  *
- * The lease/topology/canonical fixtures are real: a real git repository, a
- * real linked worktree, real owner records on the shared plane.
+ * The topology fixtures are real: a real git repository and a real linked
+ * worktree.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import {
-  deriveTaskRevision,
-  type LeaseOwnerRecordV1,
-  type NonReviewingPersistedLeaseState,
-} from '../src/core/state/coordination-identity';
 import {
   BOARD_SLICE_MARKER,
   BOARD_SLICE_MAX_BYTES,
@@ -36,10 +30,6 @@ import { runSubagentContext } from '../src/cli/hook/subagent-context';
 import { createStateInputCollector, type StateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveHookEffectiveState } from '../src/cli/hook/runtime';
 import { hookIdentity } from './helpers/hook-identity';
-import {
-  coordinationRoot,
-  LEASE_OWNER_FILE_NAME,
-} from './helpers/sprint-fixture';
 import { resolveRepoIdentity } from '../src/effects/git/repository-identity';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
@@ -51,10 +41,7 @@ const SPRINT_PATH = 'plans/sprints/wp3.sprint.md';
 const PLAN_PATH = 'plans/plan-20260820-0159-wp3-fixture.md';
 const OWN_TASK_CELL = 'wire the hook slice';
 const PEER_TASK_CELL = 'relocate worktree metadata';
-const CLAIM_ID = 'claim-wp3-own';
-const PEER_CLAIM_ID = 'claim-wp3-peer';
 const BRANCH = 'codex/wp3-fixture';
-const PEER_BRANCH = 'codex/wp3-peer';
 
 /** `backlogRows()` only scans between `## Backlog` and the next `## ` heading. */
 const SPRINT_TEXT = [
@@ -74,13 +61,9 @@ const SPRINT_TEXT = [
 interface Fixture {
   /** The primary working tree. */
   readonly primary: string;
-  /** The linked execution worktree the lease names. */
+  /** The linked execution worktree. */
   readonly worktree: string;
   readonly repoIdentity: string;
-  readonly ownTaskId: string;
-  readonly ownTaskRevision: string;
-  readonly peerTaskId: string;
-  readonly peerTaskRevision: string;
   cleanup(): void;
 }
 
@@ -121,72 +104,18 @@ function buildFixture(): Fixture {
   git(primary, ['worktree', 'add', '-b', BRANCH, worktree]);
 
   const repoIdentity = resolveRepoIdentity(primary);
-  const ownTaskId = fixtureTaskId(OWN_TASK_CELL);
-  const peerTaskId = fixtureTaskId(PEER_TASK_CELL);
 
   return {
     primary,
     worktree: realpathSync(worktree),
     repoIdentity,
-    ownTaskId,
-    ownTaskRevision: deriveTaskRevision({ taskCell: OWN_TASK_CELL, taskId: ownTaskId, modeCell: 'contract', acceptanceCell: 'slice tests pass' }),
-    peerTaskId,
-    peerTaskRevision: deriveTaskRevision({ taskCell: PEER_TASK_CELL, taskId: peerTaskId, modeCell: 'contract', acceptanceCell: 'metadata tests pass' }),
     cleanup: () => rmSync(base, { recursive: true, force: true }),
   };
 }
 
-function writeLease(fixture: Fixture, record: LeaseOwnerRecordV1): void {
-  const directory = join(coordinationRoot(fixture.primary), 'leases', record.task_id);
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(join(directory, LEASE_OWNER_FILE_NAME), serializeHistoricalLease(record));
-}
-
-function ownerRecord(
-  fixture: Fixture,
-  overrides: Partial<LeaseOwnerRecordV1> = {},
-): LeaseOwnerRecordV1 {
-  return {
-    protocol: 1,
-    kind: 'repo-harness-lease-owner',
-    claim_id: CLAIM_ID,
-    task_id: fixture.ownTaskId,
-    task_revision: fixture.ownTaskRevision,
-    sprint_path: SPRINT_PATH,
-    target_ref: 'main',
-    generation: 1,
-    state: 'bound' as NonReviewingPersistedLeaseState,
-    claimed_by: { session_id: 'session-wp3', source_worktree: fixture.primary },
-    execution_worktree: fixture.worktree,
-    branch: BRANCH,
-    unit_ref: PLAN_PATH,
-    finish_transaction_key: null,
-    stolen_from: null,
-    ...overrides,
-  };
-}
-
-function peerRecord(fixture: Fixture): LeaseOwnerRecordV1 {
-  return {
-    ...ownerRecord(fixture),
-    claim_id: PEER_CLAIM_ID,
-    task_id: fixture.peerTaskId,
-    task_revision: fixture.peerTaskRevision,
-    execution_worktree: join(fixture.primary, '..', 'peer-tree'),
-    branch: PEER_BRANCH,
-    unit_ref: 'plans/plan-peer.md',
-  };
-}
-
-/**
- * Retired lease state the slice must ignore: the provider store is its only
- * input.
- */
 function armFixture(fixture: Fixture): void {
   write(fixture.worktree, '.ai/harness/active-plan', `${PLAN_PATH}\n`);
   write(fixture.worktree, '.ai/harness/active-worktree', `${fixture.worktree}\n`);
-  writeLease(fixture, ownerRecord(fixture));
-  writeLease(fixture, peerRecord(fixture));
 }
 
 // ---------------------------------------------------------------------------
