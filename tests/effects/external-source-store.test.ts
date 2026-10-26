@@ -10,6 +10,7 @@ import {
   externalSourceStoreRoot,
   listExternalSourceRefreshReceipts,
   listProviderIssueObservations,
+  readLatestExternalSourceSnapshot,
   writeExternalSourceRefreshReceipt,
   writeProviderIssueObservation,
 } from '../../src/effects/external-sources/store';
@@ -27,10 +28,10 @@ function observation() {
   });
 }
 
-function receipt() {
+function receipt(receiptId = 'attempt-1', completedAt = '2026-08-31T00:00:01.000Z') {
   return buildExternalSourceRefreshReceipt({
-    receipt_id: 'attempt-1', registered_repository_id: 'repo_1', provider: 'github', provider_host: 'github.com', provider_repository_id: '100', provider_display_ref: 'acme/widgets', policy_revision: 'sha256:policy',
-    started_at: '2026-08-31T00:00:00.000Z', completed_at: '2026-08-31T00:00:01.000Z', outcome: 'complete', pages_fetched: 1, issues_seen: 1, observations_written: 1, limits: { max_pages: 2, max_issues: 2, max_body_bytes: 100, max_total_bytes: 1000, deadline_ms: 1000 }, source_revisions: [observation().source_revision], failure: null,
+    receipt_id: receiptId, registered_repository_id: 'repo_1', provider: 'github', provider_host: 'github.com', provider_repository_id: '100', provider_display_ref: 'acme/widgets', policy_revision: 'sha256:policy',
+    started_at: '2026-08-31T00:00:00.000Z', completed_at: completedAt, outcome: 'complete', pages_fetched: 1, issues_seen: 1, observations_written: 1, limits: { max_pages: 2, max_issues: 2, max_body_bytes: 100, max_total_bytes: 1000, deadline_ms: 1000 }, source_revisions: [observation().source_revision], failure: null,
   });
 }
 
@@ -47,6 +48,18 @@ describe('external source immutable Git-common-dir store', () => {
       const store = externalSourceStoreRoot(root);
       expect(store).toContain(EXTERNAL_SOURCE_STORE_RELATIVE_ROOT);
       expect(existsSync(store)).toBe(true);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('the receipt head names the newest receipt by completion time, not by write order', () => {
+    const root = repository();
+    const limits = { max_observations: 10, max_issue_directories: 10, max_bytes: 1024 * 1024 };
+    try {
+      expect(readLatestExternalSourceSnapshot(root, limits)).toBeNull();
+      const item = writeProviderIssueObservation(root, observation());
+      const newest = writeExternalSourceRefreshReceipt(root, receipt('newest', '2026-09-02T00:00:00.000Z'));
+      writeExternalSourceRefreshReceipt(root, receipt('late-write-older-attempt', '2026-09-01T00:00:00.000Z'));
+      expect(readLatestExternalSourceSnapshot(root, limits)).toEqual({ receipt: newest, observations: [item] });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

@@ -1,24 +1,21 @@
 import { buildExternalSourceProjection } from '../../core/external-sources/projection';
-import { decodeAdmittedTaskSessions, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { projectProviderBoard, type ProviderBoardV2 } from '../../core/state/provider-board';
-import { listExternalSourceRefreshReceipts, listProviderIssueObservations } from '../external-sources/store';
+import { readLatestExternalSourceSnapshot, type ExternalSourceSnapshotLimits } from '../external-sources/store';
 
-export interface SliceCollectionOptions {
-  /** Supplied by the runtime's existing admission observation. Never discovered by a hook. */
-  readonly sessions?: AdmittedTaskSessions;
-}
+/** Fixed per-spawn read budget. The hook runs on every agent spawn, so history size must not reach it. */
+export const SLICE_SOURCE_LIMITS: ExternalSourceSnapshotLimits = Object.freeze({
+  max_observations: 200,
+  max_issue_directories: 2000,
+  max_bytes: 2 * 1024 * 1024,
+});
 
-/** Local observation only: hooks never run provider discovery or infer a self claim. */
-export function collectSliceInputs(cwd: string, options: SliceCollectionOptions = {}): ProviderBoardV2 | null {
-  const observations = listProviderIssueObservations(cwd);
-  const receipts = listExternalSourceRefreshReceipts(cwd);
-  const ids = new Set([...observations, ...receipts].map(value => value.registered_repository_id));
-  if (options.sessions) ids.add(options.sessions.repository_id);
-  if (ids.size === 0) return null;
-  if (ids.size !== 1) throw new Error('hook_provider_repository_ambiguous');
-  const repository_id = [...ids][0]!;
-  const sessions = options.sessions ? decodeAdmittedTaskSessions(options.sessions, { repository_id }) : null;
+/** Local observation only: hooks never run provider discovery or observe sessions. */
+export function collectSliceInputs(cwd: string, limits: ExternalSourceSnapshotLimits = SLICE_SOURCE_LIMITS): ProviderBoardV2 | null {
+  const snapshot = readLatestExternalSourceSnapshot(cwd, limits);
+  if (snapshot === null) return null;
+  const repository_id = snapshot.receipt.registered_repository_id;
+  if (snapshot.observations.some(observation => observation.registered_repository_id !== repository_id)) throw new Error('hook_provider_repository_ambiguous');
   return projectProviderBoard({ registered_repository_id: repository_id,
-    issues: buildExternalSourceProjection({ registered_repository_id: repository_id, observations, receipts }),
-    sessions, session_error: sessions === null ? 'unavailable' : null });
+    issues: buildExternalSourceProjection({ registered_repository_id: repository_id, observations: snapshot.observations, receipts: [snapshot.receipt] }),
+    sessions: null, session_error: 'unavailable' });
 }
