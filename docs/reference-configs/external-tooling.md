@@ -167,6 +167,18 @@ for removal. This flag still requires ownership proof. Unknown artifacts stay.
 The third-party `codex@openai-codex` Claude plugin and user rule lines in
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
 
+Project items without ownership proof stay report-only. An operator records a
+decision with `repo-harness upgrade decide --keep|--remove <paths...>`. The
+command accepts only current project report items. It writes the tracked file
+`.ai/harness/upgrade-decisions.json` (`version: 1`; `path`, `decision`,
+`contentHash` per entry) and deletes nothing. A decision applies only while the
+current content hash matches. A changed file is reported again as a stale
+decision. `keep` moves the item to `operatorKept`; it no longer counts as a
+leftover. `remove` is valid only for a regular file that is not a document with
+a retired-path reference. `upgrade --scope project --apply` then removes it
+through the project backup and rollback manifest. An invalid decision file
+fails the project upgrade.
+
 `upgrade --apply` backs up eligible targets and checks ownership again before
 removal. It keeps current global typed adapters, sibling user hooks, changed
 files, and files without proof. Apply exits 1 on failure and restores its target
@@ -178,6 +190,34 @@ Global upgrade backups stay in `~/.repo-harness/transactions/install-*`.
 The upgrade transaction uses `beginInstallHostTransaction(..., { retainBackup: true })`.
 It keeps these backups after success or rollback. The tool never deletes these
 retained backups. The user must remove old backups when they are no longer needed.
+
+`repo-harness upgrade --registered` runs the project refresh for every repo in
+the registry. It reads one registry snapshot and never scans directories. The
+default is a preview. It prints the registry revision and, for each repo, the
+`init` refresh operations, the project upgrade items and the operator-kept
+items. A repo that is not ready is skipped with one reason: `path_missing`,
+`path_unreadable`, `not_primary_checkout`, `not_adopted`,
+`default_branch_unknown` (no valid `worktree_strategy.base_branch`),
+`not_default_branch`, `dirty_worktree` or `git_probe_failed`. The managed
+worktree sweep has no preview; it runs only on apply. Apply with the revision
+from the preview:
+
+```sh
+repo-harness upgrade --registered --apply --expected-revision sha256:REPLACE_WITH_PREVIEW_DIGEST
+```
+
+A changed registry refuses the whole apply with exit 2. Apply checks each repo
+again just before its first write. It then runs the `init` refresh transaction,
+`upgrade --scope project --apply` (with `--migrate-worktree-template` only when
+given) and the managed worktree sweep. A failed repo does not stop or roll back
+the other repos. The `init` refresh updates the repo's registry row, so preview
+again before the next apply. The command never commits, pushes or opens a PR.
+`--json` prints one object with `revision`, `apply`, `exitCode` and `repos`.
+Each repo has `path` and `status` (`ready`, `applied`, `skipped` or `failed`),
+plus `reason`, `detail`, `pending`, `init`, `upgrade`, `sweep` or `error` when
+they apply. Preview exits 1 when a repo has pending work or failed. Apply exits
+1 when a repo failed. A successful `update` prints one read-only line with the
+number of registered repos that have pending project upgrade work.
 
 The cross-review skill is **harness-owned**; its routing source lives in
 `assets/skills/repo-harness-cross-review/`. Explicit independent review uses

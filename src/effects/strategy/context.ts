@@ -4,7 +4,7 @@ import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state'
 import { osAccountHome } from '../runtime/os-account-home';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { gitSpawnSync } from '../git/runner';
+import { gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from '../git/runner';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { activeMemory, parseStrategyDocument, validateProposal, type Evidence, type StrategyPacket } from '../../core/strategy/contracts';
@@ -191,7 +191,7 @@ export class StrategyReader {
           if (args[0] === 'status' && !args.includes('--porcelain=v1') && !args.includes('--porcelain=v2')) throw new ObservationViolation('Unsupported observation Git status');
         } else if (!((file === '/bin/bash' || file === '/usr/bin/bash' || file === process.execPath) && args.length === 1 && args[0] === '--version')) throw new ObservationViolation('Observation cannot execute a tool or provider');
         const env: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_OPTIONAL_LOCKS: '0' };
-        for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[key];
+        for (const key of REPOSITORY_SELECTING_GIT_ENV) delete env[key];
         return this.capture(file, gitBinary ? ['-C', this.root, '-c', 'core.fsmonitor=false', '-c', 'maintenance.auto=false', ...(['check-ignore', 'check-attr'].includes(args[0]!) ? [] : ['--literal-pathspecs']), ...args.slice(0, 1), ...(args[0] === 'diff' ? ['--no-ext-diff', '--no-textconv'] : []), ...args.slice(1)] : args, env);
       },
     };

@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { runUpgrade, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
@@ -11,6 +11,8 @@ import { hashManagedTree } from '../../src/effects/managed-tree';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
+import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
+import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -88,7 +90,7 @@ describe('upgrade with real release bytes', () => {
       cwd: opts.cwd, env: { ...process.env, HOME: opts.home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
     expect(result.status).toBe(1);
-    const items = JSON.parse(result.stdout);
+    const { items } = JSON.parse(result.stdout);
     expect(items.length).toBeGreaterThan(0);
     expect(items.map((item: Record<string, string>) => [item.location, item.surface,
       relative(item.location === 'global' ? opts.home : opts.cwd, item.path!), item.retiredBy,
@@ -542,6 +544,113 @@ describe('upgrade with real release bytes', () => {
   }, false));
 });
 
+describe('policy worktree template migration', () => {
+  const policyPath = (cwd: string) => join(cwd, '.ai/harness/policy.json');
+  const LEGACY = ['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'];
+  const PORTABLE = '{{system_tmp}}/{{repo}}-wt-{{slug}}';
+  const policyText = (template: string) => `{\n    "mode": "standard",\n    "worktree_strategy": {\n        "branch_prefix": "codex/",\n        "worktree_dir_template": ${JSON.stringify(template)},\n        "merge_back": { "target": "main" }\n    }\n}\n`;
+  const apply = (opts: { cwd: string; home: string; packageRoot: string }, migrate = true) =>
+    runUpgrade({ ...opts, scope: 'project', apply: true, migrateWorktreeTemplate: migrate });
+
+  test.each(LEGACY)('rewrites %s, keeps every other byte and rolls back from the manifest', (legacy) => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(legacy));
+    const result = apply(opts);
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.worktreeTemplate).toMatchObject({ applied: true, item: { action: 'rewrite', current: legacy, replacement: PORTABLE } });
+    // Four-space indent, key order and the sibling inline object stay as written.
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(PORTABLE));
+    expect(formatUpgradeResult(result)).toContain('rewritten');
+    const manifest = result.worktreeTemplate!.transactionManifestPath!;
+    expect(manifest).toStartWith('.ai/harness/backups/fs-transaction/');
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: manifest });
+    expect(rollback.ok).toBe(true);
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(legacy));
+  }, false));
+
+  test.each(['../custom-{{repo}}-{{slug}}', '/var/work/{{repo}}-wt-{{slug}}', '../{{repo}}-wt-{{slug}}/', '{{system_tmp}}/custom-{{repo}}-{{slug}}'])('keeps custom template %s and reports it', (custom) => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(custom));
+    const before = tree(opts.cwd);
+    const preview = runUpgrade({ ...opts, scope: 'project' });
+    expect(preview.exitCode).toBe(0);
+    expect(preview.worktreeTemplate?.item).toMatchObject({ action: 'report', current: custom });
+    const result = apply(opts);
+    expect(result.exitCode).toBe(0);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report', current: custom } });
+    expect(formatUpgradeResult(result)).toContain(custom);
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('preview and apply without the confirm flag write nothing', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const before = tree(opts.cwd);
+    const preview = runUpgrade({ ...opts, scope: 'project' });
+    expect(preview.exitCode).toBe(1);
+    expect(preview.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'rewrite', current: LEGACY[0], replacement: PORTABLE } });
+    expect(formatUpgradeResult(preview)).toContain('--apply --migrate-worktree-template');
+    expect(JSON.parse(formatUpgradeResult(preview, true)).worktreeTemplate.item.action).toBe('rewrite');
+    const unconfirmed = apply(opts, false);
+    expect(unconfirmed.exitCode).toBe(0);
+    expect(unconfirmed.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'rewrite' } });
+    expect(formatUpgradeResult(unconfirmed)).toContain('not written');
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a second run is a no-op', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[1]!));
+    expect(apply(opts).worktreeTemplate?.applied).toBe(true);
+    const before = tree(opts.cwd);
+    for (const second of [apply(opts), runUpgrade({ ...opts, scope: 'project' })]) {
+      expect(second.exitCode).toBe(0);
+      expect(second.worktreeTemplate).toBeUndefined();
+    }
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('an absent template and an absent policy produce no item', () => sandbox((opts) => {
+    expect(runUpgrade({ ...opts, scope: 'project' }).worktreeTemplate).toBeUndefined();
+    put(policyPath(opts.cwd), '{"mode":"standard","worktree_strategy":{"branch_prefix":"codex/"}}\n');
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toBeUndefined();
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe('{"mode":"standard","worktree_strategy":{"branch_prefix":"codex/"}}\n');
+  }, false));
+
+  test('a malformed policy is reported and never written', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), '{"worktree_strategy": {"worktree_dir_template": "../{{repo}}-wt-{{slug}}",}}\n');
+    const before = tree(opts.cwd);
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report' } });
+    expect(result.worktreeTemplate?.item?.reason).toContain('not valid JSON');
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a template literal that cannot be swapped byte-exact stays report-only', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), '{"worktree_strategy":{"worktree_dir_template":"..\\/{{repo}}-wt-{{slug}}"}}\n');
+    const before = tree(opts.cwd);
+    const result = apply(opts);
+    expect(result.worktreeTemplate).toMatchObject({ applied: false, item: { action: 'report', current: LEGACY[0] } });
+    expect(tree(opts.cwd)).toEqual(before);
+  }, false));
+
+  test('a policy edit between planning and writing fails the template write closed', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const edited = policyText(LEGACY[0]!).replace('"codex/"', '"edited/"');
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true, migrateWorktreeTemplate: true },
+      { beforeTemplateWrite: () => put(policyPath(opts.cwd), edited) });
+    expect(result.exitCode).toBe(1);
+    expect(result.worktreeTemplate?.applied).toBe(false);
+    expect(result.worktreeTemplate?.error).toBeTruthy();
+    expect(result.error).toBe(result.worktreeTemplate?.error);
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(edited);
+  }, false));
+
+  test('global scope never reads the project policy', () => sandbox((opts) => {
+    put(policyPath(opts.cwd), policyText(LEGACY[0]!));
+    const result = runUpgrade({ ...opts, scope: 'global', apply: true, migrateWorktreeTemplate: true });
+    expect(result.worktreeTemplate).toBeUndefined();
+    expect(readFileSync(policyPath(opts.cwd), 'utf8')).toBe(policyText(LEGACY[0]!));
+  }, false));
+});
+
 describe('legacy workflow-state upgrade report', () => {
   for (const edited of [false, true]) {
     test(`check and apply report and preserve ${edited ? 'edited' : 'historical'} library bytes`, () => sandbox((opts) => {
@@ -579,7 +688,7 @@ describe('legacy workflow-state upgrade report', () => {
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
     expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
-    const items = JSON.parse(json.stdout);
+    const { items } = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
     expect(items[0].reason).toContain('manual removal');
@@ -598,6 +707,181 @@ describe('legacy workflow-state upgrade report', () => {
     put(join(opts.home, 'workflow-state.sh'), '# Library outside the repo\n');
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).items.some((item) => item.path === path)).toBe(false);
     expect(readFileSync(join(opts.home, 'workflow-state.sh'), 'utf8')).toBe('# Library outside the repo\n');
+  }, false));
+});
+
+describe('upgrade operator decisions', () => {
+  const decisionsFile = '.ai/harness/upgrade-decisions.json';
+  const library = '.ai/hooks/lib/workflow-state.sh';
+  const libraryBytes = () => readUpgradeFixture('upgrade-v0.10-project', library).toString('utf8');
+  const sha = (path: string) => `sha256:${new Bun.CryptoHasher('sha256').update(readFileSync(path)).digest('hex')}`;
+  const writeDecisions = (cwd: string, decisions: unknown) => put(join(cwd, decisionsFile), JSON.stringify({ version: 1, decisions }));
+  const readDecisions = (cwd: string) => JSON.parse(readFileSync(join(cwd, decisionsFile), 'utf8'));
+
+  test('keep removes the item from the pending list and exit code until the bytes change', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    writeDecisions(opts.cwd, [{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.exitCode, check.error).toBe(0);
+    expect(check.items).toEqual([]);
+    expect(check.operatorKept).toEqual([expect.objectContaining({ path, action: 'report', operatorDecision: { decision: 'keep', status: 'applied' } })]);
+    const before = tree(opts.cwd);
+    const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(apply.exitCode, apply.error).toBe(0);
+    expect(apply.removedPaths).toEqual([]);
+    expect(apply.operatorKept.map((item) => item.path)).toEqual([path]);
+    expect(tree(opts.cwd)).toEqual(before);
+
+    writeFileSync(path, `${libraryBytes()}\n# edited after the decision\n`);
+    const stale = runUpgrade({ ...opts, scope: 'project' });
+    expect(stale.exitCode).toBe(1);
+    expect(stale.operatorKept).toEqual([]);
+    expect(stale.items).toEqual([expect.objectContaining({ path, action: 'report', operatorDecision: { decision: 'keep', status: 'stale' } })]);
+    expect(stale.items[0]?.reason).toContain('decision is stale');
+  }, false));
+
+  test('remove deletes a regular file through the project backup manifest and init rollback restores it', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library] });
+    expect(decided.exitCode, decided.error).toBe(0);
+    expect(readDecisions(opts.cwd)).toEqual({ version: 1, decisions: [{ path: library, decision: 'remove', contentHash: sha(path) }] });
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.exitCode).toBe(1);
+    expect(check.items).toEqual([expect.objectContaining({ path, action: 'remove', ownership: 'unowned', operatorDecision: { decision: 'remove', status: 'applied' } })]);
+    expect(existsSync(path)).toBe(true);
+
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(result.exitCode, result.error).toBe(0);
+    expect(result.removedPaths).toEqual([path]);
+    expect(existsSync(path)).toBe(false);
+    const manifest = JSON.parse(readFileSync(result.projectBackupPath!, 'utf8'));
+    expect(manifest.operations).toEqual([expect.objectContaining({ kind: 'remove', path: library, status: 'applied', rollbackStrategy: 'restore-or-delete-file' })]);
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
+    expect(rollback.ok).toBe(true);
+    expect(readFileSync(path, 'utf8')).toBe(libraryBytes());
+  }, false));
+
+  test('remove is rejected for a directory and for a document that refers to a retired path', () => sandbox((opts) => {
+    const directory = join(opts.cwd, library);
+    put(join(directory, 'nested.sh'), '# operator directory\n');
+    const doc = join(opts.cwd, 'CLAUDE.md');
+    put(doc, `Run ${projectHook} for the old setup.\n`);
+    const items = runUpgrade({ ...opts, scope: 'project' }).items;
+    expect(items.find((item) => item.path === directory)).toEqual(expect.objectContaining({ surface: 'directory', action: 'report' }));
+    expect(items.find((item) => item.path === doc)).toEqual(expect.objectContaining({ retiredBy: 'retired-script-reference', action: 'report' }));
+
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library, 'CLAUDE.md'] });
+    expect(decided.exitCode).toBe(1);
+    expect(decided.rejected.map((rejection) => rejection.path)).toEqual([library, 'CLAUDE.md']);
+    expect(decided.rejected[0]?.reason).toContain('regular file');
+    expect(decided.rejected[1]?.reason).toContain('retired path');
+    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+
+    writeDecisions(opts.cwd, [
+      { path: library, decision: 'remove', contentHash: hashManagedTree(directory) },
+      { path: 'CLAUDE.md', decision: 'remove', contentHash: sha(doc) },
+    ]);
+    const before = tree(opts.cwd);
+    const apply = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(apply.exitCode, apply.error).toBe(0);
+    expect(apply.removedPaths).toEqual([]);
+    for (const path of [directory, doc]) {
+      expect(apply.items.find((item) => item.path === path)).toEqual(expect.objectContaining({
+        action: 'report', operatorDecision: { decision: 'remove', status: 'rejected' },
+      }));
+    }
+    expect(tree(opts.cwd)).toEqual(before);
+    expect(runUpgrade({ ...opts, scope: 'project' }).exitCode).toBe(1);
+
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library, 'CLAUDE.md'] }).exitCode).toBe(0);
+    const kept = runUpgrade({ ...opts, scope: 'project' });
+    expect(kept.exitCode, kept.error).toBe(0);
+    expect(kept.operatorKept.map((item) => item.path).sort()).toEqual([directory, doc].sort());
+  }, false));
+
+  const invalidFiles: readonly [string, (cwd: string, hash: string) => void][] = [
+    ['not JSON', (cwd) => put(join(cwd, decisionsFile), '{"version":1,')],
+    ['an unknown version', (cwd, contentHash) => put(join(cwd, decisionsFile), JSON.stringify({ version: 2, decisions: [{ path: library, decision: 'keep', contentHash }] }))],
+    ['an extra top-level key', (cwd) => put(join(cwd, decisionsFile), JSON.stringify({ version: 1, decisions: [], note: 'x' }))],
+    ['an unknown decision', (cwd, contentHash) => writeDecisions(cwd, [{ path: library, decision: 'ignore', contentHash }])],
+    ['a malformed hash', (cwd) => writeDecisions(cwd, [{ path: library, decision: 'keep', contentHash: 'sha256:abc' }])],
+    ['a path outside the repository', (cwd, contentHash) => writeDecisions(cwd, [{ path: '../outside', decision: 'keep', contentHash }])],
+    ['a duplicate path', (cwd, contentHash) => writeDecisions(cwd, [{ path: library, decision: 'keep', contentHash }, { path: library, decision: 'remove', contentHash }])],
+    ['a directory at the decision path', (cwd) => mkdirSync(join(cwd, decisionsFile), { recursive: true })],
+  ];
+  for (const [name, write] of invalidFiles) {
+    test(`a decision file with ${name} fails closed`, () => sandbox((opts) => {
+      const path = join(opts.cwd, library);
+      put(path, libraryBytes());
+      write(opts.cwd, sha(path));
+      const before = tree(opts.cwd);
+      for (const apply of [false, true]) {
+        const result = runUpgrade({ ...opts, scope: 'project', apply });
+        expect(result.exitCode).toBe(1);
+        expect(result.error).toContain('invalid upgrade decision file');
+        expect(result.items).toEqual([]);
+      }
+      const decided = runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] });
+      expect(decided.exitCode).toBe(1);
+      expect(decided.error).toContain('invalid upgrade decision file');
+      expect(tree(opts.cwd)).toEqual(before);
+    }, false));
+  }
+
+  test('decide rejects paths that are not report items and rewrites an existing entry in path order', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    put(join(opts.cwd, 'CLAUDE.md'), `Run ${projectHook} for the old setup.\n`);
+    put(join(opts.cwd, 'README.md'), '# User readme\n');
+
+    const rejected = runUpgradeDecide({ ...opts, decision: 'keep', paths: ['README.md', library, '../outside.md'] });
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.rejected).toEqual([
+      { path: 'README.md', reason: 'Path is not a current project upgrade report item.' },
+      { path: '../outside.md', reason: 'Path is outside the repository.' },
+    ]);
+    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: ['CLAUDE.md'] }).exitCode).toBe(0);
+    expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] }).exitCode).toBe(0);
+    const firstHash = sha(path);
+    expect(readDecisions(opts.cwd).decisions).toEqual([
+      { path: library, decision: 'keep', contentHash: firstHash },
+      { path: 'CLAUDE.md', decision: 'keep', contentHash: sha(join(opts.cwd, 'CLAUDE.md')) },
+    ]);
+
+    writeFileSync(path, `${libraryBytes()}\n# edited\n`);
+    expect(runUpgrade({ ...opts, scope: 'project' }).items[0]?.operatorDecision?.status).toBe('stale');
+    const rewritten = runUpgradeDecide({ ...opts, decision: 'remove', paths: [library] });
+    expect(rewritten.exitCode, rewritten.error).toBe(0);
+    const decisions = readDecisions(opts.cwd).decisions;
+    expect(decisions.map((entry: { path: string }) => entry.path)).toEqual([library, 'CLAUDE.md']);
+    expect(decisions[0]).toEqual({ path: library, decision: 'remove', contentHash: sha(path) });
+    expect(decisions[0].contentHash).not.toBe(firstHash);
+    expect(existsSync(path)).toBe(true);
+  }, false));
+
+  test('CLI decide from a nested cwd records keep and the project check exits 0', () => sandbox((opts) => {
+    const path = join(opts.cwd, library);
+    put(path, libraryBytes());
+    const invoke = (args: string[]) => spawnSync(process.execPath, [CLI, 'upgrade', ...args], {
+      cwd: dirname(path), env: { ...process.env, HOME: opts.home }, encoding: 'utf8', timeout: 60000,
+    });
+    const decided = invoke(['decide', '--keep', 'workflow-state.sh', '--json']);
+    expect(decided.status, decided.stderr).toBe(0);
+    expect(JSON.parse(decided.stdout).recorded).toEqual([{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    expect(invoke(['decide', 'workflow-state.sh']).status).toBe(2);
+    const check = invoke(['--scope', 'project', '--json']);
+    expect(check.status, check.stderr).toBe(0);
+    const checked = JSON.parse(check.stdout);
+    expect(checked.items).toEqual([]);
+    expect(checked.operatorKept.map((item: { path: string }) => item.path)).toEqual([expect.stringMatching(/\.ai\/hooks\/lib\/workflow-state\.sh$/)]);
+    const text = invoke(['--scope', 'project']);
+    expect(text.status).toBe(0);
+    expect(text.stdout).toContain(`Operator kept (${decisionsFile}):`);
+    expect(text.stdout).toContain(path);
   }, false));
 });
 
@@ -808,3 +1092,225 @@ test('router keeps canonical includes while non-projected top-level examples cha
     expect(existsSync(join(router, path))).toBe(false);
   }
 }));
+
+describe('upgrade --registered', () => {
+  const PORTABLE = '{{system_tmp}}/{{repo}}-wt-{{slug}}';
+  const policyPath = (repo: string) => join(repo, '.ai/harness/policy.json');
+  function registeredSandbox(run: (f: RegisteredReposFixture) => void): void {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'upgrade-registered-')));
+    try { run(registeredReposFixture(root)); }
+    finally { rmSync(root, { recursive: true, force: true }); }
+  }
+  function editPolicy(f: RegisteredReposFixture, repo: string, edit: (policy: { worktree_strategy: Record<string, unknown> }) => void): void {
+    const policy = JSON.parse(readFileSync(policyPath(repo), 'utf8'));
+    edit(policy);
+    writeFileSync(policyPath(repo), `${JSON.stringify(policy, null, 2)}\n`);
+    commitAll(f, repo, 'edit policy');
+  }
+  /** Adopted and committed, then one managed file is deleted and the deletion committed. */
+  function staleRepo(f: RegisteredReposFixture, name: string): string {
+    const repo = adoptedRepo(f, name);
+    rmSync(join(repo, '.ai/hooks/README.md'));
+    commitAll(f, repo, 'drop managed file');
+    return repo;
+  }
+  const byPath = (repos: readonly RegisteredRepoResult[], path: string) => {
+    const repo = repos.find((entry) => entry.path === path);
+    if (!repo) throw new Error(`no result for ${path}`);
+    return repo;
+  };
+  const cli = (f: RegisteredReposFixture, ...args: string[]) => spawnSync(process.execPath, [CLI, 'upgrade', ...args], {
+    cwd: f.root, env: { ...f.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 120000,
+  });
+
+  test('preview classifies every row from one registry snapshot and writes nothing', () => registeredSandbox((f) => {
+    const fresh = adoptedRepo(f, 'fresh');
+    const stale = staleRepo(f, 'stale');
+    const missing = join(f.root, 'missing');
+    const linked = join(f.root, 'linked');
+    git(f, fresh, 'worktree', 'add', '-q', '-b', 'feature', linked);
+    const plain = join(f.root, 'plain');
+    mkdirSync(plain);
+    git(f, plain, 'init', '-q', '-b', 'main');
+    const noBase = adoptedRepo(f, 'no-base');
+    editPolicy(f, noBase, (policy) => { delete policy.worktree_strategy.base_branch; });
+    const topic = adoptedRepo(f, 'topic');
+    git(f, topic, 'checkout', '-q', '-b', 'topic');
+    const dirty = adoptedRepo(f, 'dirty');
+    writeFileSync(join(dirty, 'untracked.txt'), 'operator work\n');
+    const broken = join(f.root, 'broken');
+    mkdirSync(join(broken, '.ai/harness'), { recursive: true });
+    writeFileSync(join(broken, '.ai/harness/policy.json'), '{}\n');
+    writeFileSync(join(broken, '.git'), `gitdir: ${join(f.root, 'no-such-git-dir')}\n`);
+    // An unregistered adopted repo is never a target: nothing scans directories.
+    const unregistered = staleRepo(f, 'unregistered');
+    const targets = [fresh, stale, missing, linked, plain, noBase, topic, dirty, broken];
+    writeRegistry(f, targets);
+    const registryBefore = readFileSync(f.registry, 'utf8');
+    const before = Object.fromEntries([...targets.filter(existsSync), unregistered].map((path) => [path, worktreeSnapshot(path)]));
+
+    const result = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(result.error).toBeUndefined();
+    expect(result.apply).toBe(false);
+    expect(result.revision).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(result.repos.map((repo) => repo.path).sort()).toEqual([...targets].sort());
+    expect(byPath(result.repos, fresh)).toMatchObject({ status: 'ready', pending: false, init: { planned: 0, operations: [] }, sweep: { ran: false } });
+    const staleResult = byPath(result.repos, stale);
+    expect(staleResult).toMatchObject({ status: 'ready', pending: true });
+    expect((staleResult.init as { planned: number }).planned).toBeGreaterThan(0);
+    expect((staleResult.init as { operations: readonly unknown[] }).operations).toContainEqual(expect.objectContaining({ path: '.ai/hooks/README.md' }));
+    expect(staleResult.upgrade).toMatchObject({ apply: false, operatorKept: [] });
+    const reasons = Object.fromEntries(result.repos.filter((repo) => repo.status === 'skipped').map((repo) => [repo.path, repo.reason]));
+    expect(reasons).toEqual({
+      [missing]: 'path_missing',
+      [linked]: 'not_primary_checkout',
+      [plain]: 'not_adopted',
+      [noBase]: 'default_branch_unknown',
+      [topic]: 'not_default_branch',
+      [dirty]: 'dirty_worktree',
+      [broken]: 'git_probe_failed',
+    });
+    for (const repo of result.repos.filter((entry) => entry.status === 'skipped')) {
+      expect(repo.detail?.length).toBeGreaterThan(0);
+      expect(repo.init ?? repo.upgrade ?? repo.sweep).toBeUndefined();
+    }
+    expect(result.exitCode).toBe(1);
+    const text = formatRegisteredUpgradeResult(result);
+    expect(text).toContain(`Registry revision: ${result.revision}`);
+    expect(text).toContain(`${dirty}: skipped (dirty_worktree)`);
+    expect(text).toContain('no dry-run path');
+    expect(text).toContain(`--apply --expected-revision ${result.revision}`);
+
+    const json = cli(f, '--registered', '--json');
+    expect(json.status, json.stderr).toBe(1);
+    const payload = JSON.parse(json.stdout);
+    expect(Object.keys(payload).sort()).toEqual(['apply', 'exitCode', 'repos', 'revision']);
+    expect(payload.revision).toBe(result.revision);
+    expect(payload.repos.map((repo: RegisteredRepoResult) => [repo.path, repo.status, repo.reason ?? null]).sort())
+      .toEqual(result.repos.map((repo) => [repo.path, repo.status, repo.reason ?? null]).sort());
+
+    expect(readFileSync(f.registry, 'utf8')).toBe(registryBefore);
+    for (const [path, snapshot] of Object.entries(before)) expect(worktreeSnapshot(path)).toEqual(snapshot);
+    expect(git(f, dirty, 'status', '--porcelain')).toBe('?? untracked.txt');
+  }), 120_000);
+
+  test('apply refuses a missing or changed registry revision before any repo write', () => registeredSandbox((f) => {
+    const stale = staleRepo(f, 'stale');
+    writeRegistry(f, [stale]);
+    const before = worktreeSnapshot(stale);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, stale).pending).toBe(true);
+
+    const unfenced = runRegisteredUpgrade({ apply: true, env: f.env, callerCwd: f.root });
+    expect(unfenced).toMatchObject({ exitCode: 2, repos: [], error: '--apply requires --expected-revision from the preview' });
+
+    writeRegistry(f, [stale], 2);
+    const changed = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(changed.revision).not.toBe(preview.revision);
+    expect(worktreeSnapshot(stale)).toEqual(before);
+
+    const mismatch = cli(f, '--registered', '--apply', '--expected-revision', preview.revision!, '--json');
+    expect(mismatch.status).toBe(2);
+    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(cli(f, '--expected-revision', preview.revision!).status).toBe(2);
+    expect(cli(f, '--registered', '--scope', 'global').status).toBe(2);
+    expect(worktreeSnapshot(stale)).toEqual(before);
+  }), 120_000);
+
+  test('apply re-checks each repo, isolates a failing repo and never commits', () => registeredSandbox((f) => {
+    const stale = staleRepo(f, 'stale');
+    const template = adoptedRepo(f, 'template');
+    editPolicy(f, template, (policy) => { policy.worktree_strategy.worktree_dir_template = '../{{repo}}-wt-{{slug}}'; });
+    const failing = adoptedRepo(f, 'failing');
+    // A user archive at the retirement target makes the init plan fail closed.
+    mkdirSync(join(failing, 'tasks/archive'), { recursive: true });
+    writeFileSync(join(failing, 'docs/TODO.md'), '# Legacy todo\n');
+    writeFileSync(join(failing, 'tasks/archive/legacy-docs-TODO.md'), '# Different user archive\n');
+    commitAll(f, failing, 'legacy todo');
+    const dirtyLater = staleRepo(f, 'dirty-later');
+    const branchLater = staleRepo(f, 'branch-later');
+    writeRegistry(f, [stale, template, failing, dirtyLater, branchLater]);
+    const heads = Object.fromEntries([stale, template].map((repo) => [repo, git(f, repo, 'rev-parse', 'HEAD')]));
+
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, dirtyLater).status).toBe('ready');
+    expect(byPath(preview.repos, branchLater).status).toBe('ready');
+    expect(byPath(preview.repos, template)).toMatchObject({ status: 'ready', pending: true,
+      upgrade: { worktreeTemplate: { item: { action: 'rewrite', replacement: PORTABLE } } } });
+    expect(byPath(preview.repos, failing)).toMatchObject({ status: 'failed' });
+    expect(byPath(preview.repos, failing).error).toContain('legacy archive collision');
+
+    // Both repos were ready at preview time; apply must see the change.
+    writeFileSync(join(dirtyLater, 'late-edit.txt'), 'operator work\n');
+    git(f, branchLater, 'checkout', '-q', '-b', 'topic');
+    const dirtyBefore = worktreeSnapshot(dirtyLater);
+    const branchBefore = worktreeSnapshot(branchLater);
+
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, migrateWorktreeTemplate: true, env: f.env, callerCwd: f.root });
+    expect(result.error).toBeUndefined();
+    expect(result.exitCode).toBe(1);
+    expect(byPath(result.repos, dirtyLater)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+    expect(byPath(result.repos, branchLater)).toMatchObject({ status: 'skipped', reason: 'not_default_branch' });
+    expect(worktreeSnapshot(dirtyLater)).toEqual(dirtyBefore);
+    expect(worktreeSnapshot(branchLater)).toEqual(branchBefore);
+    const failed = byPath(result.repos, failing);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('legacy archive collision');
+    expect(failed.upgrade).toBeUndefined();
+
+    const staleResult = byPath(result.repos, stale);
+    expect(staleResult).toMatchObject({ status: 'applied', init: { ok: true, failed: 0 }, upgrade: { apply: true }, sweep: { ran: true } });
+    expect((staleResult.init as { applied: number }).applied).toBeGreaterThan(0);
+    expect(existsSync(join(stale, '.ai/hooks/README.md'))).toBe(true);
+    const templateResult = byPath(result.repos, template);
+    expect(templateResult).toMatchObject({ status: 'applied', upgrade: { worktreeTemplate: { applied: true } }, sweep: { ran: true } });
+    expect(JSON.parse(readFileSync(policyPath(template), 'utf8')).worktree_strategy.worktree_dir_template).toBe(PORTABLE);
+    expect(formatRegisteredUpgradeResult(result)).toContain('Nothing was committed.');
+    for (const [repo, head] of Object.entries(heads)) expect(git(f, repo, 'rev-parse', 'HEAD')).toBe(head);
+
+    // The operator commits; a new preview then plans nothing for the refreshed repos.
+    commitAll(f, stale, 'refresh');
+    commitAll(f, template, 'refresh');
+    const again = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(again.error).toBeUndefined();
+    for (const repo of [stale, template]) {
+      expect(byPath(again.repos, repo)).toMatchObject({ status: 'ready', init: { planned: 0, operations: [] } });
+      expect(byPath(again.repos, repo).upgrade?.worktreeTemplate?.item?.action).not.toBe('rewrite');
+    }
+  }), 120_000);
+
+  test('an untracked file counts as dirty even when git config hides untracked files', () => registeredSandbox((f) => {
+    const repo = staleRepo(f, 'hidden-untracked');
+    git(f, repo, 'config', 'status.showUntrackedFiles', 'no');
+    writeRegistry(f, [repo]);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, repo).status).toBe('ready');
+
+    // The init refresh would write this path; the file is the operator's.
+    const target = join(repo, '.ai/hooks/README.md');
+    writeFileSync(target, 'operator notes\n');
+    expect(git(f, repo, 'status', '--porcelain')).toBe('');
+    const dirty = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(dirty.repos, repo)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(byPath(result.repos, repo)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+    expect(readFileSync(target, 'utf8')).toBe('operator notes\n');
+  }), 120_000);
+
+  test('apply passes the caller cwd to the sweep, which keeps a managed worktree that holds it', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'swept');
+    writeRegistry(f, [repo]);
+    const managed = join(f.env.REPO_HARNESS_WORKTREE_ROOT!, 'swept-wt-held');
+    git(f, repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git(f, repo, 'worktree', 'add', '-q', '-b', 'held', managed);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: managed });
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: managed });
+    const swept = byPath(result.repos, repo);
+    expect(swept.status, swept.error).toBe('applied');
+    expect(swept.sweep).toMatchObject({ ran: true });
+    expect((swept.sweep as { report: string | null }).report).toContain(`${managed}: kept; session cwd`);
+    expect(existsSync(managed)).toBe(true);
+  }), 120_000);
+});

@@ -368,6 +368,40 @@ describe("init command", () => {
     }
   });
 
+  test("runInit in a linked worktree adds no registry row and names the primary checkout", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-linked-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const linked = join(tmp, "linked");
+    const home = join(tmp, "home");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+      writeFileSync(join(repo, "README.md"), "fixture\n");
+      for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "base"], ["worktree", "add", "-q", "-b", "feature", linked]]) {
+        const git = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+        expect(git.status, git.stderr).toBe(0);
+      }
+
+      const result = runInit({
+        repo: linked,
+        sourceRoot: source,
+        verify: false,
+        codegraph: false,
+        env: { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") },
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(JSON.stringify(result.steps)).toContain(`register the primary checkout ${realpathSync(repo)} instead`);
+      const registry = join(home, ".repo-harness", "registered-repos.json");
+      expect(existsSync(registry) ? JSON.parse(readFileSync(registry, "utf-8")).repos : []).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("runInit refreshes Codex handoff and checks context without a plan file", () => {
     const tmp = join(tmpdir(), `repo-harness-init-handoff-${Date.now()}`);
     const source = join(tmp, "source");

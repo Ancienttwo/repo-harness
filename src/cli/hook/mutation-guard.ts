@@ -34,7 +34,7 @@ export interface MutationGuardResult {
   readonly stderr: string;
 }
 
-interface Denial {
+export interface Denial {
   readonly guard: string;
   readonly reason: string;
   readonly fix: string;
@@ -71,6 +71,11 @@ export function runMutationPathGuard(opts: MutationGuardInput, rawPaths: readonl
   const paths = rawPaths.map(raw => normalizeFilePath(opts.repoRoot, raw));
   const denial = firstDenial(opts.repoRoot, paths, true);
   return denial ? deny(opts.repoRoot, denial, opts.identity.runId) : { exitCode: 0, stdout: '', stderr: '' };
+}
+
+/** A caller that owns its own decision reports it through the same denial record and exit code. */
+export function runMutationDenial(opts: MutationGuardInput, denial: Denial): MutationGuardResult {
+  return deny(opts.repoRoot, denial, opts.identity.runId);
 }
 
 function firstDenial(repoRoot: string, paths: readonly string[], repoOnly = false): Denial | null {

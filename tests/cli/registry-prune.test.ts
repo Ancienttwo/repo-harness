@@ -63,3 +63,48 @@ test('malformed registry and unknown scope fail without changing authority', () 
   expect(f.cli('--apply', '--expected-revision', plan.registry_revision).status).toBe(2);
   expect(readFileSync(f.registry, 'utf8')).toBe('{bad');
 });
+
+test('preview lists linked-worktree rows as not_primary_checkout and apply removes them only under the previewed revision', () => {
+  const f = fixture();
+  const git = (cwd: string, ...args: string[]) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+  };
+  const primary = join(f.root, 'primary');
+  mkdirSync(join(primary, '.ai', 'harness'), { recursive: true });
+  writeFileSync(join(primary, '.ai', 'harness', 'policy.json'), '{}\n');
+  git(primary, 'init', '-q', '-b', 'main');
+  git(primary, 'add', '-A');
+  git(primary, 'commit', '-qm', 'base');
+  const linked = join(f.root, 'linked');
+  git(primary, 'worktree', 'add', '-q', '-b', 'feature', linked);
+  const row = (path: string) => ({ id: repoHarnessRepoIdFor(path), path, accessMode: 'read_only' as const,
+    source: 'init' as const, registeredAt: '2026-09-11T00:00:00.000Z', lastSeenAt: '2026-09-11T00:00:00.000Z' });
+  const primaryRow = row(primary); const linkedRow = row(linked); const missingRow = f.repos[1]!;
+  writeFileSync(f.registry, JSON.stringify({ version: 1, authorizationRevision: 5, repos: [primaryRow, linkedRow, missingRow] }));
+
+  const preview = f.cli(); expect(preview.status, preview.stderr).toBe(0);
+  const plan = JSON.parse(preview.stdout);
+  expect(plan.candidates).toHaveLength(2);
+  expect(plan.candidates).toEqual(expect.arrayContaining([
+    { ...linkedRow, reason: 'not_primary_checkout' },
+    { ...missingRow, reason: 'path_missing' },
+  ]));
+  expect(plan.skipped).toEqual([{ id: primaryRow.id, path: primary, reason: 'path_present' }]);
+
+  // A registry change after the preview refuses apply and leaves the bytes alone.
+  const changed = JSON.stringify({ version: 1, authorizationRevision: 6, repos: [primaryRow, linkedRow, missingRow] });
+  writeFileSync(f.registry, changed);
+  expect(f.cli('--apply', '--expected-revision', plan.registry_revision).status).toBe(2);
+  expect(readFileSync(f.registry, 'utf8')).toBe(changed);
+
+  const fresh = JSON.parse(f.cli().stdout);
+  const apply = f.cli('--apply', '--expected-revision', fresh.registry_revision);
+  expect(apply.status, apply.stderr).toBe(0);
+  const removed = JSON.parse(apply.stdout).removed;
+  expect(removed).toHaveLength(2);
+  expect(removed).toEqual(expect.arrayContaining([linkedRow, missingRow]));
+  const state = readRepoHarnessRegistryStrictSnapshot({ env: f.env });
+  expect(state.repos).toEqual([primaryRow]);
+  expect(state.authorizationRevision).toBe(7);
+});

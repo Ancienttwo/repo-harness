@@ -1,5 +1,4 @@
-import { tmpdir } from 'os';
-import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
+import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
 import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
 import { gitExecFileSync } from '../git/runner';
@@ -515,9 +514,8 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     if (!primary) return null;
     const main = checkoutPath(primary.path);
     const cwd = realpathSync(callerCwd);
-    const managedRoot = realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? systemWorktreeRoot(process.platform, tmpdir()));
-    const prefix = `${basename(main)}-wt-`;
-    const managed = (path: string) => dirname(path) === managedRoot && basename(path).startsWith(prefix) && basename(path).length > prefix.length;
+    const managedRoot = managedWorktreeRoot(env);
+    const managed = (path: string) => isManagedWorktreePath(path, managedRoot, basename(main));
     const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
     const context: SweepContext = { main, cwd, common, managedRoot, managed, limits, trashDeadline, options };
     // Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss.

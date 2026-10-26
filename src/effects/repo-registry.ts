@@ -10,6 +10,7 @@ import {
   type ExclusiveDirectoryLockHandle,
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
+import { gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from "./git/runner";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
@@ -129,6 +130,93 @@ export function canonicalRepoPath(path: string): string {
 export function isRepoHarnessAdoptedPath(repoRoot: string): boolean {
   return existsSync(join(repoRoot, ".ai", "harness", "policy.json")) ||
     existsSync(join(repoRoot, "tasks", "current.md"));
+}
+
+export type RepoHarnessCheckoutRejectionReason = "not_primary_checkout" | "git_probe_failed";
+
+export interface RepoHarnessCheckoutRejection {
+  readonly reason: RepoHarnessCheckoutRejectionReason;
+  readonly message: string;
+}
+
+type GitLines = { readonly ok: true; readonly lines: string[] } | { readonly ok: false; readonly detail: string };
+
+// The probe must read the checkout at repoRoot, not the repository an outer git hook selected.
+export function repoCheckoutProbeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  const probe = { ...(env ?? process.env) };
+  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, "GIT_COMMON_DIR"]) delete probe[key];
+  return probe;
+}
+
+function gitLines(repoRoot: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined): GitLines {
+  const result = gitSpawnSync(args, { cwd: repoRoot, env: repoCheckoutProbeEnv(env), encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+  if (result.error) return { ok: false, detail: result.error.message };
+  if (result.status !== 0) return { ok: false, detail: result.stderr.trim() || `git exited with status ${result.status}` };
+  return { ok: true, lines: result.stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0) };
+}
+
+function gitEntryPresent(repoRoot: string): boolean {
+  try {
+    lstatSync(join(repoRoot, ".git"));
+    return true;
+  } catch (error) {
+    return !(isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR"));
+  }
+}
+
+function linkedWorktreeMessage(repoRoot: string, commonDir: string, env: NodeJS.ProcessEnv | undefined): string {
+  const listing = gitLines(repoRoot, ["worktree", "list", "--porcelain"], env);
+  if (!listing.ok) {
+    return `${repoRoot} is a linked worktree of ${commonDir}, not a primary checkout; its primary checkout could not be listed: ${listing.detail}`;
+  }
+  // Git lists the main worktree first; a bare main worktree carries a `bare` line.
+  const first = listing.lines[0] ?? "";
+  if (!first.startsWith("worktree ")) {
+    return `${repoRoot} is a linked worktree of ${commonDir}, not a primary checkout; its primary checkout could not be listed`;
+  }
+  const mainPath = canonicalRepoPath(first.slice("worktree ".length));
+  const nextRecord = listing.lines.findIndex((line, index) => index > 0 && line.startsWith("worktree "));
+  const mainRecord = listing.lines.slice(1, nextRecord < 0 ? undefined : nextRecord);
+  if (mainRecord.includes("bare")) {
+    return `${repoRoot} is a linked worktree of the bare repository ${mainPath}, which has no primary checkout`;
+  }
+  return `${repoRoot} is a linked worktree, not a primary checkout; register the primary checkout ${mainPath} instead`;
+}
+
+/**
+ * Registry rows name primary checkouts only. A linked worktree carries the
+ * same tracked adoption marker, so adoption cannot tell it apart; git's own
+ * directories can. The path is never rewritten to the primary checkout: the
+ * caller decides which path to register. A root without a `.git` entry that
+ * git does not place in any work tree is a non-git scaffold (`init --repo`)
+ * and stays registrable; a failed probe of a root with a `.git` entry fails
+ * closed.
+ */
+export function repoHarnessCheckoutRejection(
+  repoRoot: string,
+  env?: NodeJS.ProcessEnv,
+): RepoHarnessCheckoutRejection | null {
+  const dirs = gitLines(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"], env);
+  if (!dirs.ok) {
+    if (!gitEntryPresent(repoRoot)) return null;
+    return { reason: "git_probe_failed", message: `cannot read the git directories of ${repoRoot}: ${dirs.detail}` };
+  }
+  if (dirs.lines.length !== 2) {
+    return { reason: "git_probe_failed", message: `cannot read the git directories of ${repoRoot}: unexpected rev-parse output` };
+  }
+  let gitDir: string;
+  let commonDir: string;
+  try {
+    gitDir = realpathSync(resolve(repoRoot, dirs.lines[0]!));
+    commonDir = realpathSync(resolve(repoRoot, dirs.lines[1]!));
+  } catch (error) {
+    return {
+      reason: "git_probe_failed",
+      message: `cannot resolve the git directories of ${repoRoot}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  if (gitDir === commonDir) return null;
+  return { reason: "not_primary_checkout", message: linkedWorktreeMessage(repoRoot, commonDir, env) };
 }
 
 function normalizeSource(value: unknown): RepoHarnessRegistrySource {
@@ -490,6 +578,10 @@ export function applyRepoHarnessRegistryBatch(
       const unadopted = canonicalEntries.find((entry) => !isRepoHarnessAdoptedPath(entry.repoRoot));
       if (unadopted) throw new Error(`repo is not repo-harness adopted: ${unadopted.repoRoot}`);
     }
+    for (const entry of canonicalEntries) {
+      const rejection = repoHarnessCheckoutRejection(entry.repoRoot, opts.env);
+      if (rejection) throw new Error(rejection.message);
+    }
     const registry = opts.recordChanges ? readRepoHarnessRegistryStrictSnapshot({ env: opts.env }) : readRegistryFile(registryPath);
     const now = new Date().toISOString();
     let repos = dedupeRepos(registry.repos);
@@ -555,6 +647,10 @@ export function registerRepoHarnessRepo(
       changed: false,
       reason: "repo is not repo-harness adopted",
     };
+  }
+  const rejection = repoHarnessCheckoutRejection(canonical, opts.env);
+  if (rejection) {
+    return { path: canonical, registryPath, registered: false, changed: false, reason: rejection.message };
   }
 
   return withRegistryMutationLock(registryPath, () => {
@@ -644,6 +740,87 @@ export function restoreRepoHarnessRegistryEntries(
   return opts.dryRun ? apply() : withRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), apply);
 }
 
+export type RepoHarnessBackfillRejectionReason = "missing" | "unreadable" | "not_adopted" | RepoHarnessCheckoutRejectionReason;
+
+export interface RepoHarnessBackfillResult {
+  readonly registry_path: string;
+  readonly registered: readonly { readonly id: string; readonly path: string }[];
+  readonly already_registered: readonly { readonly id: string; readonly path: string }[];
+  readonly rejected: readonly { readonly path: string; readonly reason: RepoHarnessBackfillRejectionReason; readonly message: string }[];
+}
+
+function backfillRejection(
+  path: string,
+  env: NodeJS.ProcessEnv | undefined,
+): { reason: RepoHarnessBackfillRejectionReason; message: string } | null {
+  try {
+    statSync(path);
+  } catch (error) {
+    const code = isNodeError(error) ? error.code : undefined;
+    return code === "ENOENT" || code === "ENOTDIR"
+      ? { reason: "missing", message: `${path} does not exist` }
+      : { reason: "unreadable", message: `${path} cannot be inspected (${code ?? "probe_failed"})` };
+  }
+  if (!isRepoHarnessAdoptedPath(path)) return { reason: "not_adopted", message: `${path} is not repo-harness adopted` };
+  return repoHarnessCheckoutRejection(path, env);
+}
+
+/**
+ * Operator-invoked one-shot backfill of explicit paths. It never scans a
+ * directory tree. Each path is checked and written on its own, so one rejected
+ * path does not block the others. An existing row keeps its source and access.
+ */
+export function backfillRepoHarnessRegistry(
+  paths: readonly string[],
+  opts: { readonly env?: NodeJS.ProcessEnv } = {},
+): RepoHarnessBackfillResult {
+  const registryPath = repoHarnessRegisteredReposPath(opts.env);
+  // A malformed registry is a global precondition: fail before any write.
+  readRepoHarnessRegistryStrictSnapshot({ env: opts.env });
+  const registered: { id: string; path: string }[] = [];
+  const alreadyRegistered: { id: string; path: string }[] = [];
+  const rejected: { path: string; reason: RepoHarnessBackfillRejectionReason; message: string }[] = [];
+  for (const input of paths) {
+    const path = canonicalRepoPath(input);
+    const rejection = backfillRejection(path, opts.env);
+    if (rejection) {
+      rejected.push({ path, ...rejection });
+      continue;
+    }
+    const id = repoHarnessRepoIdFor(path);
+    const added = withRegistryMutationLock(registryPath, () => {
+      const snapshot = readRepoHarnessRegistryStrictSnapshot({ env: opts.env });
+      if (snapshot.repos.some((repo) => repo.path === path)) return false;
+      const now = new Date().toISOString();
+      writeRegistryFile(registryPath, [...snapshot.repos, {
+        id, path, accessMode: "read_only", source: "manual", registeredAt: now, lastSeenAt: now,
+      }], snapshot.authorizationRevision);
+      return true;
+    });
+    (added ? registered : alreadyRegistered).push({ id, path });
+  }
+  return { registry_path: registryPath, registered, already_registered: alreadyRegistered, rejected };
+}
+
+export type RepoHarnessPruneReason = "path_missing" | "not_primary_checkout";
+
+/**
+ * A registry apply names the exact revision its preview printed. Without a
+ * snapshot only the presence and format are checked; with one, any other
+ * revision refuses the whole apply.
+ */
+export function assertRegistryRevisionFence(
+  opts: { readonly apply?: boolean; readonly expectedRevision?: string },
+  snapshot?: RepoHarnessRegistryStrictSnapshot,
+): void {
+  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
+    throw new Error('--apply requires --expected-revision from the preview');
+  }
+  if (snapshot && opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {
+    throw new Error('registry revision changed; preview again before applying');
+  }
+}
+
 /** Explicit operator cleanup; unreadable paths are not proof of absence. */
 export function pruneRepoHarnessRegistry(opts: {
   readonly env?: NodeJS.ProcessEnv;
@@ -651,30 +828,29 @@ export function pruneRepoHarnessRegistry(opts: {
   readonly expectedRevision?: string;
   readonly repoIds?: readonly string[];
 } = {}) {
-  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
-    throw new Error('--apply requires --expected-revision from the preview');
-  }
+  assertRegistryRevisionFence(opts);
   const inspect = (snapshot: RepoHarnessRegistryStrictSnapshot) => {
-    if (opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {
-      throw new Error('registry revision changed; preview again before applying');
-    }
+    assertRegistryRevisionFence(opts, snapshot);
     const selected = opts.repoIds === undefined ? null : new Set(opts.repoIds);
     for (const id of selected ?? []) {
       if (!snapshot.repos.some(repo => repo.id === id)) throw new Error(`unknown registered repo id: ${id}`);
     }
-    const candidates: RepoHarnessRegisteredRepo[] = [];
+    const candidates: (RepoHarnessRegisteredRepo & { reason: RepoHarnessPruneReason })[] = [];
     const skipped: { id: string; path: string; reason: string }[] = [];
     for (const repo of snapshot.repos) {
       if (selected !== null && !selected.has(repo.id)) continue;
       try {
         lstatSync(repo.path);
-        skipped.push({ id: repo.id, path: repo.path, reason: 'path_present' });
       } catch (error) {
-        if (isNodeError(error) && error.code === 'ENOENT') candidates.push(repo);
+        if (isNodeError(error) && error.code === 'ENOENT') candidates.push({ ...repo, reason: 'path_missing' });
         else skipped.push({ id: repo.id, path: repo.path, reason: isNodeError(error) ? error.code ?? 'probe_failed' : 'probe_failed' });
+        continue;
       }
+      const rejection = repoHarnessCheckoutRejection(repo.path, opts.env);
+      if (rejection?.reason === 'not_primary_checkout') candidates.push({ ...repo, reason: 'not_primary_checkout' });
+      else skipped.push({ id: repo.id, path: repo.path, reason: rejection?.reason ?? 'path_present' });
     }
-    const removed = opts.apply ? candidates : [];
+    const removed: RepoHarnessRegisteredRepo[] = opts.apply ? candidates.map(({ reason: _reason, ...repo }) => repo) : [];
     const ids = new Set(removed.map(repo => repo.id));
     const authorizationRevision = snapshot.authorizationRevision + (removed.length > 0 ? 1 : 0);
     if (removed.length > 0) {

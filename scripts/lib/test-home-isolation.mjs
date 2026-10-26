@@ -76,21 +76,37 @@ export function unsafeTestToolRoot(env) {
   return null;
 }
 
+// A kept registry under the caller's real HOME would let tests write that account's registry.
+function assertRegistryOutsideHome(registry, inherited) {
+  for (const home of [inherited.HOME, inherited.USERPROFILE]) {
+    if (!home || !isAbsolute(home)) continue;
+    let root;
+    try { root = realpathSync(home); } catch { continue; }
+    const suffix = relative(root, registry);
+    if (suffix === "" || (suffix !== ".." && !suffix.startsWith(".." + sep) && !isAbsolute(suffix))) {
+      throw new Error("Unsafe test registry: REPO_HARNESS_HOME resolves under the real user HOME (" + root + ")");
+    }
+  }
+}
+
 export function createTemporaryTestEnvironment(inherited) {
+  const registryName = Object.keys(inherited).find((name) =>
+    (process.platform === "win32" ? name.toUpperCase() : name) === "REPO_HARNESS_HOME");
+  const registry = registryName === undefined ? undefined : inherited[registryName];
+  const keptRegistry = registry === undefined ? null : temporaryPath(registry);
+  // Validate before allocation, so a refused run leaves no new directories.
+  if (keptRegistry !== null) assertRegistryOutsideHome(keptRegistry, inherited);
   const root = resolve("/tmp");
   mkdirSync(root, { recursive: true });
   const canonical = realpathSync(root);
   const home = mkdtempSync(join(canonical, "rh-test-home-"));
   const temp = mkdtempSync(join(canonical, "rh-test-tmp-"));
   const env = { ...inherited };
-  const registryName = Object.keys(inherited).find((name) =>
-    (process.platform === "win32" ? name.toUpperCase() : name) === "REPO_HARNESS_HOME");
-  const registry = registryName === undefined ? undefined : inherited[registryName];
   for (const name of Object.keys(env)) {
     if (isTestToolRoot(name) || isGitConfigInjection(name)
       || ["HOME", "TMPDIR", "REPO_HARNESS_HOME"].includes(name.toUpperCase())) delete env[name];
   }
-  if (registry !== undefined && temporaryPath(registry)) {
+  if (keptRegistry !== null) {
     env.REPO_HARNESS_HOME = registry;
   }
   Object.assign(env, { HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp });

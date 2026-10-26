@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runGlobalRuntimeSetup, updateLeftoverSummary } from '../../src/cli/commands/global-runtime';
+import { runGlobalRuntimeSetup, updateLeftoverSummary, updateRegisteredUpgradeSummary } from '../../src/cli/commands/global-runtime';
+import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry } from '../helpers/registered-repos';
 
 /**
  * Regression guard for the #169 base-dropping class on the setup-global surface.
@@ -115,7 +116,7 @@ describe('update leftover summary', () => {
       action: index === 0 ? 'remove' : 'report',
       reason: 'Fixture leftover for the update summary parser.',
     }));
-    const payload = `${JSON.stringify(items, null, 2)}\n`;
+    const payload = `${JSON.stringify({ items, apply: false, exitCode: 1 }, null, 2)}\n`;
     expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024);
     withFakeUpgrade(payload, '', () => {
       expect(updateLeftoverSummary(tmpdir(), false)).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
@@ -123,9 +124,92 @@ describe('update leftover summary', () => {
   });
 
   test('reports a failed check as a warning with redacted error text', () => {
-    withFakeUpgrade('[]\n', 'catalog failed token=hunter2', () => {
+    withFakeUpgrade('{"items":[],"error":"catalog failed"}\n', 'catalog failed token=hunter2', () => {
       expect(updateLeftoverSummary(tmpdir(), false))
         .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
     });
   });
+
+  test('reports a pending template rewrite with no leftover items as pending, not failed', () => {
+    const payload = JSON.stringify({ items: [], apply: false, exitCode: 1, worktreeTemplate: { applied: false, item: { path: '.ai/harness/policy.json', action: 'rewrite', current: '../{{repo}}-wt-{{slug}}', replacement: '{{system_tmp}}/{{repo}}-wt-{{slug}}', reason: 'Legacy template.' } } });
+    withFakeUpgrade(`${payload}\n`, '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe(
+        '0 leftovers (0 removable). Run: repo-harness upgrade; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template',
+      );
+    });
+  });
+
+  test('a bare array payload is a failed check', () => {
+    withFakeUpgrade('[]\n', '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: upgrade --json returned no leftover list. Run: repo-harness upgrade');
+    });
+  });
+
+  test('registered summary counts pending ready repos and names skipped and failed repos', () => {
+    const repos = [
+      { path: '/fixture/a', status: 'ready', pending: true },
+      { path: '/fixture/b', status: 'ready', pending: false },
+      { path: '/fixture/c', status: 'skipped', reason: 'dirty_worktree' },
+      { path: '/fixture/d', status: 'failed', error: 'init plan failed' },
+    ];
+    withFakeUpgrade(`${JSON.stringify({ revision: `sha256:${'0'.repeat(64)}`, apply: false, exitCode: 1, repos })}\n`, '', () => {
+      expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
+        'Registered repos: 1 of 4 have pending project upgrade work; 1 skipped; 1 failed. Preview: repo-harness upgrade --registered',
+      );
+    });
+  });
+
+  test('registered summary says when the count cannot be computed instead of printing a number', () => {
+    withFakeUpgrade('{"revision":null,"apply":false,"exitCode":2,"repos":[],"error":"registry authority is not valid JSON"}\n', '', () => {
+      expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
+        'Registered repo upgrade check could not be computed: registry authority is not valid JSON. Preview: repo-harness upgrade --registered',
+      );
+    });
+    withFakeUpgrade('not json\n', '', () => {
+      expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
+        'Registered repo upgrade check could not be computed: upgrade --registered --json returned no repo list. Preview: repo-harness upgrade --registered',
+      );
+    });
+  });
+
+  test('an object with an error field is a failed check', () => {
+    withFakeUpgrade('{"items":[],"apply":false,"exitCode":1,"error":"project upgrade needs a git repository"}\n', '', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: project upgrade needs a git repository. Run: repo-harness upgrade');
+    });
+  });
+});
+
+describe('update registered repo summary', () => {
+  test('runs the real preview and writes nothing in registered repos or the registry', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-update-registered-')));
+    const f = registeredReposFixture(root);
+    const keys = ['HOME', 'XDG_CONFIG_HOME', 'GIT_CONFIG_NOSYSTEM', 'REPO_HARNESS_HOME', 'REPO_HARNESS_WORKTREE_ROOT', 'REPO_HARNESS_BUN_EXECUTABLE'] as const;
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      const current = adoptedRepo(f, 'current');
+      const stale = adoptedRepo(f, 'stale');
+      rmSync(join(stale, '.ai/hooks/README.md'));
+      commitAll(f, stale, 'drop managed file');
+      writeRegistry(f, [current, stale, join(root, 'missing')]);
+      const registryBefore = readFileSync(f.registry, 'utf8');
+      const before = [current, stale].map((repo) => [worktreeSnapshot(repo), git(f, repo, 'status', '--porcelain'), git(f, repo, 'rev-parse', 'HEAD')]);
+      for (const key of keys) {
+        if (f.env[key] === undefined) delete process.env[key];
+        else process.env[key] = f.env[key];
+      }
+      expect(updateRegisteredUpgradeSummary(root, false)).toBe(
+        'Registered repos: 1 of 3 have pending project upgrade work; 1 skipped. Preview: repo-harness upgrade --registered',
+      );
+      expect(readFileSync(f.registry, 'utf8')).toBe(registryBefore);
+      expect([current, stale].map((repo) => [worktreeSnapshot(repo), git(f, repo, 'status', '--porcelain'), git(f, repo, 'rev-parse', 'HEAD')])).toEqual(before);
+    } finally {
+      for (const key of keys) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

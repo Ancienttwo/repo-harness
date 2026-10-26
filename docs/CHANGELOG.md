@@ -941,8 +941,7 @@ and the changes below.
   portable value `{{system_tmp}}/{{repo}}-wt-{{slug}}`, and each host
   resolves `{{system_tmp}}` at run time. Older repo-harness versions do not
   understand this token. `contract-worktree` now reads the stored
-  `worktree_dir_template`, so existing downstream policies keep their value.
-  Set it to `../{{repo}}-wt-{{slug}}` to keep the old location. (#600)
+  `worktree_dir_template`, so existing downstream policies keep their value. (#600)
 - `start` refuses an existing target path. It reuses the path only when this
   clone registers it on the expected branch, unlocked, with no other owner,
   and it matches the identity that `start` recorded at creation. The

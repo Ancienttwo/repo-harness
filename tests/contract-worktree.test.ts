@@ -16,6 +16,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { DEFAULT_WORKTREE_TEMPLATE, defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
 
+import { runUpgrade } from '../src/cli/commands/upgrade';
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
@@ -240,6 +241,32 @@ describe('task worktree location', () => {
       expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe('../stored-{{repo}}-{{slug}}');
     } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
+
+  test.each(['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'])('after the upgrade migration of %s, start uses the managed root and the sweep keeps the worktree', legacy => {
+    const parent = tmpWorkspace('worktree-migrated');
+    const cwd = join(parent, 'repo'); const managed = join(parent, 'managed'); const home = join(parent, 'home');
+    mkdirSync(cwd); mkdirSync(managed); mkdirSync(home);
+    try {
+      copyHelpers(cwd); initGitRepo(cwd); mkdirSync(join(cwd, 'plans'));
+      writeFileSync(join(cwd, 'plans/plan-20261008-0000-location.md'), '# Location\n');
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ worktree_strategy: { worktree_dir_template: legacy } }, null, 2)}\n`);
+      commitAll(cwd, 'legacy location fixture');
+      const migrated = runUpgrade({ cwd, home, packageRoot: ROOT, scope: 'project', apply: true, migrateWorktreeTemplate: true });
+      expect(migrated.exitCode, migrated.error).toBe(0);
+      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
+      // Upgrade apply removes the owned helper copies; restore the fixture the start command runs from.
+      copyHelpers(cwd);
+      commitAll(cwd, 'migrated location');
+      run('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd);
+      const env = { REPO_HARNESS_WORKTREE_ROOT: managed };
+      const result = run('bash', ['scripts/contract-worktree.sh', 'start', '--plan', 'plans/plan-20261008-0000-location.md', '--json', '--no-plan-to-todo'], cwd, env);
+      expect(result.status, result.stderr).toBe(0);
+      const path = join(managed, 'repo-wt-location');
+      expect(JSON.parse(result.stdout).worktree_path).toBe(path);
+      expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, ...env }, { deadlineMs: 60_000 })).toContain('marker reference');
+      expect(existsSync(path)).toBe(true);
+    } finally { rmSync(parent, { recursive: true, force: true }); }
+  }, 30000);
 
   test.each(['directory', 'file', 'symlink'])('start refuses an existing %s at the default target', kind => {
     const parent = tmpWorkspace('worktree-existing');
