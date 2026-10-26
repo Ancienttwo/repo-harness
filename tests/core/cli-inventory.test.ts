@@ -59,6 +59,7 @@ function input(overrides: Partial<CliInventoryInput> = {}): CliInventoryInput {
       exe(`${HOME}/repo/node_modules/.bin/wrangler`),
     ],
     last_used: new Map([['gh', NOW - DAY], ['claude', NOW - 100 * DAY]]),
+    usage_since: NOW - 200 * DAY,
     github: new Map([
       ['cli/cli', { full_name: 'cli/cli', stars: 46_700, archived: false }],
       ['neondatabase/neonctl', { full_name: 'neondatabase/neonctl', stars: 900, archived: true }],
@@ -145,6 +146,16 @@ describe('cli inventory projection', () => {
     expect(entries.get('manual:secretcli')?.location).toBe('[private path]');
     const text = JSON.stringify(snapshot);
     for (const leak of [HOME, '/opt/', '/usr/bin', 'left-pad', 'wrangler', 'openssl']) expect(text).not.toContain(leak);
+  });
+
+  test('an unused flag needs use records older than the window; without them it is unknown', () => {
+    for (const usage_since of [null, NOW - DAY]) {
+      const entries = byId(projectCliInventory(input({ usage_since })));
+      expect(entries.get('brew:gh')).toMatchObject({ unused: false, last_used_at: '2026-10-25T00:00:00.000Z' });
+      expect(entries.get('npm:@openai/codex')).toMatchObject({ unused: null, last_used_at: null });
+      expect(entries.get('script:claude-code')).toMatchObject({ unused: null, last_used_at: '2026-07-18T00:00:00.000Z' });
+    }
+    expect(byId(projectCliInventory(input({ usage_since: NOW - 90 * DAY }))).get('npm:@openai/codex')?.unused).toBe(true);
   });
 
   test('marks unused tools, archived or moved repositories and ambiguous commands', () => {

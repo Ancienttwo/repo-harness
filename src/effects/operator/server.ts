@@ -7,6 +7,10 @@ import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { startSetupCollector } from '../setup/collector';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupSnapshotV1 } from '../../core/setup/types';
+import { startBotAccessCollector, type BotAccessCacheV1 } from './bot-access';
+import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
+import { startCliInventoryCollector, type CliUsageSource } from '../setup/cli-inventory';
+import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../core/setup/cli-inventory';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
@@ -87,6 +91,8 @@ export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 export const OPERATOR_DEV_ACTIVITY_PATH = '/api/v1/dev-activity' as const;
 export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
+export const OPERATOR_BOT_ACCESS_PATH = '/api/v1/bot-access' as const;
+export const OPERATOR_CLI_INVENTORY_PATH = '/api/v1/cli-inventory' as const;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
@@ -123,6 +129,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'dev_activity', method: 'GET', pattern: OPERATOR_DEV_ACTIVITY_PATH, write: false }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
+  Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
+  Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -155,6 +163,17 @@ export interface OperatorServerOptions {
   readonly read_setup?: () => SetupSnapshotV1;
   /** Start the in-process setup collector (operator serve). Ignored when a cache reader is injected. */
   readonly setup_collector?: boolean;
+  /** Bot access cache reader. GET serves only this cache; it never runs the doctor or Herdr. */
+  readonly read_bot_access?: () => BotAccessCacheV1;
+  /** Start the in-process Bot access collector (operator serve). Ignored when a cache reader is injected. */
+  readonly bot_access_collector?: boolean;
+  /** CLI inventory cache reader. GET serves only this cache; it never probes a package manager. */
+  readonly read_cli_inventory?: () => CliInventorySnapshotV1;
+  /**
+   * Start the in-process CLI inventory collector (operator serve). The caller
+   * names the hook telemetry it reads for agent use. Ignored when a cache reader is injected.
+   */
+  readonly cli_inventory_collector?: { readonly usage_sources: () => readonly CliUsageSource[] };
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -1601,6 +1620,47 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_BOT_ACCESS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Bot access accepts no query selectors.'), headOnly);
+        return;
+      }
+      const cache = (options.read_bot_access ?? botAccess?.read ?? (() => ({ state: 'pending' }) as const))();
+      if (cache.state === 'pending') {
+        sendRefusal(request, response, 503, errorBody('bot_access_pending', 'The first Bot access collection has not finished.', 'Retry in a few seconds.'), headOnly);
+        return;
+      }
+      if (cache.state === 'failed') {
+        sendRefusal(request, response, 503, cache.reason === 'herdr_session_invalid'
+          ? errorBody('herdr_session_invalid', 'The Herdr session name is invalid.', 'Restart `repo-harness operator serve` with a valid HERDR_SESSION.')
+          : errorBody('bot_access_unavailable', 'Bot access is unavailable.', 'Restart `repo-harness operator serve`.'), headOnly);
+        return;
+      }
+      let snapshot;
+      try { snapshot = decodeBotAccessSnapshot(cache.snapshot); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('bot_access_invalid', 'The Bot access snapshot failed validation.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, snapshot, headOnly);
+      return;
+    }
+
+    if (pathname === OPERATOR_CLI_INVENTORY_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'CLI inventory accepts no query selectors.'), headOnly);
+        return;
+      }
+      let inventory: CliInventorySnapshotV1;
+      try {
+        inventory = decodeCliInventory((options.read_cli_inventory ?? cliInventory?.read ?? unavailableCliInventory)());
+      } catch {
+        inventory = unavailableCliInventory('collection_failed');
+      }
+      sendJson(response, 200, inventory, headOnly);
+      return;
+    }
+
     if (pathname === OPERATOR_NOTIFY_STATUS_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Notify status accepts no query selectors.'), headOnly);
@@ -1744,6 +1804,10 @@ export async function startOperatorServer(
     })
     : null;
   const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env }) : null;
+  const botAccess = options.bot_access_collector && !options.read_bot_access ? startBotAccessCollector({ env: options.env }) : null;
+  const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
+    ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
+    : null;
   const server: Server = createServer((request, response) => {
     void handleRequest(request, response).catch((_error) => {
       if (response.headersSent) {
@@ -1760,6 +1824,8 @@ export async function startOperatorServer(
       runtimeService?.close();
       void devActivity?.close();
       void setup?.close();
+      void botAccess?.close();
+      void cliInventory?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -1786,7 +1852,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), cliInventory?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

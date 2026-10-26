@@ -17,6 +17,8 @@ import {
   OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
   OPERATOR_SETUP_PATH,
+  OPERATOR_BOT_ACCESS_PATH,
+  OPERATOR_CLI_INVENTORY_PATH,
   OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
@@ -93,6 +95,8 @@ describe('operator structural write boundary', () => {
       'notify_status',
       'dev_activity',
       'setup',
+      'bot_access',
+      'cli_inventory',
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
@@ -113,6 +117,10 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'dev_activity')).toEqual({ id: 'dev_activity', method: 'GET', pattern: '/api/v1/dev-activity', write: false });
     expect(patterns.get('setup')).toBe(OPERATOR_SETUP_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'setup')).toEqual({ id: 'setup', method: 'GET', pattern: '/api/v1/setup', write: false });
+    expect(patterns.get('bot_access')).toBe(OPERATOR_BOT_ACCESS_PATH);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'bot_access')).toEqual({ id: 'bot_access', method: 'GET', pattern: '/api/v1/bot-access', write: false });
+    expect(patterns.get('cli_inventory')).toBe(OPERATOR_CLI_INVENTORY_PATH);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'cli_inventory')).toEqual({ id: 'cli_inventory', method: 'GET', pattern: '/api/v1/cli-inventory', write: false });
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);

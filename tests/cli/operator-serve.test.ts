@@ -21,6 +21,9 @@ import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import type { SetupSnapshotV1 } from '../../src/core/setup/types';
 import { ROUTES } from '../../src/cli/hook/route-registry';
+import type { BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
+import type { BotAccessCacheV1 } from '../../src/effects/operator/bot-access';
+import { CLI_INVENTORY_PROJECTION, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
 
 import {
   startOperatorServer,
@@ -355,6 +358,94 @@ describe('operator serve command and HTTP boundary', () => {
       await collecting.close();
       rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  test('serves only the Bot access and CLI inventory caches on GET, with typed unavailable states', async () => {
+    const bots: BotAccessSnapshotV1 = {
+      protocol: 1, kind: 'operator_bot_access', observed_at: '2026-10-27T00:00:00.000Z',
+      bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
+      mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
+      oauth: { state: 'missing' },
+      registry: { state: 'unavailable', reason: 'registry_unavailable' },
+      herdr: { session: 'default', status: { state: 'unavailable', reason: 'herdr_status_failed' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } },
+      notify: { state: 'unavailable', reason: 'notify_status_failed' },
+    };
+    const entry = { id: 'brew:gh', source: 'brew', package: 'gh', version: '2.62.0', commands: ['gh'], location: '~/.local/bin',
+      size_bytes: null, last_used_at: null, unused: true, github: null, deprecated: false, uninstall: null };
+    const inventory = { projection_version: CLI_INVENTORY_PROJECTION, status: 'ready', reason: null, collected_at: '2026-10-27T00:00:00.000Z', entries: [entry] } as CliInventorySnapshotV1;
+    let botCache: BotAccessCacheV1 = { state: 'pending' };
+    let cli: unknown = inventory;
+    let reads = 0;
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(),
+      read_bot_access: () => { reads++; return botCache; }, read_cli_inventory: () => { reads++; return cli as CliInventorySnapshotV1; } });
+    const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
+    try {
+      const pending = await get('/api/v1/bot-access');
+      expect(pending.status).toBe(503);
+      expect(await pending.json()).toEqual({ error: { code: 'bot_access_pending', message: expect.any(String), next_action: expect.any(String) } });
+      botCache = { state: 'failed', reason: 'herdr_session_invalid' };
+      expect(await (await get('/api/v1/bot-access')).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
+      botCache = { state: 'failed', reason: 'bot_access_failed' };
+      const failed = await get('/api/v1/bot-access');
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toEqual({ error: { code: 'bot_access_unavailable', message: expect.any(String), next_action: expect.any(String) } });
+      botCache = { state: 'ok', snapshot: bots };
+      const ready = await get('/api/v1/bot-access');
+      expect(ready.status).toBe(200);
+      expect(ready.headers.get('cache-control')).toBe('no-store');
+      expect(await ready.json()).toEqual(bots);
+      botCache = { state: 'ok', snapshot: { ...bots, registry: { state: 'ok', authorization_revision: 1, registry_revision: `sha256:${'0'.repeat(64)}`,
+        repos: [{ repo_id: 'repo-a', label: '/Users/someone/repo', access_mode: 'read_only', last_audit: { state: 'missing' } }] } } };
+      const invalid = await get('/api/v1/bot-access');
+      expect(invalid.status).toBe(503);
+      const invalidText = await invalid.text();
+      expect(JSON.parse(invalidText)).toMatchObject({ error: { code: 'bot_access_invalid' } });
+      expect(invalidText).not.toContain('/Users/');
+
+      expect(await (await get('/api/v1/cli-inventory')).json()).toEqual(inventory);
+      cli = { ...inventory, entries: [{ ...entry, location: '/Users/someone/.local/bin' }] };
+      const leaked = await (await get('/api/v1/cli-inventory')).text();
+      expect(JSON.parse(leaked)).toEqual(unavailableCliInventory('collection_failed'));
+      expect(leaked).not.toContain('/Users/');
+
+      for (const path of ['/api/v1/bot-access', '/api/v1/cli-inventory']) {
+        const head = await get(path, { method: 'HEAD' });
+        expect(head.status).toBe(path === '/api/v1/bot-access' ? 503 : 200);
+        expect(await head.text()).toBe('');
+        expect((await get(`${path}?repo=x`)).status).toBe(400);
+        expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+        expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+        for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+        expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      }
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(spawnSyncSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+      // One read per GET above, including the bot_access_unavailable case.
+      expect(reads).toBe(9);
+    } finally {
+      spawnSpy.mockRestore();
+      spawnSyncSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+    }
+
+    // Without a collector both routes report pending, never empty data.
+    const bare = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot() });
+    try {
+      expect(await (await fetch(`${bare.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'bot_access_pending' } });
+      expect(await (await fetch(`${bare.url}/api/v1/cli-inventory`)).json()).toEqual(unavailableCliInventory('collection_pending'));
+    } finally { await bare.close(); }
+
+    // The serve collector rejects an invalid Herdr session at start and the route says so at once.
+    const collecting = await startOperatorServer({ port: 0, bot_access_collector: true, collect_fleet_board: async () => snapshot(),
+      env: { ...process.env, HERDR_SESSION: '../outside' } });
+    try {
+      expect(await (await fetch(`${collecting.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
+    } finally { await collecting.close(); }
   });
 
   test('bounds repository reads and permits a healthy retry after timeout', async () => {
