@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { buildProjection, readModelVerification, serializeProjection } from '../scripts/project-test-capabilities';
+import { parseTestProjection } from '../src/core/operator/tests';
 
 const sources = new Map([
   ['bunfig.toml', ''],
@@ -55,6 +56,8 @@ describe('test capability projection', () => {
     expect(JSON.parse(text).tests).toHaveLength(3);
     expect(text.split('\n').filter(line => line.includes('"file":"tests/one.test.ts"'))).toHaveLength(1);
     expect(text).not.toContain(process.cwd());
+    // The operator tests route reads the artifact with the same schema the script writes.
+    expect(parseTestProjection(JSON.parse(text)).map(entry => entry.file)).toEqual(JSON.parse(text).tests.map((entry: { file: string }) => entry.file));
   });
 
   test('reads extensions.verification from model node files and rejects a malformed list', () => {

@@ -100,8 +100,8 @@ function registeredHookTelemetry(): readonly CliUsageSource[] {
 
 /**
  * Start the local server and keep the CLI alive until an interrupt signal.
- * `serve` owns the background Dev Activity, setup, Bot access, CLI inventory
- * and docs collectors; the server stops them on close.
+ * `serve` owns the background Dev Activity, setup, notify, Bot access, CLI
+ * inventory, docs and tests collectors; the server stops them on close.
  */
 export async function runOperatorServe(options: OperatorServeOptions): Promise<void> {
   const server = await startOperatorServer({
@@ -111,6 +111,7 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
     notify_collector: true,
     bot_access_collector: true,
     docs_collector: true,
+    tests_collector: true,
     cli_inventory_collector: { usage_sources: registeredHookTelemetry },
   });
   process.stdout.write(`${server.url}\n`);

@@ -27,6 +27,8 @@ import { CLI_INVENTORY_PROJECTION, unavailableCliInventory, type CliInventorySna
 import { DocsReader } from '../../src/effects/operator/docs-reader';
 import type { DocsRepositoryCache } from '../../src/effects/operator/docs-collector';
 import type { DocsTreeV1 } from '../../src/core/operator/docs';
+import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
+import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 
 import {
   startOperatorServer,
@@ -449,6 +451,62 @@ describe('operator serve command and HTTP boundary', () => {
     try {
       expect(await (await fetch(`${collecting.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
     } finally { await collecting.close(); }
+  });
+
+  test('serves tests only from the collector cache, with typed unavailable states', async () => {
+    const tests: TestsSnapshotV1 = {
+      protocol: 1, kind: 'operator_tests', repository_id: 'repo-a', collected_at: '2026-10-27T00:00:00.000Z',
+      run: { id: 100, attempt: 1, head_sha: 'b'.repeat(40), created_at: '2026-10-25T21:35:21Z', conclusion: 'success', channel: 'daily_full' },
+      projection: { state: 'unavailable', reason: 'projection_missing' },
+      results: { state: 'ok', files: [{ file: 'tests/a.test.ts', duration_ms: 5, cases: [{ suite: null, name: 'works', result: 'passed', duration_ms: 1 }] }] },
+      repairs: { state: 'ok', issues: [] },
+    };
+    let cache: TestsRepositoryCache = { state: 'unavailable', reason: 'tests_pending' };
+    let reads = 0;
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_tests: id => { reads++; return id === 'repo-a' ? cache : { state: 'unavailable', reason: 'repository_not_found' }; } });
+    const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
+    try {
+      for (const [state, status] of [
+        [{ state: 'unavailable', reason: 'tests_pending' }, 503],
+        [{ state: 'unavailable', reason: 'no_daily_run' }, 503],
+        [{ state: 'unavailable', reason: 'artifacts_missing' }, 503],
+        [{ state: 'unavailable', reason: 'default_branch_unknown' }, 503],
+      ] as const) {
+        cache = state;
+        const response = await get('/api/v1/repositories/repo-a/tests');
+        expect(response.status).toBe(status);
+        expect(await response.json()).toEqual({ error: { code: state.reason, message: expect.any(String), next_action: expect.any(String) } });
+      }
+      expect((await get('/api/v1/repositories/repo-b/tests')).status).toBe(404);
+      cache = { state: 'ready', snapshot: tests };
+      const ready = await get('/api/v1/repositories/repo-a/tests');
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toEqual(tests);
+      cache = { state: 'ready', snapshot: { ...tests, results: { state: 'ok', files: [{ file: 'tests/a.test.ts', duration_ms: 5, cases: [{ suite: null, name: 'at /Users/someone/repo', result: 'passed', duration_ms: 1 }] }] } } };
+      const invalid = await get('/api/v1/repositories/repo-a/tests');
+      expect(invalid.status).toBe(503);
+      const invalidText = await invalid.text();
+      expect(JSON.parse(invalidText)).toMatchObject({ error: { code: 'tests_invalid' } });
+      expect(invalidText).not.toContain('/Users/');
+
+      const path = '/api/v1/repositories/repo-a/tests';
+      expect((await get(path, { method: 'HEAD' })).status).toBe(503);
+      expect((await get(`${path}?run=1`)).status).toBe(400);
+      expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+      expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+      expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+      // One cache read per admitted GET or HEAD above.
+      expect(reads).toBe(8);
+    } finally {
+      spawnSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+    }
   });
 
   test('serves the docs tree from the cache and a file from the resident reader, with typed refusals', async () => {

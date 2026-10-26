@@ -12,6 +12,8 @@ import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
 import { startCliInventoryCollector, type CliUsageSource } from '../setup/cli-inventory';
 import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../core/setup/cli-inventory';
 import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
+import { startTestsCollector, type TestsRepositoryCache } from './tests-collector';
+import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
 import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsUnavailableReason } from '../../core/operator/docs';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
@@ -90,6 +92,7 @@ export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Z
  * exist, and duplicating its shape here would be a second opinion about it.
  */
 export const OPERATOR_REPOSITORY_SNAPSHOT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
+export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tests$/u;
 export const OPERATOR_DOCS_TREE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/tree$/u;
 export const OPERATOR_DOCS_FILE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/file$/u;
 export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
@@ -136,6 +139,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
+  Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
@@ -191,6 +195,10 @@ export interface OperatorServerOptions {
   readonly read_docs?: (repositoryId: string) => DocsRepositoryCache;
   /** Start the in-process docs collector (operator serve). Ignored when a cache reader is injected. */
   readonly docs_collector?: boolean;
+  /** Tests cache reader by repository id. GET serves only this cache; it never calls GitHub. */
+  readonly read_tests?: (repositoryId: string) => TestsRepositoryCache;
+  /** Start the in-process tests collector (operator serve). Ignored when a cache reader is injected. */
+  readonly tests_collector?: boolean;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -367,6 +375,20 @@ const NOTIFY_UNAVAILABLE: Readonly<Record<NotifyUnavailableReason, { readonly me
   herdr_session_invalid: { message: 'The Herdr session name is invalid.', next_action: 'Restart `repo-harness operator serve` with a valid HERDR_SESSION.' },
   herdr_unavailable: { message: 'Herdr did not list its plugins.', next_action: 'Check that Herdr is running, then wait for the next collection.' },
   notify_config_unavailable: { message: 'The notify plugin configuration could not be read.', next_action: 'Check the notify plugin installation, then wait for the next collection.' },
+};
+
+const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+  tests_pending: { status: 503, message: 'The test results are not collected yet.', next_action: 'Retry in a minute.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
+  default_branch_unknown: { status: 503, message: 'GitHub has not named the default branch of this repository.', next_action: 'Check `gh auth status` and the GitHub remote, then wait for the next collection.' },
+  github_unavailable: { status: 503, message: 'GitHub did not answer the CI run or artifact query.', next_action: 'Check `gh auth status`, then wait for the next collection.' },
+  no_daily_run: { status: 503, message: 'The default branch has no completed daily CI run.', next_action: 'Wait for the scheduled CI run of the default branch.' },
+  artifacts_missing: { status: 503, message: 'The newest daily CI run has no JUnit and no test projection artifact.', next_action: 'Check that the daily CI job uploads junit-daily and test-projection.' },
+  artifacts_expired: { status: 503, message: 'The artifacts of the newest daily CI run have expired.', next_action: 'Wait for the next scheduled CI run.' },
+  artifact_too_large: { status: 503, message: 'A test artifact is larger than the collector reads.', next_action: 'Check the size of the junit-daily and test-projection artifacts.' },
+  artifact_download_failed: { status: 503, message: 'A test artifact could not be downloaded.', next_action: 'Check `gh auth status`, then wait for the next collection.' },
+  tests_invalid: { status: 503, message: 'The test results failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
 };
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -1838,6 +1860,28 @@ export async function startOperatorServer(
       return;
     }
 
+    const testsRoute = OPERATOR_TESTS_ROUTE.exec(pathname);
+    if (testsRoute !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Tests accept no query parameters.'), headOnly);
+        return;
+      }
+      const cache = (options.read_tests ?? tests?.read ?? (() => ({ state: 'unavailable', reason: 'tests_pending' }) as const))(testsRoute[1]!);
+      if (cache.state !== 'ready') {
+        const refusal = TESTS_UNAVAILABLE[cache.reason];
+        sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
+        return;
+      }
+      let snapshot;
+      try { snapshot = decodeTestsSnapshot(cache.snapshot); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('tests_invalid', 'The test results failed validation.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, snapshot, headOnly);
+      return;
+    }
+
     const docsTreeRoute = OPERATOR_DOCS_TREE_ROUTE.exec(pathname);
     const docsFileRoute = docsTreeRoute === null ? OPERATOR_DOCS_FILE_ROUTE.exec(pathname) : null;
     if (docsTreeRoute !== null || docsFileRoute !== null) {
@@ -1936,6 +1980,9 @@ export async function startOperatorServer(
   const docs = options.docs_collector && !options.read_docs
     ? startDocsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
+  const tests = options.tests_collector && !options.read_tests
+    ? startTestsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
+    : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;
@@ -1959,6 +2006,7 @@ export async function startOperatorServer(
       void notify?.close();
       void cliInventory?.close();
       void docs?.close();
+      void tests?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -1985,7 +2033,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
