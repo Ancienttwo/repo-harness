@@ -6,7 +6,7 @@
 > **Artifact Level**: work-package
 > **Baseline**: `main@5f6065b4`
 > **Branch**: `feat/kanban-human-redesign`，worktree `/tmp/repo-harness-wt-kanban-redesign`
-> **Supersedes**: `plan-20261005-0405-operator-ui-revamp.md` 的 §4.1 导航和 §4.4 Pipeline 工作区的 UI 部分。该计划 §2 的不变量 I1–I9 继续有效。〔2026-10-27 已修订：I1、I9 已修订，见「修订记录」〕
+> **Supersedes**: `plan-20261005-0405-operator-ui-revamp.md` 的 §4.1 导航和 §4.4 Pipeline 工作区的 UI 部分。该计划 §2 的不变量 I1–I9 继续有效。〔2026-10-27 已修订：I1、I2、I9 已修订，I3–I8 继续有效，见「修订记录」〕
 > **Verification Boundary**: `bun run check:type`；受影响测试；`bun run build:operator-web`；`bun run smoke:tarball-install`；真实浏览器截图（亮/暗，1440 与 390 宽），真实数据与 fixture 各一组。
 > **Rollback Surface**: 一个 PR，`git revert <squash-commit>`。新快照文件只在 ignored 目录，删除即可。
 
@@ -16,7 +16,7 @@
 
 | 位置 | 原约束 | 修订后 |
 | --- | --- | --- |
-| 页头 Supersedes；§2「继续有效」 | 旧计划 I1–I9 全部继续有效 | I1（只读）和 I9（UI 不触发动作）已修订，见 [`plan-20261005-0405-operator-ui-revamp.md`](plan-20261005-0405-operator-ui-revamp.md)「修订记录」。I2–I8 继续有效 |
+| 页头 Supersedes；§2「继续有效」 | 旧计划 I1–I9 全部继续有效 | I1（只读）、I2（唯一指令通道）和 I9（UI 不触发动作）已修订，见 [`plan-20261005-0405-operator-ui-revamp.md`](plan-20261005-0405-operator-ui-revamp.md)「修订记录」。I3–I8 继续有效 |
 | §1 非目标「不做写入」「不做审批按钮」 | 没有写入，没有审批按钮 | 只为三种有界写入加按钮：本机配置（第三期）、文档会话（第四期）、worktree 清理（第五期）。拖拽仍不做。其余动作仍只给链接或可复制命令 |
 | §2 N4 | 不显示终端文本、prompt、工具参数 | 文档会话显示消息正文、工具类别、仓库相对路径和执行状态；原始工具参数、完整命令、终端输出和环境变量仍不显示，用结构化操作摘要代替，落盘前脱敏（D2、G3）。文档会话以外的页面仍按原 N4 |
 | §7 第三期「确认后调用现有 CLI。hook 和权限改动逐项确认」 | 第三期写入包括 hook 和权限改动 | 第三期的写入只改 `~/.repo-harness/config.json`。宿主投影（install、update、profile 切换）、hook 和权限改动仍只给命令，由用户在终端执行 |
@@ -59,12 +59,12 @@
 - 不做写入。不做拖拽。不做审批按钮。所有「动作」只给链接（如 GitHub PR）或一条可复制的命令。〔2026-10-27 已修订：只为三种有界写入加按钮，见「修订记录」〕
 - 不做 Tauri/桌面打包。
 - 不改 ledger 的写入路径，不改 `pipeline` CLI 语义。
-- 不在 GET 里调用 `gh`、`git` 或任何外部进程。
+- 不在 GET 里调用 `gh`、`git` 或任何外部进程。〔2026-10-27 已修订：文档读取（G7）在服务启动时为每个仓库起常驻 `git cat-file --batch` worker，文档 GET 只向它要一个对象，不另起子进程〕
 - 本期不做 Agents / Skills / Hooks 页面。导航里不放没有数据的占位项。
 
 ## 2. 不变量
 
-继续有效：旧计划的 I1–I9（只读、单一指令通道、GET 白名单、GET 不探测、不泄露 secret/私有路径、单一权威、CLI/UI 一致、写入失败可见、UI 不触发动作）。〔2026-10-27 已修订：I1、I9 已修订，见「修订记录」〕
+继续有效：旧计划的 I1–I9（只读、单一指令通道、GET 白名单、GET 不探测、不泄露 secret/私有路径、单一权威、CLI/UI 一致、写入失败可见、UI 不触发动作）。〔2026-10-27 已修订：I1、I2、I9 已修订，I3–I8 继续有效，见「修订记录」〕
 
 新增：
 - **N1 collector 边界**：collector 只在 `operator serve` 进程内的后台定时器里运行，不在请求路径上。argv 是代码里的常量加经过校验的仓库路径，请求里的值不进入 argv。每个子进程有超时。并发有上限。

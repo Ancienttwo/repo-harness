@@ -406,7 +406,7 @@ repo-harness operator serve
 The command binds to loopback only and prints the local URL. The console has
 these pages: the development board with its task drawer, repositories, Agents,
 Skills, Hooks, tools, architecture and system status. The theme follows the
-system. The language follows your saved choice, then the browser language.
+system until you pick one. The language follows your saved choice, then the browser language.
 
 The console is read-only today. The approved design allows three bounded writes
 and nothing else. They open in this order: local agent config in
