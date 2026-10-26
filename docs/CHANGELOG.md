@@ -2,6 +2,221 @@
 
 All notable changes to this skill are documented here.
 
+## [0.24.2] - 2026-10-26
+
+This release has breaking changes. #959 moves review and task authority from
+task contracts and leases to approved admission. `src/` no longer reads the
+retired lease, publication, engineer binding and sprint claim stores.
+`archctx` and `archctx-contracts` go to exact 0.9.3. Most other changes close
+the 22 remarks of the #900 architecture review (#901 to #922). If you upgrade
+from 0.23.1, also do the steps in [0.24.1](#0241---2026-10-23) and
+[0.24.0](#0240---2026-10-21).
+
+### Upgrade
+
+- Run `repo-harness update` after the upgrade. `repo-harness init` no longer
+  installs the Herdr skill or writes the account architecture defaults. When
+  the Herdr skill is missing, `init` names the `update` command. (#930, #904)
+- Record each acceptance again. An acceptance receipt from an older release
+  has no stored copy. Until a new acceptance is recorded, product and
+  waived-module dependencies on that receipt report `authority_unavailable`.
+  There is no migration. (#959)
+- Run `repo-harness external-source refresh` once. A store from an older
+  release has no receipt head, so the agent board slice stays empty until the
+  next refresh. (#959)
+- Change your review and task callers to the approved admission inputs. See
+  "Breaking". The approval expiry must cover the campaign through the merge.
+  A renewal after a PASS starts a new round and counts against the limit of 3
+  rounds. (#959)
+- Check `information_lifecycle.retention.archive_days` in
+  `.ai/harness/policy.json` before `repo-harness retention --apply`. Retention
+  now deletes archived entries older than `archive_days`. The default is
+  `days` plus 60, which is 90. (#941, #918)
+- Read the new workflow rules with
+  `repo-harness docs show agentic-development-flow`. They change merge
+  sequencing, review reuse and slice size. (#962, #961)
+- When `update` reports "Daemon readiness pending; verified packages
+  retained.", authorize the archctx `daemon upgrade` as in 0.24.0. (#951)
+
+### Breaking
+
+- `repo-harness review round|status|close|cancel` drop `--contract <path>`.
+  They require `--repository-id`, `--issue-id`, `--campaign-id`,
+  `--grant-sha256`, `--policy-sha256`, `--actor`, `--claim-ref` and
+  `--claim-revision`. The new `review admit --request <file>` applies an
+  upstream-authorized control Bot request. The new
+  `review revoke --request <file>` revokes the active grant with a check of
+  the revision and the grant digest. It is the only revoke path. Neither
+  command authenticates its caller; the control Bot owns authentication.
+  (#959, #903)
+- `fleet ready` takes `--selections <path>` and prints FleetReadinessV2.
+  `fleet board` prints FleetBoardSnapshotV2. `fleet feedback
+  intake|offers|ack|show`, `fleet message send` and `fleet inbox list|ack`
+  require `--context <file>`. (#959)
+- `publication readiness` requires `--repository`, `--repository-id`,
+  `--pr`, `--head` and `--base`, and prints PullRequestReadinessV2.
+  `--publication-id` is removed. The MCP tool `publication_readiness` requires
+  `repository`, `provider_repository_id`, `pr_number`, `expected_head_sha` and
+  `expected_base_sha`; `publication_id` is removed. Merge readiness compares
+  the PR base with the repository default branch, not with `main`. (#959)
+- `state board` requires `--repository-id` and reads provider issues and
+  admitted sessions. `--sprint` and `--target-ref` are removed. It prints
+  ProviderBoardV2, which replaces BoardDocumentV1. (#959)
+- `integration envelope` requires `--tree`. `integration accept` drops
+  `--workflow-contract` and requires `--repository-id`, `--issue-id`,
+  `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor`. The
+  integration commands print IntegrationContractV2, IntegrationEnvelopeV2,
+  AcceptanceMatrixV2 and ProductAcceptanceProjectionV2, which replace the V1
+  documents. (#959)
+- `external-source bind` replaces `--sprint`, `--task-id` and `--target-ref`
+  with `--session <file>`, and prints ExternalSourceBindingReceiptV2.
+  `external-source bindings` prints ExternalSourceBindingProjectionV2. The
+  new `external-source historical-bindings` reads retired V1 binding
+  receipts as history. (#959)
+- The `repo-harness run` helpers `verification-plan
+  validate|evaluate|execute` and `change-assessment
+  prepare|escalate-disagreement|validate` drop `--contract`. They require
+  `--repository-id`, `--issue-id`, `--campaign-id`, `--grant-sha256`,
+  `--policy-sha256` and `--actor`. A Completed `archive-workflow` run passes
+  these six flags. It no longer promotes the contract to Fulfilled and no
+  longer runs the sealed-terminal contract and review gate. The
+  sealed-terminal mode uses the same live acceptance gate as the current
+  mode. Historical contract and review files are archived as data. (#959)
+- No code in `src/` reads the retired stores: leases (`coordination/v1`),
+  publications (`publications/v1`), engineer bindings (`engineers/v1`) and
+  sprint claims (`.ai/harness/sprint/claims`). The per-task lock keeps its
+  path under `coordination/v1/locks/tasks/`. Historical sprint and task inbox
+  reply readers stay read-only. Disk history is not removed. (#959, #917)
+- `repo-harness init` no longer runs the coordination cutover check and no
+  longer writes `coordination/v1/protocol.json`. Worktree cleanup no longer
+  reads lease records. Board cards lose the `lease_liveness` field.
+  (#936, #917)
+- Remove the `run-bounded-verifier-command` helper. `repo-harness run
+  run-bounded-verifier-command` fails closed and names
+  `repo-harness run verification-plan execute`. Since #959 that helper
+  requires `--repository-id`, `--issue-id`, `--campaign-id`,
+  `--grant-sha256`, `--policy-sha256` and `--actor`. The process-group
+  supervisor accepts an absolute deadline. (#933, #914)
+- The package no longer ships `dist/oar-coding-host.js`. PM was its only
+  production caller, and 0.23.1 removed PM. (#932, #911)
+
+### Changed
+
+- Upgrade `archctx` and `archctx-contracts` from 0.9.1 to exact 0.9.3. Four
+  contract tests cover paired topology stamps. CI admits the upgrade only
+  through the exact reviewed blob transitions and the real clean-room
+  receipt. (#951, #952, #955)
+- Agent spawn prompts show only the issue reference, state and execution
+  status of a board card. Provider titles do not render. (#959)
+- SessionStart, SubagentStart and the MCP state summary resolve Effective
+  State read-only. They take no lock and write nothing. They report the last
+  published `state_version`. `repo-harness state resolve` is the only
+  publisher. The MCP state summary declares `readOnlyHint: true`.
+  `.ai/harness/state/effective.json` is no longer written. (#931, #901)
+- The edit guard caches archctx owner answers per worktree. The cache key is
+  the archctx version, the checkout, HEAD and a digest of the archcontext
+  model. (#940, #905)
+- Every `src/` git call goes through one runner. It uses
+  `REPO_HARNESS_GIT_BIN` and a default timeout of 120 s. An absolute git path
+  in a call wins over the variable. (#938, #921)
+- Retention gives each storage root a rule. `repo-harness retention --json`
+  lists every root with its rule. MCP logs rotate in segments like hook
+  telemetry. `install` removes older release tarballs from
+  `~/.repo-harness/packages/`. The upgrade audit log keeps the newest 100
+  records. (#941, #918)
+- One primitive terminates a process group. It replaces 7 POSIX copies and 3
+  Windows `taskkill /T` copies. (#929, #913)
+- One TypeScript rule resolves the host skill roots. The shell sync reads the
+  roots from it. (#946, #920)
+- Name the repo id and the worktree id. Each stored identifier has one
+  projection function. No stored record moves. (#943, #919)
+- Hook events that no route serves (`PostToolUse`, `SubagentStop`) leave the
+  hook event type. One function makes the opt-in decision. (#944, #909)
+- `src/` no longer imports `scripts/`. The acceptance receipt and capability
+  resolver libraries move into `src/`. `check:state-boundaries` reports
+  `SRC_SCRIPT_IMPORT`. (#939, #906)
+- `src/core` passes the core purity check with no exemption. Adoption,
+  projection and legacy inventory I/O moves to `src/effects`.
+  (#928, #908, #942, #924)
+- `check:state-boundaries` reports directory cycles inside one layer. 10
+  cycles are removed. 2 stay in the allow table with a reason. (#945, #907)
+- Delete modules with no production caller, and the tests that covered only
+  them. (#925, #910)
+- Delete the product projection lister. No production code lists the store
+  after #959. (#963)
+- Workflow rules: a merge needs the branch to contain the current main tip
+  and green required checks on that head. The next merge does not wait for
+  main push CI. A coordinator reuses a recorded review of the same diff when
+  it meets the diff's tier. Slices that write the same files in sequence go
+  into one PR. (#962, #961)
+
+### Fixed
+
+- Make adoption apply stop at the first failed operation and roll back from
+  the manifest. A target lock from a dead writer is reclaimed. (#923, #902)
+- Give `REPO_HARNESS_HOME` one resolver. Gate readers use the OS account
+  home. Before, with `REPO_HARNESS_HOME` set, the module-accepted dependency
+  check looked for receipts in a gates directory that no writer used.
+  (#926, #912)
+- Keep `repo-harness init` repo-local. It writes no install-managed host
+  files. (#930, #904)
+- Give runtime transaction locks an explicit scope. MCP project setup no
+  longer creates `.repo-harness/transactions/global-runtime.lock` inside the
+  repository. (#937, #922)
+- Judge a lock owner as stale by its PID and OS start time. Registry, MCP
+  path and Herdr decision label locks use the shared lock primitive.
+  (#934, #915)
+- Register detached process groups. At start, the MCP process manager and
+  the operator server reap the groups of an owner that no longer runs.
+  (#935, #916)
+- Require a checkout-local `.codegraph` directory for CodeGraph readiness. A
+  nested worktree no longer reports its parent's index as ready. (#899, #888)
+- Recovery at Stop no longer reads task contracts or the sprint marker. The
+  handoff and resume views drop the contract lines. (#927, #903)
+- Keep the evidence quarantine before the log truncation. Flush the
+  quarantine, then truncate and flush the log. A name collision fails before
+  the truncation. (#949, #947)
+- Add `--timeout-ms` to `refactor recommendations` and `refactor decide`. A
+  timeout reports `refactor_provider_timeout` with a remedy that names the
+  flag. (#892, #891)
+- `architecture-projection` prints one next step on stderr for each human
+  action. `check-context-map` skips nested checkouts. (#893, #890)
+- Point the acceptance-review flow sink to the effects implementation. With
+  a ready CodeGraph index, the flows check proves 108 of 108 selectors.
+  (#957, #956)
+- Isolate the clean-room runtime and confirm its shutdown before cleanup.
+  (#953)
+- Publish the PID files of a closeout test fixture atomically. This removes
+  a CI race. (#894)
+- Fix the Windows regressions from #959. The admission store applies its
+  owner and mode checks only on POSIX. The external-source store uses the
+  shared directory sync, which skips directory fsync on Windows. Admitted
+  task sessions start only in a Herdr pane, so they and their Task Inbox and
+  operator diff consumers are POSIX-only. On Windows, session start fails
+  closed with `herdr_endpoint_platform_unsupported`. (#968, #967)
+- Split the Codex credential copy cleanup test into one test per scenario.
+  The six fixtures in one test passed the 60 s limit on loaded CI runners.
+  (#971, #970)
+
+### Documentation
+
+- Refresh generated architecture outputs through the archctx rolling writer
+  for main `c21aa3079` (#887), main `bbf18043e`, with the observed major
+  change that the owner accepted (#895, #898), and main `f7f502792` (#966).
+- Add layered, process and namespace topology views with 22 remarks. Each
+  remark has a tracking issue, #901 to #922. (#900)
+- Separate current architecture authority from historical views.
+  (#950, #948)
+- Add rules for boundary validation and test authority to the global
+  working rules and the root agent context. (#896)
+- Add CI cost guidance for diff-sized PR checks. (#897)
+- Record the 0.24.1 publication (#889) and the 0.24.2 release holds
+  (#954, #958).
+- Fix 11 stale code citations in the architecture module docs. Delete two
+  archctx manifest keys that archctx does not enforce: `content.practices`
+  and `review.failOn`. `.archcontext/policies/review.yaml` stays the review
+  policy source. (#964)
+
 ## [0.24.1] - 2026-10-23
 
 0.24.1 is the first npm release after 0.23.1. v0.24.0 exists only as a Git
