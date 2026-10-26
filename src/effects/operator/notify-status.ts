@@ -23,12 +23,15 @@ export class NotifyStatusUnavailableError extends Error {
 }
 
 const runFile = promisify(execFile);
+const HERDR_TIMEOUT_MS = 10_000;
 
 export interface NotifyStatusReadInput {
   readonly env?: NodeJS.ProcessEnv;
   /** The Herdr session the plugin was installed into. Defaults to the session Herdr itself selects from `HERDR_SESSION`. */
   readonly session?: string;
   readonly now?: Date;
+  /** Deadline of each Herdr call. */
+  readonly timeout_ms?: number;
 }
 
 interface HerdrPluginList {
@@ -40,9 +43,10 @@ interface HerdrPluginList {
 }
 
 // The server answers other requests while Herdr runs, so these reads must not block.
-async function herdr(session: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
+async function herdr(session: string, args: readonly string[], env: NodeJS.ProcessEnv, timeout: number): Promise<string | null> {
   try {
-    const { stdout } = await runFile('herdr', ['--session', session, ...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+    // SIGKILL: a Herdr that ignores SIGTERM would otherwise hold the notify cycle, and so close(), open.
+    const { stdout } = await runFile('herdr', ['--session', session, ...args], { env, encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 });
     return stdout.trim();
   } catch { return null; }
 }
@@ -121,7 +125,8 @@ export async function readNotifyChannelStatus(input: NotifyStatusReadInput = {})
   const session = input.session ?? (env.HERDR_SESSION || 'default');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new NotifyStatusUnavailableError('herdr_session_invalid');
   for (const name of Object.keys(env)) if (name.startsWith('HERDR_')) delete env[name];
-  const plugins = (json(await herdr(session, ['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env)) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
+  const timeout = input.timeout_ms ?? HERDR_TIMEOUT_MS;
+  const plugins = (json(await herdr(session, ['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env, timeout)) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
   if (!Array.isArray(plugins)) throw new NotifyStatusUnavailableError('herdr_unavailable');
   const plugin = plugins.find(item => item.plugin_id === NOTIFY_PLUGIN_ID) ?? null;
   // Herdr listed no such plugin: nothing is installed, configured or delivered.
@@ -134,8 +139,8 @@ export async function readNotifyChannelStatus(input: NotifyStatusReadInput = {})
     } };
   }
   const [dir, logs] = await Promise.all([
-    herdr(session, ['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
-    herdr(session, ['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env, timeout),
+    herdr(session, ['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env, timeout),
   ]);
   const root = typeof plugin.plugin_root === 'string' ? plugin.plugin_root : '';
   let linked: NotifyStatusV1['linked'] = 'missing';

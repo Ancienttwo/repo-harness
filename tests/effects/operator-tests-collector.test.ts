@@ -276,8 +276,16 @@ test('a run response that is not the scheduled ci.yml run of the branch is refus
     expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_unavailable' });
     expect(gh.calls.filter(call => call.argv.startsWith('gh run download'))).toEqual([]);
   }
+  // A malformed created_at is refused with the run, before any download.
+  const malformed = github();
+  malformed.state.runs = [scheduled({ id: 100, run_attempt: 2, created_at: 'yesterday', conclusion: 'failure' })];
+  const refused = collect(f, malformed, () => activity(f.id));
+  await refused.settled();
+  expect(refused.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_unavailable' });
+  expect(malformed.calls.filter(call => call.argv.startsWith('gh run download'))).toEqual([]);
+  // An issue number the decoder rejects reaches only the final decode.
   const gh = github();
-  gh.state.runs = [scheduled({ id: 100, run_attempt: 2, created_at: 'yesterday', conclusion: 'failure' })];
+  gh.state.issues = [{ number: 0, title: '[CI repair] x', html_url: 'https://github.com/owner/repo/issues/0', body: '<!-- ci-repair:x -->', is_pull_request: false }];
   const tests = collect(f, gh, () => activity(f.id));
   await tests.settled();
   expect(tests.read(f.id)).toEqual({ state: 'unavailable', reason: 'tests_invalid' });

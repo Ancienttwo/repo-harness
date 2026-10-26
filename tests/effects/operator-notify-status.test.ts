@@ -179,6 +179,17 @@ describe('notify plugin status', () => {
     } finally { chmodSync(join(f.config, '.env'), 0o600); f.cleanup(); }
   });
 
+  test('a Herdr that ignores SIGTERM is killed at the deadline, so the read ends herdr_unavailable', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rh-notify-stubborn-'));
+    try {
+      writeFileSync(join(root, 'herdr'), "#!/bin/sh\ntrap '' TERM\nexec sleep 30\n");
+      chmodSync(join(root, 'herdr'), 0o755);
+      const started = Date.now();
+      expect(await unavailableCode(readNotifyStatus({ env: { ...process.env, PATH: `${root}:${process.env.PATH}` }, timeout_ms: 200 }))).toBe('herdr_unavailable');
+      expect(Date.now() - started).toBeLessThan(5_000);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('the collector runs one probe set per cycle, keeps its cache, and replaces it with a code on failure', async () => {
     const f = fixture();
     const calls = () => readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => (JSON.parse(line) as { argv: string[] }).argv.slice(2, 4).join(' '));

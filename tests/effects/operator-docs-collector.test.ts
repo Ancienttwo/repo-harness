@@ -148,9 +148,8 @@ test('a close during the remote lookup starts no cat-file process and no scan', 
   writeFileSync(slow, `#!/bin/sh\ncase "$*" in config*) sleep 1;; esac\nexec '${f.gitBin}' "$@"\n`);
   chmodSync(slow, 0o755);
   const docs = startDocsCollector({ env: f.env, read_dev_activity: () => activity(f.id, 'owner/repo', 'main'), git_bin: slow, interval_ms: 60_000 });
-  await Bun.sleep(100);
+  // The lookup is spawned before startDocsCollector returns, and close() waits for the cycle to end.
   await docs.close();
-  await Bun.sleep(1_300);
   expect(readFileSync(f.log, 'utf8').trim().split('\n')).toEqual(['config --local --get-regexp ^remote\\..*\\.url$']);
   expect(existsSync(f.pids)).toBe(false);
 });

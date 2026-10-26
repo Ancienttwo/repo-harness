@@ -293,6 +293,19 @@ describe('Bot access collector', () => {
       const cache = handle.read();
       expect(cache.state === 'ok' && cache.snapshot.notify.state).toBe('ok');
       await handle.close();
+
+      // A notify first cycle that fails gives its reason, not pending, to the first snapshot.
+      let failedRelease!: () => void;
+      const failedFirstCycle = new Promise<void>(resolve => { failedRelease = resolve; });
+      let failedNotify: NotifyCacheV1 = { state: 'pending' };
+      const failing = startBotAccessCollector({ env: f.env, session: 'bots', now: () => NOW, interval_ms: 60_000, first_cycle_after: failedFirstCycle,
+        run_command: async () => ({ ok: false, code: 'failed' }), read_notify: () => failedNotify });
+      failedNotify = { state: 'unavailable', reason: 'herdr_unavailable' };
+      failedRelease();
+      await failing.settled();
+      const failed = failing.read();
+      expect(failed.state === 'ok' && failed.snapshot.notify).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
+      await failing.close();
     } finally { f.cleanup(); }
   });
 

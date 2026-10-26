@@ -528,6 +528,7 @@ describe('operator serve command and HTTP boundary', () => {
     const hung = { file: () => new Promise(() => {}) } as unknown as DocsReader;
     const read_docs = (id: string): DocsRepositoryCache => pending ?? (id === 'repo-a' ? { state: 'ready', tree, reader }
       : id === 'repo-b' ? { state: 'unavailable', reason: 'default_branch_unknown' }
+        : id === 'repo-ref' ? { state: 'unavailable', reason: 'ref_invalid' }
         : id === 'repo-hung' ? { state: 'ready', tree: { ...tree, repository_id: 'repo-hung' }, reader: hung }
           : { state: 'unavailable', reason: 'repository_not_found' });
     const spawnSpy = spyOn(childProcess, 'spawn');
@@ -564,6 +565,10 @@ describe('operator serve command and HTTP boundary', () => {
       expect([missing.status, await code(missing)]).toEqual([404, 'repository_not_found']);
       const branch = await file('repo-b', 'path=docs/guide.md');
       expect([branch.status, await code(branch)]).toEqual([503, 'default_branch_unknown']);
+      // Either name can make the ref unsafe; the next action names both and says renaming fixes only the remote.
+      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; next_action: string } };
+      expect(ref.error.code).toBe('ref_invalid');
+      for (const words of ['remote', 'default branch name', 'fixes only a remote name']) expect(ref.error.next_action).toContain(words);
 
       // One read in flight fills the cap; it times out, and a client that leaves frees its slot.
       const slow = file('repo-hung', 'path=docs/guide.md');
@@ -1709,6 +1714,9 @@ test('architecture prompt keeps public absolute-path examples in CLI digest pari
 
 test('operator serve admits explicit native capture snapshots without Herdr or pipeline setup', async () => {
   const root = mkdtempSync(join(tmpdir(), 'rh-operator-native-cli-'));
+  // The server's own HOME: its background collectors (setup, Bot access, CLI inventory) and their
+  // child tools write caches there, so `root` holds only the two inputs and any write a GET makes.
+  const home = mkdtempSync(join(tmpdir(), 'rh-operator-native-home-'));
   const configPath = join(root, 'runtime.json'), sourcePath = join(root, 'capture.json');
   const heartbeat = new Date().toISOString();
   writeFileSync(sourcePath, JSON.stringify({ protocol: 'repo-harness.runtime-capture.v1', source_id: 'cli-source',
@@ -1720,7 +1728,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
   const sourceBefore = readFileSync(sourcePath), configBefore = readFileSync(configPath);
   const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
   const child = spawn(process.execPath, [cli, 'operator', 'serve', '--port', '0', '--runtime-status-config', configPath], {
-    cwd: root, env: { ...process.env, HOME: root, TMPDIR: root, REPO_HARNESS_HOME: root }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: home, env: { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '';
   child.stdout.on('data', bytes => { stdout += bytes.toString(); }); child.stderr.on('data', bytes => { stderr += bytes.toString(); });
@@ -1737,7 +1745,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
-  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } rmSync(root, { recursive: true, force: true }); }
+  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home]) rmSync(path, { recursive: true, force: true }); }
 });
 
 test('session discovery is bounded read-only transport with a closed repository selector', async () => {

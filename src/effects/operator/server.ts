@@ -399,7 +399,7 @@ const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status
   github_remote_missing: { status: 503, message: 'No git remote points to the GitHub repository.', next_action: 'Add the GitHub remote to the repository.' },
   github_remote_ambiguous: { status: 503, message: 'More than one git remote points to the GitHub repository.', next_action: 'Keep one remote for the GitHub repository.' },
   branch_missing: { status: 503, message: 'The remote-tracking ref of the default branch does not exist.', next_action: 'Run `git fetch` in the repository.' },
-  ref_invalid: { status: 503, message: 'The GitHub remote name and the default branch do not form a safe ref.', next_action: 'Rename the remote that points to the GitHub repository.' },
+  ref_invalid: { status: 503, message: 'The GitHub remote name and the default branch do not form a safe ref.', next_action: 'Either the name of the remote that points to the GitHub repository or the GitHub default branch name is the cause: it has a character outside A-Z, a-z, 0-9, ".", "_", "/" and "-", or a "..", "//", a part that starts with "." or "-", or a ".lock" end. Renaming the remote fixes only a remote name.' },
   docs_too_large: { status: 503, message: 'The docs directory has more files than the reader lists.', next_action: 'Reduce the number of files under docs/.' },
   docs_reader_unavailable: { status: 503, message: 'The docs reader is unavailable.', next_action: 'Retry after the next collection.' },
 };
