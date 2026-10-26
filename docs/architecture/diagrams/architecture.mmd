@@ -41,8 +41,8 @@ flowchart LR
   component_contract_assets_planning_helpers["Planning Helpers"]
   component_contract_assets_primary["Workflow Contract And Policy"]
   component_contract_assets_template_projection["Template Projection"]
-  component_engineer_bindings_primary["Shared Engineer Binding Store"]
-  component_engineer_scheduling_primary["Work Package Graph Reader"]
+  component_engineer_bindings_primary["Engineer Profile Resolver"]
+  component_engineer_scheduling_primary["Provider Work Graph Reader"]
   component_engineering_overlay_primary["Engineering Overlay Read Model"]
   component_evals_checks_ci_selection["CI Selection And Report"]
   component_evals_checks_evals_and_benchmarks["Evals And Benchmarks"]
@@ -73,7 +73,7 @@ flowchart LR
   component_operator_primary["Operator HTTP Reader"]
   component_operator_view_projections["Operator View Projections"]
   component_operator_web_console["Operator Web Console"]
-  component_publication_primary["Publication Record and Readiness Readers"]
+  component_publication_primary["PR Readiness and Integration Evidence"]
   component_publication_provider_feedback["Provider Feedback"]
   component_refactor_program_archctx_provider["Refactor ArchContext Provider Boundary"]
   component_root_router_primary["Root Adoption Router"]
@@ -82,7 +82,7 @@ flowchart LR
   component_task_fleet_primary["Fleet Task Observations and Board"]
   component_task_fleet_task_inbox["Task Inbox"]
   component_workflow_state_continuation_ledger["Continuation Ledger"]
-  component_workflow_state_coordination_plane["Historical Coordination and Worktree Safety"]
+  component_workflow_state_coordination_plane["Provider Board Observations and Historical Worktree Safety"]
   component_workflow_state_primary["Effective State Resolver"]
   capability_verification_acceptance_review -->|"calls"| capability_runtime_harness_hook_adapters
   capability_verification_acceptance_review -->|"depends-on"| capability_runtime_harness_mcp_sidecar
@@ -91,6 +91,7 @@ flowchart LR
   component_acceptance_review_primary -->|"calls"| capability_runtime_harness_evidence_ledger
   component_acceptance_review_primary -->|"calls"| capability_workflow_engine_execution_primitives
   component_acceptance_review_primary -->|"calls"| capability_runtime_harness_task_agent_host
+  component_acceptance_review_primary -->|"calls"| capability_organization_task_fleet
   component_acceptance_review_primary -->|"reads"| capability_workflow_engine_workflow_state
   capability_public_surface_action_commands -->|"depends-on"| capability_workflow_engine_contract_assets
   capability_public_surface_action_commands -->|"depends-on"| capability_verification_evals_checks
@@ -108,7 +109,6 @@ flowchart LR
   capability_runtime_harness_agent_runtime_effects -->|"calls"| capability_runtime_harness_engineer_scheduling
   capability_runtime_harness_agent_runtime_effects -->|"calls"| component_agent_runtime_effects_journal
   component_agent_runtime_effects_journal -->|"calls"| capability_workflow_engine_execution_primitives
-  component_agent_runtime_effects_journal -->|"reads"| capability_workflow_engine_workflow_state
   capability_runtime_harness_agent_runtime_effects -->|"calls"| capability_runtime_harness_mcp_sidecar
   capability_runtime_harness_agent_runtime_effects -->|"calls"| capability_runtime_harness_task_agent_host
   capability_runtime_harness_agent_runtime_effects -->|"calls"| capability_organization_task_fleet
@@ -133,19 +133,14 @@ flowchart LR
   component_contract_assets_template_projection -->|"calls"| capability_public_surface_adoption
   component_contract_assets_template_projection -->|"calls"| capability_verification_codegraph_readiness
   component_contract_assets_template_projection -->|"calls"| capability_workflow_engine_execution_primitives
-  component_contract_assets_template_projection -->|"calls"| capability_runtime_harness_global_runtime_reconciliation
   component_contract_assets_template_projection -->|"calls"| capability_runtime_harness_hook_adapters
   component_contract_assets_template_projection -->|"depends-on"| capability_runtime_harness_operator
-  component_contract_assets_template_projection -->|"calls"| component_contract_assets_planning_helpers
   component_contract_assets_template_projection -->|"calls"| component_action_commands_skill_surface_catalog
-  component_contract_assets_template_projection -->|"calls"| capability_runtime_harness_task_agent_host
-  component_contract_assets_template_projection -->|"calls"| capability_workflow_engine_workflow_state
   capability_runtime_harness_engineer_bindings -->|"calls"| capability_workflow_engine_execution_primitives
   capability_runtime_harness_engineer_bindings -->|"depends-on"| capability_workflow_engine_contract_assets
   capability_runtime_harness_engineer_bindings -->|"depends-on"| capability_runtime_harness_evidence_ledger
   capability_runtime_harness_engineer_bindings -->|"depends-on"| capability_runtime_harness_global_runtime_reconciliation
   capability_runtime_harness_engineer_bindings -->|"calls"| component_engineer_bindings_primary
-  capability_runtime_harness_engineer_bindings -->|"calls"| capability_workflow_engine_workflow_state
   capability_runtime_harness_engineer_scheduling -->|"calls"| capability_verification_acceptance_review
   capability_runtime_harness_engineer_scheduling -->|"calls"| capability_runtime_harness_engineer_bindings
   capability_runtime_harness_engineer_scheduling -->|"calls"| capability_workflow_engine_execution_primitives
@@ -158,6 +153,7 @@ flowchart LR
   capability_runtime_harness_engineering_overlay -->|"calls"| capability_runtime_harness_engineer_bindings
   capability_runtime_harness_engineering_overlay -->|"depends-on"| capability_runtime_harness_engineer_scheduling
   capability_runtime_harness_engineering_overlay -->|"depends-on"| capability_runtime_harness_mcp_sidecar
+  capability_runtime_harness_engineering_overlay -->|"calls"| capability_runtime_harness_engineering_overlay
   capability_runtime_harness_engineering_overlay -->|"calls"| component_engineering_overlay_primary
   component_evals_checks_ci_selection -->|"calls"| capability_workflow_engine_inspection_migration
   component_evals_checks_ci_selection -->|"calls"| component_evals_checks_test_suite
@@ -193,12 +189,13 @@ flowchart LR
   capability_runtime_harness_evidence_ledger -->|"depends-on"| capability_workflow_engine_workflow_state
   capability_runtime_harness_evidence_ledger -->|"calls"| component_evidence_ledger_primary
   component_evidence_ledger_primary -->|"calls"| capability_workflow_engine_execution_primitives
-  capability_workflow_engine_execution_primitives -->|"depends-on"| capability_workflow_engine_workflow_state
   capability_workflow_engine_execution_primitives -->|"calls"| component_execution_primitives_primary
+  capability_runtime_harness_external_source_intake -->|"depends-on"| capability_verification_acceptance_review
   capability_runtime_harness_external_source_intake -->|"calls"| component_external_source_intake_immutable_evidence
   component_external_source_intake_immutable_evidence -->|"calls"| capability_workflow_engine_execution_primitives
   capability_runtime_harness_external_source_intake -->|"calls"| capability_runtime_harness_mcp_sidecar
-  capability_runtime_harness_external_source_intake -->|"reads"| capability_workflow_engine_workflow_state
+  capability_runtime_harness_external_source_intake -->|"calls"| capability_runtime_harness_task_agent_host
+  capability_runtime_harness_external_source_intake -->|"calls"| capability_organization_task_fleet
   capability_runtime_mcp_general_repo_access -->|"calls"| component_general_repo_access_primary
   component_general_repo_access_primary -->|"calls"| capability_verification_codegraph_readiness
   component_general_repo_access_primary -->|"calls"| component_mcp_sidecar_repo_policy_registry
@@ -268,7 +265,6 @@ flowchart LR
   capability_runtime_harness_integration_acceptance -->|"calls"| component_integration_acceptance_primary
   component_integration_acceptance_primary -->|"calls"| capability_verification_acceptance_review
   component_integration_acceptance_primary -->|"calls"| capability_workflow_engine_execution_primitives
-  component_integration_acceptance_primary -->|"reads"| capability_workflow_engine_workflow_state
   capability_runtime_harness_integration_acceptance -->|"reads"| capability_organization_publication
   capability_runtime_harness_mcp_sidecar -->|"calls"| capability_runtime_harness_agent_runtime_effects
   component_mcp_sidecar_coding_profile -->|"calls"| capability_verification_codegraph_readiness
@@ -298,13 +294,11 @@ flowchart LR
   component_mcp_sidecar_repo_policy_registry -->|"calls"| capability_workflow_engine_execution_primitives
   component_mcp_sidecar_transport_auth -->|"calls"| component_mcp_sidecar_primary
   component_mcp_sidecar_transport_auth -->|"reads"| component_mcp_sidecar_repo_policy_registry
+  capability_runtime_harness_operator -->|"depends-on"| capability_verification_acceptance_review
   component_operator_activity_feeds -->|"reads"| capability_runtime_harness_hook_adapters
   component_operator_activity_feeds -->|"calls"| component_operator_view_projections
-  component_operator_architecture_view -->|"calls"| capability_verification_acceptance_review
   component_operator_architecture_view -->|"reads"| capability_runtime_harness_global_runtime_reconciliation
-  component_operator_primary -->|"calls"| capability_verification_acceptance_review
   component_operator_primary -->|"calls"| component_operator_activity_feeds
-  component_operator_primary -->|"calls"| component_operator_architecture_view
   component_operator_primary -->|"reads"| capability_runtime_harness_engineer_scheduling
   component_operator_primary -->|"reads"| capability_runtime_harness_engineering_overlay
   component_operator_primary -->|"reads"| capability_runtime_harness_global_runtime_reconciliation
@@ -328,10 +322,10 @@ flowchart LR
   capability_organization_publication -->|"depends-on"| capability_verification_acceptance_review
   capability_organization_publication -->|"calls"| component_publication_primary
   component_publication_primary -->|"calls"| capability_workflow_engine_execution_primitives
-  component_publication_primary -->|"calls"| capability_workflow_engine_workflow_state
   component_publication_provider_feedback -->|"calls"| capability_workflow_engine_execution_primitives
   component_publication_provider_feedback -->|"calls"| component_publication_primary
-  component_publication_provider_feedback -->|"calls"| capability_workflow_engine_workflow_state
+  component_publication_provider_feedback -->|"calls"| capability_runtime_harness_task_agent_host
+  component_publication_provider_feedback -->|"calls"| capability_organization_task_fleet
   capability_runtime_harness_refactor_program -->|"calls"| component_refactor_program_archctx_provider
   component_refactor_program_archctx_provider -->|"calls"| capability_runtime_harness_evidence_ledger
   component_refactor_program_archctx_provider -->|"calls"| capability_runtime_harness_global_runtime_reconciliation
@@ -353,20 +347,17 @@ flowchart LR
   capability_organization_task_fleet -->|"calls"| capability_organization_publication
   capability_organization_task_fleet -->|"reads"| component_mcp_sidecar_repo_policy_registry
   component_task_fleet_task_inbox -->|"calls"| capability_workflow_engine_execution_primitives
-  component_task_fleet_task_inbox -->|"calls"| capability_workflow_engine_workflow_state
-  component_workflow_state_continuation_ledger -->|"calls"| capability_runtime_harness_evidence_ledger
+  component_task_fleet_task_inbox -->|"calls"| capability_runtime_harness_task_agent_host
   component_workflow_state_continuation_ledger -->|"calls"| capability_workflow_engine_execution_primitives
   component_workflow_state_continuation_ledger -->|"calls"| component_workflow_state_primary
   capability_workflow_engine_workflow_state -->|"calls"| component_workflow_state_coordination_plane
   component_workflow_state_coordination_plane -->|"calls"| component_workflow_state_continuation_ledger
-  component_workflow_state_coordination_plane -->|"calls"| capability_runtime_harness_evidence_ledger
   component_workflow_state_coordination_plane -->|"calls"| capability_workflow_engine_execution_primitives
+  component_workflow_state_coordination_plane -->|"calls"| capability_runtime_harness_external_source_intake
   component_workflow_state_coordination_plane -->|"calls"| component_workflow_state_primary
   component_workflow_state_coordination_plane -->|"reads"| capability_runtime_harness_task_agent_host
   capability_workflow_engine_workflow_state -->|"depends-on"| capability_verification_acceptance_review
   capability_workflow_engine_workflow_state -->|"depends-on"| capability_runtime_harness_global_runtime_reconciliation
-  capability_workflow_engine_workflow_state -->|"depends-on"| capability_organization_publication
   capability_workflow_engine_workflow_state -->|"calls"| component_workflow_state_primary
   component_workflow_state_primary -->|"calls"| capability_workflow_engine_contract_assets
-  component_workflow_state_primary -->|"calls"| capability_runtime_harness_evidence_ledger
   component_workflow_state_primary -->|"calls"| capability_workflow_engine_execution_primitives

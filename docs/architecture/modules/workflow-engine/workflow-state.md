@@ -1,13 +1,13 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:89241a8d860eb053e3adaaeeda1b34efe0c178fd48aa1ee45a3773a4d17c9fb0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:485eee1d2b65a938a881ad9bca612d7c95bacbcc3ea79e6259edef9f75641b91" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Resolves deterministic Effective State and owns historical coordination reads, worktree safety and the continuation ledger.
+Resolves deterministic Effective State, provider issue and admitted session board observations, historical task identity, worktree safety and the continuation ledger.
 
 ## 1. P1:能力架構地圖
 
@@ -18,14 +18,13 @@ flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_capability_workflow_engine_workflow_state_c0df5f05["Workflow State"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
-  p1_component_workflow_state_coordination_plane_01b22a1b["Historical Coordination and Worktree Safety"]:::component
+  p1_component_workflow_state_coordination_plane_01b22a1b["Provider Board Observations and Historical Worktree Safety"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
-  p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Read the observation context for Git operations."| p1_capability_workflow_engine_workflow_state_c0df5f05
-  p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock and write them durably"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
-  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Serve historical coordination and board reads with worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
+  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Project provider boards and retain explicit historical task parsing and exact worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Append claim attempt receipts and read owner ledgers as progress evidence"| p1_component_workflow_state_continuation_ledger_379dbd7c
-  p1_component_workflow_state_coordination_plane_01b22a1b -->|"Take task and backlog locks and read the worktree topology"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_workflow_state_coordination_plane_01b22a1b -->|"Take task and backlog locks#44; read the worktree topology#44; and write coordination records durably"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Read artifacts and owner Effective State through the shared resolver"| p1_component_workflow_state_primary_d0fb4045
   p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Resolve Effective State under the state lock"| p1_component_workflow_state_primary_d0fb4045
   p1_component_workflow_state_primary_d0fb4045 -->|"Take the state lock and commit the version owner under the Git common dir"| p1_capability_workflow_engine_execution_primitives_b3033934
@@ -35,8 +34,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:74ff4dd2aafbe7672ce636e512c4d0506bb348ef46f1edd8c06ec1b8caf59295`).
-- Semantic nodes: `5`; declared relations: `9`.
+- Proof: `proven` (`sha256:6ea088f6412b8f6c461bd01b5c1cd71b8093678e4035ca005061a5553402838b`).
+- Semantic nodes: `5`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
@@ -47,10 +46,7 @@ flowchart LR
 | `entrypoint.workflow-state.primary` | `src/effects/state/resolve-effective-state.ts#resolveAndCommitEffectiveState` | `sink.workflow-state.version-commit` → `src/effects/state/git-state-version-store.ts#commitStateVersionAfter` |
 | `entrypoint.workflow-state.state-lock` | `src/effects/state/state-lock.ts#withStateLock` | `sink.workflow-state.directory-lock` → `src/effects/locking/exclusive-directory-lock.ts#withExclusiveDirectoryLock` |
 | `entrypoint.workflow-state.version-owner` | `src/effects/state/git-state-version-store.ts#commitStateVersionAfter` | `sink.workflow-state.git-common-dir` → `src/effects/git/common-directory.ts#resolveGitCommonDirectory` |
-| `entrypoint.workflow-state.board` | `src/effects/state/resolve-board.ts#resolveBoard` | `sink.workflow-state.board-inputs` → `src/effects/state/collect-board-inputs.ts#collectBoardInputs` |
-| `entrypoint.workflow-state.board` | `src/effects/state/resolve-board.ts#collectProjectCollect` | `sink.workflow-state.board-projection` → `src/core/state/project-board.ts#projectBoard` |
-| `entrypoint.workflow-state.board-inputs` | `src/effects/state/collect-board-inputs.ts#collectBoardInputs` | `sink.workflow-state.worktree-topology` → `src/effects/git/worktree-topology.ts#readWorktreeTopology` |
-| `entrypoint.workflow-state.board-inputs` | `src/effects/state/collect-board-inputs.ts#observeOwnerWorktree` | `sink.workflow-state.owner-state` → `src/effects/state/resolve-effective-state.ts#resolveEffectiveStateReadOnly`、`sink.workflow-state.owner-attempts` → `src/core/state/attempt-ledger.ts#parseAttemptLedger` |
+| `entrypoint.workflow-state.board` | `src/effects/state/collect-provider-board-inputs.ts#resolveProviderBoard` | `sink.workflow-state.board-inputs` → `src/effects/state/collect-provider-board-inputs.ts#collectProviderBoardInputs`、`sink.workflow-state.board-projection` → `src/core/state/provider-board.ts#projectProviderBoard` |
 
 組件入口:
 
@@ -66,55 +62,43 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `component.workflow-state.coordination-plane` — Serve historical coordination and board reads with worktree safety
+- `calls` → `component.workflow-state.coordination-plane` — Project provider boards and retain explicit historical task parsing and exact worktree safety
 - `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for Effective State.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Resolve the helper platform for coordination worktrees.
-- `depends-on` → `capability.organization.publication` — Read publication receipts for coordination worktree topology.
 - `calls` → `component.workflow-state.primary` — Resolve Effective State under the state lock
 
 入向關係:
 
 - `reads` ← `component.acceptance-review.primary` — Observe Git and files read-only and resolve the workflow profile for the review subject
 - `depends-on` ← `capability.public-surface.adoption` — Resolve worktree locations during adoption planning.
-- `reads` ← `component.agent-runtime-effects.journal` — Read the task lease before a runtime effect is recorded
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
-- `calls` ← `component.contract-assets.template-projection` — Check cutover quiescence and record the coordination cutover during init
-- `calls` ← `capability.runtime-harness.engineer-bindings` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
-- `reads` ← `capability.runtime-harness.engineer-scheduling` — Project canonical Sprint tasks into the work graph
+- `reads` ← `capability.runtime-harness.engineer-scheduling` — Read the canonical target ref for provider PR dependency and scheduling evidence
 - `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
 - `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
-- `depends-on` ← `capability.workflow-engine.execution-primitives` — Read the observation context for Git operations.
-- `reads` ← `capability.runtime-harness.external-source-intake` — Look up the canonical task for an external source
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the sprint and state commands
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the state command
 - `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths and resolve the owners of edited paths
-- `calls` ← `component.hook-adapters.primary` — Resolve effective state at most once per hook event
-- `calls` ← `component.hook-adapters.session-lifecycle` — Collect state and board slices and claim tokens for session context
-- `reads` ← `component.integration-acceptance.primary` — Read the task lease for the integration envelope
+- `calls` ← `component.hook-adapters.primary` — Resolve effective state read-only at most once per hook event
+- `calls` ← `component.hook-adapters.session-lifecycle` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
-- `reads` ← `component.mcp-sidecar.primary` — Resolve effective state for the state MCP tools
+- `reads` ← `component.mcp-sidecar.primary` — Resolve effective state read-only for the state MCP tools
 - `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
-- `calls` ← `component.publication.primary` — Read historical leases and the board to validate publication observations
-- `calls` ← `component.publication.provider-feedback` — Read canonical tasks and leases to evaluate provider feedback progress
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
-- `reads` ← `component.task-fleet.primary` — Read canonical Sprint tasks and leases to build offers and the board
-- `calls` ← `component.task-fleet.task-inbox` — Address task messages by canonical task under the task lock
+- `reads` ← `component.task-fleet.primary` — Read provider issue and admitted session board observations without Sprint or lease authority
 
 組件出向關係:
 
 - `component.workflow-state.continuation-ledger`:
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Append attempt ledger lines durably
-  - `calls` → `capability.workflow-engine.execution-primitives` — Serialize attempt ledger appends under a directory lock
+  - `calls` → `capability.workflow-engine.execution-primitives` — Serialize attempt ledger appends under a directory lock and write them durably
   - `calls` → `component.workflow-state.primary` — Project the continuation envelope from read-only Effective State
 - `component.workflow-state.coordination-plane`:
   - `calls` → `component.workflow-state.continuation-ledger` — Append claim attempt receipts and read owner ledgers as progress evidence
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Write lease and topology records durably through the atomic append primitive
-  - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks and read the worktree topology
+  - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks, read the worktree topology, and write coordination records durably
+  - `calls` → `capability.runtime-harness.external-source-intake` — Read immutable provider issue observations and complete refresh receipts
   - `calls` → `component.workflow-state.primary` — Read artifacts and owner Effective State through the shared resolver
-  - `reads` → `capability.runtime-harness.task-agent-host` — Confirm that the task runtime is closed before a worktree prune
+  - `reads` → `capability.runtime-harness.task-agent-host` — Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune
 - `component.workflow-state.primary`:
   - `calls` → `capability.workflow-engine.contract-assets` — Match changed paths to capability ids through the pure capability registry
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Evaluate the verification contract for effective state
   - `calls` → `capability.workflow-engine.execution-primitives` — Take the state lock and commit the version owner under the Git common dir
 
 ### 1.5 組件結構
@@ -122,32 +106,26 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Historical Coordination and Worktree Safety | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:74ff4dd2aafbe7672ce636e512c4d0506bb348ef46f1edd8c06ec1b8caf59295`); selectors `10/10`.
+> **Proof**: `proven` (`sha256:6ea088f6412b8f6c461bd01b5c1cd71b8093678e4035ca005061a5553402838b`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Workflow State
-  participant p2_plane_fe9f6ceb as Historical Coordination and Worktree Safety
-  participant p2_primitives_8dae000d as Execution Primitives
-  participant p2_resolver_55db5581 as Effective State Resolver
-  participant p2_ledger_bccca523 as Continuation Ledger
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Collect canonical Sprint rows and leases without the task lock
-  p2_plane_fe9f6ceb->>p2_primitives_8dae000d: Read the Git worktree topology
-  p2_plane_fe9f6ceb->>p2_resolver_55db5581: Resolve each owner worktree Effective State read-only
-  p2_plane_fe9f6ceb->>p2_ledger_bccca523: Parse the owner attempt ledger as progress evidence
+  participant p2_plane_fe9f6ceb as Provider Board Observations and Historical Worktree Safety
+  p2_capability_4262990f->>p2_plane_fe9f6ceb: Collect exact provider issue observations and all current admitted session associations
   alt Board revisions match before and after the projection
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Project the board between two collections with equal revisions
-    Note over p2_capability_4262990f: Return a stable board document
-  else Inputs move during both rounds
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Discard the torn round and project one more round
-    Note over p2_capability_4262990f: Return the second round marked changed_during_read as diagnostic only
+  p2_capability_4262990f->>p2_plane_fe9f6ceb: Project the complete provider and session observation for bounded revision comparison
+    Note over p2_capability_4262990f: Return a stable provider board after equal complete revisions
+  else Complete observations keep changing through the bounded retry
+  p2_capability_4262990f->>p2_plane_fe9f6ceb: Project the complete provider and session observation for bounded revision comparison
+    Note over p2_capability_4262990f: Return the final observation marked changed_during_read without mutation
   end
 ```
 
@@ -161,11 +139,11 @@ sequenceDiagram
   p2_capability_4262990f->>p2_resolver_55db5581: Serialize resolution under the repository state lock
   p2_resolver_55db5581->>p2_primitives_8dae000d: Take the canonical-ancestor directory-token lock
   p2_capability_4262990f->>p2_resolver_55db5581: Collect artifacts with a stability re-read and project the pure state
-  alt Sources stay stable and both writes succeed
-  p2_resolver_55db5581->>p2_primitives_8dae000d: Publish the cache and then commit the shared version owner under the Git common dir
+  alt Sources stay stable and the version commit succeeds
+  p2_resolver_55db5581->>p2_primitives_8dae000d: Confirm the sources and commit the shared version owner under the Git common dir
     Note over p2_resolver_55db5581: Return the Effective State with its state_version
   else Owner commit fails or sources move after the stability loop
-  p2_capability_4262990f->>p2_resolver_55db5581: Restore the prior cache bytes and retry the whole round once on a source mismatch
+  p2_capability_4262990f->>p2_resolver_55db5581: Retry the whole round once on a source mismatch
     Note over p2_capability_4262990f: Throw a typed failure and expose no consumed version
   end
 ```

@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0c37afd5dff8541c238137cf41357d8b48a32dcf81a3b2a1a2185f1aa0ca0b1f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:60b3018b24e4028f403aeea2aa39e5c7227a08b483e62a7406a816430e6d24f9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -28,14 +28,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:e5d3cbf83106534be399b61d9040ffed117f794fcd9d6302cd342253a347f07f`).
+- Proof: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`).
 - Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.action-commands.primary` | `src/cli/commands/init.ts#installExternalSkills` | `sink.action-commands.primary` → `src/cli/commands/init.ts#loadSkillSurfaceCatalog` |
+| `entrypoint.action-commands.primary` | `src/cli/commands/init.ts#syncCrossReviewSkills` | `sink.action-commands.primary` → `src/cli/commands/init.ts#loadSkillSurfaceCatalog` |
 
 組件入口:
 
@@ -83,7 +83,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:e5d3cbf83106534be399b61d9040ffed117f794fcd9d6302cd342253a347f07f`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

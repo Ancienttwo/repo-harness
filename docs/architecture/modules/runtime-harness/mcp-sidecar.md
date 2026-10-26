@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f29e2c625382976bfeeca00d0f0877069724fb308842adb0ebb3dd36929a17ab" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0a83f2428032d15b1adcdbb22063bdf4c17f94e261a5825b3949916cd68d02ca" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`src/core/security/**`
@@ -110,7 +110,7 @@ flowchart LR
   - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve repositories and paths under the profile policy then redact and audit each result
   - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents and send task requests through Herdr
   - `calls` → `capability.organization.task-fleet` — Acquire fleet tasks and handle task steers from the MCP tools
-  - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state for the state MCP tools
+  - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only for the state MCP tools
 - `component.mcp-sidecar.repo-policy-registry`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git for repository roots and lock guarded writes
 - `component.mcp-sidecar.transport-auth`:

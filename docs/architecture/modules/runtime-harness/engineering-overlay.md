@@ -1,13 +1,13 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ef090fbf904fbba5f4df0f58e4d46651555445a537744e52150a8509f39bc5ef" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b340fe89a41a8adfb042428870b19ef0dcaf69c4cf3db88ffa97b26a01114930" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects Profile, Binding, Claim and Agent Runtime observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
+Projects provider scheduling, independently selected engineer profiles and exact admitted runtime evidence into read-only engineering and organization attention views.
 
 ## 1. P1:能力架構地圖
 
@@ -17,6 +17,7 @@ Projects Profile, Binding, Claim and Agent Runtime observations into exact read-
 flowchart LR
   p1_capability_runtime_harness_engineering_overlay_c3aa5b35["Engineering Overlay"]:::component
   p1_component_engineering_overlay_primary_37afa8e8["Engineering Overlay Read Model"]:::component
+  p1_capability_runtime_harness_engineering_overlay_c3aa5b35 -->|"Within the existing engineering overlay collector#44; collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence#59; these are internal calls#44; not recursive invocation or a dependency on another capability"| p1_capability_runtime_harness_engineering_overlay_c3aa5b35
   p1_capability_runtime_harness_engineering_overlay_c3aa5b35 -->|"Validate and content-address the read-only Engineer and organization-attention projections"| p1_component_engineering_overlay_primary_37afa8e8
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -24,16 +25,16 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:2fbf00f9a371a78bffaae5ffd5451b83d4e0ac5d4026a6fc9cd106bd981f13df`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:7023b090b91e614a2bea236966b60d2fab8861a0dc87dd4fdc3a7e7fce4deac0`).
+- Semantic nodes: `2`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.read-pass` → `src/effects/engineers/engineering-overlay.ts#readPass`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
-| `entrypoint.engineering-overlay.attention` | `src/core/engineers/engineering-overlay.ts#projectOrganizationAttention` | `sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#validateOrganizationAttentionSnapshot` |
-| `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#validateEngineeringOverlaySnapshot` |
+| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.read-pass` → `src/effects/engineers/engineering-overlay.ts#read`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildAdmittedEngineeringOverlay`、`sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#projectAdmittedOrganizationAttention` |
+| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#read` | `sink.engineering-overlay.runtime-projection` → `src/effects/engineers/engineering-overlay.ts#runtimeProjection` |
+| `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildAdmittedEngineeringOverlay` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#invalid`、`sink.engineering-overlay.overlay-digest` → `src/core/engineers/profile-binding.ts#canonicalEngineerJson` |
 
 組件入口:
 
@@ -50,13 +51,15 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
-- `calls` → `capability.runtime-harness.engineer-bindings` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `calls` → `capability.runtime-harness.engineer-bindings` — Use canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores
 - `depends-on` → `capability.runtime-harness.engineer-scheduling` — Resolve the registered repository before reading the overlay.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read the repository registry for overlay observations.
+- `calls` → `capability.runtime-harness.engineering-overlay` — Within the existing engineering overlay collector, collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence; these are internal calls, not recursive invocation or a dependency on another capability
 - `calls` → `component.engineering-overlay.primary` — Validate and content-address the read-only Engineer and organization-attention projections
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.engineering-overlay` — Within the existing engineering overlay collector, collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence; these are internal calls, not recursive invocation or a dependency on another capability
 - `depends-on` ← `capability.verification.evals-checks` — Test Engineering Overlay behavior through its source modules.
 - `reads` ← `component.operator.primary` — Collect the engineering board for the Organization view
 
@@ -69,11 +72,11 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.engineering-overlay.primary` | Engineering Overlay Read Model | 未宣告 `source.include` | 未宣告 |
+| `component.engineering-overlay.primary` | Engineering Overlay Read Model | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:2fbf00f9a371a78bffaae5ffd5451b83d4e0ac5d4026a6fc9cd106bd981f13df`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:7023b090b91e614a2bea236966b60d2fab8861a0dc87dd4fdc3a7e7fce4deac0`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -81,12 +84,14 @@ sequenceDiagram
   autonumber
   participant p2_overlay_65dd31ba as Engineering Overlay
   participant p2_schema_a50dde9a as Engineering Overlay Read Model
-  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Validate and content-address the double-read result with explicit component fences
+  p2_overlay_65dd31ba->>p2_overlay_65dd31ba: Read scheduling and runtime observations in each pass of the consistency fence
+  p2_overlay_65dd31ba->>p2_overlay_65dd31ba: Project runtime evidence filtered to the exact admitted session and selected engineer profile
+  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Content-address the double-read admitted scheduling and runtime projection with explicit component fences
   alt Return stable#44; changed_during_read or degraded without changing an observed authority
-  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Validate and content-address organization attention from the exact overlay snapshot
+  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Derive profile assignment#44; profile drift and runtime reconciliation attention from the admitted overlay
     Note over p2_overlay_65dd31ba: Return read-only JSON/text projection with no authority mutation
-  else Reject an illegal overlay shape or digest instead of inventing a compatible projection
-  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Validate the closed overlay schema and content digest before returning bytes
+  else The supplied scheduling observation belongs to a different repository
+  p2_overlay_65dd31ba->>p2_schema_a50dde9a: Reject mismatched scheduling repository identity before returning a projection
     Note over p2_overlay_65dd31ba: Return a typed projection error with every observed authority unchanged
   end
 ```

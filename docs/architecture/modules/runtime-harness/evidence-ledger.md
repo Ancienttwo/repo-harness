@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ffe34a176f2d7cadc566603f94e8619937727931ee0fdc91f8034ca69ffc26be" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:56da1035adf6da2756a9a8dc21816975b108abeece3ea50f7e61a771c3ce89c2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/decision-trail.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
@@ -58,16 +58,13 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Canonicalize review records and load verification execution results
-- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Use canonical evidence JSON and evidence types for bindings.
+- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Use canonical evidence JSON and evidence types for profiles and historical principal records.
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
 - `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
 - `calls` ← `capability.runtime-harness.task-agent-host` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` ← `capability.organization.task-fleet` — Reuse canonical JSON and durable atomic append for task message records
-- `calls` ← `component.workflow-state.continuation-ledger` — Append attempt ledger lines durably
-- `calls` ← `component.workflow-state.coordination-plane` — Write lease and topology records durably through the atomic append primitive
-- `calls` ← `component.workflow-state.primary` — Evaluate the verification contract for effective state
 
 組件出向關係:
 

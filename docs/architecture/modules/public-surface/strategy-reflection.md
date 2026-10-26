@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b74f193d602944c651905ad98a41c839fde9a779f94ff92289dc362bbada0743" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:88740aff17632aa00a9a4a5e7e25a0a86f6a1474ffc99e3b081ea4339fc580ec" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`docs/plans/**`、`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -39,7 +39,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `1000–2000` 行
+- 規模量級:`5–10` 個文件 / `1000–2000` 行
 - 匹配前綴:`docs/plans/**`、`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 

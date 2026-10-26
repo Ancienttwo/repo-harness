@@ -1,8 +1,8 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:088f721aa6b41775830c3ad225ec8f795906c8e68bccaad54b9931f2e456c6cb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bdebd074c59010845a1fb407cd628f537a85d8f9760adb8cc8d830f5498f41a2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
-> **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
+> **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/effects/managed-tree.ts`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/segmented-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
 > **Local Contracts**:`src/cli/hook/AGENTS.md`、`src/cli/hook/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -54,7 +54,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/cli/hook/**`、`src/cli/installer/**`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/hook-event-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
+- 匹配前綴:`src/cli/hook/**`、`src/cli/installer/**`、`src/effects/managed-tree.ts`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/segmented-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -93,8 +93,8 @@ flowchart LR
   - `calls` → `component.hook-adapters.primary` — Project the route registry into managed adapter entries
   - `calls` → `component.action-commands.skill-surface-catalog` — Read skill names and profile ownership from the skill surface catalog
 - `component.hook-adapters.primary`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher entries and classify lock contention
-  - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state at most once per hook event
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run the process supervisor and group launcher entries
+  - `calls` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only at most once per hook event
   - `calls` → `component.hook-adapters.edit-guards` — Bind the PreToolUse.edit route to the mutation guard handler
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Write host output through the shared blocking writer
   - `calls` → `component.hook-adapters.session-lifecycle` — Bind SessionStart and Stop and subagent and inbox routes to their typed handlers
@@ -104,7 +104,7 @@ flowchart LR
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the native role evidence lock
   - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read state through the event-scoped collector
   - `calls` → `capability.organization.task-fleet` — Render task inbox messages as untrusted session context
-  - `calls` → `capability.workflow-engine.workflow-state` — Collect state and board slices and claim tokens for session context
+  - `calls` → `capability.workflow-engine.workflow-state` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
 
 ### 1.5 組件結構
 
