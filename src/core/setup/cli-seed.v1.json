@@ -1,0 +1,538 @@
+{
+  "seed_version": "repo-harness.cli-seed.v1",
+  "observed_on": "2026-10-26",
+  "tools": [
+    {
+      "id": "opencode",
+      "commands": [
+        "opencode"
+      ],
+      "repo": "anomalyco/opencode",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "@opencode/cli"
+        },
+        {
+          "registry": "npm",
+          "name": "opencode-ai"
+        },
+        {
+          "registry": "brew",
+          "name": "anomalyco/tap/opencode-v2"
+        },
+        {
+          "registry": "brew",
+          "name": "anomalyco/tap/opencode"
+        }
+      ],
+      "install_roots": [
+        "~/.opencode/bin"
+      ],
+      "install_files": [],
+      "script_uninstall": [
+        "opencode uninstall"
+      ],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "claude-code",
+      "commands": [
+        "claude"
+      ],
+      "repo": "anthropics/claude-code",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew_cask",
+          "name": "claude-code"
+        },
+        {
+          "registry": "npm",
+          "name": "@anthropic-ai/claude-code"
+        }
+      ],
+      "install_roots": [
+        "~/.local/share/claude"
+      ],
+      "install_files": [],
+      "script_uninstall": [
+        "rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude"
+      ],
+      "before_uninstall": [],
+      "config_uninstall": "rm -rf ~/.claude ~/.claude.json"
+    },
+    {
+      "id": "codex",
+      "commands": [
+        "codex"
+      ],
+      "repo": "openai/codex",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "@openai/codex"
+        },
+        {
+          "registry": "brew_cask",
+          "name": "codex"
+        }
+      ],
+      "install_roots": [
+        "~/.codex/packages/standalone"
+      ],
+      "install_files": [],
+      "script_uninstall": [
+        "rm -f ~/.local/bin/codex ~/.local/bin/codex-code-mode-host && rm -rf ~/.codex/packages/standalone"
+      ],
+      "before_uninstall": [],
+      "config_uninstall": "rm -rf ~/.codex"
+    },
+    {
+      "id": "gemini-cli",
+      "commands": [
+        "gemini"
+      ],
+      "repo": "google-gemini/gemini-cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "@google/gemini-cli"
+        },
+        {
+          "registry": "brew",
+          "name": "gemini-cli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "goose",
+      "commands": [
+        "goose"
+      ],
+      "repo": "aaif-goose/goose",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "block-goose-cli"
+        },
+        {
+          "registry": "brew_cask",
+          "name": "block-goose"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [
+        "~/.local/bin/goose"
+      ],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "aider",
+      "commands": [
+        "aider"
+      ],
+      "repo": "Aider-AI/aider",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "pypi",
+          "name": "aider-chat"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "gh",
+      "commands": [
+        "gh"
+      ],
+      "repo": "cli/cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "gh"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "crush",
+      "commands": [
+        "crush"
+      ],
+      "repo": "charmbracelet/crush",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "charmbracelet/tap/crush"
+        },
+        {
+          "registry": "npm",
+          "name": "@charmland/crush"
+        },
+        {
+          "registry": "go",
+          "name": "github.com/charmbracelet/crush"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "qwen-code",
+      "commands": [
+        "qwen"
+      ],
+      "repo": "QwenLM/qwen-code",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "@qwen-code/qwen-code"
+        },
+        {
+          "registry": "brew",
+          "name": "qwen-code"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "vercel",
+      "commands": [
+        "vercel",
+        "vc"
+      ],
+      "repo": "vercel/vercel",
+      "monorepo": true,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "vercel"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "asc-rorkai",
+      "commands": [
+        "asc"
+      ],
+      "repo": "rorkai/App-Store-Connect-CLI",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "asc"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [
+        "~/.local/bin/asc"
+      ],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "asc-tddworks",
+      "commands": [
+        "asc"
+      ],
+      "repo": "tddworks/asc-cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "asccli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "kimi-code",
+      "commands": [
+        "kimi"
+      ],
+      "repo": "MoonshotAI/kimi-code",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "@moonshot-ai/kimi-code"
+        },
+        {
+          "registry": "brew",
+          "name": "kimi-code"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "kimi-cli",
+      "commands": [
+        "kimi"
+      ],
+      "repo": "MoonshotAI/kimi-cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "pypi",
+          "name": "kimi-cli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": "rm -rf ~/.kimi"
+    },
+    {
+      "id": "wrangler",
+      "commands": [
+        "wrangler"
+      ],
+      "repo": "cloudflare/workers-sdk",
+      "monorepo": true,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "wrangler"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "firebase",
+      "commands": [
+        "firebase"
+      ],
+      "repo": "firebase/firebase-tools",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "firebase-tools"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [
+        "/usr/local/bin/firebase"
+      ],
+      "script_uninstall": [
+        "curl -sL firebase.tools | uninstall=true bash"
+      ],
+      "before_uninstall": [],
+      "config_uninstall": "rm -rf ~/.cache/firebase"
+    },
+    {
+      "id": "supabase",
+      "commands": [
+        "supabase"
+      ],
+      "repo": "supabase/cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "supabase/tap/supabase"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "stripe",
+      "commands": [
+        "stripe"
+      ],
+      "repo": "stripe/stripe-cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "stripe/stripe-cli/stripe"
+        },
+        {
+          "registry": "brew",
+          "name": "stripe"
+        },
+        {
+          "registry": "npm",
+          "name": "@stripe/cli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [
+        "stripe plugin uninstall --all",
+        "stripe logout --all"
+      ],
+      "config_uninstall": "rm -rf ~/.config/stripe"
+    },
+    {
+      "id": "netlify",
+      "commands": [
+        "netlify"
+      ],
+      "repo": "netlify/cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "netlify-cli"
+        },
+        {
+          "registry": "brew",
+          "name": "netlify-cli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "flyctl",
+      "commands": [
+        "flyctl",
+        "fly"
+      ],
+      "repo": "superfly/flyctl",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "flyctl"
+        }
+      ],
+      "install_roots": [
+        "~/.fly"
+      ],
+      "install_files": [],
+      "script_uninstall": [
+        "rm -rf ~/.fly"
+      ],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "eas",
+      "commands": [
+        "eas"
+      ],
+      "repo": "expo/eas-cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "npm",
+          "name": "eas-cli"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "pscale",
+      "commands": [
+        "pscale"
+      ],
+      "repo": "planetscale/cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "planetscale/tap/pscale"
+        },
+        {
+          "registry": "brew",
+          "name": "pscale"
+        }
+      ],
+      "install_roots": [],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    },
+    {
+      "id": "railway",
+      "commands": [
+        "railway"
+      ],
+      "repo": "railwayapp/cli",
+      "monorepo": false,
+      "packages": [
+        {
+          "registry": "brew",
+          "name": "railway"
+        },
+        {
+          "registry": "npm",
+          "name": "@railway/cli"
+        }
+      ],
+      "install_roots": [
+        "~/.railway/bin"
+      ],
+      "install_files": [],
+      "script_uninstall": [],
+      "before_uninstall": [],
+      "config_uninstall": null
+    }
+  ]
+}

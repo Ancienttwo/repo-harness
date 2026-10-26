@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
+  commandNames,
   createHookEventTelemetry,
   HOOK_EVENT_TELEMETRY_PATH,
   HOOK_EVENT_TELEMETRY_PROTOCOL,
@@ -39,7 +40,7 @@ describe('HRD-08 event telemetry authority', () => {
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0])).toEqual(record);
     expect(Object.keys(record).sort()).toEqual([
-      'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint',
+      'blocked', 'command_names', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint',
       'host', 'protocol', 'reason', 'route_id', 'run_id', 'session_id', 'started_at', 'turn_id',
     ]);
     expect(record).toMatchObject({
@@ -53,8 +54,29 @@ describe('HRD-08 event telemetry authority', () => {
       exit_code: 0,
       blocked: false,
       reason: 'ok',
+      command_names: [],
     });
     expect(record.elapsed_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  test('records program names of a shell command and never its arguments', () => {
+    const repoRoot = tempDir('hrd08-event-command-names-');
+    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'bash' }).finalize({
+      identity: identity(),
+      exitCode: 0,
+      blocked: false,
+      reason: 'ok',
+      commandNames: commandNames('cd /Users/alice/repo && GH_TOKEN=ghp_FAKE gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"'),
+    });
+    expect(record.command_names).toEqual(['cd', 'gh', 'jq', 'brew', 'bun']);
+    const line = readFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), 'utf8');
+    for (const secret of ['/Users/alice', 'ghp_FAKE', 'pr view', '.title']) expect(line).not.toContain(secret);
+  });
+
+  test('command names keep at most sixteen unique names', () => {
+    expect(commandNames(Array.from({ length: 20 }, (_, index) => `tool${index} --flag`).join(' && '))).toHaveLength(16);
+    expect(commandNames('git status; git diff')).toEqual(['git']);
+    expect(commandNames('')).toEqual([]);
   });
 
   test('semantic fingerprints detect repeated equivalent blocked events', () => {

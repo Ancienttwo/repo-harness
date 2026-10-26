@@ -31,6 +31,11 @@ export interface HookEventTelemetryRecord {
   readonly reason: string;
   readonly elapsed_ms: number;
   readonly fingerprint: string;
+  /**
+   * Program names of a shell tool call, e.g. `["git", "gh"]`; empty for other
+   * events. Never arguments: the CLI inventory reads only names and times.
+   */
+  readonly command_names: readonly string[];
 }
 
 export interface HookEventTelemetryResult {
@@ -38,6 +43,8 @@ export interface HookEventTelemetryResult {
   readonly exitCode: number;
   readonly blocked: boolean;
   readonly reason: string;
+  /** `commandNames` of the tool call's shell command; omit for other events. */
+  readonly commandNames?: readonly string[];
 }
 
 export interface HookEventTelemetry {
@@ -48,6 +55,34 @@ export interface CreateHookEventTelemetryInput {
   readonly repoRoot: string;
   readonly event: HookEvent;
   readonly routeId: RouteId;
+}
+
+const COMMAND_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u;
+const COMMAND_NAME_LIMIT = 16;
+/** Words that run the next word as the program. */
+const COMMAND_PREFIXES = new Set(['sudo', 'env', 'exec', 'time', 'command', 'nohup', 'xargs']);
+
+/**
+ * Program names in a shell command line: the first word of each segment split
+ * at `&&`, `||`, `;`, `|`, `&`, `(`, `)` and newlines, after `NAME=value`
+ * assignments and runner prefixes, reduced to its basename. A word that is not
+ * a plain name (quotes, `$`, globs) is dropped. Quoted separators are not
+ * parsed, so a quoted segment can add a spurious name; the inventory reads the
+ * names only as a usage hint.
+ */
+export function commandNames(command: string): string[] {
+  const names = new Set<string>();
+  for (const segment of command.split(/&&|\|\||[;|&()\n]/u)) {
+    const words = segment.trim().split(/\s+/u).filter(word => word !== '');
+    let index = 0;
+    while (index < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(words[index]!) || COMMAND_PREFIXES.has(words[index]!))) index += 1;
+    const word = words[index];
+    if (word === undefined) continue;
+    const name = word.slice(word.lastIndexOf('/') + 1);
+    if (COMMAND_NAME.test(name)) names.add(name);
+    if (names.size === COMMAND_NAME_LIMIT) break;
+  }
+  return [...names];
 }
 
 function roundMs(value: number): number {
@@ -74,6 +109,7 @@ export function createHookEventTelemetry(options: CreateHookEventTelemetryInput)
         blocked: result.blocked,
         reason: result.reason,
         elapsed_ms: roundMs(performance.now() - startedMonotonic),
+        command_names: [...(result.commandNames ?? [])],
       };
       const semanticFingerprint = {
         event: options.event,
