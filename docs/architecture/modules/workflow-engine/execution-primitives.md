@@ -1,9 +1,9 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7e83abe7f8afce76b22f79882eaf92e47d28e1b26ccf8d4f75b4088980a0c31a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e9efa1bfdfe5fdfeb67bf394698bb177b1f0c5082fd296dcb07c81dc41630acb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
-> **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
+> **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -42,15 +42,14 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/locking/**`、`src/effects/git/**`
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 匹配前綴:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
-- `depends-on` → `capability.workflow-engine.workflow-state` — Read the observation context for Git operations.
 - `calls` → `component.execution-primitives.primary` — Run a bounded child process
 
 入向關係:
@@ -62,7 +61,7 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
-- `calls` ← `capability.runtime-harness.engineer-bindings` — Hold exclusive directory locks under the Git common directory
+- `calls` ← `capability.runtime-harness.engineer-bindings` — List tracked Engineer profile and SOP paths through the shared Git runner
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
 - `calls` ← `component.evidence-ledger.primary` — Hold exclusive directory locks under the Git common directory and read the virtual tree
@@ -72,7 +71,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.release-packaging` — Run installed binaries to read back runtime evidence
 - `calls` ← `component.hook-adapters.edit-guards` — Lock the circuit breaker records
 - `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock
-- `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries and classify lock contention
+- `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
 - `calls` ← `component.integration-acceptance.primary` — Resolve the Git common directory for integration records
 - `calls` ← `component.mcp-sidecar.coding-profile` — Use the configured Git binary for coding workspaces
@@ -84,8 +83,8 @@ flowchart LR
 - `calls` ← `component.publication.provider-feedback` — Resolve the Git common directory for feedback records
 - `calls` ← `component.task-agent-host.primary` — Run Git through the process runner and hold task session locks
 - `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox
-- `calls` ← `component.workflow-state.continuation-ledger` — Serialize attempt ledger appends under a directory lock
-- `calls` ← `component.workflow-state.coordination-plane` — Take task and backlog locks and read the worktree topology
+- `calls` ← `component.workflow-state.continuation-ledger` — Serialize attempt ledger appends under a directory lock and write them durably
+- `calls` ← `component.workflow-state.coordination-plane` — Take task and backlog locks, read the worktree topology, and write coordination records durably
 - `calls` ← `component.workflow-state.primary` — Take the state lock and commit the version owner under the Git common dir
 
 組件出向關係:
@@ -97,7 +96,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

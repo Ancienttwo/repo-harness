@@ -1,13 +1,13 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1e795dbd71ea5bb457cea18a2675f08ecb4a2a265725da5d7a5bbd6d776124d7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4c10a0e4438d579805654bbce6b7e94e44d1712acbf361e5df9b55bd851107b1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
-> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
+> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Reads task offers and fleet boards for the operator and retains task message storage.
+Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage.
 
 ## 1. P1:能力架構地圖
 
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f863911bf3f499f6b4db3f8534f3d678bda9f314bdab66fb55f3040f6ab2ad3f`).
+- Proof: `proven` (`sha256:eb361411207af56ac31c7b854f3877deb0c96e2415eafe1ec9730b228172c400`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -42,7 +42,8 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/core/messages/document-handoff.ts`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`
+- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
+- 排除前綴:`src/effects/fleet/provider-feedback.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -58,33 +59,36 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.acceptance-review.primary` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
 - `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the exact Task message and delivery receipt before action admission and success.
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Fleet behavior through its source modules.
+- `calls` ← `capability.runtime-harness.external-source-intake` — Reobserve exact admitted inbox context to bind source evidence to the same current provider issue
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
 - `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
 - `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools
 - `reads` ← `component.operator.primary` — Read retained per-repository task observations and the fleet board for the console
 - `reads` ← `component.operator.view-projections` — Render fleet board errors and task message shapes
+- `calls` ← `component.publication.provider-feedback` — Reobserve exact admitted inbox context and shared message claim identity before provider feedback writes
 
 組件出向關係:
 
 - `component.task-fleet.primary`:
   - `calls` → `component.task-fleet.task-inbox` — Send deliver and summarize task-addressed messages without lease mutation
-  - `reads` → `capability.workflow-engine.workflow-state` — Read canonical Sprint tasks and leases to build offers and the board
+  - `reads` → `capability.workflow-engine.workflow-state` — Read provider issue and admitted session board observations without Sprint or lease authority
 - `component.task-fleet.task-inbox`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory for the task inbox
-  - `calls` → `capability.workflow-engine.workflow-state` — Address task messages by canonical task under the task lock
+  - `calls` → `capability.runtime-harness.task-agent-host` — Reobserve the exact task session and live admission before current inbox operations
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.task-fleet.primary` | Fleet Task Observations and Board | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-fleet.primary` | Fleet Task Observations and Board | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f863911bf3f499f6b4db3f8534f3d678bda9f314bdab66fb55f3040f6ab2ad3f`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:eb361411207af56ac31c7b854f3877deb0c96e2415eafe1ec9730b228172c400`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -92,11 +96,11 @@ sequenceDiagram
   autonumber
   participant p2_command_015216f4 as Fleet Task Observations and Board
   participant p2_inbox_44cb8de0 as Task Inbox
-  p2_command_015216f4->>p2_inbox_44cb8de0: Write one immutable TaskMessageEvent for a task or exact claim scope
+  p2_command_015216f4->>p2_inbox_44cb8de0: Write one immutable admitted message under exact current admission and claim fences
   alt The current recipient receives the message once
   p2_command_015216f4->>p2_inbox_44cb8de0: Transition the per-recipient delivery receipt and render the body as untrusted context
-    Note over p2_inbox_44cb8de0: Leave the lease byte-for-byte unchanged
-  else The sender lacks current authority or the claim scope is stale
+    Note over p2_inbox_44cb8de0: Leave provider issue and admitted claim authority unchanged
+  else The selected admission is unavailable or the exact claim scope changed
   p2_command_015216f4->>p2_inbox_44cb8de0: Refuse the send before any event is written
     Note over p2_command_015216f4: Return a typed task message error
   end

@@ -1,13 +1,13 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:01f7bac5c2a41551b6995f0873af1eb9484d32c2217d4c823183cc02784ac205" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9e63bfed7c7ffa81b1f98a86a10115602b063a06ace7768a7c0daaf9a7df2759" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Binds Approved requirement bytes, current module publications, one existing Git candidate, exact evidence and the existing AcceptanceReceipt into immutable product-acceptance projections without creating merge or verdict authority.
+Binds approved requirement bytes, explicit canonical provider PR integration proofs, one exact Git candidate, evidence and the canonical acceptance receipt into immutable V2 product projections.
 
 ## 1. P1:能力架構地圖
 
@@ -19,14 +19,14 @@ flowchart LR
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3["Integration Product Acceptance"]:::component
   p1_component_integration_acceptance_primary_d3db0bd8["Integration Acceptance Evidence Plane"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection"| p1_component_integration_acceptance_primary_d3db0bd8
-  p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Read cached immutable publication receipts and reuse their canonical JSON digest"| p1_capability_organization_publication_44355620
+  p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority"| p1_capability_organization_publication_44355620
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:9ee7fa818c784bd5c01967900090c8501607225210bfe304ba53dd704cc48ee0`).
+- Proof: `proven` (`sha256:845ce197f0447d74714728deb853a8b4bc987ea4b72f0f2c0ea5a609e0a9836a`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -34,9 +34,9 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.integration-acceptance.contract` | `src/effects/integration/product-acceptance.ts#createIntegrationContract` | `sink.integration-acceptance.contract-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationContract` |
-| `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#observeSelectedPublication` | `sink.integration-acceptance.lease` → `src/effects/state/coordination-lease-store.ts#readLease`、`sink.integration-acceptance.publication` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache` |
+| `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#observeSelectedPullRequest` | `sink.integration-acceptance.local-merge-tree` → `src/effects/integration/product-acceptance.ts#treeForCommit`、`sink.integration-acceptance.local-ancestry` → `src/effects/integration/product-acceptance.ts#assertAncestor` |
 | `entrypoint.integration-acceptance.envelope` | `src/effects/integration/product-acceptance.ts#buildCurrentEnvelope` | `sink.integration-acceptance.envelope-schema` → `src/core/integration/product-acceptance.ts#buildIntegrationEnvelope` |
-| `entrypoint.integration-acceptance.publication-observation` | `src/effects/integration/product-acceptance.ts#observeSelectedPublication` | `sink.integration-acceptance.publication-cache` → `src/effects/publication/publication-receipt.ts#readPublicationReceiptCache` |
+| `entrypoint.integration-acceptance.publication-observation` | `src/effects/integration/product-acceptance.ts#observeSelectedPullRequest` | `sink.integration-acceptance.provider-integration` → `src/effects/publication/merge-readiness.ts#collectPullRequestIntegration` |
 | `entrypoint.integration-acceptance.matrix` | `src/effects/integration/product-acceptance.ts#createAcceptanceMatrix` | `sink.integration-acceptance.matrix-schema` → `src/core/integration/product-acceptance.ts#assertCompletePassingMatrix` |
 | `entrypoint.integration-acceptance.product` | `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` | `sink.integration-acceptance.product-schema` → `src/core/integration/product-acceptance.ts#buildProductAcceptanceProjection` |
 | `entrypoint.integration-acceptance.product-command` | `src/cli/commands/integration.ts#buildIntegrationCommand` | `sink.integration-acceptance.product-operation` → `src/effects/integration/product-acceptance.ts#createProductAcceptanceProjection` |
@@ -60,7 +60,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.integration-acceptance.primary` — Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection
-- `reads` → `capability.organization.publication` — Read cached immutable publication receipts and reuse their canonical JSON digest
+- `reads` → `capability.organization.publication` — Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority
 
 入向關係:
 
@@ -73,7 +73,6 @@ flowchart LR
 - `component.integration-acceptance.primary`:
   - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt for an integration candidate
   - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for integration records
-  - `reads` → `capability.workflow-engine.workflow-state` — Read the task lease for the integration envelope
 
 ### 1.5 組件結構
 
@@ -83,7 +82,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:9ee7fa818c784bd5c01967900090c8501607225210bfe304ba53dd704cc48ee0`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:845ce197f0447d74714728deb853a8b4bc987ea4b72f0f2c0ea5a609e0a9836a`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -93,13 +92,15 @@ sequenceDiagram
   participant p2_evidence_schema_dd5fece0 as Integration Acceptance Evidence Plane
   participant p2_publication_1c89e8c8 as Publication Observations
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Digest one Approved PRD and source spec into an immutable IntegrationContract
-  p2_integration_plane_da058c3e->>p2_publication_1c89e8c8: Read the cached immutable PublicationReceipt behind each current reviewing pointer
-  p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Join exact current reviewing publications into one existing Git head and tree
+  p2_integration_plane_da058c3e->>p2_publication_1c89e8c8: Collect and reobserve exact provider PR identity and actual merge commit/tree evidence
+  p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Compare the actual provider merge tree with its exact local commit
+  p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Prove selected base to actual merge commit and merge commit to exact final candidate ancestry
+  p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Freeze exact reobserved PR integrations into one existing Git head and tree
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Require exactly one passing immutable evidence row for every contract constraint
   alt Current authority bytes and the existing passing AcceptanceReceipt project onto the exact candidate
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Revalidate every fence and content-address the existing product verdict
-    Note over p2_integration_plane_da058c3e: Return immutable ProductAcceptanceProjectionV1 with every authority unchanged
-  else Any stale requirement#44; publication#44; candidate#44; matrix#44; evidence or receipt fails closed
+    Note over p2_integration_plane_da058c3e: Return immutable ProductAcceptanceProjectionV2 with every authority unchanged
+  else Any stale requirement#44; provider integration#44; candidate#44; matrix#44; evidence or acceptance receipt fails closed
   p2_integration_plane_da058c3e->>p2_evidence_schema_dd5fece0: Reject the mismatched authority before persisting a product projection
     Note over p2_integration_plane_da058c3e: Return a typed integration error without mutation or fallback
   end

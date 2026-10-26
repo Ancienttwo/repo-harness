@@ -1,13 +1,13 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d17f9951e86feabeecb9f9f00f2c93c050da1ca8a610ae32ff8a214a51dfb174" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6f59c6d5a55b404619bc26a654ded07ee49fb0ab52796e967b199672214b36f5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
-> **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`
+> **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/effects/profiles/profile-store.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Retains Engineer contract, binding and claim actor records for operator observations and runtime reads.
+Resolves tracked capability-backed Engineer Profile and SOP contracts and retains historical principal mapping and Claim Actor codecs.
 
 ## 1. P1:能力架構地圖
 
@@ -16,22 +16,22 @@ Retains Engineer contract, binding and claim actor records for operator observat
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
-  p1_component_engineer_bindings_primary_e07af6cc["Shared Engineer Binding Store"]:::component
-  p1_capability_runtime_harness_engineer_bindings_34c00f72 -->|"Read retained Engineer binding records for the operator"| p1_component_engineer_bindings_primary_e07af6cc
+  p1_component_engineer_bindings_primary_e07af6cc["Engineer Profile Resolver"]:::component
+  p1_capability_runtime_harness_engineer_bindings_34c00f72 -->|"Resolve and validate tracked Engineer profiles"| p1_component_engineer_bindings_primary_e07af6cc
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:23a03c4b1673fd16a2806df85aedb95f559d4425e2a2b853c27a68ce3fae2d3c`).
+- Proof: `proven` (`sha256:19d61b99be0fab7e230acbba892a41aa4c718e2aae6353123b0ad868cfa30cc5`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineer-bindings.read` | `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` | `sink.engineer-bindings.read` → `src/effects/engineers/binding-store.ts#readCurrent` |
+| `entrypoint.engineer-bindings.profile` | `src/effects/profiles/profile-store.ts#readProfileFile` | `sink.engineer-bindings.validate-profile` → `src/core/engineers/profile-binding.ts#validateModuleEngineerProfile`、`sink.engineer-bindings.contract-revision` → `src/core/engineers/profile-binding.ts#engineerContractRevision` |
 
 組件入口:
 
@@ -39,8 +39,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `1000–2000` 行
-- 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`
+- 規模量級:`5–10` 個文件 / `500–1000` 行
+- 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/effects/profiles/profile-store.ts`
 - 排除前綴:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-adapters/**`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/core/engineers/engineering-overlay.ts`、`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/engineering-overlay.ts`、`src/effects/engineers/scheduling.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -48,18 +48,17 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
+- `calls` → `capability.workflow-engine.execution-primitives` — List tracked Engineer profile and SOP paths through the shared Git runner
 - `depends-on` → `capability.workflow-engine.contract-assets` — Resolve capability contracts for Engineer profiles.
-- `depends-on` → `capability.runtime-harness.evidence-ledger` — Use canonical evidence JSON and evidence types for bindings.
+- `depends-on` → `capability.runtime-harness.evidence-ledger` — Use canonical evidence JSON and evidence types for profiles and historical principal records.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Read the architecture model for Engineer profiles.
-- `calls` → `component.engineer-bindings.primary` — Read retained Engineer binding records for the operator
-- `calls` → `capability.workflow-engine.workflow-state` — Process Sprint dependencies and release Sprint leases for bound engineer tasks
+- `calls` → `component.engineer-bindings.primary` — Resolve and validate tracked Engineer profiles
 
 入向關係:
 
-- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Use canonical engineer JSON and digest helpers for profile evidence; do not resolve a legacy binding endpoint
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Resolve declared graph capabilities through the Engineer profile authority reader
-- `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `calls` ← `capability.runtime-harness.engineering-overlay` — Use canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores
 - `depends-on` ← `capability.verification.evals-checks` — Test Engineer Bindings behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the engineer command
 - `depends-on` ← `capability.runtime-harness.operator` — Use claim identity types for task activity.
@@ -74,25 +73,25 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.engineer-bindings.primary` | Shared Engineer Binding Store | 未宣告 `source.include` | 未宣告 |
+| `component.engineer-bindings.primary` | Engineer Profile Resolver | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:23a03c4b1673fd16a2806df85aedb95f559d4425e2a2b853c27a68ce3fae2d3c`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:19d61b99be0fab7e230acbba892a41aa4c718e2aae6353123b0ad868cfa30cc5`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_engineer_de10874b as Engineer Bindings
-  participant p2_store_52b5e20f as Shared Engineer Binding Store
-  p2_engineer_de10874b->>p2_store_52b5e20f: Read the current binding for an operator observation
-  alt Return the retained observation
-  p2_engineer_de10874b->>p2_store_52b5e20f: Read the exact current record
-    Note over p2_engineer_de10874b: Return the read result
-  else Refuse an unavailable or invalid observation
-  p2_engineer_de10874b->>p2_store_52b5e20f: Keep a failed read unavailable
-    Note over p2_engineer_de10874b: Report the read failure without task mutation
+  participant p2_store_52b5e20f as Engineer Profile Resolver
+  p2_engineer_de10874b->>p2_store_52b5e20f: Validate the tracked profile JSON against the closed profile schema
+  alt The profile#44; SOP and capability resolve
+  p2_engineer_de10874b->>p2_store_52b5e20f: Derive the exact engineer contract revision from the profile#44; SOP bytes and capability revision
+    Note over p2_engineer_de10874b: Return the resolved profile with its contract revision
+  else Refuse an invalid profile
+  p2_engineer_de10874b->>p2_store_52b5e20f: Reject a profile that breaks the closed schema with a typed error
+    Note over p2_engineer_de10874b: Report the profile error without a write
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" -->

@@ -1,13 +1,13 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:90848116ac7f3a4ae8656dc216bde1d9a8b25b2a674066d0975a7bc61a52032d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0b6e5b14007eb095af1576f916d9ce789404673683fc01e93208cb5bbf92d028" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
-> **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
+> **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Owns immutable external Issue evidence and authorization-fenced provenance bindings to exact canonical tasks without scheduler authority.
+Owns immutable provider issue evidence and exact admitted-session provenance bindings without scheduling authority.
 
 ## 1. P1:能力架構地圖
 
@@ -42,22 +42,25 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
+- 規模量級:`10–20` 個文件 / `1000–2000` 行
+- 匹配前綴:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
+- `depends-on` → `capability.verification.acceptance-review` — Read protected review admission sources for current source-binding validation
 - `calls` → `component.external-source-intake.immutable-evidence` — Persist provider-neutral immutable observations and typed refresh receipts before deriving a read-only projection
 - `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry snapshot for repository identity and authorization
-- `reads` → `capability.workflow-engine.workflow-state` — Look up the canonical task for an external source
+- `calls` → `capability.runtime-harness.task-agent-host` — Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding
+- `calls` → `capability.organization.task-fleet` — Reobserve exact admitted inbox context to bind source evidence to the same current provider issue
 
 入向關係:
 
 - `depends-on` ← `capability.verification.evals-checks` — Test External Source Intake behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the external-source command
+- `calls` ← `component.workflow-state.coordination-plane` — Read immutable provider issue observations and complete refresh receipts
 
 組件出向關係:
 

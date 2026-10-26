@@ -1,13 +1,13 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:77759eda4af3b845de45601cfd2428a401519c30959271356b6e0ebcc0726e28" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fea415c723470388de9ccf5d792d70ce8ce46fba36be97f3a6aa15b9ed8334fb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
-> **Matched Prefixes**:`assets/tool-catalog.v1.json`、`docs/kanban-runtime-status.md`、`src/core/tools/catalog.ts`、`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+> **Matched Prefixes**:`assets/tool-catalog.v1.json`、`docs/kanban-runtime-status.md`、`src/core/tools/catalog.ts`、`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Provides local read-only HTTP views of registered repositories.
+Provides bounded read-only HTTP views of registered provider issues, admitted sessions, planning and explicit task history.
 
 ## 1. P1:能力架構地圖
 
@@ -25,7 +25,6 @@ flowchart LR
   p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime source freshness rules"| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached#44; re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
-  p1_component_operator_primary_d8da79ba -->|"Build the docs graph from committed repository content"| p1_component_operator_architecture_view_0bdc3e1c
   p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Parse closed route requests and project or re-decode each observation before it leaves the server"| p1_component_operator_view_projections_ca31e3bc
   p1_capability_runtime_harness_operator_00133dd3 -->|"Return a read-only HTTP observation."| p1_component_operator_primary_d8da79ba
@@ -39,14 +38,15 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`).
-- Semantic nodes: `7`; declared relations: `11`.
+- Proof: `proven` (`sha256:8cdc10a9d48e1ace265d8b8ec6198b82900f88ba6b8745cf79c18de8c14647ec`).
+- Semantic nodes: `7`; declared relations: `10`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.operator.primary` | `src/effects/operator/architecture.ts#readArchitecture` | `sink.operator.primary` → `src/core/operator/architecture.ts#decodeArchitectureModuleIndex`、`sink.operator.model-reader-list` → `src/effects/architecture/model-reader.ts#list` |
+| `entrypoint.operator.organization-validation` | `src/effects/operator/repository-snapshot.ts#assertOperatorRepositorySnapshotIdentity` | `sink.operator.organization-validation` → `src/core/operator/organization-snapshot.ts#decodeOperatorOrganizationSnapshot` |
 
 組件入口:
 
@@ -59,18 +59,19 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`100–200` 個文件 / `10k–20k` 行
-- 匹配前綴:`assets/tool-catalog.v1.json`、`docs/kanban-runtime-status.md`、`src/core/tools/catalog.ts`、`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/docs/**`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
+- 匹配前綴:`assets/tool-catalog.v1.json`、`docs/kanban-runtime-status.md`、`src/core/tools/catalog.ts`、`src/core/operator/**`、`src/effects/operator/**`、`src/operator-web/**`、`src/cli/commands/operator.ts`、`src/cli/commands/catch-up.ts`、`src/cli/commands/module.ts`、`src/core/architecture/module-view.ts`、`src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`assets/operator/**`、`vite.operator.config.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
+- `depends-on` → `capability.verification.acceptance-review` — Read and reobserve protected current review admission for exact session discovery and current goal context
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
 - `depends-on` → `capability.runtime-harness.engineer-bindings` — Use claim identity types for task activity.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity.
 - `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture.
-- `depends-on` → `capability.runtime-harness.task-agent-host` — Read task role profiles for the setup snapshot.
+- `depends-on` → `capability.runtime-harness.task-agent-host` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
 - `depends-on` → `capability.workflow-engine.workflow-state` — Read state types and artifacts for Operator projections.
 - `calls` → `component.operator.primary` — Return a read-only HTTP observation.
 
@@ -87,12 +88,9 @@ flowchart LR
   - `reads` → `capability.runtime-harness.hook-adapters` — Read the hook route registry and install profile components for the Hooks and Agents pages
   - `calls` → `component.operator.view-projections` — Reuse public agent-config text filtering and runtime source freshness rules
 - `component.operator.architecture-view`:
-  - `calls` → `capability.verification.acceptance-review` — Report module CLI failures with the typed module read error of the review prompt builder
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — List modules and export review prompts through the shared ArchitectureModelReader
 - `component.operator.primary`:
-  - `calls` → `capability.verification.acceptance-review` — Raise and map the typed module read errors that the module review prompt builder declares
   - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
-  - `calls` → `component.operator.architecture-view` — Build the docs graph from committed repository content
   - `reads` → `capability.runtime-harness.engineer-scheduling` — Read the tracked work graph projection for the Planning view
   - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
@@ -113,14 +111,14 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.operator.activity-feeds` | Setup and Activity Feeds | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.operator.architecture-view` | Architecture View | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.operator.architecture-view` | Architecture View | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `2000–5000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.operator.web-console` | Operator Web Console | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:6d3517e4dc9185388b8623e76a4a672f1af458b73df6d4fe93fb9fe9ef49fe68`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:8cdc10a9d48e1ace265d8b8ec6198b82900f88ba6b8745cf79c18de8c14647ec`); selectors `8/8`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -137,6 +135,22 @@ sequenceDiagram
   else Cache is missing or invalid
   p2_http_reader_b98e0942->>p2_activity_feeds_9511dd1f: Replace a missing or invalid cache with the unavailable snapshot
     Note over p2_http_reader_b98e0942: Return 200 with an unavailable snapshot and no writes
+  end
+```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_http_a321f717 as Operator HTTP Reader
+  participant p2_views_f51ad482 as Operator View Projections
+  p2_http_a321f717->>p2_views_f51ad482: Decode observed organization V2 data using the requested registry repository identity before accepting the repository response
+  alt The bounded closed payload and its linked observations agree
+  p2_http_a321f717->>p2_views_f51ad482: Validate exact fields#44; admitted scheduling identities#44; component consistency#44; SHA syntax and overlay-to-attention digest linkage
+    Note over p2_http_a321f717: Accept the scoped organization observation without changing provider or admission authority
+  else The response violates the closed organization contract
+  p2_http_a321f717->>p2_views_f51ad482: Reject malformed#44; oversized#44; foreign-repository or internally inconsistent organization observations#59; map decoder rejection to the existing scoped-response error
+    Note over p2_http_a321f717: Refuse the invalid scoped repository source#59; never relabel it or restore a legacy DTO
   end
 ```
 

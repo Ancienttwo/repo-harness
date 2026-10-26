@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5bdc8d1cb90366c0186dfe1c3814bd48fe0f8af054d8c7f730ed554fa79d0020" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:aeeef9c79aec8a6f62eaa89351d22d668c4960b4bd5c55e7c1770ad4d3e1fd21" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`、`src/core/sessions/session-selector.ts`、`src/core/sessions/task-sessions.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -34,7 +34,6 @@ flowchart LR
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#startTaskApplicationHost` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent` |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#sendTaskRequest` | `sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#nextSessionRound` |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#collectTaskResult` | `sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#readTaskRequestResult` |
-| `entrypoint.task-agent-host.coding` | `src/effects/terminal/coding-session.ts#startCodingTaskAgent` | `sink.task-agent-host.coding` → `src/effects/terminal/task-session.ts#startTaskApplicationHost` |
 
 組件入口:
 
@@ -43,7 +42,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-worktree.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/coding-isolation.ts`、`src/effects/terminal/coding-session.ts`、`src/effects/terminal/oar-coding-host.ts`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`、`src/core/sessions/session-selector.ts`、`src/core/sessions/task-sessions.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -56,18 +55,20 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `component.acceptance-review.primary` — Run the persistent review session on a Herdr task agent and read its session artifacts
-- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Run Herdr commands for task agent runtime effects
+- `calls` ← `component.acceptance-review.primary` — Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Observe the exact admitted task session and use its closed Herdr transport endpoint
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Register and clean up task worktrees and read session artifacts
-- `calls` ← `component.contract-assets.template-projection` — Install the required Herdr skill during init
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Agent Host behavior through its source modules.
+- `calls` ← `capability.runtime-harness.external-source-intake` — Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Resolve task role profiles during host installation.
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
 - `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
-- `depends-on` ← `capability.runtime-harness.operator` — Read task role profiles for the setup snapshot.
-- `reads` ← `component.workflow-state.coordination-plane` — Confirm that the task runtime is closed before a worktree prune
+- `depends-on` ← `capability.runtime-harness.operator` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
+- `calls` ← `component.publication.provider-feedback` — Read the exact selected immutable task session for current feedback attribution
+- `calls` ← `component.task-fleet.task-inbox` — Reobserve the exact task session and live admission before current inbox operations
+- `reads` ← `component.workflow-state.coordination-plane` — Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune
 
 組件出向關係:
 

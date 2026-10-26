@@ -1,13 +1,13 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d094d73551eb1c9ca68a674e5f08f0330278788b42c5e3263534a7a328188379" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2693b1d53e6eb47c14a0799c0016415bb307ce182d57d186d42a3f0dfc6e2839" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects retained Work Package graphs and dependency observations for operator reads.
+Projects explicitly selected immutable provider WorkGraph V2 and exact dependency evidence for operator observations.
 
 ## 1. P1:能力架構地圖
 
@@ -17,24 +17,24 @@ Projects retained Work Package graphs and dependency observations for operator r
 flowchart LR
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3["Integration Product Acceptance"]:::component
-  p1_component_engineer_scheduling_primary_1e5aff8c["Work Package Graph Reader"]:::component
+  p1_component_engineer_scheduling_primary_1e5aff8c["Provider Work Graph Reader"]:::component
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose"| p1_capability_runtime_harness_integration_acceptance_8c7dd2d3
-  p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Revalidate the asserted offer against a fresh offer projection before and inside the concurrency lock"| p1_component_engineer_scheduling_primary_1e5aff8c
+  p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Validate and project the immutable provider graph selected by exact commit and path"| p1_component_engineer_scheduling_primary_1e5aff8c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:1766e60eb87646f1cd074a8e53b93607a57040cd714b47e49c1346f493dad8fd`).
+- Proof: `proven` (`sha256:d232cf094cc6cdc8842c33d0e3b9b77e78da007eece332ecccc8a4d21a96dbf6`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineer-scheduling.graph` | `src/effects/engineers/scheduling.ts#readTrackedWorkGraphProjectionAt` | `sink.engineer-scheduling.graph` → `src/core/engineers/scheduling.ts#projectWorkGraph` |
-| `entrypoint.engineer-scheduling.dependency-readers` | `src/effects/engineers/dependency-authority.ts#defaultDependencyAuthorityReaders` | `sink.engineer-scheduling.product-acceptance` → `src/effects/integration/product-acceptance.ts#listProductAcceptanceProjections` |
+| `entrypoint.engineer-scheduling.graph` | `src/effects/engineers/scheduling.ts#readProviderWorkGraph` | `sink.engineer-scheduling.graph` → `src/core/engineers/scheduling.ts#projectProviderWorkGraph` |
+| `entrypoint.engineer-scheduling.dependency-readers` | `src/effects/engineers/dependency-authority.ts#defaultDependencyAuthorityReaders` | `sink.engineer-scheduling.product-acceptance` → `src/effects/integration/product-acceptance.ts#observeSelectedPullRequest` |
 
 組件入口:
 
@@ -55,9 +55,9 @@ flowchart LR
 - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read registered repository identity for scheduling.
 - `reads` → `capability.runtime-harness.integration-acceptance` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
-- `calls` → `component.engineer-scheduling.primary` — Revalidate the asserted offer against a fresh offer projection before and inside the concurrency lock
+- `calls` → `component.engineer-scheduling.primary` — Validate and project the immutable provider graph selected by exact commit and path
 - `reads` → `capability.organization.publication` — Read cached publication receipts as dependency authority
-- `reads` → `capability.workflow-engine.workflow-state` — Project canonical Sprint tasks into the work graph
+- `reads` → `capability.workflow-engine.workflow-state` — Read the canonical target ref for provider PR dependency and scheduling evidence
 
 入向關係:
 
@@ -75,11 +75,11 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.engineer-scheduling.primary` | Work Package Graph Reader | 未宣告 `source.include` | 未宣告 |
+| `component.engineer-scheduling.primary` | Provider Work Graph Reader | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:1766e60eb87646f1cd074a8e53b93607a57040cd714b47e49c1346f493dad8fd`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:d232cf094cc6cdc8842c33d0e3b9b77e78da007eece332ecccc8a4d21a96dbf6`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -87,13 +87,13 @@ sequenceDiagram
   autonumber
   participant p2_scheduling_003befe7 as Engineer Scheduling
   participant p2_acceptance_afe48377 as Integration Product Acceptance
-  p2_scheduling_003befe7->>p2_acceptance_afe48377: Read existing product acceptance projections
-  alt Return the retained observation
-  p2_scheduling_003befe7->>p2_acceptance_afe48377: Read the exact current record
-    Note over p2_scheduling_003befe7: Return the read result
-  else Refuse an unavailable or invalid observation
-  p2_scheduling_003befe7->>p2_acceptance_afe48377: Keep a failed read unavailable
-    Note over p2_scheduling_003befe7: Report the read failure without task mutation
+  p2_scheduling_003befe7->>p2_acceptance_afe48377: Reobserve the explicitly selected PR integration against its exact final candidate
+  alt The exact selected integration evidence remains current
+  p2_scheduling_003befe7->>p2_acceptance_afe48377: Reobserve the explicitly selected PR integration against its exact final candidate
+    Note over p2_scheduling_003befe7: Return dependency evidence without acquiring a task
+  else Provider integration evidence is stale#44; unavailable or forbidden in the readonly observation boundary
+  p2_scheduling_003befe7->>p2_acceptance_afe48377: Reobserve the explicitly selected PR integration against its exact final candidate
+    Note over p2_scheduling_003befe7: Refuse dependency proof without historical or latest-record fallback
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" -->
