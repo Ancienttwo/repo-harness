@@ -8,7 +8,7 @@ import {
   createStateInputCollector,
   type EffectiveStateResolution,
 } from '../../effects/loop/state-input-collector';
-import { commandNames, createHookEventTelemetry } from './event-telemetry';
+import { commandNamesOnPath, createHookEventTelemetry } from './event-telemetry';
 import {
   resolveEffectiveStateReadOnly,
   StateResolutionUnstableError,
@@ -220,7 +220,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     exitCode,
     blocked: exitCode === 2 || result.permission?.decision === 'deny',
     reason,
-    commandNames: commandNames(shellCommand),
+    commandNames: commandNamesOnPath(shellCommand, env.PATH),
   });
   return { exitCode, reason, repoRoot, handler: handler.id };
 }
