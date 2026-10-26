@@ -14,6 +14,8 @@ const runFile = promisify(execFile);
 
 export interface NotifyStatusReadInput {
   readonly env?: NodeJS.ProcessEnv;
+  /** The Herdr session the plugin was installed into. Defaults to the session Herdr itself selects from `HERDR_SESSION`. */
+  readonly session?: string;
   readonly now?: Date;
 }
 
@@ -31,9 +33,9 @@ interface HerdrPluginLog {
 }
 
 // The server answers other requests while Herdr runs, so these reads must not block.
-async function herdr(args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
+async function herdr(session: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string | null> {
   try {
-    const { stdout } = await runFile('herdr', [...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
+    const { stdout } = await runFile('herdr', ['--session', session, ...args], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 });
     return stdout.trim();
   } catch { return null; }
 }
@@ -126,10 +128,15 @@ function lastDelivery(raw: string | null): NotifyDeliveryV1 {
 /** Read plugin install, enable, config presence, and the last recorded delivery. Values stay out. */
 export async function readNotifyStatus(input: NotifyStatusReadInput = {}): Promise<NotifyStatusV1> {
   const env = { ...process.env, ...input.env };
+  // Install names the session with --session and strips HERDR_*; the reader must
+  // target the same session, so a pane's socket or caller identity cannot redirect it.
+  const session = input.session ?? (env.HERDR_SESSION || 'default');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new Error('notify_status_session');
+  for (const name of Object.keys(env)) if (name.startsWith('HERDR_')) delete env[name];
   const [listed, dir, logs] = await Promise.all([
-    herdr(['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env),
-    herdr(['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
-    herdr(['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'config-dir', NOTIFY_PLUGIN_ID], env),
+    herdr(session, ['plugin', 'log', 'list', '--plugin', NOTIFY_PLUGIN_ID], env),
   ]);
   const plugins = (json(listed) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
   const plugin = Array.isArray(plugins) ? plugins.find(item => item.plugin_id === NOTIFY_PLUGIN_ID) ?? null : null;
