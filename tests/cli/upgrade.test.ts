@@ -1280,6 +1280,25 @@ describe('upgrade --registered', () => {
     }
   }), 120_000);
 
+  test('an untracked file counts as dirty even when git config hides untracked files', () => registeredSandbox((f) => {
+    const repo = staleRepo(f, 'hidden-untracked');
+    git(f, repo, 'config', 'status.showUntrackedFiles', 'no');
+    writeRegistry(f, [repo]);
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(preview.repos, repo).status).toBe('ready');
+
+    // The init refresh would write this path; the file is the operator's.
+    const target = join(repo, '.ai/hooks/README.md');
+    writeFileSync(target, 'operator notes\n');
+    expect(git(f, repo, 'status', '--porcelain')).toBe('');
+    const dirty = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    expect(byPath(dirty.repos, repo)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(byPath(result.repos, repo)).toMatchObject({ status: 'skipped', reason: 'dirty_worktree' });
+    expect(readFileSync(target, 'utf8')).toBe('operator notes\n');
+  }), 120_000);
+
   test('apply passes the caller cwd to the sweep, which keeps a managed worktree that holds it', () => registeredSandbox((f) => {
     const repo = adoptedRepo(f, 'swept');
     writeRegistry(f, [repo]);

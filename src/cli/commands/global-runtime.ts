@@ -852,7 +852,7 @@ function reconcileWithInstalledCandidate(
  * cap: a path such as token=x would otherwise lose its closing quote. Callers
  * print parsed counts only.
  */
-function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installedCli: boolean):
+function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installedCli: boolean, timeoutMs?: number):
   { readonly payload: unknown; readonly stderr: string } | { readonly failure: string } {
   const bunExecutable = resolveBunExecutable();
   const env = bindBunRuntimeEnv(commandEnv(defaultSourceRoot()), bunExecutable);
@@ -863,6 +863,7 @@ function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installe
     env,
     redactions: [],
     maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
   let payload: unknown;
   try {
@@ -894,6 +895,9 @@ function leftoverCheckWarning(reason: string): string {
   return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
 }
 
+/** `update` must not wait the default two minutes on a hung git probe. */
+const REGISTERED_PREVIEW_TIMEOUT_MS = 30_000;
+
 /**
  * One read-only line: how many registered repos have pending project upgrade
  * work. It runs the `upgrade --registered` preview only and never fails update.
@@ -902,7 +906,7 @@ function leftoverCheckWarning(reason: string): string {
 export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolean): string {
   const hint = 'Preview: repo-harness upgrade --registered';
   const unavailable = (reason: string) => `Registered repo upgrade check could not be computed: ${reason}. ${hint}`;
-  const run = runInstalledUpgradeCheck(['--registered'], cwd, installedCli);
+  const run = runInstalledUpgradeCheck(['--registered'], cwd, installedCli, REGISTERED_PREVIEW_TIMEOUT_MS);
   if ('failure' in run) return unavailable(run.failure);
   const record = run.payload !== null && typeof run.payload === 'object' && !Array.isArray(run.payload)
     ? run.payload as { repos?: unknown; error?: unknown } : null;

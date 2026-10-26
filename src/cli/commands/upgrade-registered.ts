@@ -127,7 +127,8 @@ function classifyRepo(path: string, env: NodeJS.ProcessEnv): Classification {
   if (head.status === 1) return skip('not_default_branch', `HEAD is detached; the default branch is ${base.branch}`);
   const current = head.stdout.trim();
   if (current !== base.branch) return skip('not_default_branch', `current branch is ${current}; the default branch is ${base.branch}`);
-  const status = git(path, ['--no-optional-locks', 'status', '--porcelain'], env);
+  // The flags override `status.showUntrackedFiles` and `diff.ignoreSubmodules` from user config.
+  const status = git(path, ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'], env);
   if (status.error || status.status !== 0) return skip('git_probe_failed', `cannot read the worktree status: ${gitFailure(status)}`);
   if (status.stdout.trim() !== '') return skip('dirty_worktree', `${status.stdout.trim().split('\n').length} changed or untracked paths`);
   return { ready: true };
