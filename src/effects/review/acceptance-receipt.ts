@@ -5,10 +5,11 @@ import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admiss
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   realpathSync,
@@ -335,6 +336,55 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
 
 
 
+/**
+ * `acceptance.latest.json` is replaced by every later review in this checkout.
+ * Each recorded receipt is also kept write-once under its own digest, so an
+ * observation or product projection that pinned the digest still reads the
+ * exact receipt it was built from.
+ */
+export function acceptanceReceiptRecordPath(root: string, authorityHome: string, receiptSha256: string, createParent = false): string {
+  if (!/^sha256:[0-9a-f]{64}$/.test(receiptSha256)) fail('AcceptanceReceipt record digest is invalid');
+  const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)), 'acceptance-receipts');
+  if (createParent) {
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+  }
+  return join(parent, `${receiptSha256.slice('sha256:'.length)}.json`);
+}
+
+function persistAcceptanceReceiptRecord(root: string, authorityHome: string, bytes: Buffer): string {
+  const digest = sha256(bytes);
+  const path = acceptanceReceiptRecordPath(root, authorityHome, digest, true);
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
+  try {
+    chmodSync(temporary, 0o600);
+    linkSync(temporary, path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    if (!readFileSync(path).equals(bytes)) fail('AcceptanceReceipt record conflicts with existing bytes');
+  } finally {
+    unlinkSync(temporary);
+  }
+  return digest;
+}
+
+export function readAcceptanceReceiptRecord(
+  root: string,
+  authorityHome: string,
+  receiptSha256: string,
+): { readonly bytes: Buffer; readonly receipt: AcceptanceReceipt } {
+  const path = acceptanceReceiptRecordPath(root, authorityHome, receiptSha256);
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch (error) {
+    fail(`AcceptanceReceipt record is unavailable for ${receiptSha256}: ${(error as Error).message}`);
+  }
+  if (sha256(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
+  return Object.freeze({ bytes, receipt: parseReceipt(bytes.toString('utf-8')) });
+}
+
 export function userWaiverGrantPath(root: string, authorityHome: string, createParent = false): string {
   const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)));
   if (createParent) {
@@ -372,7 +422,7 @@ export function writeAcceptanceVerificationObservation(args: {
   const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
   const observation = buildAcceptanceVerificationObservation({
     repository_root: root,
-    acceptance_receipt_sha256: sha256(readFileSync(acceptancePath)),
+    acceptance_receipt_sha256: persistAcceptanceReceiptRecord(root, args.authorityHome, readFileSync(acceptancePath)),
     campaign_sha256: args.receipt.campaign_sha256,
     admission_sha256: args.receipt.admission_sha256,
     grant_sha256: args.receipt.grant_sha256,
@@ -538,9 +588,13 @@ export function validateAcceptanceReceiptAgainstPolicy(
 
 function readReceipt(path: string): AcceptanceReceipt {
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
+  return parseReceipt(readFileSync(path, 'utf-8'));
+}
+
+function parseReceipt(text: string): AcceptanceReceipt {
   let value: unknown;
   try {
-    value = JSON.parse(readFileSync(path, 'utf-8'));
+    value = JSON.parse(text);
   } catch (error) {
     fail(`AcceptanceReceipt is invalid JSON: ${(error as Error).message}`);
   }

@@ -2,7 +2,7 @@ import { validateProviderIntegrationDependencyReference, validateModuleAcceptanc
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readExternalSourcesPolicy, requireManualGithubPolicy } from '../github/policy';
 import { fetchGithubIssues } from '../github/issues';
-import { currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
+import { currentReadonlyObservation, rejectObservation } from '../readonly-observation';
 /**
  * The single read-only dependency-authority resolver for Engineer scheduling.
  *
@@ -40,17 +40,18 @@ import { assertCompletePassingMatrix } from '../../core/integration/product-acce
 import type {
   IntegrationContractV2,
   IntegrationEnvelopeV2,
+  SelectedPullRequestV2,
 } from '../../core/integration/product-acceptance';
 import { publicationSha256 } from '../../core/publication/publication-receipt';
-import { readAcceptanceMatrix, readProductAcceptanceProjection, readIntegrationContract, readIntegrationEnvelope,
-  observeSelectedPullRequest, defaultReadAcceptanceReceiptBytes } from '../integration/product-acceptance';
+import { readAcceptanceMatrix, findProductAcceptanceProjection, readIntegrationContract, readIntegrationEnvelope,
+  observeSelectedPullRequest, observeSelectedPullRequestState } from '../integration/product-acceptance';
 import { gitExecFileSync } from '../git/runner';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readCanonicalTargetRef } from '../state/canonical-target';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import { osAccountHome } from '../runtime/os-account-home';
 import {
-  acceptanceReceiptPath, userWaiverGrantPath, readAcceptanceReceiptFile, readUserWaiverGrantFile, validateAcceptanceReceiptAgainstPolicy,
+  userWaiverGrantPath, readAcceptanceReceiptRecord, readUserWaiverGrantFile, validateAcceptanceReceiptAgainstPolicy,
   readAcceptanceVerificationObservation,
   type AcceptanceDisposition,
   type AcceptanceValidatorRuleId,
@@ -92,9 +93,9 @@ export interface DependencyAuthorityReaders {
     admissionSha256: string,
   ) => AcceptanceVerificationObservationV1 | null;
   readonly readAcceptanceMatrix: typeof readAcceptanceMatrix;
+  readonly observeIntegrationState: typeof observeSelectedPullRequestState;
   readonly observeIntegration: typeof observeSelectedPullRequest;
-  readonly readAcceptanceReceiptBytes: typeof defaultReadAcceptanceReceiptBytes;
-  readonly readProductAcceptanceProjection: typeof readProductAcceptanceProjection;
+  readonly readProductAcceptanceProjection: typeof findProductAcceptanceProjection;
   readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV2;
   readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV2;
   readonly repositoryIdentity: (repoRoot: string) => string;
@@ -135,12 +136,15 @@ export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders 
     readCanonicalTargetRef,
     readAcceptanceObservation: readAcceptanceVerificationObservation,
     readAcceptanceMatrix,
+    observeIntegrationState: (...args) => {
+      if (currentReadonlyObservation()) rejectObservation('Live provider integration requires an external observation');
+      return observeSelectedPullRequestState(...args);
+    },
     observeIntegration: (...args) => {
       if (currentReadonlyObservation()) rejectObservation('Live provider integration requires an external observation');
       return observeSelectedPullRequest(...args);
     },
-    readAcceptanceReceiptBytes: defaultReadAcceptanceReceiptBytes,
-    readProductAcceptanceProjection,
+    readProductAcceptanceProjection: findProductAcceptanceProjection,
     readIntegrationEnvelope: (repoRoot, digest) => readIntegrationEnvelope(repoRoot, digest),
     readIntegrationContract: (repoRoot, digest) => readIntegrationContract(repoRoot, digest),
     repositoryIdentity: (repoRoot) => publicationSha256(realpathSync(resolveGitCommonDirectory(repoRoot))),
@@ -385,15 +389,12 @@ function moduleAccepted(
   if (observation === null || observation.archive_projection_sha256 !== null) return UNAVAILABLE;
   if (observation.disposition === 'user_waiver') {
     try {
-      const receiptPath = acceptanceReceiptPath(read.repo.path, authorityHome);
       const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
-      // These are local protected authority files, never a new provider read.
-      for (const path of [receiptPath, grantPath]) {
-        const stat = lstatSync(path);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
-      }
-      const receipt = readAcceptanceReceiptFile(receiptPath);
-      if (engineerSha256(observationReadFileSync(receiptPath)) !== observation.acceptance_receipt_sha256) return UNAVAILABLE;
+      // A local protected authority file, never a new provider read.
+      const stat = lstatSync(grantPath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+      // The observation pins its receipt by digest; a later review replaces only the latest file.
+      const { receipt } = readAcceptanceReceiptRecord(read.repo.path, authorityHome, observation.acceptance_receipt_sha256);
       const grant = readUserWaiverGrantFile(grantPath);
       if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
         admission: active.admission, grantSha256: active.grant_sha256, waiverGrant: grant }).ok) return UNAVAILABLE;
@@ -423,57 +424,94 @@ function integrationSelection(input: DependencyAuthorityInput, read: DependencyA
   if (!reference) throw new Error('explicit integration selector is required');
   const bytes = subjectBytesAtCommit(input, read, reference);
   if (bytes === null) throw new Error('committed integration selector unavailable');
-  const selection = validateProviderIntegrationDependencyReference(JSON.parse(bytes));
-  if (selection.provider_repository_id !== input.target.task.provider_repository_id || selection.issue_id !== input.target.task.issue_id) throw new Error('integration task selection moved');
-  return selection;
+  return { reference, selection: validateProviderIntegrationDependencyReference(JSON.parse(bytes)) };
 }
 
-function observeIntegrationSelection(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders) {
-  const selection = integrationSelection(input, read);
+type IntegrationObservation =
+  | { readonly kind: 'unmet'; readonly verdict: AdapterVerdict }
+  | {
+    readonly kind: 'integrated';
+    readonly selection: ReturnType<typeof validateProviderIntegrationDependencyReference>;
+    readonly observed: readonly SelectedPullRequestV2[];
+    readonly refs: readonly DependencyAuthorityResolutionV1['evidence_refs'][number][];
+  };
+
+/**
+ * Reads the committed selection, then the provider state of every selected
+ * PR. A selection for another task and a selected PR that is still unmerged at
+ * its exact head are readable negatives. An unreadable, malformed or moved
+ * authority throws, and the adapters map that to `authority_unavailable`.
+ */
+function observeIntegrationSelection(
+  input: DependencyAuthorityInput,
+  read: DependencyAuthorityRepositoryRead,
+  reader: DependencyAuthorityReaders,
+  product: boolean,
+): IntegrationObservation {
+  const { reference, selection } = integrationSelection(input, read);
+  if ((selection.product !== null) !== product) throw new Error('integration selector kind does not match the dependency state');
+  const selected = evidence(`integration-selection:${reference.subject_ref}`, reference.subject_revision);
+  if (selection.provider_repository_id !== input.target.task.provider_repository_id || selection.issue_id !== input.target.task.issue_id) {
+    return { kind: 'unmet', verdict: verdict('unsatisfied', [selected]) };
+  }
+  const environment = { repo_root: read.repo.path };
+  const states = () => selection.required_pull_requests.map(pr => ({
+    repository: pr.repository, pr_number: pr.pr_number, state: reader.observeIntegrationState(environment, pr),
+  }));
+  const pending = states();
+  if (canonicalEngineerJson(pending) !== canonicalEngineerJson(states())) throw new Error('provider PR state moved');
+  if (pending.some(entry => entry.state !== 'MERGED')) {
+    return { kind: 'unmet', verdict: verdict('unsatisfied', [selected,
+      evidence(`provider-pull-requests:${reference.subject_ref}`, engineerSha256(canonicalEngineerJson(pending)))]) };
+  }
   const tree = gitExecFileSync(['rev-parse', `${selection.final_head_sha}^{tree}`], { cwd: read.repo.path, encoding: 'utf8' }).trim();
   if (tree !== selection.final_tree_sha) throw new Error('integration candidate tree changed');
   const observe = () => selection.required_pull_requests.map(pr => reader.observeIntegration(
-    { repo_root: read.repo.path }, read.repo.path, 'git', pr, selection.final_head_sha));
+    environment, read.repo.path, 'git', pr, selection.final_head_sha));
   const observed = observe();
   if (canonicalEngineerJson(observed) !== canonicalEngineerJson(observe())) throw new Error('provider integration moved');
-  return { selection, observed };
+  return { kind: 'integrated', selection, observed, refs: [selected,
+    evidence(`provider-integration:${selection.final_head_sha}`, engineerSha256(canonicalEngineerJson({ selection, observed })))] };
 }
 
 function publicationIntegrated(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
   if (input.dependency.acceptance_authority?.authority_kind !== 'provider_integration') return UNAVAILABLE;
   try {
-    const { selection, observed } = observeIntegrationSelection(input, read, reader);
-    if (selection.product !== null) return UNAVAILABLE;
-    return verdict('satisfied', [evidence(`provider-integration:${selection.final_head_sha}`, engineerSha256(canonicalEngineerJson({ selection, observed })))]);
+    const integration = observeIntegrationSelection(input, read, reader, false);
+    return integration.kind === 'unmet' ? integration.verdict : verdict('satisfied', integration.refs);
   } catch { return UNAVAILABLE; }
 }
 
 function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthorityRepositoryRead, reader: DependencyAuthorityReaders): AdapterVerdict {
   if (input.dependency.acceptance_authority?.authority_kind !== 'product_acceptance') return UNAVAILABLE;
   try {
-    const { selection, observed } = observeIntegrationSelection(input, read, reader);
-    const product = selection.product;
-    if (product === null) return UNAVAILABLE;
+    const integration = observeIntegrationSelection(input, read, reader, true);
+    if (integration.kind === 'unmet') return integration.verdict;
+    const { selection, observed, refs } = integration;
+    const product = selection.product!;
     const prd = input.readFileAtCommit(read.repo.path, read.commit!, product.approved_prd_ref);
     if (prd === null || engineerSha256(prd) !== product.approved_prd_sha256) return UNAVAILABLE;
     const projection = reader.readProductAcceptanceProjection(read.repo.path, product.projection_sha256);
+    // Nothing persisted under the selected digest: product acceptance is still pending.
+    if (projection === null) return verdict('unsatisfied', refs);
     const envelope = reader.readIntegrationEnvelope(read.repo.path, projection.envelope_sha256);
     const contract = reader.readIntegrationContract(read.repo.path, envelope.integration_contract_sha256);
     const matrix = reader.readAcceptanceMatrix(read.repo.path, projection.matrix_sha256);
     assertCompletePassingMatrix(contract, envelope, matrix);
+    if (contract.repository_id !== reader.repositoryIdentity(read.repo.path)) return UNAVAILABLE;
+    const projected = [...refs, evidence(`product-acceptance-projection:${projection.projection_sha256}`, projection.projection_sha256)];
     const sort = (values: readonly { provider_repository_id: string; pr_number: number }[]) => [...values].sort((a,b) => `${a.provider_repository_id}:${a.pr_number}`.localeCompare(`${b.provider_repository_id}:${b.pr_number}`));
-    if (contract.repository_id !== reader.repositoryIdentity(read.repo.path)
-      || contract.requirement.approved_prd_ref !== product.approved_prd_ref || contract.requirement.approved_prd_sha256 !== product.approved_prd_sha256
+    // A valid projection for another requirement, PR set or candidate is readable and does not prove this selection.
+    if (contract.requirement.approved_prd_ref !== product.approved_prd_ref || contract.requirement.approved_prd_sha256 !== product.approved_prd_sha256
       || canonicalEngineerJson(sort(contract.required_pull_requests)) !== canonicalEngineerJson(sort(selection.required_pull_requests))
       || envelope.final_head_sha !== selection.final_head_sha || envelope.final_tree_sha !== selection.final_tree_sha
-      || canonicalEngineerJson(sort(envelope.selected_pull_requests)) !== canonicalEngineerJson(sort(observed))) return UNAVAILABLE;
+      || canonicalEngineerJson(sort(envelope.selected_pull_requests)) !== canonicalEngineerJson(sort(observed))) return verdict('unsatisfied', projected);
     const authorityHome = reader.resolveAuthorityHome();
     if (product.review_authority.provider_repository_id !== input.target.task.provider_repository_id || product.review_authority.issue_id !== input.target.task.issue_id) return UNAVAILABLE;
     const active = observeSelectedAdmission(reader, read.repo.path, authorityHome, product.review_authority);
-    const receiptBytes = reader.readAcceptanceReceiptBytes(read.repo.path, authorityHome);
-    const receipt = JSON.parse(receiptBytes.toString('utf8'));
-    if (publicationSha256(receiptBytes) !== projection.acceptance_receipt_sha256
-      || receipt.subject_sha256 !== projection.acceptance_subject_sha256
+    // The projection pins its receipt by digest; a later review replaces only the latest file.
+    const { receipt } = readAcceptanceReceiptRecord(read.repo.path, authorityHome, projection.acceptance_receipt_sha256);
+    if (receipt.subject_sha256 !== projection.acceptance_subject_sha256
       || receipt.target_revision !== projection.acceptance_target_revision || receipt.target_revision !== envelope.base_sha
       || receipt.disposition !== projection.acceptance_disposition) return UNAVAILABLE;
     let waiverGrant = null;
@@ -486,8 +524,8 @@ function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthor
     if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
       admission: active.admission, grantSha256: active.grant_sha256, waiverGrant }).ok) return UNAVAILABLE;
     return verdict('satisfied', [
+      ...projected,
       evidence(`product-requirement:${product.approved_prd_ref}`, product.approved_prd_sha256),
-      evidence(`product-acceptance-projection:${projection.projection_sha256}`, projection.projection_sha256),
       evidence(`integration-envelope:${envelope.envelope_sha256}`, envelope.envelope_sha256),
       evidence(`integration-contract:${contract.contract_sha256}`, contract.contract_sha256),
       evidence(`acceptance-receipt:${projection.acceptance_receipt_sha256}`, projection.acceptance_receipt_sha256),

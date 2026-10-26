@@ -46,10 +46,11 @@ import {
   publicationSha256,
   stablePublicationJson,
 } from '../../core/publication/publication-receipt';
-import { collectPullRequestIntegration, type PublicationReadinessInput } from '../publication/merge-readiness';
+import { collectPullRequestIntegration, observeProviderReadinessIdentity, type PublicationReadinessInput } from '../publication/merge-readiness';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import {
   acceptanceReceiptPath,
+  readAcceptanceReceiptRecord,
   verifyAcceptance,
   type AcceptanceReceipt,
 } from '../review/acceptance-receipt';
@@ -340,6 +341,23 @@ export function readProductAcceptanceProjection(repoRoot: string, digest: string
   return readStored(repoRoot, gitBin, 'products', digest, validateProductAcceptanceProjection, canonicalProductAcceptanceProjectionBytes);
 }
 
+function absentEvidence(error: unknown): boolean {
+  return error instanceof IntegrationAcceptanceError && (error.cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+}
+
+/**
+ * Null means no product acceptance was persisted under this digest yet. Every
+ * other store failure, including invalid or non-canonical bytes, still throws.
+ */
+export function findProductAcceptanceProjection(repoRoot: string, digest: string, gitBin = 'git'): ProductAcceptanceProjectionV2 | null {
+  try {
+    return readProductAcceptanceProjection(repoRoot, digest, gitBin);
+  } catch (error) {
+    if (absentEvidence(error)) return null;
+    throw error;
+  }
+}
+
 /**
  * Read-only projection of the immutable product acceptance store. The store is
  * content-addressed by projection digest, so a reader that must answer "is this
@@ -351,9 +369,7 @@ export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git
   try {
     directory = integrationEvidenceDirectory(repoRoot, gitBin, 'products', false);
   } catch (error) {
-    if (error instanceof IntegrationAcceptanceError && (error.cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-      return Object.freeze([]);
-    }
+    if (absentEvidence(error)) return Object.freeze([]);
     throw error;
   }
   const digests = readdirSync(directory, { withFileTypes: true })
@@ -423,6 +439,29 @@ export function observeSelectedPullRequest(
   // not the unmerged feature head, is contained in the final candidate.
   assertAncestor(repoRoot, gitBin, mergeCommit, finalHead, 'provider merge commit');
   return Object.freeze({ ...selection, ...integrated });
+}
+
+/**
+ * The provider state (`OPEN`, `CLOSED` or `MERGED`) of one selected PR at its
+ * exact selected head. It lets a reader tell a readable unmerged selection
+ * from unavailable merge evidence before it asks for merge proof.
+ */
+export function observeSelectedPullRequestState(
+  environment: IntegrationAcceptanceEnvironment,
+  selection: RequiredPullRequestV2,
+): string {
+  let identity: ReturnType<typeof observeProviderReadinessIdentity>;
+  try {
+    identity = observeProviderReadinessIdentity({ repo_root: environment.repo_root, gh_bin: environment.gh_bin,
+      gh_runner: environment.gh_runner, repository: selection.repository, provider_repository_id: selection.provider_repository_id,
+      pr_number: selection.pr_number, expected_head_sha: selection.expected_head_sha, expected_base_sha: selection.expected_base_sha });
+  } catch (error) {
+    throw fail('publication_stale', `PR ${selection.repository}#${selection.pr_number} state is unavailable`, error);
+  }
+  if (identity.head_sha !== selection.expected_head_sha) {
+    throw fail('publication_stale', `PR ${selection.repository}#${selection.pr_number} head moved from the selection`);
+  }
+  return identity.state;
 }
 
 function buildCurrentEnvelope(
@@ -514,8 +553,19 @@ export function createAcceptanceMatrix(
   return matrix;
 }
 
+/**
+ * The projection pins the digest of the latest receipt. A dependency reader
+ * resolves that digest from the immutable receipt record after later reviews
+ * replace the latest file, so a receipt without its record is refused here.
+ */
 export function defaultReadAcceptanceReceiptBytes(root: string, authorityHome: string): Buffer {
-  return readRegular(acceptanceReceiptPath(root, authorityHome), 'AcceptanceReceipt');
+  const latest = readRegular(acceptanceReceiptPath(root, authorityHome), 'AcceptanceReceipt');
+  try {
+    readAcceptanceReceiptRecord(root, authorityHome, publicationSha256(latest));
+  } catch (error) {
+    throw fail('acceptance_unavailable', 'AcceptanceReceipt has no immutable receipt record', error);
+  }
+  return latest;
 }
 
 export async function createProductAcceptanceProjection(
