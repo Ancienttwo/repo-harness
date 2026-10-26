@@ -26,7 +26,7 @@ import type { AdmittedTaskSession } from '../../core/sessions/task-sessions';
 import { observeAdmittedSessionSource } from '../sessions/admitted-source';
 import { runGithubCommand } from '../github/issues';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
-import { readReviewAdmissionSource, readReviewAdmissionSourceForIssue } from '../admission/admission-source';
+import { readReviewAdmissionSource } from '../admission/admission-source';
 import {
   assertLocalPullRequestRepository,
   collectPullRequestMergeReadinessAbortable,
@@ -129,14 +129,14 @@ export interface FleetRepositoryCollectionOptions extends Required<Pick<FleetBoa
   readonly deadline_exceeded: () => boolean;
   readonly remaining_ms?: () => number;
   readonly provider_limiter: FleetProviderObservationLimiter;
-  readonly read_admission_source?: typeof readReviewAdmissionSourceForIssue;
+  readonly read_admission_source?: typeof readReviewAdmissionSource;
   readonly env?: NodeJS.ProcessEnv;
   readonly pull_requests?: readonly FleetBoardPullRequestSelection[];
   readonly admission_associations?: readonly FleetBoardAdmissionAssociation[];
 }
 
 export interface FleetBoardDependencies {
-  readonly read_admission_source?: typeof readReviewAdmissionSourceForIssue;
+  readonly read_admission_source?: typeof readReviewAdmissionSource;
   readonly read_registry: (input: { readonly env?: NodeJS.ProcessEnv }) => RepoHarnessRegistryStrictSnapshot;
   readonly collect_repository: (
     repo: RepoHarnessRegisteredRepo,
@@ -298,11 +298,11 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
   if (association && base.issue_state === 'open' && readiness === null && execution === null
     && card.execution_status !== 'unavailable' && base.readiness_blockers === null) {
     try {
-      source = (options.read_admission_source ?? readReviewAdmissionSourceForIssue)(repo.path, {
+      source = (options.read_admission_source ?? readReviewAdmissionSource)(repo.path, {
         'repository-id': association.provider_repository_id, 'issue-id': association.provider_issue_id,
         'campaign-id': association.admission.campaign_id, 'grant-sha256': association.admission.grant_sha256,
         'policy-sha256': association.admission.policy_sha256, actor: association.admission.actor_id,
-      }, base.task_index ?? NaN);
+      });
       const selectedRunner = source.runner ?? runGithubCommand;
       source = { ...source, runner: (args, limits) => {
         assertCollectionActive(options.signal, options.deadline_exceeded);

@@ -1,5 +1,5 @@
 import { observeReviewIssueGoal } from '../../src/effects/admission/issue-goal';
-import { readReviewAdmissionSource, readReviewAdmissionSourceForIssue } from '../../src/effects/admission/admission-source';
+import { readReviewAdmissionSource } from '../../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { revokeReviewAdmission } from '../../src/effects/admission/admission-store';
 import { buildProviderIssueObservation, buildExternalSourceRefreshReceipt } from '../../src/core/external-sources/issue-observation';
@@ -204,7 +204,7 @@ function createPlainBoardFixture(root: string, rows: number, repoId: string, fir
 }
 
 describe('fleet board collector', () => {
-  test.each(['labels', 'issue_numbers'] as const)('selected issue source reads %s policy without a protected-store fixture', selectionKind => {
+  test.each(['labels', 'issue_numbers'] as const)('admission source keeps the %s discovery policy and cannot select an issue by itself', selectionKind => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'fleet-selected-source-')));
     onTestFinished(() => rmSync(root, { recursive: true, force: true }));
     mkdirSync(join(root, '.ai/harness'), { recursive: true });
@@ -229,12 +229,6 @@ describe('fleet board collector', () => {
     const unscoped = readReviewAdmissionSource(root, values);
     expect(() => observeReviewIssueGoal({ policy: unscoped.issuePolicy, repository_id: '1001', issue_id: '2001', runner })).toThrow('review_goal_requires_one_issue');
     expect(calls).toHaveLength(0);
-    const selected = readReviewAdmissionSourceForIssue(root, values, 903);
-    expect(observeReviewIssueGoal({ policy: selected.issuePolicy, repository_id: '1001', issue_id: '2001', runner }).content).toContain('Selected issue only');
-    expect(calls).toEqual([['api', '--method', 'GET', 'repos/acme/widgets', '--hostname', 'github.com'],
-      ['api', '--method', 'GET', 'repos/acme/widgets/issues/903', '--hostname', 'github.com']]);
-    issue.id = '2002';
-    expect(() => observeReviewIssueGoal({ policy: selected.issuePolicy, repository_id: '1001', issue_id: '2001', runner })).toThrow('review_goal_identity_changed');
     expect(readFileSync(path, 'utf8')).toBe(bytes);
   });
 
@@ -259,18 +253,19 @@ describe('fleet board collector', () => {
     let reads = 0;
     const dependencies: FleetBoardDependencies = { ...productionFleetBoardDependencies,
       read_registry: () => registry([entry]),
-      read_admission_source: (selectedRoot, values, issueNumber) => {
+      read_admission_source: (selectedRoot, values) => {
         expect(realpathSync(selectedRoot)).toBe(root);
         expect(values).toEqual({ 'repository-id': '1001', 'issue-id': '2001', 'campaign-id': association.admission.campaign_id,
           'grant-sha256': approved.grant, 'policy-sha256': association.admission.policy_sha256, actor: association.admission.actor_id });
-        expect(issueNumber).toBe(903);
-        const source = readReviewAdmissionSourceForIssue(selectedRoot, values, issueNumber);
+        const source = readReviewAdmissionSource(selectedRoot, values);
         expect(source.issuePolicy).toMatchObject({ mode: 'manual', github: { repository: 'acme/widgets',
-          selection: { kind: 'issue_numbers', issue_numbers: [903] },
+          selection: { kind: selectionKind },
           limits: { max_pages: 2, max_issues: 10, max_body_bytes: 4096, max_total_bytes: 8192, deadline_ms: 5000 } } });
         // Only the account-owned test home and offline provider transport are injected.
         return { ...source, authorityHome, runner: (args, options) => {
           reads++; expect(options.timeout_ms).toBeGreaterThan(0); expect(options.timeout_ms).toBeLessThanOrEqual(30_000);
+          // The approved record, not the discovery policy, selects the one provider issue.
+          expect(args.filter(arg => arg.startsWith('repos/'))).toEqual([expect.stringMatching(/^repos\/acme\/widgets(\/issues\/903)?$/)]);
           return approved.source.runner!(args, options);
         } };
       } };
