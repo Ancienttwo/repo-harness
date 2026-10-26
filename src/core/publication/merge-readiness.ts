@@ -6,10 +6,6 @@ export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner |
  * non-ready result without interpreting an untrusted provider error string.
  */
 export type MergeReadinessBlockerCode =
-  | 'receipt_unavailable'
-  | 'publication_claim_mismatch'
-  | 'publication_pointer_mismatch'
-  | 'lease_not_reviewing'
   | 'provider_unavailable'
   | 'provider_data_incomplete'
   | 'changed_during_read'
@@ -17,16 +13,11 @@ export type MergeReadinessBlockerCode =
   | 'draft'
   | 'head_moved'
   | 'base_moved_since_verification'
-  | 'review_subject_mismatch'
-  | 'verification_evidence_stale'
   | 'checks_failed'
   | 'checks_pending'
-  | 'acceptance_missing'
-  | 'required_reviews_missing'
   | 'changes_requested'
   | 'unresolved_threads'
   | 'not_mergeable'
-  | 'task_revision_mismatch'
   | 'already_integrated';
 
 export interface MergeReadinessBlockerV1 {
@@ -35,7 +26,6 @@ export interface MergeReadinessBlockerV1 {
 }
 
 export type MergeReadinessIntegrationMode = 'unmerged' | 'ancestor' | 'absorbed' | 'unavailable';
-export type MergeReadinessAcceptance = 'pass' | 'not_required' | 'waived' | 'missing';
 export type MergeReadinessObservation = 'stable' | 'changed_during_read' | 'provider_unavailable' | 'provider_data_incomplete';
 
 export type MergeReadinessRollbackBoundary =
@@ -89,10 +79,6 @@ export interface PullRequestReadinessV2 extends PullRequestSelectionV2, MergeRea
 }
 
 const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttentionOwner>> = {
-  receipt_unavailable: 'agent',
-  publication_claim_mismatch: 'agent',
-  publication_pointer_mismatch: 'agent',
-  lease_not_reviewing: 'agent',
   provider_unavailable: 'external',
   provider_data_incomplete: 'external',
   changed_during_read: 'external',
@@ -100,16 +86,11 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   draft: 'agent',
   head_moved: 'agent',
   base_moved_since_verification: 'agent',
-  review_subject_mismatch: 'agent',
-  verification_evidence_stale: 'agent',
   checks_failed: 'agent',
   checks_pending: 'external',
-  acceptance_missing: 'agent',
-  required_reviews_missing: 'external',
   changes_requested: 'agent',
   unresolved_threads: 'agent',
   not_mergeable: 'agent',
-  task_revision_mismatch: 'agent',
   already_integrated: 'agent',
 };
 

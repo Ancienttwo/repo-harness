@@ -266,10 +266,6 @@ export const OPERATOR_REPOSITORY_ERROR_CODES = [
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
 const LEASE_STATES = ['available', 'reserving', 'bound', 'completing', 'reviewing', 'released', 'unknown'] as const;
 const MERGE_BLOCKERS = [
-  'receipt_unavailable',
-  'publication_claim_mismatch',
-  'publication_pointer_mismatch',
-  'lease_not_reviewing',
   'provider_unavailable',
   'provider_data_incomplete',
   'changed_during_read',
@@ -277,16 +273,11 @@ const MERGE_BLOCKERS = [
   'draft',
   'head_moved',
   'base_moved_since_verification',
-  'review_subject_mismatch',
-  'verification_evidence_stale',
   'checks_failed',
   'checks_pending',
-  'acceptance_missing',
-  'required_reviews_missing',
   'changes_requested',
   'unresolved_threads',
   'not_mergeable',
-  'task_revision_mismatch',
   'already_integrated',
 ] as const;
 const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;

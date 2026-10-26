@@ -1691,7 +1691,7 @@ test('an explicit historical revision remains a historical read even when the Ta
 test('refresh removes stale acceptance readiness without creating Done or a merge action',async()=>{
   const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
   const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;
-  const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'verification_evidence_stale' as const,attention_owner:'agent' as const},{code:'acceptance_missing' as const,attention_owner:'user' as const}]};
+  const readiness={...current.merge_readiness!,ready:false,attention_owner:'agent' as const,blockers:[{code:'head_moved' as const,attention_owner:'agent' as const},{code:'changes_requested' as const,attention_owner:'user' as const}]};
   const placement=classifyFleetBoardPlacement({...current,error:null,merge_readiness:readiness});
   const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
   const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
