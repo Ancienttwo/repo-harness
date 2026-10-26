@@ -11,7 +11,12 @@ provide working provider access. The default policy is off; initialization does
 not enable it. The trusted upstream Bot must authenticate the human, authorize
 the scope, and supply the bound request. Its integration calls
 `repo-harness review admit --repo <execution-checkout> --request <authorized-request.json>`.
-The request contains `{admission, approval, expectedRevision}`. Do not create an
+The request contains `{admission, approval, expectedRevision}`. To withdraw that
+approval, the Bot integration calls
+`repo-harness review revoke --repo <execution-checkout> --request <revocation-request.json>`.
+That request contains
+`{repository_id, issue_id, campaign_id, expectedGrantSha256, expectedRevision}`.
+The store revokes only the exact active grant at the expected revision. Do not create an
 approval from these examples: actor IDs and authorization references are binding
 data, not authentication. Select the resulting active grant and policy digests
 below, and supply the current immutable issue claim. A contract or plan file
