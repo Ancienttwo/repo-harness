@@ -16,14 +16,14 @@ import {
 } from './types';
 import type { SetupRawRoute } from './projection';
 
-/** `HOOK_EVENT_TELEMETRY_PROTOCOL` (src/cli/hook/event-telemetry.ts). */
-const TELEMETRY_PROTOCOL = 'loop-engine-hook-event/v2';
 const GUARD = /^[A-Za-z][A-Za-z0-9]{0,63}$/u;
 /** Cut before redaction so a cut never splits a path the filter must see. */
 const REASON_LIMIT = 512;
 
 export interface HookUsageInput {
   readonly telemetry_lines: Iterable<string>;
+  /** `HOOK_EVENT_TELEMETRY_PROTOCOL`; the hook layer owns it, so core never copies it. */
+  readonly telemetry_protocol: string;
   readonly failure_lines: readonly string[];
   readonly routes: readonly SetupRawRoute[];
   readonly now_ms: number;
@@ -61,7 +61,7 @@ export function summarizeHookUsage(input: HookUsageInput): SetupHookUsage {
   }
   for (const line of input.telemetry_lines) {
     const r = record(line);
-    if (r === null || r.protocol !== TELEMETRY_PROTOCOL) continue;
+    if (r === null || r.protocol !== input.telemetry_protocol) continue;
     const at = inWindow(r.started_at, now);
     if (at === null || typeof r.host !== 'string' || typeof r.event !== 'string' || typeof r.route_id !== 'string') continue;
     const entry = declared.get(key(r.host, r.event, r.route_id));
