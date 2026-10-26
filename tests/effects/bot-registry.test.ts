@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { botIdForMcpClient, botRegistryPath, BotRegistryError, readBotRegistry, registerBot } from '../../src/effects/bot-registry';
+import { BOT_REGISTRY_MAX_RECORDS, botIdForMcpClient, botRegistryPath, BotRegistryError, readBotRegistry, registerBot } from '../../src/effects/bot-registry';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
 
@@ -52,6 +52,21 @@ describe('Bot registry', () => {
         { bot_id: 'ok', name: 'X', host: 'X', slack_bot_id: 'https://hooks.slack.example/T0' },
         { bot_id: 'ok', name: 'X', host: 'X', herdr_agent: 'Has Space' },
       ]) expect(code(() => registerBot(input, h.env))).toBe('bot_invalid');
+    } finally { h.cleanup(); }
+  });
+
+  test('a new Bot past the registry cap is refused, so every reader keeps working', () => {
+    const h = home();
+    try {
+      const first = registerBot({ bot_id: 'bot-0', name: 'Bot 0', host: 'Dot', now: NOW }, h.env);
+      for (let index = 1; index < BOT_REGISTRY_MAX_RECORDS; index += 1) {
+        writeFileSync(join(botRegistryPath(h.env), `bot-${index}.json`), JSON.stringify({ ...first, bot_id: `bot-${index}` }));
+      }
+      expect(readBotRegistry(h.env)).toHaveLength(BOT_REGISTRY_MAX_RECORDS);
+      expect(code(() => registerBot({ bot_id: 'one-more', name: 'One more', host: 'Dot' }, h.env))).toBe('bot_registry_full');
+      expect(code(() => registerBot({ bot_id: 'one-more', name: 'One more', host: 'Dot', replace: true }, h.env))).toBe('bot_registry_full');
+      expect(registerBot({ bot_id: 'bot-0', name: 'Bot zero', host: 'Dot', replace: true }, h.env).name).toBe('Bot zero');
+      expect(readBotRegistry(h.env)).toHaveLength(BOT_REGISTRY_MAX_RECORDS);
     } finally { h.cleanup(); }
   });
 

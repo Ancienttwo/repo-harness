@@ -14,7 +14,7 @@ export const BOT_RECORD_KIND = 'repo-harness-bot' as const;
 export const BOT_REGISTRY_DIRECTORY = 'bots';
 const BOT_REGISTRY_LOCK = 'bots.lock';
 const BOT_RECORD_MAX_BYTES = 16 * 1024;
-const BOT_REGISTRY_MAX_RECORDS = 256;
+export const BOT_REGISTRY_MAX_RECORDS = 256;
 
 const BOT_ID = /^[a-z][a-z0-9-]{0,62}$/;
 const BOT_HOST = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/;
@@ -36,7 +36,7 @@ export interface BotRecordV1 {
   readonly registered_at: string;
 }
 
-export type BotRegistryErrorCode = 'bot_invalid' | 'bot_exists' | 'bot_conflict' | 'bot_registry_invalid';
+export type BotRegistryErrorCode = 'bot_invalid' | 'bot_exists' | 'bot_conflict' | 'bot_registry_full' | 'bot_registry_invalid';
 
 export class BotRegistryError extends Error {
   constructor(readonly code: BotRegistryErrorCode, message: string) {
@@ -162,8 +162,13 @@ export function registerBot(input: RegisterBotInput, env: NodeJS.ProcessEnv = pr
   mkdirSync(join(home, BOT_REGISTRY_DIRECTORY), { recursive: true, mode: 0o700 });
   return withExclusiveDirectoryLock(realpathSync(home), BOT_REGISTRY_LOCK, () => {
     const existing = readBotRegistry(env);
-    if (existing.some(entry => entry.bot_id === bot.bot_id) && input.replace !== true) {
+    const known = existing.some(entry => entry.bot_id === bot.bot_id);
+    if (known && input.replace !== true) {
       throw new BotRegistryError('bot_exists', `bot ${bot.bot_id} is already registered; pass --replace to overwrite it`);
+    }
+    // The read refuses a registry above the cap, so a new record past it would break every reader.
+    if (!known && existing.length >= BOT_REGISTRY_MAX_RECORDS) {
+      throw new BotRegistryError('bot_registry_full', `the bot registry already holds ${BOT_REGISTRY_MAX_RECORDS} bots`);
     }
     assertUniqueIdentities([...existing.filter(entry => entry.bot_id !== bot.bot_id), bot], 'bot_conflict');
     const path = join(botRegistryPath(env), `${bot.bot_id}.json`);
