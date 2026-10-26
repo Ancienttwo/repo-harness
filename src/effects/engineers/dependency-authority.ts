@@ -368,6 +368,7 @@ function moduleAccepted(
   const subject = subjectBytesAtCommit(input, read, reference);
   if (subject === null) return UNAVAILABLE;
 
+  const selected = evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision);
   let selector: ReturnType<typeof validateModuleAcceptanceReference>;
   let active: ReturnType<typeof observeActiveReviewAdmission>;
   let observation: AcceptanceVerificationObservationV1 | null;
@@ -379,14 +380,22 @@ function moduleAccepted(
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
     // Repository path and policy location come only from the adopted registry.
     // The committed selector cannot supply a filesystem or provider endpoint.
-    if (selector.provider_repository_id !== input.target.task.provider_repository_id || selector.issue_id !== input.target.task.issue_id) return UNAVAILABLE;
+    // A readable selector for another task does not cover this target.
+    if (selector.provider_repository_id !== input.target.task.provider_repository_id || selector.issue_id !== input.target.task.issue_id) return verdict('unsatisfied', [selected]);
     active = observeSelectedAdmission(reader, read.repo.path, authorityHome, selector);
     observation = reader.readAcceptanceObservation(read.repo.path, authorityHome,
       active.admission.campaign_sha256, active.admission.admission_sha256);
   } catch {
     return UNAVAILABLE;
   }
-  if (observation === null || observation.archive_projection_sha256 !== null) return UNAVAILABLE;
+  const admitted = [
+    selected,
+    evidence(`acceptance-goal:${selector.provider_repository_id}:${selector.issue_id}`, active.admission.goal.revision),
+    evidence(`acceptance-grant:${active.grant_sha256}`, active.grant_sha256),
+  ];
+  // The admission is current but its authority has recorded no acceptance yet.
+  if (observation === null) return verdict('unsatisfied', admitted);
+  if (observation.archive_projection_sha256 !== null) return UNAVAILABLE;
   if (observation.disposition === 'user_waiver') {
     try {
       const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
@@ -402,12 +411,10 @@ function moduleAccepted(
   }
 
   const refs = [
+    ...admitted,
     evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
-    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
     evidence(`acceptance-disposition:${observation.disposition}`, engineerSha256(observation.disposition)),
     evidence(`acceptance-target:${observation.target_ref}`, engineerSha256(observation.target_revision)),
-    evidence(`acceptance-goal:${selector.provider_repository_id}:${selector.issue_id}`, active.admission.goal.revision),
-    evidence(`acceptance-grant:${active.grant_sha256}`, active.grant_sha256),
   ];
   // A readable observation with stale bindings is negative. Missing or revoked
   // protected authority is unavailable, even if an old observation remains.

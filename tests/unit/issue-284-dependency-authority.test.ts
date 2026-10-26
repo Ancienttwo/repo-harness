@@ -333,7 +333,7 @@ function providerRunner(provider: Map<number, ProviderPullRequest>): NonNullable
     const command = `${args[0]} ${args[1]}`;
     if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
     if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
-    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product' });
+    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product', default_branch: 'main' });
     if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ id: 2001, node_id: 'I_product', number: 903 });
     const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
       ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
@@ -816,11 +816,17 @@ describe('issue #284 closed dependency authority', () => {
 
   test('module_accepted reads the acceptance authority\'s verified observation', () => {
     const subject = fixture();
-    // The gate store has no observations directory at all.
+    // The gate store has no observations directory at all: the admitted
+    // module has not been accepted yet, which is pending work.
     expect(existsSync(observationPathFor(subject))).toBe(false);
     const absent = resolveDependencyAuthority(input(subject, 'module_accepted'));
-    expect(absent.status).toBe('authority_unavailable');
-    expect(absent.authority_revision).toBeNull();
+    expect(absent.status).toBe('unsatisfied');
+    expect(absent.authority_revision).not.toBeNull();
+    expect(absent.evidence_refs.map((entry) => entry.ref)).toEqual([
+      `acceptance-goal:${PROVIDER_REPO_ID}:${ISSUE_A}`,
+      `acceptance-grant:${approval(subject.root).grant}`,
+      `acceptance-subject:${SELECTOR_REF}`,
+    ]);
 
     const observation = recordAcceptanceObservation(subject);
     const accepted = resolveDependencyAuthority(input(subject, 'module_accepted'));
@@ -828,6 +834,13 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.evidence_refs.map((entry) => entry.ref))
       .toContain(`acceptance-observation:${observation.observation_id}`);
     expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${PROVIDER_REPO_ID}:${ISSUE_A}`);
+    expect(accepted.authority_revision).not.toBe(absent.authority_revision);
+
+    // The committed selector still names the old task, so it does not prove the moved target.
+    const movedTarget = resolveDependencyAuthority(input(subject, 'module_accepted',
+      retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } })));
+    expect(movedTarget.status).toBe('unsatisfied');
+    expect(movedTarget.evidence_refs.map((entry) => entry.ref)).toEqual([`acceptance-subject:${SELECTOR_REF}`]);
 
     // Re-recording the same subject overwrites one file rather than growing a bag.
     const rerecorded = recordAcceptanceObservation(subject);
@@ -975,7 +988,10 @@ describe('issue #284 closed dependency authority', () => {
     const misfiled = join(dirname(path), `${'0'.repeat(64)}.json`);
     copyFileSync(path, misfiled);
     rmSync(path, { force: true });
-    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+    // The misfiled bytes are never read, so the bound key has no acceptance yet.
+    const misfiledResult = resolveDependencyAuthority(exact);
+    expect(misfiledResult.status).toBe('unsatisfied');
+    expect(misfiledResult.evidence_refs.some((entry) => entry.ref.startsWith('acceptance-observation:'))).toBe(false);
   });
 
   test('verifyAcceptance keeps the acceptance policy rule set this branch extracted', () => {

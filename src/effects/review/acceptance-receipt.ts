@@ -632,15 +632,6 @@ function parseReceipt(text: string): AcceptanceReceipt {
   return receipt;
 }
 
-/**
- * Read-only accessor for the single AcceptanceReceipt authority file. It
- * exists so other authorities revalidate the same bytes through the same
- * validator instead of re-deriving a second receipt parser.
- */
-export function readAcceptanceReceiptFile(path: string): AcceptanceReceipt {
-  return readReceipt(path);
-}
-
 function writeReceipt(path: string, receipt: AcceptanceReceipt | AcceptanceReviewResult): void {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });

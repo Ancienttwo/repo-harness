@@ -83,7 +83,7 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
     const command = `${args[0]} ${args[1]}`;
     if (command === 'repo view') return response({ id: 'R_me4c_fixture', nameWithOwner: 'example/product' });
     if (args[0] === 'api' && args[1]?.includes('/contents/')) return response({ status: '404', message: 'Not Found' }, 1);
-    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product' });
+    if (args[0] === 'api' && args[1] === 'repos/example/product') return response({ id: 1001, node_id: 'R_me4c_fixture', full_name: 'example/product', default_branch: 'main' });
     if (args[0] === 'api' && args[1]?.includes('/issues/')) return response({ id: 2001, node_id: 'I_product', number: 903 });
     const number = args[0] === 'pr' ? Number(args[2]) : command === 'api graphql'
       ? Number(args.find(arg => arg.startsWith('number='))?.slice(7))
