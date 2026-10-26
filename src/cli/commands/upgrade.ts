@@ -31,6 +31,12 @@ import {
   type UpgradeDecision,
   type UpgradeDecisionKind,
 } from '../../effects/upgrade/operator-decisions';
+import {
+  formatLegacyWorktreeOutcome,
+  runLegacyWorktreeCleanup,
+  type LegacyWorktreeCandidate,
+  type LegacyWorktreeOutcome,
+} from '../../effects/upgrade/legacy-worktree-cleanup';
 import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
@@ -48,7 +54,10 @@ import { formatRegisteredUpgradeResult, runRegisteredUpgrade } from './upgrade-r
 export const UPGRADE_AUDIT_MAX_RECORDS = 100;
 
 export interface UpgradeOptions {
+  /** Selects the repository. */
   readonly cwd?: string;
+  /** The caller's checkout; legacy worktree cleanup never removes it. Defaults to the process cwd. */
+  readonly callerCwd?: string;
   readonly home?: string;
   readonly packageRoot?: string;
   readonly scope?: 'project' | 'global' | 'all';
@@ -66,6 +75,8 @@ export interface UpgradeDependencies {
   readonly afterStage?: (item: LeftoverItem, staging: string) => void;
   /** Runs after the policy template is planned and before it is written. */
   readonly beforeTemplateWrite?: () => void;
+  /** Runs before each legacy worktree removal. */
+  readonly beforeLegacyWorktreeRemove?: (candidate: LegacyWorktreeCandidate) => void;
 }
 
 export interface UpgradeResult {
@@ -81,6 +92,7 @@ export interface UpgradeResult {
   readonly backupPath?: string;
   readonly projectBackupPath?: string;
   readonly worktreeTemplate?: WorktreeTemplateOutcome;
+  readonly legacyWorktrees?: LegacyWorktreeOutcome;
   readonly error?: string;
 }
 
@@ -419,6 +431,13 @@ function withWorktreeTemplate(result: UpgradeResult, outcome: WorktreeTemplateOu
   return { ...result, worktreeTemplate: outcome, exitCode: result.exitCode === 1 || pending || outcome.error ? 1 : 0, ...(error ? { error } : {}) };
 }
 
+function withLegacyWorktrees(result: UpgradeResult, outcome: LegacyWorktreeOutcome | undefined): UpgradeResult {
+  if (!outcome || (outcome.candidates.length === 0 && !outcome.error)) return result;
+  const pending = !result.apply && outcome.candidates.some((candidate) => candidate.verdict === 'remove');
+  const error = result.error ?? outcome.error;
+  return { ...result, legacyWorktrees: outcome, exitCode: result.exitCode === 1 || pending || outcome.error ? 1 : 0, ...(error ? { error } : {}) };
+}
+
 export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDependencies = {}): UpgradeResult {
   const apply = opts.apply === true;
   try {
@@ -441,10 +460,12 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const { items, operatorKept } = planUpgrade(options, decisions);
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))], operatorKept };
-    // A failed leftover apply leaves the policy untouched: the template item is reported, not written.
-    const finish = (result: UpgradeResult) => withWorktreeTemplate(result,
+    const callerCwd = resolve(opts.callerCwd ?? process.cwd());
+    // A failed leftover apply leaves the policy untouched and the legacy worktrees in place; both are reported.
+    const finish = (result: UpgradeResult) => withLegacyWorktrees(withWorktreeTemplate(result,
       scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true && !result.error,
-        dependencies.beforeTemplateWrite));
+        dependencies.beforeTemplateWrite)),
+      scope === 'global' ? undefined : runLegacyWorktreeCleanup(cwd, callerCwd, env, apply && !result.error, { beforeRemove: dependencies.beforeLegacyWorktreeRemove }));
     if (!apply || !items.some(removable)) return finish(emptyResult);
     return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
       const underHostLock = planUpgrade(options, decisions).items;
@@ -474,6 +495,7 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
     lines.push(`Operator kept (${UPGRADE_DECISIONS_PATH}):`);
     for (const item of result.operatorKept) lines.push(`  ${item.path}`);
   }
+  if (result.legacyWorktrees) lines.push(...formatLegacyWorktreeOutcome(result.legacyWorktrees));
   if (result.backupPath) lines.push(`Backup: ${result.backupPath}`);
   if (result.projectBackupPath) lines.push(`Project rollback: repo-harness init rollback --transaction ${result.projectBackupPath}`);
   if (result.error) lines.push(`Failed: ${result.error}`);
@@ -604,7 +626,9 @@ export function buildUpgradeCommand(): Command {
         process.exitCode = 2;
         return;
       }
-      const result = runUpgrade(opts);
+      const result = runUpgrade(opts, {
+        beforeLegacyWorktreeRemove: (candidate) => process.stderr.write(`Removing legacy worktree ${candidate.path}; rebuild: ${candidate.rebuild}\n`),
+      });
       process.stdout.write(formatUpgradeResult(result, opts.json));
       if (result.error && opts.json && !result.apply) process.stderr.write(`${result.error}\n`);
       process.exitCode = result.exitCode;
