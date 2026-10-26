@@ -8,7 +8,7 @@ import {
   createStateInputCollector,
   type EffectiveStateResolution,
 } from '../../effects/loop/state-input-collector';
-import { commandNamesOnPath, createHookEventTelemetry } from './event-telemetry';
+import { createHookEventTelemetry } from './event-telemetry';
 import {
   resolveEffectiveStateReadOnly,
   StateResolutionUnstableError,
@@ -171,7 +171,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   if (markerGate) return early(1, markerGate.code, repoRoot, `${HOOK_COMMAND_NAME}: ${markerGate.message}\n`);
 
   const handler = getHandlerForRoute(route);
-  const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId });
+  const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId, pathValue: env.PATH });
   const now = new Date();
   const collector = createStateInputCollector({
     repoRoot,
@@ -220,7 +220,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     exitCode,
     blocked: exitCode === 2 || result.permission?.decision === 'deny',
     reason,
-    commandNames: commandNamesOnPath(shellCommand, env.PATH),
+    command: shellCommand,
   });
   return { exitCode, reason, repoRoot, handler: handler.id };
 }

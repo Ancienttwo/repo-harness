@@ -4,7 +4,6 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   commandNames,
-  commandNamesOnPath,
   createHookEventTelemetry,
   HOOK_EVENT_TELEMETRY_PATH,
   HOOK_EVENT_TELEMETRY_PROTOCOL,
@@ -26,6 +25,28 @@ function tempDir(prefix: string): string {
 
 function identity(overrides: Partial<HookIdentity> = {}): HookIdentity {
   return { host: 'claude', sessionId: null, runId: null, turnId: null, ...overrides };
+}
+
+/** A bin directory that holds one executable file per name. */
+function binWith(...names: string[]): string {
+  const bin = tempDir('hrd08-event-bin-');
+  for (const name of names) {
+    writeFileSync(join(bin, name), '#!/bin/sh\n');
+    chmodSync(join(bin, name), 0o755);
+  }
+  return bin;
+}
+
+/** Names that `finalize` writes for a shell command under a given hook PATH. */
+function recordedNames(command: string, pathValue: string | undefined): string[] {
+  const repoRoot = tempDir('hrd08-event-recorded-');
+  return [...createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'bash', pathValue }).finalize({
+    identity: identity(),
+    exitCode: 0,
+    blocked: false,
+    reason: 'ok',
+    command,
+  }).command_names];
 }
 
 describe('HRD-08 event telemetry authority', () => {
@@ -62,12 +83,14 @@ describe('HRD-08 event telemetry authority', () => {
 
   test('records program names of a shell command and never its arguments', () => {
     const repoRoot = tempDir('hrd08-event-command-names-');
-    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'bash' }).finalize({
+    const record = createHookEventTelemetry({
+      repoRoot, event: 'PreToolUse', routeId: 'bash', pathValue: binWith('cd', 'gh', 'jq', 'bun', 'brew', 'sudo', 'env'),
+    }).finalize({
       identity: identity(),
       exitCode: 0,
       blocked: false,
       reason: 'ok',
-      commandNames: commandNames('cd /Users/alice/repo && GH_TOKEN=sk-proj-FAKE0123456789abc gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"'),
+      command: 'cd /Users/alice/repo && GH_TOKEN=sk-proj-FAKE0123456789abc gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"',
     });
     // A command given by path (`/opt/homebrew/bin/brew`) is not counted.
     expect(record.command_names).toEqual(['cd', 'gh', 'jq', 'bun']);
@@ -130,17 +153,39 @@ describe('HRD-08 event telemetry authority', () => {
     }
   });
 
-  test('only names of executables on the hook PATH are recorded', () => {
+  test('NAME=$( is scanned like $( and the scan still stops at NAME=(', () => {
     const s = 'sk-proj-AbCdEf0123456789xyz';
-    const bin = tempDir('hrd08-event-path-');
-    writeFileSync(join(bin, 'faketool'), '#!/bin/sh\n');
-    chmodSync(join(bin, 'faketool'), 0o755);
+    const cases: [string, string[]][] = [
+      [`x=$(git rev-parse HEAD) && git log -1 ${s}`, ['git']],
+      [`repo=$(git rev-parse --show-toplevel); cd $repo && ls ${s}`, ['git', 'cd', 'ls']],
+      [`x=$(git rev-parse HEAD); KEYS=(${s} other)`, ['git']],
+      [`KEYS=(${s} other); ls`, []],
+    ];
+    for (const [command, names] of cases) {
+      const result = commandNames(command);
+      expect(result).not.toContain(s);
+      expect([command, result]).toEqual([command, names]);
+    }
+  });
+
+  test('finalize records only names of executables on the hook PATH', () => {
+    const s = 'sk-proj-AbCdEf0123456789xyz';
+    const bin = binWith('faketool', 'git');
     writeFileSync(join(bin, 'notexec'), 'data');
     mkdirSync(join(bin, 'somedir'));
-    expect(commandNamesOnPath(`faketool run; ${s} x; notexec; somedir; git status`, bin)).toEqual(['faketool']);
-    expect(commandNamesOnPath(`./faketool; ${bin}/faketool`, bin)).toEqual([]);
-    expect(commandNamesOnPath('faketool', undefined)).toEqual([]);
-    expect(commandNamesOnPath('faketool', `relative:${bin}`)).toEqual(['faketool']);
+    expect(recordedNames(`faketool run; ${s} x; notexec; somedir; git status`, bin)).toEqual(['faketool', 'git']);
+    expect(recordedNames(`x=$(git rev-parse HEAD) && ${s} y; faketool`, bin)).toEqual(['git', 'faketool']);
+    expect(recordedNames(`./faketool; ${bin}/faketool`, bin)).toEqual([]);
+    expect(recordedNames('faketool', undefined)).toEqual([]);
+    expect(recordedNames('faketool', `relative:${bin}`)).toEqual(['faketool']);
+
+    const repoRoot = tempDir('hrd08-event-path-record-');
+    createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'bash', pathValue: bin }).finalize({
+      identity: identity(), exitCode: 0, blocked: false, reason: 'ok', command: `faketool ${s}; ${s} --flag; git status`,
+    });
+    const line = readFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), 'utf8');
+    expect(JSON.parse(line).command_names).toEqual(['faketool', 'git']);
+    expect(line).not.toContain(s);
   });
 
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
