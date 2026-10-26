@@ -126,6 +126,23 @@ describe('GitHub external-source adapter', () => {
     expect(calls.map((args) => args[3])).toEqual(['repos/Ancienttwo/byok-sdk', 'repos/Ancienttwo/byok-sdk/issues/102', 'repos/Ancienttwo/byok-sdk/issues/103']);
   });
 
+  test('rejects an exact Issue that a transfer redirected to another repository', () => {
+    const batchPolicy = requireManualGithubPolicy(parseExternalSourcesPolicy({
+      version: 1, mode: 'manual', github: { enabled: true, repository: 'acme/widgets', selection: { kind: 'issue_numbers', issue_numbers: [7] },
+        limits: { max_pages: 1, max_issues: 1, max_body_bytes: 1024, max_total_bytes: 8192, deadline_ms: 1000 } },
+    }));
+    const transferred = runner([
+      { id: 101, full_name: 'acme/widgets', html_url: 'https://github.com/acme/widgets' },
+      { id: 901, number: 7, html_url: 'https://github.com/other/place/issues/7', state: 'open', title: 'moved', body: '', labels: [], assignees: [] },
+    ]);
+    try { fetchGithubIssues(batchPolicy, transferred); throw new Error('expected a repository identity failure'); }
+    catch (error) {
+      expect(error).toBeInstanceOf(GithubAdapterError);
+      expect((error as GithubAdapterError).failure_class).toBe('repository_identity');
+      expect((error as GithubAdapterError).message).toContain('GitHub issue #7 is not in acme/widgets');
+    }
+  });
+
   test('enforces one deadline across repository identity and every exact Issue request', () => {
     const batchPolicy = requireManualGithubPolicy(parseExternalSourcesPolicy({
       version: 1,

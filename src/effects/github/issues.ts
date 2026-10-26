@@ -113,6 +113,9 @@ function parseIssue(raw: unknown, repository: GithubRepositoryIdentityV1, maxBod
   const id = typeof value.id === 'number' && Number.isSafeInteger(value.id) && value.id > 0 ? String(value.id) : typeof value.id === 'string' && value.id.trim() ? value.id : '';
   const number = typeof value.number === 'number' && Number.isSafeInteger(value.number) && value.number > 0 ? value.number : null;
   if (!id || number === null) throw new GithubAdapterError('invalid_response', 'GitHub issue has invalid immutable id or number', 'unavailable', repository);
+  // A transferred issue redirects to its new repository; it must not take this repository's identity.
+  const url = requiredText(value.html_url, 'GitHub issue html_url');
+  if (url !== `${repository.url}/issues/${number}`) throw new GithubAdapterError('repository_identity', `GitHub issue #${number} is not in ${repository.display_ref}: ${url}`, 'unavailable', repository);
   const body = value.body === null || value.body === undefined ? '' : text(value.body, 'GitHub issue body');
   if (Buffer.byteLength(body, 'utf8') > maxBodyBytes) throw new GithubAdapterError('body_limit', `GitHub issue #${number} body exceeds max_body_bytes`, 'incomplete', repository);
   const rawLabels = value.labels === undefined ? [] : value.labels;
@@ -124,7 +127,7 @@ function parseIssue(raw: unknown, repository: GithubRepositoryIdentityV1, maxBod
   return Object.freeze({
     provider_issue_id: id,
     number,
-    url: requiredText(value.html_url, 'GitHub issue html_url'),
+    url,
     created_at: timestamp(value.created_at, 'GitHub issue created_at'),
     updated_at: timestamp(value.updated_at, 'GitHub issue updated_at'),
     state: value.state,
