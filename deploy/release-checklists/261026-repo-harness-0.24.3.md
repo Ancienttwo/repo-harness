@@ -131,9 +131,8 @@ Result:
     exit 1, `status: blocked`; 28 ok, 4 warn, 1 fail, 1 n/a, 4 needs_agent.
     The fail is `doctor.codegraph-index`: `index=not-initialized` in the new
     release worktree.
-  - Repair: `bash scripts/ensure-codegraph.sh --init` in the worktree
-   . The index is worktree-local and not in the
-    package.
+  - Repair: `bash scripts/ensure-codegraph.sh --init` in the worktree. The
+    index is worktree-local and not in the package.
   - The same `setup check` after the repair: exit 0, `status: attention`;
     31 ok, 4 warn, 0 fail, 1 n/a, 2 needs_agent. `doctor.codegraph-index`
     is `ok` with `index=up-to-date`.
