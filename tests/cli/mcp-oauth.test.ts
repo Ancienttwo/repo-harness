@@ -395,9 +395,11 @@ describe('mcp oauth provider', () => {
       const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
       const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', 'http://localhost/callback');
 
-      const flush = store.flush.bind(store);
+      // `flush` is private; the spy counts the store's persisted writes.
+      const writable = store as unknown as { flush: () => void };
+      const flush = writable.flush.bind(store);
       let flushes = 0;
-      store.flush = () => {
+      writable.flush = () => {
         flushes += 1;
         flush();
       };

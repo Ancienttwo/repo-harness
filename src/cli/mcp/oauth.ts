@@ -290,7 +290,8 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     }
   }
 
-  flush(): void {
+  /** Only `mutate` writes, under the lock and after `sync`; a write from stale maps would restore revoked grants. */
+  private flush(): void {
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
     chmodSync(dirname(this.path), 0o700);
     const data: TokenData = {

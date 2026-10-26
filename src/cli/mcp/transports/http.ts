@@ -875,7 +875,6 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       await sessions.closeAll();
       await codingRuntimes?.closeAll();
       await shutdownAllMcpCodingRuntimes();
-      tokenStore?.flush();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       process.exit(0);
     })();

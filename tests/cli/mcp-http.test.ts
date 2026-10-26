@@ -809,7 +809,7 @@ describe('mcp http transport', () => {
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
       const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase;
 
-      proc = Bun.spawn(
+      const serve = () => Bun.spawn(
         [
           'bun',
           'src/cli/index.ts',
@@ -828,6 +828,7 @@ describe('mcp http transport', () => {
         ],
         { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } },
       );
+      proc = serve();
       await waitForHealth(port);
 
       const health = await fetch(`http://127.0.0.1:${port}/health`);
@@ -970,6 +971,13 @@ describe('mcp http transport', () => {
       const revoke = Bun.spawnSync(['bun', 'src/cli/index.ts', 'mcp', 'clients', 'revoke', client.client_id, '--json'], { cwd: process.cwd(), env: { ...process.env } });
       expect(revoke.exitCode).toBe(0);
       expect(JSON.parse(revoke.stdout.toString())).toEqual({ clientId: client.client_id, revoked: true, accessTokens: 1, refreshTokens: 1 });
+      // A clean shutdown right after the revoke, with no request between, must not write the revoked grant back.
+      proc.kill('SIGTERM');
+      await proc.exited;
+      const afterShutdown = readFileSync(mcpOAuthTokenStorePath(), 'utf-8');
+      for (const revoked of [client.client_id, refreshedJson.access_token, refreshedJson.refresh_token]) expect(afterShutdown).not.toContain(revoked);
+      proc = serve();
+      await waitForHealth(port);
       const revokedCall = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'POST', headers: sessionHeaders, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_workflow_files', arguments: {} } }),
       });
