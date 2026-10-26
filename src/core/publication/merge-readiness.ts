@@ -1,9 +1,3 @@
-import type { PublicationReceiptV3 } from './publication-receipt';
-
-/** Read-time protocol only. It is deliberately independent of lease/task digest domains. */
-export const MERGE_READINESS_PROTOCOL = 1 as const;
-export const MERGE_READINESS_KIND = 'repo-harness-merge-readiness' as const;
-
 export type MergeReadinessAttentionOwner = 'agent' | 'user' | 'external';
 export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner | 'none';
 
@@ -71,16 +65,9 @@ export interface PullRequestMergeReadinessInput {
   readonly provider: ProviderMergeReadinessFactsV1 | null;
 }
 
-export interface MergeReadinessInputV1 extends Omit<PullRequestMergeReadinessInput, 'expected_head_sha' | 'expected_base_sha'> {
-  readonly receipt: PublicationReceiptV3;
-}
-
-export interface MergeReadinessV1 {
-  readonly protocol: typeof MERGE_READINESS_PROTOCOL;
-  readonly kind: typeof MERGE_READINESS_KIND;
-  readonly publication_id: string;
+export interface MergeReadinessVerdict {
   readonly ready: boolean;
-  /** Immutable receipt fences, emitted whether the verdict is ready or blocked. */
+  /** Expected fences, emitted whether the verdict is ready or blocked. */
   readonly expected_head_sha: string;
   readonly expected_base_sha: string;
   readonly integration_mode: MergeReadinessIntegrationMode;
@@ -96,7 +83,7 @@ export interface PullRequestSelectionV2 {
   readonly expected_base_sha: string;
 }
 
-export interface PullRequestReadinessV2 extends PullRequestSelectionV2, Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
+export interface PullRequestReadinessV2 extends PullRequestSelectionV2, MergeReadinessVerdict {
   readonly protocol: 2;
   readonly kind: 'repo-harness-pull-request-readiness';
 }
@@ -143,7 +130,7 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  * performs no I/O and intentionally emits all applicable blockers in a stable
  * order so output remains usable for routing and tests.
  */
-export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): Omit<MergeReadinessV1, 'protocol' | 'kind' | 'publication_id'> {
+export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
   const validSha = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
@@ -184,14 +171,5 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     integration_mode: input.integration_mode,
     attention_owner: verdictAttentionOwner(blockers),
     blockers: Object.freeze(blockers),
-  });
-}
-
-export function projectMergeReadiness(input: MergeReadinessInputV1): MergeReadinessV1 {
-  return Object.freeze({
-    protocol: MERGE_READINESS_PROTOCOL,
-    kind: MERGE_READINESS_KIND,
-    publication_id: input.receipt.publication_id,
-    ...projectPullRequestMergeReadiness({ ...input, expected_head_sha: input.receipt.head_sha, expected_base_sha: input.receipt.base_sha }),
   });
 }
