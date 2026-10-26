@@ -12,12 +12,16 @@ import { claudeTarget } from '../../src/cli/installer/targets/claude';
 import type { Location } from '../../src/cli/installer/types';
 import {
   applyRepoHarnessRegistryBatch,
+  backfillRepoHarnessRegistry,
   readRegisteredRepoHarnessRepos,
   readRepoHarnessRegistryStrictSnapshot,
   RepoHarnessRegistryStrictError,
   repoHarnessAuthorizationRevision,
+  repoHarnessCheckoutRejection,
   repoHarnessRepoIdFor,
+  registerRepoHarnessRepo,
 } from '../../src/effects/repo-registry';
+import { spawnSync } from 'child_process';
 
 describe('installer target registry', () => {
   test('ALL_TARGETS lists codex then claude in stable order', () => {
@@ -455,6 +459,119 @@ describe('repo registration persistence', () => {
       expect(repos[0].path).toBe(realpathSync(legacyRepo));
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('registry writes accept only primary checkouts', () => {
+  function git(cwd: string, ...args: string[]): void {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+  }
+
+  // A real primary checkout with a tracked adoption marker and one linked worktree.
+  function checkoutFixture(prefix: string) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+    const home = join(root, 'home');
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    const primary = join(root, 'primary');
+    mkdirSync(join(primary, '.ai', 'harness'), { recursive: true });
+    writeFileSync(join(primary, '.ai', 'harness', 'policy.json'), '{}\n');
+    git(primary, 'init', '-q', '-b', 'main');
+    git(primary, 'add', '-A');
+    git(primary, 'commit', '-qm', 'base');
+    const linked = join(root, 'linked');
+    git(primary, 'worktree', 'add', '-q', '-b', 'feature', linked);
+    const registry = join(home, 'registered-repos.json');
+    return { root, home, env, primary: realpathSync(primary), linked: realpathSync(linked), registry };
+  }
+
+  test('a linked worktree is rejected at write and the reason names the primary checkout', () => {
+    const f = checkoutFixture('repo-harness-registry-linked-');
+    try {
+      const result = registerRepoHarnessRepo(f.linked, 'init', { env: f.env });
+      expect(result.registered).toBe(false);
+      expect(result.path).toBe(f.linked);
+      expect(result.reason).toContain(`register the primary checkout ${f.primary} instead`);
+      expect(existsSync(f.registry)).toBe(false);
+
+      expect(() => applyRepoHarnessRegistryBatch([{ repoRoot: f.linked, source: 'mcp-setup' }], { env: f.env }))
+        .toThrow(f.primary);
+      expect(existsSync(f.registry)).toBe(false);
+
+      const primary = registerRepoHarnessRepo(f.primary, 'init', { env: f.env });
+      expect(primary.registered).toBe(true);
+      expect(readRegisteredRepoHarnessRepos({ env: f.env }).map((repo) => repo.path)).toEqual([f.primary]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('the checkout probe ignores an inherited GIT_DIR', () => {
+    const f = checkoutFixture('repo-harness-registry-git-env-');
+    try {
+      const plain = join(f.root, 'plain');
+      mkdirSync(plain);
+      const linkedGitDir = join(f.primary, '.git', 'worktrees', 'linked');
+      const inherited = { ...f.env, GIT_DIR: linkedGitDir, GIT_WORK_TREE: f.linked, GIT_COMMON_DIR: join(f.primary, '.git') };
+      expect(repoHarnessCheckoutRejection(f.primary, inherited)).toBeNull();
+      expect(repoHarnessCheckoutRejection(plain, inherited)).toBeNull();
+      expect(repoHarnessCheckoutRejection(f.linked, inherited)).toEqual(
+        expect.objectContaining({ reason: 'not_primary_checkout' }),
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('backfill registers valid primary checkouts as manual and reports each rejected path', () => {
+    const f = checkoutFixture('repo-harness-registry-backfill-');
+    try {
+      const missing = join(f.root, 'missing');
+      const unadopted = join(f.root, 'unadopted');
+      mkdirSync(unadopted);
+      const result = backfillRepoHarnessRegistry([f.primary, missing, unadopted, f.linked], { env: f.env });
+      expect(result.registered).toEqual([{ id: repoHarnessRepoIdFor(f.primary), path: f.primary }]);
+      expect(result.already_registered).toEqual([]);
+      expect(result.rejected.map(({ path, reason }) => ({ path, reason }))).toEqual([
+        { path: missing, reason: 'missing' },
+        { path: realpathSync(unadopted), reason: 'not_adopted' },
+        { path: f.linked, reason: 'not_primary_checkout' },
+      ]);
+      expect(result.rejected[2]!.message).toContain(f.primary);
+      expect(readRegisteredRepoHarnessRepos({ env: f.env })).toEqual([
+        expect.objectContaining({ path: f.primary, source: 'manual', accessMode: 'read_only' }),
+      ]);
+
+      // An existing row keeps its source; a second backfill reports it unchanged.
+      writeFileSync(f.registry, readFileSync(f.registry, 'utf8').replace('"manual"', '"init"'));
+      const before = readFileSync(f.registry, 'utf8');
+      const again = backfillRepoHarnessRegistry([f.primary], { env: f.env });
+      expect(again.registered).toEqual([]);
+      expect(again.already_registered).toEqual([{ id: repoHarnessRepoIdFor(f.primary), path: f.primary }]);
+      expect(readFileSync(f.registry, 'utf8')).toBe(before);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('fleet register exits non-zero when any path is rejected and still registers the valid ones', () => {
+    const f = checkoutFixture('repo-harness-registry-backfill-cli-');
+    try {
+      const cli = resolve(import.meta.dir, '../../src/cli/index.ts');
+      const result = spawnSync(process.execPath, [cli, 'fleet', 'register', f.linked, f.primary], { env: f.env, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(1);
+      const output = JSON.parse(result.stdout);
+      expect(output.ok).toBe(false);
+      expect(output.registered).toEqual([{ id: repoHarnessRepoIdFor(f.primary), path: f.primary }]);
+      expect(output.rejected).toEqual([expect.objectContaining({ path: f.linked, reason: 'not_primary_checkout' })]);
+      expect(readRegisteredRepoHarnessRepos({ env: f.env }).map((repo) => repo.path)).toEqual([f.primary]);
+
+      const clean = spawnSync(process.execPath, [cli, 'fleet', 'register', f.primary], { env: f.env, encoding: 'utf8' });
+      expect(clean.status, clean.stderr).toBe(0);
+      expect(JSON.parse(clean.stdout)).toEqual(expect.objectContaining({ ok: true, rejected: [] }));
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
     }
   });
 });

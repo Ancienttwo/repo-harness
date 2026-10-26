@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -293,6 +293,22 @@ describe("test HOME and TMPDIR isolation", () => {
       });
       expect(result.status, result.stdout + result.stderr).toBe(0);
       expect(JSON.parse(readFileSync(marker, "utf8"))).toEqual({ parent: registry, child: registry });
+    } finally { f.close(); }
+  });
+
+  test("refuses a registry home under the caller's real HOME before any test runs", () => {
+    const f = fixture();
+    try {
+      const registry = join(f.home, ".repo-harness");
+      const marker = join(f.temp, "registry-under-home.json");
+      const probe = join(f.temp, "registry-under-home.test.ts");
+      writeFileSync(probe, 'import {test} from "bun:test"; test("registry",async()=>{await Bun.write(' + JSON.stringify(marker) + ',"ran");});\n');
+      const result = spawnSync("bash", ["-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
+        cwd: ROOT, env: { ...f.env, REPO_HARNESS_HOME: registry }, encoding: "utf8",
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("REPO_HARNESS_HOME resolves under the real user HOME");
+      expect(existsSync(marker)).toBe(false);
     } finally { f.close(); }
   });
 
