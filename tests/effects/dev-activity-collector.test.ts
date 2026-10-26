@@ -10,6 +10,7 @@ import {
   collectDevActivity,
   startDevActivityCollector,
   devActivityGhPrListArgv,
+  devActivityGhPrDayArgvs,
   DEV_ACTIVITY_GH_PR_LIMIT,
   DEV_ACTIVITY_GH_REPO_VIEW_ARGV,
   type DevActivityProcessRunner,
@@ -40,8 +41,12 @@ if [ -f "$state/gh-sleep" ]; then trap 'touch "$state/gh-terminated"; exit 143' 
 case "$1 $2" in
   "repo view") echo '{"nameWithOwner":"acme/widgets","defaultBranchRef":{"name":"main"}}' ;;
   "pr list")
-    while [ $# -gt 0 ]; do if [ "$1" = "--state" ]; then pr_state="$2"; fi; shift; done
-    if [ -f "$state/gh-prs-$pr_state.json" ]; then cat "$state/gh-prs-$pr_state.json"; else echo '[]'; fi ;;
+    while [ $# -gt 0 ]; do if [ "$1" = "--state" ]; then pr_state="$2"; fi; if [ "$1" = "--search" ]; then pr_search="$2"; fi; shift; done
+    # A one-day search (merged:2026-10-09) reads gh-prs-<state>-<date>.json; a window search reads gh-prs-<state>.json.
+    pr_file="gh-prs-$pr_state"
+    pr_day="\${pr_search#*:}"; pr_day="\${pr_day%% *}"
+    case "$pr_day" in 20*) pr_file="$pr_file-$pr_day" ;; esac
+    if [ -f "$state/$pr_file.json" ]; then cat "$state/$pr_file.json"; else echo '[]'; fi ;;
   *) exit 2 ;;
 esac
 `;
@@ -229,16 +234,85 @@ process.exit(0);
     }
   });
 
-  test('more PR rows than the limit mark GitHub unavailable instead of complete', async () => {
+  test('a week with more merged PRs than one query carries is paged by day and keeps the board populated', async () => {
     const f = fixture(['busy'], 0);
     try {
+      const gitDir = join(f.repos.busy!, '.git');
+      const nowMs = Date.now();
+      const merged = (index: number, daysAgo: number) => {
+        const at = new Date(nowMs - daysAgo * DAY).toISOString();
+        const { statusCheckRollup: _ci, ...fields } = prJson(`feat/m${index}`, { number: index + 1, state: 'MERGED', mergedAt: at, closedAt: at,
+          url: `https://github.com/acme/widgets/pull/${index + 1}` });
+        return fields;
+      };
+      const dayFile = (daysAgo: number) => `gh-prs-merged-${new Date(nowMs - daysAgo * DAY).toISOString().slice(0, 10)}.json`;
+      const first = Array.from({ length: 150 }, (_, index) => merged(index, 1));
+      const second = Array.from({ length: 120 }, (_, index) => merged(150 + index, 2));
+      writeFileSync(join(gitDir, 'gh-prs-merged.json'), JSON.stringify(Array.from({ length: DEV_ACTIVITY_GH_PR_LIMIT + 1 }, (_, index) => merged(index, 1))));
+      writeFileSync(join(gitDir, dayFile(1)), JSON.stringify(first));
+      writeFileSync(join(gitDir, dayFile(2)), JSON.stringify(second));
+      writeFileSync(join(gitDir, 'gh-prs-open.json'), JSON.stringify([prJson('feat/open', { number: 900, url: 'https://github.com/acme/widgets/pull/900' })]));
+
+      const snapshot = decodeDevActivitySnapshot(await collectDevActivity({ env: f.env, now: () => nowMs }));
+      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'ok', reason: null });
+      expect(snapshot.status).toBe('ready');
+      expect(snapshot.items.filter(item => item.column === 'shipped')).toHaveLength(270);
+      expect(snapshot.items.filter(item => item.column === 'ready_to_merge')).toHaveLength(1);
+
+      const argv = readFileSync(f.argvLog, 'utf8').trim().split('\n');
+      const days = devActivityGhPrDayArgvs('merged', nowMs).map(command => command.join(' '));
+      expect(days).toHaveLength(8);
+      for (const day of days) expect(argv).toContain(day);
+      expect(argv.filter(line => line.includes('--state closed') && line.includes('closed:2'))).toHaveLength(0);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('a day with more merged PRs than the limit drops only the merged category', async () => {
+    const f = fixture(['busy'], 0);
+    try {
+      const gitDir = join(f.repos.busy!, '.git');
+      const nowMs = Date.now();
+      const at = new Date(nowMs - DAY).toISOString();
+      const rows = Array.from({ length: DEV_ACTIVITY_GH_PR_LIMIT + 1 }, (_, index) => {
+        const { statusCheckRollup: _ci, ...fields } = prJson(`feat/m${index}`, { number: index + 1, state: 'MERGED', mergedAt: at, closedAt: at,
+          url: `https://github.com/acme/widgets/pull/${index + 1}` });
+        return fields;
+      });
+      writeFileSync(join(gitDir, 'gh-prs-merged.json'), JSON.stringify(rows));
+      writeFileSync(join(gitDir, `gh-prs-merged-${at.slice(0, 10)}.json`), JSON.stringify(rows));
+      writeFileSync(join(gitDir, 'gh-prs-open.json'), JSON.stringify([prJson('feat/open', { number: 900, url: 'https://github.com/acme/widgets/pull/900' })]));
+
+      const snapshot = decodeDevActivitySnapshot(await collectDevActivity({ env: f.env, now: () => nowMs }));
+      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'github_truncated_merged' });
+      expect(snapshot.repositories[0]).toMatchObject({ github: 'acme/widgets', default_branch: 'main' });
+      expect(snapshot.status).toBe('partial');
+      expect(snapshot.items.map(item => item.branch)).toEqual(['feat/open']);
+      expect(snapshot.attention.map(entry => entry.kind)).toEqual(['ready_to_merge']);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
+  test('more open PRs than the limit drop only the open category', async () => {
+    const f = fixture(['busy'], 0);
+    try {
+      const gitDir = join(f.repos.busy!, '.git');
+      const nowMs = Date.now();
+      const at = new Date(nowMs - DAY).toISOString();
       const rows = Array.from({ length: DEV_ACTIVITY_GH_PR_LIMIT + 1 }, (_, index) =>
         prJson(`feat/p${index}`, { number: index + 1, url: `https://github.com/acme/widgets/pull/${index + 1}` }));
-      writeFileSync(join(f.repos.busy!, '.git', 'gh-prs-open.json'), JSON.stringify(rows));
-      const snapshot = await collectDevActivity({ env: f.env });
-      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'github_truncated' });
+      writeFileSync(join(gitDir, 'gh-prs-open.json'), JSON.stringify(rows));
+      const { statusCheckRollup: _ci, ...shipped } = prJson('feat/shipped', { number: 900, state: 'MERGED', mergedAt: at, closedAt: at, url: 'https://github.com/acme/widgets/pull/900' });
+      writeFileSync(join(gitDir, 'gh-prs-merged.json'), JSON.stringify([shipped]));
+
+      const snapshot = await collectDevActivity({ env: f.env, now: () => nowMs });
+      expect(snapshot.repositories[0]!.sources.find(source => source.kind === 'github')).toMatchObject({ status: 'unavailable', reason: 'github_truncated_open' });
       expect(snapshot.status).toBe('partial');
-      expect(snapshot.items.some(item => item.pull_request !== null)).toBe(false);
+      expect(snapshot.items.map(item => item.branch)).toEqual(['feat/shipped']);
+      const argv = readFileSync(f.argvLog, 'utf8').trim().split('\n');
+      expect(argv.filter(line => line.includes('--state open'))).toHaveLength(1);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }

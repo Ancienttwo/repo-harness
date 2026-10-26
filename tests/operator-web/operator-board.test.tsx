@@ -110,6 +110,29 @@ describe('board page', () => {
     expect(document.querySelector('[data-attention-kind="ready_to_merge"] a[href^="https://github.com/"]')).not.toBeNull();
   });
 
+  test('decodes and labels the changes_requested, merge_conflict and checks_failed rows', async () => {
+    const base = busy();
+    const [ready] = base.attention;
+    const itemId = (branch: string) => `${HARNESS_ID}:${branch}`;
+    const rows = [
+      { ...ready!, kind: 'changes_requested' as const, subject_id: itemId('feat/pipeline-observer'), summary: 'Observe pipeline phases on the board', waiting_since: new Date(NOW - 3 * 3_600_000).toISOString() },
+      { ...ready!, kind: 'merge_conflict' as const, subject_id: itemId('feat/kanban-human-redesign'), summary: 'Rebuild the operator console for humans', waiting_since: new Date(NOW - 2 * 3_600_000).toISOString() },
+      { ...ready!, kind: 'checks_failed' as const, subject_id: itemId('feat/runtime-capture-pi'), summary: 'Capture Pi runtime status natively', waiting_since: new Date(NOW - 1 * 3_600_000).toISOString() },
+      ready!,
+    ];
+    const snapshot = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...base, attention: rows })));
+    for (const [locale, labels] of [['en', ['Changes requested', 'Conflicts with main', 'Checks failed']], ['zh', ['评审要求修改', '与 main 冲突', '检查失败']]] as const) {
+      await mount(<OperatorApp {...props(snapshot, { initialLocale: locale })} />);
+      expect(Array.from(document.querySelectorAll('[data-attention-kind]')).map(row => row.getAttribute('data-attention-kind')))
+        .toEqual(['changes_requested', 'merge_conflict', 'checks_failed', 'ready_to_merge']);
+      const text = document.querySelector('.needs-you')!.textContent!;
+      for (const label of labels) expect(text).toContain(label);
+      await act(async () => root?.unmount());
+      root = null;
+      document.body.innerHTML = '';
+    }
+  });
+
   test('cards and rows lead with human labels, never registry ids or digests', async () => {
     await mount(<OperatorApp {...props(busy(), { initialRuntimeOverlay: busyRuntimeOverlay(NOW), readRuntimeStatus: async () => busyRuntimeOverlay(NOW) })} />);
     expect(cards().length).toBeGreaterThan(5);

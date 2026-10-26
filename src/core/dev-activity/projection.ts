@@ -10,6 +10,7 @@ import {
   DEV_ACTIVITY_PROJECTION,
   DEV_ACTIVITY_SHIPPED_WINDOW_MS,
   type DevActivityAttention,
+  type DevActivityAttentionKind,
   type DevActivityCiState,
   type DevActivityColumn,
   type DevActivityHiddenReason,
@@ -165,15 +166,29 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
   return items;
 }
 
-/** §3.4: the single "needs you" definition. One merge ask per item. */
+/**
+ * The attention kind an item raises, or null. A blocked open PR outranks a
+ * merge ask, so one item is one row; the kind order is the order of the
+ * blockers a human clears first. A draft is still being worked on and raises
+ * no row. The PR's `review`, `merge_state` and `ci` are the only inputs.
+ */
+function attentionKindOf(item: DevActivityItem): DevActivityAttentionKind | null {
+  const pr = item.pull_request;
+  if (item.hidden !== null || item.column_since === null || pr === null || pr.state !== 'open' || pr.is_draft) return null;
+  if (pr.review === 'changes_requested') return 'changes_requested';
+  if (pr.merge_state === 'DIRTY') return 'merge_conflict';
+  if (pr.ci === 'failure') return 'checks_failed';
+  return item.column === 'ready_to_merge' ? 'ready_to_merge' : null;
+}
+
+/** §3.4: the single "needs you" definition. One ask per item, longest wait first. */
 function projectAttention(items: readonly DevActivityItem[]): DevActivityAttention[] {
   const attention: DevActivityAttention[] = [];
   for (const item of items) {
-    const prUrl = item.pull_request?.url ?? null;
-    if (item.column === 'ready_to_merge' && item.hidden === null && item.column_since !== null) {
-      attention.push({ kind: 'ready_to_merge', subject_id: item.id, repository_id: item.repository_id, summary: item.title,
-        waiting_since: item.column_since, url: prUrl, command: null });
-    }
+    const kind = attentionKindOf(item);
+    if (kind === null) continue;
+    attention.push({ kind, subject_id: item.id, repository_id: item.repository_id, summary: item.title,
+      waiting_since: item.column_since!, url: item.pull_request!.url, command: null });
   }
   return attention.sort((left, right) => time(left.waiting_since) - time(right.waiting_since)
     || left.kind.localeCompare(right.kind) || left.subject_id.localeCompare(right.subject_id));
