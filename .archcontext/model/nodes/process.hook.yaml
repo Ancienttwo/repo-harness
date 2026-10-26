@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.hook"
+kind: "process"
+name: "Hook process"
+status: "active"
+layer: "cli"
+summary: "One short bun process per host hook event; reads stdin JSON and answers on stdout."

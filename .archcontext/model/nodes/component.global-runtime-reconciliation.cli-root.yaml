@@ -4,6 +4,7 @@ kind: component
 name: CLI Root and Diagnostics
 status: active
 parent: capability.runtime-harness.global-runtime-reconciliation
+layer: cli
 summary: Builds the repo-harness command tree, runs the update transactions and serves read-only doctor and setup check diagnostics.
 responsibilities:
   - Register every top-level command module in one commander program.

@@ -3,6 +3,7 @@ id: capability.workflow-engine.inspection-migration
 kind: capability
 name: Inspection And Migration
 status: active
+layer: scripts
 summary: Inspects repository state and executes explicit initialization or migration plans.
 responsibilities:
   - Own project inspection, scaffold creation, and bounded migration behavior.

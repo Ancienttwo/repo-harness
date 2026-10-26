@@ -4,6 +4,7 @@ kind: "component"
 name: "Task Inbox"
 status: "active"
 parent: "capability.organization.task-fleet"
+layer: "core"
 summary: "Owns admitted task messages, exact recipient delivery receipts and separate historical message, reply and activity readers."
 responsibilities:
   - "Write immutable TaskMessageEventV2 records under the shared task mutex."

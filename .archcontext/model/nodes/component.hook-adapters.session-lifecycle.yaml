@@ -5,6 +5,7 @@
   "name": "Session Lifecycle Handlers",
   "status": "active",
   "parent": "capability.runtime-harness.hook-adapters",
+  "layer": "cli",
   "summary": "Typed handlers for session context, architecture debt, Stop recovery and subagent routes.",
   "responsibilities": [
     "Build SessionStart sections from Effective State and the session providers.",

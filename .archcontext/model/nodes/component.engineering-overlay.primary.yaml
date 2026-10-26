@@ -4,6 +4,7 @@ kind: "component"
 name: "Engineering Overlay Read Model"
 status: "active"
 parent: "capability.runtime-harness.engineering-overlay"
+layer: "core"
 summary: "Owns admitted engineering and organization-attention projections, exact runtime/profile associations and explicit component consistency fences; it stores no mutable status."
 source:
   include:

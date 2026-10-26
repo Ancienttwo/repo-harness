@@ -4,6 +4,7 @@ kind: component
 name: "Coding Profile Runtime"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
+layer: "cli"
 summary: "Runs the opt-in coding tool block: managed worktree workspaces, file edits and bounded shell processes."
 responsibilities:
   - Open managed coding workspaces as separate worktrees by default.

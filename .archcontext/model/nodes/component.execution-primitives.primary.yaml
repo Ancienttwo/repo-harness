@@ -4,6 +4,7 @@ kind: component
 name: Bounded Process And Lock Primitives
 status: active
 parent: capability.workflow-engine.execution-primitives
+layer: effects
 summary: Spawns supervised children and holds canonical directory locks under the Git common dir.
 responsibilities:
   - Spawn the supervisor and the process-group launcher, kill TERM then KILL, and reconcile the receipt with the exit status.

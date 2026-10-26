@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.mcp-server.spawns.mcp-coding-shell"
+kind: "spawns"
+source: "process.mcp-server"
+target: "process.mcp-coding-shell"
+intent: "Spawn a coding shell session for an MCP coding tool call."

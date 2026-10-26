@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.claude-code.hook-adapters"
+kind: "calls"
+source: "external.claude-code"
+target: "capability.runtime-harness.hook-adapters"
+intent: "Claude Code runs the installed repo-harness hook command for each hook event."

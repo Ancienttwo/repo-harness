@@ -3,6 +3,7 @@ id: capability.runtime-mcp.chatgpt-browser
 kind: capability
 name: ChatGPT Browser Consult
 status: active
+layer: cli
 summary: Runs local ChatGPT Web consult sessions through a pinned Oracle browser provider and projects the ChatGPT skill to hosts.
 responsibilities:
   - Own browser setup, doctor, consult, follow-up, session readback and cleanup for ChatGPT Web.

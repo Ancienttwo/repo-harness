@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.archctx"
+kind: "external-system"
+name: "ArchContext"
+status: "active"
+layer: "external"
+summary: "Architecture model CLI and daemon that validates the model, resolves path ownership and renders projections."

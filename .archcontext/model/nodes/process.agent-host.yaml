@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.agent-host"
+kind: "process"
+name: "Agent host"
+status: "active"
+layer: "external"
+summary: "Claude Code or Codex session that starts hook commands and stdio MCP servers."

@@ -3,6 +3,7 @@ id: "capability.runtime-harness.task-agent-host"
 kind: "capability"
 name: "Task Agent Host"
 status: "active"
+layer: "effects"
 summary: "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output."
 responsibilities:
   - "Start one persistent task agent per repository, task and role, binding immutable source root, live review admission, exact current claim and optional explicitly selected engineer profile revision."

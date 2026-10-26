@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.git"
+kind: "external-system"
+name: "Git"
+status: "active"
+layer: "external"
+summary: "Version control CLI that owns commits, refs, worktrees and the common directory."

@@ -3,6 +3,7 @@ id: capability.runtime-harness.hook-adapters
 kind: capability
 name: Hook Adapters
 status: active
+layer: cli
 summary: Installs and runs typed Claude and Codex host hook routes.
 responsibilities:
   - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.

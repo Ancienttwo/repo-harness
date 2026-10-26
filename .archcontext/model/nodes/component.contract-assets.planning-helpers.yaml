@@ -4,6 +4,7 @@ kind: component
 name: Planning Helpers
 status: active
 parent: capability.workflow-engine.contract-assets
+layer: scripts
 summary: Runs contract-listed planning, triage and factor-lab helpers through the protected helper runner.
 responsibilities:
   - Resolve only helper ids that the workflow contract lists and run them as bounded children with a protected environment.

@@ -3,6 +3,7 @@ id: "capability.runtime-harness.agent-runtime-effects"
 kind: "capability"
 name: "Agent Runtime Effects"
 status: "active"
+layer: "effects"
 summary: "Owns admitted session-bound, at-most-once Agent Runtime Effect V2 for the closed Herdr CLI adapter, inbox notification and durable offer wake."
 responsibilities:
   - "Validate closed runtime capability, effect intent, Host action, observation and current schemas."

@@ -5,6 +5,7 @@
   "name": "Server and Tool Dispatch",
   "status": "active",
   "parent": "capability.runtime-harness.mcp-sidecar",
+  "layer": "cli",
   "summary": "Builds one MCP server per context and dispatches every tool call to the exact profile tool block.",
   "responsibilities": [
     "Build the server instructions and the closed tool inventory for the selected profile.",

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.herdr"
+kind: "calls"
+source: "capability.runtime-harness.task-agent-host"
+target: "external.herdr"
+intent: "Split and run Herdr panes for task agents and review hosts."

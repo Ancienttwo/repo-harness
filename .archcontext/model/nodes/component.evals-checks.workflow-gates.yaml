@@ -4,6 +4,7 @@ kind: component
 name: "Workflow Gates"
 status: active
 parent: capability.verification.evals-checks
+layer: "scripts"
 summary: "Shell gates for task sync, task workflow and agent tooling."
 responsibilities:
   - Bind workflow evidence to the substantive diff digest and fail closed on missing evidence.

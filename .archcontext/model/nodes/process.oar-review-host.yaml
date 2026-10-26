@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.oar-review-host"
+kind: "process"
+name: "OAR review host"
+status: "active"
+layer: "effects"
+summary: "Node process in a Herdr pane that runs one review session for at most three rounds."

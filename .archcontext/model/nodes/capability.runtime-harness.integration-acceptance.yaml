@@ -3,6 +3,7 @@ id: "capability.runtime-harness.integration-acceptance"
 kind: "capability"
 name: "Integration Product Acceptance"
 status: "active"
+layer: "cli"
 summary: "Binds approved requirement bytes, explicit canonical provider PR integration proofs, one exact Git candidate, evidence and the canonical acceptance receipt into immutable V2 product projections."
 responsibilities:
   - "Validate IntegrationContractV2, IntegrationEnvelopeV2, AcceptanceMatrixV2 and ProductAcceptanceProjectionV2 with exact canonical digests and preserved PRD, source-spec and constraint inputs."

@@ -4,6 +4,7 @@ kind: component
 name: "Repository Inspector Process"
 status: active
 parent: capability.workflow-engine.inspection-migration
+layer: "scripts"
 summary: "Reports repository mode, drift signals and required decisions without writes, and holds the shell scaffold library."
 responsibilities:
   - "Inspect a repository read-only against the package contract inventory."

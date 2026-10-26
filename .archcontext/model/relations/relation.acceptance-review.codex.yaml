@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.acceptance-review.codex"
+kind: "calls"
+source: "capability.verification.acceptance-review"
+target: "external.codex"
+intent: "Run Codex as a sandboxed reviewer in the OAR review host."

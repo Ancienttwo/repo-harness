@@ -4,6 +4,7 @@ kind: component
 name: Operator HTTP Reader
 status: active
 parent: capability.runtime-harness.operator
+layer: effects
 summary: Returns public JSON observations and typed failures without write routes.
 responsibilities:
   - Accept only GET and HEAD from a loopback Host and same-origin callers; refuse every other method with 405.

@@ -4,6 +4,7 @@ kind: component
 name: "Evals And Benchmarks"
 status: active
 parent: capability.verification.evals-checks
+layer: "scripts"
 summary: "Skill evaluations and the harness profile benchmark that produce effectiveness evidence."
 responsibilities:
   - Run skill evaluations in a disposable evaluation boundary.
