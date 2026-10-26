@@ -190,5 +190,43 @@ repair above cleared it. On 2026-10-26 the owner accepted all 7 flags for
 
 ## Publication status
 
-- Status on 2026-10-26: not published. No `v0.24.3` tag, no GitHub Release
-  and no npm publication.
+- Status on 2026-10-26, before the merge: not published. No `v0.24.3` tag,
+  no GitHub Release and no npm publication.
+- Status on 2026-10-26 (UTC), after the merge: npm and GitHub publication
+  verified.
+  - Merge: #976 squash commit `bd3a40bd5c874a20c55916238f120e7cd884ca75`,
+    parent `5bc79eea4c6024478ce1415e1fc9414efa66fd61`, reviewed head
+    `faec71dfd3b088c1f29d013e12354ed363383f90`. The squash tree equals the
+    head tree. Rollback: `git revert bd3a40bd5c874a20c55916238f120e7cd884ca75`.
+    A revert does not undo the npm publication.
+  - Main push CI run 40308398862 at `bd3a40bd5`: `success`.
+  - Tag `v0.24.3`: annotated, tag object
+    `357673f5fd4e0686c59866496b573a22c5d4eacb`, target
+    `bd3a40bd5c874a20c55916238f120e7cd884ca75`, tagger Ancienttwo at
+    2026-10-26T10:34:16Z, message "repo-harness 0.24.3".
+  - GitHub Release:
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.24.3, title
+    "repo-harness 0.24.3", published 2026-10-26T10:34:32Z, latest, not a
+    draft, not a prerelease. Asset `repo-harness-0.24.3.tgz`, 10519411
+    bytes,
+    `sha256:f11c27a7f1789aa9a75133b7c424a0cfcc465811686c89c761f843f8b672dacc`.
+  - Tarball: `npm pack` at the squash commit, 663 entries, 10519411 bytes.
+    Its SHA-256 equals the Release asset digest. Its SHA-1 equals the
+    registry `dist.shasum`.
+  - npm: the owner ran `npm publish <tarball> --auth-type=web` in the
+    foreground. Registry time 2026-10-26T10:45:44.849Z.
+    `dist-tags.latest` is 0.24.3. `dist.shasum`
+    `1be291102449418cdb8e6ad46f003dad5d985bb3`. `dist.integrity`
+    `sha512-6vpZ78xUpHYf10rVUSpWlnduqZoZYMXcKZw4Zi9f8/3d4T5bnllquo8ZzkVZDZ02UkXoHhZNJIS7EoSHdcwvpw==`.
+    `fileCount` 663, `unpackedSize` 16828644.
+  - `bun run check:release-published 0.24.3` with a new temporary HOME and
+    `CLAUDECODE`, `AI_AGENT`, `AGENT`, `REPL_ID` and
+    `REPO_HARNESS_SOURCE_ROOT` removed: exit 0. Output:
+    "runtime-evidence-receipt: valid published_tarball, clean_install,
+    installed_hook_readback" and "[release-published] OK: registry,
+    dist-tag, tarball, tag, and local version files agree."
+  - Not yet observed: a real `repo-harness update` from 0.24.1 to 0.24.3.
+    This host still runs 0.24.1. The update writes the real HOME, so it is
+    the owner's action.
+  - Open owner actions: `repo-harness update` for flags 1, 2 and 5, then
+    `repo-harness upgrade`. The flag 3 hook review.
