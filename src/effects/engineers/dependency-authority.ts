@@ -43,7 +43,7 @@ import type {
   SelectedPullRequestV2,
 } from '../../core/integration/product-acceptance';
 import { publicationSha256 } from '../../core/publication/publication-receipt';
-import { readAcceptanceMatrix, findProductAcceptanceProjection, readIntegrationContract, readIntegrationEnvelope,
+import { readAcceptanceMatrix, readProductAcceptanceProjection, readIntegrationContract, readIntegrationEnvelope,
   observeSelectedPullRequest, observeSelectedPullRequestState } from '../integration/product-acceptance';
 import { gitExecFileSync } from '../git/runner';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -95,7 +95,7 @@ export interface DependencyAuthorityReaders {
   readonly readAcceptanceMatrix: typeof readAcceptanceMatrix;
   readonly observeIntegrationState: typeof observeSelectedPullRequestState;
   readonly observeIntegration: typeof observeSelectedPullRequest;
-  readonly readProductAcceptanceProjection: typeof findProductAcceptanceProjection;
+  readonly readProductAcceptanceProjection: typeof readProductAcceptanceProjection;
   readonly readIntegrationEnvelope: (repoRoot: string, digest: string) => IntegrationEnvelopeV2;
   readonly readIntegrationContract: (repoRoot: string, digest: string) => IntegrationContractV2;
   readonly repositoryIdentity: (repoRoot: string) => string;
@@ -144,7 +144,7 @@ export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders 
       if (currentReadonlyObservation()) rejectObservation('Live provider integration requires an external observation');
       return observeSelectedPullRequest(...args);
     },
-    readProductAcceptanceProjection: findProductAcceptanceProjection,
+    readProductAcceptanceProjection,
     readIntegrationEnvelope: (repoRoot, digest) => readIntegrationEnvelope(repoRoot, digest),
     readIntegrationContract: (repoRoot, digest) => readIntegrationContract(repoRoot, digest),
     repositoryIdentity: (repoRoot) => publicationSha256(realpathSync(resolveGitCommonDirectory(repoRoot))),
@@ -498,9 +498,9 @@ function productAccepted(input: DependencyAuthorityInput, read: DependencyAuthor
     const product = selection.product!;
     const prd = input.readFileAtCommit(read.repo.path, read.commit!, product.approved_prd_ref);
     if (prd === null || engineerSha256(prd) !== product.approved_prd_sha256) return UNAVAILABLE;
+    // The selector can only name a digest that was already persisted, so an
+    // absent projection is lost local evidence and throws to unavailable.
     const projection = reader.readProductAcceptanceProjection(read.repo.path, product.projection_sha256);
-    // Nothing persisted under the selected digest: product acceptance is still pending.
-    if (projection === null) return verdict('unsatisfied', refs);
     const envelope = reader.readIntegrationEnvelope(read.repo.path, projection.envelope_sha256);
     const contract = reader.readIntegrationContract(read.repo.path, envelope.integration_contract_sha256);
     const matrix = reader.readAcceptanceMatrix(read.repo.path, projection.matrix_sha256);

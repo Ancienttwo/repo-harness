@@ -341,23 +341,6 @@ export function readProductAcceptanceProjection(repoRoot: string, digest: string
   return readStored(repoRoot, gitBin, 'products', digest, validateProductAcceptanceProjection, canonicalProductAcceptanceProjectionBytes);
 }
 
-function absentEvidence(error: unknown): boolean {
-  return error instanceof IntegrationAcceptanceError && (error.cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
-}
-
-/**
- * Null means no product acceptance was persisted under this digest yet. Every
- * other store failure, including invalid or non-canonical bytes, still throws.
- */
-export function findProductAcceptanceProjection(repoRoot: string, digest: string, gitBin = 'git'): ProductAcceptanceProjectionV2 | null {
-  try {
-    return readProductAcceptanceProjection(repoRoot, digest, gitBin);
-  } catch (error) {
-    if (absentEvidence(error)) return null;
-    throw error;
-  }
-}
-
 /**
  * Read-only projection of the immutable product acceptance store. The store is
  * content-addressed by projection digest, so a reader that must answer "is this
@@ -369,7 +352,9 @@ export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git
   try {
     directory = integrationEvidenceDirectory(repoRoot, gitBin, 'products', false);
   } catch (error) {
-    if (absentEvidence(error)) return Object.freeze([]);
+    if (error instanceof IntegrationAcceptanceError && (error.cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+      return Object.freeze([]);
+    }
     throw error;
   }
   const digests = readdirSync(directory, { withFileTypes: true })

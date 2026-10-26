@@ -377,6 +377,10 @@ export function readAcceptanceReceiptRecord(
   const path = acceptanceReceiptRecordPath(root, authorityHome, receiptSha256);
   let bytes: Buffer;
   try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) {
+      fail('AcceptanceReceipt record must be a regular file of at most 1 MiB');
+    }
     bytes = readFileSync(path);
   } catch (error) {
     fail(`AcceptanceReceipt record is unavailable for ${receiptSha256}: ${(error as Error).message}`);
@@ -419,10 +423,9 @@ export function writeAcceptanceVerificationObservation(args: {
   receipt: AcceptanceReceipt;
 }): AcceptanceVerificationObservationV1 {
   const root = realpathSync(args.root);
-  const acceptancePath = acceptanceReceiptPath(root, args.authorityHome);
   const observation = buildAcceptanceVerificationObservation({
     repository_root: root,
-    acceptance_receipt_sha256: persistAcceptanceReceiptRecord(root, args.authorityHome, readFileSync(acceptancePath)),
+    acceptance_receipt_sha256: persistAcceptanceReceiptRecord(root, args.authorityHome, serializedRecord(args.receipt)),
     campaign_sha256: args.receipt.campaign_sha256,
     admission_sha256: args.receipt.admission_sha256,
     grant_sha256: args.receipt.grant_sha256,
@@ -632,9 +635,18 @@ function parseReceipt(text: string): AcceptanceReceipt {
   return receipt;
 }
 
+/**
+ * The one serialization of a receipt file. The digest-keyed record stores
+ * these bytes for the receipt being recorded, never a re-read of the latest
+ * file another acceptance in the same checkout may have replaced.
+ */
+function serializedRecord(receipt: AcceptanceReceipt | AcceptanceReviewResult): Buffer {
+  return Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, 'utf-8');
+}
+
 function writeReceipt(path: string, receipt: AcceptanceReceipt | AcceptanceReviewResult): void {
   const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(temporary, serializedRecord(receipt), { mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
 }
