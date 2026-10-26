@@ -74,10 +74,13 @@ describe('cli inventory collector', () => {
     const { root, env, probe, calls } = machine();
     const repo = join(root, 'repo');
     mkdirSync(repo);
+    const usageSources = () => [{ repo_root: repo, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }];
     appendSegmentedLog(join(repo, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify({ started_at: '2026-10-25T00:00:00.000Z', command_names: ['gh'] })}\n`, repo);
-    const snapshot = decodeCliInventory(await collectCliInventory({
-      env, probe, now: () => NOW, usage_sources: () => [{ repo_root: repo, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }],
-    }));
+    // Records that start inside the 90-day window prove no disuse.
+    const recent = decodeCliInventory(await collectCliInventory({ env, probe, now: () => NOW, usage_sources: usageSources }));
+    expect(recent.entries.map(entry => [entry.id, entry.unused])).toEqual([['npm:@openai/codex', null], ['brew:gh', false]]);
+    appendSegmentedLog(join(repo, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify({ started_at: '2026-06-01T00:00:00.000Z', command_names: ['ls'] })}\n`, repo);
+    const snapshot = decodeCliInventory(await collectCliInventory({ env, probe, now: () => NOW, usage_sources: usageSources }));
     const entries = new Map(snapshot.entries.map(entry => [entry.id, entry]));
     expect([...entries.keys()]).toEqual(['npm:@openai/codex', 'brew:gh']);
     expect(entries.get('brew:gh')).toMatchObject({

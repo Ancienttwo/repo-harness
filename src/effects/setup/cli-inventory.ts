@@ -210,10 +210,14 @@ export async function scanPath(pathValue: string): Promise<CliPathExecutable[]> 
   return out;
 }
 
-/** Newest agent use per command name from hook telemetry `command_names`, inside the unused window. */
-export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: number): Map<string, number> {
-  const since = nowMs - CLI_UNUSED_DAYS * 86_400_000;
+/**
+ * Newest agent use per command name from hook telemetry `command_names`,
+ * inside the unused window, and the time of the oldest such record.
+ */
+export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: number): { readonly last_used: Map<string, number>; readonly since: number | null } {
+  const windowStart = nowMs - CLI_UNUSED_DAYS * 86_400_000;
   const usage = new Map<string, number>();
+  let oldest: number | null = null;
   for (const source of sources) {
     let lines: Iterable<string> | null;
     try { lines = readSegmentedLog(join(source.repo_root, source.telemetry_path), source.repo_root); } catch { continue; }
@@ -222,11 +226,13 @@ export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: numb
       if (!line.includes('"command_names":["')) continue;
       const r = record(json(line));
       const at = typeof r.started_at === 'string' ? Date.parse(r.started_at) : Number.NaN;
-      if (!Number.isFinite(at) || at < since || at > nowMs || !Array.isArray(r.command_names)) continue;
+      if (!Number.isFinite(at) || at > nowMs || !Array.isArray(r.command_names)) continue;
+      if (oldest === null || at < oldest) oldest = at;
+      if (at < windowStart) continue;
       for (const name of r.command_names) if (typeof name === 'string' && at > (usage.get(name) ?? -Infinity)) usage.set(name, at);
     }
   }
-  return usage;
+  return { last_used: usage, since: oldest };
 }
 
 /** Bytes under `root`; null past the entry budget or when unreadable. */
@@ -314,13 +320,15 @@ export async function collectCliInventory(options: CliInventoryOptions = {}): Pr
     if (bytes !== null) sizes.set(root, bytes);
   }
 
+  const usage = readCommandUsage(options.usage_sources?.() ?? [], now);
   const input = {
     collected_at: new Date(now).toISOString(),
     home,
     packages,
     path_executables: pathExecutables,
     seed: options.seed ?? CLI_SEED,
-    last_used: readCommandUsage(options.usage_sources?.() ?? [], now),
+    last_used: usage.last_used,
+    usage_since: usage.since,
     sizes,
   };
   const local = projectCliInventory({ ...input, github: new Map(), registry_deprecated: new Map() });
