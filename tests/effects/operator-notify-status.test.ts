@@ -4,12 +4,33 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readNotifyChannelStatus, readNotifyStatus } from '../../src/effects/operator/notify-status';
+import { startNotifyCollector, type NotifyCacheV1 } from '../../src/effects/operator/notify-collector';
+import { NotifyStatusUnavailableError, readNotifyChannelStatus, type NotifyStatusReadInput } from '../../src/effects/operator/notify-status';
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
 const SECRET = 'fixture-secret-key-must-not-leak';
+
+const validDelivery = {
+  status: {
+    protocol: 1, kind: 'operator_notify_status', plugin_id: 'aimpact.webhook-notify', linked: 'linked', enabled: 'enabled',
+    config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
+    last_delivery: { at: null, result: 'succeeded' }, observed_at: '2026-10-27T00:00:00.000Z',
+  },
+  channels: { webhook: 'configured', slack: 'configured', discord: 'configured', telegram: 'configured' },
+  deliveries: {
+    webhook: { at: null, result: 'succeeded' }, slack: { at: null, result: 'succeeded' },
+    discord: { at: null, result: 'succeeded' }, telegram: { at: null, result: 'succeeded' },
+  },
+} as const;
+
+/** The plugin status part of one read; most cases here assert only that part. */
+const readNotifyStatus = async (input: NotifyStatusReadInput) => (await readNotifyChannelStatus(input)).status;
+
+async function unavailableCode(read: Promise<unknown>): Promise<string | null> {
+  try { await read; return null; } catch (error) { return error instanceof NotifyStatusUnavailableError ? error.code : String(error); }
+}
 const SLACK = 'https://hooks.slack.example/services/T000/B000/secret-token';
 
 function fixture() {
@@ -30,6 +51,7 @@ appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, herdr_env: Obje
 const args = argv[0] === '--session' ? argv.slice(2) : argv;
 const id = 'aimpact.webhook-notify';
 if (args[0] === 'plugin' && args[1] === 'list') {
+  if (process.env.FIXTURE_LIST_FAIL === '1') process.exit(1);
   const enabled = process.env.FIXTURE_ENABLED !== '0';
   const linked = process.env.FIXTURE_LINKED !== '0';
   console.log(JSON.stringify({ id: 'cli:plugin', result: { type: 'plugin_list', plugins: linked ? [{ plugin_id: id, enabled, plugin_root: process.env.FIXTURE_SOURCE }] : [] } }));
@@ -106,7 +128,7 @@ describe('notify plugin status', () => {
   test('an invalid session name is refused before any Herdr call', async () => {
     const f = fixture();
     try {
-      await expect(readNotifyStatus({ env: f.env, session: '../other' })).rejects.toThrow('notify_status_session');
+      expect(await unavailableCode(readNotifyStatus({ env: f.env, session: '../other' }))).toBe('herdr_session_invalid');
       expect(() => readFileSync(f.env.FIXTURE_CALLS!, 'utf8')).toThrow();
     } finally { f.cleanup(); }
   });
@@ -133,6 +155,56 @@ describe('notify plugin status', () => {
       expect(status.config).toEqual({ WEBHOOK_URL: 'missing', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' });
       expect(status.last_delivery).toEqual({ at: null, result: 'missing' });
     } finally { f.cleanup(); }
+  });
+
+  test('a failed Herdr plugin list or config lookup is unavailable with a code, never missing', async () => {
+    const f = fixture();
+    try {
+      f.env.FIXTURE_LIST_FAIL = '1';
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('herdr_unavailable');
+      delete f.env.FIXTURE_LIST_FAIL;
+      f.env.FIXTURE_CONFIG_FAIL = '1';
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_config_unavailable');
+      delete f.env.FIXTURE_CONFIG_FAIL;
+      f.env.FIXTURE_CONFIG = 'relative/dir';
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_config_unavailable');
+    } finally { f.cleanup(); }
+  });
+
+  test.skipIf(process.getuid?.() === 0)('an .env that exists but cannot be read is unavailable, never missing', async () => {
+    const f = fixture();
+    try {
+      chmodSync(join(f.config, '.env'), 0);
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_config_unavailable');
+    } finally { chmodSync(join(f.config, '.env'), 0o600); f.cleanup(); }
+  });
+
+  test('the collector runs one probe set per cycle, keeps its cache, and replaces it with a code on failure', async () => {
+    const f = fixture();
+    const calls = () => readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => (JSON.parse(line) as { argv: string[] }).argv.slice(2, 4).join(' '));
+    const collector = startNotifyCollector({ env: f.env, session: 'notify-test', interval_ms: 60_000 });
+    try {
+      expect(collector.read()).toEqual({ state: 'pending' });
+      await collector.settled();
+      const cache = collector.read();
+      expect(cache.state === 'ok' && cache.value.status.linked).toBe('linked');
+      collector.read(); collector.read();
+      expect(calls().sort()).toEqual(['plugin config-dir', 'plugin list', 'plugin log']);
+    } finally { await collector.close(); }
+
+    f.env.FIXTURE_LIST_FAIL = '1';
+    const failing = startNotifyCollector({ env: f.env, session: 'notify-test', interval_ms: 60_000 });
+    try {
+      await failing.settled();
+      expect(failing.read()).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
+    } finally { await failing.close(); }
+
+    const invalid = startNotifyCollector({ env: f.env, session: '../other' });
+    expect(invalid.read()).toEqual({ state: 'unavailable', reason: 'herdr_session_invalid' });
+    await invalid.settled();
+    expect(invalid.read()).toEqual({ state: 'unavailable', reason: 'herdr_session_invalid' });
+    await invalid.close();
+    f.cleanup();
   });
 
   test('a linked plugin can be disabled, and an omitted Slack value is missing', async () => {
@@ -215,11 +287,21 @@ describe('notify plugin status', () => {
       port: 0,
       static_root: f.root,
       env: f.env,
+      notify_collector: true,
     });
     try {
-      const response = await fetch(`${server.url}/api/v1/notify/status`);
+      let response = await fetch(`${server.url}/api/v1/notify/status`);
+      for (let attempt = 0; attempt < 200 && response.status === 503; attempt++) {
+        expect((await response.json() as { error: { code: string } }).error.code).toBe('notify_status_pending');
+        await Bun.sleep(25);
+        response = await fetch(`${server.url}/api/v1/notify/status`);
+      }
       expect(response.status).toBe(200);
       const body = await response.text();
+      // GETs read the cache: more requests add no Herdr call.
+      const herdrCalls = readFileSync(f.env.FIXTURE_CALLS!, 'utf8');
+      for (let index = 0; index < 3; index++) expect((await fetch(`${server.url}/api/v1/notify/status`)).status).toBe(200);
+      expect(readFileSync(f.env.FIXTURE_CALLS!, 'utf8')).toBe(herdrCalls);
       expect(body).toContain('"linked":"linked"');
       expect(body).toContain('"WEBHOOK_KEY":"configured"');
       expect(body).not.toContain(SECRET);
@@ -227,6 +309,26 @@ describe('notify plugin status', () => {
       const denied = await fetch(`${server.url}/api/v1/notify/status`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } });
       expect(denied.status).toBe(405);
     } finally { await server.close(); f.cleanup(); }
+  });
+
+  test('the notify route answers a failed probe with its reason code, never a status of missing', async () => {
+    for (const [cache, code] of [
+      [{ state: 'pending' }, 'notify_status_pending'],
+      [{ state: 'unavailable', reason: 'herdr_unavailable' }, 'herdr_unavailable'],
+      [{ state: 'unavailable', reason: 'notify_config_unavailable' }, 'notify_config_unavailable'],
+      [{ state: 'unavailable', reason: 'herdr_session_invalid' }, 'herdr_session_invalid'],
+      // A cached status that fails the decoder is refused, not sent.
+      [{ state: 'ok', value: { ...validDelivery, status: { ...validDelivery.status, linked: 'bogus' } } }, 'notify_status_invalid'],
+    ] as const) {
+      const server = await startOperatorServer({ port: 0, static_root: tmpdir(), read_notify: () => cache as NotifyCacheV1 });
+      try {
+        const response = await fetch(`${server.url}/api/v1/notify/status`);
+        expect(response.status).toBe(503);
+        const body = await response.json() as { error: { code: string; message: string } };
+        expect(body.error.code).toBe(code);
+        expect(JSON.stringify(body)).not.toContain('missing');
+      } finally { await server.close(); }
+    }
   });
   test('the 0.1.0 plugin log format is read, and its delivery identities stay out', async () => {
     const f = fixture();

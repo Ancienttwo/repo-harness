@@ -5,9 +5,9 @@
 // and saves an OAuth client), the Bot registry, the MCP OAuth token store, the repository
 // registry, the newest MCP audit row of each registered repository, `herdr
 // status --json` and the `session.snapshot` socket method, and the notify
-// plugin status. Every source passes through a projection in
-// `core/operator/bot-access`, so the cache holds no secret, absolute path,
-// stderr or environment value. Nothing here writes: the OAuth store and the
+// collector's cache (that collector owns the notify probes). Every source
+// passes through a projection in `core/operator/bot-access`, so the cache
+// holds no secret, absolute path, stderr or environment value. Nothing here writes: the OAuth store and the
 // segmented audit log are read directly, without their writers' load or lock.
 
 import { execFile } from 'node:child_process';
@@ -34,7 +34,7 @@ import {
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError, repoHarnessHome } from '../repo-registry';
 import { herdrVersionCheck, requestHerdrObservation, type HerdrJson } from '../terminal/herdr-observation';
-import { readNotifyChannelStatus, type NotifyChannelDeliveryStatus, type NotifyStatusReadInput } from './notify-status';
+import type { NotifyCacheV1 } from './notify-collector';
 
 const runFile = promisify(execFile);
 
@@ -84,7 +84,8 @@ export interface BotAccessReadInput {
   readonly now?: () => Date;
   readonly timeout_ms?: number;
   readonly run_command?: BotAccessCommand;
-  readonly read_notify?: (input: NotifyStatusReadInput) => Promise<NotifyChannelDeliveryStatus>;
+  /** The notify collector cache. That collector owns the notify probes; this one runs none. */
+  readonly read_notify: () => NotifyCacheV1;
 }
 
 type SectionInput = Required<Pick<BotAccessReadInput, 'env' | 'timeout_ms' | 'run_command'>> & { readonly cwd: string };
@@ -219,13 +220,11 @@ async function herdrSection(input: SectionInput & { readonly session: string; re
   }
 }
 
-async function notifySection(read: NonNullable<BotAccessReadInput['read_notify']>, env: NodeJS.ProcessEnv, session: string, now: Date): Promise<BotAccessSnapshotV1['notify']> {
-  try {
-    const { status, channels, deliveries } = await read({ env, session, now });
-    return { state: 'ok', status, channels, deliveries };
-  } catch {
-    return { state: 'unavailable', reason: 'notify_status_failed' };
-  }
+function notifySection(cache: NotifyCacheV1): BotAccessSnapshotV1['notify'] {
+  if (cache.state === 'pending') return { state: 'unavailable', reason: 'notify_status_pending' };
+  if (cache.state === 'unavailable') return { state: 'unavailable', reason: cache.reason };
+  const { status, channels, deliveries } = cache.value;
+  return { state: 'ok', status, channels, deliveries };
 }
 
 /** The Herdr session the collector reads, or null when the name is invalid. */
@@ -235,7 +234,7 @@ function herdrSession(input: BotAccessReadInput, env: NodeJS.ProcessEnv): string
 }
 
 /** One collection cycle. Each section fails on its own; only an invalid session name throws. */
-export async function collectBotAccess(input: BotAccessReadInput = {}): Promise<BotAccessSnapshotV1> {
+export async function collectBotAccess(input: BotAccessReadInput): Promise<BotAccessSnapshotV1> {
   const env = { ...process.env, ...input.env };
   const session = herdrSession(input, env);
   if (session === null) throw new Error('bot_access_session');
@@ -244,13 +243,13 @@ export async function collectBotAccess(input: BotAccessReadInput = {}): Promise<
   // One registry read per cycle, so every attribution in a snapshot agrees.
   const directory = botDirectory(env);
   const bots: BotAccessSnapshotV1['bots'] = directory.state === 'ok' ? { state: 'ok', bots: projectBots(directory) } : { state: 'unavailable', reason: 'bot_registry_invalid' };
-  const [mcp, oauth, registry, herdr, notify] = await Promise.all([
+  const [mcp, oauth, registry, herdr] = await Promise.all([
     mcpSection(base),
     oauthSection(env, now, directory),
     registrySection(env, directory),
     herdrSection({ ...base, session, directory }),
-    notifySection(input.read_notify ?? readNotifyChannelStatus, env, session, now),
   ]);
+  const notify = notifySection(input.read_notify());
   return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, oauth, registry, herdr, notify };
 }
 
@@ -273,7 +272,16 @@ export interface BotAccessCollectorHandle {
 }
 
 /** Collect at startup, then every interval after the previous cycle settles. Cycles never overlap. */
-export function startBotAccessCollector(options: BotAccessReadInput & { readonly interval_ms?: number } = {}): BotAccessCollectorHandle {
+export interface BotAccessCollectorOptions extends BotAccessReadInput {
+  readonly interval_ms?: number;
+  /**
+   * The first cycle starts after this settles. The server passes the notify
+   * collector's first cycle, so the first snapshot does not read its cache while it is still pending.
+   */
+  readonly first_cycle_after?: Promise<void>;
+}
+
+export function startBotAccessCollector(options: BotAccessCollectorOptions): BotAccessCollectorHandle {
   const session = herdrSession(options, { ...process.env, ...options.env });
   let cache: BotAccessCacheV1 = session === null ? { state: 'failed', reason: 'herdr_session_invalid' } : { state: 'pending' };
   let closed = session === null;
@@ -293,7 +301,10 @@ export function startBotAccessCollector(options: BotAccessReadInput & { readonly
       });
     return inflight;
   };
-  if (!closed) void cycle();
+  if (!closed) {
+    if (options.first_cycle_after === undefined) void cycle();
+    else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
+  }
   return Object.freeze({
     read: () => cache,
     settled: () => inflight ?? Promise.resolve(),

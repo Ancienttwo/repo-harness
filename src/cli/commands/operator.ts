@@ -108,6 +108,7 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
     ...options,
     dev_activity_collector: true,
     setup_collector: true,
+    notify_collector: true,
     bot_access_collector: true,
     docs_collector: true,
     cli_inventory_collector: { usage_sources: registeredHookTelemetry },

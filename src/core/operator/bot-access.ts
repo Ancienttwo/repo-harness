@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1 } from './notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -116,7 +116,7 @@ export interface BotAccessSnapshotV1 {
     readonly status: NotifyStatusV1;
     readonly channels: Readonly<Record<'webhook' | 'slack' | 'discord' | 'telegram', NotifyPresence>>;
     readonly deliveries: NotifyChannelDeliveriesV1;
-  } | BotAccessUnavailable<'notify_status_failed'>;
+  } | BotAccessUnavailable<'notify_status_pending' | NotifyUnavailableReason>;
 }
 
 const VERSION_TEXT = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
@@ -436,7 +436,7 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     }
   }
 
-  const notify = section(v.notify, 'notify', ['status', 'channels', 'deliveries'], ['notify_status_failed']);
+  const notify = section(v.notify, 'notify', ['status', 'channels', 'deliveries'], ['notify_status_pending', ...NOTIFY_UNAVAILABLE_REASONS]);
   if (notify.status !== undefined) {
     // Checked in place, like every other section: the decoder returns `value`, so a key it does not name must fail here.
     const status = obj(notify.status, ['protocol', 'kind', 'plugin_id', 'linked', 'enabled', 'config', 'last_delivery', 'observed_at'], 'notify status');
