@@ -6,7 +6,7 @@ import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, type Exclu
 import {
   OPERATOR_AUDIT_PROTOCOL,
   appendOperatorAuditRecord,
-  operatorAuditPath,
+  operatorAuditPathIn,
   prepareOperatorStateDir,
   readOperatorAuditRequest,
   type OperatorAuditRequestState,
@@ -138,7 +138,8 @@ export async function runOperatorWrite(
   } catch {
     return auditUnavailable(requestId);
   }
-  const auditPath = operatorAuditPath(env);
+  // Built from the resolved root: the directory sync after an append refuses a symlinked path.
+  const auditPath = operatorAuditPathIn(root);
   const targetKey = `${root}\0${operation.target}`;
   if (activeTargets.has(targetKey)) return busy(requestId);
   const targetLock = acquire(root, `locks/target-${createHash('sha256').update(operation.target).digest('hex').slice(0, 32)}`, TARGET_LOCK_WAIT_MS);

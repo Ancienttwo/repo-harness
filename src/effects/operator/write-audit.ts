@@ -21,8 +21,12 @@ export function operatorStateDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(repoHarnessHome(env), 'operator');
 }
 
+export function operatorAuditPathIn(stateDir: string): string {
+  return join(stateDir, 'audit.jsonl');
+}
+
 export function operatorAuditPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(operatorStateDir(env), 'audit.jsonl');
+  return operatorAuditPathIn(operatorStateDir(env));
 }
 
 /** The canonical lock root. The directory lock refuses a root reached through a symlink. */
@@ -32,7 +36,8 @@ export function prepareOperatorStateDir(env: NodeJS.ProcessEnv = process.env): s
   if (firstCreated !== undefined) {
     // A new directory entry survives a crash only after its parent is synced.
     for (let created = dir; dirname(created) !== created; created = dirname(created)) {
-      syncDirectoryDurably(dirname(created));
+      // syncDirectoryDurably refuses a symlink, so sync the resolved parent.
+      syncDirectoryDurably(realpathSync(dirname(created)));
       if (created === firstCreated) break;
     }
   }
