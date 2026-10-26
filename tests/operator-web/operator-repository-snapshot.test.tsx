@@ -1,5 +1,6 @@
 import { buildAdmittedEngineeringOverlay, projectAdmittedOrganizationAttention } from '../../src/core/engineers/engineering-overlay';
-import { projectOperatorOrganizationSnapshot, decodeOperatorOrganizationSnapshot } from '../../src/core/operator/organization-snapshot';
+import { projectOperatorOrganizationSnapshot, decodeOperatorOrganizationSnapshot, decodeAdmittedScheduling } from '../../src/core/operator/organization-snapshot';
+import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
 import { OrganizationSummary } from '../../src/operator-web/OrganizationSummary';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
@@ -129,6 +130,19 @@ describe('Organization observation boundary', () => {
       { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, tasks: scheduling.tasks.map(task => ({ ...task, sessions: task.sessions.map(row => ({ ...row, session: { ...row.session, host_id: 'private-host' } })) })) } } },
       { ...view, overlay: { ...view.overlay, scheduling: { ...scheduling, profiles: Array.from({length:201}, () => scheduling.profiles[0]) } } },
     ]) expect(() => decodeOperatorOrganizationSnapshot(malformed, repositoryId)).toThrow();
+  });
+
+  test('provider issue observation in scheduling is exact-key', () => {
+    const board = organizationBoardFixture(), scheduling = board.overlay.scheduling!, repositoryId = scheduling.repository_id;
+    const issue = buildProviderIssueObservation({ registered_repository_id: repositoryId, provider: 'github', provider_host: 'github.com',
+      provider_repository_id: '123', provider_issue_id: '456', display_ref: 'acme/widgets#456', url: 'https://github.com/acme/widgets/issues/456',
+      observed_at: '2026-09-22T07:00:00.000Z', provider_created_at: null, provider_updated_at: null, state: 'open', title: 'Review', body: 'Body',
+      labels: [], assignees: [], comments_policy: 'omitted', policy_revision: `sha256:${'d'.repeat(64)}`, eligible: true, eligibility_reasons: [] });
+    const withIssue = (value: unknown) => ({ ...scheduling, tasks: scheduling.tasks.map(task => ({ ...task, issue: value })) });
+    expect(decodeAdmittedScheduling(withIssue(issue), repositoryId)).toEqual(withIssue(issue));
+    expect(() => decodeAdmittedScheduling(withIssue({ ...issue, provider_thread_id: 'private-thread' }), repositoryId)).toThrow('operator_organization_payload_invalid');
+    const { labels: _, ...missing } = issue;
+    expect(() => decodeAdmittedScheduling(withIssue(missing), repositoryId)).toThrow('operator_organization_payload_invalid');
   });
 
   test('refuses old transport and cross-source identity with independent source failures', async () => {

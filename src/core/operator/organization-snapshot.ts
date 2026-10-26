@@ -8,6 +8,10 @@ export interface OperatorOrganizationSnapshot {
 }
 const SHA = /^sha256:[0-9a-f]{64}$/;
 const ENGINEER = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
+// Exact ProviderIssueObservationV1 keys; its node-side validator cannot load in the browser.
+const ISSUE_OBSERVATION_KEYS = ['protocol', 'kind', 'registered_repository_id', 'provider', 'provider_host', 'provider_repository_id',
+  'provider_issue_id', 'display_ref', 'url', 'observed_at', 'provider_created_at', 'provider_updated_at', 'state', 'title', 'body',
+  'labels', 'assignees', 'comments_policy', 'policy_revision', 'eligible', 'eligibility_reasons', 'source_revision', 'observation_sha256'] as const;
 function invalid(): never { throw new Error('operator_organization_payload_invalid'); }
 function object(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== keys.length
@@ -46,8 +50,7 @@ export function decodeAdmittedScheduling(value: unknown, repositoryId: string): 
     if (seen.has(key)) invalid();
     seen.add(key);
     if (task.issue !== null) {
-      if (!task.issue || typeof task.issue !== 'object' || Array.isArray(task.issue)) invalid();
-      const issue = task.issue as Record<string, unknown>;
+      const issue = object(task.issue, ISSUE_OBSERVATION_KEYS);
       if (issue.protocol !== 1 || issue.kind !== 'repo-harness-provider-issue-observation'
         || issue.registered_repository_id !== repositoryId || issue.provider_repository_id !== repo
         || issue.provider_issue_id !== issueId || !['open', 'closed'].includes(issue.state as string)
