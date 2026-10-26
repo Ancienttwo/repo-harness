@@ -8,14 +8,14 @@ import {
   createStateInputCollector,
   type EffectiveStateResolution,
 } from '../../effects/loop/state-input-collector';
-import { createHookEventTelemetry } from './event-telemetry';
+import { commandNamesOnPath, createHookEventTelemetry } from './event-telemetry';
 import {
   resolveEffectiveStateReadOnly,
   StateResolutionUnstableError,
 } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 import type { HookHandlerResult } from './handler-contract';
-import { HookPayloadError, hookIdentity, parseHookPayload, type HookIdentity } from './hook-input';
+import { HookPayloadError, hookIdentity, parseHookPayload, payloadString, type HookIdentity } from './hook-input';
 import { boundedHookDiagnostic, HOST_RENDERERS, type HookOutcome } from './hook-protocol';
 import { WORKFLOW_CONTRACT_MARKER_PATH, WORKFLOW_MARKER_GATE_EVENTS } from '../../core/adoption/minimum-harness-version';
 import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
@@ -180,11 +180,13 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   });
 
   let identity: HookIdentity = { host, sessionId: null, runId: null, turnId: null };
+  let shellCommand = '';
   let result: HookHandlerResult;
   let reason: string;
   try {
     const payload = parseHookPayload(opts.input);
     identity = hookIdentity(payload, host);
+    if (opts.event === 'PreToolUse') shellCommand = payloadString(payload, 'tool_input.command');
     result = handler.run({ event: opts.event, repoRoot, payload, identity, env, now, collector });
     reason = outcomeReason(result);
   } catch (error) {
@@ -218,6 +220,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     exitCode,
     blocked: exitCode === 2 || result.permission?.decision === 'deny',
     reason,
+    commandNames: commandNamesOnPath(shellCommand, env.PATH),
   });
   return { exitCode, reason, repoRoot, handler: handler.id };
 }

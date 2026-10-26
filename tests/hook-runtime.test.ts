@@ -213,9 +213,10 @@ describe('hook runtime typed dispatch', () => {
       expect(result.handler).toBe('mutation-guard');
       const [record] = telemetry(root);
       expect(Object.keys(record).sort()).toEqual([
-        'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
+        'blocked', 'command_names', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint', 'host',
         'protocol', 'reason', 'route_id', 'run_id', 'session_id', 'started_at', 'turn_id',
       ]);
+      expect(record.command_names).toEqual([]);
       expect(existsSync(join(root, '.ai/hooks'))).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 30_000);

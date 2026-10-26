@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
+  commandNames,
+  commandNamesOnPath,
   createHookEventTelemetry,
   HOOK_EVENT_TELEMETRY_PATH,
   HOOK_EVENT_TELEMETRY_PROTOCOL,
@@ -39,7 +41,7 @@ describe('HRD-08 event telemetry authority', () => {
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0])).toEqual(record);
     expect(Object.keys(record).sort()).toEqual([
-      'blocked', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint',
+      'blocked', 'command_names', 'completed_at', 'elapsed_ms', 'event', 'event_id', 'exit_code', 'fingerprint',
       'host', 'protocol', 'reason', 'route_id', 'run_id', 'session_id', 'started_at', 'turn_id',
     ]);
     expect(record).toMatchObject({
@@ -53,8 +55,92 @@ describe('HRD-08 event telemetry authority', () => {
       exit_code: 0,
       blocked: false,
       reason: 'ok',
+      command_names: [],
     });
     expect(record.elapsed_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  test('records program names of a shell command and never its arguments', () => {
+    const repoRoot = tempDir('hrd08-event-command-names-');
+    const record = createHookEventTelemetry({ repoRoot, event: 'PreToolUse', routeId: 'bash' }).finalize({
+      identity: identity(),
+      exitCode: 0,
+      blocked: false,
+      reason: 'ok',
+      commandNames: commandNames('cd /Users/alice/repo && GH_TOKEN=sk-proj-FAKE0123456789abc gh pr view 12 | jq .title; sudo /opt/homebrew/bin/brew list\n(env FOO=1 bun test) & "$HOME/bin/x"'),
+    });
+    // A command given by path (`/opt/homebrew/bin/brew`) is not counted.
+    expect(record.command_names).toEqual(['cd', 'gh', 'jq', 'bun']);
+    const line = readFileSync(join(repoRoot, HOOK_EVENT_TELEMETRY_PATH), 'utf8');
+    for (const secret of ['/Users/alice', 'sk-proj-FAKE0123456789abc', 'pr view', '.title']) expect(line).not.toContain(secret);
+  });
+
+  test('command names keep at most sixteen unique names', () => {
+    expect(commandNames(Array.from({ length: 20 }, (_, index) => `tool${index} --flag`).join(' && '))).toHaveLength(16);
+    expect(commandNames('git status; git diff')).toEqual(['git']);
+    expect(commandNames('')).toEqual([]);
+  });
+
+  test('command names never come from quoted data or heredoc bodies', () => {
+    // A secret that passes COMMAND_NAME, so only the scanner keeps it out.
+    const secret = 'sk-proj-AbCdEf0123456789xyz';
+    expect(commandNames(`cat <<EOF\n${secret}\nEOF`)).toEqual(['cat']);
+    expect(commandNames(`cat <<-'END' > out\n\t${secret}\n\tEND\nls -la`)).toEqual(['cat', 'ls']);
+    expect(commandNames(`echo "a; ${secret}" && git status`)).toEqual(['echo', 'git']);
+    expect(commandNames(`printf 'x|${secret}' | wc -l`)).toEqual(['printf', 'wc']);
+    expect(commandNames(`echo \\; ${secret}`)).toEqual(['echo']);
+    expect(commandNames(`echo "unterminated; ${secret}`)).toEqual(['echo']);
+    expect(commandNames(`git log <<< "x; ${secret}"; jq .`)).toEqual(['git', 'jq']);
+  });
+
+  test('the scan stops at a construct it does not model and keeps the names before it', () => {
+    const s = 'sk-proj-AbCdEf0123456789xyz';
+    const cases: [string, string[]][] = [
+      [`git commit -m "$(cat <<'EOF'\nFix "x; ${s} y" now\nEOF\n)"`, ['git']],
+      [`gh pr create --body "$(cat <<'EOF'\nSet "| ${s} | b |" here\nEOF\n)"`, ['gh']],
+      [`gh pr create --body "$(cat <<'EOF'\nSet "| ${s}\n| b |" here\nEOF\n)"`, ['gh']],
+      [`echo "$(jq -r ".a | ${s} x" f)"`, ['echo']],
+      [`echo "a \`${s}\` b"`, ['echo']],
+      [`echo "\${A:-x; ${s} }"`, ['echo']],
+      [`git status # then; ${s}`, ['git']],
+      [`# check (docs) here\nls`, ['ls']],
+      [`echo \${A:-x; ${s} }`, ['echo']],
+      [`KEYS=(${s} other)`, []],
+      [`echo $((1<<2))\nls; ${s}`, ['echo']],
+      [`echo $'x\\'; ${s}'`, ['echo']],
+      [`cat <<EOF\na; ${s}\n| b\nc\nEOF\nls`, ['cat', 'ls']],
+      [`cat <<$X\n${s}\n$X`, ['cat']],
+      [`cat <<'A B'\nx'\nA\n${s}\nA B`, ['cat']],
+      [`cat <<'E\\OF'\nEOF\n${s}\nE\\OF`, ['cat']],
+      [`case "$k" in a) echo 1;; ${s}) echo 2;; esac`, []],
+      [`case "$k" in (a) echo 1;; (${s}) echo 2;; esac`, []],
+      [`case "$k" in a|${s}) echo 1;; esac`, []],
+      [`git status && case x in y) ;; esac; ${s}`, ['git']],
+      [`[[ $t =~ ^(ghp|${s})$ ]] && echo y`, []],
+      [`ls @(a|${s})`, ['ls']],
+      [`ls (a|${s})`, ['ls']],
+      [`cat <<"EOF"\n${s}\nEOF\nls`, ['cat', 'ls']],
+      [`cat <<\\EOF\n${s}\nEOF\nls`, ['cat', 'ls']],
+      [`/usr/bin/git status; ./faketool`, []],
+    ];
+    for (const [command, names] of cases) {
+      const result = commandNames(command);
+      expect(result).not.toContain(s);
+      expect([command, result]).toEqual([command, names]);
+    }
+  });
+
+  test('only names of executables on the hook PATH are recorded', () => {
+    const s = 'sk-proj-AbCdEf0123456789xyz';
+    const bin = tempDir('hrd08-event-path-');
+    writeFileSync(join(bin, 'faketool'), '#!/bin/sh\n');
+    chmodSync(join(bin, 'faketool'), 0o755);
+    writeFileSync(join(bin, 'notexec'), 'data');
+    mkdirSync(join(bin, 'somedir'));
+    expect(commandNamesOnPath(`faketool run; ${s} x; notexec; somedir; git status`, bin)).toEqual(['faketool']);
+    expect(commandNamesOnPath(`./faketool; ${bin}/faketool`, bin)).toEqual([]);
+    expect(commandNamesOnPath('faketool', undefined)).toEqual([]);
+    expect(commandNamesOnPath('faketool', `relative:${bin}`)).toEqual(['faketool']);
   });
 
   test('semantic fingerprints detect repeated equivalent blocked events', () => {
