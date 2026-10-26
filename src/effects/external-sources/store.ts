@@ -17,6 +17,7 @@ import {
   validateExternalSourceBindingReceipt,
   type ExternalSourceBindingReceiptV1,
 } from '../../core/external-sources/binding';
+import { syncDirectoryDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
@@ -61,11 +62,6 @@ function pathSegments(root: string, target: string): string[] {
   return scoped.split(sep).filter(Boolean);
 }
 
-function syncDirectory(path: string): void {
-  const descriptor = openSync(path, constants.O_RDONLY);
-  try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
-}
-
 function ensureDirectory(common: string, target: string, create: boolean): boolean {
   let current = common;
   for (const segment of pathSegments(common, target)) {
@@ -83,7 +79,7 @@ function ensureDirectory(common: string, target: string, create: boolean): boole
       catch (mkdirError) { if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') fail('external_source_store_unavailable', `cannot create external source directory: ${current}`, mkdirError); }
       const stat = lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) fail('external_source_store_unsafe', `external source directory is unsafe: ${current}`);
-      syncDirectory(dirname(current));
+      syncDirectoryDurably(dirname(current));
     }
   }
   return true;
@@ -123,7 +119,7 @@ function writeExclusive(path: string, bytes: string, label: string): boolean {
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = null;
-    syncDirectory(dirname(path));
+    syncDirectoryDurably(dirname(path));
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
@@ -177,7 +173,7 @@ function writeReceiptHead(repoRoot: string, paths: StorePaths): void {
     rmSync(temporary, { force: true });
     fail('external_source_store_unavailable', 'cannot replace external source refresh receipt head', error);
   }
-  syncDirectory(paths.root);
+  syncDirectoryDurably(paths.root);
 }
 
 function readReceiptHead(paths: StorePaths): ExternalSourceReceiptHeadV1 {

@@ -369,6 +369,7 @@ installed copy with `herdr --skill` and fails when a copy is absent or differs.
 The skill only controls Herdr from a real Herdr pane with `HERDR_ENV=1`.
 The persistent reviewer still requires POSIX process groups: use macOS/Linux or
 WSL. Native Windows review lifecycle support is not implied by Herdr support.
+Admitted task sessions start only in a Herdr pane, so they and their Task Inbox and operator diff consumers are POSIX-only; on Windows, session start fails closed with `herdr_endpoint_platform_unsupported`.
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
 Rebind endpoints explicitly as `herdr-cli-agent`; old adapter policy, capabilities
 and live session metadata are not translated. The self-host runtime remains off.
