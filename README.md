@@ -138,6 +138,7 @@ repo-harness update          # reconcile CLI, mandatory deps, profile tooling, a
 repo-harness update --check  # read-only repair guidance, no writes
 repo-harness upgrade         # check retired leftovers; no writes
 repo-harness upgrade --apply # back up and remove only proven owned leftovers
+repo-harness upgrade decide --keep <path> # record an operator decision for a report-only project item
 repo-harness uninstall --dry-run # preview owned user configuration cleanup
 repo-harness uninstall           # remove owned configuration; preserve user changes/history
 repo-harness mcp uninstall --dry-run # preview independent MCP setup cleanup

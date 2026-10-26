@@ -167,6 +167,18 @@ for removal. This flag still requires ownership proof. Unknown artifacts stay.
 The third-party `codex@openai-codex` Claude plugin and user rule lines in
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
 
+Project items without ownership proof stay report-only. An operator records a
+decision with `repo-harness upgrade decide --keep|--remove <paths...>`. The
+command accepts only current project report items. It writes the tracked file
+`.ai/harness/upgrade-decisions.json` (`version: 1`; `path`, `decision`,
+`contentHash` per entry) and deletes nothing. A decision applies only while the
+current content hash matches. A changed file is reported again as a stale
+decision. `keep` moves the item to `operatorKept`; it no longer counts as a
+leftover. `remove` is valid only for a regular file that is not a document with
+a retired-path reference. `upgrade --scope project --apply` then removes it
+through the project backup and rollback manifest. An invalid decision file
+fails the project upgrade.
+
 `upgrade --apply` backs up eligible targets and checks ownership again before
 removal. It keeps current global typed adapters, sibling user hooks, changed
 files, and files without proof. Apply exits 1 on failure and restores its target
