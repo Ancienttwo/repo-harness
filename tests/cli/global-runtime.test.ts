@@ -115,7 +115,7 @@ describe('update leftover summary', () => {
       action: index === 0 ? 'remove' : 'report',
       reason: 'Fixture leftover for the update summary parser.',
     }));
-    const payload = `${JSON.stringify(items, null, 2)}\n`;
+    const payload = `${JSON.stringify({ items, apply: false, exitCode: 1 }, null, 2)}\n`;
     expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024);
     withFakeUpgrade(payload, '', () => {
       expect(updateLeftoverSummary(tmpdir(), false)).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
@@ -123,7 +123,7 @@ describe('update leftover summary', () => {
   });
 
   test('reports a failed check as a warning with redacted error text', () => {
-    withFakeUpgrade('[]\n', 'catalog failed token=hunter2', () => {
+    withFakeUpgrade('{"items":[]}\n', 'catalog failed token=hunter2', () => {
       expect(updateLeftoverSummary(tmpdir(), false))
         .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
     });

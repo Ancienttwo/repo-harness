@@ -428,7 +428,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
 }
 
 export function formatUpgradeResult(result: UpgradeResult, asJson = false): string {
-  if (asJson) return formatJson(result.apply || result.worktreeTemplate ? result : result.items);
+  if (asJson) return formatJson(result);
   const lines = [result.apply ? 'Upgrade cleanup apply.' : 'Upgrade cleanup check.'];
   const groups = new Map<string, LeftoverItem[]>();
   for (const item of result.items) {

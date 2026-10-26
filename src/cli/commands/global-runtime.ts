@@ -864,7 +864,7 @@ export function updateLeftoverSummary(cwd: string, installedCli: boolean): strin
   });
   let items: unknown;
   try {
-    items = JSON.parse(check.stdout);
+    items = (JSON.parse(check.stdout) as { items?: unknown } | null)?.items;
   } catch (_error) {
     items = null;
   }

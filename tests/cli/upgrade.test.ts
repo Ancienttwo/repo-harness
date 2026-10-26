@@ -88,7 +88,7 @@ describe('upgrade with real release bytes', () => {
       cwd: opts.cwd, env: { ...process.env, HOME: opts.home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
     expect(result.status).toBe(1);
-    const items = JSON.parse(result.stdout);
+    const { items } = JSON.parse(result.stdout);
     expect(items.length).toBeGreaterThan(0);
     expect(items.map((item: Record<string, string>) => [item.location, item.surface,
       relative(item.location === 'global' ? opts.home : opts.cwd, item.path!), item.retiredBy,
