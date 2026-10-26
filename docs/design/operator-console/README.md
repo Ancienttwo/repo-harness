@@ -2,13 +2,14 @@
 
 Design material for the operator console redesign. The design brief is
 [`../DESIGN-operator-console-uiux.md`](../DESIGN-operator-console-uiux.md) and
-the PRD is
-[`plans/prds/20261026-2100-operator-console-uiux.prd.md`](../../../plans/prds/20261026-2100-operator-console-uiux.prd.md).
+the PRD is the snapshot
+[`plans/prds/20261026-2310-operator-console-uiux.prd.md`](../../../plans/prds/20261026-2310-operator-console-uiux.prd.md)
+(rev 213). Where this file and the design brief disagree, the brief wins.
 
 | Material | Where |
 | --- | --- |
-| Design canvas (21 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared) |
-| Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared) |
+| Design canvas (21 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared). Read for the brief at version `1793028533-d1e8` (`project/canvas.json` sha256 `61876184…4e6a7a`) |
+| Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared). Read at version `1793028749-cefd` |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
 
 ## Page inventory

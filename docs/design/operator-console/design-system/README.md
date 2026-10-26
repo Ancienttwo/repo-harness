@@ -1,6 +1,8 @@
 # repo-harness
 
-English repo copy of the repo-harness design system. The live, browsable version is the Claude design-system artifact; keep both in step.
+English repo copy of the repo-harness design system. The live, browsable version is the Claude design-system artifact (https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT); keep both in step.
+
+`tokens.json` is a byte-exact copy of the artifact's `project/tokens.json` at version `1793028749-cefd` (sha256 `b6fb4735e554b44907e18876304e6812cd818bf4b54b6580f830800eb79b4de8`, read 2026-10-27). Its `usage` strings stay in Chinese, as in the source. To check for drift, compare the sha256 with a fresh read of the artifact. The prose below and the component notes are English translations; the design brief [`../../DESIGN-operator-console-uiux.md`](../../DESIGN-operator-console-uiux.md) wins where they disagree.
 
 The design system for every repo-harness surface: the website repo-harness.com, the operator console, and the docs pages. The brand comes from the tokens in the website repo `repo-harness-page@ffe3ff1` (paper background, ink-blue neutrals, carrot orange, Space Grotesk · IBM Plex Sans · JetBrains Mono). This pass reorganizes them under Kumo 2.14.0 semantic token names and fixes several places where contrast was too low. The console's component layer uses Kumo (`@cloudflare/kumo`). The layout follows conversational desktop apps: sidebar + centered reading column + composer pinned to the bottom.
 

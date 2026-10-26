@@ -1,6 +1,6 @@
 # DiagramCanvas
 
-The canvas viewport on the architecture page. Layered, sequence and topology diagrams share it. Kumo has no matching component. Nodes and edges are drawn with this system's tokens. ELK computes the layout automatically (PRD gap G11).
+The canvas viewport on the architecture page. Layered, sequence and topology diagrams share it. Kumo has no matching component. Nodes and edges are drawn with this system's tokens. `@dagrejs/dagre` computes the layout and `@xyflow/react` renders it (PRD gap G11, dependencies approved 2026-10-27). elkjs is excluded for its license (EPL-2.0 or GPL-3.0). The first repo copy named ELK; this copy follows the approved decision.
 
 - Viewport: `rh-diagram-bg` background (pure white in the light theme) + 20px dot grid (`rh-diagram-dot`), `radius-xl`, scrollable and zoomable. Nodes, legend and zoom group inside the canvas use `rh-diagram-line` borders.
 - Legend at bottom left, zoom group at bottom right (− / 100% / + / fit). The inspector panel on the right is fixed at 300 to 360px and shows details of the selected element.
