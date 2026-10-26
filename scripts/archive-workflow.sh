@@ -182,7 +182,7 @@ completed_archive_gate() {
     return 1
   fi
   if ! REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
-    "${admission_args[@]}" --verification "$verification_file" >/dev/null; then
+    ${admission_args[@]+"${admission_args[@]}"} --verification "$verification_file" >/dev/null; then
     echo "archive-workflow: Completed AcceptanceReceipt gate failed" >&2
     return 1
   fi
