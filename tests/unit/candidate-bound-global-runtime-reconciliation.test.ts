@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSy
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
@@ -159,15 +159,37 @@ function invokeCandidateChild(
   });
 }
 
+const GLOBAL_RUNTIME_LOCK = '.repo-harness/transactions/global-runtime.lock';
+
+interface ParentLock {
+  readonly lockPath: string;
+  readonly ownerToken: string;
+  release(): void;
+}
+
+// A 0.24.1 parent publishes { pid, created_at, token } with no start_time (#973).
+function holdLegacyParentLock(home: string, pid: number): ParentLock {
+  const lockPath = join(realpathSync(home), GLOBAL_RUNTIME_LOCK);
+  const ownerToken = `${pid}-${Date.now()}-${randomUUID()}`;
+  mkdirSync(lockPath, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(lockPath, `${ownerToken}.json`),
+    `${JSON.stringify({ pid, created_at: Date.now(), token: ownerToken })}\n`,
+    { mode: 0o600 },
+  );
+  return { lockPath, ownerToken, release: () => rmSync(lockPath, { recursive: true, force: true }) };
+}
+
 function runCandidateChild(
   request: CandidateReconciliationRequest,
   env: NodeJS.ProcessEnv,
+  holdParentLock: (home: string) => ParentLock = home => acquireExclusiveDirectoryLock(home, GLOBAL_RUNTIME_LOCK),
 ): ReturnType<typeof spawnSync> {
   const home = realpathSync(env.HOME!);
   const globalModules = join(env.BUN_INSTALL!, 'install', 'global', 'node_modules');
   mkdirSync(globalModules, { recursive: true });
   symlinkSync(request.candidate.root, join(globalModules, 'repo-harness'), 'dir');
-  const lock = acquireExclusiveDirectoryLock(home, '.repo-harness/transactions/global-runtime.lock');
+  const lock = holdParentLock(home);
   try {
     publishCandidateReconciliationCapability({
       transactionId: request.transaction_id,
@@ -349,6 +371,81 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(30);
       expect(invokeCandidateChild(request, env).status).toBe(1);
       rollbackInstallHostTransaction(activeTransaction);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('#973: a 0.24.1 parent lock record without start_time authorizes the candidate; a pid or token mismatch does not', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-legacy-lock-'));
+    const home = join(root, 'home');
+    const cwd = join(root, 'repo');
+    const candidate = fixtureCandidate(root);
+    const token = 'd'.repeat(64);
+    const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
+    try {
+      mkdirSync(cwd, { recursive: true });
+      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
+      if (!stop) throw new Error('fixture requires Stop.default');
+      stop.hooks[0]!.timeout = 150;
+      const hookPath = join(home, '.codex', 'hooks.json');
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
+      const requestFor = (backupRoot: string): CandidateReconciliationRequest => ({
+        protocol: 1,
+        parent_token: token,
+        transaction_id: sha256(backupRoot),
+        transaction_backup_root: backupRoot,
+        candidate,
+        cwd,
+        target: 'codex',
+        profile: 'minimal',
+        sync_skill: false,
+        host_adapters: true,
+        external_skills: false,
+        reverse_skill: false,
+        obsidian_skills: false,
+        codegraph: false,
+      });
+      const publish = (request: CandidateReconciliationRequest, lock: ParentLock, lockOwnerToken: string): void => {
+        publishCandidateReconciliationCapability({
+          transactionId: request.transaction_id,
+          transactionBackupRoot: request.transaction_backup_root,
+          parentToken: token,
+          parentPid: process.pid,
+          lockPath: lock.lockPath,
+          lockOwnerToken,
+        });
+      };
+
+      const refusals = [
+        { lockPid: process.pid + 1, capabilityToken: (lock: ParentLock) => lock.ownerToken },
+        { lockPid: process.pid, capabilityToken: () => `${process.pid}-${Date.now()}-${randomUUID()}` },
+      ];
+      for (const refusal of refusals) {
+        const transaction = beginInstallHostTransaction([], env);
+        const request = requestFor(transaction.backup_root);
+        const lock = holdLegacyParentLock(home, refusal.lockPid);
+        try {
+          publish(request, lock, refusal.capabilityToken(lock));
+          const result = invokeCandidateChild(request, env);
+          expect(result.status).toBe(1);
+          expect(String(result.stderr)).toContain('parent does not own the active global runtime lock');
+        } finally {
+          lock.release();
+        }
+        rollbackInstallHostTransaction(transaction);
+      }
+      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(150);
+
+      const transaction = beginInstallHostTransaction([], env);
+      const request = requestFor(transaction.backup_root);
+      const result = runCandidateChild(request, env, canonicalHome => holdLegacyParentLock(canonicalHome, process.pid));
+      expect(String(result.stderr)).not.toContain('parent does not own the active global runtime lock');
+      expect(result.status).toBe(0);
+      expect(JSON.parse(readFileSync(hookPath, 'utf-8')).hooks.Stop[0].hooks[0].timeout).toBe(30);
+      rollbackInstallHostTransaction(transaction);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

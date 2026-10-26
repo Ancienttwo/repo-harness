@@ -97,10 +97,37 @@ describe('exclusive directory lock owner identity', () => {
     const exited = spawnSync(process.execPath, ['-e', '']);
     expect(exited.status).toBe(0);
     const ownerPath = forgeOwner(root, { pid: exited.pid });
-    expect(readExclusiveDirectoryLockOwner(root, LOCK)).toBeNull();
+    const owner = readExclusiveDirectoryLockOwner(root, LOCK);
+    expect(owner).toEqual({
+      lockPath: join(root, LOCK), pid: exited.pid, startTime: null, token: expect.any(String),
+    });
+    expect(exclusiveDirectoryLockOwnerLiveness(owner!)).toBe('dead');
 
     expect(() => acquireExclusiveDirectoryLock(root, LOCK, { waitTimeoutMs: 1 })).toThrow(ExclusiveLockContentionError);
     expect(existsSync(ownerPath)).toBe(true);
+  });
+
+  test('#973: a pre-#934 owner record { pid, created_at, token } still identifies its owner', () => {
+    const root = temporaryRoot();
+    const ownerPath = forgeOwner(root, { pid: process.pid });
+    const token = ownerPath.slice(join(root, LOCK).length + 1, -'.json'.length);
+    expect(Object.keys(JSON.parse(readFileSync(ownerPath, 'utf-8'))).sort()).toEqual(['created_at', 'pid', 'token']);
+    const owner = readExclusiveDirectoryLockOwner(root, LOCK);
+    expect(owner).toEqual({ lockPath: join(root, LOCK), pid: process.pid, startTime: null, token });
+    expect(exclusiveDirectoryLockOwnerLiveness(owner!)).toBe('unverified');
+
+    expect(() => acquireExclusiveDirectoryLock(root, LOCK, { waitTimeoutMs: 1 })).toThrow(ExclusiveLockContentionError);
+    expect(existsSync(ownerPath)).toBe(true);
+  });
+
+  test('an owner record whose pid or token does not match its file name has no owner', () => {
+    const root = temporaryRoot();
+    const ownerPath = forgeOwner(root, { pid: process.pid });
+    const record = JSON.parse(readFileSync(ownerPath, 'utf-8')) as Record<string, unknown>;
+    writeFileSync(ownerPath, `${JSON.stringify({ ...record, pid: process.pid + 1 })}\n`);
+    expect(readExclusiveDirectoryLockOwner(root, LOCK)).toBeNull();
+    writeFileSync(ownerPath, `${JSON.stringify({ ...record, token: `${record.token}-forged` })}\n`);
+    expect(readExclusiveDirectoryLockOwner(root, LOCK)).toBeNull();
   });
 
   test('the process table reports a stable start time for a live PID and none for an exited one', () => {
