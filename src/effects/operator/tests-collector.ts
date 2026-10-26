@@ -22,6 +22,7 @@ import {
   parseTestProjection,
   publicTestText,
   TESTS_CHANNEL,
+  TESTS_ISO_TIME,
   type TestFileResultV1,
   type TestsSnapshotV1,
   type TestsUnavailableReason,
@@ -142,7 +143,7 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     }
     const value = {
       id: raw.id, attempt: raw.run_attempt, head_sha: raw.head_sha,
-      created_at: typeof raw.created_at === 'string' ? raw.created_at : null, conclusion: raw.conclusion ?? null, channel: TESTS_CHANNEL,
+      created_at: typeof raw.created_at === 'string' && TESTS_ISO_TIME.test(raw.created_at) ? raw.created_at : null, conclusion: raw.conclusion ?? null, channel: TESTS_CHANNEL,
     };
     if (!Number.isSafeInteger(value.id) || !Number.isSafeInteger(value.attempt) || (value.attempt as number) < 1
       || typeof value.head_sha !== 'string' || !/^[0-9a-f]{40}$/u.test(value.head_sha) || value.created_at === null
