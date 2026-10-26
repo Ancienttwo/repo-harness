@@ -1,7 +1,8 @@
-import { closeSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
-import { join } from 'node:path';
+import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, writeSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import type { JsonValue } from '../../core/evidence/types';
+import { syncDirectoryDurably } from '../atomic-append';
 import { repoHarnessHome } from '../repo-registry';
 
 /**
@@ -27,7 +28,14 @@ export function operatorAuditPath(env: NodeJS.ProcessEnv = process.env): string 
 /** The canonical lock root. The directory lock refuses a root reached through a symlink. */
 export function prepareOperatorStateDir(env: NodeJS.ProcessEnv = process.env): string {
   const dir = operatorStateDir(env);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const firstCreated = mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (firstCreated !== undefined) {
+    // A new directory entry survives a crash only after its parent is synced.
+    for (let created = dir; dirname(created) !== created; created = dirname(created)) {
+      syncDirectoryDurably(dirname(created));
+      if (created === firstCreated) break;
+    }
+  }
   return realpathSync(dir);
 }
 
@@ -124,15 +132,38 @@ export function readOperatorAuditRequest(auditPath: string, requestId: string): 
   return { intent, result };
 }
 
-/** One durable line per record. A record that is not on disk does not count as written. */
+function openAuditLog(auditPath: string): { readonly fd: number; readonly created: boolean } {
+  const flags = constants.O_RDWR | constants.O_APPEND;
+  try {
+    return { fd: openSync(auditPath, flags | constants.O_CREAT | constants.O_EXCL, 0o600), created: true };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return { fd: openSync(auditPath, flags), created: false };
+  }
+}
+
+/**
+ * One durable line per record. A record that is not on disk does not count as
+ * written: the line, and for a new log its directory entry, are synced before
+ * this returns. The caller holds the audit lock.
+ */
 export function appendOperatorAuditRecord(auditPath: string, record: OperatorAuditRecordV1): void {
   const line = `${JSON.stringify(record)}\n`;
   // A line the reader refuses would fail every later lookup closed for the
   // whole account, so it must not reach the log.
   decodeAuditRecord(JSON.parse(line));
-  const fd = openSync(auditPath, 'a', 0o600);
+  const { fd, created } = openAuditLog(auditPath);
   try {
     const before = fstatSync(fd).size;
+    // An interrupted append can leave a record without its newline. Appending
+    // after it would join two records on one line, so refuse and leave the
+    // tail for an operator to inspect; never repair it here.
+    if (before > 0) {
+      const last = Buffer.alloc(1);
+      if (readSync(fd, last, 0, 1, before - 1) !== 1 || last[0] !== 0x0a) {
+        throw new OperatorAuditUnavailableError('audit log ends with an unterminated record');
+      }
+    }
     const written = writeSync(fd, line);
     if (written !== Buffer.byteLength(line)) {
       // Cut the torn tail so the log stays readable; the caller holds the audit lock.
@@ -143,4 +174,5 @@ export function appendOperatorAuditRecord(auditPath: string, record: OperatorAud
   } finally {
     closeSync(fd);
   }
+  if (created) syncDirectoryDurably(dirname(auditPath));
 }
