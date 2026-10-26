@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
@@ -29,6 +29,8 @@ type GateOptions = {
   /** Prepended to PATH so a case can substitute a deterministic fake `bun`. */
   binDir?: string;
   nodeOptions?: string;
+  /** Directory that receives the per-file JUnit reports; unset means the lib picks its own run directory. */
+  junitDir?: string;
 };
 
 function writeTestFile(dir: string, name: string, passing: boolean): string {
@@ -62,6 +64,7 @@ function runIsolatedGate(files: string[], options: GateOptions = {}): RunResult 
       ...(options.nodeOptions ? { NODE_OPTIONS: options.nodeOptions } : {}),
       ...(options.binDir ? { PATH: `${options.binDir}${delimiter}${process.env.PATH ?? ""}` } : {}),
       ...(options.jobs === undefined ? {} : { BUN_TEST_JOBS: options.jobs }),
+      ...(options.junitDir ? { BUN_TEST_JUNIT_DIR: options.junitDir } : {}),
       BUN_TEST_ISOLATE_FILES: "1",
       BUN_TEST_FILES: files.join(" "),
       BUN_TEST_TIMEOUT_MS: "60000",
@@ -199,6 +202,33 @@ describe("ci isolate-mode test loop", () => {
       expect(result.output).toContain(`[ci] test ${second}`);
       expect(result.output).not.toContain("[ci] failed test files (");
       expect(result.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("writes one JUnit report per test file, failures included", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rh-ci-junit-"));
+    const reports = join(dir, "reports");
+    mkdirSync(reports);
+    try {
+      const failing = writeTestFile(dir, "junit-failing.test.ts", false);
+      const passing = writeTestFile(dir, "junit-passing.test.ts", true);
+
+      const result = runIsolatedGate([failing, passing], { junitDir: reports });
+
+      expect(result.status).toBe(1);
+      const names = readdirSync(reports).sort();
+      expect(names).toEqual([
+        `${failing.replace(/[\\/]/g, "__")}.xml`,
+        `${passing.replace(/[\\/]/g, "__")}.xml`,
+      ].sort());
+      const failed = readFileSync(join(reports, names.find((name) => name.includes("junit-failing"))!), "utf-8");
+      expect(failed).toContain('failures="1"');
+      expect(failed).toContain("<failure");
+      const passed = readFileSync(join(reports, names.find((name) => name.includes("junit-passing"))!), "utf-8");
+      expect(passed).toContain('<testcase name="passes"');
+      expect(passed).toContain('failures="0"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

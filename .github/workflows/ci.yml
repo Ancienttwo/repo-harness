@@ -159,6 +159,15 @@ jobs:
       - run: bash scripts/check-ci.sh affected
         env:
           CI_SHARD: ${{ matrix.shard }}/3
+      # Per-file JUnit reports from scripts/lib/ci-run-tests.sh. A shard with no selected file has none.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-affected-shard-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: .ai/harness/runs/junit
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
   # Advisory only: this job is not in the Required / CI aggregate, and its
   # script exits 0 for every architecture result.
@@ -269,6 +278,14 @@ jobs:
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
       - run: bash scripts/check-ci.sh functional
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-daily-${{ github.run_attempt }}
+          path: .ai/harness/runs/junit
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
 
   mcp-path-matrix:
     name: Daily MCP path matrix (${{ matrix.os }})

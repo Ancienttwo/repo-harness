@@ -181,6 +181,9 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   echo "[ci] reference-configs projection"
   bun run check:reference-configs
 
+  echo "[ci] test capability projection"
+  bun run check:test-projection
+
   echo "[ci] workflow checks"
   bash scripts/check-deploy-sql-order.sh
   echo "[ci] context files"
