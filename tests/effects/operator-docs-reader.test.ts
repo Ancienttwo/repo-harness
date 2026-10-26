@@ -122,6 +122,11 @@ test('reads outside docs, of .env and of .git are refused', async () => {
   expect(await refusal(docs.file('.env'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/.env'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/.env.local'))).toBe('path_denied');
+  expect(await refusal(docs.file('docs/.ENV'))).toBe('path_denied');
+  expect(await refusal(docs.file('docs/.Env.local'))).toBe('path_denied');
+  expect(await refusal(docs.file('docs/.GIT/config'))).toBe('path_denied');
+  expect(await refusal(docs.file('docs/.SSH/ID_RSA'))).toBe('path_denied');
+  expect(await refusal(docs.file('docs/.NPMRC'))).toBe('path_denied');
   expect(await refusal(docs.file('.git/config'))).toBe('path_denied');
   expect(await refusal(docs.file('docs/.git/config'))).toBe('path_denied');
   expect(await refusal(docs.file('src/code.ts'))).toBe('path_denied');
@@ -192,6 +197,16 @@ test('size, encoding and missing paths have their own refusals', async () => {
   expect(await refusal(docs.file('docs/image.bin'))).toBe('not_text');
   expect(await refusal(docs.file('docs/none.md'))).toBe('not_found');
   expect(await refusal(docs.file('docs/dir'))).toBe('not_a_file');
+});
+
+test('a removed repository root is refused without an absolute path', () => {
+  const { root } = fixture({ 'docs/a.md': 'a\n' });
+  rmSync(root, { recursive: true, force: true });
+  let error: unknown;
+  try { new DocsReader({ root, defaultBranch: 'main' }); } catch (caught) { error = caught; }
+  expect(error).toBeInstanceOf(DocsReadError);
+  expect((error as DocsReadError).code).toBe('repo_unavailable');
+  expect((error as DocsReadError).message).not.toContain(root);
 });
 
 test('a missing default branch and an unsafe branch name are refused', async () => {
