@@ -4,7 +4,7 @@
 > **Slug**: operator-console-uiux
 > **Created**: 2026-10-26 23:10
 > **Updated**: 2026-10-26
-> **Source of truth**: [Claude 文档](https://claude.ai/artifact/6nK8dssBnBGMEB74CnvZHa)，rev 212。本文件是这一版的快照；两者不一致时以文档为准，文档改动后重新导出本文件。
+> **Source of truth**: [Claude 文档](https://claude.ai/artifact/6nK8dssBnBGMEB74CnvZHa)，rev 213。本文件是这一版的快照；两者不一致时以文档为准，文档改动后重新导出本文件。
 > **Design**: [设计画布](https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw)，Version 38；画布和文档都是私有链接，要 owner 分享后才能打开。
 > **Baseline**: `origin/main@e551f3e672085e6d50e91afdd06614be0530b7da`（package `0.24.3`）；Worktree 根目录的说法已对齐 `9b5a15f`（#983、#985）
 > **Tier**: standard
@@ -498,6 +498,8 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 4. **第三期 · 写入通道与本机配置**：写入 API、设置页、安装探测与能力表（G1、G6、G9）；Bot 登记与归属、Slack 渠道与通知负载（G30、G31）。第一个新写入只改本机配置。门槛：G1 已批准。
 5. **第四期 · 文档会话**：引用协议、docs host、事件推送、worktree 与 Draft PR（G3、G4、G5、G8）。门槛：G3 已批准；G5 的 OS 边界有零模型的拒写、拒读、拒连测试证明。
 6. **第五期 · Worktree 清理**：一键清理绿色项；清理会话复用文档会话的宿主，agent 只读调查非绿色项、给建议和归档计划，你逐项授权后先归档再删（G24、G25）。门槛：带授权的删除模式有测试，归档推送成功前不删。
+
+**研发 issue**：第〇期 [#997](https://github.com/Ancienttwo/repo-harness/issues/997)、第一期 [#998](https://github.com/Ancienttwo/repo-harness/issues/998)、第二期 [#999](https://github.com/Ancienttwo/repo-harness/issues/999)、第三期 [#1000](https://github.com/Ancienttwo/repo-harness/issues/1000)、第四期 [#1001](https://github.com/Ancienttwo/repo-harness/issues/1001)、第五期 [#1002](https://github.com/Ancienttwo/repo-harness/issues/1002)。下表每个切片是一个子 issue（#1003–#1025），挂在所属一期下面；PRD 快照在 [#996](https://github.com/Ancienttwo/repo-harness/pull/996)。
 
 **单独排期，不进这次 UI 首版**：「存放层级」一节的目录迁移（worktree 根目录不迁，见 [#987](https://github.com/Ancienttwo/repo-harness/issues/987)）；OAR 升到 0.71.x 和更多 runtime，评审 runtime 有隔离证据才放开（G10）；herdr pin 对齐（G32）。
 
