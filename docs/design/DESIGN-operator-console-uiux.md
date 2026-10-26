@@ -1,12 +1,12 @@
 # Design Brief: operator 控制台 UI/UX 改版
 
-> **Status**: Draft（等用户确认）
+> **Status**: Confirmed（2026-10-27）
 > **Slug**: operator-console-uiux
 > **Owner**: Ancienttwo
 > **Date**: 2026-10-27
 > **Issue**: [#1003](https://github.com/Ancienttwo/repo-harness/issues/1003)（第〇期 [#997](https://github.com/Ancienttwo/repo-harness/issues/997)，切片 0.1）
 >
-> 本稿确认前不取代 `DESIGN-local-human-control-board-v1.md`。确认后，前端切片（1.1 起）引用本稿和下面的场景 id。
+> 用户 2026-10-27 确认本稿。控制台的 UX 以本稿为准，取代 `DESIGN-local-human-control-board-v1.md`；旧稿的标注由切片 0.2（#1004）另开 PR。前端切片（1.1 起）引用本稿和下面的场景 id。
 
 ## 输入与权威
 
@@ -43,7 +43,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | D9 | G30 | Bot 不回 MCP 派活，只走 CLI → herdr | Bots、任务抽屉；`1-BOTS-N1` |
 | D10 | G31 | repo-harness 不读 Slack | Bots、系统；`3-BOTS-N1` |
 | DW | G24、G25 | 绿色项一键清理；非绿色项由用户发起清理会话，agent 给删留建议和归档计划，用户逐项授权后先归档进 `docs/archive/` 再删 | Worktree、清理会话 |
-| DT | G13 | Paper（亮）与 Ink（暗）两套主题并存，亮色 Paper 为默认 | 全部；默认值与代码的冲突见「仍需用户拍板」U1 |
+| DT | G13 | Paper（亮）与 Ink（暗）两套主题并存，亮色 Paper 为默认 | 全部；默认值按 U1：跟随系统，系统是亮色时就是 Paper |
 
 ## 页面清单与上线期
 
@@ -65,7 +65,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | Hooks | `Hooks` | 接入 | 1（1.4） | 无 | `1-HOOKS` |
 | CLI | `CLI` | 接入 | 1（1.4） | 无，卸载只给命令 | `1-CLI` |
 | Bots | `Bots` | 接入 | 1（1.8）；登记归属与 Slack 渠道 3（3.3、3.4） | 无，只给命令 | `1-BOTS`、`3-BOTS` |
-| 架构 | `ArchModules`、`ArchLayers`、`ArchSequence`、`ArchTopology` | 观测 | 现有模块页 1（1.1，待 U2 确认）；四张底图与图层 2（2.1–2.3） | 无 | `1-ARCH`、`2-ARCH` |
+| 架构 | `ArchModules`、`ArchLayers`、`ArchSequence`、`ArchTopology` | 观测 | 现有模块页 1（1.1，U2）；四张底图与图层 2（2.1–2.3） | 无 | `1-ARCH`、`2-ARCH` |
 | 测试 | `Tests` | 观测 | 1（1.6） | 无 | `1-TESTS` |
 | 系统 | `System` | 观测 | 1（1.1；notify 会话修正 1.8） | 无 | `1-SYS` |
 | 工具 | `Tools` | 观测 | 1（1.1；展示字段 1.4） | 无 | `1-TOOLS` |
@@ -97,7 +97,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 - Forbidden extras / non-goals:
   - 在控制台里写代码；向编码会话发消息、steer、停止或注入内容。
   - 从浏览器执行宿主投影（install、update、profile 切换）、registry 清理、卸载 CLI、改 MCP 接入、收回 OAuth 客户端。这些只给命令。
-  - 手机版专门设计（窄屏行为见 U4）；拖拽改列或派工；自动派工。
+  - 手机版专门设计（窄屏按 U4：760px 以下侧栏变抽屉）；拖拽改列或派工；自动派工。
   - 保存或显示凭据；改宿主的 `~/.claude`、`~/.codex`。
   - 在 UI 里跑测试、设红灯门槛、开写测试的会话（D8）。
   - 经 MCP 派活（D9）；读 Slack（D10）。
@@ -290,7 +290,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 
 #### 架构
 
-- `1-ARCH-P1`（待 U2 确认）：Given 第一期上线，When 用户打开架构页，Then 现有模块列表和一跳依赖图在新外框里照常工作，没有新图层。
+- `1-ARCH-P1`（U2）：Given 第一期上线，When 用户打开架构页，Then 现有模块列表和一跳依赖图在新外框里照常工作，没有新图层。
 - `2-ARCH-P1`：Given 第二期上线，When 用户打开架构页，Then 默认是模块底图并打开「今日变更」图层；节点和边来自 `archctx export native`，节点大小按行数，能力之间的边粗细按 import 次数；侧栏收起。
 - `2-ARCH-P2`：Given 用户切到分层、时序或拓扑底图，When 选中一个元素，Then 右侧面板显示代码量、依赖边、相关 PR 或违规项和可复制的修复命令。
 - `2-ARCH-N1`：Given archctx 还没有导出 ADR 的 `appliesTo`（arch-context#407），When 用户查看图层开关，Then「决策」图层不可用并写原因；页面上没有手写数字，也没有改模型的控件。
@@ -321,16 +321,16 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 - `3-SET-F1`：Given 另一个窗口先保存过，When 用户用旧的修订号保存，Then 服务端回 409 `revision_conflict`，页面要求重新加载，没有写入。
 - `3-SET-F2`：Given 意图审计写不进去，When 用户保存，Then 服务端不执行写入，页面显示原因。
 
-## 仍需用户拍板
+## 已确认的待定项（U1–U5）
 
-下面每一行都有建议，用户确认或改选后，0.2 和 1.1 按结果写。
+用户 2026-10-27 在编排会话里确认，每项都按建议定：「#980 的设计稿 U1–U5 已确认，开始派前端 0.2 和 route wiring。」0.2 和 1.1 按下表写。
 
-| # | 问题 | 代码事实 | 建议 |
+| # | 问题 | 代码事实 | 决定（2026-10-27） |
 | --- | --- | --- | --- |
-| U1 | 默认主题：PRD 已定「亮色 Paper 为默认」，代码默认跟随系统 | `theme.ts:14-20`：没存选择时返回 `system` | 保持跟随系统；系统是亮色时就是 Paper。改成固定亮色会改变现有行为 |
+| U1 | 默认主题：PRD 已定「亮色 Paper 为默认」，代码默认跟随系统 | `theme.ts:14-20`：没存选择时返回 `system` | 主题跟随系统；系统是亮色时就是 Paper。不改成固定亮色 |
 | U2 | 第一期架构页：PRD 第一期清单没有架构，但「页面需求」说现有页面全部保留 | 现有模块页 `ArchitectureWorkspace.tsx:239`、`ModuleGraph.tsx:73` | 第一期把现有模块页原样搬进新外框；第二期换成底图和图层 |
-| U3 | 任务抽屉的形态：画布画的是两栏详情页（左列任务列表），PRD 和代码都叫抽屉 | `ItemDrawer.tsx:120` 用 `DrawerFrame`（`Drawer.tsx`） | 保留抽屉，内容按画布的分节排；不新增详情页路由 |
-| U4 | 窄屏：PRD 不做手机版，现有代码有窄屏底部导航，NavRail 规范写 760px 以下侧栏变抽屉 | `App.tsx:179` | 按 NavRail 规范，760px 以下侧栏变抽屉；不为手机单独设计页面 |
+| U3 | 任务抽屉的形态：画布画的是两栏详情页（左列任务列表），PRD 和代码都叫抽屉 | `ItemDrawer.tsx:120` 用 `DrawerFrame`（`Drawer.tsx`） | 任务视图保留抽屉，内容按画布的分节排；不新增详情页路由 |
+| U4 | 窄屏：PRD 不做手机版，现有代码有窄屏底部导航，NavRail 规范写 760px 以下侧栏变抽屉 | `App.tsx:179` | 760px 以下侧栏变抽屉；不为手机单独设计页面 |
 | U5 | 默认语言：画布和 design system 写简体中文，代码默认英文，按浏览器语言选择 | `i18n.ts:13`、`:1793` | 保持现有语言解析；中文用户自动看到中文 |
 
 ## 文档问题
@@ -342,8 +342,8 @@ PRD、画布和 design system 里与代码事实或彼此不一致的地方。�
 | I1 | PRD「背景与目标」：「设计稿在 设计画布 上」 | 链接是 `claude.ai/code/artifact/8d9f19a4…`，与页头的画布链接不同 | PRD 页头 Design 一行是 `JVJiUztNTXwx1wvmFwdcyw` | 两处都用页头的链接 |
 | I2 | PRD「页面需求」架构一行：「ArchLayers、ArchSequence、ArchTopology」「三张底图新增」 | 漏了画布的默认画板 `ArchModules`；与「架构」一节「四张底图」不一致 | `project/canvas.json`：`ArchModules.dc.html` 标题「架构 · 模块（默认）」 | 设计稿列加 `ArchModules`；写成「模块底图改造，另三张新增」 |
 | I3 | PRD「待决问题与里程碑」第一期：「先做首页待办、文档阅读」 | 第一期清单没有架构页；「页面需求」又说现有 8 页全部保留 | `workspace-location.ts:7` 有 `architecture` | 写明第一期把现有模块页搬进新外框（U2） |
-| I4 | PRD「待决问题」：「你确认后再勾选」；Quick-Read：「10 项待用户确认」 | 10 项已在 2026-10-27 批准，勾选框和 Unknowns 都没更新 | #997 评论 6420993596 | 勾选并链接该评论；Unknowns 改为 U1–U5 |
-| I5 | PRD「待决问题」：「亮色 Paper 为默认」 | 代码没存选择时跟随系统 | `theme.ts:14-20` | 由 U1 定 |
+| I4 | PRD「待决问题」：「你确认后再勾选」；Quick-Read：「10 项待用户确认」 | 10 项已在 2026-10-27 批准，勾选框和 Unknowns 都没更新 | #997 评论 6420993596 | 勾选并链接该评论；Unknowns 改为无（U1–U5 已在 2026-10-27 确认） |
+| I5 | PRD「待决问题」：「亮色 Paper 为默认」 | 代码没存选择时跟随系统 | `theme.ts:14-20` | 按 U1 改成「跟随系统，系统是亮色时就是 Paper」 |
 | I6 | PRD「信息架构」图：「侧栏分组 · 首页加 4 组」 | 图里任务抽屉和文档会话是侧栏条目；画布侧栏没有这两项（抽屉从看板打开，会话在「最近」） | 画布各画板的侧栏 | 重画图，去掉这两个条目 |
 | I7 | PRD「开发环境管理」：「Pi Durable、Cursor、Mister Morph 不在默认表里」 | 画布设置页把 Pi Durable 列在主列表，写「随 OAR 内置」 | `Settings.dc.html` runtime 列表 | 改画布（C15） |
 | I8 | PRD 页头：「Version 38」 | 画布接口只给版本 id，无法核对 Version 38 | 画布版本 `1793028533-d1e8` | 页头同时记版本 id |
@@ -379,7 +379,7 @@ PRD、画布和 design system 里与代码事实或彼此不一致的地方。�
 
 ## Layout
 
-- Grid / breakpoints: 侧栏 248–272px，可收起成 64px 图标栏；架构页默认收起，其余页默认展开。主区最宽 1152px；对话和文档正文的阅读列 672px；右侧面板 300–360px。只设计桌面宽度；窄屏见 U4。
+- Grid / breakpoints: 侧栏 248–272px，可收起成 64px 图标栏；架构页默认收起，其余页默认展开。主区最宽 1152px；对话和文档正文的阅读列 672px；右侧面板 300–360px。只设计桌面宽度；760px 以下侧栏变抽屉（U4）。
 - Spacing scale: 4、8、12、16、24、32、40、48px。
 - Key components and hierarchy: NavRail（标识下方是醒目的仓库切换）、ListGroup、SegmentedTabs、StatusBadge、SourceBanner、CommandCopy、MarketCard、FolderCard、DiagramCanvas、Conversation、AgentRow、HookRouteTable。每个组件的说明在 [`design-system/components/`](operator-console/design-system/components/)。
 
@@ -404,17 +404,17 @@ PRD、画布和 design system 里与代码事实或彼此不一致的地方。�
 
 ## Confirmation Checklist
 
-由用户勾选。本稿作者不代勾。
+- [x] Value proposition is clear
+- [x] Primary reference is decided
+- [x] Color is accurate to the reference
+- [x] Anti-pattern / don't list is explicit
+- [x] Motion spec is explicit
+- [x] Product rules/non-goals are frozen; instruction and payload are separate
+- [x] Existing component/domain authorities have exact reuse paths; every new surface is justified
+- [x] Positive, negative, and authority-failure Given/When/Then scenarios are explicit and fail loudly
+- [x] Role-aware visible/backstage-only concept boundary is explicit; `UX-operator-console-uiux-N1` matches a backstage-only or non-goal concept
 
-- [ ] Value proposition is clear
-- [ ] Primary reference is decided
-- [ ] Color is accurate to the reference
-- [ ] Anti-pattern / don't list is explicit
-- [ ] Motion spec is explicit
-- [ ] Product rules/non-goals are frozen; instruction and payload are separate
-- [ ] Existing component/domain authorities have exact reuse paths; every new surface is justified
-- [ ] Positive, negative, and authority-failure Given/When/Then scenarios are explicit and fail loudly
-- [ ] Role-aware visible/backstage-only concept boundary is explicit; `UX-operator-console-uiux-N1` matches a backstage-only or non-goal concept
+勾选记录的是用户在编排会话里的确认（2026-10-27）：「#980 的设计稿 U1–U5 已确认，开始派前端 0.2 和 route wiring。」
 
 ## Preview Attachment
 
