@@ -17,8 +17,8 @@ import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsUnava
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
-import { decodeNotifyStatus, type NotifyStatusV1 } from '../../core/operator/notify-status';
-import { readNotifyStatus, type NotifyStatusReadInput } from './notify-status';
+import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
@@ -161,7 +161,13 @@ export interface OperatorServerOptions {
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_sessions?: (input: AdmittedTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskSessions>;
   readonly read_task_diff?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
-  readonly read_notify_status?: (input: NotifyStatusReadInput) => Promise<NotifyStatusV1>;
+  /** Notify cache reader. GET notify_status and the Bot access collector read only this cache; neither runs Herdr. */
+  readonly read_notify?: () => NotifyCacheV1;
+  /**
+   * Start the in-process notify collector (operator serve). The Bot access
+   * collector also starts it, because it reads its cache. Ignored when a cache reader is injected.
+   */
+  readonly notify_collector?: boolean;
   /** Dev Activity cache reader. GET serves only this cache; it never collects. */
   readonly read_dev_activity?: () => DevActivitySnapshotV2;
   /** Start the in-process Dev Activity collector (operator serve). Ignored when a cache reader is injected. */
@@ -356,6 +362,12 @@ function sendRefusal(
   );
   sendJson(response, status, body, headOnly, extraHeaders);
 }
+
+const NOTIFY_UNAVAILABLE: Readonly<Record<NotifyUnavailableReason, { readonly message: string; readonly next_action: string }>> = {
+  herdr_session_invalid: { message: 'The Herdr session name is invalid.', next_action: 'Restart `repo-harness operator serve` with a valid HERDR_SESSION.' },
+  herdr_unavailable: { message: 'Herdr did not list its plugins.', next_action: 'Check that Herdr is running, then wait for the next collection.' },
+  notify_config_unavailable: { message: 'The notify plugin configuration could not be read.', next_action: 'Check the notify plugin installation, then wait for the next collection.' },
+};
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   docs_pending: { status: 503, message: 'The docs listing is not collected yet.', next_action: 'Retry in a minute.' },
@@ -1740,12 +1752,23 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Notify status accepts no query selectors.'), headOnly);
         return;
       }
-      try {
-        const status = decodeNotifyStatus(await (options.read_notify_status ?? readNotifyStatus)({ env: options.env }));
-        sendJson(response, 200, status, headOnly);
-      } catch {
-        sendRefusal(request, response, 503, errorBody('notify_status_unavailable', 'Notify status is unavailable.'), headOnly);
+      const cache = (options.read_notify ?? notify?.read ?? (() => ({ state: 'pending' }) as const))();
+      if (cache.state === 'pending') {
+        sendRefusal(request, response, 503, errorBody('notify_status_pending', 'The first notify status collection has not finished.', 'Retry in a few seconds.'), headOnly);
+        return;
       }
+      if (cache.state === 'unavailable') {
+        const reason = NOTIFY_UNAVAILABLE[cache.reason];
+        sendRefusal(request, response, 503, errorBody(cache.reason, reason.message, reason.next_action), headOnly);
+        return;
+      }
+      let status;
+      try { status = decodeNotifyStatus(cache.value.status); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('notify_status_invalid', 'The notify status failed validation.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, status, headOnly);
       return;
     }
 
@@ -1904,7 +1927,11 @@ export async function startOperatorServer(
     })
     : null;
   const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env }) : null;
-  const botAccess = options.bot_access_collector && !options.read_bot_access ? startBotAccessCollector({ env: options.env }) : null;
+  const botAccessCollects = options.bot_access_collector === true && !options.read_bot_access;
+  const notify = (options.notify_collector || botAccessCollects) && !options.read_notify ? startNotifyCollector({ env: options.env }) : null;
+  const botAccess = botAccessCollects
+    ? startBotAccessCollector({ env: options.env, read_notify: options.read_notify ?? notify!.read })
+    : null;
   const docs = options.docs_collector && !options.read_docs
     ? startDocsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
@@ -1928,6 +1955,7 @@ export async function startOperatorServer(
       void devActivity?.close();
       void setup?.close();
       void botAccess?.close();
+      void notify?.close();
       void cliInventory?.close();
       void docs?.close();
       rejectListen(error);
@@ -1956,7 +1984,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), cliInventory?.close(), docs?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

@@ -8,6 +8,10 @@ export type NotifyEnableState = 'enabled' | 'disabled' | 'missing';
 export const NOTIFY_CHANNELS = ['webhook', 'slack', 'discord', 'telegram'] as const;
 
 export type NotifyChannel = typeof NOTIFY_CHANNELS[number];
+
+/** Why the notify status is unknown. A probe that fails is never read as "not configured". */
+export const NOTIFY_UNAVAILABLE_REASONS = ['herdr_session_invalid', 'herdr_unavailable', 'notify_config_unavailable'] as const;
+export type NotifyUnavailableReason = typeof NOTIFY_UNAVAILABLE_REASONS[number];
 export type NotifyDeliveryState = 'succeeded' | 'failed' | 'unsupported' | 'unavailable' | 'missing';
 
 export interface NotifyDeliveryV1 {

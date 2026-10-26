@@ -371,7 +371,7 @@ describe('operator serve command and HTTP boundary', () => {
       oauth: { state: 'missing' },
       registry: { state: 'unavailable', reason: 'registry_unavailable' },
       herdr: { session: 'default', status: { state: 'unavailable', reason: 'herdr_status_failed' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } },
-      notify: { state: 'unavailable', reason: 'notify_status_failed' },
+      notify: { state: 'unavailable', reason: 'herdr_unavailable' },
     };
     const entry = { id: 'brew:gh', source: 'brew', package: 'gh', version: '2.62.0', commands: ['gh'], location: '~/.local/bin',
       size_bytes: null, last_used_at: null, unused: true, github: null, deprecated: false, uninstall: null };
