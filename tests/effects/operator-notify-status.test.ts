@@ -463,12 +463,13 @@ describe('notify plugin status', () => {
       try {
         const repoRoot = join(f.root, 'repo');
         binding(repoRoot);
-        const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot } });
+        const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
         expect(sent).toHaveLength(4);
         const bot = sent.find(item => item.url.includes('bot.example'))!;
-        expect(bot.body).toMatchObject({ repository: 'repo-key-1', task: 'task-1019', request_id: 'req-2' });
+        expect(bot.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
         const slack = sent.find(item => item.url === SLACK)!;
         expect(String(slack.body.text)).toContain('task task-1019 · request req-2');
+        expect(String(slack.body.text)).not.toContain('repo-key-1');
         for (const item of sent.filter(item => !item.url.includes('bot.example'))) {
           expect(JSON.stringify(item.body)).toContain('task-1019');
         }
@@ -484,9 +485,9 @@ describe('notify plugin status', () => {
           () => binding(repoRoot, { pane: 'pane-9' })]) {
           setup();
           rmSync(join(f.root, 'state'), { recursive: true, force: true });
-          const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot } });
+          const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
           const bot = sent.find(item => item.url.includes('bot.example'))!;
-          expect(bot.body).toMatchObject({ repository: 'repo-key-1' });
+          expect(bot.body).toMatchObject({ repository: 'demo-repo' });
           expect(bot.body).not.toHaveProperty('task');
           expect(bot.body).not.toHaveProperty('request_id');
           expect(String(sent.find(item => item.url === SLACK)!.body.text)).not.toContain('task ');
@@ -498,34 +499,35 @@ describe('notify plugin status', () => {
       } finally { f.cleanup(); }
     });
 
-    test('human channels name the repository, not the repo_key path', async () => {
-      const f = fixture();
-      try {
-        const repoRoot = join(f.root, 'repo');
-        binding(repoRoot);
-        const key = '/Users/someone/Projects/demo-repo/.git';
-        const { sent } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
-        // The session was written for another repository id, so only the repository is known here.
-        const bot = sent.find(item => item.url.includes('bot.example'))!;
-        expect(bot.body).toMatchObject({ repository: key });
-        for (const item of sent.filter(item => !item.url.includes('bot.example'))) {
-          expect(JSON.stringify(item.body)).not.toContain('/Users/someone');
-          expect(JSON.stringify(item.body)).not.toContain('.git');
-          expect(JSON.stringify(item.body)).toContain('repo demo-repo');
-        }
-      } finally { f.cleanup(); }
-    });
-
-    test('a repo_key path is the repository in the payload and matches the session repository id', async () => {
+    test('every payload names the repository by name, never by the repo_key path', async () => {
       const f = fixture();
       try {
         const repoRoot = join(f.root, 'repo');
         const key = '/Users/some one/Projects/demo-repo/.git';
         binding(repoRoot);
+        // The session carries the same path as its repository id, with a space in it.
         const path = join(repoRoot, '.ai/harness/runs/task-agents/key-1/binding.json');
         writeFileSync(path, readFileSync(path, 'utf8').replace('"repo-key-1"', JSON.stringify(key)));
-        const { sent } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
-        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: key, task: 'task-1019', request_id: 'req-2' });
+        const { sent, stderr, state } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
+        const everything = JSON.stringify(sent.map(item => item.body)) + stderr.join('\n')
+          + readdirSync(state).map(name => readFileSync(join(state, name), 'utf8')).join('\n');
+        expect(everything).not.toContain('/Users/some one');
+        expect(everything).not.toContain('Projects/demo-repo');
+        for (const item of sent.filter(item => !item.url.includes('bot.example'))) expect(JSON.stringify(item.body)).toContain('repo demo-repo');
+      } finally { f.cleanup(); }
+    });
+
+    test('without a repo_name the repository is left out, even when a repo_key path is given', async () => {
+      const f = fixture();
+      try {
+        const { sent } = await run(f, { worktree: { repo_key: '/Users/someone/Projects/demo-repo/.git' } });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+        expect(JSON.stringify(sent)).not.toContain('/Users/someone');
+        // A repo_name that is not a plain name is not forwarded.
+        rmSync(join(f.root, 'state'), { recursive: true, force: true });
+        const odd = await run(f, { worktree: { repo_key: 'k', repo_name: '/Users/someone/demo-repo' } });
+        expect(JSON.stringify(odd.sent)).not.toContain('/Users/someone');
       } finally { f.cleanup(); }
     });
 
@@ -537,7 +539,7 @@ describe('notify plugin status', () => {
         binding(repoRoot, { key: 'key-2', task: 'task-other', started: ['req-9'] });
         const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
         const bot = sent.find(item => item.url.includes('bot.example'))!;
-        expect(bot.body).toMatchObject({ repository: 'repo-key-1' });
+        expect(bot.body).toMatchObject({ repository: 'demo-repo' });
         expect(bot.body).not.toHaveProperty('task');
         expect(bot.body).not.toHaveProperty('request_id');
         expect(JSON.stringify(sent)).not.toContain('task-other');

@@ -74,11 +74,13 @@ function readIdentityFile(path) {
 // Herdr's context names the repository only. The task and the request live in the
 // repo-harness task-agent session that owns this pane. A value that cannot be read, or
 // that two open sessions both claim, is left out: this notice never guesses a task.
-// `repository` is Herdr's repo_key, the same value as the session's repository_id.
+// Herdr's repo_key is a path. It only matches the session's repository_id here and never
+// leaves this function; the payload names the repository by Herdr's repo_name.
 function taskIdentity(data, context, session) {
   const key = context.worktree?.repo_key;
-  const repository = typeof key === 'string' && key.length <= 1024 && !/[\u0000-\u001f]/.test(key) ? key : undefined;
-  const identity = { ...(repository ? { repository } : {}) };
+  const repoKey = typeof key === 'string' && key.length <= 1024 && !/[\u0000-\u001f]/.test(key) ? key : undefined;
+  const name = context.worktree?.repo_name;
+  const identity = { ...(typeof name === 'string' && NAME_PATTERN.test(name) ? { repository: name } : {}) };
   const root = context.worktree?.repo_root;
   if (typeof root !== 'string' || !isAbsolute(root)) return identity;
   try {
@@ -91,7 +93,7 @@ function taskIdentity(data, context, session) {
       let binding;
       try { binding = readIdentityFile(join(dir, 'binding.json')); } catch { continue; }
       if (binding?.runtime !== 'herdr' || binding.pane_id !== data.pane_id || binding.workspace_id !== data.workspace_id
-        || binding.endpoint?.session !== session || (repository && binding.repository_id !== repository)
+        || binding.endpoint?.session !== session || (repoKey && binding.repository_id !== repoKey)
         || typeof binding.task !== 'string' || !ID_PATTERN.test(binding.task) || existsSync(join(dir, 'closed.json'))) continue;
       matches.push({ dir, binding });
     }
@@ -109,12 +111,6 @@ function taskIdentity(data, context, session) {
     return { ...identity, task: binding.task, ...(requestId ? { request_id: requestId } : {}) };
   } catch { /* No readable session: report the repository alone. */ }
   return identity;
-}
-
-// repo_key is a path. Human channels get the repository name Herdr gives, never the path.
-function repoName(context) {
-  const name = context.worktree?.repo_name;
-  return typeof name === 'string' && NAME_PATTERN.test(name) ? name : undefined;
 }
 
 export async function notify(env = process.env, send = fetch, options = {}) {
@@ -143,7 +139,7 @@ export async function notify(env = process.env, send = fetch, options = {}) {
     state_labels: data.state_labels ?? null, workspace_label: context.workspace_label ?? null,
     tab_label: context.tab_label ?? null, ...taskIdentity(data, context, config.NOTIFY_SESSION), ts: new Date(now).toISOString(),
   };
-  const trace = [repoName(context) && `repo ${repoName(context)}`, payload.task && `task ${payload.task}`,
+  const trace = [payload.repository && `repo ${payload.repository}`, payload.task && `task ${payload.task}`,
     payload.request_id && `request ${payload.request_id}`].filter(Boolean).join(' · ');
   const where = [payload.workspace_label, payload.tab_label].filter(Boolean).join(' / ') || payload.workspace_id;
   const text = `Herdr ${payload.agent_status}: ${payload.display_agent || payload.agent || 'agent'} @ ${where}` +
