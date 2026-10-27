@@ -17,6 +17,9 @@ import {
   admittedTaskContextFixture,
 } from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
+import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
+import type { BotAccessRead } from '../bots';
+import { busyBotAccess, degradedBotAccess } from './bots';
 import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
@@ -77,6 +80,9 @@ export function fixtureProps(name: string): OperatorAppProps {
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
     }) };
+  // empty: the first Bot access collection has not finished.
+  const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
+    : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -97,5 +103,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
+    readBotAccess: () => Promise.resolve(botAccess),
   };
 }

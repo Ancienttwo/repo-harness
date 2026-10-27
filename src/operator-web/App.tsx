@@ -6,6 +6,8 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
+import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
+import { BotsFreshness, BotsPage } from './BotsPage';
 import {
   DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
@@ -106,6 +108,8 @@ export interface OperatorAppProps {
   readonly readExecution?: ExecutionReader;
   /** The architecture map route; the Architecture workspace reads it from the server when absent. */
   readonly readArchitectureMap?: ArchitectureMapReader;
+  /** The Bot access collector's cached snapshot behind the Bots page. */
+  readonly readBotAccess?: BotAccessReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -214,6 +218,7 @@ export function OperatorApp({
   readCiRepairs = fetchCiRepairs,
   readExecution = fetchExecution,
   readArchitectureMap,
+  readBotAccess = fetchBotAccess,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -250,6 +255,7 @@ export function OperatorApp({
   useEffect(() => {
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
+  const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
@@ -431,7 +437,8 @@ export function OperatorApp({
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
-            {(SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
+            {workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+              : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
             <span className="max-sm:sr-only">{busy ? t('status.refreshing') : t('status.refresh')}</span>
@@ -464,6 +471,7 @@ export function OperatorApp({
                   onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
               </Suspense>}
           </>}
+          {workspace === 'bots' && <BotsPage view={botAccess} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}

@@ -1,4 +1,4 @@
-import { publicDevActivityText } from './decode';
+import { publicDevActivityText } from '../operator/public-text';
 import { isTruncatedDevActivityReason, type DevActivityAttentionKind, type DevActivityItem, type DevActivitySnapshotV2 } from './types';
 
 /**
