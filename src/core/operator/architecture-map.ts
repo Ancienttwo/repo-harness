@@ -127,7 +127,7 @@ export interface ArchitectureDebtItemV1 { readonly kind: ArchitectureDebtKind; r
 export interface ArchitectureViolationsLayerV1 {
   /** `archctx debt`: unowned and contested paths, stale model anchors. */
   readonly debt: Section<{ readonly items: readonly ArchitectureDebtItemV1[] }, ArchitectureViolationReason>;
-  /** Flow proofs: `archctx flows check` would rebuild the user's CodeGraph index. */
+  /** Flow proofs: `archctx flows check` would sync (write) the user's CodeGraph index. */
   readonly flows: Gap<typeof ARCHITECTURE_FLOWS_REASON>;
   /** `archctx docs anchors`: citations in human-written module docs that no longer match the code. */
   readonly anchors: Section<{ readonly citations: number; readonly nodes: readonly { readonly id: string; readonly findings: number }[] }, ArchitectureViolationReason>;
