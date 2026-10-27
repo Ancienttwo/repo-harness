@@ -8,7 +8,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, decodeDocsAnchorsReport } from '../../core/architecture/projection';
 import {
   ARCHITECTURE_DEBT_KINDS,
   architectureModelDelta,
@@ -47,7 +47,6 @@ const GIT_TIMEOUT_MS = 30_000;
 type Record_ = Record<string, unknown>;
 const isRecord = (value: unknown): value is Record_ => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (value: unknown): string | null => (typeof value === 'string' ? value : null);
-const strings = (value: unknown): string[] | null => (Array.isArray(value) && value.every(entry => typeof entry === 'string') ? value : null);
 const whole = (value: unknown): number | null => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
 function git(root: string, args: readonly string[]): { status: number | null; stdout: Buffer } {
@@ -254,29 +253,33 @@ function archctxData(root: string, args: readonly string[]): Record_ | Architect
   return isRecord(value.data) ? value.data : 'archctx_failed';
 }
 
+/** A report that its ArchContext decoder refuses is a failed run. */
+function decoded<Report>(decode: (value: unknown) => Report, value: unknown): Report | null {
+  try { return decode(value); } catch { return null; }
+}
+
 /** `archctx debt` items. Its ownership and anchor checks must both be complete; it defers the others. */
 function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['debt'] {
   const data = archctxData(root, ['debt', '--json']);
   if (typeof data === 'string') return { state: 'unavailable', reason: data };
-  const checks = Array.isArray(data.checks) ? data.checks.filter(isRecord) : [];
-  for (const name of ['ownership', 'anchors']) {
-    const check = checks.find(entry => entry.check === name);
+  const report = decoded(decodeArchitectureDebtReport, data);
+  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  for (const name of ['ownership', 'anchors'] as const) {
+    const check = report.checks.find(entry => entry.check === name);
     if (check === undefined) return { state: 'unavailable', reason: 'archctx_failed' };
     if (check.coverage !== 'complete') {
-      return { state: 'unavailable', reason: strings(check.reasonCodes)?.includes('codegraph-unavailable') ? 'code_facts_unavailable' : 'code_facts_incomplete' };
+      return { state: 'unavailable', reason: check.reasonCodes.includes('codegraph-unavailable') ? 'code_facts_unavailable' : 'code_facts_incomplete' };
     }
   }
-  if (!Array.isArray(data.items)) return { state: 'unavailable', reason: 'archctx_failed' };
   const items: ArchitectureDebtItemV1[] = [];
-  for (const item of data.items) {
-    const kind = isRecord(item) ? ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind) : undefined;
-    const nodes = isRecord(item) ? strings(item.nodeIds) : null;
-    const paths = isRecord(item) ? strings(item.paths) : null;
-    if (kind === undefined || nodes === null || paths === null || !nodes.every(id => known.has(id)) || !paths.every(isArchitectureRepoPath)
-      || new Set(nodes).size !== nodes.length || new Set(paths).size !== paths.length) {
+  for (const item of report.items) {
+    // The map shows only the kinds of the two complete checks; the map decoder also needs known ids and unique repository paths.
+    const kind = ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind);
+    if (kind === undefined || !item.nodeIds.every(id => known.has(id)) || !item.paths.every(isArchitectureRepoPath)
+      || new Set(item.nodeIds).size !== item.nodeIds.length || new Set(item.paths).size !== item.paths.length) {
       return { state: 'unavailable', reason: 'archctx_failed' };
     }
-    items.push({ kind, nodes, paths });
+    items.push({ kind, nodes: item.nodeIds, paths: item.paths });
   }
   return { state: 'ok', items };
 }
@@ -285,18 +288,13 @@ function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolati
 function readAnchors(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['anchors'] {
   const data = archctxData(root, ['docs', 'anchors', '--json']);
   if (typeof data === 'string') return { state: 'unavailable', reason: data };
-  if (!isRecord(data.codeGraph) || data.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
-  const citations = isRecord(data.summary) ? whole(data.summary.citations) : null;
-  const unchecked = isRecord(data.summary) ? whole(data.summary.unchecked) : null;
-  if (citations === null || unchecked === null || !Array.isArray(data.nodes)) return { state: 'unavailable', reason: 'archctx_failed' };
-  if (unchecked > 0) return { state: 'unavailable', reason: 'code_facts_incomplete' };
-  const nodes = [];
-  for (const node of data.nodes) {
-    const id = isRecord(node) ? string(node.nodeId) : null;
-    if (id === null || !known.has(id) || !isRecord(node) || !Array.isArray(node.findings)) return { state: 'unavailable', reason: 'archctx_failed' };
-    if (node.findings.length > 0) nodes.push({ id, findings: node.findings.length });
-  }
-  return { state: 'ok', citations, nodes };
+  const report = decoded(decodeDocsAnchorsReport, data);
+  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  if (report.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
+  if (report.summary.unchecked > 0) return { state: 'unavailable', reason: 'code_facts_incomplete' };
+  if (!report.nodes.every(node => known.has(node.nodeId))) return { state: 'unavailable', reason: 'archctx_failed' };
+  const nodes = report.nodes.filter(node => node.findings.length > 0).map(node => ({ id: node.nodeId, findings: node.findings.length }));
+  return { state: 'ok', citations: report.summary.citations, nodes };
 }
 
 /**
