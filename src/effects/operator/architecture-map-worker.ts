@@ -1,25 +1,38 @@
 // Child process of the architecture map collector. The model export, git and
 // archctx run synchronously, so they run here, in a process group that the
-// collector kills at its deadline or on close. It takes one repository id,
+// collector kills at its deadline or on close. It takes one repository id and
+// the file that holds the repository's open PRs from the Dev Activity cache,
 // reads the repository registry with the environment it got and writes one
 // JSON line: the result for that repository.
 
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, decodeDocsAnchorsReport } from '../../core/architecture/projection';
 import {
+  ARCHITECTURE_DEBT_KINDS,
+  architectureModelDelta,
+  decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
+  type ArchitectureChangesInput,
+  type ArchitectureDebtItemV1,
   type ArchitectureMapDependencyInput,
+  type ArchitectureMapDependencyReason,
+  type ArchitectureMapImportV1,
+  type ArchitectureMapLayersInput,
   type ArchitectureMapNodeV1,
   type ArchitectureMapRelationV1,
   type ArchitectureMapSizeInput,
   type ArchitectureMapV1,
+  type ArchitecturePullRequestsInput,
+  type ArchitecturePullRequestsSource,
+  type ArchitectureViolationReason,
+  type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
-import { publicDevActivityText } from '../../core/operator/public-text';
+import { isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
-import { runPackageLocalArchctxJson } from '../architecture/archctx-provider';
+import { readArchitectureNativeContext, runPackageLocalArchctxJson } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { publicValue } from './architecture';
@@ -37,6 +50,7 @@ const GIT_TIMEOUT_MS = 30_000;
 type Record_ = Record<string, unknown>;
 const isRecord = (value: unknown): value is Record_ => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+const whole = (value: unknown): number | null => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null);
 
 function git(root: string, args: readonly string[]): { status: number | null; stdout: Buffer } {
   const result = gitSpawnSync(['--no-optional-locks', '-c', 'core.fsmonitor=false', ...args], {
@@ -67,10 +81,10 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
 }
 
 /**
- * What archctx reads besides the commit. `archctx resolve` and `archctx deps`
- * read the worktree model, and the CodeGraph index covers the working tree, so
- * their answers describe the commit only while HEAD names it and the model,
- * or the whole tree, is clean. null: git could not answer.
+ * What archctx reads besides the commit. `archctx resolve`, `deps`, `debt` and
+ * `docs anchors` read the worktree model, and the CodeGraph
+ * index covers the working tree, so their answers describe the commit only while
+ * HEAD names it and the model, or the whole tree, is clean. null: git could not answer.
  */
 export interface CheckoutState {
   readonly head: string | null;
@@ -92,6 +106,28 @@ function readCheckoutState(root: string): CheckoutState {
   };
 }
 
+/** Why a source that reads the worktree model cannot describe `commit`; null when it can. */
+function modelGate(commit: string, checkout: CheckoutState): 'git_read_failed' | 'checkout_changed' | 'model_worktree_dirty' | null {
+  if (checkout.head === null || checkout.modelClean === null) return 'git_read_failed';
+  if (checkout.head !== commit) return 'checkout_changed';
+  return checkout.modelClean ? null : 'model_worktree_dirty';
+}
+
+/** As `modelGate`, for a source that also reads the CodeGraph index: the whole tree must be clean. */
+function treeGate(commit: string, checkout: CheckoutState): 'unreadable' | 'checkout_changed' | 'model_worktree_dirty' | 'code_facts_worktree_dirty' | null {
+  if (checkout.treeClean === null) return 'unreadable';
+  const model = modelGate(commit, checkout);
+  if (model !== null) return model === 'git_read_failed' ? 'unreadable' : model;
+  return checkout.treeClean ? null : 'code_facts_worktree_dirty';
+}
+
+/** The violation checks this collector runs; flow proofs and layer direction have no read-only source. */
+type CollectedViolations = ArchitectureMapLayersInput['violations'];
+
+const CHECKOUT_CHANGED = { state: 'unavailable', reason: 'checkout_changed' } as const;
+const keepIf = <Section extends { readonly state: string }>(section: Section, still: boolean): Section | typeof CHECKOUT_CHANGED =>
+  section.state === 'ok' && !still ? CHECKOUT_CHANGED : section;
+
 /**
  * A cycle reads the commit, then archctx reads the worktree. A checkout or an
  * edit between the two checks pairs facts of two trees, so the cycle drops the
@@ -104,16 +140,34 @@ export function recheckCheckout(
   read: { readonly sizes: ArchitectureMapSizeInput; readonly dependencies: ArchitectureMapDependencyInput },
 ): { readonly sizes: ArchitectureMapSizeInput; readonly dependencies: ArchitectureMapDependencyInput } {
   const moved = before.head !== commit || after.head !== commit;
-  const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
   return {
-    sizes: read.sizes.state === 'ok' && (moved || after.modelClean !== true) ? changed : read.sizes,
-    dependencies: read.dependencies.state === 'ok' && (moved || after.treeClean !== true) ? changed : read.dependencies,
+    sizes: keepIf(read.sizes, !moved && after.modelClean === true),
+    dependencies: keepIf(read.dependencies, !moved && after.treeClean === true),
+  };
+}
+
+/** The same end-of-cycle check for the layers: today's changes and PR owners read the model, each violation check the whole tree. */
+export function recheckLayers(
+  commit: string,
+  before: CheckoutState,
+  after: CheckoutState,
+  read: { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations },
+): { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations } {
+  const moved = before.head !== commit || after.head !== commit;
+  const model = !moved && after.modelClean === true;
+  const tree = !moved && after.treeClean === true;
+  const { debt, anchors, dependencies } = read.violations;
+  return {
+    changes: keepIf(read.changes, model),
+    pull_requests: keepIf(read.pull_requests, model),
+    violations: { debt: keepIf(debt, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree) },
   };
 }
 
 /** The deepest owning node of each path. An unmatched or contested path has no owner. */
 function resolveOwners(root: string, paths: readonly string[]): ReadonlyMap<string, string | null> {
   const owners = new Map<string, string | null>();
+  if (paths.length === 0) return owners;
   const dir = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-map-'));
   try {
     for (let start = 0; start < paths.length; start += RESOLVE_BATCH) {
@@ -138,9 +192,8 @@ function resolveOwners(root: string, paths: readonly string[]): ReadonlyMap<stri
 }
 
 function readSizes(root: string, commit: string, checkout: CheckoutState): ArchitectureMapSizeInput {
-  if (checkout.head === null || checkout.modelClean === null) return { state: 'unavailable', reason: 'git_read_failed' };
-  if (checkout.head !== commit) return { state: 'unavailable', reason: 'checkout_changed' };
-  if (!checkout.modelClean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
+  const gate = modelGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate };
   const lines = readCommitLineCounts(root, commit);
   if (lines === null) return { state: 'unavailable', reason: 'git_read_failed' };
   try {
@@ -150,37 +203,160 @@ function readSizes(root: string, commit: string, checkout: CheckoutState): Archi
   }
 }
 
+const lineList = (stdout: Buffer): string[] => stdout.toString('utf8').split('\n').filter(line => line !== '');
+
 /**
- * Capability import counts from the CodeGraph index that the user built. This collector builds no index.
- * `worktree.headSha` names HEAD, not what the index read, so only a clean tree ties the index to the commit.
+ * Commits on the first-parent chain of `commit` since `since`, the files they
+ * changed with `git diff --numstat`, their owners from `archctx resolve`, and
+ * the model entities that differ from the base commit's `export native`.
  */
-function readDependencies(root: string, commit: string, checkout: CheckoutState): ArchitectureMapDependencyInput {
-  if (checkout.head === null || checkout.modelClean === null || checkout.treeClean === null) return { state: 'unavailable', reason: 'dependencies_unavailable' };
-  if (checkout.head !== commit) return { state: 'unavailable', reason: 'checkout_changed' };
-  if (!checkout.modelClean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
-  if (!checkout.treeClean) return { state: 'unavailable', reason: 'code_facts_worktree_dirty' };
+function readChanges(
+  root: string,
+  commit: string,
+  checkout: CheckoutState,
+  since: string,
+  head: { readonly nodes: readonly unknown[]; readonly relations: readonly unknown[] },
+): ArchitectureChangesInput {
+  const gate = modelGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate };
+  const today = git(root, ['rev-list', '--first-parent', `--since=${since}`, commit]);
+  if (today.status !== 0) return { state: 'unavailable', reason: 'git_read_failed' };
+  const commits = lineList(today.stdout).length;
+  // `--since` filters by committer date; the base is the next commit on the chain, so the window must be the chain's head.
+  const chain = git(root, ['rev-list', '--first-parent', `--max-count=${commits + 1}`, commit]);
+  if (chain.status !== 0 || lineList(chain.stdout).slice(0, commits).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
+  const base = lineList(chain.stdout)[commits];
+  if (base === undefined) return { state: 'unavailable', reason: 'history_starts_today' };
+  const diff = git(root, ['diff', '--numstat', '-z', '--no-renames', '--no-ext-diff', base, commit, '--']);
+  if (diff.status !== 0) return { state: 'unavailable', reason: 'git_read_failed' };
+  const files = new Map<string, { added: number; deleted: number }>();
+  for (const record of diff.stdout.toString('utf8').split('\0')) {
+    if (record === '') continue;
+    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/su.exec(record);
+    if (match === null) return { state: 'unavailable', reason: 'git_read_failed' };
+    // A binary file shows `-`: it changed, with no line count.
+    files.set(match[3]!, { added: match[1] === '-' ? 0 : Number(match[1]), deleted: match[2] === '-' ? 0 : Number(match[2]) });
+  }
+  let owners;
+  try { owners = resolveOwners(root, [...files.keys()]); }
+  catch { return { state: 'unavailable', reason: 'ownership_unavailable' }; }
+  let model: Extract<ArchitectureChangesInput, { state: 'ok' }>['model'];
+  try { model = { state: 'ok', ...architectureModelDelta(readArchitectureNativeContext(root, { kind: 'ref', commit: base }).model, head) }; }
+  catch { model = { state: 'unavailable', reason: 'model_base_unavailable' }; }
+  return { state: 'ok', since, base, commits, files, owners, model };
+}
+
+/** Owners of the open PRs' changed files. The files come from the PR heads; their owners come from the map commit's model. */
+function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource): ArchitecturePullRequestsInput {
+  if (source.state === 'unavailable') return source;
+  const gate = modelGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate };
+  const paths = new Set(source.pull_requests.flatMap(pr => (pr.head_sha !== null && pr.changed_files.state === 'ok' ? pr.changed_files.paths : [])));
+  try { return { ...source, owners: resolveOwners(root, [...paths].sort()) }; }
+  catch { return { state: 'unavailable', reason: 'ownership_unavailable' }; }
+}
+
+type Violation<Fields> = ({ readonly state: 'ok' } & Fields) | { readonly state: 'unavailable'; readonly reason: ArchitectureViolationReason };
+
+/** One archctx JSON command. An error envelope or a failed run is a reason, never a partial answer. */
+function archctxData(root: string, args: readonly string[]): Record_ | ArchitectureViolationReason {
   let value: unknown;
-  try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, ['deps', '--json'], {}, ARCHCTX_TIMEOUT_MS, true).value; }
-  catch { return { state: 'unavailable', reason: 'dependencies_unavailable' }; }
-  if (!isRecord(value)) return { state: 'unavailable', reason: 'dependencies_unavailable' };
-  if (value.ok !== true) {
-    const code = isRecord(value.error) ? value.error.code : null;
-    return { state: 'unavailable', reason: code === 'AC_CODE_FACTS_UNAVAILABLE' ? 'code_facts_unavailable' : 'dependencies_unavailable' };
-  }
-  const data = isRecord(value.data) ? value.data : null;
-  const head = data && isRecord(data.worktree) ? data.worktree.headSha : null;
-  if (head !== commit) return { state: 'unavailable', reason: 'code_facts_other_commit' };
-  if (!data || !isRecord(data.imports) || data.imports.coverage !== 'complete') return { state: 'unavailable', reason: 'code_facts_incomplete' };
-  if (!Array.isArray(data.matrix)) return { state: 'unavailable', reason: 'dependencies_unavailable' };
-  const matrix = [];
-  for (const entry of data.matrix) {
-    if (!isRecord(entry) || typeof entry.from !== 'string' || typeof entry.to !== 'string'
-      || typeof entry.imports !== 'number' || !Number.isSafeInteger(entry.imports) || entry.imports < 0) {
-      return { state: 'unavailable', reason: 'dependencies_unavailable' };
+  try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, args, {}, ARCHCTX_TIMEOUT_MS, true).value; }
+  catch { return 'archctx_failed'; }
+  if (!isRecord(value)) return 'archctx_failed';
+  if (value.ok !== true) return isRecord(value.error) && value.error.code === 'AC_CODE_FACTS_UNAVAILABLE' ? 'code_facts_unavailable' : 'archctx_failed';
+  return isRecord(value.data) ? value.data : 'archctx_failed';
+}
+
+/** A report that its ArchContext decoder refuses is a failed run. */
+function decoded<Report>(decode: (value: unknown) => Report, value: unknown): Report | null {
+  try { return decode(value); } catch { return null; }
+}
+
+/** `archctx debt` items. Its ownership and anchor checks must both be complete; it defers the others. */
+function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['debt'] {
+  const data = archctxData(root, ['debt', '--json']);
+  if (typeof data === 'string') return { state: 'unavailable', reason: data };
+  const report = decoded(decodeArchitectureDebtReport, data);
+  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  for (const name of ['ownership', 'anchors'] as const) {
+    const check = report.checks.find(entry => entry.check === name);
+    if (check === undefined) return { state: 'unavailable', reason: 'archctx_failed' };
+    if (check.coverage !== 'complete') {
+      return { state: 'unavailable', reason: check.reasonCodes.includes('codegraph-unavailable') ? 'code_facts_unavailable' : 'code_facts_incomplete' };
     }
-    matrix.push({ from: entry.from, to: entry.to, imports: entry.imports });
   }
-  return { state: 'ok', matrix };
+  const items: ArchitectureDebtItemV1[] = [];
+  for (const item of report.items) {
+    // The map shows only the kinds of the two complete checks; the map decoder also needs known ids and unique repository paths.
+    const kind = ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind);
+    if (kind === undefined || !item.nodeIds.every(id => known.has(id)) || !item.paths.every(isPublicRepoPath)
+      || new Set(item.nodeIds).size !== item.nodeIds.length || new Set(item.paths).size !== item.paths.length) {
+      return { state: 'unavailable', reason: 'archctx_failed' };
+    }
+    items.push({ kind, nodes: item.nodeIds, paths: item.paths });
+  }
+  return { state: 'ok', items };
+}
+
+/** `archctx docs anchors`: a citation it could not check makes the answer incomplete. */
+function readAnchors(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['anchors'] {
+  const data = archctxData(root, ['docs', 'anchors', '--json']);
+  if (typeof data === 'string') return { state: 'unavailable', reason: data };
+  const report = decoded(decodeDocsAnchorsReport, data);
+  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  if (report.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
+  if (report.summary.unchecked > 0) return { state: 'unavailable', reason: 'code_facts_incomplete' };
+  if (!report.nodes.every(node => known.has(node.nodeId))) return { state: 'unavailable', reason: 'archctx_failed' };
+  const nodes = report.nodes.filter(node => node.findings.length > 0).map(node => ({ id: node.nodeId, findings: node.findings.length }));
+  return { state: 'ok', citations: report.summary.citations, nodes };
+}
+
+/**
+ * One `archctx deps` run: capability import counts, and the rows archctx marks
+ * undeclared. Counts come from the CodeGraph index that the user built; this
+ * collector builds no index. `worktree.headSha` names HEAD, not what the index
+ * read, so only a clean tree ties the index to the commit.
+ */
+function readDependencies(root: string, commit: string, checkout: CheckoutState, capabilities: ReadonlySet<string>): {
+  readonly dependencies: ArchitectureMapDependencyInput;
+  readonly undeclared: Violation<{ readonly edges: readonly ArchitectureMapImportV1[] }>;
+} {
+  const gap = (reason: ArchitectureMapDependencyReason) => ({ dependencies: { state: 'unavailable', reason }, undeclared: { state: 'unavailable', reason } } as const);
+  const gate = treeGate(commit, checkout);
+  if (gate !== null) return gap(gate === 'unreadable' ? 'dependencies_unavailable' : gate);
+  const data = archctxData(root, ['deps', '--json']);
+  if (typeof data === 'string') return gap(data === 'code_facts_unavailable' ? data : 'dependencies_unavailable');
+  const head = isRecord(data.worktree) ? data.worktree.headSha : null;
+  if (head !== commit) return gap('code_facts_other_commit');
+  if (!isRecord(data.imports) || data.imports.coverage !== 'complete') return gap('code_facts_incomplete');
+  if (!Array.isArray(data.matrix)) return gap('dependencies_unavailable');
+  const matrix = [];
+  const undeclared: ArchitectureMapImportV1[] = [];
+  for (const entry of data.matrix) {
+    if (!isRecord(entry) || typeof entry.from !== 'string' || typeof entry.to !== 'string' || whole(entry.imports) === null) return gap('dependencies_unavailable');
+    matrix.push({ from: entry.from, to: entry.to, imports: entry.imports as number });
+    if (entry.declared === false && entry.from !== entry.to && (entry.imports as number) > 0) undeclared.push({ source: entry.from, target: entry.to, imports: entry.imports as number });
+  }
+  const typed = data.matrix.every(entry => isRecord(entry) && typeof entry.declared === 'boolean');
+  return {
+    dependencies: { state: 'ok', matrix },
+    undeclared: typed && undeclared.every(edge => capabilities.has(edge.source) && capabilities.has(edge.target))
+      ? { state: 'ok', edges: undeclared } : { state: 'unavailable', reason: 'archctx_failed' },
+  };
+}
+
+/**
+ * The violation checks that read the CodeGraph index; each runs only on a clean tree at the commit.
+ * `archctx flows check` is not one of them: it runs `codegraph sync` on an existing index.
+ */
+function readViolations(root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>): Omit<CollectedViolations, 'dependencies'> {
+  const gate = treeGate(commit, checkout);
+  if (gate !== null) {
+    const gap = { state: 'unavailable', reason: gate === 'unreadable' ? 'archctx_failed' : gate } as const;
+    return { debt: gap, anchors: gap };
+  }
+  return { debt: readDebt(root, known), anchors: readAnchors(root, known) };
 }
 
 /** The public node and relation fields of the committed model, redacted before projection. */
@@ -201,27 +377,60 @@ function modelEntities(context: { readonly model: { readonly nodes: readonly unk
   return publicValue({ nodes, relations }, root) as { nodes: ArchitectureMapNodeV1[]; relations: ArchitectureMapRelationV1[] };
 }
 
-export function collectArchitectureMap(repositoryId: string, path: string, collectedAt: string): ArchitectureMapWorkerResult {
+/**
+ * One repository's map. `since` starts today's window. This process has no
+ * tests cache: the collector reads the tests layer from it in the server.
+ */
+export function collectArchitectureMap(
+  repositoryId: string,
+  path: string,
+  collectedAt: string,
+  since: string,
+  pullRequests: ArchitecturePullRequestsSource,
+): ArchitectureMapWorkerResult {
   const before = readCheckoutState(path);
   let committed;
   try { committed = readCommittedNativeContext(path); }
   catch { return { id: repositoryId, ok: false, reason: 'model_unavailable' }; }
-  const { nodes, relations } = modelEntities(committed.context, realpathSync(path));
-  const read = { sizes: readSizes(path, committed.commit, before), dependencies: readDependencies(path, committed.commit, before) };
+  const { commit, context } = committed;
+  const { nodes, relations } = modelEntities(context, realpathSync(path));
+  const known = new Set(nodes.map(node => node.id));
+  const capabilities = new Set(nodes.filter(node => node.kind === 'capability').map(node => node.id));
+  const deps = readDependencies(path, commit, before, capabilities);
+  const read = { sizes: readSizes(path, commit, before), dependencies: deps.dependencies };
+  const layers = {
+    changes: readChanges(path, commit, before, since, context.model),
+    pull_requests: readPullRequests(path, commit, before, pullRequests),
+    violations: { ...readViolations(path, commit, before, known), dependencies: deps.undeclared },
+  };
+  const after = readCheckoutState(path);
   const snapshot = projectArchitectureMap({
-    repository_id: repositoryId, commit: committed.commit, collected_at: collectedAt, nodes, relations,
-    ...recheckCheckout(committed.commit, before, readCheckoutState(path), read),
+    repository_id: repositoryId, commit, collected_at: collectedAt, nodes, relations,
+    ...recheckCheckout(commit, before, after, read),
+    layers: { ...recheckLayers(commit, before, after, layers), tests: { state: 'unavailable', reason: 'tests_pending' } },
   });
   return { id: repositoryId, ok: true, snapshot };
 }
 
+/** Local midnight of the collector host: today's changes start there. */
+export function localMidnight(now: Date): string {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight.toISOString();
+}
+
 if (import.meta.main) {
   const id = process.argv[2] ?? '';
+  // The collector wrote this file from its own cache; a file it cannot read leaves only the PR layer without data.
+  let pullRequests: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_unavailable' };
+  try { pullRequests = decodeArchitecturePullRequestsSource(JSON.parse(readFileSync(process.argv[3] ?? '', 'utf8'))); }
+  catch { /* dev_activity_unavailable */ }
   const repo = readRepoHarnessRegistryStrictSnapshot({ env: process.env }).repos.find(entry => entry.id === id);
   let result: ArchitectureMapWorkerResult = { id, ok: false, reason: 'model_unavailable' };
   // A failure is one result; its cause (a path, an archctx error) stays in this process.
   if (repo) {
-    try { result = collectArchitectureMap(repo.id, repo.path, new Date().toISOString()); }
+    const now = new Date();
+    try { result = collectArchitectureMap(repo.id, repo.path, now.toISOString(), localMidnight(now), pullRequests); }
     catch { /* model_unavailable */ }
   }
   // Exit once the line is flushed so a handle left open cannot hold the child past its output.

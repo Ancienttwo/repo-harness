@@ -15,7 +15,7 @@ import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
 import { startTestsCollector, type TestsRepositoryCache } from './tests-collector';
 import { startExecutionCollector, type ExecutionRepositoryCache } from './execution-collector';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from './architecture-map-collector';
-import { decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
+import { architecturePullRequestsSource, decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
 import { decodeTaskExecutionView, type ExecutionStateUnavailableReason } from '../../core/operator/execution-state';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
@@ -2105,7 +2105,14 @@ export async function startOperatorServer(
     ? startTestsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
   const execution = options.execution_collector && !options.read_execution_state ? startExecutionCollector({ env: options.env }) : null;
-  const architectureMap = options.architecture_map_collector && !options.read_architecture_map ? startArchitectureMapCollector({ env: options.env }) : null;
+  const architectureMap = options.architecture_map_collector && !options.read_architecture_map
+    ? startArchitectureMapCollector({
+      env: options.env,
+      read_pull_requests: repositoryId => architecturePullRequestsSource((options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot)(), repositoryId),
+      read_tests: options.read_tests ?? tests?.read,
+      first_cycle_after: devActivity?.settled(),
+    })
+    : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;

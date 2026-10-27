@@ -38,7 +38,7 @@ describe("herdr runtime pin has one source of truth", () => {
     const herdr = readPolicy().external_tooling?.herdr;
     expect(herdr).toBeDefined();
     expect(herdr.min_version).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(herdr.min_version).toBe("0.9.3");
+    expect(herdr.min_version).toBe("0.9.5");
     for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
       const asset = herdr.release_assets?.[platform];
       expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);

@@ -7,7 +7,7 @@ parent: capability.runtime-harness.operator
 layer: core
 summary: Background collectors and projections for the development activity board and the setup pages.
 responsibilities:
-  - Collect Git worktrees, the user's GitHub pull requests and runtime source health into one development activity snapshot.
+  - Collect Git worktrees, the user's GitHub pull requests and runtime source health into one development activity snapshot; an open pull request also carries its head commit and its changed files, or the reason gh gave no complete list.
   - Run the setup check builder in a child process with a deadline and keep the last good setup snapshot.
   - After setup check in the same cycle, probe the agent runtime installations in a child process with a deadline, and keep the last good probe as stale when a later probe fails.
   - Keep a failed source local to its own repository or check, with a fixed reason code.

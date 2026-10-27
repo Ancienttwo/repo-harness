@@ -1,7 +1,7 @@
 id = "aimpact.webhook-notify"
 name = "Webhook Notify"
 version = "0.2.0"
-min_herdr_version = "0.9.3"
+min_herdr_version = "0.9.5"
 description = "Send blocked events to a Bot and selected human channels."
 platforms = ["macos", "linux"]
 

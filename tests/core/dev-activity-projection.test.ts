@@ -30,7 +30,9 @@ function pr(head: string, overrides: Partial<DevActivityRawPullRequest> = {}): D
   return {
     number, title: `PR ${head}`, url: `https://github.com/acme/widgets/pull/${number}`, state: 'open', is_draft: false,
     head_branch: head, base_branch: 'main', merge_state: 'BLOCKED', ci: (overrides.state ?? 'open') === 'open' ? 'pending' : null,
-    review: 'review_required', created_at: iso(3 * DAY), updated_at: iso(DAY), merged_at: null, closed_at: null, ...overrides,
+    review: 'review_required', created_at: iso(3 * DAY), updated_at: iso(DAY), merged_at: null, closed_at: null,
+    head_sha: (overrides.state ?? 'open') === 'open' ? 'b'.repeat(40) : null,
+    changed_files: (overrides.state ?? 'open') === 'open' ? { state: 'ok', paths: [`src/${number}.ts`] } : null, ...overrides,
   };
 }
 
@@ -298,6 +300,14 @@ describe('dev activity decoder', () => {
     pull_requests: [pr('feat/a', { merge_state: 'CLEAN' })],
   })))) as any;
 
+  test('carries an open PR head and its changed files through projection and decode', () => {
+    const decoded = decodeDevActivitySnapshot(valid());
+    expect(decoded.items[0]!.pull_request).toMatchObject({ head_sha: 'b'.repeat(40), changed_files: { state: 'ok', paths: [expect.stringMatching(/^src\/\d+\.ts$/u)] } });
+    const truncated = valid();
+    truncated.items[0].pull_request.changed_files = { state: 'unavailable', reason: 'files_truncated' };
+    expect(decodeDevActivitySnapshot(truncated).items[0]!.pull_request!.changed_files).toEqual({ state: 'unavailable', reason: 'files_truncated' });
+  });
+
   test('accepts a projected snapshot and the unavailable snapshot', () => {
     expect(decodeDevActivitySnapshot(valid()).items).toHaveLength(1);
     expect(decodeDevActivitySnapshot(unavailableDevActivitySnapshot()).status).toBe('unavailable');
@@ -332,6 +342,14 @@ describe('dev activity decoder', () => {
     ['attention without its item', v => { v.attention[0].subject_id = `${REPO}:nope`; }],
     ['unavailable with data', v => { v.status = 'unavailable'; }],
     ['bad time', v => { v.items[0].column_since = 'yesterday'; }],
+    ['open PR with no file answer', v => { v.items[0].pull_request.changed_files = null; }],
+    ['merged PR with a head', v => { Object.assign(v.items[0].pull_request, { state: 'merged', ci: null, merged_at: v.items[0].pull_request.updated_at, changed_files: null }); }],
+    ['bad head commit', v => { v.items[0].pull_request.head_sha = 'HEAD'; }],
+    ['absolute changed file', v => { v.items[0].pull_request.changed_files.paths = ['/Users/me/repo/src/a.ts']; }],
+    ['escaping changed file', v => { v.items[0].pull_request.changed_files.paths = ['src/../../a.ts']; }],
+    ['repeated changed file', v => { v.items[0].pull_request.changed_files.paths = ['src/a.ts', 'src/a.ts']; }],
+    ['unknown file list reason', v => { v.items[0].pull_request.changed_files = { state: 'unavailable', reason: 'too_many' }; }],
+    ['partial file list with paths', v => { v.items[0].pull_request.changed_files = { state: 'unavailable', reason: 'files_truncated', paths: ['src/a.ts'] }; }],
   ];
   for (const [name, mutate] of rejections) {
     test(`rejects ${name}`, () => {
