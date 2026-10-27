@@ -332,7 +332,9 @@ export function NavRail({
             <XIcon size={18} />
           </button>
         </div>
-        <RepositorySwitch model={repositorySwitch} collapsed={collapsed} locale={locale} t={t} onManage={() => open(REPOSITORIES)} />
+        {/* A pick routes like a nav link, so it closes the drawer too. */}
+        <RepositorySwitch model={{ ...repositorySwitch, onSelect: id => { onCloseDrawer(); repositorySwitch.onSelect(id); } }}
+          collapsed={collapsed} locale={locale} t={t} onManage={() => open(REPOSITORIES)} />
         <nav aria-label={t('nav.label')} className="workspace-nav -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1">
           <ul><li><NavLink workspace="home" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
           {GROUPS.map(group => (

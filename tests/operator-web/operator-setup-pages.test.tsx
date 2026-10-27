@@ -94,7 +94,7 @@ describe('navigation', () => {
     }
   });
 
-  test('below 760 px the side rail is a drawer: the menu button opens it, a link routes and closes it, Escape closes it and returns focus', async () => {
+  test('below 760 px the side rail is a drawer: the menu button opens it, a link or a repository pick routes and closes it, Escape closes it and returns focus', async () => {
     await mount('', props(readySetup(NOW)));
     const rail = () => document.querySelector<HTMLElement>('[data-nav-rail]')!;
     const open = document.querySelector<HTMLButtonElement>('[data-rail-open]')!;
@@ -119,6 +119,10 @@ describe('navigation', () => {
     expect(rail().getAttribute('data-drawer')).toBe('closed');
     expect(open.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(open);
+    await act(async () => open.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-switch-option]:not([data-switch-option=""])')!.click());
+    expect(rail().getAttribute('data-drawer')).toBe('closed');
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
