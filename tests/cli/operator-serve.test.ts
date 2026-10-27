@@ -1793,10 +1793,16 @@ test('session discovery is bounded read-only transport with a closed repository 
 });
 
 describe('architecture map', () => {
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const map: ArchitectureMapV1 = projectArchitectureMap({
     repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
     nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layers: {
+      changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      tests: { state: 'unavailable', reason: 'tests_pending' },
+    },
   });
 
   test('the route reads only the injected cache and maps each unavailable state to its code', async () => {
@@ -1836,6 +1842,8 @@ describe('architecture map', () => {
       await collector.settled();
       const ready = collector.read(id);
       expect(ready.state === 'ready' && ready.map.nodes.map(entry => entry.id)).toEqual([MODULE_ID, 'component.module.core']);
+      // The child has no tests cache; without a reader the tests layer stays pending.
+      expect(ready.state === 'ready' && ready.map.layers.tests).toEqual({ state: 'unavailable', reason: 'tests_pending' });
       expect(collector.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
     } finally { await collector.close(); }
     for (const [run_process, reason] of [
@@ -1849,6 +1857,14 @@ describe('architecture map', () => {
         expect(failing.read(id)).toEqual({ state: 'unavailable', reason });
       } finally { await failing.close(); }
     }
+    // The tests layer comes from the tests collector's cache when the child's map arrives.
+    const child = async () => ({ ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) });
+    const withTests = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: child as never, read_tests: () => ({ state: 'unavailable', reason: 'no_daily_run' }) });
+    try {
+      await withTests.settled();
+      const read = withTests.read(id);
+      expect(read.state === 'ready' && read.map.layers.tests).toEqual({ state: 'unavailable', reason: 'no_daily_run' });
+    } finally { await withTests.close(); }
     writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
     const broken = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: async () => { throw new Error('not reached'); } });
     try {

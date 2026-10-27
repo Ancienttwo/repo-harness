@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.archctx
 kind: reads
 source: component.operator.console-collectors
 target: external.archctx
-intent: "Read the committed model, the owner of each file and the capability import counts for the architecture map."
+intent: "Read the committed model, the owner of each file, the capability import counts, the model at a base commit, architecture debt, flow proofs and doc anchors for the architecture map and its layers."

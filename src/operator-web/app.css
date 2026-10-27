@@ -240,7 +240,7 @@
   .architecture-map__box[data-tone="change"], .architecture-map__group[data-tone="change"] { border-color: var(--rh-accent); }
   .architecture-map__box[data-tone="danger"], .architecture-map__group[data-tone="danger"] { @apply border-kumo-danger; }
   .architecture-map__box[data-tone="success"], .architecture-map__group[data-tone="success"] { @apply border-kumo-success; }
-  .architecture-map__box[data-quiet], .architecture-map__group[data-quiet] { opacity: .4; }
+  .architecture-map__box[data-quiet]:not([data-selected]), .architecture-map__group[data-quiet]:not([data-selected]) { opacity: .4; }
   .architecture-map__swatch--undeclared { border-top-style: dashed; border-color: var(--text-color-kumo-danger); }
   @media (max-width: 47.5rem) { .architecture-map__legend { display: none; } }
 }

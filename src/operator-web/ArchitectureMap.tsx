@@ -369,7 +369,7 @@ function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; read
   if (layer === 'violations') {
     const { debt, flows, anchors, dependencies } = violations;
     const gap = (part: keyof typeof violations, reason: ArchitectureViolationReason) =>
-      <Gap key={part} part={part} reason={reason}>{`${t(`architecture.layer.violations.${part}.label`)}: ${t(`architecture.layer.reason.${reason}`)}`}</Gap>;
+      <Gap key={part} part={`violations.${part}`} reason={reason}>{t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason: t(`architecture.layer.reason.${reason}`) })}</Gap>;
     const unowned = debt.state === 'ok' ? debt.items.filter(item => item.nodes.length === 0) : [];
     return <div className="architecture-layer-summary" data-layer-summary="violations">
       {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt.reason)}

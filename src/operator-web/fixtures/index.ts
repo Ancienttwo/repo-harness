@@ -73,12 +73,19 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the task session records could not be read.
   const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
     : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
-  // degraded: the model is served with no line or import counts; empty: the first collection has not finished.
+  // degraded: the model is served with no line or import counts and no layer data; empty: the first collection has not finished.
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' || repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'architecture_map_pending' }
     : { state: 'ok', map: decodeArchitectureMap(fixture === 'busy' ? architectureMap : {
       ...architectureMap,
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
-      dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+      dependencies: noCodeFacts,
+      layers: {
+        ...architectureMap.layers,
+        changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+        violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+        tests: { state: 'unavailable', reason: 'github_unavailable' },
+      },
     }) };
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
