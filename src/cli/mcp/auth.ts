@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { repoHarnessHome } from '../../effects/repo-registry';
+import { repoHarnessHome } from '../../effects/repo-harness-home';
 
 export interface McpLocalConfig {
   version: 1 | 2 | 3;

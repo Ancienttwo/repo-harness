@@ -95,8 +95,6 @@ export interface RepoHarnessRegistryStrictSnapshot extends RepoHarnessRegistrySn
   readonly registryRevision: string;
 }
 
-export { repoHarnessHome };
-
 export function repoHarnessRegisteredReposPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(repoHarnessHome(env), "registered-repos.json");
 }

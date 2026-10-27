@@ -28,7 +28,8 @@ import {
   type TestsUnavailableReason,
 } from '../../core/operator/tests';
 import { runDevActivityProcess, type DevActivityProcessRunner } from '../dev-activity/collector';
-import { readRepoHarnessRegistryStrictSnapshot, repoHarnessHome, type RepoHarnessRegisteredRepo } from '../repo-registry';
+import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
+import { repoHarnessHome } from '../repo-harness-home';
 
 export const TESTS_COLLECT_INTERVAL_MS = 15 * 60_000;
 const TESTS_PENDING_RETRY_MS = 5_000;

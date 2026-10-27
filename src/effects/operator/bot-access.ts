@@ -33,7 +33,8 @@ import {
   type RegistryRepoProjection,
 } from '../../core/operator/bot-access';
 import { readBotRegistry } from '../bot-registry';
-import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError, repoHarnessHome } from '../repo-registry';
+import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
+import { repoHarnessHome } from '../repo-harness-home';
 import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
 import { herdrVersionCheck, requestHerdrObservation, type HerdrJson } from '../terminal/herdr-observation';
 import type { NotifyCacheV1 } from './notify-collector';

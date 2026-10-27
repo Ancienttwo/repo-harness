@@ -14,7 +14,7 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 
 import { processGroupExists, signalProcessGroup, terminateProcessGroupSync } from './process-group-termination';
-import { repoHarnessHome } from './repo-registry';
+import { repoHarnessHome } from './repo-harness-home';
 
 const RECORD_KIND = 'repo-harness-detached-process-group';
 const RECORD_NAME = /^([1-9]\d*)-([1-9]\d*)\.json$/;
