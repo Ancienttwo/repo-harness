@@ -117,10 +117,11 @@ function staleCitation(): OperatorWriteRefusal {
 /**
  * The exclusive mkdir is the path claim: it refuses an existing file,
  * directory or symlink, so the checkout cannot land outside the root through
- * the planned name. A failed `git worktree add` removes the claim when it is
+ * the planned name. The claim must resolve to a managed path before git runs.
+ * A refused claim or a failed `git worktree add` removes the claim when it is
  * still the empty directory this call made. The caller holds the topology lock.
  */
-function addDocsWorktree(repoRoot: string, worktree: string, branch: string, base: string, env: NodeJS.ProcessEnv, deadline: number): string {
+function addDocsWorktree(repoRoot: string, root: string, worktree: string, branch: string, base: string, env: NodeJS.ProcessEnv, deadline: number): string {
   const git = (args: string[]) => gitExecFileSync(args, {
     cwd: repoRoot, gitBin: configuredGitBinary(env), env: gitEnvironment(env), encoding: 'utf8',
     timeout: Math.max(1, deadline - Date.now()), stdio: ['ignore', 'pipe', 'pipe'],
@@ -135,14 +136,25 @@ function addDocsWorktree(repoRoot: string, worktree: string, branch: string, bas
     throw error;
   }
   const claim = lstatSync(worktree);
+  /** True when the claim is gone, so nothing of this call is left on disk. */
+  const releaseClaim = (): boolean => {
+    try {
+      const current = lstatSync(worktree);
+      if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== claim.dev || current.ino !== claim.ino || readdirSync(worktree).length !== 0) return false;
+      rmdirSync(worktree);
+      return true;
+    } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+  };
   const canonical = realpathSync(worktree);
+  // A root component replaced after the root was resolved could move the claim; git must not run there.
+  if (!isManagedWorktreePath(canonical, root, basename(repoRoot))) {
+    if (releaseClaim()) throw refuse(503, 'worktree_root_changed', 'The managed worktree root changed during the request.', 'Retry with a new request_id.');
+    throw new Error('doc session worktree claim resolved outside the managed root');
+  }
   try {
     git(['worktree', 'add', '-b', branch, canonical, base]);
   } catch (error) {
-    try {
-      const current = lstatSync(worktree);
-      if (current.isDirectory() && !current.isSymbolicLink() && current.dev === claim.dev && current.ino === claim.ino && readdirSync(worktree).length === 0) rmdirSync(worktree);
-    } catch { /* the original failure is the one to report */ }
+    releaseClaim();
     throw error;
   }
   return canonical;
@@ -154,13 +166,18 @@ function worktreeExists(): OperatorWriteRefusal {
 
 /** `<repoHarnessHome>/operator/sessions/<sid>/session.json`, created once with mode 0600. */
 function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: JsonValue): void {
-  const sessions = join(prepareOperatorStateDir(env), 'sessions');
-  try { mkdirSync(sessions, { mode: 0o700 }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  const operator = prepareOperatorStateDir(env);
+  const sessions = join(operator, 'sessions');
+  try {
+    mkdirSync(sessions, { mode: 0o700 });
+    syncDirectoryDurably(operator);
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   const directory = join(sessions, sessionId);
   mkdirSync(directory, { mode: 0o700 });
   syncDirectoryDurably(sessions);
   createFileExclusiveDurably(join(directory, 'session.json'), Buffer.from(`${JSON.stringify(record, null, 2)}\n`));
+  // Each new directory entry survives a crash only after its parent is synced.
+  syncDirectoryDurably(directory);
 }
 
 async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDependencies): Promise<OperatorWriteResponse> {
@@ -189,13 +206,11 @@ async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDe
   const deadline = Date.now() + DOC_SESSION_GIT_DEADLINE_MS;
   let canonical: string;
   try {
-    canonical = withWorktreeTopologyLock(primary, () => addDocsWorktree(primary, worktree, branch, base, deps.env, deadline), { deadline });
+    canonical = withWorktreeTopologyLock(primary, () => addDocsWorktree(primary, root, worktree, branch, base, deps.env, deadline), { deadline });
   } catch (error) {
     if (error instanceof ExclusiveLockContentionError) throw refuse(503, 'busy', 'Another worktree change in this repository is running.', 'Retry with a new request_id.');
     throw error;
   }
-  // The claim refuses a symlink, so only a root replaced during the call can land the checkout elsewhere.
-  if (!isManagedWorktreePath(canonical, root, basename(primary))) throw new Error('doc session worktree resolved outside the managed root');
 
   const citations = verified.map(entry => ({ path: entry.citation.path, start_line: entry.start_line, end_line: entry.end_line, relocated: entry.relocated }));
   writeSessionRecord(deps.env, sessionId, {

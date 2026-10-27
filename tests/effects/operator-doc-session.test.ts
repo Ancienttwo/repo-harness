@@ -66,7 +66,8 @@ async function harness(options: { readonly session_id?: () => string; readonly p
   const route = docSessionCreateRoute({
     env, docs_reader: id => (id === repositoryId ? reader : null),
     ...(options.session_id ? { new_session_id: options.session_id } : {}),
-    ...(options.platform ? { platform: options.platform } : {}),
+    // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
+    platform: options.platform ?? 'darwin',
   });
   const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, SESSIONS_INVENTORY], write_routes: [route] });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
@@ -159,6 +160,30 @@ test('a planned worktree path that already exists, even as a symlink out of the 
   expect(answer.body.error.code).toBe('worktree_exists');
   expect(readdirSync(outside)).toEqual([]);
   expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
+});
+
+test('a git failure after the claim removes only the empty claim, and leaves no docs branch and no session record', async () => {
+  const h = await harness();
+  // A branch named `docs` makes every `docs/<slug>` ref impossible, so `git worktree add -b` fails after the claim.
+  git(['branch', 'docs'], h.repo);
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('reconcile_required');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(git(['worktree', 'list', '--porcelain'], h.repo).match(/^worktree /gmu)).toHaveLength(1);
+  expect(existsSync(sessionsDir(h))).toBe(false);
+});
+
+test('an existing docs/<slug> branch is refused before the claim', async () => {
+  const sessionId = 'b'.repeat(32);
+  const h = await harness({ session_id: () => sessionId });
+  git(['branch', `docs/${sessionId.slice(0, 12)}`], h.repo);
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('worktree_exists');
+  expect(readdirSync(h.worktrees)).toEqual([]);
   expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
