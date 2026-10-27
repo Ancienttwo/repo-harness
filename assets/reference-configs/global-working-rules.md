@@ -72,8 +72,8 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 
 - Investigate first, then split work by write ownership. Give each sub-agent one scope that no other agent writes.
 - Give each parallel writer its own worktree from a clean source. A sub-agent commits only in its own worktree. In a shared checkout it does not commit; the parent commits.
-- Implementation sub-agents do not run build, typecheck or tests. They commit early and return early. An evidence role whose task is a named check, such as a root-cause reproduction, still runs that check and does not commit.
-- The parent agent owns task management, conflict resolution, build, typecheck, tests and integration.
+- Implementation sub-agents may run scoped typecheck and affected tests in their own worktree. They commit early and return their check results. An evidence role whose task is a named check, such as a root-cause reproduction, still runs that check and does not commit.
+- The parent agent owns task management, conflict resolution, build and post-merge integration verification, including typecheck and affected tests.
 - After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.
 
 ## Peer Harness Collaboration
