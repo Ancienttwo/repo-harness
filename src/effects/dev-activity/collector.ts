@@ -444,7 +444,10 @@ export function startDevActivityCollector(options: DevActivityCollectorOptions =
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
     inflight = collectDevActivity({ ...options, signal: controller.signal })
-      .then(next => { if (!closed) cache = next; }, () => { /* keep the last cache; its collected_at shows its age */ })
+      .then(next => { if (!closed) cache = next; }, () => {
+        // Keep the last cache; its collected_at shows its age. A failed first cycle still ends the pending state.
+        if (!closed && cache.collected_at === null) cache = { ...unavailableDevActivitySnapshot(), collected_at: new Date((options.now ?? Date.now)()).toISOString() };
+      })
       .finally(() => {
         inflight = null;
         if (closed) return;

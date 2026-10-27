@@ -45,6 +45,11 @@ export interface ArchitectureMapCollectorOptions {
   readonly run_process?: SetupProcessRunner;
   /** The open PRs from the Dev Activity cache; without it the PR impact layer stays `dev_activity_pending`. */
   readonly read_pull_requests?: (repositoryId: string) => ArchitecturePullRequestsSource;
+  /**
+   * The first cycle starts when this settles: `operator serve` passes the Dev Activity
+   * collector's first cycle, so the first map does not read the PR source while it is still pending.
+   */
+  readonly first_cycle_after?: Promise<void>;
   /** The tests collector's cache read; without it the tests layer stays `tests_pending`. */
   readonly read_tests?: (repositoryId: string) => ArchitectureTestsSource;
 }
@@ -71,7 +76,7 @@ function childResult(stdout: string, repositoryId: string, tests: (repositoryId:
   }
 }
 
-/** Collect at start, then every interval after the previous cycle settles. Cycles never overlap. */
+/** Collect at start, or once `first_cycle_after` settles, then every interval after the previous cycle settles. Cycles never overlap. */
 export function startArchitectureMapCollector(options: ArchitectureMapCollectorOptions = {}): ArchitectureMapCollectorHandle {
   const env = { ...process.env, ...options.env };
   const run = options.run_process ?? runSetupProcess;
@@ -126,7 +131,8 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
     });
     return inflight;
   };
-  void cycle();
+  if (options.first_cycle_after === undefined) void cycle();
+  else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
 
   return Object.freeze({
     read: (repositoryId: string): ArchitectureMapRepositoryCache => {

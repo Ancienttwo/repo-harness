@@ -2110,6 +2110,7 @@ export async function startOperatorServer(
       env: options.env,
       read_pull_requests: repositoryId => architecturePullRequestsSource((options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot)(), repositoryId),
       read_tests: options.read_tests ?? tests?.read,
+      first_cycle_after: devActivity?.settled(),
     })
     : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory

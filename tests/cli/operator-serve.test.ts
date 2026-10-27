@@ -1881,6 +1881,22 @@ describe('architecture map', () => {
       const last = handed.at(-1)!;
       expect([JSON.parse(last.text), last.mode, existsSync(last.file)]).toEqual([expected, 0o600, false]);
     }
+    // operator serve starts the first map cycle after Dev Activity's first cycle, so it reads that cycle's PRs.
+    let release!: () => void;
+    const devActivityFirstCycle = new Promise<void>(resolve => { release = resolve; });
+    let collected = false;
+    const ordered = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: reading as never,
+      read_pull_requests: () => (collected ? source : pending), first_cycle_after: devActivityFirstCycle });
+    try {
+      const before = handed.length;
+      await Bun.sleep(20);
+      expect([handed.length, ordered.read(id)]).toEqual([before, { state: 'unavailable', reason: 'architecture_map_pending' }]);
+      collected = true;
+      release();
+      await ordered.settled();
+      expect([handed.length - before, JSON.parse(handed.at(-1)!.text)]).toEqual([1, source]);
+      expect(ordered.read(id).state).toBe('ready');
+    } finally { await ordered.close(); }
     writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
     const broken = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: async () => { throw new Error('not reached'); } });
     try {

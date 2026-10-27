@@ -397,6 +397,21 @@ describe('dev activity collector bounds', () => {
     }
   });
 
+  test('a first cycle that fails ends the pending state with an unavailable snapshot', async () => {
+    const f = fixture(['one'], 0);
+    try {
+      const collector = startDevActivityCollector({
+        env: f.env, interval_ms: 60_000, now: () => Date.parse('2026-10-28T09:00:00.000Z'),
+        run_process: async () => { throw new Error('spawn failed'); },
+      });
+      await collector.settled();
+      await collector.close();
+      expect(collector.read()).toMatchObject({ status: 'unavailable', collected_at: '2026-10-28T09:00:00.000Z', repositories: [], items: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   test('serves unavailable before the first cycle, then the cache; close stops the timer', async () => {
     const f = fixture(['one'], 0);
     try {
