@@ -23,6 +23,7 @@ import { busyBotAccess, degradedBotAccess } from './bots';
 import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { agentsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
@@ -83,6 +84,8 @@ export function fixtureProps(name: string): OperatorAppProps {
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
+  // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
+  const agentsSettings = agentsSettingsStore(now, fixture);
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -104,5 +107,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
     readBotAccess: () => Promise.resolve(botAccess),
+    readAgentsSettings: agentsSettings.read,
+    writeAgentsSettings: agentsSettings.write,
   };
 }
