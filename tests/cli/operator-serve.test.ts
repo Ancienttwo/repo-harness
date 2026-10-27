@@ -372,8 +372,8 @@ describe('operator serve command and HTTP boundary', () => {
       mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
       oauth: { state: 'missing' },
       registry: { state: 'unavailable', reason: 'registry_unavailable' },
-      herdr: { session: 'default', status: { state: 'unavailable', reason: 'herdr_status_failed' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } },
-      notify: { state: 'unavailable', reason: 'herdr_unavailable' },
+      herdr: { state: 'unavailable', reason: 'notify_session_missing' },
+      notify: { state: 'unavailable', reason: 'notify_session_missing' },
     };
     const entry = { id: 'brew:gh', source: 'brew', package: 'gh', version: '2.62.0', commands: ['gh'], location: '~/.local/bin',
       size_bytes: null, last_used_at: null, unused: true, github: null, deprecated: false, uninstall: null };
@@ -391,8 +391,6 @@ describe('operator serve command and HTTP boundary', () => {
       const pending = await get('/api/v1/bot-access');
       expect(pending.status).toBe(503);
       expect(await pending.json()).toEqual({ error: { code: 'bot_access_pending', message: expect.any(String), next_action: expect.any(String) } });
-      botCache = { state: 'failed', reason: 'herdr_session_invalid' };
-      expect(await (await get('/api/v1/bot-access')).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
       botCache = { state: 'failed', reason: 'bot_access_failed' };
       const failed = await get('/api/v1/bot-access');
       expect(failed.status).toBe(503);
@@ -430,7 +428,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(spawnSyncSpy).not.toHaveBeenCalled();
       expect(execFileSpy).not.toHaveBeenCalled();
       // One read per GET above, including the bot_access_unavailable case.
-      expect(reads).toBe(9);
+      expect(reads).toBe(8);
     } finally {
       spawnSpy.mockRestore();
       spawnSyncSpy.mockRestore();
@@ -445,12 +443,19 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await (await fetch(`${bare.url}/api/v1/cli-inventory`)).json()).toEqual(unavailableCliInventory('collection_pending'));
     } finally { await bare.close(); }
 
-    // The serve collector rejects an invalid Herdr session at start and the route says so at once.
-    const collecting = await startOperatorServer({ port: 0, bot_access_collector: true, collect_fleet_board: async () => snapshot(),
-      env: { ...process.env, HERDR_SESSION: '../outside' } });
+    // The serve collectors take the session only from the install record: HERDR_SESSION in the server
+    // environment neither fails Bot access at start nor stands in for a missing record.
+    const home = mkdtempSync(join(tmpdir(), 'rh-serve-notify-session-'));
+    const collecting = await startOperatorServer({ port: 0, notify_collector: true, collect_fleet_board: async () => snapshot(),
+      env: { ...process.env, REPO_HARNESS_HOME: home, HERDR_SESSION: 'pane-session' } });
     try {
-      expect(await (await fetch(`${collecting.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'herdr_session_invalid' } });
-    } finally { await collecting.close(); }
+      let notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
+      for (let attempt = 0; attempt < 200 && notify.error.code === 'notify_status_pending'; attempt++) {
+        await Bun.sleep(25);
+        notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
+      }
+      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `repo-harness herdr notify install --session <name>`.' });
+    } finally { await collecting.close(); rmSync(home, { recursive: true, force: true }); }
   });
 
   test('serves tests only from the collector cache, with typed unavailable states', async () => {
@@ -566,7 +571,7 @@ describe('operator serve command and HTTP boundary', () => {
       const branch = await file('repo-b', 'path=docs/guide.md');
       expect([branch.status, await code(branch)]).toEqual([503, 'default_branch_unknown']);
       // Either name can make the ref unsafe; the next action names both and says renaming fixes only the remote.
-      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; next_action: string } };
+      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; message: string; next_action: string } };
       expect(ref.error.code).toBe('ref_invalid');
       for (const words of ['remote', 'default branch name', 'fixes only a remote name']) expect(ref.error.next_action).toContain(words);
 

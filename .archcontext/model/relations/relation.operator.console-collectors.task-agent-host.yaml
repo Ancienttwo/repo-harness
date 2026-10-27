@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.task-agent-host
+kind: reads
+source: component.operator.console-collectors
+target: component.task-agent-host.primary
+intent: "Read the Herdr session from the notify install record at the start of each notify and Bot access cycle."

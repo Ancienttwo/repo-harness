@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.primary.repo-policy-registry
+kind: reads
+source: component.task-agent-host.primary
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Root the Herdr notify install record in the account-level repo-harness home."

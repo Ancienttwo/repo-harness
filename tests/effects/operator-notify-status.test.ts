@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createElement } from 'react';
@@ -9,6 +10,7 @@ import { NotifyStatusUnavailableError, readNotifyChannelStatus, type NotifyStatu
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
+import { notifyInstallRecordPath, writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 
 const SECRET = 'fixture-secret-key-must-not-leak';
 
@@ -71,7 +73,10 @@ if (args[0] === 'plugin' && args[1] === 'list') {
     FIXTURE_SOURCE: source,
     FIXTURE_ENABLED: '1',
     FIXTURE_LINKED: '1',
+    REPO_HARNESS_HOME: join(root, 'home'),
   };
+  // The session `herdr notify install` recorded; every read takes it from here.
+  writeNotifyInstallRecord('notify-test', env);
   return { root, config, source, env, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
@@ -102,7 +107,7 @@ describe('notify plugin status', () => {
     try {
       f.env.HERDR_SESSION = 'pane-session';
       f.env.HERDR_SOCKET_PATH = join(f.root, 'pane.sock');
-      await readNotifyStatus({ env: f.env, session: 'notify-test', now: new Date('2026-10-04T00:00:00.000Z') });
+      await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       const calls = readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { argv: string[]; herdr_env: string[] });
       expect(calls.map(call => call.argv.slice(0, 3)).sort()).toEqual([
         ['--session', 'notify-test', 'plugin'],
@@ -113,22 +118,49 @@ describe('notify plugin status', () => {
     } finally { f.cleanup(); }
   });
 
-  test('without an explicit session the reader names the session Herdr itself would select', async () => {
-    for (const [session, expected] of [[undefined, 'default'], ['pane-session', 'pane-session']] as const) {
+  test('the recorded session is read whatever HERDR_SESSION the server has', async () => {
+    for (const session of [undefined, 'default', 'pane-session']) {
       const f = fixture();
       try {
+        writeNotifyInstallRecord('recorded', f.env);
         if (session) f.env.HERDR_SESSION = session; else delete f.env.HERDR_SESSION;
         await readNotifyStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
         const calls = readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { argv: string[] });
-        expect(new Set(calls.map(call => call.argv.slice(0, 2).join(' ')))).toEqual(new Set([`--session ${expected}`]));
+        expect(new Set(calls.map(call => call.argv.slice(0, 2).join(' ')))).toEqual(new Set(['--session recorded']));
       } finally { f.cleanup(); }
     }
   });
 
-  test('an invalid session name is refused before any Herdr call', async () => {
+  test('no install record is notify_session_missing, and a record that fails the strict read is notify_session_invalid, before any Herdr call', async () => {
     const f = fixture();
+    const record = notifyInstallRecordPath(f.env);
     try {
-      expect(await unavailableCode(readNotifyStatus({ env: f.env, session: '../other' }))).toBe('herdr_session_invalid');
+      rmSync(record);
+      f.env.HERDR_SESSION = 'pane-session';
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_session_missing');
+      const valid = { protocol: 1, kind: 'herdr_notify_install', session: 'notify-test' };
+      for (const text of [
+        '{not json',
+        JSON.stringify({ ...valid, at: '2026-10-27T00:00:00.000Z' }),
+        JSON.stringify({ ...valid, session: '../other' }),
+        JSON.stringify({ ...valid, protocol: 2 }),
+        JSON.stringify({ protocol: 1, kind: 'herdr_notify_install' }),
+        JSON.stringify([valid]),
+        JSON.stringify({ ...valid, session: 'x'.repeat(2000) }),
+      ]) {
+        writeFileSync(record, text, { mode: 0o600 });
+        expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_session_invalid');
+      }
+      // A symlink to a valid record is not followed.
+      const target = join(f.root, 'elsewhere.json');
+      writeFileSync(target, JSON.stringify(valid), { mode: 0o600 });
+      rmSync(record);
+      symlinkSync(target, record);
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_session_invalid');
+      // A FIFO is not a regular file, and opening it does not hold the read.
+      rmSync(record);
+      expect(spawnSync('mkfifo', [record]).status).toBe(0);
+      expect(await unavailableCode(readNotifyStatus({ env: f.env }))).toBe('notify_session_invalid');
       expect(() => readFileSync(f.env.FIXTURE_CALLS!, 'utf8')).toThrow();
     } finally { f.cleanup(); }
   });
@@ -137,7 +169,7 @@ describe('notify plugin status', () => {
     const f = fixture();
     try {
       writeFileSync(join(f.config, '.env'), `WEBHOOK_URL='https://bot.example/routine'\nSLACK_WEBHOOK_URL='${SLACK}'\nDISCORD_WEBHOOK_URL='https://discord.example/discord-secret'\nTELEGRAM_BOT_TOKEN='123:telegram-secret'\n`, { mode: 0o600 });
-      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test', now: new Date('2026-10-04T00:00:00.000Z') });
+      const read = await readNotifyChannelStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
       expect(read.channels).toEqual({ webhook: 'missing', slack: 'configured', discord: 'configured', telegram: 'missing' });
       expect(read.status.config).toEqual({ WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'configured' });
       for (const value of [SLACK, 'discord-secret', 'telegram-secret', 'bot.example']) expect(JSON.stringify(read)).not.toContain(value);
@@ -184,8 +216,10 @@ describe('notify plugin status', () => {
     try {
       writeFileSync(join(root, 'herdr'), "#!/bin/sh\ntrap '' TERM\nexec sleep 30\n");
       chmodSync(join(root, 'herdr'), 0o755);
+      const env = { ...process.env, PATH: `${root}:${process.env.PATH}`, REPO_HARNESS_HOME: join(root, 'home') };
+      writeNotifyInstallRecord('notify-test', env);
       const started = Date.now();
-      expect(await unavailableCode(readNotifyStatus({ env: { ...process.env, PATH: `${root}:${process.env.PATH}` }, timeout_ms: 200 }))).toBe('herdr_unavailable');
+      expect(await unavailableCode(readNotifyStatus({ env, timeout_ms: 200 }))).toBe('herdr_unavailable');
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
@@ -193,7 +227,7 @@ describe('notify plugin status', () => {
   test('the collector runs one probe set per cycle, keeps its cache, and replaces it with a code on failure', async () => {
     const f = fixture();
     const calls = () => readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => (JSON.parse(line) as { argv: string[] }).argv.slice(2, 4).join(' '));
-    const collector = startNotifyCollector({ env: f.env, session: 'notify-test', interval_ms: 60_000 });
+    const collector = startNotifyCollector({ env: f.env, interval_ms: 60_000 });
     try {
       expect(collector.read()).toEqual({ state: 'pending' });
       await collector.settled();
@@ -204,18 +238,28 @@ describe('notify plugin status', () => {
     } finally { await collector.close(); }
 
     f.env.FIXTURE_LIST_FAIL = '1';
-    const failing = startNotifyCollector({ env: f.env, session: 'notify-test', interval_ms: 60_000 });
+    const failing = startNotifyCollector({ env: f.env, interval_ms: 60_000 });
     try {
       await failing.settled();
       expect(failing.read()).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
     } finally { await failing.close(); }
-
-    const invalid = startNotifyCollector({ env: f.env, session: '../other' });
-    expect(invalid.read()).toEqual({ state: 'unavailable', reason: 'herdr_session_invalid' });
-    await invalid.settled();
-    expect(invalid.read()).toEqual({ state: 'unavailable', reason: 'herdr_session_invalid' });
-    await invalid.close();
     f.cleanup();
+  });
+
+  test('a record written while the collector runs takes effect on the next cycle, without a restart', async () => {
+    const f = fixture();
+    rmSync(notifyInstallRecordPath(f.env));
+    const collector = startNotifyCollector({ env: f.env, interval_ms: 20 });
+    try {
+      await collector.settled();
+      expect(collector.read()).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
+      writeNotifyInstallRecord('installed-later', f.env);
+      for (let attempt = 0; attempt < 250 && collector.read().state !== 'ok'; attempt++) { await Bun.sleep(20); await collector.settled(); }
+      const cache = collector.read();
+      expect(cache.state === 'ok' && cache.value.status.linked).toBe('linked');
+      const sessions = readFileSync(f.env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => (JSON.parse(line) as { argv: string[] }).argv.slice(0, 2).join(' '));
+      expect(new Set(sessions)).toEqual(new Set(['--session installed-later']));
+    } finally { await collector.close(); f.cleanup(); }
   });
 
   test('a linked plugin can be disabled, and an omitted Slack value is missing', async () => {
@@ -327,7 +371,8 @@ describe('notify plugin status', () => {
       [{ state: 'pending' }, 'notify_status_pending'],
       [{ state: 'unavailable', reason: 'herdr_unavailable' }, 'herdr_unavailable'],
       [{ state: 'unavailable', reason: 'notify_config_unavailable' }, 'notify_config_unavailable'],
-      [{ state: 'unavailable', reason: 'herdr_session_invalid' }, 'herdr_session_invalid'],
+      [{ state: 'unavailable', reason: 'notify_session_missing' }, 'notify_session_missing'],
+      [{ state: 'unavailable', reason: 'notify_session_invalid' }, 'notify_session_invalid'],
       // A cached status that fails the decoder is refused, not sent.
       [{ state: 'ok', value: { ...validDelivery, status: { ...validDelivery.status, linked: 'bogus' } } }, 'notify_status_invalid'],
     ] as const) {
@@ -337,7 +382,8 @@ describe('notify plugin status', () => {
         expect(response.status).toBe(503);
         const body = await response.json() as { error: { code: string; message: string } };
         expect(body.error.code).toBe(code);
-        expect(JSON.stringify(body)).not.toContain('missing');
+        // `notify_session_missing` names a missing record, not a missing status: the rest of the body still says nothing is missing.
+        expect(JSON.stringify(body).replaceAll(code, '')).not.toContain('missing');
       } finally { await server.close(); }
     }
   });
@@ -454,7 +500,7 @@ describe('notify plugin status', () => {
         { finished_unix_ms: 1_700_000_200_000, status: 'succeeded', stderr: '[webhook-notify] TELEGRAM: HTTP 200 app-failed\n' },
         { finished_unix_ms: 1_700_000_300_000, status: 'succeeded', stderr: '' },
       ] } });
-      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const read = await readNotifyChannelStatus({ env: f.env });
       expect(read.deliveries).toEqual({
         webhook: { at: '2023-11-14T22:15:00.000Z', result: 'succeeded' },
         slack: { at: '2023-11-14T22:15:00.000Z', result: 'failed' },
@@ -472,11 +518,11 @@ describe('notify plugin status', () => {
       f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [
         { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
       ] } });
-      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const read = await readNotifyChannelStatus({ env: f.env });
       expect(read.deliveries.webhook).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'succeeded' });
       for (const channel of ['slack', 'discord', 'telegram'] as const) expect(read.deliveries[channel]).toEqual({ at: null, result: 'missing' });
       f.env.FIXTURE_LOGS = 'not json';
-      const unreadable = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const unreadable = await readNotifyChannelStatus({ env: f.env });
       for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) expect(unreadable.deliveries[channel]).toEqual({ at: null, result: 'unavailable' });
     } finally { f.cleanup(); }
   });
@@ -488,7 +534,7 @@ describe('notify plugin status', () => {
         { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] SLACK: HTTP 200\n[webhook-notify] WEBHOOK: HTTP 200\n' },
         { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n[webhook-notify] DISCORD sent private-identity ok\n' },
       ] } });
-      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const read = await readNotifyChannelStatus({ env: f.env });
       expect(read.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
       expect(read.deliveries.slack).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
       expect(read.deliveries.discord).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
@@ -505,7 +551,7 @@ describe('notify plugin status', () => {
         { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n[webhook-notify] SLACK wA:p4:done -> 200\n' },
         { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] SLACK failed: fetch failed\n' },
       ] } });
-      const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const read = await readNotifyChannelStatus({ env: f.env });
       for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) {
         expect(read.deliveries[channel]).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'unsupported' });
       }
@@ -517,7 +563,7 @@ describe('notify plugin status', () => {
         { finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: '[webhook-notify] POST wA:p4:done -> 200\n' },
         { finished_unix_ms: 1_700_000_100_000, status: 'succeeded', stderr: '[webhook-notify] WEBHOOK: HTTP 200\n' },
       ] } });
-      const later = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+      const later = await readNotifyChannelStatus({ env: f.env });
       expect(later.deliveries.webhook).toEqual({ at: '2023-11-14T22:15:00.000Z', result: 'succeeded' });
       expect(later.deliveries.slack).toEqual({ at: '2023-11-14T22:13:20.000Z', result: 'unsupported' });
     } finally { f.cleanup(); }
@@ -701,7 +747,7 @@ describe('notify plugin status', () => {
       try {
         const { stderr } = await run(f, { failing: ['hooks.slack.example'] });
         f.env.FIXTURE_LOGS = JSON.stringify({ result: { logs: [{ finished_unix_ms: 1_700_000_000_000, status: 'succeeded', stderr: stderr.join('\n') + '\n' }] } });
-        const read = await readNotifyChannelStatus({ env: f.env, session: 'notify-test' });
+        const read = await readNotifyChannelStatus({ env: f.env });
         expect(read.deliveries.slack.result).toBe('failed');
         for (const channel of ['webhook', 'discord', 'telegram'] as const) expect(read.deliveries[channel].result).toBe('succeeded');
         expect(read.status.last_delivery.result).toBe('failed');

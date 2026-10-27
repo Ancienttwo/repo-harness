@@ -280,7 +280,7 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
 });
 
 // These fixtures replace only external I/O. They run the shipped command and plugin.
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parseEnv } from 'node:util';
 import { spawn, spawnSync } from 'node:child_process';
@@ -301,7 +301,7 @@ function notifyFixture() {
   for (const dir of [home, config, state, bin]) mkdirSync(dir);
   const tail = join(root, 'tail.txt');
   writeFileSync(tail, 'Result: complete.', { encoding: 'utf8', mode: 0o600 });
-  const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'),
+  const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config'), REPO_HARNESS_HOME: join(home, '.repo-harness'),
     PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${process.env.PATH}`,
     FIXTURE_CONFIG: config, FIXTURE_CALLS: join(root, 'calls.jsonl'), FIXTURE_TAIL_FILE: tail };
   for (const key of Object.keys(env)) if (key.startsWith('HERDR_') || /^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_)/.test(key)) delete (env as NodeJS.ProcessEnv)[key];
@@ -311,7 +311,9 @@ function notifyFixture() {
   const run = (args: string[] = [], extra: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
     [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'install', '--session', 'notify-test', '--non-interactive', ...args],
     { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
-  return { root, workspace, home, config, state, env, run, cleanup: () => {
+  // The record the operator readers take the Herdr session from.
+  const record = join(home, '.repo-harness', 'herdr', 'notify-install.json');
+  return { root, workspace, home, config, state, env, run, record, cleanup: () => {
     rmSync(root, { recursive: true, force: true });
   } };
 }
@@ -409,6 +411,10 @@ describe('Herdr notify install', () => {
         ['--session', 'notify-test', 'plugin', 'enable', 'aimpact.webhook-notify'],
       ]);
       expect(calls.every(call => call.secret === null)).toBe(true);
+      // The install record holds exactly the session: no secret, path or time.
+      expect(readFileSync(fixture.record, 'utf8')).toBe('{"protocol":1,"kind":"herdr_notify_install","session":"notify-test"}\n');
+      expect(statSync(fixture.record).mode & 0o777).toBe(0o600);
+      expect(statSync(dirname(fixture.record)).mode & 0o777).toBe(0o700);
       for (const name of ['herdr-plugin.toml', 'notify.mjs', 'worktree-location.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
       const { notify: installedNotify } = await import(join(fixture.config, 'source/notify.mjs'));
       const delivered: string[] = [];
@@ -470,8 +476,24 @@ describe('Herdr notify install', () => {
         expect(result.stdout + result.stderr).not.toContain('private-webhook-url');
         const calls = readFileSync(fixture.env.FIXTURE_CALLS, 'utf8').trim().split('\n');
         expect(calls).toHaveLength(['list', 'config-dir', 'link', 'enable'].indexOf(operation) + 1);
+        // The record is the last step, so a failed Herdr step, enable included, writes none.
+        expect(existsSync(fixture.record)).toBe(false);
       } finally { fixture.cleanup(); }
     }
+  });
+
+  test('a failed record write exits 1 with a fixed message and writes through no symlink', () => {
+    const fixture = notifyFixture();
+    try {
+      const elsewhere = join(fixture.root, 'elsewhere'); mkdirSync(elsewhere);
+      mkdirSync(join(fixture.home, '.repo-harness'));
+      symlinkSync(elsewhere, dirname(fixture.record));
+      const result = fixture.run(botFlags);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe('Herdr notify: The plugin is enabled, but the install record was not written. Run: repo-harness herdr notify install --session notify-test\n');
+      expect(readdirSync(elsewhere)).toEqual([]);
+      expect(readFileSync(fixture.env.FIXTURE_CALLS, 'utf8')).toContain('"enable"');
+    } finally { fixture.cleanup(); }
   });
 
   test('a config symlink cannot overwrite another file or enable the plugin', () => {

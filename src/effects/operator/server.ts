@@ -372,7 +372,8 @@ function sendRefusal(
 }
 
 const NOTIFY_UNAVAILABLE: Readonly<Record<NotifyUnavailableReason, { readonly message: string; readonly next_action: string }>> = {
-  herdr_session_invalid: { message: 'The Herdr session name is invalid.', next_action: 'Restart `repo-harness operator serve` with a valid HERDR_SESSION.' },
+  notify_session_missing: { message: 'No Herdr notify install record names the session.', next_action: 'Run `repo-harness herdr notify install --session <name>`.' },
+  notify_session_invalid: { message: 'The Herdr notify install record cannot be read.', next_action: 'Run `repo-harness herdr notify install --session <name>` again.' },
   herdr_unavailable: { message: 'Herdr did not list its plugins.', next_action: 'Check that Herdr is running, then wait for the next collection.' },
   notify_config_unavailable: { message: 'The notify plugin configuration could not be read.', next_action: 'Check the notify plugin installation, then wait for the next collection.' },
 };
@@ -1740,9 +1741,7 @@ export async function startOperatorServer(
         return;
       }
       if (cache.state === 'failed') {
-        sendRefusal(request, response, 503, cache.reason === 'herdr_session_invalid'
-          ? errorBody('herdr_session_invalid', 'The Herdr session name is invalid.', 'Restart `repo-harness operator serve` with a valid HERDR_SESSION.')
-          : errorBody('bot_access_unavailable', 'Bot access is unavailable.', 'Restart `repo-harness operator serve`.'), headOnly);
+        sendRefusal(request, response, 503, errorBody('bot_access_unavailable', 'Bot access is unavailable.', 'Restart `repo-harness operator serve`.'), headOnly);
         return;
       }
       let snapshot;

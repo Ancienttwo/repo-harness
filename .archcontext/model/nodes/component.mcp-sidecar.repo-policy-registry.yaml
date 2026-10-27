@@ -23,4 +23,5 @@ source:
     - src/cli/mcp/workspaces.ts
     - src/cli/mcp/audit.ts
     - src/effects/repo-registry.ts
+    - src/effects/repo-harness-home.ts
     - src/core/security/**

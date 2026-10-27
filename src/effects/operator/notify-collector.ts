@@ -16,8 +16,6 @@ export type NotifyCacheV1 =
 
 export interface NotifyCollectorOptions {
   readonly env?: NodeJS.ProcessEnv;
-  /** The Herdr session the plugin was installed into. Defaults to the session Herdr itself selects. */
-  readonly session?: string;
   readonly interval_ms?: number;
   readonly read?: (input: NotifyStatusReadInput) => Promise<NotifyChannelDeliveryStatus>;
 }
@@ -29,17 +27,17 @@ export interface NotifyCollectorHandle {
   readonly close: () => Promise<void>;
 }
 
-/** Collect at start, then every interval after the previous cycle settles. Cycles never overlap. */
+/**
+ * Collect at start, then every interval after the previous cycle settles. Cycles never overlap.
+ * Each cycle reads the install record first, so a new install takes effect without a restart.
+ */
 export function startNotifyCollector(options: NotifyCollectorOptions = {}): NotifyCollectorHandle {
-  const env = { ...process.env, ...options.env };
-  const session = options.session ?? (env.HERDR_SESSION || 'default');
-  const valid = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session);
-  let cache: NotifyCacheV1 = valid ? { state: 'pending' } : { state: 'unavailable', reason: 'herdr_session_invalid' };
-  let closed = !valid;
+  let cache: NotifyCacheV1 = { state: 'pending' };
+  let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
-    inflight = (options.read ?? readNotifyChannelStatus)({ env: options.env, session })
+    inflight = (options.read ?? readNotifyChannelStatus)({ env: options.env })
       .then(value => { if (!closed) cache = { state: 'ok', value }; }, (error: unknown) => {
         if (!closed) cache = { state: 'unavailable', reason: error instanceof NotifyStatusUnavailableError ? error.code : 'herdr_unavailable' };
       })
@@ -51,7 +49,7 @@ export function startNotifyCollector(options: NotifyCollectorOptions = {}): Noti
       });
     return inflight;
   };
-  if (!closed) void cycle();
+  void cycle();
   return Object.freeze({
     read: () => cache,
     settled: () => inflight ?? Promise.resolve(),

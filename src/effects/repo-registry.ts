@@ -1,6 +1,5 @@
 import { createHash } from "crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { basename, dirname, isAbsolute, join, resolve } from "path";
 import {
   acquireExclusiveDirectoryLock,
@@ -11,6 +10,7 @@ import {
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
 import { gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from "./git/runner";
+import { repoHarnessHome } from "./repo-harness-home";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
@@ -95,10 +95,7 @@ export interface RepoHarnessRegistryStrictSnapshot extends RepoHarnessRegistrySn
   readonly registryRevision: string;
 }
 
-/** The single account-level harness home; every host-owned authority store roots here. */
-export function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env.REPO_HARNESS_HOME ?? join(env.HOME ?? env.USERPROFILE ?? homedir(), ".repo-harness"));
-}
+export { repoHarnessHome };
 
 export function repoHarnessRegisteredReposPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(repoHarnessHome(env), "registered-repos.json");
