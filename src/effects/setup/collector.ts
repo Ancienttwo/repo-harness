@@ -32,7 +32,11 @@ export type SetupProcessFailure = 'timeout' | 'failed' | 'aborted';
 export type SetupProcessResult = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly code: SetupProcessFailure };
 export type SetupProcessRunner = (
   argv: readonly string[],
-  options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal },
+  options: {
+    readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal;
+    /** The owner name in the process-group record; the setup collector by default. */
+    readonly service?: string;
+  },
 ) => Promise<SetupProcessResult>;
 
 /**
@@ -45,7 +49,7 @@ export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promis
   const group = process.platform !== 'win32';
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawnRegisteredProcessGroup('setup-collector', () => spawn(process.execPath, [...argv], {
+    child = spawnRegisteredProcessGroup(options.service ?? 'setup-collector', () => spawn(process.execPath, [...argv], {
       cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], detached: group, windowsHide: true,
     }));
   } catch {

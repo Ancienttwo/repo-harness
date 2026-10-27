@@ -10,7 +10,7 @@ responsibilities:
   - Accept GET and HEAD from a loopback Host and same-origin callers; accept POST only with this service's Origin and Sec-Fetch-Site same-origin, and only on a declared write route; refuse every other method with 405.
   - Route each path through the frozen OPERATOR_ROUTES list; production declares no write route, and the server starts a write handler only when the route inventory declares it with method POST and write true.
   - Run slow reads in supervised worker processes and start background collectors once per server.
-  - Serve the Bot access, CLI inventory, notify status, docs and tests GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
+  - Serve the Bot access, CLI inventory, notify status, docs, tests and task execution GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
   - Own the operator serve and runtime capture CLI entry and the Herdr observation transport.
 source:
   include:
@@ -25,6 +25,9 @@ source:
     - src/effects/operator/docs-collector.ts
     - src/effects/operator/docs-reader.ts
     - src/effects/operator/tests-collector.ts
+    - src/effects/operator/execution-collector.ts
+    - src/effects/operator/execution-state-worker.ts
+    - src/effects/operator/execution-state.ts
   entrypoints:
     - id: entrypoint.operator.http-server
       path: src/effects/operator/server.ts
@@ -46,6 +49,9 @@ source:
             - id: sink.operator.tests-collector
               path: src/effects/operator/tests-collector.ts
               symbol: startTestsCollector
+            - id: sink.operator.execution-collector
+              path: src/effects/operator/execution-collector.ts
+              symbol: startExecutionCollector
             - id: sink.operator.cli-inventory-collector
               path: src/effects/setup/cli-inventory.ts
               symbol: startCliInventoryCollector

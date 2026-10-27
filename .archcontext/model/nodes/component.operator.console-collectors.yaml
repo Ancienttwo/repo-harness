@@ -5,13 +5,14 @@ name: Console Collectors
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Background collectors for the Bot access, notify status, docs and tests views; each keeps an in-memory cache that a GET reads.
+summary: Background collectors for the Bot access, notify status, docs, tests and task execution views; each keeps an in-memory cache that a GET reads.
 responsibilities:
   - Own the Herdr notify probes in one notify collector; the notify route and the Bot access collector read its cache, and a failed probe is unavailable with a reason code.
   - Collect Bot access from the MCP doctor, the Bot registry, the OAuth token store, the repository registry, the newest audit rows and Herdr status; the first cycle starts after the first notify cycle.
   - Own one resident git cat-file worker for each registered repository that resolves to exactly one GitHub remote and a valid remote-tracking ref of the GitHub default branch; build and hash the docs listing each cycle, read local refs only and never fetch or write.
   - Read the newest completed daily CI run of the GitHub default branch with gh, download its JUnit and test projection artifacts of the highest attempt into the repo-harness home only for a new run, parse them into memory and delete the older download.
   - Take each repository's GitHub name and default branch only from the Dev Activity cache; a missing name is unavailable with a reason code.
+  - Collect the task execution state of every registered repository in one child process through the setup collector's supervised runner, whose process group the deadline and server close kill, with the repository-selecting git variables removed; a session is verified only when its binding hash, native session record and process identity agree and it has no closed record, and a failed, timed-out or thrown cycle makes every repository unavailable.
 source:
   include:
     - src/effects/operator/bot-access.ts
@@ -20,3 +21,6 @@ source:
     - src/effects/operator/docs-collector.ts
     - src/effects/operator/docs-reader.ts
     - src/effects/operator/tests-collector.ts
+    - src/effects/operator/execution-collector.ts
+    - src/effects/operator/execution-state-worker.ts
+    - src/effects/operator/execution-state.ts
