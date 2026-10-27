@@ -10,6 +10,7 @@ responsibilities:
   - "Project Fleet, planning, organization, decision and task reads into public snapshot shapes."
   - "Decode each public schema with exact field sets so the server and the web console share one contract."
   - "Parse closed request shapes for task and architecture routes before any process starts."
+  - "Own the doc citation protocol: decode a citation of whole lines and find the cited lines at their place, at one unique new place, or report them stale."
   - "Validate bounded organization V2 payloads with exact field sets, repository and admitted-session identities, component consistency, SHA syntax and overlay-to-attention digest linkage. Snapshot builders compute content hashes; the decoder does not recompute them."
 source:
   include:

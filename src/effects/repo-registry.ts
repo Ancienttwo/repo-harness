@@ -139,7 +139,7 @@ type GitLines = { readonly ok: true; readonly lines: string[] } | { readonly ok:
 // The probe must read the checkout at repoRoot, not the repository an outer git hook selected.
 export function repoCheckoutProbeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   const probe = { ...(env ?? process.env) };
-  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, "GIT_COMMON_DIR"]) delete probe[key];
+  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete probe[key];
   return probe;
 }
 
