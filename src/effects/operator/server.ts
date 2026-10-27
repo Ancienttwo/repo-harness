@@ -2105,7 +2105,9 @@ export async function startOperatorServer(
     ? startTestsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
   const execution = options.execution_collector && !options.read_execution_state ? startExecutionCollector({ env: options.env }) : null;
-  const architectureMap = options.architecture_map_collector && !options.read_architecture_map ? startArchitectureMapCollector({ env: options.env }) : null;
+  const architectureMap = options.architecture_map_collector && !options.read_architecture_map
+    ? startArchitectureMapCollector({ env: options.env, read_tests: options.read_tests ?? tests?.read })
+    : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;

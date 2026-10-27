@@ -226,6 +226,22 @@
   .architecture-map__inspector h4 { @apply text-xs font-semibold text-kumo-subtle; }
   .architecture-map__inspector ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs; }
   .architecture-map__id { @apply text-xs text-kumo-subtle; }
+  .architecture-layers { @apply flex flex-wrap gap-1.5; }
+  .architecture-layers button { @apply inline-flex h-7 cursor-pointer items-center rounded-full border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium text-kumo-strong hover:bg-kumo-tint; }
+  .architecture-layers button[data-state="unavailable"] { @apply border-dashed text-kumo-subtle; }
+  .architecture-layers button[aria-pressed="true"] { @apply border-kumo-contrast bg-kumo-contrast text-kumo-inverse; }
+  .architecture-layer-summary { @apply flex min-w-0 flex-col gap-1 text-sm text-kumo-default; overflow-wrap: anywhere; }
+  .architecture-layer-summary details ul { @apply m-0 mt-1 flex list-none flex-col gap-0.5 p-0 text-xs; }
+  .architecture-map__title { @apply flex min-w-0 items-center gap-1.5; }
+  .architecture-map__mark { @apply shrink-0 rounded bg-kumo-recessed px-1 text-[11px] leading-4 text-kumo-subtle; }
+  .architecture-map__mark[data-tone="change"] { color: var(--rh-accent); }
+  .architecture-map__mark[data-tone="danger"] { @apply bg-kumo-danger-tint text-kumo-danger; }
+  .architecture-map__mark[data-tone="success"] { @apply bg-kumo-success-tint text-kumo-success; }
+  .architecture-map__box[data-tone="change"], .architecture-map__group[data-tone="change"] { border-color: var(--rh-accent); }
+  .architecture-map__box[data-tone="danger"], .architecture-map__group[data-tone="danger"] { @apply border-kumo-danger; }
+  .architecture-map__box[data-tone="success"], .architecture-map__group[data-tone="success"] { @apply border-kumo-success; }
+  .architecture-map__box[data-quiet], .architecture-map__group[data-quiet] { opacity: .4; }
+  .architecture-map__swatch--undeclared { border-top-style: dashed; border-color: var(--text-color-kumo-danger); }
   @media (max-width: 47.5rem) { .architecture-map__legend { display: none; } }
 }
 
@@ -235,6 +251,7 @@
 .architecture-map__edge.is-dim .react-flow__edge-path { stroke-opacity: .08; }
 .architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
+.architecture-map__edge--undeclared .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; }
 .architecture-map__edge .react-flow__edge-text { font-family: var(--font-mono); font-size: 11px; fill: var(--text-color-kumo-default); }
 .architecture-map .react-flow__edge-textbg { fill: var(--rh-diagram-bg); }
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
