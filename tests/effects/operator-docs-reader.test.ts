@@ -272,6 +272,35 @@ test('an ancestor swapped during open is refused before worktree bytes are read'
   }
 });
 
+for (const missing of ['ENOENT', 'ENOTDIR'] as const) {
+  test(`a worktree path lost between realpath and lstat (${missing}) still serves the commit`, async () => {
+    const { root, commit } = fixture({ 'docs/nested/guide.md': 'committed\n' });
+    const docs = await reader(root);
+    const target = join(root, 'docs/nested/guide.md');
+    const lstat = fs.lstatSync;
+    let changed = false;
+    const statSpy = spyOn(fs, 'lstatSync').mockImplementation(((...args: Parameters<typeof fs.lstatSync>) => {
+      if (!changed && args[0] === target) {
+        changed = true;
+        if (missing === 'ENOENT') unlinkSync(target);
+        else {
+          fs.renameSync(join(root, 'docs/nested'), join(root, 'docs/saved'));
+          writeFileSync(join(root, 'docs/nested'), 'not a directory');
+        }
+      }
+      return lstat(...args);
+    }) as typeof fs.lstatSync);
+    try {
+      const result = await docs.file('docs/nested/guide.md');
+      expect(changed).toBe(true);
+      expect(result.commit).toBe(commit);
+      expect(result.text).toBe('committed\n');
+      expect(result.sha256).toBe(hash('committed\n'));
+      expect(result.worktree_differs).toBe(true);
+    } finally { statSpy.mockRestore(); }
+  });
+}
+
 test('a worktree FIFO in place of a committed file is marked as differing without blocking', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });
   unlinkSync(join(root, 'docs/a.md'));

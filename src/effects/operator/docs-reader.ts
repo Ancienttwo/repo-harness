@@ -428,6 +428,7 @@ export class DocsReader {
         return { path: physical, absolute: real, dev: stat.dev, ino: stat.ino };
       } catch (error) {
         if (error instanceof DocsReadError) throw error;
+        if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null;
         throw new DocsReadError('git_read_failed', path);
       }
     }
