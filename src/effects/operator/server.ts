@@ -40,6 +40,9 @@ import { terminateProcessGroup, type ProcessGroupTermination } from '../process-
 import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
+import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
+import { AgentsConfigurationError } from '../configuration/agents-configuration';
+import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
@@ -149,6 +152,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
+  // The first write route: it changes only the host config's `agents` section.
+  Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -229,13 +235,15 @@ export interface OperatorServerOptions {
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
   /**
-   * Write routes admitted for POST. Each one must match a `POST`, `write: true`
-   * entry of the route inventory, or the server does not start. Production
-   * passes none: no business write is open yet.
+   * Write routes admitted for POST in addition to the production ones. Each
+   * one must match a `POST`, `write: true` entry of the route inventory, or the
+   * server does not start. Only tests pass this.
    */
   readonly write_routes?: readonly OperatorWriteRoute[];
   /** The route inventory write routes bind to. Production uses OPERATOR_ROUTES; only tests inject another. */
   readonly route_inventory?: readonly OperatorRouteV1[];
+  /** Agent runtime probe cache reader. GET and POST settings read only this cache; neither probes. */
+  readonly read_agent_runtimes?: () => AgentRuntimesCacheV1;
 }
 
 export interface OperatorServerHandle {
@@ -1592,14 +1600,22 @@ export async function startOperatorServer(
   };
 
   const writeToken = createOperatorWriteToken();
-  const writeRoutes = options.write_routes ?? [];
+  const readAgentRuntimes = (): AgentRuntimesCacheV1 =>
+    (options.read_agent_runtimes ?? setup?.read_agent_runtimes ?? (() => ({ status: 'unavailable', reason: 'collection_pending' } as const)))();
+  const writeRoutes = [agentsSettingsWriteRoute(readAgentRuntimes, options.env), ...(options.write_routes ?? [])];
   // The inventory is the one write authority: a handler it does not declare
-  // as a POST write route is a second authority, so the server refuses to start.
+  // as a POST write route is a second authority, and a declared write route
+  // without a handler is a broken contract, so the server refuses to start.
   const routeInventory = options.route_inventory ?? OPERATOR_ROUTES;
   for (const route of writeRoutes) {
     const entry = routeInventory.find(candidate => candidate.id === route.id);
     if (entry?.method !== 'POST' || entry.write !== true || entry.pattern !== route.path.source) {
       throw new OperatorServerError('invalid_argument', `write route ${JSON.stringify(route.id)} has no matching POST write entry in the route inventory`, 400);
+    }
+  }
+  for (const entry of routeInventory) {
+    if (entry.write && !writeRoutes.some(route => route.id === entry.id)) {
+      throw new OperatorServerError('invalid_argument', `route inventory entry ${JSON.stringify(entry.id)} has no write route`, 400);
     }
   }
   // Doc session events are served only when the inventory declares them; production OPERATOR_ROUTES does not yet.
@@ -1679,7 +1695,8 @@ export async function startOperatorServer(
       else sendJson(response, reply.status, reply.body, false, replyHeaders);
       return;
     }
-    if (writeMatch !== null) {
+    // A write path may also be a read resource; only a write-only path refuses GET.
+    if (writeMatch !== null && !routeInventory.some(entry => entry.method === 'GET' && entry.pattern === pathname)) {
       sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only POST is supported.'), headOnly, {
         Allow: OPERATOR_WRITE_ALLOWED_METHODS,
       });
@@ -1773,6 +1790,21 @@ export async function startOperatorServer(
         setupSnapshot = unavailableSetupSnapshot('setup_check_invalid');
       }
       sendJson(response, 200, setupSnapshot, headOnly);
+      return;
+    }
+
+    if (pathname === OPERATOR_SETTINGS_AGENTS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Agent settings accept no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, readAgentsSettings(readAgentRuntimes, options.env), headOnly);
+      } catch (error) {
+        if (!(error instanceof AgentsConfigurationError)) throw error;
+        sendRefusal(request, response, AGENTS_CONFIGURATION_FAILURES[error.code].status,
+          errorBody(error.code, error.message, AGENTS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
+      }
       return;
     }
 
@@ -2060,7 +2092,7 @@ export async function startOperatorServer(
       read_runtime: options.read_runtime_status ?? runtimeService?.read ?? null,
     })
     : null;
-  const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env }) : null;
+  const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env, agent_runtimes: {} }) : null;
   const botAccessCollects = options.bot_access_collector === true && !options.read_bot_access;
   const notify = (options.notify_collector || botAccessCollects) && !options.read_notify ? startNotifyCollector({ env: options.env }) : null;
   const botAccess = botAccessCollects
