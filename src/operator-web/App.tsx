@@ -257,7 +257,9 @@ export function OperatorApp({
   const workspace = place.workspace;
   const [systemMounted, setSystemMounted] = useState(workspace === 'system');
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
-  const fleetActive = workspace === 'repository' || workspace === 'architecture';
+  // Pages that name one repository: they activate the Fleet read and own the
+  // repository switch and docs-tree head.
+  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
 
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -322,7 +324,7 @@ export function OperatorApp({
     navigate(id, null, workspaceHash(next));
     setPlace(next);
   };
-  const busy = state.kind === 'loading' && fleetActive;
+  const busy = state.kind === 'loading' && singleRepository;
 
   const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const previous = snapshotForState(stateRef.current);
@@ -351,8 +353,8 @@ export function OperatorApp({
       return false;
     }
   }, [fetchSnapshot]);
-  // Fleet feeds the repository and architecture pages only; the Board reads development activity.
-  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: fleetActive });
+  // Fleet feeds the pages that name one repository; the Board reads development activity.
+  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: singleRepository });
   const refresh = () => {
     // Explicit refresh supersedes every scoped observation.
     setRepositorySnapshot({ kind: 'idle' });
@@ -405,8 +407,7 @@ export function OperatorApp({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  // Single-repository pages name the repository they read; the board's task drawer names its item's repository.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
+  // The board's task drawer names its item's repository.
   const drawerItem = workspace === 'board' && place.item !== null ? devSnapshot?.items.find(item => item.id === place.item) ?? null : null;
   const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : drawerItem?.repository_id ?? null, refreshGeneration);
   const devRepositories = devSnapshot?.repositories ?? [];

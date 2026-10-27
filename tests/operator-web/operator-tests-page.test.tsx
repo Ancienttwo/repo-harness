@@ -101,6 +101,20 @@ describe('tests page', () => {
     expect(parseWorkspaceLocation('#tests/extra').workspace).toBe('home');
   });
 
+  test('first entry loads repository inventory before showing its test results', async () => {
+    let fleetReads = 0;
+    const requested: string[] = [];
+    const fleet = fixtureProps('busy').initialSnapshot!;
+    await mount('#tests', props(okRead(), {
+      initialSnapshot: undefined,
+      fetchSnapshot: async () => { fleetReads++; return fleet; },
+      readTests: async id => { requested.push(id); return okRead(); },
+    }));
+    expect(fleetReads).toBe(1);
+    expect(requested).toEqual(['repo_a5b76eee64af71c3']);
+    expect(all('[data-test-file]')).toHaveLength(4);
+  });
+
   test('a finished daily run lists its inventory grouped by directory, with per-file results, capabilities and commands', async () => {
     await mount('#tests', props(okRead()));
     expect(document.querySelector('[data-tests-page]')).not.toBeNull();
