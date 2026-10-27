@@ -5,6 +5,7 @@ import {
   OPERATOR_REPOSITORY_SNAPSHOT_KIND,
   type OperatorRepositorySnapshotV1,
 } from '../../src/core/operator/repository-snapshot';
+import { OPERATOR_ARCHITECTURE_MAP_ROUTE } from '../../src/core/operator/architecture-map';
 import {
   OperatorRepositoryError,
   assertOperatorRepositorySnapshotIdentity,
@@ -111,6 +112,7 @@ describe('operator structural write boundary', () => {
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
+      'architecture_map',
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
@@ -142,6 +144,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'architecture_map')).toEqual({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false });
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
