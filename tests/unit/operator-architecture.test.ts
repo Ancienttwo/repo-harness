@@ -389,7 +389,7 @@ describe('architecture map', () => {
       try { step(); } finally { delete process.env.GIT_AUTHOR_DATE; delete process.env.GIT_COMMITTER_DATE; }
     };
     try {
-      dated('2026-10-20T00:00:00Z', () => fixtureGit(root, ['commit', '--amend', '--no-edit', '--quiet']));
+      dated('2026-10-20T00:00:00Z', () => fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--amend', '--no-edit', '--quiet']));
       const base = fixtureGit(root, ['rev-parse', 'HEAD']);
       dated('2026-10-27T12:00:00Z', () => {
         fixtureWrite(root, MODULE_NODE, readFileSync(join(root, MODULE_NODE), 'utf8').replace('Read a committed module.', 'Read a module.'));
