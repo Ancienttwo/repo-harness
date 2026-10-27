@@ -17,6 +17,7 @@ import {
   type ArchitectureMapSizeInput,
   type ArchitectureMapV1,
 } from '../../core/operator/architecture-map';
+import { publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import { runPackageLocalArchctxJson } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
@@ -65,10 +66,49 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
   return lines;
 }
 
-/** `archctx resolve` and `archctx deps` read the worktree model, so they describe the commit's model only when that model is clean. */
-function modelWorktreeClean(root: string): boolean | null {
-  const result = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', MODEL_ROOT]);
+/**
+ * What archctx reads besides the commit. `archctx resolve` and `archctx deps`
+ * read the worktree model, and the CodeGraph index covers the working tree, so
+ * their answers describe the commit only while HEAD names it and the model,
+ * or the whole tree, is clean. null: git could not answer.
+ */
+export interface CheckoutState {
+  readonly head: string | null;
+  readonly modelClean: boolean | null;
+  readonly treeClean: boolean | null;
+}
+
+function clean(root: string, pathspec: readonly string[]): boolean | null {
+  const result = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', ...pathspec]);
   return result.status === 0 ? result.stdout.length === 0 : null;
+}
+
+function readCheckoutState(root: string): CheckoutState {
+  const head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  return {
+    head: head.status === 0 ? head.stdout.toString('utf8').trim() : null,
+    modelClean: clean(root, [MODEL_ROOT]),
+    treeClean: clean(root, []),
+  };
+}
+
+/**
+ * A cycle reads the commit, then archctx reads the worktree. A checkout or an
+ * edit between the two checks pairs facts of two trees, so the cycle drops the
+ * counts that the change can reach. No lock: the next cycle reads again.
+ */
+export function recheckCheckout(
+  commit: string,
+  before: CheckoutState,
+  after: CheckoutState,
+  read: { readonly sizes: ArchitectureMapSizeInput; readonly dependencies: ArchitectureMapDependencyInput },
+): { readonly sizes: ArchitectureMapSizeInput; readonly dependencies: ArchitectureMapDependencyInput } {
+  const moved = before.head !== commit || after.head !== commit;
+  const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
+  return {
+    sizes: read.sizes.state === 'ok' && (moved || after.modelClean !== true) ? changed : read.sizes,
+    dependencies: read.dependencies.state === 'ok' && (moved || after.treeClean !== true) ? changed : read.dependencies,
+  };
 }
 
 /** The deepest owning node of each path. An unmatched or contested path has no owner. */
@@ -97,9 +137,10 @@ function resolveOwners(root: string, paths: readonly string[]): ReadonlyMap<stri
   return owners;
 }
 
-function readSizes(root: string, commit: string, clean: boolean | null): ArchitectureMapSizeInput {
-  if (clean === null) return { state: 'unavailable', reason: 'git_read_failed' };
-  if (!clean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
+function readSizes(root: string, commit: string, checkout: CheckoutState): ArchitectureMapSizeInput {
+  if (checkout.head === null || checkout.modelClean === null) return { state: 'unavailable', reason: 'git_read_failed' };
+  if (checkout.head !== commit) return { state: 'unavailable', reason: 'checkout_changed' };
+  if (!checkout.modelClean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
   const lines = readCommitLineCounts(root, commit);
   if (lines === null) return { state: 'unavailable', reason: 'git_read_failed' };
   try {
@@ -109,10 +150,15 @@ function readSizes(root: string, commit: string, clean: boolean | null): Archite
   }
 }
 
-/** Capability import counts from the CodeGraph index that the user built. This collector builds no index. */
-function readDependencies(root: string, commit: string, clean: boolean | null): ArchitectureMapDependencyInput {
-  if (clean === null) return { state: 'unavailable', reason: 'dependencies_unavailable' };
-  if (!clean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
+/**
+ * Capability import counts from the CodeGraph index that the user built. This collector builds no index.
+ * `worktree.headSha` names HEAD, not what the index read, so only a clean tree ties the index to the commit.
+ */
+function readDependencies(root: string, commit: string, checkout: CheckoutState): ArchitectureMapDependencyInput {
+  if (checkout.head === null || checkout.modelClean === null || checkout.treeClean === null) return { state: 'unavailable', reason: 'dependencies_unavailable' };
+  if (checkout.head !== commit) return { state: 'unavailable', reason: 'checkout_changed' };
+  if (!checkout.modelClean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
+  if (!checkout.treeClean) return { state: 'unavailable', reason: 'code_facts_worktree_dirty' };
   let value: unknown;
   try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, ['deps', '--json'], {}, ARCHCTX_TIMEOUT_MS, true).value; }
   catch { return { state: 'unavailable', reason: 'dependencies_unavailable' }; }
@@ -142,27 +188,29 @@ function modelEntities(context: { readonly model: { readonly nodes: readonly unk
   readonly nodes: ArchitectureMapNodeV1[];
   readonly relations: ArchitectureMapRelationV1[];
 } {
+  // `publicValue` knows this repository's root; the shared guard masks any other absolute path in model prose.
+  const prose = (value: unknown) => publicDevActivityText(string(value) ?? '');
   const nodes = context.model.nodes.filter(isRecord).map(node => ({
-    id: string(node.id) ?? '', kind: string(node.kind) ?? '', name: string(node.name) ?? '', status: string(node.status) ?? '',
-    layer: string(node.layer), parent: string(node.parent), summary: string(node.summary) ?? '',
+    id: string(node.id) ?? '', kind: string(node.kind) ?? '', name: prose(node.name), status: string(node.status) ?? '',
+    layer: string(node.layer), parent: string(node.parent), summary: prose(node.summary),
   }));
   const relations = context.model.relations.filter(isRecord).map(relation => ({
     id: string(relation.id) ?? '', kind: string(relation.kind) ?? '', source: string(relation.source) ?? '',
-    target: string(relation.target) ?? '', intent: string(relation.intent) ?? '',
+    target: string(relation.target) ?? '', intent: prose(relation.intent),
   }));
   return publicValue({ nodes, relations }, root) as { nodes: ArchitectureMapNodeV1[]; relations: ArchitectureMapRelationV1[] };
 }
 
 export function collectArchitectureMap(repositoryId: string, path: string, collectedAt: string): ArchitectureMapWorkerResult {
+  const before = readCheckoutState(path);
   let committed;
   try { committed = readCommittedNativeContext(path); }
   catch { return { id: repositoryId, ok: false, reason: 'model_unavailable' }; }
   const { nodes, relations } = modelEntities(committed.context, realpathSync(path));
-  const clean = modelWorktreeClean(path);
+  const read = { sizes: readSizes(path, committed.commit, before), dependencies: readDependencies(path, committed.commit, before) };
   const snapshot = projectArchitectureMap({
     repository_id: repositoryId, commit: committed.commit, collected_at: collectedAt, nodes, relations,
-    sizes: readSizes(path, committed.commit, clean),
-    dependencies: readDependencies(path, committed.commit, clean),
+    ...recheckCheckout(committed.commit, before, readCheckoutState(path), read),
   });
   return { id: repositoryId, ok: true, snapshot };
 }

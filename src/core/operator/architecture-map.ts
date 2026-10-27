@@ -6,6 +6,8 @@
 // `parent` chain and checks the shape. The strict decoder serves the server
 // before it sends and the browser before it renders.
 
+import { isPublicDevActivityText } from './public-text';
+
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v1' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
@@ -20,11 +22,15 @@ export const ARCHITECTURE_MAP_UNAVAILABLE_REASONS = [
 export type ArchitectureMapUnavailableReason = typeof ARCHITECTURE_MAP_UNAVAILABLE_REASONS[number];
 
 /** Why line counts are missing while the model itself is served. */
-export const ARCHITECTURE_MAP_SIZE_REASONS = ['model_worktree_dirty', 'ownership_unavailable', 'git_read_failed'] as const;
+export const ARCHITECTURE_MAP_SIZE_REASONS = ['model_worktree_dirty', 'checkout_changed', 'ownership_unavailable', 'git_read_failed'] as const;
 export type ArchitectureMapSizeReason = typeof ARCHITECTURE_MAP_SIZE_REASONS[number];
 
-/** Why import counts are missing. The collector never builds a CodeGraph index. */
-export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['model_worktree_dirty', 'code_facts_unavailable', 'code_facts_incomplete', 'code_facts_other_commit', 'dependencies_unavailable'] as const;
+/**
+ * Why import counts are missing. The collector never builds a CodeGraph index.
+ * The index covers the working tree, so it describes the commit only while the
+ * whole tree is clean: `code_facts_worktree_dirty` otherwise.
+ */
+export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['model_worktree_dirty', 'checkout_changed', 'code_facts_worktree_dirty', 'code_facts_unavailable', 'code_facts_incomplete', 'code_facts_other_commit', 'dependencies_unavailable'] as const;
 export type ArchitectureMapDependencyReason = typeof ARCHITECTURE_MAP_DEPENDENCY_REASONS[number];
 
 export interface ArchitectureMapNodeV1 {
@@ -90,8 +96,10 @@ const ENTITY_ID = /^([a-z][a-z0-9]*(\.[a-z0-9][a-z0-9-]*)*::)?[a-z][a-z0-9]*(\.[
 const LAYER = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/u;
 const KIND = /^[a-z][a-z0-9-]{0,63}$/u;
 const id = match(ENTITY_ID);
-const node = object({ id, kind: match(KIND), name: nonEmpty, status: match(KIND), layer: nullable(match(LAYER)), parent: nullable(id), summary: text });
-const relation = object({ id, kind: match(KIND), source: id, target: id, intent: text });
+// Model prose is free text; an absolute path in it never leaves the host.
+const prose = (check: Check): Check => value => check(value) && isPublicDevActivityText(value as string);
+const node = object({ id, kind: match(KIND), name: prose(nonEmpty), status: match(KIND), layer: nullable(match(LAYER)), parent: nullable(id), summary: prose(text) });
+const relation = object({ id, kind: match(KIND), source: id, target: id, intent: prose(text) });
 const size = object({ id, files: positive, lines: count });
 const imports = object({ source: id, target: id, imports: positive });
 const reason = (values: readonly string[]): Check => object({ state: one('unavailable'), reason: one(...values) });

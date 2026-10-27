@@ -5,7 +5,7 @@ import { parseArchitectureRequest } from '../../src/core/operator/architecture';
 import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapNodeV1 } from '../../src/core/operator/architecture-map';
-import { collectArchitectureMap, readCommitLineCounts } from '../../src/effects/operator/architecture-map-worker';
+import { collectArchitectureMap, readCommitLineCounts, recheckCheckout } from '../../src/effects/operator/architecture-map-worker';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -188,6 +188,9 @@ describe('architecture map', () => {
     refused(copy => { copy.nodes.push(copy.nodes[0]); });
     refused(copy => { copy.nodes[2].parent = 'capability.gone.node'; });
     refused(copy => { copy.nodes[0].parent = PART; });
+    refused(copy => { copy.nodes[1].summary = 'Reads /opt/company/private.env'; });
+    refused(copy => { copy.nodes[1].name = 'C:\\Users\\someone\\secret'; });
+    refused(copy => { copy.relations[0].intent = 'Write [/home/someone/.ssh/key]'; });
     refused(copy => { copy.relations[0].target = 'capability.gone.node'; });
     refused(copy => { copy.sizes.nodes[0].id = 'capability.gone.node'; });
     refused(copy => { copy.sizes.nodes[0].files = 0; });
@@ -195,6 +198,41 @@ describe('architecture map', () => {
     refused(copy => { copy.dependencies.edges[0].target = CAP; });
     refused(copy => { copy.dependencies = { state: 'unavailable', reason: 'stale' }; });
     refused(copy => { copy.commit = 'HEAD'; });
+  });
+
+  test('model prose never carries an absolute path, and a dirty source tree withholds import counts', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const nodeText = readFileSync(join(root, MODULE_NODE), 'utf8');
+      expect(nodeText).toContain('Read a committed module.');
+      fixtureWrite(root, MODULE_NODE, nodeText.replace('Read a committed module.', 'Reads /opt/company/private.env'));
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.nodes.find(entry => entry.id === MODULE_ID)?.summary).toBe('Reads [private path]');
+      expect(JSON.stringify(result.snapshot)).not.toContain('/opt/');
+      expect(result.snapshot.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // The CodeGraph index covers the working tree, so an uncommitted source edit withholds import counts; line counts stay.
+      fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
+      const edited = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      expect(edited.ok && [edited.snapshot.sizes.state, edited.snapshot.dependencies]).toEqual(['ok', { state: 'unavailable', reason: 'code_facts_worktree_dirty' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a checkout or edit between the two checks of a cycle drops the counts it can reach', () => {
+    const commit = 'c'.repeat(40);
+    const clean = { head: commit, modelClean: true, treeClean: true };
+    const read = { sizes: { state: 'ok', lines: new Map(), owners: new Map() }, dependencies: { state: 'ok', matrix: [] } } as const;
+    const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
+    expect(recheckCheckout(commit, clean, clean, read)).toEqual(read);
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, { ...clean, head: null }, clean, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: null }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    // An unavailable source keeps its own reason.
+    const dirty = { sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_worktree_dirty' } } as const;
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, dirty)).toEqual(dirty);
   });
 
   test('the worker maps a committed model with git line counts, and imports fail closed without a CodeGraph index', () => {
