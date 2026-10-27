@@ -47,6 +47,7 @@ interface Harness {
 interface HarnessOptions {
   readonly session_id?: () => string;
   readonly platform?: NodeJS.Platform;
+  readonly env?: NodeJS.ProcessEnv;
   /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
   readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
 }
@@ -66,7 +67,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
-  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const env = { ...process.env, ...options.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
@@ -332,5 +333,19 @@ test('a docs view refresh between two citations of one request refuses it, and n
   expect(readdirSync(h.worktrees)).toEqual([]);
   expect(h.branches()).toEqual([]);
   expect(existsSync(sessionsDir(h))).toBe(false);
+});
+
+test('git variables that select another repository do not move the branch or the worktree there', async () => {
+  const other = tmpWorkspace('operator-doc-session-other'); initGitRepo(other);
+  writeFileSync(join(other, 'README.md'), 'other');
+  commitAll(other, 'other');
+  cleanups.push(() => rmSync(other, { recursive: true, force: true }));
+  const h = await harness({ env: { GIT_DIR: join(other, '.git'), GIT_COMMON_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(201);
+  expect(h.branches()).toEqual([answer.body.branch]);
+  expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(join(h.worktrees, answer.body.worktree))}\n`);
+  expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads/docs/'], other)).toBe('');
+  expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
 });
 

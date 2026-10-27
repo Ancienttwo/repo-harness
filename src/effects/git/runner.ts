@@ -26,9 +26,13 @@ import {
  */
 export const DEFAULT_GIT_TIMEOUT_MS = 120_000;
 
-/** Variables that make git ignore the working directory when it selects the repository. */
+/**
+ * Variables that make git ignore the working directory when it selects the repository,
+ * or take its refs, objects and config from another repository.
+ */
 export const REPOSITORY_SELECTING_GIT_ENV = [
   'GIT_DIR',
+  'GIT_COMMON_DIR',
   'GIT_WORK_TREE',
   'GIT_INDEX_FILE',
   'GIT_OBJECT_DIRECTORY',

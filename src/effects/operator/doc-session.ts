@@ -79,7 +79,7 @@ const docsUnavailable = () => refuse(503, 'docs_unavailable', 'The docs view of 
 
 function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = { ...env, GIT_TERMINAL_PROMPT: '0' };
-  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, 'GIT_COMMON_DIR']) delete next[key];
+  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
   return next;
 }
 
