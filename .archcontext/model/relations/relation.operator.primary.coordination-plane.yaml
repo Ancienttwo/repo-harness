@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.coordination-plane
+kind: calls
+source: component.operator.primary
+target: component.workflow-state.coordination-plane
+intent: "Create a doc session worktree under the worktree topology lock of its clone."

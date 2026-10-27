@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.execution-primitives
+kind: reads
+source: component.operator.primary
+target: component.execution-primitives.primary
+intent: "Read the managed worktree root and its naming rule for a doc session worktree."

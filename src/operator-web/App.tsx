@@ -6,6 +6,8 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
+import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
+import { BotsFreshness, BotsPage } from './BotsPage';
 import {
   DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
@@ -31,7 +33,15 @@ import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
-import { fetchCiRepairs, fetchRepositoryHead, useRepositoryHead, type CiRepairsReader, type RepositoryHeadReader } from './repository-reads';
+import {
+  fetchCiRepairs,
+  fetchExecution,
+  fetchRepositoryHead,
+  useRepositoryHead,
+  type CiRepairsReader,
+  type ExecutionReader,
+  type RepositoryHeadReader,
+} from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
 import {
@@ -97,6 +107,10 @@ export interface OperatorAppProps {
   readonly readRepositoryHead?: RepositoryHeadReader;
   /** The tests route's open CI repair issues, for Home's "Today" section. */
   readonly readCiRepairs?: CiRepairsReader;
+  /** The execution route's verified task sessions: the agent on Home and the Board, and the task drawer's follow-up. */
+  readonly readExecution?: ExecutionReader;
+  /** The Bot access collector's cached snapshot behind the Bots page. */
+  readonly readBotAccess?: BotAccessReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -205,6 +219,8 @@ export function OperatorApp({
   initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
+  readExecution = fetchExecution,
+  readBotAccess = fetchBotAccess,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -241,6 +257,7 @@ export function OperatorApp({
   useEffect(() => {
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
+  const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
@@ -423,15 +440,16 @@ export function OperatorApp({
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
-            {workspace === 'cli' ? null : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
+            {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+              : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
             <span className="max-sm:sr-only">{busy ? t('status.refreshing') : t('status.refresh')}</span>
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
-          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <Board view={devActivity} runtime={runtime} filters={boardFilters} onFilters={setFilters} itemId={place.item}
+          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+          {workspace === 'board' && <Board view={devActivity} runtime={runtime} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
@@ -457,6 +475,7 @@ export function OperatorApp({
                   onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
               </Suspense>}
           </>}
+          {workspace === 'bots' && <BotsPage view={botAccess} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}

@@ -43,6 +43,7 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
     readCliInventory: async () => unavailableCliInventory(),
+    readBotAccess: () => new Promise(() => {}),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     ...overrides,
   };
@@ -130,7 +131,7 @@ describe('navigation', () => {
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['agents', 'agents'], ['skills', 'skills'],
-      ['hooks', 'hooks'], ['cli', 'cli'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
+      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
         await act(async () => root?.unmount());
@@ -145,8 +146,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'cli', 'architecture', 'system', 'tools']);
-    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'worktrees', 'bots']) {
+      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'system', 'tools']);
+    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'worktrees']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });
