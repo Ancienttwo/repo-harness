@@ -77,7 +77,7 @@ function replaceSecrets(text: string): string {
 }
 
 /** Message text the page may show: token rules first, then absolute paths; a secret left over withholds the text. */
-export function redactDocSessionText(text: string): string {
+function redactDocSessionText(text: string): string {
   const out = publicDevActivityText(replaceSecrets(text));
   return hasUnredactedSecret(out) ? DOC_SESSION_TEXT_WITHHELD : out;
 }
@@ -88,8 +88,18 @@ export function redactDocSessionPath(path: string): string {
   return hasUnredactedSecret(out) ? PATH_WITHHELD : out;
 }
 
+/**
+ * The stored form of message text: redacted whole, then cut to the byte limit.
+ * A cut inside a replacement (`Authorization: Bearer [RE`) can match a rule
+ * again, so cut text that no longer passes is withheld.
+ */
+export function storedDocSessionText(text: string): { readonly text: string; readonly truncated: boolean } {
+  const cut = truncateUtf8(redactDocSessionText(text), DOC_SESSION_EVENT_TEXT_MAX_BYTES);
+  return cut.truncated && !publicText(cut.text) ? { text: DOC_SESSION_TEXT_WITHHELD, truncated: true } : cut;
+}
+
 /** The longest prefix of whole code points that fits the byte limit. */
-export function truncateUtf8(text: string, maxBytes: number): { readonly text: string; readonly truncated: boolean } {
+function truncateUtf8(text: string, maxBytes: number): { readonly text: string; readonly truncated: boolean } {
   if (utf8Bytes(text) <= maxBytes) return { text, truncated: false };
   let bytes = 0;
   let end = 0;
@@ -106,13 +116,16 @@ export function truncateUtf8(text: string, maxBytes: number): { readonly text: s
 export function isRepositoryRelativePath(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || utf8Bytes(value) > PATH_MAX_BYTES) return false;
   if (value.startsWith('/') || value.includes('\\') || /[\u0000-\u001f\u007f]/u.test(value) || /^[A-Za-z]:/u.test(value)) return false;
-  return value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..');
+  // The message text rule masks `~/x` and other absolute-looking spans; a path must pass it too.
+  return isPublicDevActivityText(value) && value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..');
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const counter = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 const oneOf = <T>(value: unknown, values: readonly T[]): value is T => values.includes(value as T);
-const timestamp = (value: unknown): value is string => typeof value === 'string' && value.length <= 64 && Number.isFinite(Date.parse(value));
+// A date parser skips text it does not read, such as `(token) 2020`; only the exact UTC form passes.
+const timestamp = (value: unknown): value is string => typeof value === 'string'
+  && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && new Date(value).toISOString() === value;
 
 function publicText(value: unknown): value is string {
   return typeof value === 'string' && utf8Bytes(value) <= DOC_SESSION_EVENT_TEXT_MAX_BYTES

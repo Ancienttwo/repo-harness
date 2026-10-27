@@ -10,8 +10,8 @@ import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readSy
 import { join } from 'node:path';
 
 import {
-  compareDocSessionCursor, decodeDocSessionEvent, decodeOperatorDocSessionEvents, docSessionActivity, DOC_SESSION_EVENT_TEXT_MAX_BYTES,
-  DOC_SESSION_EVENTS_PAGE, formatDocSessionCursor, parseDocSessionCursor, redactDocSessionPath, redactDocSessionText, truncateUtf8,
+  compareDocSessionCursor, decodeDocSessionEvent, decodeOperatorDocSessionEvents, docSessionActivity,
+  DOC_SESSION_EVENTS_PAGE, formatDocSessionCursor, parseDocSessionCursor, redactDocSessionPath, storedDocSessionText,
   type DocSessionCursor, type DocSessionEventInput, type DocSessionEventV1, type OperatorDocSessionEventsV1,
 } from '../../core/operator/doc-session-events';
 import { syncDirectoryDurably } from '../atomic-append';
@@ -94,9 +94,7 @@ function storedEvent(input: DocSessionEventInput): DocSessionEventV1 {
   let record: Record<string, unknown>;
   if (input.type === 'message') {
     if (typeof value.text !== 'string') return fail('invalid_event');
-    // Redaction runs on the whole text, so a secret across the cut is still found.
-    const { text, truncated } = truncateUtf8(redactDocSessionText(value.text), DOC_SESSION_EVENT_TEXT_MAX_BYTES);
-    record = { ...value, protocol: 1, text, truncated };
+    record = { ...value, protocol: 1, ...storedDocSessionText(value.text) };
   } else if (input.type === 'tool') {
     if (!Array.isArray(value.paths) || !value.paths.every(path => typeof path === 'string')) return fail('invalid_event');
     record = { ...value, protocol: 1, paths: (value.paths as string[]).map(redactDocSessionPath) };

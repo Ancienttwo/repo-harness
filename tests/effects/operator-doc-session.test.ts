@@ -446,8 +446,12 @@ test('an event field outside the schema, such as raw tool arguments, a command, 
   for (const extra of extras) {
     expect(() => appendDocSessionEvents(h.env, sid, [{ ...tool(1, 0, ['docs/guide.md']), ...extra } as DocSessionEventInput])).toThrow();
   }
-  for (const path of ['/etc/passwd', '../outside.md', 'docs/../../x', 'docs\\guide.md', 'C:/x.md', '']) {
+  for (const path of ['/etc/passwd', '../outside.md', 'docs/../../x', 'docs\\guide.md', 'C:/x.md', '~/.ssh/id_rsa', '']) {
     expect(() => appendDocSessionEvents(h.env, sid, [tool(1, 0, [path])])).toThrow();
+  }
+  // `at` is a strict UTC timestamp, so it cannot carry free text that a date parser skips.
+  for (const at of [`(${SECRET_SAMPLES.github}) 2020`, '(/Users/someone/.ssh/id_rsa) 2020', '2026-10-27', '2026-10-27T12:00:00Z', '2026-02-30T12:00:00.000Z']) {
+    expect(() => appendDocSessionEvents(h.env, sid, [{ ...message(1, 0, 'ok'), at }])).toThrow();
   }
   // One bad event refuses the whole batch.
   expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'ok'), { ...message(1, 1, 'ok'), command: 'ls' } as unknown as DocSessionEventInput])).toThrow();
@@ -508,6 +512,46 @@ test('message text over the byte limit is cut after redaction and marked truncat
   expect(event.truncated).toBe(true);
   expect(Buffer.byteLength(event.text)).toBeLessThanOrEqual(DOC_SESSION_EVENT_TEXT_MAX_BYTES);
   expect(readFileSync(eventsFile(h, sid), 'utf8')).not.toContain(SECRET_SAMPLES.openai.slice(0, 12));
+  // A cut inside a replacement leaves text that matches its rule again; the cut text is withheld, not refused.
+  const bearer = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 'Authorization: Bearer [RE'.length)}Authorization: Bearer ${SECRET_SAMPLES.bearer}`;
+  appendDocSessionEvents(h.env, sid, [message(1, 1, bearer)]);
+  const cut = (await readEvents(h, sid, '1.0')).body.events[0];
+  expect(cut).toMatchObject({ truncated: true });
+  expect(cut.text).not.toContain('Bearer');
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).not.toContain(SECRET_SAMPLES.bearer);
+});
+
+test('a last line without its newline is skipped by the reader and refused by the writer, and a symlinked log is refused', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'kept')]);
+  const torn = `${readFileSync(eventsFile(h, sid), 'utf8')}{"protocol":1,"epoch":1,"seq":1`;
+  writeFileSync(eventsFile(h, sid), torn, { mode: 0o600 });
+  const page = await readEvents(h, sid);
+  expect(page.status).toBe(200);
+  expect(page.body.events.map((e: { text: string }) => e.text)).toEqual(['kept']);
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 2, 'next')])).toThrow();
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(torn);
+
+  const other = await createdSession(h);
+  const outside = join(h.home, 'outside.jsonl');
+  writeFileSync(outside, `${JSON.stringify({ protocol: 1, epoch: 1, seq: 0, at: AT, type: 'message', role: 'agent', text: 'outside', truncated: false })}\n`, { mode: 0o600 });
+  symlinkSync(outside, eventsFile(h, other));
+  const linked = await readEvents(h, other);
+  expect(linked.status).toBe(503);
+  expect(linked.text).not.toContain('outside');
+  expect(() => appendDocSessionEvents(h.env, other, [message(1, 1, 'x')])).toThrow();
+  expect(readFileSync(outside, 'utf8')).not.toContain('"x"');
+});
+
+test('the events read refuses an unknown query key and a repeated cursor', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  for (const query of ['?limit=5', '?after=1.0&after=1.1', '?after=1.0&x=1']) {
+    const response = await fetch(`${h.url}/api/v1/sessions/${sid}/events${query}`);
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('invalid_cursor');
+  }
 });
 
 test('the events read refuses a bad cursor, an unknown session and a corrupt log without echoing the log', async () => {
