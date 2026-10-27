@@ -6,7 +6,7 @@
 // its confirmation bypass first. Production OPERATOR_ROUTES has no events
 // route; tests admit it through their own route inventory.
 
-import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -32,13 +32,22 @@ export class DocSessionEventsError extends Error {
 }
 const fail = (code: DocSessionEventsFailure): never => { throw new DocSessionEventsError(code); };
 
-/** The session directory, which exists once #1021 wrote its record. A symlink is not a session. */
+/**
+ * The session directory, which exists once #1021 wrote its record. `sessions`
+ * and `<sid>` must be real directories: a symlink at either level would move
+ * the log out of the operator state directory.
+ */
 function sessionDirectory(env: NodeJS.ProcessEnv, sessionId: string): string {
   if (!SESSION_ID.test(sessionId)) return fail('session_not_found');
-  const directory = join(operatorStateDir(env), 'sessions', sessionId);
+  const sessions = join(operatorStateDir(env), 'sessions');
+  const directory = join(sessions, sessionId);
   try {
-    if (lstatSync(directory).isDirectory() && lstatSync(join(directory, 'session.json')).isFile()) return directory;
+    if (!lstatSync(sessions).isDirectory()) return fail('events_unavailable');
+    const entry = lstatSync(directory);
+    if (!entry.isDirectory()) return fail(entry.isSymbolicLink() ? 'events_unavailable' : 'session_not_found');
+    if (lstatSync(join(directory, 'session.json')).isFile()) return directory;
   } catch (error) {
+    if (error instanceof DocSessionEventsError) throw error;
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return fail('events_unavailable');
   }
   return fail('session_not_found');
@@ -104,9 +113,16 @@ function storedEvent(input: DocSessionEventInput): DocSessionEventV1 {
   try { return decodeDocSessionEvent(record); } catch { return fail('invalid_event'); }
 }
 
-function writeAll(fd: number, data: Buffer): void {
+type WriteChunk = (fd: number, data: Buffer, offset: number, length: number) => number;
+
+function writeAll(fd: number, data: Buffer, write: WriteChunk): void {
   let offset = 0;
-  while (offset < data.length) offset += writeSync(fd, data, offset, data.length - offset);
+  while (offset < data.length) offset += write(fd, data, offset, data.length - offset);
+}
+
+/** Test seam: the write call, so a test can fail a batch part way through. */
+export interface DocSessionEventsIo {
+  readonly write?: WriteChunk;
 }
 
 /**
@@ -114,7 +130,7 @@ function writeAll(fd: number, data: Buffer): void {
  * appended with one write and synced; a refusal writes nothing. Each event
  * must move the `epoch.seq` cursor forward.
  */
-export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string, inputs: readonly DocSessionEventInput[]): void {
+export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string, inputs: readonly DocSessionEventInput[], io: DocSessionEventsIo = {}): void {
   const directory = sessionDirectory(env, sessionId);
   const records = inputs.map(storedEvent);
   for (let index = 1; index < records.length; index += 1) {
@@ -140,8 +156,15 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
         const last = decodeLog(readAll(fd, stat.size), 'refuse').at(-1);
         if (last !== undefined && compareDocSessionCursor(records[0]!, last) <= 0) fail('cursor_not_increasing');
         if (stat.size + data.length > DOC_SESSION_EVENTS_MAX_BYTES) fail('events_full');
-        writeAll(fd, data);
-        fsyncSync(fd);
+        try {
+          writeAll(fd, data, io.write ?? writeSync);
+          fsyncSync(fd);
+        } catch {
+          // A failed batch leaves no line behind. If the truncate fails too, the
+          // torn tail stays and the next append refuses the log.
+          try { ftruncateSync(fd, stat.size); fsyncSync(fd); } catch { /* fail closed below */ }
+          fail('events_unavailable');
+        }
       } finally { closeSync(fd); }
       // A new directory entry survives a crash only after its parent is synced.
       if (created) syncDirectoryDurably(directory);

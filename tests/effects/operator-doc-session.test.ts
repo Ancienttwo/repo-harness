@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
@@ -542,6 +542,52 @@ test('a last line without its newline is skipped by the reader and refused by th
   expect(linked.text).not.toContain('outside');
   expect(() => appendDocSessionEvents(h.env, other, [message(1, 1, 'x')])).toThrow();
   expect(readFileSync(outside, 'utf8')).not.toContain('"x"');
+});
+
+test('a sessions directory or a session directory that is a symlink is refused for the session record and for events', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  // `operator/sessions` now points at a directory outside that holds <sid>/session.json.
+  const elsewhere = join(h.home, 'elsewhere');
+  renameSync(sessionsDir(h), elsewhere);
+  symlinkSync(elsewhere, sessionsDir(h));
+  const read = await readEvents(h, sid);
+  expect(read.status).toBe(503);
+  expect(read.body.code).toBe('events_unavailable');
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'x')])).toThrow();
+  expect(existsSync(join(elsewhere, sid, 'events.jsonl'))).toBe(false);
+  const created = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(created.status).toBe(409);
+  expect(created.body.error.code).toBe('reconcile_required');
+  expect(readdirSync(elsewhere)).toEqual([sid]);
+
+  // A real sessions directory whose <sid> entry is a symlink to another session directory.
+  rmSync(sessionsDir(h));
+  mkdirSync(sessionsDir(h), { mode: 0o700 });
+  symlinkSync(join(elsewhere, sid), join(sessionsDir(h), sid));
+  expect((await readEvents(h, sid)).status).not.toBe(200);
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'x')])).toThrow();
+  expect(existsSync(join(elsewhere, sid, 'events.jsonl'))).toBe(false);
+});
+
+test('a write that fails part way through a batch leaves the log at its old length, and a later append succeeds', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'a')]);
+  const before = readFileSync(eventsFile(h, sid), 'utf8');
+  let calls = 0;
+  const write = (fd: number, data: Buffer, offset: number, length: number): number => {
+    calls += 1;
+    if (calls === 1) return writeSync(fd, data, offset, Math.floor(length / 2));
+    throw Object.assign(new Error('no space left'), { code: 'ENOSPC' });
+  };
+  let failure: unknown;
+  try { appendDocSessionEvents(h.env, sid, [message(1, 1, 'b'), message(1, 2, 'c')], { write }); } catch (error) { failure = error; }
+  expect(calls).toBe(2);
+  expect((failure as { code?: string }).code).toBe('events_unavailable');
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(before);
+  appendDocSessionEvents(h.env, sid, [message(1, 1, 'b')]);
+  expect((await readEvents(h, sid)).body.events.map((e: { text: string }) => e.text)).toEqual(['a', 'b']);
 });
 
 test('the events read refuses an unknown query key and a repeated cursor', async () => {

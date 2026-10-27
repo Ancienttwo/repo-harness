@@ -176,6 +176,8 @@ function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: J
     mkdirSync(sessions, { mode: 0o700 });
     syncDirectoryDurably(operator);
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  // A sessions entry that is a symlink would put the record outside the operator state directory.
+  if (!lstatSync(sessions).isDirectory()) throw new Error('doc session directory is not a real directory');
   const directory = join(sessions, sessionId);
   mkdirSync(directory, { mode: 0o700 });
   syncDirectoryDurably(sessions);
