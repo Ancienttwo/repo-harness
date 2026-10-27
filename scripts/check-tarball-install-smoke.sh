@@ -12,7 +12,9 @@ OPERATOR_PID=""
 # register its temporary repositories in the real ~/.repo-harness registry.
 SMOKE_HOME="$TMP_DIR/home"
 mkdir -p "$SMOKE_HOME"
-export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$SMOKE_HOME/.repo-harness"
+# Keep the registry beside HOME: the nested test runner rejects registries
+# below its caller HOME, even when that HOME is temporary.
+export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$TMP_DIR/registry"
 
 cleanup() {
   local exit_code=$?
