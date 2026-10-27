@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.mcp-sidecar
+kind: reads
+source: component.operator.console-collectors
+target: capability.runtime-harness.mcp-sidecar
+intent: "Run mcp doctor without live registration and read the OAuth token store and the newest audit rows for Bot access, and read the strict repository registry snapshot for Bot access, docs and tests."

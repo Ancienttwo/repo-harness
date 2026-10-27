@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds.npm-registry
+kind: reads
+source: component.operator.activity-feeds
+target: external.npm-registry
+intent: "Look up whether an npm package of the CLI inventory is deprecated, with cached and capped npm view calls."

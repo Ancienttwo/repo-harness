@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.http-reader
+kind: calls
+source: component.operator.console-collectors
+target: component.operator.primary
+intent: "Check the herdr status version and request session.snapshot through the Herdr observation transport."

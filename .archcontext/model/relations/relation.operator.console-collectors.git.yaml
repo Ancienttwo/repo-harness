@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.git
+kind: reads
+source: component.operator.console-collectors
+target: external.git
+intent: "Read remote URLs from local config and docs blobs through a resident cat-file worker on local refs only."
