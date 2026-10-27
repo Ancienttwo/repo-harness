@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { parseArchitectureRequest } from '../../src/core/operator/architecture';
-import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureYaml } from '../helpers/module-repository';
-import { readFileSync, rmSync } from 'node:fs';
+import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
+import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapNodeV1 } from '../../src/core/operator/architecture-map';
+import { collectArchitectureMap, readCommitLineCounts, recheckCheckout } from '../../src/effects/operator/architecture-map-worker';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -138,4 +140,120 @@ test('accepts new model node kinds and reserves group for aggregate nodes', () =
   const withKind = (kind: unknown) => ({ ...detail, graph: { ...detail.graph, nodes: detail.graph.nodes.map(node => node.id === id ? { ...node, kind } : node) } });
   expect(decodeArchitectureModuleDetail(withKind('future-node-kind')).graph.nodes.find(node => node.id === id)?.kind).toBe('future-node-kind');
   for (const kind of ['', 'group', null, 7]) expect(() => decodeArchitectureModuleDetail(withKind(kind))).toThrow('architecture_module_detail_invalid');
+});
+
+describe('architecture map', () => {
+  const CAP = 'capability.pipeline.ledger';
+  const PART = 'component.pipeline.store';
+  const OTHER = 'capability.review.gate';
+  const mapNode = (nodeId: string, kind: string, parent: string | null = null): ArchitectureMapNodeV1 =>
+    ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary` });
+  const input = {
+    repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
+    nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
+    relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
+  };
+  const projected = () => projectArchitectureMap({
+    ...input,
+    sizes: { state: 'ok', lines: new Map([['src/store.ts', 30], ['src/ledger.ts', 12], ['README.md', 5], ['src/gate.ts', 0]]),
+      owners: new Map<string, string | null>([['src/store.ts', PART], ['src/ledger.ts', CAP], ['README.md', null], ['src/gate.ts', OTHER]]) },
+    dependencies: { state: 'ok', matrix: [{ from: CAP, to: OTHER, imports: 4 }, { from: OTHER, to: CAP, imports: 0 }, { from: CAP, to: CAP, imports: 9 }] },
+  });
+
+  test('a file counts for its owner and every ancestor; unowned files, self imports and zero counts are left out', () => {
+    const map = projected();
+    expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: CAP, files: 2, lines: 42 }, { id: OTHER, files: 1, lines: 0 }, { id: PART, files: 1, lines: 30 }] });
+    expect(map.dependencies).toEqual({ state: 'ok', edges: [{ source: CAP, target: OTHER, imports: 4 }] });
+    expect(map.nodes.map(entry => entry.id)).toEqual([CAP, OTHER, PART]);
+    expect(map.relations.map(entry => entry.id)).toEqual(['relation.a', 'relation.b']);
+    expect(decodeArchitectureMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
+  });
+
+  test('an owner the model does not name fails the projection; an unavailable source passes through with its reason', () => {
+    expect(() => projectArchitectureMap({ ...input, sizes: { state: 'ok', lines: new Map([['src/x.ts', 1]]), owners: new Map([['src/x.ts', 'capability.gone.node']]) },
+      dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' } })).toThrow('architecture_map_invalid');
+    const map = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_other_commit' } });
+    expect([map.sizes, map.dependencies]).toEqual([{ state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'code_facts_other_commit' }]);
+  });
+
+  test('the decoder refuses extra fields, broken references and imports that do not join two capabilities', () => {
+    const map = JSON.parse(JSON.stringify(projected()));
+    const refused = (change: (copy: typeof map) => void) => {
+      const copy = JSON.parse(JSON.stringify(map));
+      change(copy);
+      expect(() => decodeArchitectureMap(copy)).toThrow('architecture_map_invalid');
+    };
+    refused(copy => { copy.extra = 1; });
+    refused(copy => { copy.nodes[0].path = '/Users/someone/repo'; });
+    refused(copy => { copy.nodes.push(copy.nodes[0]); });
+    refused(copy => { copy.nodes[2].parent = 'capability.gone.node'; });
+    refused(copy => { copy.nodes[0].parent = PART; });
+    refused(copy => { copy.nodes[1].summary = 'Reads /opt/company/private.env'; });
+    refused(copy => { copy.nodes[1].name = 'C:\\Users\\someone\\secret'; });
+    refused(copy => { copy.relations[0].intent = 'Write [/home/someone/.ssh/key]'; });
+    refused(copy => { copy.relations[0].target = 'capability.gone.node'; });
+    refused(copy => { copy.sizes.nodes[0].id = 'capability.gone.node'; });
+    refused(copy => { copy.sizes.nodes[0].files = 0; });
+    refused(copy => { copy.dependencies.edges[0].target = PART; });
+    refused(copy => { copy.dependencies.edges[0].target = CAP; });
+    refused(copy => { copy.dependencies = { state: 'unavailable', reason: 'stale' }; });
+    refused(copy => { copy.commit = 'HEAD'; });
+  });
+
+  test('model prose never carries an absolute path, and a dirty source tree withholds import counts', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const nodeText = readFileSync(join(root, MODULE_NODE), 'utf8');
+      expect(nodeText).toContain('Read a committed module.');
+      fixtureWrite(root, MODULE_NODE, nodeText.replace('Read a committed module.', 'Reads /opt/company/private.env'));
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.nodes.find(entry => entry.id === MODULE_ID)?.summary).toBe('Reads [private path]');
+      expect(JSON.stringify(result.snapshot)).not.toContain('/opt/');
+      expect(result.snapshot.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // The CodeGraph index covers the working tree, so an uncommitted source edit withholds import counts; line counts stay.
+      fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
+      const edited = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      expect(edited.ok && [edited.snapshot.sizes.state, edited.snapshot.dependencies]).toEqual(['ok', { state: 'unavailable', reason: 'code_facts_worktree_dirty' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a checkout or edit between the two checks of a cycle drops the counts it can reach', () => {
+    const commit = 'c'.repeat(40);
+    const clean = { head: commit, modelClean: true, treeClean: true };
+    const read = { sizes: { state: 'ok', lines: new Map(), owners: new Map() }, dependencies: { state: 'ok', matrix: [] } } as const;
+    const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
+    expect(recheckCheckout(commit, clean, clean, read)).toEqual(read);
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, { ...clean, head: null }, clean, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: null }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    // An unavailable source keeps its own reason.
+    const dirty = { sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_worktree_dirty' } } as const;
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, dirty)).toEqual(dirty);
+  });
+
+  test('the worker maps a committed model with git line counts, and imports fail closed without a CodeGraph index', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const commit = fixtureGit(root, ['rev-parse', 'HEAD']).trim();
+      expect(readCommitLineCounts(root, commit)?.get('src/module/read.ts')).toBe(1);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      const map = result.snapshot;
+      expect(map.commit).toBe(commit);
+      expect(map.nodes.map(entry => [entry.id, entry.parent])).toEqual([[MODULE_ID, null], ['component.module.core', MODULE_ID]]);
+      expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
+      expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: MODULE_ID, files: 2, lines: 2 }] });
+      expect(map.dependencies.state).toBe('unavailable');
+      expect(JSON.stringify(map)).not.toContain(root);
+      // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
+      fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
+      const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
+      expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
+        { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });

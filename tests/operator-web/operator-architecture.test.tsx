@@ -6,6 +6,10 @@ import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelat
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
+import type { ArchitectureMapRead, ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
+import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
+import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
 import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
@@ -120,13 +124,22 @@ async function mount(element: ReactElement): Promise<void> {
   await settle();
 }
 
+const pendingMap: ArchitectureMapReader = async () => ({ state: 'unavailable', reason: 'architecture_map_pending' });
+
 function workspace(props: Partial<Parameters<typeof ArchitectureWorkspace>[0]> = {}): ReactElement {
-  return <ArchitectureWorkspace repositoryId={REPO} moduleId={null} onModule={() => {}} refreshGeneration={0} t={t} {...props} />;
+  return <ArchitectureWorkspace repositoryId={REPO} moduleId={null} onModule={() => {}} refreshGeneration={0} readMap={pendingMap} t={t} {...props} />;
+}
+
+/** The workspace opens on the map; the module list is the second view. */
+async function openModules(): Promise<void> {
+  await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-modules')!.click());
+  await settle();
 }
 
 describe('architecture module list', () => {
   test('groups modules by domain and shows three separate states, with unknown explicit', async () => {
     await mount(workspace());
+    await openModules();
     const domains = [...document.querySelectorAll('.module-domain')];
     expect(domains.map(item => item.getAttribute('data-domain'))).toEqual(['public-surface', 'workflow-engine']);
     expect(domains.map(item => item.querySelectorAll('.module-row').length)).toEqual([1, 2]);
@@ -146,6 +159,7 @@ describe('architecture module list', () => {
   test('shows the route failure code and keeps the last result after a failed refresh', async () => {
     respond = () => json({ code: 'repository_not_found' }, 404);
     await mount(workspace());
+    await openModules();
     expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('repository_not_found');
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('repository_not_found');
 
@@ -164,6 +178,7 @@ describe('architecture module list', () => {
     let commits = 0;
     const tree = (generation: number) => <Profiler id="architecture" onRender={() => { commits++; }}>{workspace({ refreshGeneration: generation })}</Profiler>;
     await mount(tree(0));
+    await openModules();
     expect(calls).toEqual([{ path: `/api/v1/repositories/${REPO}/architecture/modules`, ifNoneMatch: null }]);
     const before = document.querySelector('.architecture-workspace')?.innerHTML;
     respond = (_path, call) => call.ifNoneMatch === '"index-1"' ? new Response(null, { status: 304 }) : json({ code: 'unexpected' }, 500);
@@ -178,6 +193,7 @@ describe('architecture module list', () => {
 
   test('a failed read of another path drops the old ETag, so returning does not wait on a 304', async () => {
     await mount(workspace());
+    await openModules();
     expect(document.querySelectorAll('.module-row')).toHaveLength(3);
     respond = path => path.includes('/repo-other/') ? json({ code: 'busy' }, 503) : serveArchitecture(path);
     await act(async () => root?.render(workspace({ repositoryId: 'repo-other' })));
@@ -306,6 +322,110 @@ describe('one-hop module graph', () => {
   });
 });
 
+describe('architecture map', () => {
+  const PART = 'component.pipeline.ledger';
+  const EXTERNAL = 'external.git';
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  function mapFor(available = true): ArchitectureMapV1 {
+    return projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
+      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)],
+      sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
+        : { state: 'unavailable', reason: 'model_worktree_dirty' },
+      dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
+    });
+  }
+  const reader = (read: ArchitectureMapRead): ArchitectureMapReader => async () => read;
+
+  beforeEach(() => {
+    // React Flow measures its viewport and nodes.
+    Object.assign(globalThis, {
+      ResizeObserver: window.ResizeObserver, SVGElement: window.SVGElement, DOMMatrixReadOnly: window.DOMMatrixReadOnly,
+      requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    });
+  });
+
+  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included', () => {
+    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    // Three namespace levels, with a relation that ends on the deepest one.
+    const nested = projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
+        mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
+      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')],
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+    });
+    for (const map of [mapFor(), nested, decodeArchitectureMap(recordedMap)]) {
+      const layout = layoutArchitectureMap(map);
+      expect(layout.nodes.map(item => item.node.id).sort()).toEqual(map.nodes.map(node => node.id).sort());
+      const placed = new Map(layout.nodes.map(item => [item.node.id, item]));
+      for (const item of layout.nodes) {
+        if (item.node.parent === null) continue;
+        const group = placed.get(item.node.parent)!;
+        expect(group.group).toBe(true);
+        expect(item.x >= group.x && item.y >= group.y && item.x + item.width <= group.x + group.width && item.y + item.height <= group.y + group.height).toBe(true);
+      }
+      const siblings = new Map<string | null, MapLayoutNode[]>();
+      for (const item of layout.nodes) siblings.set(item.node.parent, [...(siblings.get(item.node.parent) ?? []), item]);
+      for (const group of siblings.values()) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
+      // React Flow places a member relative to a parent that comes earlier in the list.
+      for (const [index, item] of layout.nodes.entries()) {
+        if (item.node.parent !== null) expect(layout.nodes.findIndex(other => other.node.id === item.node.parent)).toBeLessThan(index);
+      }
+      expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id));
+    }
+  });
+
+  test('box width follows lines, I/O relations are dashed, and only a capability pair with imports is weighted', () => {
+    const layout = layoutArchitectureMap(mapFor());
+    const width = (id: string) => layout.nodes.find(item => item.node.id === id)!.width;
+    expect(width(PART)).toBeGreaterThan(width(CALLER));
+    expect(width(EXTERNAL)).toBe(MAP_NODE_MIN_WIDTH);
+    const edges = new Map(layout.edges.map(edge => [edge.relation.id, edge]));
+    expect(edges.get('relation.c-git')!.dashed).toBe(true);
+    expect(edges.get('relation.a-own')!.dashed).toBe(false);
+    expect(edges.get('relation.b-router')).toMatchObject({ imports: 7, strokeWidth: 6 });
+    expect(edges.get('relation.a-own')).toMatchObject({ imports: null, strokeWidth: 1 });
+    const bare = layoutArchitectureMap(mapFor(false));
+    expect(bare.nodes.every(item => item.size === null && (item.group || item.width === MAP_NODE_MIN_WIDTH))).toBe(true);
+    expect(bare.edges.every(edge => edge.imports === null)).toBe(true);
+  });
+
+  test('the map is the default view and selecting a node lists its relations with import counts', async () => {
+    const opened: (string | null)[] = [];
+    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id) }));
+    expect(document.querySelector('#architecture-tab-map')?.getAttribute('aria-selected')).toBe('true');
+    expect(calls).toEqual([]);
+    const canvas = document.querySelector('.architecture-map')!;
+    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
+    expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort()).toEqual([CALLER, CENTER, PART, EXTERNAL].sort());
+    expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
+    expect(document.querySelector('.architecture-map-view')?.textContent).toContain(COMMIT);
+    expect(document.querySelectorAll('.architecture-map__gap')).toHaveLength(0);
+
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${CALLER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const inspector = document.querySelector('.architecture-map__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe(CALLER);
+    expect([...inspector.querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CENTER} · 7 imports`]);
+    expect(inspector.textContent).toContain('100 lines in 1 files');
+    await act(async () => [...inspector.querySelectorAll('button')].find(item => item.textContent === 'Open module')!.click());
+    expect(opened).toEqual([CALLER]);
+  });
+
+  test('a missing line or import source is stated with its reason, and a failed read shows its code', async () => {
+    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor(false) }) }));
+    expect([...document.querySelectorAll('.architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
+    expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
+    await settle();
+    expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');
+    expect(document.querySelector('.architecture-map')).toBeNull();
+  });
+});
+
 describe('workspace navigation', () => {
   const repositoryId = stableSnapshot.repositories[0]!.repository_id;
   function app(): ReactElement {
@@ -343,6 +463,7 @@ describe('workspace navigation', () => {
     expect(calls.some(call => call.path.includes('/architecture/'))).toBe(false);
     await act(async () => link('architecture').click());
     await settle();
+    await openModules();
     expect(window.location.hash).toBe('#architecture');
     expect(calls.at(-1)?.path).toBe(`/api/v1/repositories/${repositoryId}/architecture/modules`);
     await act(async () => document.querySelector<HTMLButtonElement>(`[data-module-id="${CENTER}"] button`)!.click());

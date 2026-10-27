@@ -23,6 +23,10 @@ import { busyBotAccess, degradedBotAccess } from './bots';
 import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { decodeArchitectureMap } from '../../core/operator/architecture-map';
+import type { ArchitectureMapRead } from '../ArchitectureMap';
+// A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
+import architectureMap from './architecture-map.json';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -69,6 +73,13 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the task session records could not be read.
   const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
     : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
+  // degraded: the model is served with no line or import counts; empty: the first collection has not finished.
+  const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' || repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'architecture_map_pending' }
+    : { state: 'ok', map: decodeArchitectureMap(fixture === 'busy' ? architectureMap : {
+      ...architectureMap,
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    }) };
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
@@ -91,6 +102,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
+    readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
     readBotAccess: () => Promise.resolve(botAccess),
   };
 }

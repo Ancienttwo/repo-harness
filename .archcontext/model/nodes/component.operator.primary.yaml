@@ -29,6 +29,8 @@ source:
     - src/effects/operator/execution-collector.ts
     - src/effects/operator/execution-state-worker.ts
     - src/effects/operator/execution-state.ts
+    - src/effects/operator/architecture-map-collector.ts
+    - src/effects/operator/architecture-map-worker.ts
   entrypoints:
     - id: entrypoint.operator.http-server
       path: src/effects/operator/server.ts
@@ -53,6 +55,9 @@ source:
             - id: sink.operator.execution-collector
               path: src/effects/operator/execution-collector.ts
               symbol: startExecutionCollector
+            - id: sink.operator.architecture-map-collector
+              path: src/effects/operator/architecture-map-collector.ts
+              symbol: startArchitectureMapCollector
             - id: sink.operator.cli-inventory-collector
               path: src/effects/setup/cli-inventory.ts
               symbol: startCliInventoryCollector
