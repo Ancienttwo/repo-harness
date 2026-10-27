@@ -160,9 +160,10 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
           writeAll(fd, data, io.write ?? writeSync);
           fsyncSync(fd);
         } catch {
-          // A failed batch leaves no line behind. If the truncate fails too, the
-          // torn tail stays and the next append refuses the log.
-          try { ftruncateSync(fd, stat.size); fsyncSync(fd); } catch { /* fail closed below */ }
+          // When the truncate works, the log is as it was before the batch. When it
+          // fails too, the written bytes stay: complete lines are still read and
+          // later appends follow them; a torn last line makes later appends refuse the log.
+          try { ftruncateSync(fd, stat.size); fsyncSync(fd); } catch { /* reported as events_unavailable below */ }
           fail('events_unavailable');
         }
       } finally { closeSync(fd); }
