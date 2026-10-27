@@ -320,7 +320,9 @@ describe('home page', () => {
     await mount(<OperatorApp {...props(snapshot, { initialLocale: 'zh', readCiRepairs: noRepairs })} />);
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');
     expect(document.querySelector('h1')?.textContent).toContain('有 3 件事等你处理');
-    const rows = Array.from(document.querySelector('section[aria-labelledby="home-waiting"]')!.querySelectorAll('[data-attention-kind]'));
+    // C6: one pixel character per screen; the rail's carrot is the logo, not a character.
+    expect(Array.from(document.querySelectorAll('[data-mascot]')).map(element => element.getAttribute('data-mascot'))).toEqual(['buddy-happy']);
+    const rows =Array.from(document.querySelector('section[aria-labelledby="home-waiting"]')!.querySelectorAll('[data-attention-kind]'));
     expect(rows.map(row => row.getAttribute('data-attention-kind'))).toEqual(['changes_requested', 'merge_conflict', 'ready_to_merge']);
     for (const [row, reason, pr] of [[rows[0], '评审要求修改', 'PR #603'], [rows[1], '与 main 冲突', 'PR #608'], [rows[2], '可以合并', 'PR #602']] as const) {
       for (const part of [reason, 'repo-harness', pr, 'agent 未知']) expect(row!.textContent).toContain(part);
@@ -428,6 +430,11 @@ describe('side rail', () => {
     expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('scope');
     expect(repositorySwitch().textContent).toContain('All repositories');
     expect(heads).toEqual([]);
+    // C7: the language and theme toggles sit at the bottom of the rail beside the operator status.
+    const bottom = rail().lastElementChild!;
+    expect(bottom.getAttribute('data-operator-status')).toBe('ready');
+    expect(bottom.querySelector('.locale-switch')).not.toBeNull();
+    expect(bottom.querySelector('button[aria-label^="Theme:"]')).not.toBeNull();
 
     const id = `${HARNESS_ID}:feat/pipeline-observer`;
     await act(async () => card(id).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
