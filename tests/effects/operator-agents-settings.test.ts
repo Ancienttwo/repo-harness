@@ -175,8 +175,22 @@ describe('agent settings routes', () => {
     symlinkSync(target, linked.configPath);
     const revision = (await settings(linked)).config.revision;
     const refused = await post(linked, { expected_revision: revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }] });
-    expect([refused.status, (await refused.json()).error.code]).toEqual([503, 'config_invalid']);
+    const linkError = (await refused.json()).error;
+    expect([refused.status, linkError.code]).toEqual([409, 'config_is_link']);
+    expect(linkError.next_action).toContain('links to');
     expect(readFileSync(target, 'utf8')).toBe('{}\n');
+  });
+
+  test('disables a runtime that left the registry, and still refuses to enable it', async () => {
+    const harness = await startHarness({ agents: { enabled: ['codex', 'gone'], uses: { docs: ['gone'], review: [] }, default_docs: 'gone' } });
+    const revision = (await settings(harness)).config.revision;
+    const enable = await post(harness, { expected_revision: revision, changes: [{ runtime: 'gone', enabled: true, uses: ['docs'] }] });
+    expect([enable.status, (await enable.json()).error.code]).toEqual([422, 'runtime_unknown']);
+
+    const disable = await post(harness, { expected_revision: revision, changes: [{ runtime: 'gone', enabled: false, uses: [] }], default_docs_runtime: null });
+    expect(disable.status).toBe(200);
+    expect((await disable.json()).changed_keys).toEqual(['agents.enabled', 'agents.uses.docs', 'agents.default_docs']);
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents).toEqual({ enabled: ['codex'], uses: { docs: [], review: [] }, default_docs: null });
   });
 });
 

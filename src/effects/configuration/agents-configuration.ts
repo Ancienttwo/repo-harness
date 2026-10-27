@@ -14,13 +14,15 @@ import { syncDirectoryDurably } from '../atomic-append';
 import { globalConfigurationRevision, readGlobalConfiguration } from './global-configuration';
 
 /**
- * The `agents` section of the host configuration document (G9). The CLI and
- * the operator write route share `applyAgentsSettings`; the caller holds the
- * config lock.
+ * The `agents` section of the host configuration document (G9). Its one
+ * writer is the operator settings write route, which runs
+ * `applyAgentsSettings` under the operator write lock of the `config` target.
+ * Other writers of this file do not take that lock.
  */
 
 export type AgentsConfigurationErrorCode =
   | 'config_invalid'
+  | 'config_is_link'
   | 'revision_conflict'
   | 'runtime_unknown'
   | 'runtime_not_enabled'
@@ -67,7 +69,9 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
   const docs = new Set(current.uses.docs);
   const review = new Set(current.uses.review);
   for (const change of request.changes) {
-    if (!knownRuntimes.has(change.runtime)) {
+    // A runtime that left the registry, for example after an OAR upgrade, can still be turned off.
+    const disables = !change.enabled && change.uses.length === 0;
+    if (!disables && !knownRuntimes.has(change.runtime)) {
       throw new AgentsConfigurationError('runtime_unknown', `Runtime ${change.runtime} is not in the runtime registry.`);
     }
     if (!change.enabled && change.uses.length > 0) {
@@ -118,7 +122,9 @@ function replaceConfiguration(path: string, expectedRevision: string, bytes: Buf
   const created = mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (created !== undefined) syncDirectoryDurably(dirname(directory));
   try {
-    if (!lstatSync(path).isFile()) throw new AgentsConfigurationError('config_invalid', 'The repo-harness configuration file must be a regular file, not a link.');
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) throw new AgentsConfigurationError('config_is_link', 'The repo-harness configuration file is a symbolic link. The console writes only a regular file.');
+    if (!stat.isFile()) throw new AgentsConfigurationError('config_invalid', 'The repo-harness configuration file must be a regular file.');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
