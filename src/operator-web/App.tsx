@@ -31,6 +31,7 @@ import { Home } from './Home';
 import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
+import type { ArchitectureMapReader } from './ArchitectureMap';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
 import {
@@ -109,6 +110,8 @@ export interface OperatorAppProps {
   readonly readCiRepairs?: CiRepairsReader;
   /** The execution route's verified task sessions: the agent on Home and the Board, and the task drawer's follow-up. */
   readonly readExecution?: ExecutionReader;
+  /** The architecture map route; the Architecture workspace reads it from the server when absent. */
+  readonly readArchitectureMap?: ArchitectureMapReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
 }
@@ -220,6 +223,7 @@ export function OperatorApp({
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
   readExecution = fetchExecution,
+  readArchitectureMap,
   readBotAccess = fetchBotAccess,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
@@ -471,7 +475,7 @@ export function OperatorApp({
             </header>
             {!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
               : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-                <ArchitectureWorkspace repositoryId={activeRepository.repository_id} moduleId={place.module} refreshGeneration={refreshGeneration}
+                <ArchitectureWorkspace repositoryId={activeRepository.repository_id} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
                   onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
               </Suspense>}
           </>}

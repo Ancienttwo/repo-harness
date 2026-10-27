@@ -1,10 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
+import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
 import { docSessionCreateRoute, OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
+import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -12,6 +14,8 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixtu
 
 /** The inventory entry that binds the session route in tests; production OPERATOR_ROUTES has none. */
 const SESSIONS_INVENTORY: OperatorRouteV1 = { id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true };
+/** The inventory entry that binds the session events read in tests; production OPERATOR_ROUTES has none. */
+const SESSION_EVENTS_INVENTORY: OperatorRouteV1 = { id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false };
 const GUIDE = '# Guide\n\nThe operator reads docs.\nIt never writes main.\n\n## Next\n\nMore text.\n';
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -38,6 +42,7 @@ interface Harness {
   readonly worktrees: string;
   readonly home: string;
   readonly url: string;
+  readonly env: NodeJS.ProcessEnv;
   head: () => string;
   commit: (text: string) => Promise<void>;
   post: (body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, any>; text: string }>;
@@ -48,6 +53,8 @@ interface HarnessOptions {
   readonly session_id?: () => string;
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
+  /** Serve only the production GET inventory, without the test session events entry. */
+  readonly production_reads?: boolean;
   /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
   readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
 }
@@ -81,7 +88,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
   });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, SESSIONS_INVENTORY], write_routes: [route] });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, SESSIONS_INVENTORY, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
@@ -89,7 +96,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     for (const dir of [repo, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
   return {
-    repo, repositoryId, worktrees, home, url: server.url,
+    repo, repositoryId, worktrees, home, url: server.url, env,
     head: () => git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(),
     commit: async (text) => {
       writeFileSync(join(repo, 'docs', 'guide.md'), text);
@@ -268,8 +275,9 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes still admit no write, so no session can be created through operator serve', () => {
-  expect(OPERATOR_ROUTES.some(route => route.write || route.id === 'sessions_create')).toBe(false);
+test('production routes admit only the agent settings write, so no session can be created through operator serve', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['settings_agents_write']);
+  expect(OPERATOR_ROUTES.some(route => route.id === 'sessions_create')).toBe(false);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
@@ -367,5 +375,261 @@ test('git variables that select another repository do not move the branch or the
   expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(join(h.worktrees, answer.body.worktree))}\n`);
   expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads/docs/'], other)).toBe('');
   expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
+});
+
+const AT = '2026-10-27T12:00:00.000Z';
+const message = (epoch: number, seq: number, text: string): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'message', role: 'agent', text });
+const turn = (epoch: number, seq: number, boundary: 'started' | 'ended'): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'turn', boundary });
+const tool = (epoch: number, seq: number, paths: string[]): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'tool', category: 'read', status: 'succeeded', paths });
+const eventsFile = (h: Harness, sid: string) => join(sessionsDir(h), sid, 'events.jsonl');
+
+async function createdSession(h: Harness): Promise<string> {
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(201);
+  return answer.body.session_id;
+}
+
+async function readEvents(h: Harness, sid: string, after?: string) {
+  const query = after === undefined ? '' : `?after=${encodeURIComponent(after)}`;
+  const response = await fetch(`${h.url}/api/v1/sessions/${sid}/events${query}`);
+  const text = await response.text();
+  return { status: response.status, body: JSON.parse(text) as Record<string, any>, text };
+}
+
+// Built at run time, so no literal credential sits in the repository.
+const SECRET_SAMPLES = {
+  openai: `sk-${'a1B2'.repeat(8)}`,
+  github: `ghp_${'Z9y8'.repeat(9)}`,
+  aws: `AKIA${'Q7'.repeat(8)}`,
+  bearer: `t0k${'e'.repeat(24)}`,
+  jwt: `eyJ${'h'.repeat(12)}.${'p'.repeat(12)}.${'s'.repeat(12)}`,
+  key: `MIIB${'x'.repeat(24)}`,
+  password: `p4ss${'w'.repeat(8)}`,
+  assignment: `hunter2-${'v'.repeat(8)}`,
+};
+
+test('the host writer redacts events before they reach events.jsonl, and no secret sample reaches the file or a response', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  const s = SECRET_SAMPLES;
+  appendDocSessionEvents(h.env, sid, [
+    message(1, 0, [
+      `Read ${s.openai} and ${s.github} from /Users/someone/private/notes.md.`,
+      `Authorization: Bearer ${s.bearer}`,
+      s.jwt,
+      `-----BEGIN PRIVATE KEY-----\n${s.key}\n-----END PRIVATE KEY-----`,
+      `Push to https://user:${s.password}@example.com/repo.git`,
+    ].join('\n')),
+    message(1, 1, `DATABASE_PASSWORD=${s.assignment}`),
+    tool(1, 2, [`docs/${s.aws}.md`, 'docs/guide.md', 'app/[slug]/page.tsx', 'src/app/(group)/page.tsx']),
+  ]);
+  const raw = readFileSync(eventsFile(h, sid), 'utf8');
+  expect(statSync(eventsFile(h, sid)).mode & 0o777).toBe(0o600);
+  const page = await readEvents(h, sid);
+  expect(page.status).toBe(200);
+  for (const sample of [...Object.values(s), '/Users/someone']) {
+    expect(raw).not.toContain(sample);
+    expect(page.text).not.toContain(sample);
+  }
+  for (const hidden of [h.repo, h.home, h.worktrees]) expect(page.text).not.toContain(hidden);
+  const [first, second, third] = page.body.events;
+  expect(first.text).toContain('sk-[REDACTED]');
+  expect(first.text).toContain('[private path]');
+  // A secret that no replacement rule removes withholds the whole text.
+  expect(second.text).not.toContain('DATABASE_PASSWORD');
+  expect(third.paths).toEqual(['docs/AKIA[REDACTED].md', 'docs/guide.md', 'app/[slug]/page.tsx', 'src/app/(group)/page.tsx']);
+});
+
+test('an event field outside the schema, such as raw tool arguments, a command, terminal output or the environment, is refused and nothing is written', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  const extras = [{ arguments: { path: 'docs/guide.md' } }, { command: 'cat docs/guide.md' }, { output: 'stdout text' }, { env: { HOME: '/Users/someone' } }];
+  for (const extra of extras) {
+    expect(() => appendDocSessionEvents(h.env, sid, [{ ...tool(1, 0, ['docs/guide.md']), ...extra } as DocSessionEventInput])).toThrow();
+  }
+  for (const path of ['/etc/passwd', '../outside.md', 'docs/../../x', 'docs\\guide.md', 'C:/x.md', '~/.ssh/id_rsa', '']) {
+    expect(() => appendDocSessionEvents(h.env, sid, [tool(1, 0, [path])])).toThrow();
+  }
+  // `at` is a strict UTC timestamp, so it cannot carry free text that a date parser skips.
+  for (const at of [`(${SECRET_SAMPLES.github}) 2020`, '(/Users/someone/.ssh/id_rsa) 2020', '2026-10-27', '2026-10-27T12:00:00Z', '2026-02-30T12:00:00.000Z']) {
+    expect(() => appendDocSessionEvents(h.env, sid, [{ ...message(1, 0, 'ok'), at }])).toThrow();
+  }
+  // One bad event refuses the whole batch.
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'ok'), { ...message(1, 1, 'ok'), command: 'ls' } as unknown as DocSessionEventInput])).toThrow();
+  expect(existsSync(eventsFile(h, sid))).toBe(false);
+  expect((await readEvents(h, sid)).body.events).toEqual([]);
+});
+
+test('the epoch.seq cursor orders events across host restarts, and an event that does not move the cursor forward is refused', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'a'), message(1, 1, 'b'), message(1, 2, 'c')]);
+  // The host restarted: OAR counts seq from 0 again, in a new epoch.
+  appendDocSessionEvents(h.env, sid, [message(2, 0, 'd'), message(2, 1, 'e')]);
+  const all = await readEvents(h, sid);
+  expect(all.body.events.map((e: { text: string }) => e.text)).toEqual(['a', 'b', 'c', 'd', 'e']);
+  expect(all.body).toMatchObject({ after: null, next_cursor: '2.1', complete: true });
+  const tail = await readEvents(h, sid, '1.1');
+  expect(tail.body.events.map((e: { epoch: number; seq: number }) => `${e.epoch}.${e.seq}`)).toEqual(['1.2', '2.0', '2.1']);
+  expect((await readEvents(h, sid, '2.1')).body).toMatchObject({ events: [], after: '2.1', next_cursor: '2.1', complete: true });
+  const before = readFileSync(eventsFile(h, sid), 'utf8');
+  for (const stale of [[message(1, 5, 'late')], [message(2, 1, 'again')], [message(2, 3, 'x'), message(2, 2, 'y')]]) {
+    expect(() => appendDocSessionEvents(h.env, sid, stale)).toThrow();
+  }
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(before);
+});
+
+test('the session is running between turn boundaries and idle otherwise, which picks the 1 s or the 30 s poll', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  expect(DOC_SESSION_POLL_MS).toEqual({ running: 1_000, idle: 30_000 });
+  expect((await readEvents(h, sid)).body.activity).toBe('idle');
+  appendDocSessionEvents(h.env, sid, [turn(1, 0, 'started'), message(1, 1, 'working')]);
+  // Activity covers the whole log, not only the page after the cursor.
+  expect((await readEvents(h, sid, '1.1')).body).toMatchObject({ events: [], activity: 'running' });
+  appendDocSessionEvents(h.env, sid, [turn(1, 2, 'ended')]);
+  expect((await readEvents(h, sid)).body.activity).toBe('idle');
+});
+
+test('a page holds at most DOC_SESSION_EVENTS_PAGE events, and its next_cursor reads the rest', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, Array.from({ length: DOC_SESSION_EVENTS_PAGE + 50 }, (_, seq) => message(1, seq, `m${seq}`)));
+  const first = await readEvents(h, sid);
+  expect(first.body.events).toHaveLength(DOC_SESSION_EVENTS_PAGE);
+  expect(first.body).toMatchObject({ complete: false, next_cursor: `1.${DOC_SESSION_EVENTS_PAGE - 1}` });
+  const second = await readEvents(h, sid, first.body.next_cursor);
+  expect(second.body.events).toHaveLength(50);
+  expect(second.body).toMatchObject({ complete: true, next_cursor: `1.${DOC_SESSION_EVENTS_PAGE + 49}` });
+});
+
+test('message text over the byte limit is cut after redaction and marked truncated', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  // The secret sits across the cut, so redaction must run on the whole text first.
+  const text = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 15)}${SECRET_SAMPLES.openai} ${'y'.repeat(100)}`;
+  appendDocSessionEvents(h.env, sid, [message(1, 0, text)]);
+  const [event] = (await readEvents(h, sid)).body.events;
+  expect(event.truncated).toBe(true);
+  expect(Buffer.byteLength(event.text)).toBeLessThanOrEqual(DOC_SESSION_EVENT_TEXT_MAX_BYTES);
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).not.toContain(SECRET_SAMPLES.openai.slice(0, 12));
+  // A cut inside a replacement leaves text that matches its rule again; the cut text is withheld, not refused.
+  const bearer = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 'Authorization: Bearer [RE'.length)}Authorization: Bearer ${SECRET_SAMPLES.bearer}`;
+  appendDocSessionEvents(h.env, sid, [message(1, 1, bearer)]);
+  const cut = (await readEvents(h, sid, '1.0')).body.events[0];
+  expect(cut).toMatchObject({ truncated: true });
+  expect(cut.text).not.toContain('Bearer');
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).not.toContain(SECRET_SAMPLES.bearer);
+});
+
+test('a last line without its newline is skipped by the reader and refused by the writer, and a symlinked log is refused', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'kept')]);
+  const torn = `${readFileSync(eventsFile(h, sid), 'utf8')}{"protocol":1,"epoch":1,"seq":1`;
+  writeFileSync(eventsFile(h, sid), torn, { mode: 0o600 });
+  const page = await readEvents(h, sid);
+  expect(page.status).toBe(200);
+  expect(page.body.events.map((e: { text: string }) => e.text)).toEqual(['kept']);
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 2, 'next')])).toThrow();
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(torn);
+
+  const other = await createdSession(h);
+  const outside = join(h.home, 'outside.jsonl');
+  writeFileSync(outside, `${JSON.stringify({ protocol: 1, epoch: 1, seq: 0, at: AT, type: 'message', role: 'agent', text: 'outside', truncated: false })}\n`, { mode: 0o600 });
+  symlinkSync(outside, eventsFile(h, other));
+  const linked = await readEvents(h, other);
+  expect(linked.status).toBe(503);
+  expect(linked.text).not.toContain('outside');
+  expect(() => appendDocSessionEvents(h.env, other, [message(1, 1, 'x')])).toThrow();
+  expect(readFileSync(outside, 'utf8')).not.toContain('"x"');
+});
+
+test('a sessions directory or a session directory that is a symlink is refused for the session record and for events', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  // `operator/sessions` now points at a directory outside that holds <sid>/session.json.
+  const elsewhere = join(h.home, 'elsewhere');
+  renameSync(sessionsDir(h), elsewhere);
+  symlinkSync(elsewhere, sessionsDir(h));
+  const read = await readEvents(h, sid);
+  expect(read.status).toBe(503);
+  expect(read.body.code).toBe('events_unavailable');
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'x')])).toThrow();
+  expect(existsSync(join(elsewhere, sid, 'events.jsonl'))).toBe(false);
+  const created = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(created.status).toBe(409);
+  expect(created.body.error.code).toBe('reconcile_required');
+  expect(readdirSync(elsewhere)).toEqual([sid]);
+
+  // A real sessions directory whose <sid> entry is a symlink to another session directory.
+  rmSync(sessionsDir(h));
+  mkdirSync(sessionsDir(h), { mode: 0o700 });
+  symlinkSync(join(elsewhere, sid), join(sessionsDir(h), sid));
+  expect((await readEvents(h, sid)).status).not.toBe(200);
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'x')])).toThrow();
+  expect(existsSync(join(elsewhere, sid, 'events.jsonl'))).toBe(false);
+});
+
+test('a write that fails part way through a batch leaves the log at its old length, and a later append succeeds', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'a')]);
+  const before = readFileSync(eventsFile(h, sid), 'utf8');
+  let calls = 0;
+  const write = (fd: number, data: Buffer, offset: number, length: number): number => {
+    calls += 1;
+    if (calls === 1) return writeSync(fd, data, offset, Math.floor(length / 2));
+    throw Object.assign(new Error('no space left'), { code: 'ENOSPC' });
+  };
+  let failure: unknown;
+  try { appendDocSessionEvents(h.env, sid, [message(1, 1, 'b'), message(1, 2, 'c')], { write }); } catch (error) { failure = error; }
+  expect(calls).toBe(2);
+  expect((failure as { code?: string }).code).toBe('events_unavailable');
+  expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(before);
+  appendDocSessionEvents(h.env, sid, [message(1, 1, 'b')]);
+  expect((await readEvents(h, sid)).body.events.map((e: { text: string }) => e.text)).toEqual(['a', 'b']);
+});
+
+test('the events read refuses an unknown query key and a repeated cursor', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  for (const query of ['?limit=5', '?after=1.0&after=1.1', '?after=1.0&x=1']) {
+    const response = await fetch(`${h.url}/api/v1/sessions/${sid}/events${query}`);
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('invalid_cursor');
+  }
+});
+
+test('the events read refuses a bad cursor, an unknown session and a corrupt log without echoing the log', async () => {
+  const h = await harness();
+  const sid = await createdSession(h);
+  for (const after of ['1', '1.', 'x.1', '-1.0', '1.01', '1.2.3']) {
+    const answer = await readEvents(h, sid, after);
+    expect(answer.status).toBe(400);
+    expect(answer.body.code).toBe('invalid_cursor');
+  }
+  const unknown = await readEvents(h, 'f'.repeat(32));
+  expect(unknown.status).toBe(404);
+  expect(unknown.body.code).toBe('session_not_found');
+  expect(() => appendDocSessionEvents(h.env, 'f'.repeat(32), [message(1, 0, 'x')])).toThrow();
+  expect(existsSync(join(sessionsDir(h), 'f'.repeat(32)))).toBe(false);
+  const leaked = `${JSON.stringify({ protocol: 1, epoch: 1, seq: 0, at: AT, type: 'tool', category: 'command', status: 'succeeded', paths: [], command: `curl -H "token ${SECRET_SAMPLES.github}"` })}\n`;
+  writeFileSync(eventsFile(h, sid), leaked, { mode: 0o600 });
+  const corrupt = await readEvents(h, sid);
+  expect(corrupt.status).toBe(503);
+  expect(corrupt.body.code).toBe('events_unavailable');
+  expect(corrupt.text).not.toContain(SECRET_SAMPLES.github);
+  expect(() => appendDocSessionEvents(h.env, sid, [message(1, 1, 'x')])).toThrow();
+});
+
+test('production routes keep no session events read, so operator serve does not answer it', async () => {
+  expect(OPERATOR_ROUTES.some(route => route.id === 'session_events' || route.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source)).toBe(false);
+  const h = await harness({ production_reads: true });
+  const sid = await createdSession(h);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'hidden')]);
+  const answer = await readEvents(h, sid);
+  expect(answer.status).toBe(404);
+  expect(answer.text).not.toContain('hidden');
 });
 

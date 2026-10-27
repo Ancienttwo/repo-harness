@@ -1,4 +1,5 @@
 import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
+import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { claudeRuntime, codexRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -17,7 +18,7 @@ export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
 }
 export function reviewRuntime(kind: string) {
-  if (!['claude', 'codex'].includes(kind)) throw new Error('OAR_REVIEW_RUNTIME_UNSUPPORTED');
+  if (!isReviewRuntimeId(kind)) throw new Error('OAR_REVIEW_RUNTIME_UNSUPPORTED');
   return createRuntimeRegistry([codexRuntime, claudeRuntime]).require(kind);
 }
 
