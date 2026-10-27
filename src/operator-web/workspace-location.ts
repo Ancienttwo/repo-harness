@@ -18,6 +18,8 @@ export const WORKSPACES = [
   { id: 'architecture', group: 'observe' },
   { id: 'system', group: 'observe' },
   { id: 'tools', group: 'observe' },
+  // Below the groups, at the foot of the rail.
+  { id: 'settings', group: null },
 ] as const;
 export type NavWorkspace = typeof WORKSPACES[number]['id'];
 export type NavGroup = NonNullable<typeof WORKSPACES[number]['group']>;
@@ -51,7 +53,7 @@ function decodeItem(value: string): string | null {
 export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   const [name, parameter, ...rest] = hash.replace(/^#/u, '').split('/');
   if (rest.length > 0) return HOME;
-  if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'bots') {
+  if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'bots' || name === 'settings') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
   }
   if (name === 'architecture') {
