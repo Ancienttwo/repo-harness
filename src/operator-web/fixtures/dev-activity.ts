@@ -41,6 +41,9 @@ function pull(now: number, slug: string, number: number, title: string, override
   return {
     number, title, url: `https://github.com/${slug}/pull/${number}`, state: 'open', is_draft: false, base_branch: 'main',
     merge_state: 'BLOCKED', ci: 'pending', review: 'review_required', updated_at: at(now, 20 * MINUTE), merged_at: null, closed_at: null,
+    // Only the open query reads the head and the changed files.
+    head_sha: (overrides.state ?? 'open') === 'open' ? sha(String(number)) : null,
+    changed_files: (overrides.state ?? 'open') === 'open' ? { state: 'ok', paths: ['README.md'] } : null,
     ...overrides,
   };
 }
@@ -76,12 +79,14 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'feat/kanban-human-redesign', {
       title: 'Rebuild the operator console for humans', column: 'building', column_since: at(now, 3 * HOUR),
       worktrees: [worktree('repo-harness-wt-kanban-redesign', 'a1', { dirty: true, ahead: 3 })],
-      pull_request: pull(now, harness, 608, 'Rebuild the operator console for humans', { is_draft: true, ci: 'pending', review: 'none' }),
+      pull_request: pull(now, harness, 608, 'Rebuild the operator console for humans', { is_draft: true, ci: 'pending', review: 'none',
+        changed_files: { state: 'ok', paths: ['src/operator-web/App.tsx', 'src/operator-web/NavRail.tsx', 'src/operator-web/app.css', 'tests/operator-web/operator-ui.test.tsx'] } }),
     }),
     item(HARNESS_ID, 'feat/runtime-capture-pi', {
       title: 'Capture Pi runtime status natively', column: 'building', column_since: at(now, 9 * HOUR),
       worktrees: [worktree('repo-harness-wt-pi-capture', 'b2', { ahead: 5, behind: 2 })],
-      pull_request: pull(now, harness, 604, 'Capture Pi runtime status natively', { is_draft: true, ci: 'success', review: 'none' }),
+      pull_request: pull(now, harness, 604, 'Capture Pi runtime status natively', { is_draft: true, ci: 'success', review: 'none',
+        changed_files: { state: 'unavailable', reason: 'files_truncated' } }),
     }),
     item(SITE_ID, 'fix/csp-header', {
       title: 'fix/csp-header', column: 'building', worktrees: [worktree('operator-site-csp', 'd4', { dirty: true, ahead: null, behind: null })],
@@ -93,7 +98,8 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'feat/pipeline-observer', {
       title: 'Observe pipeline phases on the board', column: 'verifying', column_since: at(now, 20 * HOUR),
       worktrees: [worktree('repo-harness-wt-pipeline', 'e5', { ahead: 1 })],
-      pull_request: pull(now, harness, 603, 'Observe pipeline phases on the board', { ci: 'success', review: 'review_required' }),
+      pull_request: pull(now, harness, 603, 'Observe pipeline phases on the board', { ci: 'success', review: 'review_required',
+        changed_files: { state: 'ok', paths: ['src/core/dev-activity/projection.ts', 'src/effects/dev-activity/collector.ts', 'tests/core/dev-activity-projection.test.ts'] } }),
     }),
     item(SITE_ID, 'feat/billing-copy', {
       title: 'Rewrite billing copy', column: 'verifying', column_since: at(now, 2 * DAY + 3 * HOUR),
@@ -102,7 +108,8 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'chore/oar-0-45', {
       title: 'Upgrade OAR to 0.45.1', column: 'ready_to_merge', column_since: at(now, 50 * MINUTE),
       worktrees: [worktree('repo-harness-wt-oar', 'f6', { ahead: 2 })],
-      pull_request: pull(now, harness, 602, 'Upgrade OAR to 0.45.1', { ci: 'success', review: 'approved', merge_state: 'CLEAN' }),
+      pull_request: pull(now, harness, 602, 'Upgrade OAR to 0.45.1', { ci: 'success', review: 'approved', merge_state: 'CLEAN',
+        changed_files: { state: 'ok', paths: ['bun.lock', 'docs/reference-configs/external-tooling.md', 'package.json'] } }),
     }),
     merged(now, HARNESS_ID, harness, 607, 'feat/pi-host', 'Add native Pi host support', 3 * HOUR),
     merged(now, HARNESS_ID, harness, 606, 'feat/kanban-status', 'Observe native agent status in Kanban', 9 * HOUR, true),

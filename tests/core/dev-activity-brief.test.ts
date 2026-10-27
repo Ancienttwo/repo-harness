@@ -13,6 +13,8 @@ function pr(overrides: Partial<DevActivityRawPullRequest> = {}): DevActivityRawP
     number: 7, title: 'Add widgets', url: 'https://github.com/acme/widgets/pull/7', state: 'open',
     is_draft: false, head_branch: 'feat/widgets', base_branch: 'main', merge_state: 'CLEAN',
     ci: 'success', review: 'approved', created_at: AT, updated_at: AT, merged_at: null, closed_at: null,
+    head_sha: (overrides.state ?? 'open') === 'open' ? 'b'.repeat(40) : null,
+    changed_files: (overrides.state ?? 'open') === 'open' ? { state: 'ok', paths: ['src/widgets.ts'] } : null,
     ...overrides,
   };
 }

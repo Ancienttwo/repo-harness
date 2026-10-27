@@ -22,7 +22,7 @@ import {
   type ArchitectureMapV1,
   type ArchitectureViolationReason,
 } from '../core/operator/architecture-map';
-import { MAP_LAYERS, mapLayerView, type MapLayerId, type MapLayerView, type MapMark } from './architecture-map-layers';
+import { firstImpactPullRequest, MAP_LAYERS, mapLayerView, pullRequestDependents, type MapLayerId, type MapLayerView, type MapMark } from './architecture-map-layers';
 import { layoutArchitectureMap, type MapLayoutNode } from './architecture-map-layout';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
@@ -142,15 +142,16 @@ function Legend({ map, view, t }: { readonly map: ArchitectureMapV1; readonly vi
 }
 
 /** The active layer's facts for one node, straight from the collector. */
-function LayerFacts({ map, layer, nodeId, names, t }: {
+function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
   readonly nodeId: string;
   readonly names: ReadonlyMap<string, string>;
   readonly t: OperatorTranslate;
 }) {
   const facts: { key: string; text: string; paths?: readonly string[] }[] = [];
-  const { changes, violations, tests } = map.layers;
+  const { changes, violations, pull_requests: pullRequests, tests } = map.layers;
   if (layer === 'changes' && changes.state === 'ok') {
     const entry = changes.nodes.find(item => item.id === nodeId);
     if (entry) facts.push({ key: 'changes', text: t('architecture.layer.node.changes', { files: entry.files, added: entry.added, deleted: entry.deleted }) });
@@ -169,6 +170,13 @@ function LayerFacts({ map, layer, nodeId, names, t }: {
       }
     }
   }
+  const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
+  if (layer === 'pull_requests' && impact?.state === 'ok') {
+    const entry = impact.nodes.find(item => item.id === nodeId);
+    if (entry) facts.push({ key: 'pull_request', text: t('architecture.layer.node.pull_request', { files: entry.files, number: pullRequest! }) });
+    const targets = pullRequestDependents(map, new Set(impact.nodes.map(item => item.id))).get(nodeId);
+    if (targets) facts.push({ key: 'dependent', text: t('architecture.layer.node.dependent', { names: targets.map(id => names.get(id) ?? id).join(', ') }) });
+  }
   if (layer === 'tests' && tests.state === 'ok') {
     const entry = tests.capabilities.find(item => item.id === nodeId);
     if (entry) facts.push({ key: 'tests', text: t('architecture.layer.node.tests', { files: entry.files, passed: entry.passed, failed: entry.failed, skipped: entry.skipped, noResult: entry.no_result }) });
@@ -182,9 +190,10 @@ function LayerFacts({ map, layer, nodeId, names, t }: {
   </>;
 }
 
-function Inspector({ map, layer, selected, onModule, t }: {
+function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
   readonly selected: MapLayoutNode | null;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
@@ -222,7 +231,7 @@ function Inspector({ map, layer, selected, onModule, t }: {
       </dd></div>}
     </dl>
     {node.kind === 'capability' && <button type="button" className="operator-button operator-button--secondary" onClick={() => onModule(node.id)}>{t('architecture.map.open')}</button>}
-    <LayerFacts map={map} layer={layer} nodeId={node.id} names={names} t={t} />
+    <LayerFacts map={map} layer={layer} pullRequest={pullRequest} nodeId={node.id} names={names} t={t} />
     <h4>{t('architecture.map.outgoing', { count: outgoing.length })}</h4>
     {outgoing.length ? <ul>{outgoing}</ul> : <p className="detail-quiet">{t('architecture.none')}</p>}
     <h4>{t('architecture.map.incoming', { count: incoming.length })}</h4>
@@ -230,14 +239,15 @@ function Inspector({ map, layer, selected, onModule, t }: {
   </aside>;
 }
 
-function MapCanvas({ map, layer, onModule, t }: {
+function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
   const layout = useMemo(() => layoutArchitectureMap(map), [map]);
-  const view = useMemo(() => mapLayerView(map, layer), [map, layer]);
+  const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
@@ -315,7 +325,7 @@ function MapCanvas({ map, layer, onModule, t }: {
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
     </div>
-    <Inspector map={map} layer={layer} selected={selected} onModule={onModule} t={t} />
+    <Inspector map={map} layer={layer} pullRequest={pullRequest} selected={selected} onModule={onModule} t={t} />
   </div>;
 }
 
@@ -350,7 +360,13 @@ function Note({ part, reason, children }: { readonly part: string; readonly reas
 }
 
 /** What the active layer covers, or why it has no data. Every number is a count from the collector. */
-function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; readonly layer: MapLayerId; readonly t: OperatorTranslate }) {
+function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
+  readonly onPullRequest: (number: number) => void;
+  readonly t: OperatorTranslate;
+}) {
   const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
   if (layer === 'changes') {
     if (changes.state === 'unavailable') return <Gap part="changes" reason={changes.reason}>{t(`architecture.layer.changes.${changes.reason}`)}</Gap>;
@@ -394,9 +410,29 @@ function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; read
       {tests.results !== 'ok' && <Gap part="results" reason={tests.results}>{t(`architecture.layer.tests.results.${tests.results}`)}</Gap>}
     </div>;
   }
-  return layer === 'pull_requests'
-    ? <Note part={layer} reason={pullRequests.reason}>{t(`architecture.layer.pull_requests.${pullRequests.reason}`)}</Note>
-    : <Note part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Note>;
+  if (layer === 'pull_requests') {
+    if (pullRequests.state === 'unavailable') return <Gap part="pull_requests" reason={pullRequests.reason}>{t(`architecture.layer.pull_requests.${pullRequests.reason}`)}</Gap>;
+    const chosen = pullRequests.pull_requests.find(item => item.number === pullRequest) ?? null;
+    return <div className="architecture-layer-summary" data-layer-summary="pull_requests">
+      <p>{t('architecture.layer.pull_requests.summary', { count: pullRequests.pull_requests.length })}{' '}
+        <time dateTime={pullRequests.observed_at}>{new Date(pullRequests.observed_at).toLocaleString()}</time></p>
+      {pullRequests.pull_requests.length > 0 && <label className="architecture-layer-summary__pick">
+        <span>{t('architecture.layer.pull_requests.pick')}</span>
+        <select value={chosen?.number ?? ''} onChange={event => onPullRequest(Number(event.target.value))}>
+          {chosen === null && <option value="" disabled>{t('architecture.layer.pull_requests.none')}</option>}
+          {pullRequests.pull_requests.map(item => <option key={item.number} value={item.number}>#{item.number} {item.title}</option>)}
+        </select>
+      </label>}
+      {chosen && <p data-pull-request={chosen.number}>
+        <a href={chosen.url} target="_blank" rel="noreferrer">#{chosen.number}</a>
+        {chosen.head_sha !== null && <> · <code>{chosen.head_sha.slice(0, 12)}</code></>}
+        {chosen.impact.state === 'ok' && <> · {t('architecture.layer.pull_requests.impact', { files: chosen.impact.files, nodes: chosen.impact.nodes.length, unowned: chosen.impact.unowned_files })}</>}
+      </p>}
+      {chosen?.impact.state === 'unavailable' && <Gap part="pull_request" reason={chosen.impact.reason}>{t(`architecture.layer.pull_requests.pr.${chosen.impact.reason}`)}</Gap>}
+      <Note part="pull_requests.flow_steps" reason={pullRequests.flow_steps.reason}>{t(`architecture.layer.changes.flow_steps.${pullRequests.flow_steps.reason}`)}</Note>
+    </div>;
+  }
+  return <Note part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Note>;
 }
 
 /** The whole committed model on one canvas, with line and import counts from the map collector. */
@@ -410,10 +446,14 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
   const result = useArchitectureMap(read, repositoryId, refreshGeneration);
   // PRD 2-ARCH-P1: the map opens on today's changes.
   const [layer, setLayer] = useState<MapLayerId>('changes');
+  const [picked, setPicked] = useState<number | null>(null);
   // The last good map stays on screen through a failed refresh; a new repository starts empty.
   const shown = useRef<{ repositoryId: string; map: ArchitectureMapV1 } | null>(null);
   if (result?.state === 'ok') shown.current = { repositoryId, map: result.map };
   const map = shown.current?.repositoryId === repositoryId ? shown.current.map : null;
+  // A picked PR that a refresh no longer lists falls back to the first PR with impact data.
+  const listed = map !== null && map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.some(item => item.number === picked);
+  const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   return <div className="architecture-map-view">
     {result === null && <p role="status">{t('architecture.map.loading')}</p>}
     {result?.state === 'unavailable' && <p className="architecture-notice" role="alert" data-error-code={result.reason}>
@@ -426,8 +466,8 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
       {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
       {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
       <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
-      <LayerSummary map={map} layer={layer} t={t} />
-      <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} onModule={onModule} t={t} /></ReactFlowProvider>
+      <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
+      <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>
     </>}
   </div>;
 }
