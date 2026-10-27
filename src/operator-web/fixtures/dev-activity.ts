@@ -1,8 +1,10 @@
 // Development-only board fixtures. Loaded by `?fixture=<name>` under the Vite
 // dev server and never emitted into the production bundle.
 import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityItem, type DevActivityPullRequest, type DevActivityRepository, type DevActivitySnapshotV2, type DevActivitySourceHealth, type DevActivityWorktree } from '../../core/dev-activity/types';
+import { decodeTaskExecutionView } from '../../core/operator/execution-state';
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
+import type { ExecutionRead } from '../repository-reads';
 
 /** The repo-harness registration shares its id with the repository snapshot fixture. */
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
@@ -116,6 +118,36 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
       waiting_since: at(now, 50 * MINUTE), url: `https://github.com/${harness}/pull/602`, command: null },
   ];
   return { projection_version: DEV_ACTIVITY_PROJECTION, status: 'ready', collected_at: at(now, 40_000), repositories, unreadable_registrations: 0, items, attention };
+}
+
+function executionView(repositoryId: string, now: number, tasks: readonly unknown[], unlisted: number): ExecutionRead {
+  return { state: 'ok', view: decodeTaskExecutionView({
+    protocol: 1, kind: 'operator_task_execution', repository_id: repositoryId, observed_at: at(now, 20_000), tasks, unlisted_tasks: unlisted,
+  }) };
+}
+
+/**
+ * The execution route beside the busy board. repo-harness: Codex in a Herdr
+ * pane on the console redesign, Claude Code in a terminal on the pipeline
+ * observer, a session whose provider exited, and one session left out because
+ * its branch is not public text. operator-site has no first collection yet.
+ */
+export function busyExecution(repositoryId: string, now: number): ExecutionRead {
+  if (repositoryId === SITE_ID) return { state: 'unavailable', reason: 'execution_state_pending' };
+  if (repositoryId !== HARNESS_ID) return executionView(repositoryId, now, [], 0);
+  return executionView(repositoryId, now, [
+    { state: 'verified', task: 'kanban-redesign', role: 'implementer', issue_id: '608', branch: 'feat/kanban-human-redesign', agent: 'codex', runtime: 'herdr',
+      follow_up: { task_id: 'kanban-redesign', resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
+        herdr_pane: { session: 'main', workspace_id: 'w2', pane_id: 'w2:p1', agent_name: 'implementer' } } },
+    { state: 'verified', task: 'pipeline-observer', role: 'deep-reasoner', issue_id: '603', branch: 'feat/pipeline-observer', agent: 'claude', runtime: 'terminal',
+      follow_up: { task_id: 'pipeline-observer', resume: { host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' }, herdr_pane: null } },
+    { state: 'unverified', task: 'oar-0-45', role: 'implementer', reason: 'provider_exited', follow_up: { task_id: 'oar-0-45', resume: null, herdr_pane: null } },
+  ], 1);
+}
+
+/** Repositories registered, no task session. */
+export function emptyExecution(repositoryId: string, now: number): ExecutionRead {
+  return executionView(repositoryId, now, [], 0);
 }
 
 /** Repositories registered, nothing in flight. */
