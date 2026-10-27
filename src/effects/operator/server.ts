@@ -40,6 +40,7 @@ import { terminateProcessGroup, type ProcessGroupTermination } from '../process-
 import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
+import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -1601,6 +1602,9 @@ export async function startOperatorServer(
       throw new OperatorServerError('invalid_argument', `write route ${JSON.stringify(route.id)} has no matching POST write entry in the route inventory`, 400);
     }
   }
+  // Doc session events are served only when the inventory declares them; production OPERATOR_ROUTES does not yet.
+  const sessionEventsRead = routeInventory.some(entry => entry.id === 'session_events' && entry.method === 'GET' && !entry.write
+    && entry.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source);
   const matchWriteRoute = (pathname: string): { readonly route: OperatorWriteRoute; readonly params: readonly string[] } | null => {
     for (const route of writeRoutes) {
       const match = route.path.exec(pathname);
@@ -1699,6 +1703,18 @@ export async function startOperatorServer(
       }, ARCHITECTURE_FAILURES, 'architecture', undefined, code =>
         code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
           : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422, request);
+      return;
+    }
+
+    const sessionEvents = sessionEventsRead ? OPERATOR_SESSION_EVENTS_ROUTE.exec(pathname) : null;
+    if (sessionEvents !== null) {
+      const keys = [...url.searchParams.keys()];
+      if (keys.some(key => key !== 'after') || keys.length > 1) { sendJson(response, 400, { code: 'invalid_cursor' }, headOnly); return; }
+      try { sendJson(response, 200, readDocSessionEvents(options.env ?? process.env, sessionEvents[1]!, url.searchParams.get('after')), headOnly); }
+      catch (error) {
+        const code = error instanceof DocSessionEventsError && (error.code === 'invalid_cursor' || error.code === 'session_not_found') ? error.code : 'events_unavailable';
+        sendJson(response, code === 'invalid_cursor' ? 400 : code === 'session_not_found' ? 404 : 503, { code }, headOnly);
+      }
       return;
     }
 
