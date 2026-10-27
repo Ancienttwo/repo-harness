@@ -31,7 +31,15 @@ import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
-import { fetchCiRepairs, fetchRepositoryHead, useRepositoryHead, type CiRepairsReader, type RepositoryHeadReader } from './repository-reads';
+import {
+  fetchCiRepairs,
+  fetchExecution,
+  fetchRepositoryHead,
+  useRepositoryHead,
+  type CiRepairsReader,
+  type ExecutionReader,
+  type RepositoryHeadReader,
+} from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
 import {
@@ -93,6 +101,8 @@ export interface OperatorAppProps {
   readonly readRepositoryHead?: RepositoryHeadReader;
   /** The tests route's open CI repair issues, for Home's "Today" section. */
   readonly readCiRepairs?: CiRepairsReader;
+  /** The execution route's verified task sessions: the agent on Home and the Board, and the task drawer's follow-up. */
+  readonly readExecution?: ExecutionReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -199,6 +209,7 @@ export function OperatorApp({
   initialSetup,
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
+  readExecution = fetchExecution,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -423,8 +434,8 @@ export function OperatorApp({
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
-          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <Board view={devActivity} runtime={runtime} filters={boardFilters} onFilters={setFilters} itemId={place.item}
+          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+          {workspace === 'board' && <Board view={devActivity} runtime={runtime} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
