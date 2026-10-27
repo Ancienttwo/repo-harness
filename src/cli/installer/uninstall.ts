@@ -38,7 +38,29 @@ function object(raw: string): Record<string, any> {
 /** Plan completely before writing; dry-run neither takes a filesystem lock nor creates receipts. */
 export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   if (opts.dryRun) return runUserUninstallLocked(opts);
+  // Reject invalid authority without creating a lock directory. Read it again
+  // under the lock before planning any mutation, since another writer can run here.
+  try { readUninstallState(opts); }
+  catch (error) {
+    return uninstallResult([{ path: configurationReceiptPath(hostConfigurationRoot(opts.env)), action: 'unresolved', reason: String((error as Error).message) }], false);
+  }
   return withRuntimeTransactionContext(globalRuntimeScope(opts.env), opts.runtimeLock, (runtimeLock) => runUserUninstallLocked({ ...opts, runtimeLock }));
+}
+
+function readUninstallState(opts: UninstallOptions) {
+  const env = opts.env ?? process.env;
+  const home = hostConfigurationRoot(env);
+  assertConfigurationPath(installProfileStatePath(env), home);
+  const state = readInstalledProfile(env);
+  const receipt = readConfigurationReceipt(home);
+  if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
+  return { state, receipt };
+}
+
+function uninstallResult(items: UninstallItem[], dryRun: boolean): UninstallResult {
+  const partial = items.some((item) => item.action === 'unresolved');
+  return { exitCode: partial ? 1 : 0, status: partial ? 'partial' : 'complete', dryRun, items,
+    lines: [...items.map((item) => `[${item.action}] ${item.path}: ${item.reason}`), `[uninstall] ${partial ? 'partial' : 'complete'}${dryRun ? ' (dry-run)' : ''}`] };
 }
 
 function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
@@ -58,10 +80,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   let state: ReturnType<typeof readInstalledProfile> = null;
   let receipt: ReturnType<typeof readConfigurationReceipt>;
   try {
-    assertConfigurationPath(installProfileStatePath(env), home);
-    state = readInstalledProfile(env);
-    receipt = readConfigurationReceipt(home);
-    if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
+    ({ state, receipt } = readUninstallState(opts));
   } catch (error) { unresolved(configurationReceiptPath(home), String((error as Error).message)); return result(); }
   let recovered = false;
   if (receipt.pending) {
@@ -246,9 +265,5 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
     } catch (error) { unresolved(home, `uninstall incomplete: ${String((error as Error).message)}`); }
   }
   return result();
-  function result(): UninstallResult {
-    const partial = items.some((item) => item.action === 'unresolved');
-    return { exitCode: partial ? 1 : 0, status: partial ? 'partial' : 'complete', dryRun: opts.dryRun === true, items,
-      lines: [...items.map((item) => `[${item.action}] ${item.path}: ${item.reason}`), `[uninstall] ${partial ? 'partial' : 'complete'}${opts.dryRun ? ' (dry-run)' : ''}`] };
-  }
+  function result(): UninstallResult { return uninstallResult(items, opts.dryRun === true); }
 }

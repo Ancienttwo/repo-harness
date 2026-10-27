@@ -830,8 +830,9 @@ export function rollbackInstallHostTransaction(
 
 export function commitInstallHostTransaction(transaction: InstallHostTransaction): void {
   assertTransactionLock(transaction);
-  try { rmSync(transaction.backup_root, { recursive: true, force: true }); }
-  finally { transactionLocks.get(transaction)?.owned?.release(); transactionLocks.delete(transaction); }
+  rmSync(transaction.backup_root, { recursive: true, force: true });
+  transactionLocks.get(transaction)?.owned?.release();
+  transactionLocks.delete(transaction);
 }
 
 /** Lazy (never evaluated at module load) so importing this module has no filesystem side effect. */

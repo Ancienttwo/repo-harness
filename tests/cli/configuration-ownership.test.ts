@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync, symlinkSync, statSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync, symlinkSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { configurationReceiptPath, readConfigurationReceipt, writeOwnedConfiguration, recordConfigurationChange, readConfigurationFragment, replaceConfigurationFragment } from '../../src/cli/installer/configuration-ownership';
@@ -153,6 +153,43 @@ test('installer rollback refuses a competing configuration writer before it can 
     expect(await child.exited, stderr).toBe(0);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ brainRoot: brain, security: { mode: 'strict' } });
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('failed commit cleanup retains its lock and permits rollback', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'configuration-commit-cleanup-'));
+  const env = { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
+  const path = join(home, '.repo-harness/config.json');
+  const { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction } = await import('../../src/cli/installer/install-profile');
+  let transaction: ReturnType<typeof beginInstallHostTransaction> | undefined;
+  try {
+    mkdirSync(join(home, '.repo-harness'));
+    const original = JSON.stringify({ brainRoot: join(home, 'original'), security: { mode: 'strict' } });
+    writeFileSync(path, original);
+    transaction = beginInstallHostTransaction([path], env);
+    writeFileSync(path, JSON.stringify({ brainRoot: join(home, 'during-install') }));
+    chmodSync(transaction.backup_root, 0o500);
+    try {
+      expect(() => commitInstallHostTransaction(transaction!)).toThrow();
+    } finally { if (existsSync(transaction.backup_root)) chmodSync(transaction.backup_root, 0o700); }
+    const modulePath = join(import.meta.dir, '../../src/cli/commands/brain-root.ts');
+    const child = Bun.spawn([process.execPath, '-e', `import {configureBrainRoot} from ${JSON.stringify(modulePath)}; try { configureBrainRoot(${JSON.stringify(join(home, 'competing'))}, process.env); } catch (error) { console.error(error.code); process.exit(75); }`], { env, stdout: 'pipe', stderr: 'pipe' });
+    const stderr = await new Response(child.stderr).text();
+    expect(await child.exited).toBe(75);
+    expect(stderr).toContain('busy');
+    rollbackInstallHostTransaction(transaction);
+    transaction = undefined;
+    expect(readFileSync(path, 'utf8')).toBe(original);
+    const { configureBrainRoot } = await import('../../src/cli/commands/brain-root');
+    configureBrainRoot(join(home, 'after-rollback'), env);
+    expect(JSON.parse(readFileSync(path, 'utf8')).brainRoot).toBe(join(home, 'after-rollback'));
+  } finally {
+    if (transaction && existsSync(transaction.backup_root)) {
+      chmodSync(transaction.backup_root, 0o700);
+      rollbackInstallHostTransaction(transaction);
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('configuration writes preserve sibling sections and reject invalid input or foreign lock contexts', async () => {
