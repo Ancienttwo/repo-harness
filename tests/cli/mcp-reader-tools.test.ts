@@ -459,16 +459,30 @@ describe('MCP reader tools', () => {
         content: '#!/bin/sh\necho pwned\n',
         must_not_exist: true,
       }));
-      if (existsSync(join(repoRoot, '.GIT'))) {
-        // Case-insensitive file systems resolve .GIT to the real git directory.
-        expectDenied(await jsonTool(ctx, 'write_file', {
-          repo_id: repoId,
-          path: '.GIT/hooks/post-merge',
-          content: '#!/bin/sh\necho pwned\n',
-          must_not_exist: true,
-        }));
-        expect(existsSync(join(repoRoot, '.git', 'hooks', 'post-merge'))).toBe(false);
-      }
+      // Case variants are refused on the logical path, so no case-insensitive file system or realpath folding is needed.
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: '.GIT/hooks/post-merge',
+        content: '#!/bin/sh\necho pwned\n',
+        must_not_exist: true,
+      }));
+      expect(existsSync(join(repoRoot, '.git', 'hooks', 'post-merge'))).toBe(false);
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: 'src/.GIT',
+        content: 'gitdir: ../docs\n',
+        must_not_exist: true,
+      }));
+      expect(readdirSync(join(repoRoot, 'src'))).toEqual(['index.ts']);
+      expectDenied(await jsonTool(ctx, 'move_path', {
+        repo_id: repoId,
+        from_path: 'docs/notes.txt',
+        to_path: 'src/.Git',
+        expected_sha256: sha256(readFileSync(join(repoRoot, 'docs', 'notes.txt'), 'utf-8')),
+        must_not_exist: true,
+      }));
+      expect(existsSync(join(repoRoot, 'docs', 'notes.txt'))).toBe(true);
+      expect(readdirSync(join(repoRoot, 'src'))).toEqual(['index.ts']);
       expectDenied(await jsonTool(ctx, 'apply_patch', {
         repo_id: repoId,
         path: '.git/config',

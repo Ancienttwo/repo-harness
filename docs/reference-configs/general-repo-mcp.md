@@ -47,7 +47,8 @@ Read/write access is an operator decision in the registry. Do not grant
 and are denied for every `read_only` repo.
 
 Every general repo tool refuses a path that has a `.git` segment, at any depth,
-with `PATH_DENIED`. The check runs on the logical path and on the physical path
+with `PATH_DENIED`. The match ignores case, so `.GIT` and `.Git` are refused too.
+The check runs on the logical path and on the physical path
 after realpath, for reads and writes. A write to `.git/hooks/*` or `.git/config`
 runs code on the next local `git` command. `repo_manifest` and `list_tree` do
 not list `.git` entries.

@@ -283,9 +283,11 @@ function ignoreRuleMatches(rule: IgnoreRule, relativePath: string): boolean {
 
 // A write to .git/hooks or .git/config runs code on the next local git command, so
 // the git directory is refused at any depth. ADR-0001 keeps .ignore as the only
-// content filter for every other path.
+// content filter for every other path. The match ignores case: on a
+// case-insensitive file system git reads `.GIT` as `.git`, and realpath cannot
+// fold a leaf that does not exist yet.
 export function isGitDirectoryPath(relativePath: string): boolean {
-  return relativePath.split('/').includes('.git');
+  return relativePath.split('/').some((segment) => segment.toLowerCase() === '.git');
 }
 
 function assertOutsideGitDirectory(checkedPath: string, reportedPath: string): void {
