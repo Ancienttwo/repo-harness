@@ -116,8 +116,9 @@ function truncateUtf8(text: string, maxBytes: number): { readonly text: string; 
 export function isRepositoryRelativePath(value: unknown): value is string {
   if (typeof value !== 'string' || value.length === 0 || utf8Bytes(value) > PATH_MAX_BYTES) return false;
   if (value.startsWith('/') || value.includes('\\') || /[\u0000-\u001f\u007f]/u.test(value) || /^[A-Za-z]:/u.test(value)) return false;
-  // The message text rule masks `~/x` and other absolute-looking spans; a path must pass it too.
-  return isPublicDevActivityText(value) && value.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..');
+  const segments = value.split('/');
+  // `~` as the first segment names a home directory, not a path inside the repository.
+  return segments[0] !== '~' && segments.every(segment => segment !== '' && segment !== '.' && segment !== '..');
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

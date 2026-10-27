@@ -420,7 +420,7 @@ test('the host writer redacts events before they reach events.jsonl, and no secr
       `Push to https://user:${s.password}@example.com/repo.git`,
     ].join('\n')),
     message(1, 1, `DATABASE_PASSWORD=${s.assignment}`),
-    tool(1, 2, [`docs/${s.aws}.md`, 'docs/guide.md']),
+    tool(1, 2, [`docs/${s.aws}.md`, 'docs/guide.md', 'app/[slug]/page.tsx', 'src/app/(group)/page.tsx']),
   ]);
   const raw = readFileSync(eventsFile(h, sid), 'utf8');
   expect(statSync(eventsFile(h, sid)).mode & 0o777).toBe(0o600);
@@ -436,7 +436,7 @@ test('the host writer redacts events before they reach events.jsonl, and no secr
   expect(first.text).toContain('[private path]');
   // A secret that no replacement rule removes withholds the whole text.
   expect(second.text).not.toContain('DATABASE_PASSWORD');
-  expect(third.paths).toEqual(['docs/AKIA[REDACTED].md', 'docs/guide.md']);
+  expect(third.paths).toEqual(['docs/AKIA[REDACTED].md', 'docs/guide.md', 'app/[slug]/page.tsx', 'src/app/(group)/page.tsx']);
 });
 
 test('an event field outside the schema, such as raw tool arguments, a command, terminal output or the environment, is refused and nothing is written', async () => {
