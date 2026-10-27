@@ -131,7 +131,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
       nullable(p.closed_at, y => time(y, 'closed_at'));
       if ((p.state === 'merged') !== (p.merged_at !== null)) fail('merged_at');
       // Only the open query asks gh for the head and the files; an open PR always says whether its list is complete.
-      nullable(p.head_sha, y => (typeof y === 'string' && /^[0-9a-f]{40,64}$/u.test(y) ? y : fail('pr head_sha')));
+      nullable(p.head_sha, y => (typeof y === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(y) ? y : fail('pr head_sha')));
       nullable(p.changed_files, y => {
         const files = typeof y === 'object' && y !== null && (y as Record<string, unknown>).state === 'ok'
           ? obj(y, ['state', 'paths'], 'changed_files') : obj(y, ['state', 'reason'], 'changed_files');

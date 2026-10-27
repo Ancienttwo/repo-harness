@@ -371,9 +371,10 @@ export type ArchitecturePullRequestsInput =
   | Gap<ArchitecturePullRequestsReason>;
 
 /**
- * The open PRs of one repository. Dev Activity reads only the user's own PRs
- * (`--author @me`); a repository whose GitHub read is not `ok` has no PR list
- * the map can call complete.
+ * The open PRs of one repository as the board shows them: the user's own PRs
+ * (`--author @me`), one per work branch, so a PR from the default branch or a
+ * second open PR on one branch is not listed. A repository whose GitHub read is
+ * not `ok` has no PR list the map can call complete.
  */
 export function architecturePullRequestsSource(snapshot: DevActivitySnapshotV2, repositoryId: string): ArchitecturePullRequestsSource {
   if (snapshot.collected_at === null) return { state: 'unavailable', reason: 'dev_activity_pending' };

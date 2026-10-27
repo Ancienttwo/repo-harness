@@ -289,7 +289,7 @@ export function parseGhPullRequests(stdout: string, open: boolean): DevActivityR
       head_branch: str(pr.headRefName), base_branch: str(pr.baseRefName), merge_state: mergeState,
       ci: open ? summarizeCiRollup(pr.statusCheckRollup ?? null) : null, review: reviewStateOf(pr.reviewDecision),
       created_at: isoTime(pr.createdAt), updated_at: isoTime(pr.updatedAt), merged_at: mergedAt, closed_at: optionalTime(pr.closedAt),
-      head_sha: open && typeof pr.headRefOid === 'string' && /^[0-9a-f]{40,64}$/u.test(pr.headRefOid) ? pr.headRefOid : null,
+      head_sha: open && typeof pr.headRefOid === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(pr.headRefOid) ? pr.headRefOid : null,
       changed_files: open ? changedFilesOf(pr) : null,
     };
   });
