@@ -6,13 +6,17 @@ import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fi
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
   architectureModelDelta,
+  architecturePullRequestsSource,
   decodeArchitectureMap,
+  decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
   projectTestCoverage,
   withTestCoverage,
   type ArchitectureMapLayersInput,
   type ArchitectureMapNodeV1,
+  type ArchitecturePullRequestsSource,
 } from '../../src/core/operator/architecture-map';
+import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import { collectArchitectureMap, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
 import { join } from 'node:path';
@@ -164,6 +168,15 @@ describe('architecture map', () => {
       owners: new Map<string, string | null>([['src/store.ts', PART], ['src/ledger.ts', CAP], ['README.md', null]]),
       model: { state: 'ok', nodes_added: [PART], nodes_removed: ['component.pipeline.gone'], nodes_changed: [], relations_added: ['relation.a'], relations_removed: [], relations_changed: [] },
     },
+    pull_requests: {
+      state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
+      pull_requests: [
+        { number: 7, title: 'Store rows', url: 'https://github.com/acme/widgets/pull/7', head_sha: 'e'.repeat(40), changed_files: { state: 'ok', paths: ['README.md', 'src/store.ts'] } },
+        { number: 8, title: 'Big change', url: 'https://github.com/acme/widgets/pull/8', head_sha: 'f'.repeat(40), changed_files: { state: 'unavailable', reason: 'files_truncated' } },
+        { number: 9, title: 'No head', url: 'https://github.com/acme/widgets/pull/9', head_sha: null, changed_files: { state: 'ok', paths: ['src/ledger.ts'] } },
+      ],
+      owners: new Map<string, string | null>([['README.md', null], ['src/store.ts', PART]]),
+    },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
@@ -176,6 +189,7 @@ describe('architecture map', () => {
     nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
     relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
   };
+  const pending: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_pending' };
   const projected = () => projectArchitectureMap({
     ...input,
     sizes: { state: 'ok', lines: new Map([['src/store.ts', 30], ['src/ledger.ts', 12], ['README.md', 5], ['src/gate.ts', 0]]),
@@ -230,14 +244,14 @@ describe('architecture map', () => {
       expect(nodeText).toContain('Read a committed module.');
       fixtureWrite(root, MODULE_NODE, nodeText.replace('Read a committed module.', 'Reads /opt/company/private.env'));
       fixtureCommit(root);
-      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       if (!result.ok) throw new Error('worker failed');
       expect(result.snapshot.nodes.find(entry => entry.id === MODULE_ID)?.summary).toBe('Reads [private path]');
       expect(JSON.stringify(result.snapshot)).not.toContain('/opt/');
       expect(result.snapshot.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       // The CodeGraph index covers the working tree, so an uncommitted source edit withholds import counts; line counts stay.
       fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
-      const edited = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      const edited = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       expect(edited.ok && [edited.snapshot.sizes.state, edited.snapshot.dependencies]).toEqual(['ok', { state: 'unavailable', reason: 'code_facts_worktree_dirty' }]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
@@ -263,7 +277,7 @@ describe('architecture map', () => {
     try {
       const commit = fixtureGit(root, ['rev-parse', 'HEAD']).trim();
       expect(readCommitLineCounts(root, commit)?.get('src/module/read.ts')).toBe(1);
-      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       if (!result.ok) throw new Error('worker failed');
       const map = result.snapshot;
       expect(map.commit).toBe(commit);
@@ -274,11 +288,16 @@ describe('architecture map', () => {
       expect(JSON.stringify(map)).not.toContain(root);
       // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
       fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
-      const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
       expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.debt]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+      // A PR source passes through with its own reason; the PR owners would read the edited model, so a ready source is withheld.
+      expect(dirty.ok && dirty.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'dev_activity_pending' });
+      const dirtyPrs = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z',
+        { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [] });
+      expect(dirtyPrs.ok && dirtyPrs.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'model_worktree_dirty' });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -291,8 +310,8 @@ describe('architecture map', () => {
       flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
     });
     // Parts with no read-only source in archctx 0.9.3 or on main carry a fixed reason.
-    expect([map.layers.pull_requests, map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
-      { state: 'unavailable', reason: 'pr_files_unavailable' }, { state: 'unavailable', reason: 'decisions_not_exported' },
+    expect([map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
+      { state: 'unavailable', reason: 'decisions_not_exported' },
       { state: 'unavailable', reason: 'flows_check_writes_index' }, { state: 'unavailable', reason: 'layer_order_not_released' }]);
     // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
     const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
@@ -338,6 +357,57 @@ describe('architecture map', () => {
     expect(withTestCoverage(projected(), { state: 'ready', snapshot }).layers.tests.state).toBe('ok');
   });
 
+  test('PR impact rolls each open PR\'s files up the parent chain at its head; a PR with no head or no complete list keeps its reason', () => {
+    expect(projected().layers.pull_requests).toEqual({
+      state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
+      pull_requests: [
+        { number: 7, title: 'Store rows', url: 'https://github.com/acme/widgets/pull/7', head_sha: 'e'.repeat(40),
+          impact: { state: 'ok', files: 2, unowned_files: 1, nodes: [{ id: CAP, files: 1 }, { id: PART, files: 1 }] } },
+        { number: 8, title: 'Big change', url: 'https://github.com/acme/widgets/pull/8', head_sha: 'f'.repeat(40), impact: { state: 'unavailable', reason: 'files_truncated' } },
+        { number: 9, title: 'No head', url: 'https://github.com/acme/widgets/pull/9', head_sha: null, impact: { state: 'unavailable', reason: 'head_missing' } },
+      ],
+      flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
+    });
+    const prs = layers.pull_requests.state === 'ok' ? layers.pull_requests : null;
+    const unknown = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, pull_requests: { ...prs!, owners: new Map([['src/store.ts', 'capability.gone.node']]) } } });
+    expect(unknown.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'ownership_unavailable' });
+    expect(unknown.layers.changes.state).toBe('ok');
+  });
+
+  test('the PR source takes only open PRs of a repository whose GitHub read is ok, and masks private paths in titles', () => {
+    const REPO = 'repo_0123456789abcdef';
+    const at = '2026-10-27T08:59:00.000Z';
+    const pull = (number: number, state: 'open' | 'merged', title = `PR ${number}`) => ({
+      number, title, url: `https://github.com/acme/widgets/pull/${number}`, state, is_draft: false, base_branch: 'main', merge_state: 'BLOCKED',
+      ci: state === 'open' ? 'pending' as const : null, review: 'none' as const, updated_at: at, merged_at: state === 'merged' ? at : null, closed_at: state === 'merged' ? at : null,
+      head_sha: state === 'open' ? 'a'.repeat(40) : null, changed_files: state === 'open' ? { state: 'ok' as const, paths: ['src/store.ts'] } : null,
+    });
+    const item = (repositoryId: string, branch: string, pr: ReturnType<typeof pull>) => ({
+      id: `${repositoryId}:${branch}`, repository_id: repositoryId, branch, title: pr.title, column: 'verifying' as const, hidden: null,
+      column_since: at, worktrees: [], pull_request: pr, cleanup_pending: false,
+    });
+    const snapshot = (github: 'ok' | 'unavailable'): DevActivitySnapshotV2 => ({
+      projection_version: 'repo-harness.dev-activity.v2', status: 'ready', collected_at: at, unreadable_registrations: 0, attention: [],
+      repositories: [{ repository_id: REPO, display_name: 'widgets', github: 'acme/widgets', default_branch: 'main',
+        sources: [{ kind: 'github', status: github, reason: github === 'ok' ? null : 'gh_failed', observed_at: at }] }],
+      items: [item(REPO, 'feat/b', pull(12, 'open', 'Read /Users/someone/notes')), item(REPO, 'feat/a', pull(11, 'open')), item(REPO, 'feat/old', pull(10, 'merged')),
+        item('repo_fedcba9876543210', 'feat/x', pull(13, 'open'))],
+    });
+    const source = architecturePullRequestsSource(snapshot('ok'), REPO);
+    expect(source).toEqual({ state: 'ok', observed_at: at, pull_requests: [
+      { number: 11, title: 'PR 11', url: 'https://github.com/acme/widgets/pull/11', head_sha: 'a'.repeat(40), changed_files: { state: 'ok', paths: ['src/store.ts'] } },
+      { number: 12, title: 'Read [private path]', url: 'https://github.com/acme/widgets/pull/12', head_sha: 'a'.repeat(40), changed_files: { state: 'ok', paths: ['src/store.ts'] } },
+    ] });
+    expect(decodeArchitecturePullRequestsSource(JSON.parse(JSON.stringify(source)))).toEqual(source);
+    expect(architecturePullRequestsSource(snapshot('unavailable'), REPO)).toEqual({ state: 'unavailable', reason: 'dev_activity_unavailable' });
+    expect(architecturePullRequestsSource({ ...snapshot('ok'), collected_at: null }, REPO)).toEqual({ state: 'unavailable', reason: 'dev_activity_pending' });
+    expect(architecturePullRequestsSource(snapshot('ok'), 'repo_1111111111111111')).toEqual({ state: 'unavailable', reason: 'dev_activity_unavailable' });
+    const bad = JSON.parse(JSON.stringify(source));
+    bad.pull_requests[0].changed_files.paths = ['/Users/someone/repo/src/store.ts'];
+    expect(() => decodeArchitecturePullRequestsSource(bad)).toThrow('architecture_pull_requests_invalid');
+  });
+
   test('the decoder refuses layer facts that name unknown nodes, private or escaping paths, or inconsistent counts', () => {
     const map = JSON.parse(JSON.stringify(projected()));
     map.layers.tests = { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [{ id: CAP, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] };
@@ -364,6 +434,14 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.tests.capabilities[0].files = 3; });
     refused(copy => { copy.layers.tests.capabilities[0].id = PART; });
     refused(copy => { copy.layers.pull_requests = { state: 'ok', pulls: [] }; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[1].number = 7; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].head_sha = null; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[1].head_sha = null; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.nodes[0].id = 'capability.gone.node'; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.unowned_files = 3; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].title = 'Fix /Users/someone/secret'; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].url = 'https://example.invalid/pull/7'; });
+    refused(copy => { delete copy.layers.pull_requests.flow_steps; });
     refused(copy => { copy.layers.decisions = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v1'; });
   });
@@ -371,13 +449,13 @@ describe('architecture map', () => {
   test('a checkout or edit during a cycle drops today\'s changes when the model moved and each violation check when the tree moved', () => {
     const commit = 'c'.repeat(40);
     const clean = { head: commit, modelClean: true, treeClean: true };
-    const read = { changes: layers.changes, violations: layers.violations };
+    const read = { changes: layers.changes, pull_requests: layers.pull_requests, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
     const allChanged = { debt: changed, anchors: changed, dependencies: changed };
     expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
-    expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, violations: allChanged });
-    expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, violations: allChanged });
-    expect(recheckLayers(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ changes: changed, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, pull_requests: changed, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, pull_requests: read.pull_requests, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ changes: changed, pull_requests: changed, violations: allChanged });
     expect(localMidnight(new Date(2026, 9, 27, 18, 30))).toBe(new Date(2026, 9, 27).toISOString());
   });
 
@@ -396,8 +474,14 @@ describe('architecture map', () => {
         fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
         fixtureCommit(root);
       });
-      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      const head = 'a'.repeat(40);
+      const source: ArchitecturePullRequestsSource = { state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
+        { number: 5, title: 'Read more', url: 'https://github.com/acme/module/pull/5', head_sha: head, changed_files: { state: 'ok', paths: ['docs/notes.md', 'src/module/read.ts'] } }] };
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source);
       if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layers.pull_requests).toEqual({ state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
+        { number: 5, title: 'Read more', url: 'https://github.com/acme/module/pull/5', head_sha: head, impact: { state: 'ok', files: 2, unowned_files: 1, nodes: [{ id: MODULE_ID, files: 1 }] } }],
+        flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' } });
       expect(result.snapshot.layers.changes).toEqual({
         state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1, files: 2, unowned_files: 1,
         nodes: [{ id: MODULE_ID, files: 1, added: 2, deleted: 1 }],
@@ -409,7 +493,7 @@ describe('architecture map', () => {
       expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'flows_check_writes_index' });
       expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       // A window that holds the whole history has no base commit.
-      const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z');
+      const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z', pending);
       expect(all.ok && all.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'history_starts_today' });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
