@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import { Banner, Empty, Loader } from '@cloudflare/kumo';
 import { WarningCircleIcon } from '@phosphor-icons/react';
 import { decodeCliInventory, type CliInventoryEntry, type CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
@@ -43,7 +43,14 @@ function CliRow({ entry, now, t }: { readonly entry: CliInventoryEntry; readonly
   const github = entry.github;
   return <li data-cli-entry={entry.id} className="flex min-w-0 flex-col gap-2 py-4">
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h2 className="break-all font-mono text-sm font-semibold text-kumo-strong">{entry.commands.join(', ')}</h2>
+      <h2 className="font-mono text-sm font-semibold text-kumo-strong">
+        {entry.commands.map((command, index) => (
+          <Fragment key={`${index}:${command}`}>
+            <span className="inline-block max-w-full [overflow-wrap:anywhere]">{index < entry.commands.length - 1 ? `${command},` : command}</span>
+            {index < entry.commands.length - 1 && ' '}
+          </Fragment>
+        ))}
+      </h2>
       <span className="text-xs text-kumo-subtle">{entry.source} · {entry.package ?? t('cli.noPackage')} · {entry.version ?? t('setup.unknown')}</span>
       {entry.deprecated && <span className="text-xs text-kumo-danger">{t('cli.deprecated')}</span>}
       {github?.archived && <span className="text-xs text-kumo-danger">{t('cli.archived')}</span>}
