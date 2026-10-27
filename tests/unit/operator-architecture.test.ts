@@ -288,7 +288,7 @@ describe('architecture map', () => {
     expect(map.layers.changes).toEqual({
       state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2, files: 3, unowned_files: 1,
       nodes: [{ id: CAP, files: 2, added: 4, deleted: 1 }, { id: PART, files: 1, added: 3, deleted: 1 }],
-      model: layers.changes.state === 'ok' ? layers.changes.model : null,
+      model: (layers.changes as Extract<ArchitectureMapLayersInput['changes'], { state: 'ok' }>).model,
     });
     expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, unproven: [{ id: PART, selectors: 1 }], capabilities: [CAP] });
     expect([map.layers.pull_requests, map.layers.decisions]).toEqual([
