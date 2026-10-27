@@ -190,12 +190,17 @@ interface FormState {
 export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsSettingsWriter, generation: number, enabled: boolean): AgentsSettingsForm {
   const [state, setState] = useState<FormState>({ view: { kind: 'loading' }, base: null, draft: null, save: { kind: 'idle' } });
   const adoptNextRead = useRef(false);
+  // A read that started before a save succeeded can carry the section from before the write.
+  const readsStarted = useRef(0);
+  const staleReadsThrough = useRef(0);
   // The request_id of the last unanswered or retryable send, bound to its exact body.
   const pending = useRef<{ readonly body: string; readonly id: string } | null>(null);
 
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const started = ++readsStarted.current;
     const result = await read(signal);
     if (signal.aborted) return false;
+    if (started <= staleReadsThrough.current) return true;
     if (result.state !== 'ok') {
       setState(current => ({ ...current, view: current.view.kind === 'ready' ? { ...current.view, refreshFailed: true } : { kind: 'unavailable', reason: result.reason } }));
       return result.reason !== 'unreachable';
@@ -217,8 +222,9 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
   const request = state.base && state.draft ? draftRequest(state.base, state.draft) : null;
 
   const edit = useCallback((change: (draft: AgentsDraft) => AgentsDraft) => {
+    // A changed draft is a new request, so an earlier result no longer describes it.
     setState(current => current.draft === null || saveNeedsReload(current.save) || current.save.kind === 'saving'
-      ? current : { ...current, draft: change(current.draft), save: current.save.kind === 'saved' ? { kind: 'idle' } : current.save });
+      ? current : { ...current, draft: change(current.draft), save: { kind: 'idle' } });
   }, []);
 
   const discard = useCallback(() => {
@@ -241,6 +247,7 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
     void write({ request_id: id, ...request }).then((outcome) => {
       if (outcome.state === 'saved') {
         pending.current = null;
+        staleReadsThrough.current = readsStarted.current;
         // The server applied exactly this draft to the read it was made from.
         setState(current => ({
           ...current,

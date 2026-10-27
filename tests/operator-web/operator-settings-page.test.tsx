@@ -217,6 +217,8 @@ describe('settings page', () => {
     expect(result()?.getAttribute('data-save-result')).toBe('unreachable');
     await click(saveButton());
     await click(use('claude', 'docs'));
+    // The banner promised the same request; a changed draft is a new one.
+    expect(result()).toBeNull();
     await click(saveButton());
     const [first, second, third] = route.posts.map(post => post.request_id);
     expect(second).toBe(first);
@@ -230,6 +232,9 @@ describe('settings page', () => {
     await mount(props(route));
     expect(row('gemini').closest('[data-runtime-group]')?.getAttribute('data-runtime-group')).toBe('settings-group-missing');
     expect(use('gemini', 'review').disabled).toBe(true);
+    // The server accepts an unlisted runtime only in a change that turns it off, so its docs use goes only with the switch.
+    expect(use('gemini', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(use('gemini', 'docs').disabled).toBe(true);
     await click(toggle('gemini')!);
     expect(toggle('gemini')).toBeNull();
     expect(radio('').checked).toBe(true);

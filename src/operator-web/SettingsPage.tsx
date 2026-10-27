@@ -58,8 +58,9 @@ function UseToggle({ use, row, draft, locked, onEdit, t }: {
   const on = (use === 'docs' ? draft.docs : draft.review).includes(row.id);
   const enabled = draft.enabled.includes(row.id);
   const unsupported = use === 'review' && row.entry !== null && !row.entry.review_supported;
-  // A use can be removed whatever the reason; it can be added only to an enabled runtime the probe lists.
-  const disabled = locked || (!on && (!enabled || row.entry === null || unsupported));
+  // The server accepts a runtime the probe no longer lists only in a change that turns it off, so its uses
+  // go only with the switch. Otherwise a use can be removed whatever the reason, and added only to an enabled runtime.
+  const disabled = locked || row.entry === null || (!on && (!enabled || unsupported));
   const reason = unsupported ? t('settings.use.reviewUnsupported') : !enabled ? t('settings.use.needsEnabled') : undefined;
   return (
     <button type="button" aria-pressed={on} disabled={disabled} title={disabled && !locked ? reason : undefined} data-use={use}
@@ -193,7 +194,8 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
   const { settings } = view;
   const { runtimes } = settings;
   const locked = saveNeedsReload(form.save) || form.save.kind === 'saving';
-  const changedElsewhere = base !== null && form.request !== null && settings.config.revision !== base.revision;
+  // During a save, a newer revision is most likely this page's own write.
+  const changedElsewhere = base !== null && form.request !== null && form.save.kind !== 'saving' && settings.config.revision !== base.revision;
   const rows = rowsOf(settings);
   const stale = runtimes.status === 'stale' && runtimes.reason !== null && runtimes.collected_at !== null;
   return (
