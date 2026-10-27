@@ -40,6 +40,7 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
+    readBotAccess: () => new Promise(() => {}),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     ...overrides,
   };
@@ -127,7 +128,7 @@ describe('navigation', () => {
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['agents', 'agents'], ['skills', 'skills'],
-      ['hooks', 'hooks'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
+      ['hooks', 'hooks'], ['bots', 'bots'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
         await act(async () => root?.unmount());
@@ -142,8 +143,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'architecture', 'system', 'tools']);
-    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'cli', 'worktrees', 'bots']) {
+      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'bots', 'architecture', 'system', 'tools']);
+    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'cli', 'worktrees']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });

@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
+import * as fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DOCS_FILE_MAX_BYTES, DocsReadError, DocsReader } from '../../src/effects/operator/docs-reader';
+import { decodeDocsFile } from '../../src/core/operator/docs';
 
 const cleanup: string[] = [];
 const readers: DocsReader[] = [];
@@ -73,7 +75,34 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 test('file returns the default branch blob with commit, digest and a clean worktree', async () => {
   const { root, commit } = fixture({ 'docs/guide.md': '# Guide\n', 'README.md': 'root\n' });
   const result = await (await reader(root)).file('docs/guide.md');
-  expect(result).toEqual({ path: 'docs/guide.md', commit, size: 8, sha256: hash('# Guide\n'), text: '# Guide\n', worktree_differs: false });
+  expect(result).toEqual({ path: 'docs/guide.md', commit, size: 8, sha256: hash('# Guide\n'), text: '# Guide\n',
+    lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
+});
+
+test('numbered lines preserve committed UTF-8 bytes, blank lines, CRLF and final-line boundaries', async () => {
+  const cases = [
+    { path: 'docs/empty.md', text: '', lines: [] },
+    { path: 'docs/lf.md', text: 'a\n\nb\n', lines: [{ number: 1, text: 'a\n' }, { number: 2, text: '\n' }, { number: 3, text: 'b\n' }] },
+    { path: 'docs/crlf.md', text: '\uFEFF文档\r\n\r\nend', lines: [{ number: 1, text: '\uFEFF文档\r\n' }, { number: 2, text: '\r\n' }, { number: 3, text: 'end' }] },
+  ];
+  const { root } = fixture(Object.fromEntries(cases.map(item => [item.path, item.text])));
+  const docs = await reader(root);
+  for (const item of cases) {
+    const result = await docs.file(item.path);
+    expect(result.lines).toEqual(item.lines);
+    expect(result.text).toBe(item.text);
+    expect(result.lines.map(line => line.text).join('')).toBe(result.text);
+    expect(result.size).toBe(Buffer.byteLength(item.text));
+    expect(result.sha256).toBe(hash(result.text));
+    const wire = { protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: docs.ref, ...result } as const;
+    expect(decodeDocsFile(wire)).toEqual(wire);
+    expect(() => decodeDocsFile({ ...wire, lines: undefined })).toThrow();
+    expect(() => decodeDocsFile({ ...wire, lines: [...result.lines, { number: result.lines.length + 1, text: '' }] })).toThrow();
+    if (result.lines.length) {
+      expect(() => decodeDocsFile({ ...wire, lines: result.lines.map(line => ({ ...line, number: line.number + 1 })) })).toThrow();
+      expect(() => decodeDocsFile({ ...wire, lines: result.lines.map(line => ({ ...line, text: 'other' })) })).toThrow();
+    }
+  }
 });
 
 test('file serves the commit while it marks an edited or deleted worktree copy', async () => {
@@ -208,6 +237,69 @@ test('an internal worktree symlink inside docs is readable and marked as differi
   expect(result.text).toBe('a\n');
   expect(result.worktree_differs).toBe(true);
 });
+
+test('file refuses a path that becomes an escaping symlink while the blob request is pending', async () => {
+  const { root, outside } = fixture({ 'docs/guide.md': 'committed\n', 'docs/.env': 'secret\n', 'src/code.ts': 'source\n' });
+  const docs = await reader(root);
+  for (const target of [join(outside, 'secret.md'), join(root, 'docs/.env'), join(root, '.git/config'), join(root, 'src/code.ts')]) {
+    const pending = docs.file('docs/guide.md');
+    // file() has sent its object request, but its continuation cannot run until this turn ends.
+    unlinkSync(join(root, 'docs/guide.md'));
+    symlinkSync(target, join(root, 'docs/guide.md'));
+    expect(await refusal(pending)).toBe('path_escape');
+    unlinkSync(join(root, 'docs/guide.md'));
+    writeFileSync(join(root, 'docs/guide.md'), 'committed\n');
+  }
+});
+
+test('an ancestor swapped during open is refused before worktree bytes are read', async () => {
+  const { root, outside } = fixture({ 'docs/nested/secret.md': 'committed\n' });
+  const docs = await reader(root);
+  const open = fs.openSync;
+  const openSpy = spyOn(fs, 'openSync').mockImplementation((...args: Parameters<typeof fs.openSync>) => {
+    fs.renameSync(join(root, 'docs/nested'), join(root, 'docs/saved'));
+    symlinkSync(outside, join(root, 'docs/nested'));
+    return open(...args);
+  });
+  const readSpy = spyOn(fs, 'readSync');
+  try {
+    expect(await refusal(docs.file('docs/nested/secret.md'))).toBe('path_escape');
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(readSpy).not.toHaveBeenCalled();
+  } finally {
+    openSpy.mockRestore();
+    readSpy.mockRestore();
+  }
+});
+
+for (const missing of ['ENOENT', 'ENOTDIR'] as const) {
+  test(`a worktree path lost between realpath and lstat (${missing}) still serves the commit`, async () => {
+    const { root, commit } = fixture({ 'docs/nested/guide.md': 'committed\n' });
+    const docs = await reader(root);
+    const target = join(root, 'docs/nested/guide.md');
+    const lstat = fs.lstatSync;
+    let changed = false;
+    const statSpy = spyOn(fs, 'lstatSync').mockImplementation(((...args: Parameters<typeof fs.lstatSync>) => {
+      if (!changed && args[0] === target) {
+        changed = true;
+        if (missing === 'ENOENT') unlinkSync(target);
+        else {
+          fs.renameSync(join(root, 'docs/nested'), join(root, 'docs/saved'));
+          writeFileSync(join(root, 'docs/nested'), 'not a directory');
+        }
+      }
+      return lstat(...args);
+    }) as typeof fs.lstatSync);
+    try {
+      const result = await docs.file('docs/nested/guide.md');
+      expect(changed).toBe(true);
+      expect(result.commit).toBe(commit);
+      expect(result.text).toBe('committed\n');
+      expect(result.sha256).toBe(hash('committed\n'));
+      expect(result.worktree_differs).toBe(true);
+    } finally { statSpy.mockRestore(); }
+  });
+}
 
 test('a worktree FIFO in place of a committed file is marked as differing without blocking', async () => {
   const { root } = fixture({ 'docs/a.md': 'a\n' });

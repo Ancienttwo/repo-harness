@@ -9,6 +9,8 @@ import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
 import { processProofAlive, readSessionArtifact, readTaskAgent, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session';
 
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
+// Admission records the full ref; Dev Activity names a branch without this prefix.
+const BRANCH_REF = 'refs/heads/';
 
 function sessionDirectories(primaryRoot: string): string[] {
   let base = primaryRoot;
@@ -44,8 +46,9 @@ function verify(primaryRoot: string, dir: string, task: string, role: string): T
   if (existsSync(join(dir, 'closed.json'))) return refuse('closed');
   try { if (digest(readTaskAgent(primaryRoot, task, role).binding) !== bindingDigest) return refuse('binding_mismatch'); }
   catch { return refuse('binding_invalid'); }
+  const admitted = binding.task_admission?.identity.branch ?? null;
   return { state: 'verified', task, role, issue_id: binding.task_admission?.identity.issue_id ?? null,
-    agent: native.host, runtime: binding.runtime, native_session_id: native.native_session_id,
+    branch: admitted?.startsWith(BRANCH_REF) ? admitted.slice(BRANCH_REF.length) : null, agent: native.host, runtime: binding.runtime, native_session_id: native.native_session_id,
     herdr_pane: binding.runtime === 'herdr' ? { session: binding.endpoint.session, workspace_id: binding.workspace_id,
       pane_id: binding.pane_id, agent_name: binding.agent_name } : null };
 }
