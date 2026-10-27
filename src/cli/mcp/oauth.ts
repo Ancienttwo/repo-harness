@@ -11,6 +11,7 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
+import { authorizationProfile, mcpSupportedScopes } from './policy';
 
 interface TokenData {
   accessTokens?: Record<string, AuthInfo>;
@@ -46,11 +47,7 @@ function issueToken(): string {
 }
 
 function normalizeScopes(scopes: string[] | undefined, profile = 'planner'): string[] {
-  const allowed = new Set([
-    'repo-harness',
-    'offline_access',
-    ...(profile === 'coding' ? ['repo-harness.coding'] : []),
-  ]);
+  const allowed = new Set(mcpSupportedScopes(profile));
   const normalized = (scopes ?? [])
     .flatMap((scope) => scope.split(' '))
     .map((scope) => scope.trim())
@@ -435,8 +432,8 @@ export function createMcpOAuthProvider(
   const accessTokenTtlSeconds = opts.accessTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const refreshTokenTtlSeconds = opts.refreshTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const profile = opts.profile ?? 'planner';
-  const authorizationScoped = profile === 'coding';
-  const requiredScope = profile === 'coding' ? 'repo-harness.coding' : null;
+  const requiredScope = authorizationProfile(profile)?.requiredScope ?? null;
+  const authorizationScoped = requiredScope !== null;
   const revisionOption = opts.authorizationRevision;
   const notifyAuthorizationRevoked = (info: McpStoredAuthInfo | undefined): void => {
     if (!authorizationScoped || !info?.authorizationId) return;
@@ -450,6 +447,14 @@ export function createMcpOAuthProvider(
     ? revisionOption
     : () => revisionOption ?? 0;
   if (authorizationScoped) store.revokeMismatchedAuthorization(profile, currentAuthorizationRevision());
+
+  /** A scoped grant without current authority: old revision, missing profile scope, or no authorization identity. */
+  const scopedGrantIsStale = (info: McpStoredAuthInfo, revision = currentAuthorizationRevision()): boolean => requiredScope !== null && (
+    info.authorizationRevision !== revision ||
+    !info.scopes.includes(requiredScope) ||
+    typeof info.authorizationId !== 'string' ||
+    !info.authorizationId.trim()
+  );
 
   const cleanupExpiredAuthorizationCodes = (): void => {
     const now = clock();
@@ -476,12 +481,7 @@ export function createMcpOAuthProvider(
     const info = store.getAccessToken(token);
     if (!info) throw new InvalidTokenError('Token not found');
     if ((info.profile ?? 'planner') !== profile) throw new InvalidTokenError('Token profile mismatch');
-    if (authorizationScoped && (
-      info.authorizationRevision !== currentAuthorizationRevision() ||
-      (requiredScope !== null && !info.scopes.includes(requiredScope)) ||
-      typeof info.authorizationId !== 'string' ||
-      !info.authorizationId.trim()
-    )) {
+    if (scopedGrantIsStale(info)) {
       const refreshToken = store.findRefreshTokenByAccessToken(token);
       if (refreshToken) store.deleteRefreshToken(refreshToken);
       store.deleteAccessToken(token);
@@ -592,15 +592,7 @@ export function createMcpOAuthProvider(
       const expiresIn = accessTokenTtlSeconds;
       const scopes = normalizeScopes(existing.scopes, profile);
       const authorizationRevision = currentAuthorizationRevision();
-      if (
-        (existing.profile ?? 'planner') !== profile ||
-        (authorizationScoped && (
-          existing.authorizationRevision !== authorizationRevision ||
-          typeof existing.authorizationId !== 'string' ||
-          !existing.authorizationId.trim() ||
-          (requiredScope !== null && !existing.scopes.includes(requiredScope))
-        ))
-      ) {
+      if ((existing.profile ?? 'planner') !== profile || scopedGrantIsStale(existing, authorizationRevision)) {
         store.deleteRefreshToken(refreshToken);
         store.deleteAccessToken(accessToken);
         notifyAuthorizationRevoked(existing);

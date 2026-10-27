@@ -19,6 +19,7 @@ import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './re
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import { buildHerdrToolDefinitions, callHerdrTool, isHerdrTool } from './herdr-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -812,6 +813,8 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
 }
 
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
+  // The dispatch surface is exclusive: a task-dispatch token reaches no workflow, file or shell tool.
+  if (policy.capabilities.taskDispatch) return buildHerdrToolDefinitions();
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -1040,6 +1043,11 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (ctx.policy.capabilities.taskDispatch) {
+      if (isHerdrTool(name)) return await callHerdrTool({ repoRoot: ctx.repoRoot }, name, args);
+      audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
+      return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
+    }
     if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
       return errorResult('TOOL_RETIRED', `Upgrade to ${name === 'write_codex_goal' ? 'write_task_goal' : 'prepare_task_goal_from_sprint'}; the retired tool has no alias.`);
     }

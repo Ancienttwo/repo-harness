@@ -1,4 +1,12 @@
-export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean } = {}): string {
+export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean; taskDispatchEnabled?: boolean } = {}): string {
+  if (opts.taskDispatchEnabled === true) {
+    return [
+      'repo-harness orchestrator profile: dispatch work to Claude and Codex agent panes in local Herdr.',
+      'Call list_task_agents first. It returns only agents whose working directory is in a read_write granted repo.',
+      'prompt_task_agent submits text and returns without waiting; poll read_task_agent for progress.',
+      'This profile has no file, workflow or shell tools. Never put secrets or credentials in a prompt.',
+    ].join(' ');
+  }
   return [
     'repo-harness exposes one MCP connector whose capabilities are selected by local configuration.',
     'Use workflow tools to read product intent, plans, contracts, checks, reviews, and handoff.',

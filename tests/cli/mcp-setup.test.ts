@@ -520,9 +520,10 @@ describe('mcp setup', () => {
       expect(config).toMatchObject({
         version: 3,
         profile: 'coding',
-        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true },
-        coding: { enabled: true, environmentAllowlist: [] },
+        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true, taskDispatch: false },
+        coding: { environmentAllowlist: [] },
       });
+      expect(config.coding.enabled).toBeUndefined();
       expect(config.scope).toBeUndefined();
       expect(config.authorizationRevision).toBe(1);
       expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })[0]).toMatchObject({ accessMode: 'read_write' });
@@ -539,9 +540,63 @@ describe('mcp setup', () => {
       expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('authorization revision is stale');
       runMcpSetupChatgpt({ repo: repoRoot, profile: 'planner' });
       const disabled = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
-      expect(disabled).toMatchObject({ profile: 'planner', coding: { enabled: false } });
+      expect(disabled).toMatchObject({ profile: 'planner', capabilities: { workspaceCoder: false } });
       expect(disabled.authorizationRevision).toBe(4);
       expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
+    });
+  });
+
+  test('orchestrator setup requires an explicit grant and its own profile authorization', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' }))
+        .toThrow('orchestrator profile setup requires at least one explicit --grant-read-write');
+      expect(existsSync(join(userHome, 'mcp.local.json'))).toBe(false);
+
+      const setup = runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'orchestrator',
+        grantReadWrite: [repoRoot],
+        endpoint: 'https://orchestrator.example.com/mcp',
+      });
+      expect(setup.lines.join('\n')).toContain('Profile: orchestrator');
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config).toMatchObject({
+        version: 3,
+        profile: 'orchestrator',
+        authorizationRevision: 1,
+        capabilities: { workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false, taskDispatch: true },
+      });
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' });
+      expect(ctx.policy.capabilities.taskDispatch).toBe(true);
+      expect(ctx.workspaceManager).toBeUndefined();
+      expect(ctx.codingWorkspaceManager).toBeUndefined();
+      // A config for one scoped profile never serves the other.
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
+
+      // Rerunning the authorized profile keeps its grant; switching profile needs an explicit grant again.
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' });
+      expect(JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8')).authorizationRevision).toBe(1);
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, profile: 'coding' }))
+        .toThrow('coding profile setup requires at least one explicit --grant-read-write');
+
+      setRepoHarnessAccessMode(repoRoot, 'read_only');
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' })).toThrow('explicit read_write grant');
+    });
+  });
+
+  test('a v3 orchestrator config from before task dispatch counts as authorized', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      // Before task dispatch, orchestrator setup needed no grant; the read_write grant here came from another profile.
+      setRepoHarnessAccessMode(repoRoot, 'read_write');
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'planner' });
+      const configPath = join(userHome, 'mcp.local.json');
+      writeFileSync(configPath, `${JSON.stringify({ ...JSON.parse(readFileSync(configPath, 'utf-8')), profile: 'orchestrator' }, null, 2)}\n`);
+
+      expect(createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' }).policy.capabilities.taskDispatch).toBe(true);
+      expect(runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' }).lines.join('\n')).toContain('Profile: orchestrator');
+
+      setRepoHarnessAccessMode(repoRoot, 'read_only');
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' })).toThrow('explicit read_write grant');
     });
   });
 
@@ -728,7 +783,7 @@ describe('mcp setup', () => {
         server: { host: '0.0.0.0', port: 9876, transport: 'http' },
         auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
-        profile: 'orchestrator',
+        profile: 'executor',
       }, null, 2)}\n`);
 
       runMcpSetupChatgpt({ repo: repoRoot, serverName: 'team-review-mcp' });
@@ -739,7 +794,7 @@ describe('mcp setup', () => {
         serverName: 'team-review-mcp',
         endpoint: 'https://repo-harness-mcp.example.com/mcp',
       });
-      expect(config.profile).toBe('orchestrator');
+      expect(config.profile).toBe('executor');
     });
   });
 
@@ -752,7 +807,7 @@ describe('mcp setup', () => {
         server: { host: '0.0.0.0', port: 9876, transport: 'http' },
         auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
-        profile: 'orchestrator',
+        profile: 'executor',
       }, null, 2)}\n`);
 
       // The child must inherit the isolated storage root explicitly; storage is

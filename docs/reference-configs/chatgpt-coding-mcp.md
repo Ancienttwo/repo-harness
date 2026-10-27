@@ -1,8 +1,9 @@
 # ChatGPT direct coding MCP
 
 This is the operator and security reference for the opt-in `coding` profile. The
-default `planner`, `executor`, and `orchestrator` profiles keep their existing
-tool and trust boundaries.
+`planner` and `executor` profiles keep their existing tool and trust boundaries.
+The `orchestrator` profile uses the same authorization gate for Herdr task
+dispatch; see [herdr-orchestrator-mcp.md](herdr-orchestrator-mcp.md).
 
 Current ChatGPT UI terminology is **developer-mode app** under **Settings →
 Plugins**; older repo-harness material may call the same surface a Connector.
@@ -20,7 +21,7 @@ host and keep ChatGPT write confirmations enabled.
 
 The profile is fail-closed until all of these are true:
 
-- user-scoped v3 config selects `coding` and has `coding.enabled: true`;
+- user-scoped v3 config selects `coding`;
 - at least one adopted repo has an explicit `read_write` grant;
 - OAuth tokens contain `repo-harness.coding`, the current authorization
   revision, and a server-issued coding authorization identity;

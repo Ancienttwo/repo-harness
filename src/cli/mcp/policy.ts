@@ -117,6 +117,7 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
     workflowPlanner: false,
     workflowExecutor: false,
     workspaceCoder: false,
+    taskDispatch: false,
     ...overrides,
   };
 }
@@ -160,11 +161,12 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
   }
 
   if (profile === 'orchestrator') {
+    // Dispatch only: no workflow file, reader, planner write, or shell surface.
     return {
       profile,
       allowedRoots: opts.allowedRoots,
       discoveryRoots: opts.discoveryRoots,
-      capabilities: capabilities(),
+      capabilities: capabilities({ taskDispatch: true }),
       readGlobs: [],
       writeGlobs: [],
       denyGlobs: ['**'],
@@ -196,7 +198,37 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
   throw new Error(`unknown MCP profile: ${String(profile)}`);
 }
 
+/**
+ * Profiles whose tokens carry repo authority. This table is the only place
+ * that names them: the OAuth scope, the OAuth-only rule, the read_write grant
+ * and the authorization revision checks all read it.
+ */
+const AUTHORIZATION_PROFILES: Readonly<Partial<Record<McpProfileName, McpAuthorizationProfile>>> = Object.freeze({
+  coding: Object.freeze({ requiredScope: 'repo-harness.coding' }),
+  orchestrator: Object.freeze({ requiredScope: 'repo-harness.orchestrator' }),
+});
+
+export interface McpAuthorizationProfile {
+  readonly requiredScope: string;
+}
+
+export function authorizationProfile(profile: string | undefined): McpAuthorizationProfile | null {
+  return profile !== undefined && Object.hasOwn(AUTHORIZATION_PROFILES, profile)
+    ? AUTHORIZATION_PROFILES[profile as McpProfileName] ?? null
+    : null;
+}
+
+/** Scopes this profile advertises and accepts. */
+export function mcpSupportedScopes(profile: string): string[] {
+  const requiredScope = authorizationProfile(profile)?.requiredScope;
+  return ['repo-harness', ...(requiredScope ? [requiredScope] : []), 'offline_access'];
+}
+
+export function isMcpProfileName(value: string): value is McpProfileName {
+  return value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding';
+}
+
 export function parseMcpProfile(value: string): McpProfileName {
-  if (value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding') return value;
+  if (isMcpProfileName(value)) return value;
   throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator, coding)`);
 }

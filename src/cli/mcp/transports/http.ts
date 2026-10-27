@@ -9,6 +9,7 @@ import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/share
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { basename } from 'path';
 import {
+  authorizationProfileBlocker,
   createMcpCodingRuntime,
   createMcpToolContext,
   createRepoHarnessMcpServer,
@@ -27,10 +28,12 @@ import {
   type McpHttpAuthMode,
 } from '../auth';
 import { createMcpOAuthProvider, McpOAuthTokenStore, type McpStoredAuthInfo } from '../oauth';
+import { authorizationProfile, mcpSupportedScopes } from '../policy';
 import { readRegisteredRepoHarnessRepos, repoHarnessAuthorizationRevision } from '../../../effects/repo-registry';
 import { resolveMcpRepoRoot } from '../repo';
 import { McpSessionStore } from '../session-store';
 import { buildMcpToolDefinitions } from '../tools';
+import type { McpPolicy } from '../types';
 import { repoHarnessPackageVersion } from '../version';
 
 export interface McpHttpOptions extends McpServerOptions {
@@ -197,7 +200,20 @@ function escapeHtmlAttribute(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function renderPassphrasePage(params: URLSearchParams, opts: { coding?: boolean; repoNames?: string[] } = {}): string {
+/** Consent text for the profile's capabilities. Returned as escaped HTML. */
+function consentDescription(policy: McpPolicy, repoNames: string[]): string {
+  const repos = escapeHtmlAttribute(repoNames.join(', ') || '(none)');
+  const tokenLifetime = 'Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.';
+  if (policy.capabilities.workspaceCoder) {
+    return `This Connector can open and edit these explicitly granted repositories: ${repos}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. ${tokenLifetime}`;
+  }
+  if (policy.capabilities.taskDispatch) {
+    return `This Connector can list, prompt and read the Claude and Codex agent panes in local Herdr that work in these explicitly granted repositories: ${repos}. A prompt makes that agent act with the authority of your local OS user, which is not limited to these repositories. ${tokenLifetime}`;
+  }
+  return 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.';
+}
+
+function renderPassphrasePage(params: URLSearchParams, description: string): string {
   const hiddenFields = Array.from(params.entries())
     .filter(([key]) => key !== 'passphrase')
     .map(([key, value]) => `<input type="hidden" name="${escapeHtmlAttribute(key)}" value="${escapeHtmlAttribute(value)}">`)
@@ -216,9 +232,7 @@ button{width:100%;margin-top:14px;border:0;border-radius:8px;padding:12px;backgr
 </style></head>
 <body><main class="card">
 <h1>Authorize repo-harness</h1>
-<p>${opts.coding
-    ? `This Connector can open and edit these explicitly granted repositories: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
-      : 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.'}</p>
+<p>${description}</p>
 <form method="POST" action="/authorize">
 ${hiddenFields}
 <input type="password" name="passphrase" placeholder="Passphrase" autofocus>
@@ -256,7 +270,7 @@ function consentRequestParams(req: Request): URLSearchParams {
 
 function requirePassphrase(
   passphrase: string,
-  opts: { coding?: boolean; repoNames?: string[] } = {},
+  description: string,
 ): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     const provided = typeof req.body?.passphrase === 'string' ? req.body.passphrase : undefined;
@@ -268,7 +282,7 @@ function requirePassphrase(
         return;
       }
     }
-    res.type('html').send(renderPassphrasePage(consentRequestParams(req), opts));
+    res.type('html').send(renderPassphrasePage(consentRequestParams(req), description));
   };
 }
 
@@ -465,7 +479,7 @@ async function handleMcpPost(
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
   startupProfile: string,
 ): Promise<void> {
-  const authorizationScoped = startupProfile === 'coding';
+  const authorizationScoped = authorizationProfile(startupProfile) !== null;
   let body: unknown;
   try {
     body = rawBodyToJson(req.body as Buffer);
@@ -475,7 +489,7 @@ async function handleMcpPost(
   }
   const sessionId = sessionIdFromRequest(req);
   if (!sessionId && isInitializeRequest(body)) {
-    // The whole HTTP enforcement layer (coding-grant middleware, OAuth
+    // The whole HTTP enforcement layer (authorization middleware, OAuth
     // requirement, host/origin pinning, per-authorization coding runtimes) is
     // decided once from the startup profile. A local config flip after startup
     // would otherwise let a new session resolve a different tool context behind
@@ -491,11 +505,8 @@ async function handleMcpPost(
       });
       return;
     }
+    // Token verification owns the identity: a scoped token without an authorization id never reaches here.
     const authorizationId = authorizationScoped ? authorizationIdFromRequest(req) : undefined;
-    if (authorizationScoped && !authorizationId) {
-      sendOAuthUnauthorized(req, res, `${startupProfile} authorization identity is missing`);
-      return;
-    }
     let codingRuntime: McpCodingRuntime | undefined;
     if (codingRuntimes && authorizationId) {
       try {
@@ -624,34 +635,22 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   if (!isLoopbackBindHost(host) && !configuredPublicOrigin) {
     throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required when binding MCP HTTP to a non-loopback host');
   }
-  const coding = profile === 'coding';
-  const profileEnabled = (config: ReturnType<typeof loadMcpLocalConfig>) => config?.coding?.enabled === true;
-  const authorizationScoped = coding;
-  if (
-    authorizationScoped
-    && (
-      localConfig?.version !== 3
-      || localConfig.profile !== profile
-      || !profileEnabled(localConfig)
-      || localConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
-    )
-  ) {
-    throw new Error(`${profile} profile requires enabled v3 setup`);
-  }
-  const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
-  if (authorizationScoped && readWriteRepos.length === 0) {
-    throw new Error(`${profile} profile requires at least one explicitly registered read_write repo`);
-  }
+  const authorizationScoped = authorizationProfile(profile) !== null;
   const authMode = parseMcpHttpAuthMode(opts.auth);
   if (authorizationScoped && authMode !== 'oauth') {
     throw new Error(`${profile} profile requires OAuth authentication`);
   }
+  // Context construction owns the setup, grant and revision preconditions, so
+  // it runs before any token store or listener exists. The server description
+  // reported by /health is fixed for the process; building it per request
+  // re-ran `git rev-parse --show-toplevel` and blocked the event loop.
+  const healthContext = createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
   const authToken = authMode === 'bearer' || authMode === 'url-token' ? opts.authToken ?? readMcpBearerToken() : null;
   const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase() : null;
   const sessionTtlMs = boundedIntegerEnv('REPO_HARNESS_MCP_SESSION_TTL_MS', SESSION_TTL_MS, 1_000, 24 * 60 * 60 * 1000);
   const maxSessions = boundedIntegerEnv('REPO_HARNESS_MCP_MAX_SESSIONS', MAX_SESSIONS, 1, 256);
   const sessions = new McpSessionStore<McpHttpTransport>({ ttlMs: sessionTtlMs, maxSessions });
-  const codingRuntimes = coding ? new CodingAuthorizationRuntimeStore(sessionTtlMs, maxSessions) : null;
+  const codingRuntimes = healthContext.policy.capabilities.workspaceCoder ? new CodingAuthorizationRuntimeStore(sessionTtlMs, maxSessions) : null;
   const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath()) : null;
   tokenStore?.load();
   let observedAuthorizationRevision = repoHarnessAuthorizationRevision();
@@ -691,22 +690,20 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       .catch(reportCodingRuntimeCleanupError)
       .finally(() => { authorizationCleanupRunning = false; });
   };
+  // The request middleware rejects a stale authorization; this timer tears down
+  // sessions and coding runtimes that would otherwise keep running between requests.
   const authorizationTimer = authorizationScoped ? setInterval(() => {
     const currentRevision = repoHarnessAuthorizationRevision();
-    let liveConfig: ReturnType<typeof loadMcpLocalConfig>;
+    const revisionChanged = currentRevision !== observedAuthorizationRevision;
+    observedAuthorizationRevision = currentRevision;
+    let blocker: string | null;
     try {
-      liveConfig = loadMcpLocalConfig();
-    } catch {
-      // An unreadable configuration is no authority. Close in-flight work and keep the server alive.
-      closeStaleAuthorizationState();
-      return;
+      blocker = authorizationProfileBlocker(profile, loadMcpLocalConfig());
+    } catch (error) {
+      // An unreadable configuration is no authority.
+      blocker = error instanceof Error ? error.message : String(error);
     }
-    if (currentRevision !== observedAuthorizationRevision) {
-      observedAuthorizationRevision = currentRevision;
-      closeStaleAuthorizationState();
-    }
-    const enabled = profileEnabled(liveConfig);
-    if (liveConfig?.profile !== profile || !enabled) closeStaleAuthorizationState();
+    if (revisionChanged || blocker !== null) closeStaleAuthorizationState();
   }, 1_000) : undefined;
   authorizationTimer?.unref?.();
   const cleanupTimer = setInterval(() => {
@@ -714,13 +711,6 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     codingRuntimes?.cleanupExpired();
   }, Math.min(sessionTtlMs, 60_000));
   cleanupTimer.unref?.();
-  // The server description reported by /health is fixed for the process: this
-  // context is built once here instead of per request, where rebuilding it
-  // re-ran `git rev-parse --show-toplevel` synchronously and blocked the event
-  // loop for seconds on a cold disk. Live state stays live: the coding grant is
-  // still re-checked per request by the middleware above, and session counters
-  // are read from the store on each response.
-  const healthContext = createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
   const healthSchemaHash = createHash('sha256')
     .update(JSON.stringify(buildMcpToolDefinitions(healthContext.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
     .digest('hex');
@@ -728,15 +718,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
 
   app.use((req, res, next) => {
     if (authorizationScoped) {
-      const liveConfig = loadMcpLocalConfig();
-      const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some(repo => repo.accessMode === 'read_write');
-      const enabled = profileEnabled(liveConfig);
-      if (
-        liveConfig?.profile !== profile
-        || !enabled
-        || liveConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
-        || !hasGrant
-      ) {
+      if (authorizationProfileBlocker(profile, loadMcpLocalConfig()) !== null) {
         closeStaleAuthorizationState();
         res.status(503).json({ error: `${profile}_disabled` });
         return;
@@ -794,7 +776,10 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     const oauthRateLimit = createOAuthRateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
     app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
-    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, repoNames: readWriteRepos.map((repo) => basename(repo.path)) }));
+    const grantedRepoNames = readRegisteredRepoHarnessRepos({ adoptedOnly: true })
+      .filter((repo) => repo.accessMode === 'read_write')
+      .map((repo) => basename(repo.path));
+    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', consentDescription(healthContext.policy, grantedRepoNames)));
     app.use('/authorize', oauthAuthorizationHandler(oauthProvider, allowedRedirectHosts));
     app.use('/token', tokenHandler({ provider: oauthProvider }));
     app.use('/revoke', revocationHandler({ provider: oauthProvider }));
@@ -811,7 +796,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
+        scopes_supported: mcpSupportedScopes(profile),
       });
     });
     app.get('/.well-known/openid-configuration', (req, res) => {
@@ -825,7 +810,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
+        scopes_supported: mcpSupportedScopes(profile),
       });
     });
     app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
@@ -833,7 +818,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       res.json({
         resource: `${origin}/mcp`,
         authorization_servers: [origin],
-        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
+        scopes_supported: mcpSupportedScopes(profile),
         bearer_methods_supported: ['header'],
       });
     });
