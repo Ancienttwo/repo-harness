@@ -232,6 +232,8 @@
   .architecture-layers button[data-state="unavailable"] { @apply border-dashed text-kumo-subtle; }
   .architecture-layers button[aria-pressed="true"] { @apply border-kumo-contrast bg-kumo-contrast text-kumo-inverse; }
   .architecture-layer-summary { @apply flex min-w-0 flex-col gap-1 text-sm text-kumo-default; overflow-wrap: anywhere; }
+  .architecture-layer-summary__pick { @apply flex min-w-0 items-center gap-2 text-xs text-kumo-subtle; }
+  .architecture-layer-summary__pick select { @apply h-8 min-w-0 max-w-full flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm text-kumo-default sm:flex-none; }
   .architecture-layer-summary details ul { @apply m-0 mt-1 flex list-none flex-col gap-0.5 p-0 text-xs; }
   .architecture-map__title { @apply flex min-w-0 items-center gap-1.5; }
   .architecture-map__mark { @apply shrink-0 rounded bg-kumo-recessed px-1 text-[11px] leading-4 text-kumo-subtle; }

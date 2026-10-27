@@ -1,10 +1,11 @@
 // Child process of the architecture map collector. The model export, git and
 // archctx run synchronously, so they run here, in a process group that the
-// collector kills at its deadline or on close. It takes one repository id,
+// collector kills at its deadline or on close. It takes one repository id and
+// the file that holds the repository's open PRs from the Dev Activity cache,
 // reads the repository registry with the environment it got and writes one
 // JSON line: the result for that repository.
 
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,7 +13,7 @@ import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, decodeDocsAncho
 import {
   ARCHITECTURE_DEBT_KINDS,
   architectureModelDelta,
-  isArchitectureRepoPath,
+  decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
   type ArchitectureChangesInput,
   type ArchitectureDebtItemV1,
@@ -24,10 +25,12 @@ import {
   type ArchitectureMapRelationV1,
   type ArchitectureMapSizeInput,
   type ArchitectureMapV1,
+  type ArchitecturePullRequestsInput,
+  type ArchitecturePullRequestsSource,
   type ArchitectureViolationReason,
   type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
-import { publicDevActivityText } from '../../core/operator/public-text';
+import { isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import { readArchitectureNativeContext, runPackageLocalArchctxJson } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
@@ -143,18 +146,20 @@ export function recheckCheckout(
   };
 }
 
-/** The same end-of-cycle check for the layers: today's changes read the model, each violation check the whole tree. */
+/** The same end-of-cycle check for the layers: today's changes and PR owners read the model, each violation check the whole tree. */
 export function recheckLayers(
   commit: string,
   before: CheckoutState,
   after: CheckoutState,
-  read: { readonly changes: ArchitectureChangesInput; readonly violations: CollectedViolations },
-): { readonly changes: ArchitectureChangesInput; readonly violations: CollectedViolations } {
+  read: { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations },
+): { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations } {
   const moved = before.head !== commit || after.head !== commit;
+  const model = !moved && after.modelClean === true;
   const tree = !moved && after.treeClean === true;
   const { debt, anchors, dependencies } = read.violations;
   return {
-    changes: keepIf(read.changes, !moved && after.modelClean === true),
+    changes: keepIf(read.changes, model),
+    pull_requests: keepIf(read.pull_requests, model),
     violations: { debt: keepIf(debt, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree) },
   };
 }
@@ -241,6 +246,16 @@ function readChanges(
   return { state: 'ok', since, base, commits, files, owners, model };
 }
 
+/** Owners of the open PRs' changed files. The files come from the PR heads; their owners come from the map commit's model. */
+function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource): ArchitecturePullRequestsInput {
+  if (source.state === 'unavailable') return source;
+  const gate = modelGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate };
+  const paths = new Set(source.pull_requests.flatMap(pr => (pr.head_sha !== null && pr.changed_files.state === 'ok' ? pr.changed_files.paths : [])));
+  try { return { ...source, owners: resolveOwners(root, [...paths].sort()) }; }
+  catch { return { state: 'unavailable', reason: 'ownership_unavailable' }; }
+}
+
 type Violation<Fields> = ({ readonly state: 'ok' } & Fields) | { readonly state: 'unavailable'; readonly reason: ArchitectureViolationReason };
 
 /** One archctx JSON command. An error envelope or a failed run is a reason, never a partial answer. */
@@ -275,7 +290,7 @@ function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolati
   for (const item of report.items) {
     // The map shows only the kinds of the two complete checks; the map decoder also needs known ids and unique repository paths.
     const kind = ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind);
-    if (kind === undefined || !item.nodeIds.every(id => known.has(id)) || !item.paths.every(isArchitectureRepoPath)
+    if (kind === undefined || !item.nodeIds.every(id => known.has(id)) || !item.paths.every(isPublicRepoPath)
       || new Set(item.nodeIds).size !== item.nodeIds.length || new Set(item.paths).size !== item.paths.length) {
       return { state: 'unavailable', reason: 'archctx_failed' };
     }
@@ -366,7 +381,13 @@ function modelEntities(context: { readonly model: { readonly nodes: readonly unk
  * One repository's map. `since` starts today's window. This process has no
  * tests cache: the collector reads the tests layer from it in the server.
  */
-export function collectArchitectureMap(repositoryId: string, path: string, collectedAt: string, since: string): ArchitectureMapWorkerResult {
+export function collectArchitectureMap(
+  repositoryId: string,
+  path: string,
+  collectedAt: string,
+  since: string,
+  pullRequests: ArchitecturePullRequestsSource,
+): ArchitectureMapWorkerResult {
   const before = readCheckoutState(path);
   let committed;
   try { committed = readCommittedNativeContext(path); }
@@ -379,6 +400,7 @@ export function collectArchitectureMap(repositoryId: string, path: string, colle
   const read = { sizes: readSizes(path, commit, before), dependencies: deps.dependencies };
   const layers = {
     changes: readChanges(path, commit, before, since, context.model),
+    pull_requests: readPullRequests(path, commit, before, pullRequests),
     violations: { ...readViolations(path, commit, before, known), dependencies: deps.undeclared },
   };
   const after = readCheckoutState(path);
@@ -399,12 +421,16 @@ export function localMidnight(now: Date): string {
 
 if (import.meta.main) {
   const id = process.argv[2] ?? '';
+  // The collector wrote this file from its own cache; a file it cannot read leaves only the PR layer without data.
+  let pullRequests: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_unavailable' };
+  try { pullRequests = decodeArchitecturePullRequestsSource(JSON.parse(readFileSync(process.argv[3] ?? '', 'utf8'))); }
+  catch { /* dev_activity_unavailable */ }
   const repo = readRepoHarnessRegistryStrictSnapshot({ env: process.env }).repos.find(entry => entry.id === id);
   let result: ArchitectureMapWorkerResult = { id, ok: false, reason: 'model_unavailable' };
   // A failure is one result; its cause (a path, an archctx error) stays in this process.
   if (repo) {
     const now = new Date();
-    try { result = collectArchitectureMap(repo.id, repo.path, now.toISOString(), localMidnight(now)); }
+    try { result = collectArchitectureMap(repo.id, repo.path, now.toISOString(), localMidnight(now), pullRequests); }
     catch { /* model_unavailable */ }
   }
   // Exit once the line is flushed so a handle left open cannot hold the child past its output.

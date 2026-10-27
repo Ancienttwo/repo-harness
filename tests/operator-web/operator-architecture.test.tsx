@@ -331,12 +331,14 @@ describe('architecture map', () => {
   const noModelDelta = { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [], relations_added: [], relations_removed: [], relations_changed: [] } as const;
   const noLayers: ArchitectureMapLayersInput = {
     changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+    pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
     violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
     tests: { state: 'unavailable', reason: 'tests_pending' },
   };
   const mapLayers: ArchitectureMapLayersInput = {
     changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
       files: new Map([['src/ledger.ts', { added: 5, deleted: 2 }]]), owners: new Map([['src/ledger.ts', PART]]), model: noModelDelta },
+    pull_requests: { state: 'unavailable', reason: 'dev_activity_unavailable' },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
       anchors: noCodeFacts,
@@ -345,7 +347,7 @@ describe('architecture map', () => {
     tests: { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [
       { id: CALLER, files: 2, passed: 1, failed: 0, skipped: 0, no_result: 1 }, { id: CENTER, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] },
   };
-  function mapFor(available = true): ArchitectureMapV1 {
+  function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers): ArchitectureMapV1 {
     return projectArchitectureMap({
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
@@ -353,7 +355,7 @@ describe('architecture map', () => {
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
         : { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
-      layers: mapLayers,
+      layers,
     });
   }
   const reader = (read: ArchitectureMapRead): ArchitectureMapReader => async () => read;
@@ -474,11 +476,53 @@ describe('architecture map', () => {
     await settle();
     expect(document.querySelector('[data-layer-facts="tests"]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
 
-    for (const [layer, reason] of [['pull_requests', 'pr_files_unavailable'], ['decisions', 'decisions_not_exported']] as const) {
-      await choose(layer);
-      expect([gaps(), notes()]).toEqual([[], [`${layer}:${reason}`]]);
-      expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
-    }
+    await choose('pull_requests');
+    expect([gaps(), notes()]).toEqual([['pull_requests:dev_activity_unavailable'], []]);
+    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+    await choose('decisions');
+    expect([gaps(), notes()]).toEqual([[], ['decisions:decisions_not_exported']]);
+    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+  });
+
+  test('PR impact marks the nodes the chosen PR changes and the nodes that depend on them, and a PR without a complete list says why', async () => {
+    const head = 'e'.repeat(40);
+    const map = mapFor(true, { ...mapLayers, pull_requests: {
+      state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
+      pull_requests: [
+        { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: head, changed_files: { state: 'ok', paths: ['README.md', 'src/ledger.ts'] } },
+        { number: 22, title: 'Big rewrite', url: 'https://github.com/acme/widgets/pull/22', head_sha: 'f'.repeat(40), changed_files: { state: 'unavailable', reason: 'files_truncated' } },
+      ],
+      owners: new Map<string, string | null>([['README.md', null], ['src/ledger.ts', PART]]),
+    } });
+    await mount(workspace({ readMap: reader({ state: 'ok', map }) }));
+    const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    const gaps = () => [...document.querySelectorAll('.architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`);
+    const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="pull_requests"]')!.click());
+    await settle();
+
+    expect(document.querySelector('.architecture-layers [data-layer="pull_requests"]')?.getAttribute('data-state')).toBe('ok');
+    const select = document.querySelector<HTMLSelectElement>('[data-layer-summary="pull_requests"] select')!;
+    expect([select.value, [...select.options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite']]);
+    const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
+    expect(summary).toContain(head.slice(0, 12));
+    expect(summary).toContain('2 files changed in 2 nodes, 1 without an owner');
+    // The changed component and its group; the caller depends on the group through a model relation.
+    expect([PART, CENTER, CALLER].map(id => [box(id).getAttribute('data-tone'), box(id).textContent?.includes(id === CALLER ? '↳' : '1')]))
+      .toEqual([['change', true], ['change', true], ['muted', true]]);
+    expect(box(EXTERNAL).hasAttribute('data-quiet')).toBe(true);
+    expect([gaps(), notes()]).toEqual([[], ['pull_requests.flow_steps:change_impact_not_exported']]);
+    await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${CENTER}`);
+
+    await act(async () => {
+      select.value = '22';
+      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
+    });
+    await settle();
+    expect(gaps()).toEqual(['pull_request:files_truncated']);
+    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
   });
 
   test('a layer without data is still listed and says why', async () => {

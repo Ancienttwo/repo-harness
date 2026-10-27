@@ -15,3 +15,10 @@ export function isPublicDevActivityText(value: string): boolean {
   PRIVATE_PATH.lastIndex = 0;
   return !PRIVATE_PATH.test(value);
 }
+
+const REPO_PATH = /^(?![/\\])(?![A-Za-z]:)(?!(?:.*\/)?\.\.(?:\/|$))[^\0\r\n]{1,1024}$/u;
+
+/** A repository-relative path: no root, drive or `..` segment, and nothing the private-path guard masks. */
+export function isPublicRepoPath(value: string): boolean {
+  return REPO_PATH.test(value) && isPublicDevActivityText(value);
+}
