@@ -106,7 +106,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
   const itemHasPullRequest = new Map<string, boolean>();
   for (const raw of array(v.items, 'items')) {
     const i = obj(raw, ['id', 'repository_id', 'branch', 'title', 'column', 'hidden', 'column_since', 'worktrees',
-      'pull_request', 'cleanup_pending'], 'item');
+      'pull_request'], 'item');
     const repo = repositoryId(i.repository_id);
     if (!repositoryIds.has(repo)) fail('item repository');
     const id = nonEmpty(i.id, 'item id');
@@ -148,7 +148,6 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
       if ((p.state === 'merged') !== (p.merged_at !== null)) fail('merged_at');
       return p;
     });
-    bool(i.cleanup_pending, 'cleanup_pending');
   }
 
   let previous = Number.NEGATIVE_INFINITY;

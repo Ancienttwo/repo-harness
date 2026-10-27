@@ -18,6 +18,13 @@ Repo but no worktree: create one with
 If the path or the branch exists, stop with `worktree_exists`. Do not reuse or
 replace it.
 
+After creation, write the shared lifecycle record before starting the agent:
+`repo-harness run contract-worktree-runtime record --repo <repo> --worktree <cwd> --creator portal --purpose <slug> --task <slug>`.
+The runtime stores the record in the clone's common Git directory. A failed record write stops startup and preserves the checkout.
+On operator-authorized closeout, after the portal has stopped, run
+`repo-harness run contract-worktree-runtime end-record --repo <repo> --worktree <cwd>`.
+This records the end state and does not delete the checkout. Manually created worktrees use the same `record` command with `--creator manual`.
+
 ## Sequence
 
 ```bash

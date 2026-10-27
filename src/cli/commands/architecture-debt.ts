@@ -11,6 +11,8 @@ import {
   type ArchctxProviderOptions,
 } from '../../effects/architecture/archctx-provider';
 import { gitSpawnSync } from '../../effects/git/runner';
+import { recordWorktree, endWorktreeRecord, type WorktreeRecord } from '../../effects/git/worktree-record';
+import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 
 export interface ArchitectureDebtOutputV1 {
   kind: 'repo-harness-architecture-debt';
@@ -100,15 +102,20 @@ function withBaseCheckout<T>(repoRoot: string, sha: string, options: ArchctxProv
   const parent = mkdtempSync(join(tmpdir(), 'repo-harness-debt-base-'));
   const checkout = join(parent, 'checkout');
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
+  let record: WorktreeRecord | null = null;
   // Hooks of the measured repository do not run in the temporary checkout.
   const added = gitSpawnSync(['-C', repoRoot, '-c', 'core.hooksPath=/dev/null', 'worktree', 'add', '--detach', checkout, sha], { encoding: 'utf8' });
   if (added.status !== 0) {
     outcome = { ok: false, error: new ArchctxClientError({ code: 'RH_ARCHITECTURE_DEBT_CHECKOUT_FAILED', action: 'inspect-git-worktree', reasonCode: 'worktree-add-failed', details: { sha }, message: `git worktree add for ${sha} failed: ${added.stderr.trim()}` }) };
   } else {
-    try { outcome = { ok: true, value: work(realpathSync(checkout)) }; }
+    try {
+      record = recordWorktree(repoRoot, checkout, { creator: 'task', purpose: 'architecture base inspection', task_id: sha });
+      outcome = { ok: true, value: work(realpathSync(checkout)) };
+    }
     catch (error) { outcome = { ok: false, error }; }
   }
   const issues = closeBaseCheckout(repoRoot, parent, checkout, options);
+  if (issues.length === 0) endWorktreeRecord(resolveGitCommonDirectory(repoRoot), record, 'removed');
   if (issues.length > 0) {
     const baseError = outcome.ok ? null : outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
     throw new ArchctxClientError({

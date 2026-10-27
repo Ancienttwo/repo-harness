@@ -17,9 +17,11 @@ import {
   admittedTaskContextFixture,
 } from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
+import { decodeWorktrees } from '../../core/operator/worktrees';
 import type { CiRepairsRead } from '../repository-reads';
 import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { busyWorktrees, degradedWorktrees, emptyWorktrees } from './worktrees';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -59,6 +61,8 @@ export function fixtureProps(name: string): OperatorAppProps {
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
   const setup = decodeSetupSnapshot(fixture === 'busy' ? readySetup(now) : fixture === 'empty' ? loadingSetup() : degradedSetup(now));
+  // busy: every judgment; empty: the first collection has not finished; degraded: one repository unreadable, sizes unknown.
+  const worktrees = decodeWorktrees(fixture === 'busy' ? busyWorktrees(now) : fixture === 'empty' ? emptyWorktrees() : degradedWorktrees(now));
   // busy: one open CI repair issue in repo-harness and no daily run elsewhere; degraded: the daily run uploaded nothing.
   const repairs = (repositoryId: string): CiRepairsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'artifacts_missing' }
     : repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'no_daily_run' }
@@ -79,6 +83,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialNotifyStatus: notifyStatus,
     readSetup: () => Promise.resolve(setup),
     initialSetup: setup,
+    readWorktrees: () => Promise.resolve(worktrees),
+    initialWorktrees: worktrees,
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
   };

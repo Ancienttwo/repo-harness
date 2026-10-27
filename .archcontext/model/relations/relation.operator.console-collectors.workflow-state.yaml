@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.workflow-state
+kind: depends-on
+source: component.operator.console-collectors
+target: capability.workflow-engine.workflow-state
+intent: Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.

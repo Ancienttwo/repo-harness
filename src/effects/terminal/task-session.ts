@@ -13,6 +13,7 @@ import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
 import { taskWorkspaceKey } from '../git/repository-identity';
+import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -529,6 +530,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
       recheckTaskAdmission(repoRoot, { ...intent.spec, runtime: 'herdr', task_admission: intent.task_admission }, effects.taskAuthority);
       return reconcile(dir, intent);
     }
+    recordWorktree(repository.primary_root, repository.execution_root, { creator: 'task', purpose: 'task agent', task_id: spec.task });
     const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, recheck);
     recheck();
     const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec, ...(taskAdmission ? { task_admission: taskAdmission } : {}) };
@@ -950,6 +952,10 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
   const repository = taskRepository(repoRoot, gitBin);
   const expected = { ...repository, execution_root: checkoutPath };
   const dir = workspaceDirectory(expected);
+  const recordClosed = () => {
+    writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+    endWorktreeRecord(repository.repository_id, readWorktreeRecord(repository.repository_id, checkoutPath), 'closed');
+  };
   if (!existsSync(dir)) return { status: 'not_registered', pids: [] };
   assertSessionDirectory(repository.primary_root, dir);
   return locked(repository.primary_root, dir, async () => {
@@ -961,7 +967,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
       const spaces = workspaceReadback(intent.endpoint);
       const existing = checkoutWorkspace(spaces, expected);
       if (!existing) {
-        if (!dryRun) writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+        if (!dryRun) recordClosed();
         return { status: 'closed', pids: [] };
       }
       if (dryRun) return { status: 'cleanup_pending', pids: [], reason: 'workspace_attached' };
@@ -987,7 +993,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
     const spaces = info(workspace.endpoint, ['workspace', 'list']).workspaces;
     if (!Array.isArray(spaces)) throw new Error('task_agent_workspace_response_invalid');
     if (!spaces.some(item => item.workspace_id === workspace.workspace_id)) {
-      if (!dryRun) writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+      if (!dryRun) recordClosed();
       return { status: 'closed', pids: [] };
     }
     assertWorkspace(workspace);
@@ -1008,7 +1014,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
       mutate(workspace.endpoint, ['workspace', 'close', workspace.workspace_id]);
       const readback = info(workspace.endpoint, ['workspace', 'list']).workspaces;
       if (!Array.isArray(readback) || readback.some(item => item.workspace_id === workspace.workspace_id)) return { status: 'cleanup_pending', pids: [], reason: 'readback_failed' };
-      writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+      recordClosed();
     }
     return { status: 'closed', pids: [] };
   });

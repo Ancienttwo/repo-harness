@@ -2,6 +2,8 @@ import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type Admi
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
+import { startWorktreeCollector } from './worktree-collector';
+import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { startSetupCollector } from '../setup/collector';
@@ -101,6 +103,7 @@ export const OPERATOR_DOCS_FILE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][
 export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 export const OPERATOR_DEV_ACTIVITY_PATH = '/api/v1/dev-activity' as const;
+export const OPERATOR_WORKTREES_PATH = '/api/v1/worktrees' as const;
 export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
 export const OPERATOR_BOT_ACCESS_PATH = '/api/v1/bot-access' as const;
 export const OPERATOR_CLI_INVENTORY_PATH = '/api/v1/cli-inventory' as const;
@@ -139,6 +142,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'runtime_status', method: 'GET', pattern: OPERATOR_RUNTIME_STATUS_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'dev_activity', method: 'GET', pattern: OPERATOR_DEV_ACTIVITY_PATH, write: false }),
+  Object.freeze({ id: 'worktrees', method: 'GET', pattern: OPERATOR_WORKTREES_PATH, write: false }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
@@ -180,6 +184,8 @@ export interface OperatorServerOptions {
   readonly read_dev_activity?: () => DevActivitySnapshotV2;
   /** Start the in-process Dev Activity collector (operator serve). Ignored when a cache reader is injected. */
   readonly dev_activity_collector?: boolean;
+  readonly read_worktrees?: () => WorktreesSnapshot;
+  readonly worktree_collector?: boolean;
   /** Setup snapshot cache reader. GET serves only this cache; it never runs setup check. */
   readonly read_setup?: () => SetupSnapshotV1;
   /** Start the in-process setup collector (operator serve). Ignored when a cache reader is injected. */
@@ -1715,6 +1721,18 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_WORKTREES_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Worktrees accepts no query selectors.'), headOnly);
+        return;
+      }
+      let snapshot: WorktreesSnapshot;
+      try { snapshot = decodeWorktrees((options.read_worktrees ?? worktrees?.read ?? unavailableWorktrees)()); }
+      catch { snapshot = unavailableWorktrees(); }
+      sendJson(response, 200, snapshot, headOnly);
+      return;
+    }
+
     if (pathname === OPERATOR_DEV_ACTIVITY_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Dev activity accepts no query selectors.'), headOnly);
@@ -2020,6 +2038,7 @@ export async function startOperatorServer(
     ? startTestsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
   const execution = options.execution_collector && !options.read_execution_state ? startExecutionCollector({ env: options.env }) : null;
+  const worktrees = options.worktree_collector && !options.read_worktrees ? startWorktreeCollector({ env: options.env }) : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;
@@ -2045,6 +2064,7 @@ export async function startOperatorServer(
       void docs?.close();
       void tests?.close();
       void execution?.close();
+      void worktrees?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -2071,7 +2091,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

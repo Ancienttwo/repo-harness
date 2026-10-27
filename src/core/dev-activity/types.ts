@@ -84,8 +84,6 @@ export interface DevActivityItem {
   column_since: string | null;
   worktrees: DevActivityWorktree[];
   pull_request: DevActivityPullRequest | null;
-  /** Merged PR whose worktree still exists. */
-  cleanup_pending: boolean;
 }
 
 export const DEV_ACTIVITY_ATTENTION_KINDS = ['ready_to_merge', 'changes_requested', 'merge_conflict', 'checks_failed'] as const;

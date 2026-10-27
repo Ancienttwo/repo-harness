@@ -10,6 +10,7 @@ import { ageWords } from './labels';
 import { useCiRepairs, type CiRepairsReader, type CiRepairsReason, type CiRepairsResult } from './repository-reads';
 import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
+import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
 
 const WAITING_PREVIEW = 5;
 const CONTINUE_PREVIEW = 4;
@@ -17,6 +18,7 @@ const TODAY_PREVIEW = 3;
 
 const BOARD: WorkspaceLocation = { workspace: 'board', module: null, item: null };
 const SYSTEM: WorkspaceLocation = { workspace: 'system', module: null, item: null };
+const WORKTREES: WorkspaceLocation = { workspace: 'worktrees', module: null, item: null };
 const boardItem = (item: string): WorkspaceLocation => ({ workspace: 'board', module: null, item });
 
 type Open = (next: WorkspaceLocation) => void;
@@ -167,8 +169,27 @@ function RepairReasons({ rows, snapshot, t }: { readonly rows: readonly CiRepair
   );
 }
 
-function Today({ snapshot, repairs, now, onOpen, t }: {
-  readonly snapshot: DevActivitySnapshotV2; readonly repairs: readonly CiRepairsResult[] | null; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
+/** Reclaimable space from the worktree collector; an unmeasured size is never counted as 0 B. */
+function ReclaimableRow({ worktrees, onOpen, t }: { readonly worktrees: WorktreesView; readonly onOpen: Open; readonly t: OperatorTranslate }) {
+  const snapshot = worktreesOf(worktrees);
+  const state: RowState = worktrees.kind === 'loading' ? 'loading' : snapshot === null ? 'unavailable' : 'ready';
+  const unread = snapshot?.repositories.filter(repository => repository.status === 'unavailable').length ?? 0;
+  return (
+    <TodayRow id="reclaimable" label={t('home.today.reclaimable')} state={state}
+      link={<PageLink to={WORKTREES} onOpen={onOpen} className="text-kumo-link hover:underline">{t('nav.worktrees')} ›</PageLink>}>
+      {state === 'loading' ? <span className="text-kumo-subtle">{t('home.today.loading')}</span>
+        : snapshot === null ? t('home.today.unavailable')
+          : <>
+            <span className="font-mono">{spaceWords(reclaimableSpace(snapshot), t)}</span>
+            {unread > 0 && <span className="type-caption text-kumo-warning"> · {t('home.today.partial', { count: unread })}</span>}
+          </>}
+    </TodayRow>
+  );
+}
+
+function Today({ snapshot, repairs, worktrees, now, onOpen, t }: {
+  readonly snapshot: DevActivitySnapshotV2; readonly repairs: readonly CiRepairsResult[] | null; readonly worktrees: WorktreesView;
+  readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
 }) {
   const gaps = githubGaps(snapshot);
   const since = startOfToday(now);
@@ -217,6 +238,7 @@ function Today({ snapshot, repairs, now, onOpen, t }: {
                 {refused.length > 0 && <RepairReasons rows={refused} snapshot={snapshot} t={t} />}
               </>}
         </TodayRow>
+        <ReclaimableRow worktrees={worktrees} onOpen={onOpen} t={t} />
       </ul>
     </ListGroup>
   );
@@ -242,8 +264,9 @@ function SourceBanner({ view, snapshot, now, onOpen, t }: {
     title={failures.length > 1 ? `${sentence} · ${t('home.banner.more', { count: failures.length - 1 })}` : sentence} />;
 }
 
-export function Home({ view, readCiRepairs, generation, now, onOpen, t }: {
+export function Home({ view, worktrees, readCiRepairs, generation, now, onOpen, t }: {
   readonly view: DevActivityView;
+  readonly worktrees: WorktreesView;
   readonly readCiRepairs: CiRepairsReader;
   readonly generation: number;
   readonly now: number;
@@ -307,7 +330,7 @@ export function Home({ view, readCiRepairs, generation, now, onOpen, t }: {
           ))}
         </ul>
       </section>
-      <Today snapshot={ready} repairs={repairs} now={now} onOpen={onOpen} t={t} />
+      <Today snapshot={ready} repairs={repairs} worktrees={worktrees} now={now} onOpen={onOpen} t={t} />
     </div>
   );
 }

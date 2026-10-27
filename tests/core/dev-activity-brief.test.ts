@@ -35,7 +35,7 @@ function snapshot(overrides: Partial<DevActivityRawRepository> = {}): DevActivit
 function item(overrides: Partial<DevActivityItem> = {}): DevActivityItem {
   return {
     id: `${REPO}:feat/local`, repository_id: REPO, branch: 'feat/local', title: 'feat/local',
-    column: 'building', hidden: null, column_since: null, pull_request: null, cleanup_pending: false,
+    column: 'building', hidden: null, column_since: null, pull_request: null,
     worktrees: [{ directory: 'local-worktree', head_sha: 'a'.repeat(40), dirty: false, ahead: 1, behind: 0 }],
     ...overrides,
   };

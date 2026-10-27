@@ -160,7 +160,6 @@ function projectRepositoryItems(repo: DevActivityRawRepository, input: DevActivi
       column_since: placement.since,
       worktrees: worktrees.map(({ branch: _branch, ...worktree }) => worktree),
       pull_request: pr ? publicPullRequest(pr) : null,
-      cleanup_pending: pr?.state === 'merged' && worktrees.length > 0,
     });
   }
   return items;

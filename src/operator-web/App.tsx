@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
 import type { SetupSnapshotV1 } from '../core/setup/types';
+import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
@@ -61,6 +62,8 @@ import {
 import { useNow } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
 import { parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { fetchWorktrees, useWorktrees, worktreesOf, type WorktreesReader, type WorktreesView } from './worktrees';
+import { WorktreesPage } from './WorktreesPage';
 import { taskKey } from './worklist';
 
 export interface OperatorAppProps {
@@ -89,6 +92,9 @@ export interface OperatorAppProps {
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
   readonly initialSetup?: SetupSnapshotV1;
+  /** The worktree collector's cached result behind the Worktree page, the Board cleanup signal and Home's reclaimable space. */
+  readonly readWorktrees?: WorktreesReader;
+  readonly initialWorktrees?: WorktreesSnapshot;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */
   readonly readRepositoryHead?: RepositoryHeadReader;
   /** The tests route's open CI repair issues, for Home's "Today" section. */
@@ -159,6 +165,24 @@ function Freshness({ view, now, t }: { readonly view: DevActivityView; readonly 
   );
 }
 
+/** The same line for the Worktree page, about the collector result it shows. */
+function WorktreesFreshness({ view, now, t }: { readonly view: WorktreesView; readonly now: number; readonly t: OperatorTranslate }) {
+  if (view.kind === 'loading') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="worktrees"><Loader size={12} />{t('freshness.worktrees.loading')}</span>;
+  if (view.kind === 'unreachable') return <span className="text-kumo-danger" data-freshness="failed" data-freshness-source="worktrees">{t('freshness.worktrees.failed')}</span>;
+  const { snapshot } = view;
+  if (snapshot.status === 'unavailable' || snapshot.collected_at === null) {
+    return <span data-freshness="pending" data-freshness-source="worktrees">{t('freshness.worktrees.pending')}</span>;
+  }
+  const age = ageWords(snapshot.collected_at, now, t);
+  const unread = snapshot.repositories.filter(repository => repository.status === 'unavailable').length;
+  return (
+    <span className={cn('truncate', view.refreshFailed && 'text-kumo-warning')} data-freshness={view.refreshFailed ? 'refresh-failed' : snapshot.status} data-freshness-source="worktrees">
+      {view.refreshFailed ? t('freshness.worktrees.refreshFailed', { age }) : t('freshness.worktrees.read', { age })}
+      {unread > 0 && <>{' · '}{t('freshness.worktrees.partial', { count: unread })}</>}
+    </span>
+  );
+}
+
 /** The same line for the setup pages, about the setup check result they show. */
 function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly now: number; readonly t: OperatorTranslate }) {
   const state = setupPageState(view);
@@ -197,6 +221,8 @@ export function OperatorApp({
   initialNotifyStatus,
   readSetup = fetchSetup,
   initialSetup,
+  readWorktrees = fetchWorktrees,
+  initialWorktrees,
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
 }: OperatorAppProps) {
@@ -238,6 +264,8 @@ export function OperatorApp({
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
+  // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
+  const worktrees = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
     ? { ...filters, repositoryId: null } : filters;
@@ -416,17 +444,20 @@ export function OperatorApp({
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
-            {(SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
+            {(SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} />
+              : workspace === 'worktrees' ? <WorktreesFreshness view={worktrees} now={now} t={t} />
+                : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
             <span className="max-sm:sr-only">{busy ? t('status.refreshing') : t('status.refresh')}</span>
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
-          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <Board view={devActivity} runtime={runtime} filters={boardFilters} onFilters={setFilters} itemId={place.item}
+          {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+          {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
+          {workspace === 'worktrees' && <WorktreesPage view={worktrees} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}

@@ -98,6 +98,7 @@ describe('operator structural write boundary', () => {
       'runtime_status',
       'notify_status',
       'dev_activity',
+      'worktrees',
       'setup',
       'bot_access',
       'cli_inventory',

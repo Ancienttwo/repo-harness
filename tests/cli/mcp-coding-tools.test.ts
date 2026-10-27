@@ -79,7 +79,7 @@ function fixture(): {
   git(repo, 'add', '.');
   git(repo, 'commit', '-m', 'fixture');
 
-  const env = { ...process.env, REPO_HARNESS_HOME: home };
+  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: temporary('coding-worktrees-') };
   const grant = setRepoHarnessAccessMode(repo, 'read_write', { env });
   expect(grant.authorizationRevision).toBe(1);
   const manager = new CodingWorkspaceManager(env);
@@ -635,10 +635,13 @@ describe('coding MCP workspace and file tools', () => {
   }, 30_000);
 });
 
- test('coding worktrees use system tmp by default and keep the root override', async () => {
+ test('coding worktrees share the sweep root and reject the retired override', async () => {
   const { codingWorktreeRoot } = await import('../../src/cli/mcp/coding-workspaces');
-  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe(process.platform === 'win32' ? join(tmpdir(), 'repo-harness-mcp-worktrees') : '/tmp/repo-harness-mcp-worktrees');
-  expect(codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toBe(require('path').resolve('/custom'));
+  const { managedWorktreeRoot } = await import('../../src/effects/git/managed-worktree');
+  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe(managedWorktreeRoot({}));
+  const root = temporary('mcp-shared-root-');
+  expect(codingWorktreeRoot({ REPO_HARNESS_WORKTREE_ROOT: root })).toBe(require('fs').realpathSync(root));
+  expect(() => codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toThrow('REPO_HARNESS_WORKTREE_ROOT');
 });
 
 describe('system worktree root platform policy', () => {

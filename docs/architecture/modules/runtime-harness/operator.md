@@ -175,6 +175,21 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
+The Worktree page reads `GET /api/v1/worktrees`. Background child processes collect
+Git topology, process cwd, merge proof and disk size. GET does no probes. The shared
+`inspectWorktree` predicate also gates live sweep selection. Unknown process state,
+unpublished commits and non-rebuildable ignored data prevent a green judgment.
+The browser gets stable opaque ids and directory names. Orphans without a retained
+Git pointer stay unassigned. Disk probes run at most once per directory incarnation
+per 15 minutes; a changed directory mtime makes the cached size unknown until then.
+
+Creation paths write lifecycle records in the clone's common Git directory under
+`repo-harness/worktree-records`. Contract recovery metadata and MCP/session bindings
+retain their operational fields; they do not supply the Console lifecycle view.
+Closeout records the end state. New MCP checkouts use `REPO_HARNESS_WORKTREE_ROOT`
+and the same naming rule as sweep. The retired MCP-specific root setting now fails
+with an instruction to use the shared setting. Existing paths remain readable.
+
 ### 3.1 必须保持的不变量
 
 1. **只有三种有界写入，其余只读。** 用户 2026-10-27 批准三种写入（[#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)，D1）：本机配置 `~/.repo-harness/config.json`（第三期）、文档会话（第四期）、worktree 清理（第五期）。默认仍只读，按这个顺序逐项开放。每个写入请求先过 Origin、`Sec-Fetch-Site`、写 token、封闭 schema、幂等、锁和前置条件，先写意图审计再执行（[PRD](../../../../plans/prds/20261026-2310-operator-console-uiux.prd.md)「写入与权限边界」「写入 API」）。代码现状：生产还没有写入。`OPERATOR_ROUTES` 是冻结的生产路由表，每条路由都是 `write: false`（`src/effects/operator/server.ts:107`）。`startOperatorServer` 只为路由清单里 `method: 'POST'`、`write: true` 的条目启动写入处理，不匹配就拒绝启动；生产不传写路由（`server.ts:1435-1444`）。`handleRequest` 只在 POST 带本服务的 Origin 和 `Sec-Fetch-Site: same-origin` 并命中写路由时放行；GET 和 HEAD 不变，其他方法返回 405（`server.ts:1469-1483`）。`tests/effects/operator-write-boundary.test.ts:59` 要求写路由集合为空，切片 3.1 把它改成三种写入的端点清单。PR #482 删除了旧的浏览器写入口（composer）。
