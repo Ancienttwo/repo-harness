@@ -314,11 +314,12 @@ describe('workspace navigation', () => {
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
-  test('names eight sections, starts on the Board and keeps the repository page with its three tabs', async () => {
+  test('names Home and eight sections in three groups, starts on Home and keeps the repository page with its three tabs', async () => {
     await mount(app());
-    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Board', 'Repositories', 'Agents', 'Skills', 'Hooks', 'Tools', 'Architecture', 'System']);
-    expect(link('board').getAttribute('aria-current')).toBe('page');
-    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
+    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Home', 'Board', 'Repositories', 'Agents', 'Skills', 'Hooks', 'Architecture', 'System', 'Tools']);
+    expect([...document.querySelectorAll('.workspace-nav [id^="nav-group-"]')].map(item => item.textContent)).toEqual(['Work', 'Setup', 'Observe']);
+    expect(link('home').getAttribute('aria-current')).toBe('page');
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');
     for (const workspace of ['repositories', 'system']) {
       await act(async () => link(workspace).click());
       expect(window.location.hash).toBe(`#${workspace}`);

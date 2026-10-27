@@ -4,11 +4,15 @@ import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Window } from 'happy-dom';
 
+import tokens from '../../docs/design/operator-console/design-system/tokens.json';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
+import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
+import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
+import type { CiRepairsReader } from '../../src/operator-web/repository-reads';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from '../../src/operator-web/fixtures/dev-activity';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
@@ -18,7 +22,7 @@ let root: Root | null = null;
 let window: Window;
 let prefersDark = false;
 
-function installDom(url = 'http://127.0.0.1:4318/'): void {
+function installDom(url = 'http://127.0.0.1:4318/#board'): void {
   window = new Window({ url });
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
@@ -56,6 +60,8 @@ async function mount(element: React.ReactElement): Promise<void> {
   await act(async () => root?.render(element));
 }
 
+/** Lets reads that resolve after the first render (CI repairs, the head commit) commit. */
+const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) await Promise.resolve(); });
 const key = (value: string) => act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true }) as unknown as Event); });
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-board-column] [data-item-id]'));
 const card = (id: string) => cards().find(element => element.getAttribute('data-item-id') === id)!;
@@ -142,7 +148,10 @@ describe('board page', () => {
     }
     for (const row of document.querySelectorAll('[data-attention-kind]')) expect(row.textContent).not.toMatch(PRIVATE_LABEL);
     expect(document.querySelector('[data-roster="connected"]')?.textContent).not.toMatch(PRIVATE_LABEL);
-    expect(document.querySelector('.board-repo-filter')?.textContent).not.toMatch(PRIVATE_LABEL);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
+    const menu = document.querySelector('[data-repository-switch] + [role="dialog"]')!;
+    expect(menu.querySelectorAll('[data-switch-option]').length).toBeGreaterThan(1);
+    expect(menu.textContent).not.toMatch(PRIVATE_LABEL);
   });
 
   test('offers no drag, write or form control anywhere on the board', async () => {
@@ -274,7 +283,235 @@ describe('board page', () => {
   });
 });
 
+const HOME_URL = 'http://127.0.0.1:4318/';
+const HEAD = '0123456789abcdef0123456789abcdef01234567';
+const midnight = (() => { const day = new Date(NOW); day.setHours(0, 0, 0, 0); return day.getTime(); })();
+
+/** The busy fixture with PR #607 merged today and every other merge before today, whatever the hour. */
+function busyToday(): DevActivitySnapshotV2 {
+  const snapshot = busy();
+  return { ...snapshot, items: snapshot.items.map(item => {
+    if (item.pull_request?.state !== 'merged') return item;
+    const mergedAt = new Date(item.pull_request.number === 607 ? (midnight + NOW) / 2 : midnight - 60_000).toISOString();
+    return { ...item, column_since: mergedAt, pull_request: { ...item.pull_request, merged_at: mergedAt, updated_at: mergedAt, closed_at: mergedAt } };
+  }) };
+}
+
+/** Three attention rows, oldest first, as the projection sorts them. */
+function waitingThree(): DevActivitySnapshotV2 {
+  const base = busyToday();
+  const [ready] = base.attention;
+  const row = (kind: 'changes_requested' | 'merge_conflict', branch: string, summary: string, hours: number) =>
+    ({ ...ready!, kind, subject_id: `${HARNESS_ID}:${branch}`, summary, waiting_since: new Date(NOW - hours * 3_600_000).toISOString(), url: null });
+  return { ...base, attention: [
+    row('changes_requested', 'feat/pipeline-observer', 'Observe pipeline phases on the board', 3),
+    row('merge_conflict', 'feat/kanban-human-redesign', 'Rebuild the operator console for humans', 2),
+    ready!,
+  ] };
+}
+
+const noRepairs: CiRepairsReader = async () => ({ state: 'ok', issues: [] });
+const todayRow = (id: string) => document.querySelector(`[data-today="${id}"]`)!;
+
+describe('home page', () => {
+  test('1-HOME-P1 greets with the waiting count and lists rows by wait with reason, repository, PR and an unknown agent', async () => {
+    installDom(HOME_URL);
+    const snapshot = waitingThree();
+    await mount(<OperatorApp {...props(snapshot, { initialLocale: 'zh', readCiRepairs: noRepairs })} />);
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');
+    expect(document.querySelector('h1')?.textContent).toContain('有 3 件事等你处理');
+    // C6: one pixel character per screen; the rail's carrot is the logo, not a character.
+    expect(Array.from(document.querySelectorAll('[data-mascot]')).map(element => element.getAttribute('data-mascot'))).toEqual(['buddy-happy']);
+    const rows =Array.from(document.querySelector('section[aria-labelledby="home-waiting"]')!.querySelectorAll('[data-attention-kind]'));
+    expect(rows.map(row => row.getAttribute('data-attention-kind'))).toEqual(['changes_requested', 'merge_conflict', 'ready_to_merge']);
+    for (const [row, reason, pr] of [[rows[0], '评审要求修改', 'PR #603'], [rows[1], '与 main 冲突', 'PR #608'], [rows[2], '可以合并', 'PR #602']] as const) {
+      for (const part of [reason, 'repo-harness', pr, 'agent 未知']) expect(row!.textContent).toContain(part);
+      expect(row!.querySelector('[data-agent="unknown"] [data-dot="unknown"]')).not.toBeNull();
+    }
+    await act(async () => rows[0]!.querySelector<HTMLAnchorElement>(`a[href="#board/${encodeURIComponent(snapshot.attention[0]!.subject_id)}"]`)!.click());
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
+    expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Observe pipeline phases on the board');
+  });
+
+  test('1-HOME-N1 offers no document session input, agent picker or start button, and Continue lists tasks only', async () => {
+    installDom(HOME_URL);
+    const snapshot = busyToday();
+    await mount(<OperatorApp {...props(snapshot, { readCiRepairs: noRepairs })} />);
+    const home = document.querySelector('[data-home]')!;
+    expect(home.querySelectorAll('input, textarea, select, form, [contenteditable]')).toHaveLength(0);
+    // The only buttons on Home fold a list.
+    expect(home.querySelectorAll('button:not([aria-expanded])')).toHaveLength(0);
+    const continuing = Array.from(home.querySelectorAll('[data-continue-item]')).map(row => row.getAttribute('data-continue-item'));
+    expect(continuing.length).toBeGreaterThan(0);
+    for (const id of continuing) expect(['building', 'verifying']).toContain(snapshot.items.find(item => item.id === id)!.column);
+    expect(continuing).not.toContain(snapshot.attention[0]!.subject_id);
+  });
+
+  test('1-HOME-P2 Today has merged, the three longest waits, failed checks and CI repair, each linked to the page that owns it', async () => {
+    installDom(HOME_URL);
+    const snapshot = waitingThree();
+    const issue = { number: 1101, title: '[CI repair] daily full run failed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1101' };
+    const reads: string[] = [];
+    await mount(<OperatorApp {...props(snapshot, { readCiRepairs: async id => {
+      reads.push(id);
+      return id === HARNESS_ID ? { state: 'ok', issues: [issue] } : { state: 'unavailable', reason: 'no_daily_run' };
+    } })} />);
+    await settle();
+    // Reclaimable space joins this section with the Worktree page (slice 1.7).
+    expect(Array.from(document.querySelectorAll('[data-today]')).map(row => row.getAttribute('data-today'))).toEqual(['merged', 'longest', 'failed', 'repairs']);
+    expect(todayRow('merged').textContent).toContain('PRs merged: 1');
+    expect(Array.from(todayRow('longest').querySelectorAll('ul a')).map(link => link.getAttribute('href')))
+      .toEqual(snapshot.attention.map(row => `#board/${encodeURIComponent(row.subject_id)}`));
+    expect(todayRow('failed').textContent).toContain('Open PRs: 1');
+    expect(todayRow('failed').querySelector('ul a')?.textContent).toBe('Rewrite billing copy');
+    for (const id of ['merged', 'longest', 'failed']) expect(todayRow(id).querySelector('a[href="#board"]')).not.toBeNull();
+    expect(todayRow('repairs').getAttribute('data-state')).toBe('ready');
+    expect(todayRow('repairs').textContent).toContain('Open issues: 1');
+    expect(todayRow('repairs').querySelector(`a[href="${issue.url}"]`)?.textContent).toContain('#1101');
+    expect(todayRow('repairs').querySelector('[data-repairs-reason="no_daily_run"]')?.textContent).toContain('operator-site');
+    // Only repositories with a GitHub remote are asked.
+    expect(reads.sort()).toEqual(snapshot.repositories.filter(row => row.github !== null).map(row => row.repository_id).sort());
+  });
+
+  test('1-HOME-F1 a merged-PR query over the limit marks only Merged unavailable, with its reason and no count', async () => {
+    installDom(HOME_URL);
+    const base = busyToday();
+    const snapshot: DevActivitySnapshotV2 = { ...base, repositories: base.repositories.map(row => row.repository_id !== HARNESS_ID ? row : {
+      ...row, sources: row.sources.map(source => source.kind === 'github' ? { ...source, status: 'unavailable' as const, reason: 'github_truncated_merged' } : source),
+    }) };
+    await mount(<OperatorApp {...props(snapshot, { readCiRepairs: noRepairs })} />);
+    await settle();
+    expect(todayRow('merged').getAttribute('data-state')).toBe('unavailable');
+    expect(todayRow('merged').textContent).toContain('Unavailable · more merged PRs than one query reads in repo-harness');
+    expect(todayRow('merged').textContent).not.toContain('PRs merged');
+    for (const id of ['longest', 'failed', 'repairs']) expect(todayRow(id).getAttribute('data-state')).toBe('ready');
+    // Dropping merged PRs leaves open work complete, so no source banner claims GitHub failed.
+    expect(document.querySelector('[data-source-banner]')).toBeNull();
+  });
+
+  test('a failed GitHub source gets one banner with the source, the repository and the System page', async () => {
+    installDom(HOME_URL);
+    const base = busyToday();
+    const snapshot: DevActivitySnapshotV2 = { ...base, repositories: base.repositories.map(row => row.github === null ? row : {
+      ...row, sources: row.sources.map(source => source.kind === 'github' ? { ...source, status: 'unavailable' as const, reason: 'gh_auth_failed' } : source),
+    }) };
+    await mount(<OperatorApp {...props(snapshot, { readCiRepairs: noRepairs })} />);
+    await settle();
+    const banners = document.querySelectorAll('[data-source-banner]');
+    expect(banners).toHaveLength(1);
+    expect(banners[0]!.textContent).toContain('GitHub is unavailable for repo-harness · other failed sources: 1');
+    expect(banners[0]!.querySelector('a[href="#system"]')).not.toBeNull();
+    expect(document.querySelector('[data-mascot]')?.getAttribute('data-mascot')).toBe('cloud-off');
+    // Every GitHub source failed, so the rows that read GitHub say so instead of showing 0.
+    for (const id of ['merged', 'longest', 'failed']) expect(todayRow(id).getAttribute('data-state')).toBe('unavailable');
+  });
+
+  test('1-SHELL-F1 without the operator service Home states it with the serve command, not an empty page', async () => {
+    installDom(HOME_URL);
+    await mount(<OperatorApp {...props(busy(), { initialDevActivity: undefined, fetchDevActivity: async () => { throw new Error('down'); } })} />);
+    await settle();
+    expect(document.querySelector('[data-home]')).toBeNull();
+    expect(document.querySelector('main')?.textContent).toContain('The operator service is not running');
+    expect(document.querySelector('main')?.textContent).toContain('repo-harness operator serve');
+    expect(document.querySelector('[data-operator-status]')?.getAttribute('data-operator-status')).toBe('unreachable');
+  });
+});
+
+describe('side rail', () => {
+  const rail = () => document.querySelector<HTMLElement>('[data-nav-rail]')!;
+  const repositorySwitch = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+  const go = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
+
+  test('1-SHELL-P1 the switch sits under the logo; pages across repositories show All repositories, the task drawer its repository', async () => {
+    const heads: string[] = [];
+    await mount(<OperatorApp {...props(busy(), { readRepositoryHead: async id => { heads.push(id); return HEAD; } })} />);
+    expect(rail().children[0]!.querySelector('img[src="/logos/repo-harness-carrot-mark-transparent.svg"]')).not.toBeNull();
+    expect(rail().children[1]!.contains(repositorySwitch())).toBe(true);
+    expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('scope');
+    expect(repositorySwitch().textContent).toContain('All repositories');
+    expect(heads).toEqual([]);
+    // C7: the language and theme toggles sit at the bottom of the rail beside the operator status.
+    const bottom = rail().lastElementChild!;
+    expect(bottom.getAttribute('data-operator-status')).toBe('ready');
+    expect(bottom.querySelector('.locale-switch')).not.toBeNull();
+    expect(bottom.querySelector('button[aria-label^="Theme:"]')).not.toBeNull();
+
+    const id = `${HARNESS_ID}:feat/pipeline-observer`;
+    await act(async () => card(id).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
+    await settle();
+    expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('current');
+    expect(repositorySwitch().getAttribute('data-selected')).toBe(HARNESS_ID);
+    const [owner] = busy().repositories[0]!.github!.split('/');
+    expect(repositorySwitch().querySelector('[data-switch-detail]')?.textContent).toBe(`${owner} · main · ${HEAD.slice(0, 7)}`);
+    expect(heads).toContain(HARNESS_ID);
+
+    // Picking another repository from the drawer closes it and scopes the board.
+    const site = busy().repositories[1]!.repository_id;
+    await act(async () => repositorySwitch().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${site}"]`)!.click());
+    expect(window.location.hash).toBe('#board');
+    expect(document.querySelector('#item-drawer-title')).toBeNull();
+    expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('scope');
+    expect(repositorySwitch().getAttribute('data-selected')).toBe(site);
+    expect(cards().every(element => element.getAttribute('data-item-id')!.startsWith(`${site}:`))).toBe(true);
+
+    await act(async () => root?.unmount());
+    root = null;
+    window.happyDOM.abort();
+    installDom(HOME_URL);
+    await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh', readCiRepairs: noRepairs })} />);
+    expect(Array.from(document.querySelectorAll('.workspace-nav [id^="nav-group-"]')).map(group => group.textContent)).toEqual(['工作', '接入', '观测']);
+    expect(repositorySwitch().textContent).toContain('范围');
+    expect(repositorySwitch().textContent).toContain('全部仓库');
+  });
+
+  test('1-SHELL-P2 architecture opens the 64 px icon bar, other pages open expanded, and each choice stays in this browser', async () => {
+    await mount(<OperatorApp {...props(busy())} />);
+    const toggle = () => act(async () => document.querySelector<HTMLButtonElement>('[data-rail-toggle]')!.click());
+    expect(rail().getAttribute('data-nav-rail')).toBe('expanded');
+    await go('architecture');
+    expect(rail().getAttribute('data-nav-rail')).toBe('collapsed');
+    expect(rail().className).toContain('rail:w-16');
+    expect(document.querySelector('.workspace-nav a[data-workspace="board"]')?.getAttribute('title')).toBe('Board');
+    await toggle();
+    expect(rail().getAttribute('data-nav-rail')).toBe('expanded');
+    expect(localStorage.getItem(`${OPERATOR_RAIL_STORAGE_KEY}:architecture`)).toBe('expanded');
+    await go('board');
+    expect(rail().getAttribute('data-nav-rail')).toBe('expanded');
+    await toggle();
+    expect(rail().getAttribute('data-nav-rail')).toBe('collapsed');
+    expect(localStorage.getItem(`${OPERATOR_RAIL_STORAGE_KEY}:pages`)).toBe('collapsed');
+
+    await act(async () => root?.unmount());
+    root = null;
+    await mount(<OperatorApp {...props(busy())} />);
+    expect(rail().getAttribute('data-nav-rail')).toBe('collapsed');
+    await go('architecture');
+    expect(rail().getAttribute('data-nav-rail')).toBe('expanded');
+  });
+});
+
 describe('theme', () => {
+  test('Paper and Ink are projected from tokens.json for both modes, with no value restated', () => {
+    const css = designTokenStylesheet();
+    const [light, dark] = css.split(':root[data-mode="dark"]');
+    const palette = new Map(tokens.color.tokens.flatMap(token => typeof token.value === 'string' ? [[token.name, token.value] as const] : []));
+    const value = (raw: string) => palette.get(/^\{(.+)\}$/u.exec(raw)?.[1] ?? '') ?? raw;
+    let themed = 0;
+    for (const token of tokens.color.tokens) {
+      if (typeof token.value === 'string') {
+        expect(css).not.toContain(`--${token.name}:`);
+        continue;
+      }
+      themed += 1;
+      expect(light).toContain(`--${token.name}: ${value(token.value.light)};`);
+      expect(dark).toContain(`--${token.name}: ${value(token.value.dark)};`);
+    }
+    expect(themed).toBeGreaterThan(40);
+    for (const family of Object.keys(tokens.type.families)) expect(light).toContain(`--font-${family}: `);
+    for (const group of tokens.type.groups) for (const style of group.styles) expect(css).toContain(`.type-${style.name} {`);
+  });
+
   test('follows the system, cycles light → dark → system, and persists the choice', async () => {
     expect(resolveThemeMode('system', true)).toBe('dark');
     expect(resolveThemeMode('light', true)).toBe('light');

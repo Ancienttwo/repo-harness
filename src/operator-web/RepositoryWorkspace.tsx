@@ -121,34 +121,6 @@ function CopyValue({ label, value, t }: { readonly label: string; readonly value
   );
 }
 
-/** Selects the Fleet repository a page reads. Duplicate names carry their id so two rows never look the same. */
-export function RepositorySwitch({ snapshot, repositoryId, onRepository, t }: {
-  readonly snapshot: OperatorFleetSnapshotV1 | null;
-  readonly repositoryId: string;
-  readonly onRepository: (id: string) => void;
-  readonly t: OperatorTranslate;
-}) {
-  return (
-    <label className="repository-switch flex min-w-0 items-center gap-2 text-sm text-kumo-subtle">
-      <span className="shrink-0">{t('field.repository')}</span>
-      <select
-        className="h-8 min-w-0 max-w-full flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none sm:w-64 sm:flex-none"
-        aria-label={t('repository.select')}
-        value={repositoryId}
-        onChange={(event) => onRepository(event.target.value)}
-        disabled={!snapshot?.repositories.length}
-      >
-        <option value="" disabled>{t('repository.select')}</option>
-        {snapshot?.repositories.map((repo) => (
-          <option key={repo.repository_id} value={repo.repository_id}>
-            {repo.display_name}{snapshot.repositories.filter((other) => other.display_name === repo.display_name).length > 1 ? ` · ${repo.repository_id}` : ''}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 /** The Fleet read facts that belong to this page: age, sequence, consistency and repository counts. */
 function FleetFacts({ snapshot, stale, now, t }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null; readonly stale: boolean; readonly now: number; readonly t: OperatorTranslate;
@@ -774,7 +746,6 @@ export interface RepositoryWorkspaceProps {
   readonly state: OperatorSnapshotViewState;
   readonly activeRepository: OperatorFleetRepositoryV1 | null;
   readonly activeRepositoryId: string;
-  readonly onRepository: (id: string) => void;
   readonly location: TaskLocation;
   readonly selection: TaskLocation['selection'];
   readonly selectedCard: OperatorFleetCardV1 | null;
@@ -806,7 +777,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <button type="button" className="cursor-pointer text-sm text-kumo-link hover:underline" onClick={props.onBack}>{t('repositories.back')}</button>
           <h1 className="min-w-0 flex-1 truncate text-xl font-semibold text-kumo-strong">{activeRepository?.display_name ?? t('repository.select')}</h1>
-          <RepositorySwitch snapshot={snapshot} repositoryId={activeRepository?.repository_id ?? ''} onRepository={props.onRepository} t={t} />
         </div>
         <FleetFacts snapshot={snapshot} stale={state.kind === 'stale'} now={props.now} t={t} />
       </header>

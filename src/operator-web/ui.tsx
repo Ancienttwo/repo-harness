@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
 import { CopyIcon, ArrowSquareOutIcon } from '@phosphor-icons/react';
 import { cn } from '@cloudflare/kumo';
 import { copyOperatorIdentifier } from './clipboard';
 import { formatRelativeAge, relativeAge, type OperatorTranslate } from './i18n';
+import { workspaceHash, type WorkspaceLocation } from './workspace-location';
 
-export type DotTone = 'ok' | 'active' | 'warn' | 'danger' | 'neutral';
+export type DotTone = 'ok' | 'active' | 'warn' | 'danger' | 'neutral' | 'accent' | 'unknown';
 
 const DOT: Readonly<Record<DotTone, string>> = {
   ok: 'bg-kumo-success',
@@ -12,6 +13,10 @@ const DOT: Readonly<Record<DotTone, string>> = {
   warn: 'bg-kumo-warning',
   danger: 'bg-kumo-danger',
   neutral: 'bg-kumo-fill',
+  // Marks only what waits on you.
+  accent: 'bg-(--rh-accent)',
+  // Unknown is a hollow ring, never a solid grey dot that looks like a known state.
+  unknown: 'border border-current text-kumo-subtle',
 };
 
 /** Colour is never the only signal: every dot sits next to a text label. */
@@ -81,6 +86,18 @@ export function ExternalLink({ href, children, className }: { readonly href: str
       {children}
       <ArrowSquareOutIcon size={12} aria-hidden="true" />
     </a>
+  );
+}
+
+/** A link to a console page: a plain click opens it in place, a modified click keeps the browser's own behaviour. */
+export function PageLink({ to, onOpen, children, ...anchor }: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href' | 'onClick'> & {
+  readonly to: WorkspaceLocation; readonly onOpen: (next: WorkspaceLocation) => void; readonly children: ReactNode;
+}) {
+  return (
+    <a {...anchor} href={workspaceHash(to)} onClick={event => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); onOpen(to);
+    }}>{children}</a>
   );
 }
 

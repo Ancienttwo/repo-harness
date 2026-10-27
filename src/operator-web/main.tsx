@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { OperatorApp, type OperatorAppProps } from './App';
 import { applyThemeMode, readStoredTheme, resolveThemeMode } from './theme';
 import './app.css';
+// Paper and Ink, generated from the design system's tokens.json by the Vite config.
+import 'virtual:operator-design-tokens.css';
 
 // Resolve the mode before the first paint so a dark system does not flash light.
 applyThemeMode(resolveThemeMode(readStoredTheme(), typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches));
