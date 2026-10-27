@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.task-agent-host
 kind: reads
 source: component.operator.console-collectors
 target: component.task-agent-host.primary
-intent: "Read the Herdr session from the notify install record at the start of each notify and Bot access cycle."
+intent: "Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records."

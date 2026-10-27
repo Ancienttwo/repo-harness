@@ -112,6 +112,7 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
     bot_access_collector: true,
     docs_collector: true,
     tests_collector: true,
+    execution_collector: true,
     cli_inventory_collector: { usage_sources: registeredHookTelemetry },
   });
   process.stdout.write(`${server.url}\n`);

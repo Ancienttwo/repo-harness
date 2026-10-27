@@ -4,8 +4,12 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
-import { buildTaskFollowUp, type UnverifiedExecutionReason } from '../../src/core/operator/execution-state';
+import { buildTaskFollowUp, decodeTaskExecutionView, projectTaskExecutionView, type TaskExecutionViewV1, type UnverifiedExecutionReason } from '../../src/core/operator/execution-state';
 import { collectTaskExecutionStates } from '../../src/effects/operator/execution-state';
+import { startExecutionCollector, type ExecutionRepositoryCache } from '../../src/effects/operator/execution-collector';
+import { startOperatorServer } from '../../src/effects/operator/server';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -133,4 +137,152 @@ test('follow-up gives each host its own resume command and refuses an id that is
     .toEqual({ host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' });
   expect(buildTaskFollowUp({ ...base, agent: 'codex', native_session_id: 'thread; rm -rf ~' }))
     .toEqual({ task_id: 'a'.repeat(64), resume: null, herdr_pane: null });
+});
+
+/** A repo-harness home that registers the fixture repository, so the collector reads it. */
+function collectorHome(root: string, session: string | null = 'fixture') {
+  const home = tmpWorkspace('operator-execution-collector-home'); roots.push(home);
+  const at = new Date().toISOString();
+  writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
+    id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
+  }] }));
+  const env = { ...process.env, REPO_HARNESS_HOME: home };
+  if (session !== null) writeNotifyInstallRecord(session, env);
+  return { id: repoHarnessRepoIdFor(root), env };
+}
+
+async function served(env: NodeJS.ProcessEnv, id: string) {
+  const server = await startOperatorServer({ port: 0, env, execution_collector: true });
+  try {
+    let response = await fetch(`${server.url}/api/v1/repositories/${id}/execution`);
+    // The first cycle runs in a worker thread; until it ends the route is pending, never empty.
+    for (let attempt = 0; attempt < 400 && response.status === 503; attempt++) {
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('execution_state_pending');
+      await Bun.sleep(25);
+      response = await fetch(`${server.url}/api/v1/repositories/${id}/execution`);
+    }
+    return { status: response.status, text: await response.text() };
+  } finally { await server.close(); }
+}
+
+test('the route shows the agent of a verified session with its follow-up, and no path', async () => {
+  const f = await fixture();
+  const c = collectorHome(f.root);
+  const { status, text } = await served(c.env, c.id);
+  expect(status).toBe(200);
+  const view = decodeTaskExecutionView(JSON.parse(text));
+  expect(view).toMatchObject({ protocol: 1, kind: 'operator_task_execution', repository_id: c.id, unlisted_tasks: 0 });
+  expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', agent: 'codex', runtime: 'herdr',
+    follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
+      herdr_pane: { session: 'fixture', workspace_id: 'fixture-primary-workspace', pane_id: 'fixture-deep-reasoner', agent_name: f.bound.binding.runtime === 'herdr' ? f.bound.binding.agent_name : '' } } }]);
+  for (const hidden of [f.root, f.home, '/tmp', '/private']) expect(text).not.toContain(hidden);
+});
+
+test('through the route, a forged binding, a dead process or closed.json is "no verified session"', async () => {
+  const cases: [string, (dir: string) => void, UnverifiedExecutionReason][] = [
+    ['forged binding', dir => { const path = join(dir, 'binding.json'); writeFileSync(path, JSON.stringify({ ...readJson(path), agent_name: 'forged-agent' })); }, 'binding_mismatch'],
+    ['dead process', dir => {
+      const pid = Number(spawnSync('/bin/sh', ['-c', 'echo $$'], { encoding: 'utf8' }).stdout.trim());
+      replaceProvider(dir, { pid, identity: `${pid} ${pid} Mon Oct 26 10:00:00 2026 sh` });
+    }, 'provider_exited'],
+    ['closed.json', dir => writeFileSync(join(dir, 'closed.json'), '{}'), 'closed'],
+  ];
+  for (const [, change, reason] of cases) {
+    const f = await fixture();
+    change(f.bound.dir);
+    const c = collectorHome(f.root);
+    const { status, text } = await served(c.env, c.id);
+    expect(status).toBe(200);
+    expect(decodeTaskExecutionView(JSON.parse(text)).tasks).toEqual([{ state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason,
+      follow_up: { task_id: f.bound.binding.task, resume: null, herdr_pane: null } }]);
+    expect(text).not.toContain('codex resume');
+  }
+});
+
+test('a Herdr pane location needs the session that the notify install record names', async () => {
+  const f = await fixture();
+  for (const session of [null, 'other-session']) {
+    const c = collectorHome(f.root, session);
+    const collector = startExecutionCollector({ env: { ...c.env, HERDR_SESSION: 'fixture' }, interval_ms: 60_000 });
+    try {
+      await collector.settled();
+      const cache = collector.read(c.id);
+      expect(cache.state === 'ready' && cache.view.tasks[0]?.follow_up).toEqual({ task_id: f.bound.binding.task,
+        resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, herdr_pane: null });
+    } finally { await collector.close(); }
+  }
+});
+
+test('the collector is pending before its first cycle and unavailable when the registry or the worker fails', async () => {
+  const f = await fixture();
+  const c = collectorHome(f.root);
+  const failing = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_worker: async () => null });
+  try {
+    expect(failing.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_pending' });
+    await failing.settled();
+    expect(failing.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_unavailable' });
+    expect(failing.read('unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
+  } finally { await failing.close(); }
+  writeFileSync(join(c.env.REPO_HARNESS_HOME!, 'registered-repos.json'), '{"version":1}');
+  let runs = 0;
+  const broken = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_worker: async () => { runs++; return []; } });
+  try {
+    await broken.settled();
+    expect(broken.read(c.id)).toEqual({ state: 'unavailable', reason: 'registry_unavailable' });
+    expect(runs).toBe(0);
+  } finally { await broken.close(); }
+});
+
+test('the route reads only the injected cache and maps each unavailable state to its code', async () => {
+  const view: TaskExecutionViewV1 = { protocol: 1, kind: 'operator_task_execution', repository_id: 'repo-a', observed_at: '2026-10-27T00:00:00.000Z', tasks: [], unlisted_tasks: 0 };
+  let cache: ExecutionRepositoryCache = { state: 'unavailable', reason: 'execution_state_pending' };
+  const server = await startOperatorServer({ port: 0, read_execution_state: () => cache });
+  const get = async (path = '/api/v1/repositories/repo-a/execution') => {
+    const response = await fetch(`${server.url}${path}`);
+    return { status: response.status, body: await response.json() as unknown };
+  };
+  try {
+    for (const [next, status, code] of [
+      [{ state: 'unavailable', reason: 'execution_state_pending' }, 503, 'execution_state_pending'],
+      [{ state: 'unavailable', reason: 'registry_unavailable' }, 503, 'registry_unavailable'],
+      [{ state: 'unavailable', reason: 'repository_not_found' }, 404, 'repository_not_found'],
+      [{ state: 'unavailable', reason: 'execution_state_unavailable' }, 503, 'execution_state_unavailable'],
+      // A cached view that fails the decoder is refused, not sent.
+      [{ state: 'ready', view: { ...view, tasks: [{ state: 'unverified', task: '/Users/someone/task', role: 'deep-reasoner', reason: 'closed',
+        follow_up: { task_id: '/Users/someone/task', resume: null, herdr_pane: null } }] } }, 503, 'execution_state_invalid'],
+    ] as const) {
+      cache = next as ExecutionRepositoryCache;
+      const answer = await get();
+      expect(answer.status).toBe(status);
+      expect((answer.body as { error?: { code: string } }).error?.code).toBe(code);
+      expect(JSON.stringify(answer.body)).not.toContain('/Users/');
+    }
+    cache = { state: 'ready', view };
+    expect(await get()).toEqual({ status: 200, body: view });
+    expect((await get('/api/v1/repositories/repo-a/execution?task=x')).status).toBe(400);
+    expect((await fetch(`${server.url}/api/v1/repositories/repo-a/execution`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+    expect((await fetch(`${server.url}/api/v1/repositories/repo-a/execution`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
+  } finally { await server.close(); }
+});
+
+test('the public view leaves out a session whose task is not public text, and the decoder refuses forged follow-ups', () => {
+  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', agent: 'codex' as const, runtime: 'herdr' as const,
+    native_session_id: 'thread-1', herdr_pane: { session: 'main', workspace_id: 'w1', pane_id: 'w1:p1', agent_name: 'deep-reasoner' } };
+  const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
+    executions: [verified, { ...verified, task: '/Users/someone/private task' }, { ...verified, herdr_pane: { ...verified.herdr_pane, pane_id: '../x' } }] };
+  const view = projectTaskExecutionView(snapshot, 'repo-a', 'main');
+  expect(view.unlisted_tasks).toBe(2);
+  expect(view.tasks).toHaveLength(1);
+  expect(decodeTaskExecutionView(view)).toEqual(view);
+  const entry = view.tasks[0]!;
+  for (const forged of [
+    { ...view, extra: true },
+    { ...view, tasks: [{ ...entry, native_session_id: 'thread-1' }] },
+    { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, resume: { host: 'codex', command: 'codex resume thread-1; rm -rf ~' } } }] },
+    { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, resume: { host: 'claude', command: 'claude --resume thread-1' } } }] },
+    { ...view, tasks: [{ ...entry, runtime: 'terminal' }] },
+    { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, task_id: 'b'.repeat(64) } }] },
+    { ...view, tasks: [{ state: 'unverified', task: entry.task, role: entry.role, reason: 'closed', follow_up: entry.follow_up }] },
+    { ...view, unlisted_tasks: -1 },
+  ]) expect(() => decodeTaskExecutionView(forged)).toThrow('execution view invalid');
 });
