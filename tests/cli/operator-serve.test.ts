@@ -521,6 +521,11 @@ describe('operator serve command and HTTP boundary', () => {
     mkdirSync(join(root, 'docs'));
     writeFileSync(join(root, 'docs/guide.md'), '# Guide\n');
     writeFileSync(join(root, '.env'), 'TOKEN=secret\n');
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src/private.ts'), 'private source\n');
+    symlinkSync('../.env', join(root, 'docs/env.md'));
+    symlinkSync('../.git/config', join(root, 'docs/git.md'));
+    symlinkSync('../src', join(root, 'docs/source'));
     gitIn('init', '-q', '-b', 'main'); gitIn('add', 'docs'); gitIn('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'seed');
     gitIn('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const commit = gitIn('rev-parse', 'HEAD');
@@ -546,16 +551,21 @@ describe('operator serve command and HTTP boundary', () => {
       const treeResponse = await get('/api/v1/repositories/repo-a/docs/tree');
       expect(treeResponse.status).toBe(200);
       expect(await treeResponse.json()).toEqual(tree);
+      expect(tree.files.map(entry => entry.path)).toEqual(['docs/guide.md']);
       const ok = await file('repo-a', 'path=docs/guide.md');
       expect(ok.status).toBe(200);
       expect(await ok.json()).toEqual({ protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
-        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n', worktree_differs: false });
+        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n',
+        lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
       const head = await file('repo-a', 'path=docs/guide.md', { method: 'HEAD' });
       expect(head.status).toBe(200);
       expect(await head.text()).toBe('');
 
       for (const [query, status, expected] of [
         ['path=.env', 403, 'path_denied'], ['path=docs/.env', 403, 'path_denied'], ['path=docs/../.env', 400, 'path_invalid'],
+        ['path=.git/config', 403, 'path_denied'], ['path=docs/.git/config', 403, 'path_denied'], ['path=docs/.GIT/config', 403, 'path_denied'],
+        ['path=src/private.ts', 403, 'path_denied'], ['path=docs/env.md', 403, 'path_escape'], ['path=docs/git.md', 403, 'path_escape'],
+        ['path=docs/source/private.ts', 403, 'path_escape'], ['path=docs%2F..%2F.env', 400, 'path_invalid'],
         ['path=' + encodeURIComponent(join(root, 'docs/guide.md')), 400, 'path_invalid'], ['path=docs/none.md', 404, 'not_found'],
         ['', 400, 'invalid_request'], ['path=docs/guide.md&path=docs/guide.md', 400, 'invalid_request'], ['path=docs/guide.md&ref=main', 400, 'invalid_request'],
       ] as const) {
