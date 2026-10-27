@@ -213,8 +213,14 @@ repair above cleared it. On 2026-10-26 the owner accepted all 7 flags for
   - Tarball: `npm pack` at the squash commit, 663 entries, 10519411 bytes.
     Its SHA-256 equals the Release asset digest. Its SHA-1 equals the
     registry `dist.shasum`.
+  - Prepublish gate: a tarball publish does not run `prepublishOnly`.
+    `bash scripts/check-npm-release.sh --prepublish` at the squash commit:
+    exit 0.
   - npm: the owner ran `npm publish <tarball> --auth-type=web` in the
-    foreground. Registry time 2026-10-26T10:45:44.849Z.
+    foreground with the Release asset. The first run waited until the
+    web-auth link expired, and npm failed with `E404` on
+    `GET /-/v1/done`. The second run published. Registry time
+    2026-10-26T10:45:44.849Z.
     `dist-tags.latest` is 0.24.3. `dist.shasum`
     `1be291102449418cdb8e6ad46f003dad5d985bb3`. `dist.integrity`
     `sha512-6vpZ78xUpHYf10rVUSpWlnduqZoZYMXcKZw4Zi9f8/3d4T5bnllquo8ZzkVZDZ02UkXoHhZNJIS7EoSHdcwvpw==`.
@@ -225,8 +231,30 @@ repair above cleared it. On 2026-10-26 the owner accepted all 7 flags for
     "runtime-evidence-receipt: valid published_tarball, clean_install,
     installed_hook_readback" and "[release-published] OK: registry,
     dist-tag, tarball, tag, and local version files agree."
-  - Not yet observed: a real `repo-harness update` from 0.24.1 to 0.24.3.
-    This host still runs 0.24.1. The update writes the real HOME, so it is
-    the owner's action.
-  - Open owner actions: `repo-harness update` for flags 1, 2 and 5, then
-    `repo-harness upgrade`. The flag 3 hook review.
+  - This host: it did not run 0.24.1 at publication. On 2026-10-26 it went
+    from 0.24.1 to 0.24.2 with the #973 workaround (`bun add -g
+    repo-harness@0.24.2`, then `repo-harness update`). After publication,
+    the owner-authorized `repo-harness update` here went from 0.24.2 to
+    0.24.3: "reconcile installed candidate runtime - candidate=0.24.3;
+    scope=complete". `repo-harness --version` prints 0.24.3.
+  - #973 fix on a 0.24.1 parent: partly proven. In a disposable HOME with
+    only `bun add -g repo-harness@0.24.1`, `repo-harness update` installed
+    0.24.3. The candidate then failed with "install profile projection is
+    incomplete for full: missing=planning-integrations", because that HOME
+    had no `repo-harness install`. The candidate consumes the parent lock
+    capability before the runtime setup that checks the projection
+    (`runCandidateRuntimeReconciliation` in `src/cli/index.ts`), so the
+    0.24.1 lock record passed. A 0.24.1 `repo-harness install --no-cli` in
+    that HOME failed at "sync repo-harness skill runtime", so the full
+    update from an installed 0.24.1 host is not observed. The #974
+    regression test runs the candidate child under a 0.24.1-shaped lock
+    record.
+  - Flags after the host update, from `setup check --target both --json`
+    and `upgrade --json` on the real HOME: flags 1 and 2 are clear
+    (`global-rules.claude` and `global-rules.codex` are `ok`;
+    `doctor.skill-projection` reports the install ledger `consistent` with
+    no surface drift). Flag 3 is open: the same 2 findings. Flag 4: Skills
+    CLI missing; the Waza update check did not run. Flag 5: 16 leftover
+    items.
+  - Open owner actions: `repo-harness upgrade --apply` for flag 5. The
+    flag 3 hook review.

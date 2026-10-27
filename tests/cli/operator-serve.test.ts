@@ -10,7 +10,7 @@ import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/
 import { OperatorRepositoryError, readOperatorRepositorySnapshot } from '../../src/effects/operator/repository-snapshot';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
-import { chmodSync, watch, lstatSync } from 'node:fs';
+import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
 import { spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
@@ -825,7 +825,9 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
-      timeout_ms: 1_000,
+      // The retry starts a real collector process and real Git reads within this
+      // deadline. On a busy host that work took more than one second.
+      timeout_ms: 5_000,
       env: registry.env,
     });
     let writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
@@ -836,7 +838,7 @@ describe('operator serve command and HTTP boundary', () => {
       await Bun.sleep(30);
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
       const timedOut = await blocked;
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(Date.now() - startedAt).toBeLessThan(6_500);
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({ error: { code: 'fleet_snapshot_timeout' } });
 
@@ -1511,6 +1513,14 @@ function architectureFiles(root: string, path = ''): Record<string, string> {
   }
   return result;
 }
+// macOS FSEvents can deliver a write seconds late, to a watch that started
+// after the write. Each event keeps the path of its write. Move a tree after
+// its setup writes, so a watch on the new path gets only the later writes.
+function watchedPath(path: string): string {
+  const moved = `${path}-watched`;
+  renameSync(path, moved);
+  return moved;
+}
 function architectureGit(scratch: string, slow = false) {
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   const log = join(scratch, 'git.jsonl');
@@ -1569,13 +1579,15 @@ function assertArchitectureArgv(records: ReturnType<typeof architectureArgv>): v
 }
 
 test('architecture GET and HEAD match CLI digests and keep closed argv with zero file changes', async () => {
-  const root = realpathSync(moduleRepository());
+  const fixture = realpathSync(moduleRepository());
   const scratch = mkdtempSync('/tmp/oui-b-argv-');
-  const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
-  const base = fixtureGit(root, ['rev-parse', 'HEAD']);
-  fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(root);
+  const base = fixtureGit(fixture, ['rev-parse', 'HEAD']);
+  fixtureWrite(fixture, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(fixture);
+  const root = watchedPath(fixture);
+  const registered = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const registry = { ids: registered.ids, home: watchedPath(registered.home) };
   const git = architectureGit(scratch);
-  const env = { ...process.env, ...registry.env, ...git.env };
+  const env = { ...process.env, REPO_HARNESS_HOME: registry.home, ...git.env };
   const before = architectureFiles(root), registryBefore = architectureFiles(registry.home);
   const changes: string[] = [];
   const watchers = [root, registry.home].map(path => watch(path, { recursive: true }, (kind, file) => changes.push(`${kind}:${file}`)));
