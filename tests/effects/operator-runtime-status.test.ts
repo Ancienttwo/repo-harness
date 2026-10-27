@@ -346,7 +346,8 @@ describe('snapshot lifecycle', () => {
     second.resolve(() => { secondCloses++; }); await newStart; const current = observer.read();
     expect(current.source_epoch).toBe(1); expect(current.badges[0].state).toBe('working'); expect(snapshots).toBe(1);
     first.resolve(() => { firstCloses++; }); await oldStart;
-    callbacks[0]('events_lost'); callbacks[0]('disconnected'); await Promise.resolve();
+    callbacks[0]('events_lost'); callbacks[0]('disconnected');
+    callbacks[0]({ type: 'failure', error: new HerdrVersionMismatchError(versionCheck()) }); await Promise.resolve();
     expect(observer.read()).toEqual(current); expect(firstCloses).toBe(1); expect(secondCloses).toBe(0); expect(snapshots).toBe(1);
     callbacks[1]('updated'); await observer.refresh(); expect(snapshots).toBe(2);
     observer.stop(); expect(secondCloses).toBe(1);

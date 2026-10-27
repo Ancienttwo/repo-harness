@@ -20,7 +20,7 @@ export function observeProgramStatus(value: ProgramStatusV1): RuntimeObservation
   return decodeRuntimeObservation({ identity: value.identity, revision: value.revision,
     state: value.state === 'aborted' ? 'cancelled' : value.state, reason: value.reason, changed_at: value.changed_at, source: 'program-v1' });
 }
-export type RuntimeInvalidation = 'updated' | 'reconnect' | 'events_lost' | 'disconnected';
+export type RuntimeInvalidation = 'updated' | 'reconnect' | 'events_lost' | 'disconnected' | { type: 'failure'; error: unknown };
 export interface RuntimeSnapshot {
   bindings: readonly RuntimeIdentity[]; observations: readonly RuntimeObservation[]; pane_observations?: readonly RuntimePaneObservation[]; unclaimed?: number;
 }
@@ -53,6 +53,7 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
     if (!started) return;
     version++;
     failed = true;
+    if (typeof event === 'object') { connected = false; reason = runtimeUnavailableReason(event.error); return; }
     if (event !== 'updated') reason = null;
     if (event === 'reconnect' || event === 'events_lost') { epoch++; last = null; revisions.clear(); cancelled.clear(); paneRevisions.clear(); }
     connected = event !== 'disconnected';

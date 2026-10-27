@@ -10,7 +10,8 @@ export interface RuntimeSourceCapabilities {
 }
 export interface StructuredRuntimeTransport {
   capabilities(signal: AbortSignal): Promise<unknown>;
-  subscribe(events: readonly string[], invalidate: (event: string) => void, signal: AbortSignal): Promise<() => void>;
+  /** Transport failures stay internal; only the observer selects public failure facts. */
+  subscribe(events: readonly string[], invalidate: (event: string, error?: unknown) => void, signal: AbortSignal): Promise<() => void>;
   snapshot(signal: AbortSignal): Promise<unknown>;
 }
 export interface ConfiguredRuntimeSource {
@@ -54,10 +55,10 @@ export async function configureRuntimeSource(config: ConfiguredRuntimeSource): P
     program_status,
     async subscribe(invalidate) {
       let active = true;
-      const callback = (event: string) => {
+      const callback = (event: string, error?: unknown) => {
         if (!active || !(RUNTIME_SOURCE_EVENTS as readonly string[]).includes(event)) return;
         const lifecycle = ['reconnect','events_lost','disconnected'].includes(event);
-        invalidate(lifecycle ? event as RuntimeInvalidation : 'updated');
+        invalidate(lifecycle && error !== undefined ? { type: 'failure', error } : lifecycle ? event as RuntimeInvalidation : 'updated');
       };
       // A late subscription completion must be closed after a deadline failure.
       const unsubscribe = await deadline(config.deadline_ms, async signal => {
