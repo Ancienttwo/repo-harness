@@ -34,7 +34,7 @@ The default event is `blocked`. Each channel can also receive `done`.
 
 ## Install
 
-Use macOS or Linux. Install repo-harness, Node 24, and Herdr 0.9.3 or later.
+Use macOS or Linux. Install repo-harness, Node 24, and Herdr 0.9.5 or later.
 Windows is not supported because this command requires POSIX file permissions.
 Run this command in a terminal. Replace `default` with your Herdr session name.
 

@@ -29,7 +29,7 @@ async function fixture() {
   const root = mkdtempSync('/tmp/rh-socket-'), path = join(root, 'herdr.sock');
   const sockets = new Set<Socket>(), subscriptions: { socket: Socket; id: string; types: Record<string, any>[] }[] = [];
   const requests: Record<string, any>[] = [];
-  let version = '0.9.3', protocol = 22, panes: unknown[] = [pane], wrongId = false, globals = 0;
+  let version = '0.9.5', protocol = 22, panes: unknown[] = [pane], wrongId = false, globals = 0;
   let programCapability: unknown = undefined;
   const server = createServer(socket => {
     sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
@@ -170,7 +170,7 @@ describe('official Herdr socket observation', () => {
       f.wrongId(); await expect(requestHerdrObservation(f.endpoint, 'ping')).rejects.toThrow('response_id');
       expect(() => herdrAgentSessionKey({ ...agentSession, raw_terminal: 'secret' })).toThrow();
     } finally { await f.close(); }
-    for (const [version, protocol] of [['0.9.2',22],['0.9.3',21]] as const) {
+    for (const [version, protocol] of [['0.9.2',22],['0.9.5',21]] as const) {
       const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
       try { f.setVersion(version, protocol); await expect(owner.transport.capabilities(new AbortController().signal)).rejects.toThrow('version'); }
       finally { owner.close(); await f.close(); }
@@ -179,23 +179,23 @@ describe('official Herdr socket observation', () => {
 
   test('a version mismatch names the expected pin and the observed server version', async () => {
     const expected = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
-    expect(expected).toEqual({ version: '0.9.3', protocol: 22, revision: 'add5f99a8351e66464f9abec0920778303f0e885' });
-    expect(herdrVersionCheck({ version: '0.9.3', protocol: 22 })).toEqual({ state: 'aligned', expected, actual: { version: '0.9.3', protocol: 22 } });
-    expect(herdrVersionCheck({ version: '0.9.5', protocol: 23 })).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.5', protocol: 23 } });
+    expect(expected).toEqual({ version: '0.9.5', protocol: 22, revision: '2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01' });
+    expect(herdrVersionCheck({ version: '0.9.5', protocol: 22 })).toEqual({ state: 'aligned', expected, actual: { version: '0.9.5', protocol: 22 } });
+    expect(herdrVersionCheck({ version: '0.9.3', protocol: 23 })).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.3', protocol: 23 } });
     // An unreadable value is reported as unknown, never echoed.
-    expect(herdrVersionCheck({ version: '/Users/me/herdr 0.9.5', protocol: '23' }).actual).toEqual({ version: null, protocol: null });
+    expect(herdrVersionCheck({ version: '/Users/me/herdr 0.9.3', protocol: '23' }).actual).toEqual({ version: null, protocol: null });
     let error: unknown;
-    try { verifyHerdrVersion({ version: '0.9.5', protocol: 23 }); } catch (caught) { error = caught; }
+    try { verifyHerdrVersion({ version: '0.9.3', protocol: 23 }); } catch (caught) { error = caught; }
     expect(error).toBeInstanceOf(HerdrVersionMismatchError);
-    expect((error as HerdrVersionMismatchError).check).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.5', protocol: 23 } });
-    expect((error as Error).message).toBe('herdr_observation_version: expected 0.9.3 protocol 22 (revision add5f99a); actual 0.9.5 protocol 23');
+    expect((error as HerdrVersionMismatchError).check).toEqual({ state: 'mismatch', expected, actual: { version: '0.9.3', protocol: 23 } });
+    expect((error as Error).message).toBe('herdr_observation_version: expected 0.9.5 protocol 22 (revision 2ecf19a9); actual 0.9.3 protocol 23');
 
     const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
     try {
-      f.setVersion('0.9.5', 23);
+      f.setVersion('0.9.3', 23);
       const failure = await owner.transport.capabilities(new AbortController().signal).then(() => null, (caught: unknown) => caught);
       expect(failure).toBeInstanceOf(HerdrVersionMismatchError);
-      expect((failure as HerdrVersionMismatchError).check.actual).toEqual({ version: '0.9.5', protocol: 23 });
+      expect((failure as HerdrVersionMismatchError).check.actual).toEqual({ version: '0.9.3', protocol: 23 });
     } finally { owner.close(); await f.close(); }
   });
 

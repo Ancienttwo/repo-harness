@@ -124,7 +124,7 @@ function setupFakeEnvironment(prefix: string) {
   mkdirSync(home, { recursive: true });
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.3\\n'; fi\n`);
+  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.5\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
     const skillDir = join(home, host, "skills", "herdr");
     mkdirSync(skillDir, { recursive: true });
@@ -1844,7 +1844,7 @@ test.each(['present', 'missing', 'unavailable'])('herdr is a required runtime ca
     expect(report.runtime_capabilities.herdr.required).toBe(true);
     expect(report.runtime_capabilities.herdr.status).toBe(status);
     if (status === 'present') {
-      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.3');
+      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.5');
       expect(result.stderr).not.toContain('herdr runtime is');
     } else {
       expect(result.status).not.toBe(0);
@@ -1863,7 +1863,7 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
     });
     const herdr = JSON.parse(result.stdout).runtime_capabilities.herdr;
     expect(herdr.status).toBe("configuration-error");
-    expect(herdr.version).toBe("herdr 0.9.3");
+    expect(herdr.version).toBe("herdr 0.9.5");
     expect(herdr.reason).toContain("min_version");
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("repo-harness init --repo .");
