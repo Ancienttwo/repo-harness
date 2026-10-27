@@ -281,6 +281,19 @@ function ignoreRuleMatches(rule: IgnoreRule, relativePath: string): boolean {
   return pathMatchesPattern(rule.pattern, path, rule.anchored);
 }
 
+// A write to .git/hooks or .git/config runs code on the next local git command, so
+// the git directory is refused at any depth. ADR-0001 keeps .ignore as the only
+// content filter for every other path.
+export function isGitDirectoryPath(relativePath: string): boolean {
+  return relativePath.split('/').includes('.git');
+}
+
+function assertOutsideGitDirectory(checkedPath: string, reportedPath: string): void {
+  if (isGitDirectoryPath(checkedPath)) {
+    throw new GeneralRepoAccessError('PATH_DENIED', 'path is inside a git directory', { path: reportedPath });
+  }
+}
+
 export function isIgnored(policy: IgnorePolicy, relativePath: string): boolean {
   if (relativePath === '.ignore') return true;
   let ignored = false;
@@ -327,6 +340,7 @@ export function resolveRepoPath(repo: RepoRecord, inputPath: unknown, ignore: Ig
   allowExternalSymlinkMetadata?: boolean;
 } = {}): ResolvedRepoPath {
   const relativePath = normalizeRepoRelativePath(inputPath, { allowRoot: opts.allowRoot });
+  assertOutsideGitDirectory(relativePath, relativePath);
   if (relativePath !== '.' && isIgnored(ignore, relativePath)) {
     throw new GeneralRepoAccessError('PATH_IGNORED', 'path is excluded by .ignore', { path: relativePath });
   }
@@ -361,6 +375,7 @@ export function resolveRepoPath(repo: RepoRecord, inputPath: unknown, ignore: Ig
   }
   if (readable) {
     const physicalRelative = toPosixPath(relative(repo.canonicalRoot, canonicalPath)) || '.';
+    assertOutsideGitDirectory(physicalRelative, relativePath);
     if (physicalRelative !== '.' && isIgnored(ignore, physicalRelative)) {
       throw new GeneralRepoAccessError('PATH_IGNORED', 'symlink target is excluded by .ignore', { path: relativePath });
     }
@@ -422,6 +437,7 @@ export function refreshPathsArg(repo: RepoRecord, ignore: IgnorePolicy, value: u
       throw new GeneralRepoAccessError('INVALID_RELATIVE_PATH', 'paths must contain only strings');
     }
     const relativePath = normalizeRepoRelativePath(item, { allowRoot: true });
+    assertOutsideGitDirectory(relativePath, relativePath);
     if (relativePath !== '.' && isIgnored(ignore, relativePath)) {
       throw new GeneralRepoAccessError('PATH_IGNORED', 'path is excluded by .ignore', { path: relativePath });
     }
@@ -441,6 +457,7 @@ export function refreshPathsArg(repo: RepoRecord, ignore: IgnorePolicy, value: u
 
 export function resolveRepoWritePath(repo: RepoRecord, inputPath: unknown, ignore: IgnorePolicy): ResolvedRepoWritePath {
   const relativePath = normalizeRepoRelativePath(inputPath);
+  assertOutsideGitDirectory(relativePath, relativePath);
   if (isIgnored(ignore, relativePath)) {
     throw new GeneralRepoAccessError('PATH_IGNORED', 'path is excluded by .ignore', { path: relativePath });
   }
@@ -475,6 +492,7 @@ export function resolveRepoWritePath(repo: RepoRecord, inputPath: unknown, ignor
     throw new GeneralRepoAccessError('PATH_OUTSIDE_REPO', 'path escapes repo root', { path: relativePath });
   }
   const physicalRelative = toPosixPath(relative(repo.canonicalRoot, canonicalPath)) || '.';
+  assertOutsideGitDirectory(physicalRelative, relativePath);
   if (physicalRelative !== '.' && isIgnored(ignore, physicalRelative)) {
     throw new GeneralRepoAccessError('PATH_IGNORED', 'write target is excluded by .ignore', { path: relativePath });
   }
@@ -509,6 +527,7 @@ export function resolveWalkedRepoPath(repo: RepoRecord, ignore: IgnorePolicy, re
     if (inside) {
       fileStat = statSync(canonicalPath);
       const physicalRelative = toPosixPath(relative(repo.canonicalRoot, canonicalPath)) || '.';
+      assertOutsideGitDirectory(physicalRelative, relativePath);
       if (physicalRelative !== '.' && isIgnored(ignore, physicalRelative)) {
         throw new GeneralRepoAccessError('PATH_IGNORED', 'symlink target is excluded by .ignore', { path: relativePath });
       }
@@ -545,6 +564,7 @@ function revalidateResolvedPath(
     throw new GeneralRepoAccessError('PATH_OUTSIDE_REPO', 'path escapes repo root after open', { path: resolved.relativePath });
   }
   const physicalRelative = toPosixPath(relative(resolved.repo.canonicalRoot, currentCanonical)) || '.';
+  assertOutsideGitDirectory(physicalRelative, resolved.relativePath);
   if (physicalRelative !== '.' && isIgnored(ignore, physicalRelative)) {
     throw new GeneralRepoAccessError('PATH_IGNORED', 'path target is excluded by .ignore after open', { path: resolved.relativePath });
   }

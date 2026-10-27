@@ -15,6 +15,7 @@ import { isPathInside } from './paths';
 import {
   GeneralRepoAccessError,
   assertRepoWriteEnabled,
+  isGitDirectoryPath,
   isIgnored,
   leafName,
   normalizeRepoRelativePath,
@@ -789,6 +790,7 @@ function walkVisibleEntries(repo: RepoRecord, ignore: IgnorePolicy, startRelativ
     }
     for (const child of children) {
       const childRelative = relativeDir === '.' ? child.name : `${relativeDir}/${child.name}`;
+      if (isGitDirectoryPath(childRelative)) continue;
       const childAbsolute = resolve(absoluteDir, child.name);
       const ignored = isIgnored(ignore, childRelative);
       let resolvedChild: ResolvedRepoPath | null = null;
@@ -1011,6 +1013,7 @@ function buildManifestPageSnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
   while (pending.length > 0) {
     const current = pending.pop();
     if (!current) break;
+    if (isGitDirectoryPath(current.relativePath)) continue;
     const ignored = isIgnored(ignore, current.relativePath);
     let resolvedChild: ResolvedRepoPath | null = null;
     if (!ignored) {

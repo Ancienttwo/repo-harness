@@ -418,6 +418,102 @@ describe('MCP reader tools', () => {
     });
   });
 
+  test('general repo tools refuse the git directory on logical and physical paths', async () => {
+    await withReaderRepo(async (repoRoot, ctx) => {
+      const init = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot, encoding: 'utf-8' });
+      expect(init.status).toBe(0);
+      const configPath = join(repoRoot, '.git', 'config');
+      const configBefore = readFileSync(configPath, 'utf-8');
+      const configHash = sha256(configBefore);
+      symlinkSync('../.git', join(repoRoot, 'docs', 'gitdir'));
+      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
+      const expectDenied = (result: { error?: { code: string; details?: unknown } }) => {
+        expect(result.error?.code).toBe('PATH_DENIED');
+        expect(JSON.stringify(result)).not.toContain(realpathSync(repoRoot));
+        expect(JSON.stringify(result)).not.toContain('repositoryformatversion');
+      };
+
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: '.git/hooks/post-commit',
+        content: '#!/bin/sh\necho pwned\n',
+        must_not_exist: true,
+      }));
+      expect(existsSync(join(repoRoot, '.git', 'hooks', 'post-commit'))).toBe(false);
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: '.git/config',
+        content: `${configBefore}[core]\n\thooksPath = elsewhere\n`,
+        expected_sha256: configHash,
+      }));
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: 'docs/gitdir/hooks/pre-commit',
+        content: '#!/bin/sh\necho pwned\n',
+        must_not_exist: true,
+      }));
+      expect(existsSync(join(repoRoot, '.git', 'hooks', 'pre-commit'))).toBe(false);
+      expectDenied(await jsonTool(ctx, 'write_file', {
+        repo_id: repoId,
+        path: 'vendor/nested/.git/hooks/post-checkout',
+        content: '#!/bin/sh\necho pwned\n',
+        must_not_exist: true,
+      }));
+      if (existsSync(join(repoRoot, '.GIT'))) {
+        // Case-insensitive file systems resolve .GIT to the real git directory.
+        expectDenied(await jsonTool(ctx, 'write_file', {
+          repo_id: repoId,
+          path: '.GIT/hooks/post-merge',
+          content: '#!/bin/sh\necho pwned\n',
+          must_not_exist: true,
+        }));
+        expect(existsSync(join(repoRoot, '.git', 'hooks', 'post-merge'))).toBe(false);
+      }
+      expectDenied(await jsonTool(ctx, 'apply_patch', {
+        repo_id: repoId,
+        path: '.git/config',
+        expected_sha256: configHash,
+        edits: [{ old_text: '[core]', new_text: '[core]\n\thooksPath = elsewhere' }],
+      }));
+      expectDenied(await jsonTool(ctx, 'move_path', {
+        repo_id: repoId,
+        from_path: 'docs/design.md',
+        to_path: '.git/hooks/pre-push',
+        expected_sha256: sha256(readFileSync(join(repoRoot, 'docs', 'design.md'), 'utf-8')),
+        must_not_exist: true,
+      }));
+      expect(existsSync(join(repoRoot, 'docs', 'design.md'))).toBe(true);
+      expectDenied(await jsonTool(ctx, 'move_path', {
+        repo_id: repoId,
+        from_path: '.git/config',
+        to_path: 'docs/config-copy',
+        expected_sha256: configHash,
+        must_not_exist: true,
+      }));
+      expectDenied(await jsonTool(ctx, 'delete_path', { repo_id: repoId, path: '.git/config', expected_sha256: configHash }));
+      expect(readFileSync(configPath, 'utf-8')).toBe(configBefore);
+
+      expectDenied(await jsonTool(ctx, 'read_file', { repo_id: repoId, path: '.git/config' }));
+      expectDenied(await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/gitdir/config' }));
+      expectDenied(await jsonTool(ctx, 'stat_file', { repo_id: repoId, path: '.git/HEAD' }));
+      expectDenied(await jsonTool(ctx, 'search_text', { repo_id: repoId, query: 'repositoryformatversion', paths: ['.git/config'] }));
+      expectDenied(await jsonTool(ctx, 'refresh_repo_index', { repo_id: repoId, paths: ['.git/config'] }));
+      const batch = await jsonTool(ctx, 'read_files', { repo_id: repoId, requests: [{ path: '.git/config' }] });
+      expect(batch.results[0].error.code).toBe('PATH_DENIED');
+
+      const manifest = await jsonTool(ctx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
+      const manifestPaths: string[] = manifest.entries.map((entry: { path: string }) => entry.path);
+      expect(manifestPaths.filter((path) => path === '.git' || path.startsWith('.git/'))).toEqual([]);
+      const tree = await jsonTool(ctx, 'list_tree', { repo_id: repoId, path: '.', depth: 3, page_size: 1000 });
+      const treePaths: string[] = tree.entries.map((entry: { path: string }) => entry.path);
+      expect(treePaths.filter((path) => path === '.git' || path.startsWith('.git/'))).toEqual([]);
+
+      // ADR-0001: .ignore stays the only content filter for everything outside the git directory.
+      const envRead = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: '.env' });
+      expect(envRead.content).toContain('sk-testsecret');
+    }, { accessMode: 'read_write' });
+  }, 30_000);
+
   test('.ignore symlink fails closed before policy content is read', async () => {
     await withReaderRepo(async (repoRoot, ctx) => {
       const outside = mkdtempSync(join(tmpdir(), 'repo-harness-ignore-outside-'));
