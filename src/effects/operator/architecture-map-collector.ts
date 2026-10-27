@@ -6,12 +6,19 @@
 // synchronously. The child is the setup collector's supervised process: it
 // leads its own process group, which the deadline and close kill. Line counts
 // and import counts come from git and archctx in that child, never from the
-// browser. A repository whose child fails keeps no older map: the map always
+// browser. The tests layer comes from the tests collector's cache in this
+// process, read when the child's map arrives. A repository whose child fails keeps no older map: the map always
 // names the commit it describes.
 
 import { fileURLToPath } from 'node:url';
 
-import { decodeArchitectureMap, type ArchitectureMapUnavailableReason, type ArchitectureMapV1 } from '../../core/operator/architecture-map';
+import {
+  decodeArchitectureMap,
+  withTestCoverage,
+  type ArchitectureMapUnavailableReason,
+  type ArchitectureMapV1,
+  type ArchitectureTestsSource,
+} from '../../core/operator/architecture-map';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { executionChildEnvironment } from './execution-collector';
@@ -30,6 +37,8 @@ export interface ArchitectureMapCollectorOptions {
   readonly interval_ms?: number;
   readonly timeout_ms?: number;
   readonly run_process?: SetupProcessRunner;
+  /** The tests collector's cache read; without it the tests layer stays `tests_pending`. */
+  readonly read_tests?: (repositoryId: string) => ArchitectureTestsSource;
 }
 
 export interface ArchitectureMapCollectorHandle {
@@ -40,7 +49,7 @@ export interface ArchitectureMapCollectorHandle {
 }
 
 /** The child's one result line, checked against the repository it was asked for. */
-function childResult(stdout: string, repositoryId: string): ArchitectureMapRepositoryCache {
+function childResult(stdout: string, repositoryId: string, tests: (repositoryId: string) => ArchitectureTestsSource): ArchitectureMapRepositoryCache {
   let value: unknown;
   try { value = JSON.parse(stdout); } catch { return { state: 'unavailable', reason: 'architecture_map_invalid' }; }
   const record = value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -48,7 +57,7 @@ function childResult(stdout: string, repositoryId: string): ArchitectureMapRepos
   if (record.ok === false) return { state: 'unavailable', reason: 'model_unavailable' };
   try {
     const map = decodeArchitectureMap(record.snapshot);
-    return map.repository_id === repositoryId ? { state: 'ready', map } : { state: 'unavailable', reason: 'architecture_map_invalid' };
+    return map.repository_id === repositoryId ? { state: 'ready', map: withTestCoverage(map, tests(repositoryId)) } : { state: 'unavailable', reason: 'architecture_map_invalid' };
   } catch {
     return { state: 'unavailable', reason: 'architecture_map_invalid' };
   }
@@ -71,7 +80,7 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
       cwd: process.cwd(), env: executionChildEnvironment(env), service: 'architecture-map-collector',
       timeout_ms: options.timeout_ms ?? ARCHITECTURE_MAP_WORKER_TIMEOUT_MS, signal: abort.signal,
     });
-    return result.ok ? childResult(result.stdout, repositoryId) : { state: 'unavailable', reason: 'model_unavailable' };
+    return result.ok ? childResult(result.stdout, repositoryId, options.read_tests ?? (() => ({ state: 'unavailable', reason: 'tests_pending' }))) : { state: 'unavailable', reason: 'model_unavailable' };
   };
 
   const cycle = (): Promise<void> => {
