@@ -8,14 +8,19 @@ checkout paths here.
 
 ## First harness connect (before assuming lanes)
 
-On the **first** connect to repo-harness for a user or room:
+On the **first** connect to repo-harness for a user or room (or when config is
+unknown):
 
-1. Inventory the user's current agents/teammates (names and roles if known).
-2. Ask in the **room** with a widget how to map them onto harness lanes.
-   Do not DM + relay. Do not assume a fixed six-seat map until the room
-   confirms (or updates) the assignment.
-3. After the room answers, use that map for routing. Re-ask only when the
-   fleet changes or the Owner opens a new config gate.
+1. Inventory the user's current agents/teammates (names and roles if known),
+   including Herdr / Codex / Claude / Pi seats when present.
+2. Ask in the **room** with a widget how to configure them. Do not DM + relay.
+   Do not assume a fixed six-seat map or other defaults until the room answers.
+   Cover at least:
+   - lane mapping (who owns Notion / coding dispatch / cloud / UI / bot create)
+   - Worker-Herdr defaults: model, pane strategy, cleanup/收工
+   - Cursor Worker path: internal vs external model lane when relevant
+3. Persist the room answer (memory / brief / profile), then route with that map.
+   Re-ask only when the fleet changes or the Owner opens a new config gate.
 
 Recommended default lanes (example only — room may override):
 
@@ -23,9 +28,17 @@ Recommended default lanes (example only — room may override):
 | --- | --- |
 | Projects, Notion SoT, room task claim | Projects Manager |
 | Coding dispatch: Codex/Claude/Pi via Herdr; Draft PR seats | tinkabot → Worker-Herdr |
-| Cursor cloud accept/verify and simple cloud work | Cursor Worker |
+| Cursor cloud accept/verify and simple cloud work | Cursor Worker — **Internal** default Grok 4.7; **External** prefer Opus + DeepSeek 4.1 flash (Cursor bills pools separately). Formal production coding stays in Herdr. |
 | UI/UX materials | Designer |
 | New bot creation or description rewrite | dr eggbot |
+
+### Worker-Herdr init (same first-connect gate)
+
+When Worker-Herdr is the host doing first-connect:
+
+1. Scan existing Herdr / Codex / Claude / Pi (and other coding seats if present).
+2. Room widget: default model, pane strategy, cleanup/收工 (and lane map if unset).
+3. Persist that config, then proceed. User/room config wins over templates.
 
 ## Init checklist (every connect)
 
