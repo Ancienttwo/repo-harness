@@ -743,9 +743,10 @@ darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes bef
     binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
       parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
     expect(binding.provider.pid).toBe(JSON.parse(readFileSync(readyFile,'utf8')).pid);
-    const screen = execute(['pane','read',binding.pane_id,'--source','recent','--lines','120','--format','text','--raw']);
+    // Match host text independently of the pane width and terminal soft wraps.
+    const screen = execute(['pane','read',binding.pane_id,'--source','recent-unwrapped','--lines','120','--format','text','--raw']);
     expect(screen).toContain('fixture-oar');
-    await until(() => execute(['pane','read',binding!.pane_id,'--source','recent','--lines','120','--format','text','--raw']).includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
+    await until(() => execute(['pane','read',binding!.pane_id,'--source','recent-unwrapped','--lines','120','--format','text','--raw']).includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
     writeFileSync(closeRequest, 'close');
     await until(() => existsSync(disposedFile));
     await until(() => !live(binding!.provider.pid));
