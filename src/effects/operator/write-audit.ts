@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 
 import type { JsonValue } from '../../core/evidence/types';
 import { syncDirectoryDurably } from '../atomic-append';
-import { repoHarnessHome } from '../repo-registry';
+import { repoHarnessHome } from '../repo-harness-home';
 
 /**
  * Every console write is recorded in one account-level log, not in a worktree

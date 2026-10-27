@@ -7,7 +7,7 @@
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { withExclusiveDirectoryLock } from './locking/exclusive-directory-lock';
-import { repoHarnessHome } from './repo-registry';
+import { repoHarnessHome } from './repo-harness-home';
 
 export const BOT_RECORD_PROTOCOL = 1 as const;
 export const BOT_RECORD_KIND = 'repo-harness-bot' as const;

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
 import { acquireExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
-import { repoHarnessHome, type RepoHarnessRegisteredRepo } from '../../effects/repo-registry';
+import { type RepoHarnessRegisteredRepo } from '../../effects/repo-registry';
+import { repoHarnessHome } from '../../effects/repo-harness-home';
 import { assertConfigurationPath, writePrivateConfiguration } from '../installer/configuration-ownership';
 
 export interface McpRegistryRestore {

@@ -18,9 +18,9 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'pat
 import {
   isRepoHarnessAdoptedPath,
   readRegisteredRepoHarnessRepos,
-  repoHarnessHome,
   type RepoHarnessRegisteredRepo,
 } from '../../effects/repo-registry';
+import { repoHarnessHome } from '../../effects/repo-harness-home';
 import { globMatches, isPathInside } from './paths';
 import { configuredGitBinary } from '../../effects/git/common-directory';
 import { cleanupExactWorktree } from '../../effects/state/coordination-worktree-topology';

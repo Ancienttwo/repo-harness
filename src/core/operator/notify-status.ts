@@ -10,7 +10,10 @@ export const NOTIFY_CHANNELS = ['webhook', 'slack', 'discord', 'telegram'] as co
 export type NotifyChannel = typeof NOTIFY_CHANNELS[number];
 
 /** Why the notify status is unknown. A probe that fails is never read as "not configured". */
-export const NOTIFY_UNAVAILABLE_REASONS = ['herdr_session_invalid', 'herdr_unavailable', 'notify_config_unavailable'] as const;
+export const NOTIFY_SESSION_REASONS = ['notify_session_missing', 'notify_session_invalid'] as const;
+/** The install record that names the Herdr session is absent or unreadable. */
+export type NotifySessionReason = typeof NOTIFY_SESSION_REASONS[number];
+export const NOTIFY_UNAVAILABLE_REASONS = [...NOTIFY_SESSION_REASONS, 'herdr_unavailable', 'notify_config_unavailable'] as const;
 export type NotifyUnavailableReason = typeof NOTIFY_UNAVAILABLE_REASONS[number];
 export type NotifyDeliveryState = 'succeeded' | 'failed' | 'unsupported' | 'unavailable' | 'missing';
 

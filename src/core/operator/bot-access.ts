@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_SESSION_REASONS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifySessionReason, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -107,10 +107,11 @@ export interface BotAccessSnapshotV1 {
   readonly registry: { readonly state: 'ok'; readonly authorization_revision: number; readonly registry_revision: string; readonly repos: readonly RegistryRepoProjection[] }
     | BotAccessUnavailable<'registry_unavailable' | 'registry_invalid'>;
   readonly herdr: {
+    readonly state: 'ok';
     readonly session: string;
     readonly status: { readonly state: 'ok'; readonly value: HerdrStatusProjection } | BotAccessUnavailable<'herdr_status_failed' | 'herdr_status_invalid'>;
     readonly snapshot: { readonly state: 'ok'; readonly value: HerdrSnapshotProjection } | BotAccessUnavailable<'herdr_not_running' | 'herdr_version_mismatch' | 'herdr_snapshot_failed'>;
-  };
+  } | BotAccessUnavailable<NotifySessionReason>;
   readonly notify: {
     readonly state: 'ok';
     readonly status: NotifyStatusV1;
@@ -397,42 +398,45 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     }
   }
 
-  const herdr = obj(v.herdr, ['session', 'status', 'snapshot'], 'herdr');
-  match(herdr.session, NAME_TEXT, 'herdr session');
-  const status = section(herdr.status, 'herdr status', ['value'], ['herdr_status_failed', 'herdr_status_invalid']);
-  if (status.value !== undefined) {
-    const value = obj(status.value, ['client', 'server'], 'herdr status value');
-    const client = obj(value.client, ['version', 'protocol'], 'herdr client');
-    nullable(client.version, x => match(x, VERSION_TEXT, 'herdr client version'));
-    nullable(client.protocol, x => whole(x, 'herdr client protocol'));
-    const server = obj(value.server, ['status', 'version', 'restart_needed'], 'herdr server');
-    const running = oneOf(server.status, ['running', 'not_running', 'unknown'] as const, 'herdr server status') === 'running';
-    bool(server.restart_needed, 'herdr restart_needed');
-    if ((server.version === null) === running) fail('herdr server version');
-    nullable(server.version, x => {
-      const version = obj(x, ['state', 'expected', 'actual'], 'herdr version');
-      oneOf(version.state, ['aligned', 'mismatch'] as const, 'herdr version state');
-      const expected = obj(version.expected, ['version', 'protocol', 'revision'], 'herdr expected');
-      match(expected.version, VERSION_TEXT, 'herdr expected version');
-      whole(expected.protocol, 'herdr expected protocol');
-      match(expected.revision, HERDR_REVISION_TEXT, 'herdr expected revision');
-      const actual = obj(version.actual, ['version', 'protocol'], 'herdr actual');
-      nullable(actual.version, y => match(y, VERSION_TEXT, 'herdr actual version'));
-      nullable(actual.protocol, y => whole(y, 'herdr actual protocol'));
-      return version;
-    });
-  }
-  const snapshot = section(herdr.snapshot, 'herdr snapshot', ['value'], ['herdr_not_running', 'herdr_version_mismatch', 'herdr_snapshot_failed']);
-  if (snapshot.value !== undefined) {
-    const value = obj(snapshot.value, ['workspaces', 'tabs', 'panes', 'agents'], 'herdr snapshot value');
-    for (const key of ['workspaces', 'tabs', 'panes'] as const) whole(value[key], `herdr ${key}`);
-    for (const raw of array(value.agents, 'herdr agents')) {
-      const agent = obj(raw, ['pane_id', 'agent', 'name', 'agent_status', 'bot'], 'herdr agent');
-      match(agent.pane_id, HERDR_ID_TEXT, 'herdr pane_id');
-      nullable(agent.agent, x => match(x, NAME_TEXT, 'herdr agent kind'));
-      nullable(agent.name, x => match(x, HERDR_AGENT_TEXT, 'herdr agent name'));
-      oneOf(agent.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const, 'herdr agent_status');
-      attribution(agent.bot, 'herdr agent bot');
+  // Without an install record there is no session to ask, so the section is unavailable as a whole.
+  const herdr = section(v.herdr, 'herdr', ['session', 'status', 'snapshot'], NOTIFY_SESSION_REASONS);
+  if (herdr.session !== undefined) {
+    match(herdr.session, NAME_TEXT, 'herdr session');
+    const status = section(herdr.status, 'herdr status', ['value'], ['herdr_status_failed', 'herdr_status_invalid']);
+    if (status.value !== undefined) {
+      const value = obj(status.value, ['client', 'server'], 'herdr status value');
+      const client = obj(value.client, ['version', 'protocol'], 'herdr client');
+      nullable(client.version, x => match(x, VERSION_TEXT, 'herdr client version'));
+      nullable(client.protocol, x => whole(x, 'herdr client protocol'));
+      const server = obj(value.server, ['status', 'version', 'restart_needed'], 'herdr server');
+      const running = oneOf(server.status, ['running', 'not_running', 'unknown'] as const, 'herdr server status') === 'running';
+      bool(server.restart_needed, 'herdr restart_needed');
+      if ((server.version === null) === running) fail('herdr server version');
+      nullable(server.version, x => {
+        const version = obj(x, ['state', 'expected', 'actual'], 'herdr version');
+        oneOf(version.state, ['aligned', 'mismatch'] as const, 'herdr version state');
+        const expected = obj(version.expected, ['version', 'protocol', 'revision'], 'herdr expected');
+        match(expected.version, VERSION_TEXT, 'herdr expected version');
+        whole(expected.protocol, 'herdr expected protocol');
+        match(expected.revision, HERDR_REVISION_TEXT, 'herdr expected revision');
+        const actual = obj(version.actual, ['version', 'protocol'], 'herdr actual');
+        nullable(actual.version, y => match(y, VERSION_TEXT, 'herdr actual version'));
+        nullable(actual.protocol, y => whole(y, 'herdr actual protocol'));
+        return version;
+      });
+    }
+    const snapshot = section(herdr.snapshot, 'herdr snapshot', ['value'], ['herdr_not_running', 'herdr_version_mismatch', 'herdr_snapshot_failed']);
+    if (snapshot.value !== undefined) {
+      const value = obj(snapshot.value, ['workspaces', 'tabs', 'panes', 'agents'], 'herdr snapshot value');
+      for (const key of ['workspaces', 'tabs', 'panes'] as const) whole(value[key], `herdr ${key}`);
+      for (const raw of array(value.agents, 'herdr agents')) {
+        const agent = obj(raw, ['pane_id', 'agent', 'name', 'agent_status', 'bot'], 'herdr agent');
+        match(agent.pane_id, HERDR_ID_TEXT, 'herdr pane_id');
+        nullable(agent.agent, x => match(x, NAME_TEXT, 'herdr agent kind'));
+        nullable(agent.name, x => match(x, HERDR_AGENT_TEXT, 'herdr agent name'));
+        oneOf(agent.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const, 'herdr agent_status');
+        attribution(agent.bot, 'herdr agent bot');
+      }
     }
   }
 

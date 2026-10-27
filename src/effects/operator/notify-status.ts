@@ -13,6 +13,7 @@ import {
   type NotifyStatusV1,
   type NotifyUnavailableReason,
 } from '../../core/operator/notify-status';
+import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
 
 /** A probe failed, so the status is unknown. The code is public; the cause stays here. */
 export class NotifyStatusUnavailableError extends Error {
@@ -27,8 +28,6 @@ const HERDR_TIMEOUT_MS = 10_000;
 
 export interface NotifyStatusReadInput {
   readonly env?: NodeJS.ProcessEnv;
-  /** The Herdr session the plugin was installed into. Defaults to the session Herdr itself selects from `HERDR_SESSION`. */
-  readonly session?: string;
   readonly now?: Date;
   /** Deadline of each Herdr call. */
   readonly timeout_ms?: number;
@@ -115,15 +114,18 @@ export interface NotifyChannelDeliveryStatus extends NotifyChannelStatus {
 
 /**
  * The status, whether each channel is configured, and each channel's newest
- * delivery, from one read. Values stay out. A failed plugin list, or a failed
- * config read of an installed plugin, throws NotifyStatusUnavailableError.
+ * delivery, from one read. Values stay out. A missing or invalid install
+ * record, a failed plugin list, or a failed config read of an installed plugin
+ * throws NotifyStatusUnavailableError.
  */
 export async function readNotifyChannelStatus(input: NotifyStatusReadInput = {}): Promise<NotifyChannelDeliveryStatus> {
   const env = { ...process.env, ...input.env };
-  // Install names the session with --session and strips HERDR_*; the reader must
-  // target the same session, so a pane's socket or caller identity cannot redirect it.
-  const session = input.session ?? (env.HERDR_SESSION || 'default');
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new NotifyStatusUnavailableError('herdr_session_invalid');
+  // The session is the one install recorded. HERDR_* is stripped, so a pane's
+  // socket or caller identity cannot redirect the read to another session.
+  const record = await readNotifyInstallSession(env);
+  if (record.state === 'missing') throw new NotifyStatusUnavailableError('notify_session_missing');
+  if (record.state === 'invalid') throw new NotifyStatusUnavailableError('notify_session_invalid');
+  const { session } = record;
   for (const name of Object.keys(env)) if (name.startsWith('HERDR_')) delete env[name];
   const timeout = input.timeout_ms ?? HERDR_TIMEOUT_MS;
   const plugins = (json(await herdr(session, ['plugin', 'list', '--json', '--plugin', NOTIFY_PLUGIN_ID], env, timeout)) as { readonly result?: HerdrPluginList } | null)?.result?.plugins;
