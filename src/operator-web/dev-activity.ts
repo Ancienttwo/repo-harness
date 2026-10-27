@@ -1,12 +1,14 @@
 import { useCallback, useState } from 'react';
 import { decodeDevActivitySnapshot } from '../core/dev-activity/decode';
-import type {
-  DevActivityAttention,
-  DevActivityColumn,
-  DevActivityItem,
-  DevActivityRepository,
-  DevActivitySnapshotV2,
-  DevActivitySourceStatus,
+import {
+  DEV_ACTIVITY_TRUNCATED_REASON_PREFIX,
+  type DevActivityAttention,
+  type DevActivityColumn,
+  type DevActivityItem,
+  type DevActivityRepository,
+  type DevActivitySnapshotV2,
+  type DevActivitySourceHealth,
+  type DevActivitySourceStatus,
 } from '../core/dev-activity/types';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -131,6 +133,25 @@ export function sourceHealth(repositories: readonly DevActivityRepository[]): So
   const counts: Record<DevActivitySourceStatus, number> = { ok: 0, stale: 0, unavailable: 0, not_configured: 0 };
   for (const repository of repositories) for (const source of repository.sources) counts[source.status] += 1;
   return counts;
+}
+
+/**
+ * The PR categories (open, merged, closed) a GitHub source dropped for
+ * exceeding one query; null for any other reason. The other categories stay.
+ */
+export function truncatedCategories(source: DevActivitySourceHealth): readonly string[] | null {
+  return source.reason?.startsWith(DEV_ACTIVITY_TRUNCATED_REASON_PREFIX)
+    ? source.reason.slice(DEV_ACTIVITY_TRUNCATED_REASON_PREFIX.length).split('_') : null;
+}
+
+/**
+ * Git and GitHub sources that are not ok, except a GitHub source that dropped
+ * only merged or closed PRs: open work is complete there, and the drop is
+ * reported where merged PRs are counted.
+ */
+export function failedSources(repository: DevActivityRepository): readonly DevActivitySourceHealth[] {
+  return repository.sources.filter(source => source.kind !== 'runtime' && (source.status === 'unavailable' || source.status === 'stale')
+    && !(truncatedCategories(source)?.every(category => category !== 'open') ?? false));
 }
 
 export function openPullRequests(items: readonly DevActivityItem[], repositoryId: string): number {

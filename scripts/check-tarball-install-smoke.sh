@@ -92,6 +92,11 @@ const retired = [
   "scripts/repo-harness.sh",
 ];
 const missing = required.filter((file) => !files.has(file));
+// The console's logo and pixel characters are the design system's own files, built in under their own names.
+const brandSource = "docs/design/operator-console/design-system/assets/";
+const brandAssets = [...new Bun.Glob(`${brandSource}{logos,mascots}/*.svg`).scanSync(".")]
+  .map((file) => `dist/operator-ui/${file.slice(brandSource.length)}`);
+const missingBrandAssets = brandAssets.length === 0 ? [`${brandSource}{logos,mascots}/*.svg`] : brandAssets.filter((file) => !files.has(file));
 const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
 const operatorAssets = [...files].filter((file) => file.startsWith("dist/operator-ui/assets/"));
@@ -99,9 +104,12 @@ const operatorAssets = [...files].filter((file) => file.startsWith("dist/operato
 const missingOperatorAssetKinds = [".js", ".css"].filter(
   (extension) => !operatorAssets.some((file) => /^dist\/operator-ui\/assets\/index-[A-Za-z0-9_-]+\.(?:js|css)$/u.test(file) && file.endsWith(extension)),
 );
-if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
+if (missing.length > 0 || missingBrandAssets.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
   if (missing.length > 0) {
     console.error(`[tarball-smoke] ERROR: package is missing hook assets: ${missing.join(", ")}`);
+  }
+  if (missingBrandAssets.length > 0) {
+    console.error(`[tarball-smoke] ERROR: package is missing design-system brand assets: ${missingBrandAssets.join(", ")}`);
   }
   if (leaked.length > 0) {
     console.error(`[tarball-smoke] ERROR: package still contains retired hook runtime: ${leaked.join(", ")}`);
@@ -200,9 +208,18 @@ for (const kind of ['js', 'css']) {
   if (body.length === 0) fail(`operator ${kind} bundle is unavailable`);
   assetText[kind] = body;
 }
-// Kumo's colour tokens and its dark-mode selector must survive the packaged build.
-for (const token of ['--color-kumo-base', '--color-kumo-line', '[data-mode=dark]']) {
-  if (!assetText.css.includes(token)) fail(`operator stylesheet is missing Kumo token ${token}`);
+// Kumo's colour tokens, the design system's own tokens and the dark-mode selector must survive the packaged build.
+for (const token of ['--color-kumo-base', '--color-kumo-line', '--rh-accent', '[data-mode=dark]']) {
+  if (!assetText.css.includes(token)) fail(`operator stylesheet is missing token ${token}`);
+}
+// Every logo and pixel character the page and its bundle reference is served by the packed console.
+const brandRefs = [...new Set([...`${html}\n${assetText.js}`.matchAll(/\/(?:logos|mascots)\/[a-z0-9-]+\.svg/gu)].map((match) => match[0]))];
+if (!brandRefs.some((ref) => ref.startsWith('/logos/')) || !brandRefs.some((ref) => ref.startsWith('/mascots/'))) {
+  fail('operator console references no design-system logo or character');
+}
+for (const ref of brandRefs) {
+  const image = await fetch(new URL(ref.slice(1), `${baseUrl}/`));
+  if (!image.ok || !image.headers.get('content-type')?.includes('image/svg+xml')) fail(`operator console does not serve ${ref}`);
 }
 // `?fixture=` exists only under the Vite dev server; its data must not ship.
 if (assetText.js.includes('unknown operator fixture')) fail('operator bundle contains development fixtures');

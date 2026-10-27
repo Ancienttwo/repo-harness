@@ -4,6 +4,9 @@
 @import "@cloudflare/kumo/styles/tailwind";
 @import "tailwindcss";
 
+/* 760px: below it the side rail becomes a drawer (design brief U4). */
+@theme { --breakpoint-rail: 47.5rem; }
+
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -12,13 +15,13 @@
   body {
     @apply bg-kumo-canvas text-kumo-default antialiased;
     margin: 0;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
     overflow-x: hidden;
   }
-  code, kbd, pre, .mono-value { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-  :focus-visible { outline: 2px solid var(--color-kumo-brand); outline-offset: 2px; }
+  code, kbd, pre, .mono-value { font-family: var(--font-mono); }
+  :focus-visible { outline: 3px solid var(--color-kumo-focus); outline-offset: 2px; }
   [hidden] { display: none !important; }
 }
 

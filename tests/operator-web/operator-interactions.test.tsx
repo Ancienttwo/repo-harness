@@ -7,6 +7,7 @@ import { Window } from 'happy-dom';
 import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
 import { OperatorApp, OPERATOR_REPOSITORY_STORAGE_KEY } from '../../src/operator-web/App';
+import { LOGO_MARK, MASCOTS } from '../../src/operator-web/brand';
 import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
 import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
 import { defaultCollapsedGroups, groupWorklist, primaryCause, taskDisplayLabel, taskKey } from '../../src/operator-web/worklist';
@@ -132,10 +133,22 @@ function installDom(wide = false): void {
   });
 }
 
+/** The side rail's repository switch: the one place a page picks its repository. */
+function repositorySwitch(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>('[data-repository-switch]');
+  if (!button) throw new Error('repository selector missing');
+  return button;
+}
+
+async function openRepositoryMenu(): Promise<Element> {
+  if (repositorySwitch().getAttribute('aria-expanded') !== 'true') await act(async () => repositorySwitch().click());
+  return document.getElementById(repositorySwitch().getAttribute('aria-controls')!)!;
+}
+
 async function selectRepository(id: string): Promise<void> {
-  const select = document.querySelector<HTMLSelectElement>('.repository-switch select');
-  if (!select) throw new Error('repository selector missing');
-  await act(async () => { select.value = id; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  const option = (await openRepositoryMenu()).querySelector<HTMLButtonElement>(`[data-switch-option="${id}"]`);
+  if (!option) throw new Error(`repository option missing: ${id}`);
+  await act(async () => option.click());
 }
 
 function buttonWithText(text: string): HTMLButtonElement {
@@ -533,20 +546,20 @@ describe('operator web interactions', () => {
     expect(window.localStorage.getItem(OPERATOR_REPOSITORY_STORAGE_KEY)).toBe('repo-console');
     await act(async () => root?.unmount()); root = null;
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} />);
-    expect(document.querySelector<HTMLSelectElement>('.repository-switch select')?.value).toBe('repo-console');
+    expect(repositorySwitch().getAttribute('data-selected')).toBe('repo-console');
     await act(async () => buttonWithText('Refresh').click());
     expect(filterChipCount('All')).toBe(stableSnapshot.repositories[1]!.cards.length);
     next = { ...stableSnapshot, repositories: [stableSnapshot.repositories[0]!] };
     await act(async () => buttonWithText('Refresh').click());
     expect(document.querySelector('.worklist')).toBeNull();
-    expect(document.querySelector<HTMLSelectElement>('.repository-switch select')?.value).toBe('');
+    expect(repositorySwitch().getAttribute('data-selected')).toBe('');
     expect(document.querySelector('main')?.textContent).toContain('Select repository');
   });
 
   test('duplicate display names remain distinguishable and names never become request identities', async () => {
     const snapshot = { ...stableSnapshot, repositories: stableSnapshot.repositories.map(repo => ({ ...repo, display_name: 'shared-name' })) };
     await mount(<OperatorApp initialSnapshot={snapshot} initialLocale="en" />);
-    const options = Array.from(document.querySelectorAll<HTMLOptionElement>('.repository-switch option')).filter(option => option.value);
+    const options = Array.from((await openRepositoryMenu()).querySelectorAll('[data-switch-option] [data-switch-label]'));
     expect(options.map(option => option.textContent?.trim())).toEqual(['shared-name · repo-harness', 'shared-name · repo-console']);
     await selectRepository('repo-console');
     expect(filterChipCount('All')).toBe(snapshot.repositories[1]!.cards.length);
@@ -1194,7 +1207,7 @@ describe('operator web interactions', () => {
 
   test('builds the console into the packaged static root with Tailwind and a loopback dev proxy', async () => {
     const config = (await import('../../vite.operator.config.ts')).default as {
-      root: string; build: { outDir: string }; server: { host: string; proxy: Record<string, string> }; plugins: unknown[];
+      root: string; publicDir: string; build: { outDir: string }; server: { host: string; proxy: Record<string, string> }; plugins: unknown[];
     };
     const names = config.plugins.flat(Infinity).map(plugin => (plugin as { name?: string } | null)?.name ?? '');
     expect(config.root.endsWith('/src/operator-web')).toBe(true);
@@ -1202,6 +1215,13 @@ describe('operator web interactions', () => {
     expect(config.build.outDir.endsWith('/dist/operator-ui')).toBe(true);
     expect(names).toContain('@tailwindcss/vite:generate:build');
     expect(names).toContain('vite:react-babel');
+    // Paper and Ink come from tokens.json; the logo and characters ship from the design system's assets under their own names.
+    expect(names).toContain('repo-harness:design-tokens');
+    expect(config.publicDir.endsWith('/docs/design/operator-console/design-system/assets')).toBe(true);
+    const favicon = (await Bun.file('src/operator-web/index.html').text()).match(/rel="icon"[^>]*href="([^"]+)"/u)?.[1];
+    for (const file of [favicon, LOGO_MARK, ...Object.values(MASCOTS)]) {
+      expect(await Bun.file(`${config.publicDir}${file}`).exists()).toBe(true);
+    }
     expect(config.server.host).toBe('127.0.0.1');
     expect(config.server.proxy['/api']).toBe(process.env.OPERATOR_API_ORIGIN ?? 'http://127.0.0.1:4318');
   });
@@ -1266,19 +1286,19 @@ describe('operator web interactions', () => {
    * `marks.tsx` is brand identity art and may carry the brand orange; any other
    * component painting with it would be reusing the write accent as decoration.
    */
-  test('keeps brand orange literals inside the brand art module', async () => {
+  test('keeps brand orange literals inside the design-system brand art', async () => {
     const BRAND_ORANGE = /#(?:E8742C|F2954A|C2571A|C2592C|A44721)\b/giu;
     const offenders: string[] = [];
-    for await (const relative of new Bun.Glob('*.tsx').scan({ cwd: 'src/operator-web' })) {
-      if (relative === 'marks.tsx') continue;
+    for await (const relative of new Bun.Glob('*.{ts,tsx,css,html}').scan({ cwd: 'src/operator-web' })) {
       const source = await Bun.file(`src/operator-web/${relative}`).text();
       const hits = source.match(BRAND_ORANGE);
       if (hits) offenders.push(`${relative}: ${hits.join(', ')}`);
     }
     expect(offenders).toEqual([]);
 
-    // The whitelist is load-bearing only while the brand art actually uses it.
-    expect((await Bun.file('src/operator-web/marks.tsx').text()).match(BRAND_ORANGE)?.length ?? 0).toBeGreaterThan(0);
+    // The console draws its logo from the design system's asset, which still carries the brand orange.
+    expect(LOGO_MARK).toBe('/logos/repo-harness-carrot-mark-transparent.svg');
+    expect((await Bun.file(`docs/design/operator-console/design-system/assets${LOGO_MARK}`).text()).match(BRAND_ORANGE)?.length ?? 0).toBeGreaterThan(0);
   });
 });
 

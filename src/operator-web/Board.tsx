@@ -309,7 +309,7 @@ function BoardColumns({ columns, snapshot, now, selectedId, mobileColumn, onMobi
   );
 }
 
-function BoardState({ title, description, command, loading = false }: { readonly title: string; readonly description: string; readonly command?: string; readonly loading?: boolean }) {
+export function BoardState({ title, description, command, loading = false }: { readonly title: string; readonly description: string; readonly command?: string; readonly loading?: boolean }) {
   return <Empty size="sm" icon={loading ? <Loader size={24} /> : <CircleDashedIcon size={32} />} title={title} description={description} commandLine={command} />;
 }
 

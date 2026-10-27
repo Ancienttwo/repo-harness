@@ -80,7 +80,7 @@ describe('navigation', () => {
     for (const workspace of ['agents', 'skills', 'hooks'] as const) {
       expect(parseWorkspaceLocation(`#${workspace}`)).toEqual({ workspace, module: null, item: null });
       expect(workspaceHash({ workspace, module: null, item: null })).toBe(`#${workspace}`);
-      expect(parseWorkspaceLocation(`#${workspace}/extra`).workspace).toBe('board');
+      expect(parseWorkspaceLocation(`#${workspace}/extra`).workspace).toBe('home');
     }
   });
 
@@ -94,22 +94,54 @@ describe('navigation', () => {
     }
   });
 
-  test('on a phone, Skills, Hooks, Tools and Architecture sit behind More, which opens, routes and closes', async () => {
+  test('below 760 px the side rail is a drawer: the menu button opens it, a link routes and closes it, Escape closes it and returns focus', async () => {
     await mount('', props(readySetup(NOW)));
-    for (const workspace of ['skills', 'hooks', 'tools', 'architecture']) expect(navLink(workspace).closest('li')!.className).toContain('max-md:hidden');
-    for (const workspace of ['board', 'repositories', 'agents', 'system']) expect(navLink(workspace).closest('li')!.className).not.toContain('max-md:hidden');
-    const more = document.querySelector<HTMLButtonElement>('[data-nav-more] button')!;
-    expect(more.getAttribute('aria-expanded')).toBe('false');
-    expect(document.querySelector('#nav-more-menu')).toBeNull();
-    await act(async () => more.click());
-    expect(more.getAttribute('aria-expanded')).toBe('true');
-    expect(all('#nav-more-menu a').map(link => link.getAttribute('data-more-workspace'))).toEqual(['skills', 'hooks', 'tools', 'architecture']);
-    await act(async () => document.querySelector<HTMLAnchorElement>('#nav-more-menu a[data-more-workspace="hooks"]')!.click());
+    const rail = () => document.querySelector<HTMLElement>('[data-nav-rail]')!;
+    const open = document.querySelector<HTMLButtonElement>('[data-rail-open]')!;
+    expect(open.className).toContain('rail:hidden');
+    expect(open.getAttribute('aria-controls')).toBe(rail().id);
+    expect(open.getAttribute('aria-expanded')).toBe('false');
+    expect(rail().getAttribute('data-drawer')).toBe('closed');
+    expect(rail().className).toContain('max-rail:invisible');
+    expect(document.querySelector('[data-rail-backdrop]')).toBeNull();
+    await act(async () => open.click());
+    expect(rail().getAttribute('data-drawer')).toBe('open');
+    expect(open.getAttribute('aria-expanded')).toBe('true');
+    expect(rail().className).not.toContain('max-rail:invisible');
+    expect(document.querySelector('[data-rail-backdrop]')).not.toBeNull();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close sidebar');
+    await act(async () => navLink('hooks').click());
     expect(window.location.hash).toBe('#hooks');
-    expect(document.querySelector('#nav-more-menu')).toBeNull();
-    await act(async () => more.click());
-    await act(async () => { document.querySelector('#nav-more-menu a')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
-    expect(document.querySelector('#nav-more-menu')).toBeNull();
+    expect(rail().getAttribute('data-drawer')).toBe('closed');
+    open.focus();
+    await act(async () => open.click());
+    await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
+    expect(rail().getAttribute('data-drawer')).toBe('closed');
+    expect(open.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(open);
+  });
+
+  test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
+    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['agents', 'agents'], ['skills', 'skills'],
+      ['hooks', 'hooks'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
+    for (const [workspace, entry] of pages) {
+      if (root) {
+        await act(async () => root?.unmount());
+        root = null;
+        window.happyDOM.abort();
+        installDom();
+      }
+      await mount(`#${workspace}`, props(readySetup(NOW), { readCiRepairs: async () => ({ state: 'ok', issues: [] }) }));
+      expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe(workspace);
+      expect(all('.workspace-nav a[aria-current="page"]').map(link => link.getAttribute('data-workspace'))).toEqual([entry]);
+      expect(all('[data-repository-switch]')).toHaveLength(1);
+      expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
+    }
+    expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
+      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'architecture', 'system', 'tools']);
+    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'cli', 'worktrees', 'bots']) {
+      expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
+    }
   });
 
   test('the setup result is read only while a setup page shows, once on each return', async () => {
@@ -300,21 +332,22 @@ describe('Tools page', () => {
   const row = (id: string) => document.querySelector<HTMLButtonElement>(`[data-tool="${id}"] button`)!;
   const drawer = () => document.querySelector<HTMLElement>('[data-tool-drawer]');
 
-  test('#tools lists the catalog; #tools/<id> opens a catalog entry; anything else is the Board', () => {
+  test('#tools lists the catalog; #tools/<id> opens a catalog entry; anything else is Home', () => {
     expect(parseWorkspaceLocation('#tools')).toEqual({ workspace: 'tools', module: null, item: null });
     expect(parseWorkspaceLocation('#tools/codegraph')).toEqual({ workspace: 'tools', module: null, item: 'codegraph' });
     expect(workspaceHash({ workspace: 'tools', module: null, item: null })).toBe('#tools');
     expect(workspaceHash({ workspace: 'tools', module: null, item: 'codegraph' })).toBe('#tools/codegraph');
     for (const hash of ['#tools/CodeGraph', '#tools/code_graph', '#tools/%2e%2e', '#tools/not-in-catalog', '#tools/codegraph/extra', '#tools/']) {
-      expect(parseWorkspaceLocation(hash)).toEqual({ workspace: 'board', module: null, item: null });
+      expect(parseWorkspaceLocation(hash)).toEqual({ workspace: 'home', module: null, item: null });
     }
   });
 
-  test('Tools sits after Hooks in the nav and routes by hash without a setup read', async () => {
+  test('Tools closes the Observe group after System and routes by hash without a setup read', async () => {
     let reads = 0;
     await mount('', props(null, { readSetup: async () => { reads++; return readySetup(NOW); } }));
     const order = all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace'));
-    expect(order.indexOf('tools')).toBe(order.indexOf('hooks') + 1);
+    expect(order.indexOf('tools')).toBe(order.indexOf('system') + 1);
+    expect(order.at(-1)).toBe('tools');
     await act(async () => navLink('tools').click());
     expect(window.location.hash).toBe('#tools');
     expect(navLink('tools').getAttribute('aria-current')).toBe('page');
