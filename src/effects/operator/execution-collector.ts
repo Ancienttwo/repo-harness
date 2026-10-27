@@ -3,61 +3,52 @@
 //
 // Each cycle reads the repository registry and the Herdr notify install record,
 // then runs `collectTaskExecutionStates` for every registered repository in one
-// worker thread, because it reads files and runs `ps` synchronously. A deadline
-// terminates the worker. A repository whose read fails, or every repository of a
-// cycle whose worker fails, is unavailable: a stale verified session is never shown.
+// child process, because it reads files and runs `ps` and git synchronously. The
+// child is the setup collector's supervised process: it leads its own process
+// group, which the deadline and close kill, so a blocked `ps` or git cannot hold
+// a cycle. A repository whose read fails, or every repository of a cycle that
+// fails or times out, is unavailable: a stale verified session is never shown.
 
-import { Worker } from 'node:worker_threads';
+import { fileURLToPath } from 'node:url';
 import {
   projectTaskExecutionView,
   type ExecutionStateUnavailableReason,
   type TaskExecutionViewV1,
 } from '../../core/operator/execution-state';
+import { REPOSITORY_SELECTING_GIT_ENV } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
-import type { ExecutionStateWorkerRequest, ExecutionStateWorkerResult } from './execution-state-worker';
+import type { ExecutionStateWorkerResult } from './execution-state-worker';
 
 export const EXECUTION_COLLECT_INTERVAL_MS = 30_000;
 export const EXECUTION_WORKER_TIMEOUT_MS = 20_000;
+export const EXECUTION_CHILD_ARGV = Object.freeze([fileURLToPath(new URL('./execution-state-worker.ts', import.meta.url))] as const);
 const READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
+const UNAVAILABLE: ExecutionRepositoryCache = { state: 'unavailable', reason: 'execution_state_unavailable' };
 
 export type ExecutionRepositoryCache =
   | { readonly state: 'ready'; readonly view: TaskExecutionViewV1 }
   | { readonly state: 'unavailable'; readonly reason: ExecutionStateUnavailableReason };
 
-/** One run of the worker. `null` is a failed run: an error, an exit without a result, or the deadline. */
-export type ExecutionWorkerRunner = (
-  request: ExecutionStateWorkerRequest,
-  options: { readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal },
-) => Promise<readonly ExecutionStateWorkerResult[] | null>;
+/** Each registered repository must resolve from its own path, whatever git variables the server has. */
+export function executionChildEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env, ...READ_ONLY_GIT_ENVIRONMENT };
+  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, 'GIT_COMMON_DIR']) delete next[key];
+  return next;
+}
 
-export const runExecutionWorker: ExecutionWorkerRunner = (request, options) => new Promise((settle) => {
-  if (options.signal.aborted) { settle(null); return; }
-  const worker = new Worker(new URL('./execution-state-worker.ts', import.meta.url), {
-    workerData: request, env: { ...options.env, ...READ_ONLY_GIT_ENVIRONMENT },
-  });
-  let result: readonly ExecutionStateWorkerResult[] | null = null;
-  const stop = () => { void worker.terminate().catch(() => {}); };
-  const timer = setTimeout(stop, options.timeout_ms);
-  options.signal.addEventListener('abort', stop, { once: true });
-  worker.once('message', (value: unknown) => {
-    if (Array.isArray(value) && value.length === request.repos.length) result = value as ExecutionStateWorkerResult[];
-    stop();
-  });
-  worker.once('error', stop);
-  // Settle on exit only, so a terminated worker has released its thread.
-  worker.once('exit', () => {
-    clearTimeout(timer);
-    options.signal.removeEventListener('abort', stop);
-    settle(result);
-  });
-});
+function childResults(stdout: string): ReadonlyMap<string, ExecutionStateWorkerResult> {
+  const value: unknown = JSON.parse(stdout);
+  if (!Array.isArray(value)) throw new Error('execution child output is not a list');
+  return new Map((value as ExecutionStateWorkerResult[]).map(result => [result.id, result]));
+}
 
 export interface ExecutionCollectorOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly interval_ms?: number;
   readonly timeout_ms?: number;
-  readonly run_worker?: ExecutionWorkerRunner;
+  readonly run_process?: SetupProcessRunner;
 }
 
 export interface ExecutionCollectorHandle {
@@ -70,7 +61,7 @@ export interface ExecutionCollectorHandle {
 /** Collect at start, then every interval after the previous cycle settles. Cycles never overlap. */
 export function startExecutionCollector(options: ExecutionCollectorOptions = {}): ExecutionCollectorHandle {
   const env = { ...process.env, ...options.env };
-  const run = options.run_worker ?? runExecutionWorker;
+  const run = options.run_process ?? runSetupProcess;
   const abort = new AbortController();
   let states = new Map<string, ExecutionRepositoryCache>();
   let registryFailed = false;
@@ -79,30 +70,40 @@ export function startExecutionCollector(options: ExecutionCollectorOptions = {})
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
 
+  const collect = async (repos: readonly { readonly id: string }[]): Promise<Map<string, ExecutionRepositoryCache>> => {
+    const record = await readNotifyInstallSession(env);
+    const herdrSession = record.state === 'ok' ? record.session : null;
+    const result = await run(EXECUTION_CHILD_ARGV, {
+      cwd: process.cwd(), env: executionChildEnvironment(env), service: 'execution-collector',
+      timeout_ms: options.timeout_ms ?? EXECUTION_WORKER_TIMEOUT_MS, signal: abort.signal,
+    });
+    const results = result.ok ? childResults(result.stdout) : new Map<string, ExecutionStateWorkerResult>();
+    const next = new Map<string, ExecutionRepositoryCache>();
+    for (const repo of repos) {
+      const entry = results.get(repo.id);
+      let cache = UNAVAILABLE;
+      if (entry?.ok) {
+        try { cache = { state: 'ready', view: projectTaskExecutionView(entry.snapshot, repo.id, herdrSession) }; }
+        catch { /* a malformed child result stays unavailable */ }
+      }
+      next.set(repo.id, cache);
+    }
+    return next;
+  };
+
   const cycle = (): Promise<void> => {
     inflight = (async () => {
       let repos;
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
       catch { registryFailed = true; return; }
-      const record = await readNotifyInstallSession(env);
-      const herdrSession = record.state === 'ok' ? record.session : null;
-      const results = await run({ repos: repos.map(repo => ({ id: repo.id, path: repo.path })) },
-        { env, timeout_ms: options.timeout_ms ?? EXECUTION_WORKER_TIMEOUT_MS, signal: abort.signal });
+      let next: Map<string, ExecutionRepositoryCache>;
+      try { next = await collect(repos); }
+      catch { next = new Map(repos.map(repo => [repo.id, UNAVAILABLE])); }
       if (closed) return;
-      const next = new Map<string, ExecutionRepositoryCache>();
-      repos.forEach((repo, index) => {
-        const result = results?.[index];
-        let cache: ExecutionRepositoryCache = { state: 'unavailable', reason: 'execution_state_unavailable' };
-        if (result?.id === repo.id && result.ok) {
-          try { cache = { state: 'ready', view: projectTaskExecutionView(result.snapshot, repo.id, herdrSession) }; }
-          catch { /* a malformed worker result stays unavailable */ }
-        }
-        next.set(repo.id, cache);
-      });
       states = next;
       registryFailed = false;
       started = true;
-    })().catch(() => { /* every failure above is a state; keep the cache */ }).finally(() => {
+    })().finally(() => {
       inflight = null;
       if (closed) return;
       timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? EXECUTION_COLLECT_INTERVAL_MS);
@@ -122,7 +123,7 @@ export function startExecutionCollector(options: ExecutionCollectorOptions = {})
     close: async () => {
       closed = true;
       clearTimeout(timer);
-      // Aborting terminates a running worker, so a slow `ps` does not hold shutdown.
+      // Aborting kills the child's process group, so a blocked `ps` or git does not hold shutdown.
       abort.abort();
       await inflight;
     },

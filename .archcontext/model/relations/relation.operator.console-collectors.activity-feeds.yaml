@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.activity-feeds
 kind: reads
 source: component.operator.console-collectors
 target: component.operator.activity-feeds
-intent: "Read the GitHub name and default branch of each repository from the Dev Activity cache for the docs ref and the daily CI run."
+intent: "Read the GitHub name and default branch of each repository from the Dev Activity cache for the docs ref and the daily CI run, and run the execution-state child through the setup collector's supervised process runner."

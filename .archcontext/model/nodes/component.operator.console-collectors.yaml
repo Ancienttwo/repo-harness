@@ -12,7 +12,7 @@ responsibilities:
   - Own one resident git cat-file worker for each registered repository that resolves to exactly one GitHub remote and a valid remote-tracking ref of the GitHub default branch; build and hash the docs listing each cycle, read local refs only and never fetch or write.
   - Read the newest completed daily CI run of the GitHub default branch with gh, download its JUnit and test projection artifacts of the highest attempt into the repo-harness home only for a new run, parse them into memory and delete the older download.
   - Take each repository's GitHub name and default branch only from the Dev Activity cache; a missing name is unavailable with a reason code.
-  - Collect the task execution state of every registered repository in one worker thread under a deadline; a session is verified only when its binding hash, native session record and process identity agree and it has no closed record, and a failed cycle makes every repository unavailable.
+  - Collect the task execution state of every registered repository in one child process through the setup collector's supervised runner, whose process group the deadline and server close kill, with the repository-selecting git variables removed; a session is verified only when its binding hash, native session record and process identity agree and it has no closed record, and a failed, timed-out or thrown cycle makes every repository unavailable.
 source:
   include:
     - src/effects/operator/bot-access.ts

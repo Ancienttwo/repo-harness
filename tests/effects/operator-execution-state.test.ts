@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { buildTaskFollowUp, decodeTaskExecutionView, projectTaskExecutionView, type TaskExecutionViewV1, type UnverifiedExecutionReason } from '../../src/core/operator/execution-state';
 import { collectTaskExecutionStates } from '../../src/effects/operator/execution-state';
-import { startExecutionCollector, type ExecutionRepositoryCache } from '../../src/effects/operator/execution-collector';
+import { executionChildEnvironment, startExecutionCollector, type ExecutionRepositoryCache } from '../../src/effects/operator/execution-collector';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { runSetupProcess, type SetupProcessRunner } from '../../src/effects/setup/collector';
 import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
@@ -155,7 +156,7 @@ async function served(env: NodeJS.ProcessEnv, id: string) {
   const server = await startOperatorServer({ port: 0, env, execution_collector: true });
   try {
     let response = await fetch(`${server.url}/api/v1/repositories/${id}/execution`);
-    // The first cycle runs in a worker thread; until it ends the route is pending, never empty.
+    // The first cycle runs in a child process; until it ends the route is pending, never empty.
     for (let attempt = 0; attempt < 400 && response.status === 503; attempt++) {
       expect(((await response.json()) as { error: { code: string } }).error.code).toBe('execution_state_pending');
       await Bun.sleep(25);
@@ -213,10 +214,10 @@ test('a Herdr pane location needs the session that the notify install record nam
   }
 });
 
-test('the collector is pending before its first cycle and unavailable when the registry or the worker fails', async () => {
+test('the collector is pending before its first cycle and unavailable when the registry or the child process fails', async () => {
   const f = await fixture();
   const c = collectorHome(f.root);
-  const failing = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_worker: async () => null });
+  const failing = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_process: async () => ({ ok: false, code: 'failed' }) });
   try {
     expect(failing.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_pending' });
     await failing.settled();
@@ -225,12 +226,75 @@ test('the collector is pending before its first cycle and unavailable when the r
   } finally { await failing.close(); }
   writeFileSync(join(c.env.REPO_HARNESS_HOME!, 'registered-repos.json'), '{"version":1}');
   let runs = 0;
-  const broken = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_worker: async () => { runs++; return []; } });
+  const broken = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_process: async () => { runs++; return { ok: false, code: 'failed' }; } });
   try {
     await broken.settled();
     expect(broken.read(c.id)).toEqual({ state: 'unavailable', reason: 'registry_unavailable' });
     expect(runs).toBe(0);
   } finally { await broken.close(); }
+});
+
+async function until(condition: () => boolean, limit_ms: number) {
+  const deadline = Date.now() + limit_ms;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('condition not reached');
+    await Bun.sleep(25);
+  }
+}
+
+/** The real child for the first cycle; `later` replaces every later cycle. */
+function firstRealThen(later: SetupProcessRunner): { readonly runner: SetupProcessRunner; readonly runs: () => number } {
+  let runs = 0;
+  return { runs: () => runs, runner: (argv, options) => (++runs === 1 ? runSetupProcess(argv, { ...options, timeout_ms: 60_000 }) : later(argv, options)) };
+}
+
+test('a collection that blocks past the deadline is killed, and a verified session becomes unavailable', async () => {
+  const f = await fixture();
+  const c = collectorHome(f.root);
+  // A child blocked in a synchronous process, like `ps` or git that does not return.
+  const blocked = firstRealThen((_argv, options) => runSetupProcess(['-e', 'require("child_process").spawnSync("sleep", ["30"])'], options));
+  const collector = startExecutionCollector({ env: c.env, interval_ms: 10, timeout_ms: 300, run_process: blocked.runner });
+  try {
+    await until(() => collector.read(c.id).state === 'ready', 30_000);
+    await until(() => blocked.runs() >= 2, 5_000);
+    const blockedAt = Date.now();
+    await until(() => collector.read(c.id).state !== 'ready', 5_000);
+    expect(collector.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_unavailable' });
+    expect(Date.now() - blockedAt).toBeLessThan(5_000);
+    const closing = Date.now();
+    await collector.close();
+    expect(Date.now() - closing).toBeLessThan(5_000);
+  } finally { await collector.close(); }
+});
+
+test('a cycle that throws makes every repository unavailable, before and after a good cycle', async () => {
+  const f = await fixture();
+  const c = collectorHome(f.root);
+  const first = startExecutionCollector({ env: c.env, interval_ms: 60_000, run_process: async () => { throw new Error('spawn failed'); } });
+  try {
+    await first.settled();
+    expect(first.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_unavailable' });
+  } finally { await first.close(); }
+  // The throwing cycle records the cache it replaces, so a short ready window is not missed.
+  let before: ExecutionRepositoryCache['state'] | undefined;
+  const later = firstRealThen(async () => { before ??= collector.read(c.id).state; throw new Error('spawn failed'); });
+  const collector = startExecutionCollector({ env: c.env, interval_ms: 10, run_process: later.runner });
+  try {
+    await until(() => before !== undefined && collector.read(c.id).state !== 'ready', 30_000);
+    expect(before).toBe('ready');
+    expect(collector.read(c.id)).toEqual({ state: 'unavailable', reason: 'execution_state_unavailable' });
+  } finally { await collector.close(); }
+});
+
+test('git variables of the server do not select the repository that the child reads', async () => {
+  const f = await fixture();
+  const other = tmpWorkspace('operator-execution-other-repo'); roots.push(other); initGitRepo(other);
+  const c = collectorHome(f.root);
+  const selecting = { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other, GIT_COMMON_DIR: join(other, '.git'), GIT_INDEX_FILE: join(other, '.git', 'index') };
+  expect(executionChildEnvironment({ PATH: '/bin', ...selecting })).toEqual({ PATH: '/bin', GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' });
+  const { status, text } = await served({ ...c.env, ...selecting }, c.id);
+  expect(status).toBe(200);
+  expect(decodeTaskExecutionView(JSON.parse(text)).tasks).toMatchObject([{ state: 'verified', task: f.bound.binding.task, agent: 'codex' }]);
 });
 
 test('the route reads only the injected cache and maps each unavailable state to its code', async () => {
