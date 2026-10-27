@@ -331,15 +331,14 @@ describe('architecture map', () => {
   const noModelDelta = { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [], relations_added: [], relations_removed: [], relations_changed: [] } as const;
   const noLayers: ArchitectureMapLayersInput = {
     changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
-    violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+    violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
     tests: { state: 'unavailable', reason: 'tests_pending' },
   };
   const mapLayers: ArchitectureMapLayersInput = {
     changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
       files: new Map([['src/ledger.ts', { added: 5, deleted: 2 }]]), owners: new Map([['src/ledger.ts', PART]]), model: noModelDelta },
     violations: {
-      debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }] },
-      flows: { state: 'ok', selectors: 2, unproven: [{ id: PART, selectors: 1 }], capabilities: [] },
+      debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
       anchors: noCodeFacts,
       dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
     },
@@ -451,6 +450,7 @@ describe('architecture map', () => {
     const layerButton = (layer: string) => document.querySelector<HTMLButtonElement>(`.architecture-layers [data-layer="${layer}"]`)!;
     const choose = async (layer: string) => { await act(async () => layerButton(layer).click()); await settle(); };
     const gaps = () => [...document.querySelectorAll('.architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`);
+    const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
 
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
@@ -459,11 +459,13 @@ describe('architecture map', () => {
     // The change counts for the group too; nodes with nothing on the layer fade.
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['change', true, true]);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('1 files changed in 1 commits');
+    expect(notes()).toEqual(['flow_steps:change_impact_not_exported']);
 
     await choose('violations');
     expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
+    expect(notes()).toEqual(['violations.flows:flows_check_writes_index', 'violations.layer_direction:layer_order_not_released']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
 
     await choose('tests');
@@ -474,7 +476,7 @@ describe('architecture map', () => {
 
     for (const [layer, reason] of [['pull_requests', 'pr_files_unavailable'], ['decisions', 'decisions_not_exported']] as const) {
       await choose(layer);
-      expect(gaps()).toEqual([`${layer}:${reason}`]);
+      expect([gaps(), notes()]).toEqual([[], [`${layer}:${reason}`]]);
       expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
     }
   });

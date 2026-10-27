@@ -201,6 +201,7 @@
   .architecture-map-view { @apply flex min-w-0 flex-col gap-2; }
   .architecture-map__source { overflow-wrap: anywhere; }
   .architecture-map__gap { @apply rounded-lg bg-kumo-warning-tint p-3 text-sm text-kumo-default; }
+  .architecture-map__note { @apply rounded-lg border border-dashed border-kumo-line p-3 text-sm text-kumo-subtle; }
   .architecture-map { @apply grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]; }
   .architecture-map__canvas { @apply h-[60vh] min-h-[24rem] min-w-0 overflow-hidden rounded-xl border; border-color: var(--rh-diagram-line); background: var(--rh-diagram-bg); }
   .architecture-map__box, .architecture-map__group { @apply h-full w-full rounded-lg border text-xs; border-color: var(--rh-diagram-line); }

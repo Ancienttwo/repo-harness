@@ -3,7 +3,7 @@
 // tracked text files of that commit with their line counts, their owners with
 // `archctx resolve`, and the capability import counts with `archctx deps`.
 // The layers come from the same cycle: git history since local midnight,
-// `archctx debt`, `flows check` and `docs anchors`, and the tests collector's
+// `archctx debt` and `docs anchors`, and the tests collector's
 // cache. archctx owns ownership, dependency, flow and anchor facts; this module
 // only sums counts along the model's `parent` chain and checks the shape. The
 // strict decoder serves the server before it sends and the browser before it
@@ -53,7 +53,13 @@ export type ArchitectureTestReason = typeof ARCHITECTURE_TEST_REASONS[number];
 export const ARCHITECTURE_PR_REASON = 'pr_files_unavailable' as const;
 /** archctx 0.9.3 does not export the nodes a decision applies to (Ancienttwo/arch-context#407). */
 export const ARCHITECTURE_DECISION_REASON = 'decisions_not_exported' as const;
-/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. */
+/** archctx 0.9.3 does not map a change to the flow steps it reaches (Ancienttwo/arch-context#409). */
+export const ARCHITECTURE_FLOW_STEP_REASON = 'change_impact_not_exported' as const;
+/** `archctx flows check` runs `codegraph sync` on an existing index; the collector never writes the user's index. */
+export const ARCHITECTURE_FLOWS_REASON = 'flows_check_writes_index' as const;
+/** archctx 0.9.3 sorts layers by name and has no layer direction rule; arch-context#408 is not in a release yet. */
+export const ARCHITECTURE_LAYER_DIRECTION_REASON = 'layer_order_not_released' as const;
+/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
 export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
 export type ArchitectureDebtKind = typeof ARCHITECTURE_DEBT_KINDS[number];
 
@@ -113,18 +119,22 @@ export type ArchitectureChangesLayerV1 = Section<{
   readonly unowned_files: number;
   readonly nodes: readonly ArchitectureChangeV1[];
   readonly model: Section<ArchitectureModelDeltaV1, ArchitectureModelDeltaReason>;
+  /** Which flow steps the changes reach. */
+  readonly flow_steps: Gap<typeof ARCHITECTURE_FLOW_STEP_REASON>;
 }, ArchitectureChangeReason>;
 
 export interface ArchitectureDebtItemV1 { readonly kind: ArchitectureDebtKind; readonly nodes: readonly string[]; readonly paths: readonly string[] }
 export interface ArchitectureViolationsLayerV1 {
   /** `archctx debt`: unowned and contested paths, stale model anchors. */
   readonly debt: Section<{ readonly items: readonly ArchitectureDebtItemV1[] }, ArchitectureViolationReason>;
-  /** `archctx flows check`: selectors without a proven call per node, and capabilities whose flow proof fails. */
-  readonly flows: Section<{ readonly selectors: number; readonly unproven: readonly { readonly id: string; readonly selectors: number }[]; readonly capabilities: readonly string[] }, ArchitectureViolationReason>;
+  /** Flow proofs: `archctx flows check` would rebuild the user's CodeGraph index. */
+  readonly flows: Gap<typeof ARCHITECTURE_FLOWS_REASON>;
   /** `archctx docs anchors`: citations in human-written module docs that no longer match the code. */
   readonly anchors: Section<{ readonly citations: number; readonly nodes: readonly { readonly id: string; readonly findings: number }[] }, ArchitectureViolationReason>;
   /** `archctx deps` rows that archctx marks undeclared: imports with no model relation behind them. */
   readonly dependencies: Section<{ readonly edges: readonly ArchitectureMapImportV1[] }, ArchitectureViolationReason>;
+  /** Imports against the layer order. */
+  readonly layer_direction: Gap<typeof ARCHITECTURE_LAYER_DIRECTION_REASON>;
 }
 
 /** Test files of one capability by their result in the daily run. `no_result`: the run has no report for the file. */
@@ -201,12 +211,14 @@ const changes = section({
   since: instant, base: commit, commits: count, files: count, unowned_files: count,
   nodes: list(object({ id, files: positive, added: count, deleted: count })),
   model: section({ nodes_added: ids, nodes_removed: ids, nodes_changed: ids, relations_added: ids, relations_removed: ids, relations_changed: ids }, ARCHITECTURE_MODEL_DELTA_REASONS),
+  flow_steps: reason([ARCHITECTURE_FLOW_STEP_REASON]),
 }, ARCHITECTURE_CHANGE_REASONS);
 const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
-  flows: section({ selectors: count, unproven: list(object({ id, selectors: positive })), capabilities: ids }, ARCHITECTURE_VIOLATION_REASONS),
+  flows: reason([ARCHITECTURE_FLOWS_REASON]),
   anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
+  layer_direction: reason([ARCHITECTURE_LAYER_DIRECTION_REASON]),
 });
 const tests = section({
   run: object({ id: positive, head_sha: commit, created_at: instant }),
@@ -260,8 +272,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
     || (changes.state === 'ok' && (!known(changes.nodes.map(entry => entry.id)) || changes.unowned_files > changes.files))
     || (delta !== null && (!known([...delta.nodes_added, ...delta.nodes_changed]) || !known(delta.nodes_removed, entry => !nodes.has(entry))
       || !known([...delta.relations_added, ...delta.relations_changed], entry => relations.has(entry)) || !known(delta.relations_removed, entry => !relations.has(entry))))
-    || (violations.debt.state === 'ok' && violations.debt.items.some(item => !known(item.nodes) || item.paths.length === 0 || !unique(item.paths)))
-    || (violations.flows.state === 'ok' && (!known(violations.flows.unproven.map(entry => entry.id)) || !known(violations.flows.capabilities, capability)))
+    || (violations.debt.state === 'ok' && violations.debt.items.some(item => !known(item.nodes) || !unique(item.paths)))
     || (violations.anchors.state === 'ok' && !known(violations.anchors.nodes.map(entry => entry.id)))
     || (violations.dependencies.state === 'ok' && !importEdges(violations.dependencies.edges))
     || (tests.state === 'ok' && (!known(tests.capabilities.map(entry => entry.id), capability)
@@ -301,7 +312,8 @@ export type ArchitectureChangesInput =
 
 export interface ArchitectureMapLayersInput {
   readonly changes: ArchitectureChangesInput;
-  readonly violations: ArchitectureViolationsLayerV1;
+  /** The violation checks the collector runs; the projection adds the parts that have no source. */
+  readonly violations: Pick<ArchitectureViolationsLayerV1, 'debt' | 'anchors' | 'dependencies'>;
   readonly tests: ArchitectureTestsLayerV1;
 }
 
@@ -345,6 +357,7 @@ function projectChanges(parents: ReadonlyMap<string, string | null>, input: Arch
     unowned_files: [...input.files.keys()].filter(path => owner(path) === null).length,
     nodes: byId([...totals].map(([id, total]) => ({ id, ...total }))),
     model: input.model,
+    flow_steps: { state: 'unavailable', reason: ARCHITECTURE_FLOW_STEP_REASON },
   };
 }
 
@@ -459,9 +472,10 @@ export function projectArchitectureMap(input: {
       changes: projectChanges(parents, input.layers.changes),
       violations: {
         debt: violations.debt,
-        flows: violations.flows.state === 'ok' ? { ...violations.flows, unproven: byId(violations.flows.unproven), capabilities: [...violations.flows.capabilities].sort(compare) } : violations.flows,
+        flows: { state: 'unavailable', reason: ARCHITECTURE_FLOWS_REASON },
         anchors: violations.anchors.state === 'ok' ? { ...violations.anchors, nodes: byId(violations.anchors.nodes) } : violations.anchors,
         dependencies: violations.dependencies.state === 'ok' ? { state: 'ok', edges: byEdge(violations.dependencies.edges) } : violations.dependencies,
+        layer_direction: { state: 'unavailable', reason: ARCHITECTURE_LAYER_DIRECTION_REASON },
       },
       pull_requests: { state: 'unavailable', reason: ARCHITECTURE_PR_REASON },
       tests: input.layers.tests,

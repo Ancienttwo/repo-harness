@@ -1800,7 +1800,7 @@ describe('architecture map', () => {
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
     layers: {
       changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
-      violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
       tests: { state: 'unavailable', reason: 'tests_pending' },
     },
   });

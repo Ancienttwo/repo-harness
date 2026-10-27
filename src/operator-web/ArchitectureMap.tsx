@@ -159,11 +159,6 @@ function LayerFacts({ map, layer, nodeId, names, t }: {
     if (violations.debt.state === 'ok') {
       violations.debt.items.filter(item => item.nodes.includes(nodeId)).forEach((item, index) => facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths }));
     }
-    if (violations.flows.state === 'ok') {
-      const unproven = violations.flows.unproven.find(item => item.id === nodeId);
-      if (unproven) facts.push({ key: 'unproven', text: t('architecture.layer.node.unproven', { count: unproven.selectors }) });
-      if (violations.flows.capabilities.includes(nodeId)) facts.push({ key: 'flow', text: t('architecture.layer.node.flowFails') });
-    }
     if (violations.anchors.state === 'ok') {
       const anchors = violations.anchors.nodes.find(item => item.id === nodeId);
       if (anchors) facts.push({ key: 'anchors', text: t('architecture.layer.node.anchors', { count: anchors.findings }) });
@@ -182,7 +177,7 @@ function LayerFacts({ map, layer, nodeId, names, t }: {
     <h4>{t(`architecture.layer.${layer}`)}</h4>
     {facts.length ? <ul data-layer-facts={layer}>{facts.map(fact => <li key={fact.key}>
       {fact.text}
-      {fact.paths && <ul>{fact.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul>}
+      {fact.paths?.length ? <ul>{fact.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : null}
     </li>)}</ul> : <p className="detail-quiet">{t('architecture.layer.node.none')}</p>}
   </>;
 }
@@ -349,6 +344,11 @@ function Gap({ part, reason, children }: { readonly part: string; readonly reaso
   return <p className="architecture-map__gap" data-gap={part} data-reason={reason}>{children}</p>;
 }
 
+/** A part that has no source until archctx or a collector provides one; a fixed limit, not a failed read. */
+function Note({ part, reason, children }: { readonly part: string; readonly reason: string; readonly children: string }) {
+  return <p className="architecture-map__note" data-note={part} data-reason={reason}>{children}</p>;
+}
+
 /** What the active layer covers, or why it has no data. Every number is a count from the collector. */
 function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; readonly layer: MapLayerId; readonly t: OperatorTranslate }) {
   const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
@@ -364,23 +364,24 @@ function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; read
           relationsAdded: model.relations_added.length, relationsRemoved: model.relations_removed.length, relationsChanged: model.relations_changed.length,
         })}</p>
         : <Gap part="model" reason={model.reason}>{t(`architecture.layer.model.${model.reason}`)}</Gap>}
+      <Note part="flow_steps" reason={changes.flow_steps.reason}>{t(`architecture.layer.changes.flow_steps.${changes.flow_steps.reason}`)}</Note>
     </div>;
   }
   if (layer === 'violations') {
-    const { debt, flows, anchors, dependencies } = violations;
-    const gap = (part: keyof typeof violations, reason: ArchitectureViolationReason) =>
-      <Gap key={part} part={`violations.${part}`} reason={reason}>{t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason: t(`architecture.layer.reason.${reason}`) })}</Gap>;
+    const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = violations;
+    const text = (part: 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction', reason: ArchitectureViolationReason | typeof flows.reason | typeof layerDirection.reason) =>
+      t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason: t(`architecture.layer.reason.${reason}`) });
+    const gap = (part: 'debt' | 'anchors' | 'dependencies', reason: ArchitectureViolationReason) => <Gap part={`violations.${part}`} reason={reason}>{text(part, reason)}</Gap>;
     const unowned = debt.state === 'ok' ? debt.items.filter(item => item.nodes.length === 0) : [];
     return <div className="architecture-layer-summary" data-layer-summary="violations">
       {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt.reason)}
       {unowned.length > 0 && <details><summary>{t('architecture.layer.unowned', { count: unowned.length })}</summary>
         <ul>{unowned.flatMap(item => item.paths.map(path => <li key={`${item.kind}:${path}`}><code>{path}</code> · {t(`architecture.layer.debt.${item.kind}`)}</li>))}</ul>
       </details>}
-      {flows.state === 'ok' ? <p>{t('architecture.layer.violations.flows', {
-        unproven: flows.unproven.reduce((sum, item) => sum + item.selectors, 0), selectors: flows.selectors, capabilities: flows.capabilities.length,
-      })}</p> : gap('flows', flows.reason)}
       {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors.reason)}
       {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies.reason)}
+      <Note part="violations.flows" reason={flows.reason}>{text('flows', flows.reason)}</Note>
+      <Note part="violations.layer_direction" reason={layerDirection.reason}>{text('layer_direction', layerDirection.reason)}</Note>
     </div>;
   }
   if (layer === 'tests') {
@@ -394,8 +395,8 @@ function LayerSummary({ map, layer, t }: { readonly map: ArchitectureMapV1; read
     </div>;
   }
   return layer === 'pull_requests'
-    ? <Gap part={layer} reason={pullRequests.reason}>{t(`architecture.layer.pull_requests.${pullRequests.reason}`)}</Gap>
-    : <Gap part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Gap>;
+    ? <Note part={layer} reason={pullRequests.reason}>{t(`architecture.layer.pull_requests.${pullRequests.reason}`)}</Note>
+    : <Note part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Note>;
 }
 
 /** The whole committed model on one canvas, with line and import counts from the map collector. */

@@ -166,7 +166,6 @@ describe('architecture map', () => {
     },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
-      flows: { state: 'ok', selectors: 3, unproven: [{ id: PART, selectors: 1 }], capabilities: [CAP] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
     },
@@ -278,7 +277,7 @@ describe('architecture map', () => {
       const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
       expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
-      expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.flows]).toEqual([
+      expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.debt]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
@@ -289,10 +288,16 @@ describe('architecture map', () => {
       state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2, files: 3, unowned_files: 1,
       nodes: [{ id: CAP, files: 2, added: 4, deleted: 1 }, { id: PART, files: 1, added: 3, deleted: 1 }],
       model: (layers.changes as Extract<ArchitectureMapLayersInput['changes'], { state: 'ok' }>).model,
+      flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
     });
-    expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, unproven: [{ id: PART, selectors: 1 }], capabilities: [CAP] });
-    expect([map.layers.pull_requests, map.layers.decisions]).toEqual([
-      { state: 'unavailable', reason: 'pr_files_unavailable' }, { state: 'unavailable', reason: 'decisions_not_exported' }]);
+    // Parts with no read-only source in archctx 0.9.3 or on main carry a fixed reason.
+    expect([map.layers.pull_requests, map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
+      { state: 'unavailable', reason: 'pr_files_unavailable' }, { state: 'unavailable', reason: 'decisions_not_exported' },
+      { state: 'unavailable', reason: 'flows_check_writes_index' }, { state: 'unavailable', reason: 'layer_order_not_released' }]);
+    // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
+    const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, violations: { ...layers.violations, debt: { state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] } } } });
+    expect(anchorOnly.layers.violations.debt).toEqual({ state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] });
     expect(architectureModelDelta(
       { nodes: [{ id: 'a', summary: 'one' }, { id: 'b' }], relations: [{ id: 'r', intent: 'x' }] },
       { nodes: [{ id: 'a', summary: 'two' }, { id: 'c' }], relations: [{ id: 'r', intent: 'x' }] },
@@ -350,7 +355,10 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['/Users/someone/repo/src/orphan.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['src/../../outside.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].kind = 'undeclared-dependency'; });
-    refused(copy => { copy.layers.violations.flows.capabilities = [PART]; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
+    refused(copy => { copy.layers.violations.debt.items[1].nodes = [CAP, CAP]; });
+    refused(copy => { delete copy.layers.violations.layer_direction; });
+    refused(copy => { delete copy.layers.changes.flow_steps; });
     refused(copy => { copy.layers.violations.anchors.nodes[0].id = 'capability.gone.node'; });
     refused(copy => { copy.layers.violations.dependencies.edges[0].target = OTHER; });
     refused(copy => { copy.layers.tests.capabilities[0].files = 3; });
@@ -365,7 +373,7 @@ describe('architecture map', () => {
     const clean = { head: commit, modelClean: true, treeClean: true };
     const read = { changes: layers.changes, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
-    const allChanged = { debt: changed, flows: changed, anchors: changed, dependencies: changed };
+    const allChanged = { debt: changed, anchors: changed, dependencies: changed };
     expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
     expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, violations: allChanged });
     expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, violations: allChanged });
@@ -394,9 +402,11 @@ describe('architecture map', () => {
         state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1, files: 2, unowned_files: 1,
         nodes: [{ id: MODULE_ID, files: 1, added: 2, deleted: 1 }],
         model: { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [MODULE_ID], relations_added: [], relations_removed: [], relations_changed: [] },
+        flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
       });
-      // The fixture has no CodeGraph index: each check that reads it says so; nothing is filled in.
-      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // The fixture has no CodeGraph index: each check that reads it says so; nothing is filled in, and no check syncs an index.
+      expect(result.snapshot.layers.violations.anchors).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'flows_check_writes_index' });
       expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       // A window that holds the whole history has no base commit.
       const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z');

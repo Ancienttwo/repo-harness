@@ -31,16 +31,12 @@ function withAncestors(map: ArchitectureMapV1, marked: Iterable<string>): Set<st
   return lit;
 }
 
-/** Violations per node: debt items, unproven selectors, a failed capability flow proof, stale doc citations, undeclared imports. */
+/** Violations per node: debt items, stale doc citations, undeclared imports. */
 export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
-  const { debt, flows, anchors, dependencies } = map.layers.violations;
+  const { debt, anchors, dependencies } = map.layers.violations;
   const counts = new Map<string, number>();
   const add = (id: string, count: number) => counts.set(id, (counts.get(id) ?? 0) + count);
   if (debt.state === 'ok') for (const item of debt.items) for (const id of item.nodes) add(id, 1);
-  if (flows.state === 'ok') {
-    for (const entry of flows.unproven) add(entry.id, entry.selectors);
-    for (const id of flows.capabilities) add(id, 1);
-  }
   if (anchors.state === 'ok') for (const entry of anchors.nodes) add(entry.id, entry.findings);
   if (dependencies.state === 'ok') for (const edge of dependencies.edges) add(edge.source, 1);
   return counts;

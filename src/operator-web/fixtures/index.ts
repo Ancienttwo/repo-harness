@@ -83,7 +83,7 @@ export function fixtureProps(name: string): OperatorAppProps {
       layers: {
         ...architectureMap.layers,
         changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
-        violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+        violations: { ...architectureMap.layers.violations, debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
         tests: { state: 'unavailable', reason: 'github_unavailable' },
       },
     }) };

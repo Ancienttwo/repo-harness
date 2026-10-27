@@ -19,6 +19,7 @@ import {
   type ArchitectureMapDependencyInput,
   type ArchitectureMapDependencyReason,
   type ArchitectureMapImportV1,
+  type ArchitectureMapLayersInput,
   type ArchitectureMapNodeV1,
   type ArchitectureMapRelationV1,
   type ArchitectureMapSizeInput,
@@ -78,8 +79,8 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
 }
 
 /**
- * What archctx reads besides the commit. `archctx resolve`, `deps`, `debt`,
- * `flows check` and `docs anchors` read the worktree model, and the CodeGraph
+ * What archctx reads besides the commit. `archctx resolve`, `deps`, `debt` and
+ * `docs anchors` read the worktree model, and the CodeGraph
  * index covers the working tree, so their answers describe the commit only while
  * HEAD names it and the model, or the whole tree, is clean. null: git could not answer.
  */
@@ -118,6 +119,9 @@ function treeGate(commit: string, checkout: CheckoutState): 'unreadable' | 'chec
   return checkout.treeClean ? null : 'code_facts_worktree_dirty';
 }
 
+/** The violation checks this collector runs; flow proofs and layer direction have no read-only source. */
+type CollectedViolations = ArchitectureMapLayersInput['violations'];
+
 const CHECKOUT_CHANGED = { state: 'unavailable', reason: 'checkout_changed' } as const;
 const keepIf = <Section extends { readonly state: string }>(section: Section, still: boolean): Section | typeof CHECKOUT_CHANGED =>
   section.state === 'ok' && !still ? CHECKOUT_CHANGED : section;
@@ -145,14 +149,14 @@ export function recheckLayers(
   commit: string,
   before: CheckoutState,
   after: CheckoutState,
-  read: { readonly changes: ArchitectureChangesInput; readonly violations: ArchitectureViolationsLayerV1 },
-): { readonly changes: ArchitectureChangesInput; readonly violations: ArchitectureViolationsLayerV1 } {
+  read: { readonly changes: ArchitectureChangesInput; readonly violations: CollectedViolations },
+): { readonly changes: ArchitectureChangesInput; readonly violations: CollectedViolations } {
   const moved = before.head !== commit || after.head !== commit;
   const tree = !moved && after.treeClean === true;
-  const { debt, flows, anchors, dependencies } = read.violations;
+  const { debt, anchors, dependencies } = read.violations;
   return {
     changes: keepIf(read.changes, !moved && after.modelClean === true),
-    violations: { debt: keepIf(debt, tree), flows: keepIf(flows, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree) },
+    violations: { debt: keepIf(debt, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree) },
   };
 }
 
@@ -268,34 +272,13 @@ function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolati
     const kind = isRecord(item) ? ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind) : undefined;
     const nodes = isRecord(item) ? strings(item.nodeIds) : null;
     const paths = isRecord(item) ? strings(item.paths) : null;
-    if (kind === undefined || nodes === null || paths === null || !nodes.every(id => known.has(id)) || !paths.every(isArchitectureRepoPath)) {
+    if (kind === undefined || nodes === null || paths === null || !nodes.every(id => known.has(id)) || !paths.every(isArchitectureRepoPath)
+      || new Set(nodes).size !== nodes.length || new Set(paths).size !== paths.length) {
       return { state: 'unavailable', reason: 'archctx_failed' };
     }
     items.push({ kind, nodes, paths });
   }
   return { state: 'ok', items };
-}
-
-/** `archctx flows check`: a selector is proven when archctx found its call; a capability's flow proof fails as `unprovable`. */
-function readFlows(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
-  const data = archctxData(root, ['flows', 'check', '--json']);
-  if (typeof data === 'string') return { state: 'unavailable', reason: data };
-  if (!isRecord(data.codeGraph) || data.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
-  if (!Array.isArray(data.selectors) || !Array.isArray(data.capabilities)) return { state: 'unavailable', reason: 'archctx_failed' };
-  const unproven = new Map<string, number>();
-  for (const selector of data.selectors) {
-    const id = isRecord(selector) ? string(selector.nodeId) : null;
-    const status = isRecord(selector) ? string(selector.status) : null;
-    if (id === null || status === null || !known.has(id)) return { state: 'unavailable', reason: 'archctx_failed' };
-    if (status !== 'proven') unproven.set(id, (unproven.get(id) ?? 0) + 1);
-  }
-  const capabilities: string[] = [];
-  for (const capability of data.capabilities) {
-    const id = isRecord(capability) ? string(capability.capabilityId) : null;
-    if (id === null || !known.has(id)) return { state: 'unavailable', reason: 'archctx_failed' };
-    if (isRecord(capability) && capability.p2Status === 'unprovable') capabilities.push(id);
-  }
-  return { state: 'ok', selectors: data.selectors.length, unproven: [...unproven].map(([id, selectors]) => ({ id, selectors })), capabilities };
 }
 
 /** `archctx docs anchors`: a citation it could not check makes the answer incomplete. */
@@ -350,14 +333,17 @@ function readDependencies(root: string, commit: string, checkout: CheckoutState,
   };
 }
 
-/** The violation checks that read the CodeGraph index; each runs only on a clean tree at the commit. */
-function readViolations(root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>): Omit<ArchitectureViolationsLayerV1, 'dependencies'> {
+/**
+ * The violation checks that read the CodeGraph index; each runs only on a clean tree at the commit.
+ * `archctx flows check` is not one of them: it runs `codegraph sync` on an existing index.
+ */
+function readViolations(root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>): Omit<CollectedViolations, 'dependencies'> {
   const gate = treeGate(commit, checkout);
   if (gate !== null) {
     const gap = { state: 'unavailable', reason: gate === 'unreadable' ? 'archctx_failed' : gate } as const;
-    return { debt: gap, flows: gap, anchors: gap };
+    return { debt: gap, anchors: gap };
   }
-  return { debt: readDebt(root, known), flows: readFlows(root, known), anchors: readAnchors(root, known) };
+  return { debt: readDebt(root, known), anchors: readAnchors(root, known) };
 }
 
 /** The public node and relation fields of the committed model, redacted before projection. */

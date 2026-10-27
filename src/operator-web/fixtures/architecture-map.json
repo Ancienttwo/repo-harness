@@ -5157,6 +5157,10 @@
      "relation.evals-checks.imports.operator",
      "relation.mcp-sidecar.primary.task-agent-host"
     ]
+   },
+   "flow_steps": {
+    "state": "unavailable",
+    "reason": "change_impact_not_exported"
    }
   },
   "violations": {
@@ -5226,10 +5230,8 @@
     ]
    },
    "flows": {
-    "state": "ok",
-    "selectors": 126,
-    "unproven": [],
-    "capabilities": []
+    "state": "unavailable",
+    "reason": "flows_check_writes_index"
    },
    "anchors": {
     "state": "ok",
@@ -5395,6 +5397,10 @@
       "imports": 1
      }
     ]
+   },
+   "layer_direction": {
+    "state": "unavailable",
+    "reason": "layer_order_not_released"
    }
   },
   "pull_requests": {
