@@ -502,7 +502,7 @@ test('message text over the byte limit is cut after redaction and marked truncat
   const h = await harness();
   const sid = await createdSession(h);
   // The secret sits across the cut, so redaction must run on the whole text first.
-  const text = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 15)}${SECRET_SAMPLES.openai}${'y'.repeat(100)}`;
+  const text = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 15)}${SECRET_SAMPLES.openai} ${'y'.repeat(100)}`;
   appendDocSessionEvents(h.env, sid, [message(1, 0, text)]);
   const [event] = (await readEvents(h, sid)).body.events;
   expect(event.truncated).toBe(true);
