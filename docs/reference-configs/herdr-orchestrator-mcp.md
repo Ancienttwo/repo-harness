@@ -27,8 +27,11 @@ scope.
 call. For an out-of-scope or unknown pane they return `PANE_NOT_IN_SCOPE` and do
 not run the prompt or read command. A grant change takes effect at the next call.
 
-The Herdr session is `HERDR_SESSION`, else `default`. The child process does not
-inherit other `HERDR_*` variables.
+The Herdr session comes from the notify install record that
+`repo-harness herdr notify install --session <name>` writes. Each tool call reads
+the record. When the record is missing or invalid, the call returns
+`notify_session_missing` or `notify_session_invalid`, is audited as blocked, and
+runs no herdr command. The child process does not inherit `HERDR_*` variables.
 
 ## Trust boundary
 
@@ -67,3 +70,10 @@ A change between `coding` and `orchestrator` needs `--grant-read-write` again
 and bumps the authorization revision, which revokes the tokens of the old
 profile. Tunnel, ChatGPT app, client revoke and live doctor steps are the same
 as in [chatgpt-coding-mcp.md](chatgpt-coding-mcp.md).
+
+Upgrade: before this profile had tools, `orchestrator` setup needed no grant. An
+existing v3 config with `profile: orchestrator` still counts as authorized. If
+any adopted repo already has a `read_write` grant and the revision is current,
+the next serve exposes the dispatch tools without a new setup. To keep dispatch
+off, rerun setup with another profile, or set each granted repo back with
+`repo-harness mcp access set --repo <path> --mode read_only`.

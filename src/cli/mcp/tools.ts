@@ -1044,9 +1044,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
     if (ctx.policy.capabilities.taskDispatch) {
-      return isHerdrTool(name)
-        ? callHerdrTool({ repoRoot: ctx.repoRoot }, name, args)
-        : errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
+      if (isHerdrTool(name)) return await callHerdrTool({ repoRoot: ctx.repoRoot }, name, args);
+      audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
+      return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
     }
     if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
       return errorResult('TOOL_RETIRED', `Upgrade to ${name === 'write_codex_goal' ? 'write_task_goal' : 'prepare_task_goal_from_sprint'}; the retired tool has no alias.`);

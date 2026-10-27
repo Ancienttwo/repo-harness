@@ -10,7 +10,8 @@ import { realpathSync } from 'fs';
 import { isAbsolute } from 'path';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { readRegisteredRepoHarnessRepos, repoCheckoutProbeEnv } from '../../effects/repo-registry';
-import { herdrCommand, herdrMutation, herdrResult, spawnHerdr, type HerdrEndpoint, type HerdrSpawn } from '../../effects/terminal/herdr';
+import { herdrCommand, herdrMutation, herdrResult, spawnHerdr, type HerdrSpawn } from '../../effects/terminal/herdr';
+import { readNotifyInstallSession } from '../../effects/terminal/herdr-notify-install';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 
@@ -115,12 +116,13 @@ function errorResult(code: string, message: string): HerdrToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }], structuredContent: value, isError: true };
 }
 
-function endpoint(ctx: HerdrToolContext): HerdrEndpoint {
-  return { session: (ctx.env ?? process.env).HERDR_SESSION || 'default' };
+/** A tool call bound to the session that the notify install record names. */
+interface SessionContext extends HerdrToolContext {
+  readonly session: string;
 }
 
-function runHerdr(ctx: HerdrToolContext, args: readonly string[]) {
-  return herdrCommand(endpoint(ctx), args, 'herdr', ctx.spawn ?? spawnHerdr);
+function runHerdr(ctx: SessionContext, args: readonly string[]) {
+  return herdrCommand({ session: ctx.session }, args, 'herdr', ctx.spawn ?? spawnHerdr);
 }
 
 function commonDirectory(path: string): string | null {
@@ -148,7 +150,7 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-export function listTaskAgents(ctx: HerdrToolContext): TaskAgent[] {
+function listTaskAgents(ctx: SessionContext): TaskAgent[] {
   const response = herdrResult(runHerdr(ctx, ['agent', 'list']));
   if (!Array.isArray(response.agents)) throw new HerdrToolError('HERDR_UNAVAILABLE', 'herdr agent list returned no agent array');
   const index = readWriteRepoIndex();
@@ -178,7 +180,7 @@ export function listTaskAgents(ctx: HerdrToolContext): TaskAgent[] {
   return agents;
 }
 
-function scopedTarget(ctx: HerdrToolContext, args: Record<string, unknown>): TaskAgent {
+function scopedTarget(ctx: SessionContext, args: Record<string, unknown>): TaskAgent {
   const paneId = args.pane_id;
   if (typeof paneId !== 'string' || !PANE_ID.test(paneId)) {
     throw new HerdrToolError('INVALID_ARGUMENT', 'pane_id must be a pane id from list_task_agents');
@@ -216,7 +218,7 @@ function audit(ctx: HerdrToolContext, tool: string, status: 'ok' | 'blocked' | '
   });
 }
 
-function run(ctx: HerdrToolContext, name: HerdrToolName, args: Record<string, unknown>): { readonly value: unknown; readonly repoId?: string } {
+function run(ctx: SessionContext, name: HerdrToolName, args: Record<string, unknown>): { readonly value: unknown; readonly repoId?: string } {
   if (name === 'list_task_agents') return { value: { agents: listTaskAgents(ctx) } };
   // Validate the arguments before the scope probe so a malformed call runs no herdr command.
   const text = name === 'prompt_task_agent' ? promptText(args) : undefined;
@@ -239,14 +241,20 @@ function run(ctx: HerdrToolContext, name: HerdrToolName, args: Record<string, un
   };
 }
 
-export function callHerdrTool(ctx: HerdrToolContext, name: HerdrToolName, args: Record<string, unknown>): HerdrToolResult {
+export async function callHerdrTool(ctx: HerdrToolContext, name: HerdrToolName, args: Record<string, unknown>): Promise<HerdrToolResult> {
   const unknown = Object.keys(args).filter((key) => !PARAMETERS[name].includes(key));
   if (unknown.length > 0) {
     audit(ctx, name, 'blocked', args, undefined, `unknown parameter: ${unknown.join(', ')}`);
     return errorResult('INVALID_ARGUMENT', `${name} does not accept: ${unknown.join(', ')}`);
   }
+  const record = await readNotifyInstallSession(ctx.env);
+  if (record.state !== 'ok') {
+    const code = `notify_session_${record.state}`;
+    audit(ctx, name, 'blocked', args, undefined, code);
+    return errorResult(code, 'No valid Herdr notify install record names the session. Run `repo-harness herdr notify install --session <name>`.');
+  }
   try {
-    const { value, repoId } = run(ctx, name, args);
+    const { value, repoId } = run({ ...ctx, session: record.session }, name, args);
     audit(ctx, name, 'ok', args, repoId);
     return textResult(value);
   } catch (error) {

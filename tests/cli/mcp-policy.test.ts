@@ -214,10 +214,13 @@ describe('mcp policy and paths', () => {
         expect(names.filter((name) => dispatchTools.includes(name))).toEqual([]);
       }
 
-      for (const name of ['write_prd', 'read_workflow_file', 'harness_status', 'exec_command', 'open_workspace', 'read_text', 'publication_readiness']) {
+      const deniedTools = ['write_prd', 'read_workflow_file', 'harness_status', 'exec_command', 'open_workspace', 'read_text', 'publication_readiness'];
+      for (const name of deniedTools) {
         const denied = await jsonTool(tmp, orchestrator, name, { path: 'plans/prds/existing.prd.md' });
         expect(denied.error.code).toBe('TOOL_NOT_AVAILABLE');
       }
+      const auditRows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
+      expect(auditRows.map((row) => [row.tool, row.status])).toEqual(deniedTools.map((name) => [name, 'blocked']));
       expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {

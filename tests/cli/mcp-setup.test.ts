@@ -584,6 +584,22 @@ describe('mcp setup', () => {
     });
   });
 
+  test('a v3 orchestrator config from before task dispatch counts as authorized', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      // Before task dispatch, orchestrator setup needed no grant; the read_write grant here came from another profile.
+      setRepoHarnessAccessMode(repoRoot, 'read_write');
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'planner' });
+      const configPath = join(userHome, 'mcp.local.json');
+      writeFileSync(configPath, `${JSON.stringify({ ...JSON.parse(readFileSync(configPath, 'utf-8')), profile: 'orchestrator' }, null, 2)}\n`);
+
+      expect(createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' }).policy.capabilities.taskDispatch).toBe(true);
+      expect(runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' }).lines.join('\n')).toContain('Profile: orchestrator');
+
+      setRepoHarnessAccessMode(repoRoot, 'read_only');
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' })).toThrow('explicit read_write grant');
+    });
+  });
+
   test('retired engineer and PM profiles fail before setup changes authorization', () => {
     withTmpRepo((repoRoot, userHome) => {
       for (const profile of ['engineer', 'pm']) {
