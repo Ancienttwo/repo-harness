@@ -6,8 +6,8 @@ A minimal Bot host loads `repo-harness-check` and lite working rules: brief,
 edit, targeted verification, and review by risk. Exclude by default
 `repo-harness-cross-review`, `repo-harness-herdr-portal`,
 `repo-harness-chatgpt`, and control `review admit` / `review revoke`.
-Exclude the root router's `requires: herdr` unless the host actually drives
-Herdr.
+Skip the root router's required `herdr` skill load (`SKILL.md`) unless the
+host actually drives Herdr.
 
 ## Control integration
 
