@@ -6,13 +6,17 @@ cd "$ROOT"
 
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')"
-TMP_DIR="$(mktemp -d /tmp/rh-tarball-smoke.XXXXXX)"
+# Use the same native /tmp root as the nested Node/Bun isolation policy.
+# Git Bash maps /tmp elsewhere on Windows.
+TMP_DIR="$(bun -e 'const fs = require("node:fs"); const path = require("node:path"); const root = path.resolve("/tmp"); fs.mkdirSync(root, { recursive: true }); console.log(fs.mkdtempSync(path.join(fs.realpathSync(root), "rh-tarball-smoke.")).replaceAll("\\", "/"));')"
 OPERATOR_PID=""
 # Every step runs with a temporary HOME and harness home. The smoke must not
 # register its temporary repositories in the real ~/.repo-harness registry.
 SMOKE_HOME="$TMP_DIR/home"
 mkdir -p "$SMOKE_HOME"
-export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$SMOKE_HOME/.repo-harness"
+# Keep the registry beside HOME: the nested test runner rejects registries
+# below its caller HOME, even when that HOME is temporary.
+export HOME="$SMOKE_HOME" REPO_HARNESS_HOME="$TMP_DIR/registry"
 
 cleanup() {
   local exit_code=$?

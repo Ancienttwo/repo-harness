@@ -372,6 +372,44 @@ describe("test HOME and TMPDIR isolation", () => {
     } finally { f.close(); }
   });
 
+  test("tarball smoke setup permits a nested installed test runner with its explicit registry", () => {
+    const f = fixture();
+    try {
+      const scripts = join(f.temp, "scripts");
+      mkdirSync(scripts);
+      writeFileSync(join(f.temp, "package.json"), JSON.stringify({ name: "smoke-probe", version: "0.0.0" }));
+      const marker = join(f.temp, "nested-result.json");
+      const probe = join(f.temp, "nested.test.ts");
+      writeFileSync(probe, `import {test,expect} from "bun:test";
+import {mkdirSync,writeFileSync,realpathSync} from "node:fs";
+test("nested registry",()=>{
+  expect(process.env.HOME).not.toBe(process.env.SMOKE_PARENT_HOME);
+  expect(process.env.REPO_HARNESS_HOME).toBe(process.env.SMOKE_PARENT_REGISTRY);
+  mkdirSync(process.env.REPO_HARNESS_HOME!,{recursive:true});
+  writeFileSync(process.env.REPO_HARNESS_HOME+"/probe","isolated");
+  writeFileSync(${JSON.stringify(marker)},JSON.stringify({home:process.env.HOME,registry:realpathSync(process.env.REPO_HARNESS_HOME!)}));
+});`);
+      // Execute the smoke's real setup and cleanup, stopping before npm pack.
+      // The nested runner is real; no package install, server or full suite runs.
+      const smoke = readFileSync(join(ROOT, "scripts/check-tarball-install-smoke.sh"), "utf8");
+      const boundary = smoke.indexOf('PACK_JSON="$TMP_DIR/pack.json"');
+      expect(boundary).toBeGreaterThan(0);
+      const script = join(scripts, "smoke-setup.sh");
+      writeFileSync(script, smoke.slice(0, boundary) + `
+export SMOKE_PARENT_HOME="$HOME" SMOKE_PARENT_REGISTRY="$REPO_HARNESS_HOME"
+source "$1"
+run_bun_test_file "$2"
+`);
+      const result = spawnSync("bash", [script, join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
+        cwd: f.temp, env: f.env, encoding: "utf8",
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      const value = JSON.parse(readFileSync(marker, "utf8")) as { home: string; registry: string };
+      expect(value.registry.startsWith(TMP_ROOT + sep)).toBe(true);
+      expect(value.registry).not.toBe(join(value.home, ".repo-harness"));
+    } finally { f.close(); }
+  });
+
   test.each(["HOME", "TMPDIR"])("refuses startup %s outside /tmp despite safe native aliases", (name) => {
     const f = fixture();
     try {
