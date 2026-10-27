@@ -430,7 +430,7 @@ export function OperatorApp({
       data-state={state.kind}
       data-locale={locale}
       data-workspace={workspace}
-      lang={locale === 'zh' ? 'zh' : 'en'}
+      lang={locale}
     >
       <NavRail current={workspace} attention={attention} onOpen={openPlace} repositorySwitch={repositorySwitch}
         collapsed={railCollapsed} onToggleCollapsed={toggleRail} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer}

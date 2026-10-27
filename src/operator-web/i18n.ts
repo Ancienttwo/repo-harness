@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * The operator board ships its own dictionary instead of an i18n library: the
@@ -2279,6 +2279,11 @@ export function useLocale(initial?: OperatorLocale): OperatorLocaleController {
     setLocaleState(next);
     writeStoredLocale(next);
   }, []);
+  // The document language is a projection of this locale. The app subtree
+  // already carries the same value; this keeps the document in step with it.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   const t = useCallback<OperatorTranslate>((key, params) => translate(locale, key, params), [locale]);
   return { locale, setLocale, t };
 }

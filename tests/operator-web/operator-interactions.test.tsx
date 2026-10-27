@@ -1120,8 +1120,10 @@ describe('operator web interactions', () => {
   });
 
   test('defaults to English, switches to Chinese, and remembers the choice', async () => {
+    document.documentElement.lang = 'en';
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />);
 
+    expect(document.documentElement.lang).toBe('en');
     expect(document.querySelector('.operator-app')?.getAttribute('data-locale')).toBe('en');
     expect(document.body.textContent).toContain('Worklist');
     expect(document.body.textContent).toContain('Needs you');
@@ -1129,6 +1131,7 @@ describe('operator web interactions', () => {
     await act(async () => buttonWithText('中').click());
     const text = document.body.textContent ?? '';
     expect(document.querySelector('.operator-app')?.getAttribute('data-locale')).toBe('zh');
+    expect(document.documentElement.lang).toBe('zh');
     expect(text).toContain('工作队列');
     expect(text).toContain('需要你');
     expect(text).toContain('验证之后 base 分支动过');
@@ -1140,6 +1143,10 @@ describe('operator web interactions', () => {
     expect(text).toContain('base_moved_since_verification');
     expect(text).toContain('repo-harness');
     expect(text).toContain('read-only');
+
+    await act(async () => buttonWithText('EN').click());
+    expect(document.documentElement.lang).toBe('en');
+    expect(document.querySelector('.operator-app')?.getAttribute('data-locale')).toBe('en');
   });
 
   test('locale resolution prefers the stored choice and fails closed to English', () => {
