@@ -241,6 +241,20 @@ describe('Agents page', () => {
 });
 
 describe('Skills page', () => {
+  test('closing a catalog drawer opened from Skills focuses the matching Tools row', async () => {
+    await mount('#skills', props(loadingSetup()));
+    const trigger = document.querySelector<HTMLButtonElement>('[data-tool="waza"] > button')!;
+    trigger.focus();
+    await act(async () => trigger.click());
+    expect(window.location.hash).toBe('#tools/waza');
+    expect(trigger.isConnected).toBe(false);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close details');
+    await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
+    expect(window.location.hash).toBe('#tools');
+    expect(document.querySelector('[data-tool-drawer]')).toBeNull();
+    expect(document.activeElement?.closest('[data-tool]')?.getAttribute('data-tool')).toBe('waza');
+  });
+
   test('recommended skills remain separate from host projections and open catalog metadata', async () => {
     await mount('#skills', props(loadingSetup()));
     expect(all('[data-tool]').map(row => row.dataset.tool)).toEqual(['waza', 'herdr-skill', 'hai-stack']);

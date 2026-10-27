@@ -33,10 +33,13 @@ function Status({ tool, t }: { readonly tool: ToolCatalogEntry; readonly t: Oper
   );
 }
 
-function ToolRow({ tool, onOpen, t }: { readonly tool: ToolCatalogEntry; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate }) {
+function ToolRow({ tool, onOpen, t, buttonRef }: {
+  readonly tool: ToolCatalogEntry; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
+  readonly buttonRef?: (button: HTMLButtonElement | null) => void;
+}) {
   return (
     <li data-tool={tool.id}>
-      <button type="button" onClick={() => onOpen(tool.id)}
+      <button ref={buttonRef} type="button" onClick={() => onOpen(tool.id)}
         className="grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left hover:bg-kumo-tint focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none md:grid-cols-[minmax(0,1fr)_10rem_7rem_7rem]">
         <span className="min-w-0 truncate text-sm font-medium text-kumo-strong">{tool.name}</span>
         <span className="justify-self-end md:justify-self-start"><Status tool={tool} t={t} /></span>
@@ -47,8 +50,9 @@ function ToolRow({ tool, onOpen, t }: { readonly tool: ToolCatalogEntry; readonl
   );
 }
 
-export function ToolGroup({ kind, onOpen, t }: {
+export function ToolGroup({ kind, onOpen, t, buttonRef }: {
   readonly kind: ToolKind; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
+  readonly buttonRef?: (id: string) => (button: HTMLButtonElement | null) => void;
 }) {
   const tools = TOOL_CATALOG.tools.filter(tool => tool.kind === kind);
   const headingId = `tools-${kind}-heading`;
@@ -59,7 +63,7 @@ export function ToolGroup({ kind, onOpen, t }: {
         <span>{t('tools.column.name')}</span><span>{t('tools.column.category')}</span><span>{t('tools.column.status')}</span><span>{t('tools.column.license')}</span>
       </div>
       <ul className="flex flex-col divide-y divide-kumo-hairline">
-        {tools.map(tool => <ToolRow key={tool.id} tool={tool} onOpen={onOpen} t={t} />)}
+        {tools.map(tool => <ToolRow key={tool.id} tool={tool} onOpen={onOpen} t={t} buttonRef={buttonRef?.(tool.id)} />)}
       </ul>
     </section>
   );
@@ -70,12 +74,14 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 }
 
 /** Read-only detail for one catalog entry. Esc closes and returns focus to its row. */
-function ToolDrawer({ tool, onClose, locale, t }: {
+function ToolDrawer({ tool, onClose, locale, t, rowButton }: {
   readonly tool: ToolCatalogEntry; readonly onClose: () => void; readonly locale: OperatorLocale; readonly t: OperatorTranslate;
+  readonly rowButton: () => HTMLButtonElement | null;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  useModalFocus({ dialogRef, closeRef, identity: tool.id, onClose });
+  // A routed drawer supplies a live destination: the source trigger unmounts.
+  useModalFocus({ dialogRef, closeRef, identity: tool.id, onClose, restoreFocus: () => { rowButton()?.focus(); } });
   const status = toolStatus(tool);
   const header = (
     <div className="flex items-start justify-between gap-3 border-b border-kumo-hairline px-5 py-4 sm:px-6">
@@ -119,6 +125,10 @@ function ToolDrawer({ tool, onClose, locale, t }: {
  */
 export function ToolsPage({ toolId, onOpen, onClose, locale, t }: PageProps) {
   const selected = toolId === null ? null : TOOL_CATALOG.tools.find(tool => tool.id === toolId) ?? null;
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const buttonRef = (id: string) => (button: HTMLButtonElement | null) => {
+    if (button) buttons.current.set(id, button); else buttons.current.delete(id);
+  };
   return (
     <div className="flex min-w-0 flex-col gap-5" data-tools-page>
       <header className="flex flex-col gap-1 border-b border-kumo-hairline pb-4">
@@ -129,10 +139,10 @@ export function ToolsPage({ toolId, onOpen, onClose, locale, t }: PageProps) {
           <p>{t('tools.local.statusNote')}</p>
           <CommandLine command={TOOLING_REPORT_COMMAND} t={t} className="w-fit max-w-full" />
       </div>
-      <ToolGroup kind="local_tool" onOpen={onOpen} t={t} />
-      <ToolGroup kind="skill" onOpen={onOpen} t={t} />
-      <ToolGroup kind="resource" onOpen={onOpen} t={t} />
-      {selected && <ToolDrawer tool={selected} onClose={onClose} locale={locale} t={t} />}
+      <ToolGroup kind="local_tool" onOpen={onOpen} t={t} buttonRef={buttonRef} />
+      <ToolGroup kind="skill" onOpen={onOpen} t={t} buttonRef={buttonRef} />
+      <ToolGroup kind="resource" onOpen={onOpen} t={t} buttonRef={buttonRef} />
+      {selected && <ToolDrawer tool={selected} onClose={onClose} locale={locale} t={t} rowButton={() => buttons.current.get(selected.id) ?? null} />}
     </div>
   );
 }
