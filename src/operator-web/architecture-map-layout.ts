@@ -58,35 +58,42 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   const width = (id: string): number => MAP_NODE_MIN_WIDTH
     + Math.round((MAP_NODE_MAX_WIDTH - MAP_NODE_MIN_WIDTH) * Math.sqrt((sizes.get(id)?.lines ?? 0) / maxLines));
 
-  // Members sit on a near-square grid inside their group, in model order; each column is as wide as its widest member.
+  // Members sit on a near-square grid inside their group, in model order, at their own size, so a group may hold groups.
+  // Each column is as wide as its widest member and each row as tall as its tallest. Sizes resolve from the leaves up.
   const inner = new Map<string, Box>();
-  const groupSize = new Map<string, { width: number; height: number }>();
-  for (const [id, nodes] of members) {
+  const sizeCache = new Map<string, { width: number; height: number }>();
+  const sizeOf = (id: string): { width: number; height: number } => {
+    const cached = sizeCache.get(id);
+    if (cached) return cached;
+    const nodes = members.get(id);
+    if (!nodes) return { width: width(id), height: MAP_NODE_HEIGHT };
     const columns = Math.ceil(Math.sqrt(nodes.length));
-    const columnWidth = Array.from({ length: columns }, (_, column) => Math.max(0, ...nodes.filter((_, index) => index % columns === column).map(node => width(node.id))));
-    nodes.forEach((node, index) => {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      inner.set(node.id, {
-        x: MAP_GROUP_PADDING + columnWidth.slice(0, column).reduce((sum, value) => sum + value + MAP_GROUP_GAP, 0),
-        y: MAP_GROUP_HEADER + row * (MAP_NODE_HEIGHT + MAP_GROUP_GAP),
-        width: width(node.id), height: MAP_NODE_HEIGHT,
-      });
-    });
     const rows = Math.ceil(nodes.length / columns);
-    groupSize.set(id, {
-      width: Math.max(MAP_NODE_MIN_WIDTH, columnWidth.reduce((sum, value) => sum + value, 0) + (columns - 1) * MAP_GROUP_GAP) + 2 * MAP_GROUP_PADDING,
-      height: MAP_GROUP_HEADER + rows * MAP_NODE_HEIGHT + (rows - 1) * MAP_GROUP_GAP + MAP_GROUP_PADDING,
+    const own = nodes.map(node => sizeOf(node.id));
+    const columnWidth = Array.from({ length: columns }, (_, column) => Math.max(0, ...own.filter((_, index) => index % columns === column).map(size => size.width)));
+    const rowHeight = Array.from({ length: rows }, (_, row) => Math.max(0, ...own.slice(row * columns, (row + 1) * columns).map(size => size.height)));
+    const offset = (sizes: readonly number[], index: number) => sizes.slice(0, index).reduce((sum, value) => sum + value + MAP_GROUP_GAP, 0);
+    nodes.forEach((node, index) => {
+      inner.set(node.id, { x: MAP_GROUP_PADDING + offset(columnWidth, index % columns), y: MAP_GROUP_HEADER + offset(rowHeight, Math.floor(index / columns)), ...own[index]! });
     });
-  }
+    const size = {
+      width: Math.max(MAP_NODE_MIN_WIDTH, columnWidth.reduce((sum, value) => sum + value, 0) + (columns - 1) * MAP_GROUP_GAP) + 2 * MAP_GROUP_PADDING,
+      height: MAP_GROUP_HEADER + rowHeight.reduce((sum, value) => sum + value, 0) + (rows - 1) * MAP_GROUP_GAP + MAP_GROUP_PADDING,
+    };
+    sizeCache.set(id, size);
+    return size;
+  };
 
   const top = map.nodes.filter(node => node.parent === null);
-  const owner = new Map(map.nodes.map(node => [node.id, node.parent ?? node.id]));
+  const parents = new Map(map.nodes.map(node => [node.id, node.parent]));
+  // The decoder refuses parent cycles, so every chain ends at a top-level node.
+  const rootOf = (id: string): string => { let cursor = id; while (parents.get(cursor)) cursor = parents.get(cursor)!; return cursor; };
+  const owner = new Map(map.nodes.map(node => [node.id, rootOf(node.id)]));
   const graph = new dagre.graphlib.Graph();
   // A long relation adds one dummy node per rank it crosses; a small edge spacing keeps those from widening the map.
   graph.setGraph({ rankdir: 'TB', ranker: 'tight-tree', nodesep: 24, ranksep: 64, edgesep: 4, marginx: 24, marginy: 24 });
   graph.setDefaultEdgeLabel(() => ({}));
-  for (const node of top) graph.setNode(node.id, groupSize.get(node.id) ?? { width: width(node.id), height: MAP_NODE_HEIGHT });
+  for (const node of top) graph.setNode(node.id, sizeOf(node.id));
   for (const relation of map.relations) {
     const source = owner.get(relation.source)!;
     const target = owner.get(relation.target)!;
@@ -101,14 +108,15 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
     const center = graph.node(node.id) as { x: number; y: number; width: number; height: number };
     placed.set(node.id, { x: center.x - center.width / 2, y: center.y - center.height / 2, width: center.width, height: center.height });
   }
-  const nodes = [...top, ...map.nodes.filter(node => node.parent !== null)].map(node => {
-    const parent = node.parent === null ? null : placed.get(node.parent)!;
+  // Parents before members at every depth: React Flow places a member relative to a parent it has already seen.
+  const nodes: MapLayoutNode[] = [];
+  const visit = (node: ArchitectureMapNodeV1, parent: Box | null) => {
     const own = parent === null ? placed.get(node.id)! : inner.get(node.id)!;
-    return {
-      node, x: (parent?.x ?? 0) + own.x, y: (parent?.y ?? 0) + own.y, width: own.width, height: own.height,
-      group: members.has(node.id), size: sizes.get(node.id) ?? null,
-    };
-  });
+    const box = { x: (parent?.x ?? 0) + own.x, y: (parent?.y ?? 0) + own.y, width: own.width, height: own.height };
+    nodes.push({ node, ...box, group: members.has(node.id), size: sizes.get(node.id) ?? null });
+    for (const member of members.get(node.id) ?? []) visit(member, box);
+  };
+  for (const node of top) visit(node, null);
 
   const imports = new Map(map.dependencies.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
   const maxImports = Math.max(1, ...imports.values());

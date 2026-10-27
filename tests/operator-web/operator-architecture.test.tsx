@@ -347,9 +347,17 @@ describe('architecture map', () => {
     });
   });
 
-  test('every model node is placed once, members inside their group, top-level boxes apart, the recorded map included', () => {
+  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    for (const map of [mapFor(), decodeArchitectureMap(recordedMap)]) {
+    // Three namespace levels, with a relation that ends on the deepest one.
+    const nested = projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
+        mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
+      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')],
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+    });
+    for (const map of [mapFor(), nested, decodeArchitectureMap(recordedMap)]) {
       const layout = layoutArchitectureMap(map);
       expect(layout.nodes.map(item => item.node.id).sort()).toEqual(map.nodes.map(node => node.id).sort());
       const placed = new Map(layout.nodes.map(item => [item.node.id, item]));
@@ -359,8 +367,13 @@ describe('architecture map', () => {
         expect(group.group).toBe(true);
         expect(item.x >= group.x && item.y >= group.y && item.x + item.width <= group.x + group.width && item.y + item.height <= group.y + group.height).toBe(true);
       }
-      const top = layout.nodes.filter(item => item.node.parent === null);
-      for (const [index, a] of top.entries()) for (const b of top.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
+      const siblings = new Map<string | null, MapLayoutNode[]>();
+      for (const item of layout.nodes) siblings.set(item.node.parent, [...(siblings.get(item.node.parent) ?? []), item]);
+      for (const group of siblings.values()) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
+      // React Flow places a member relative to a parent that comes earlier in the list.
+      for (const [index, item] of layout.nodes.entries()) {
+        if (item.node.parent !== null) expect(layout.nodes.findIndex(other => other.node.id === item.node.parent)).toBeLessThan(index);
+      }
       expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id));
     }
   });

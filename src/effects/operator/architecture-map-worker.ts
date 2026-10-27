@@ -48,7 +48,7 @@ function git(root: string, args: readonly string[]): { status: number | null; st
 
 /** Lines of every tracked text file of `commit`. `git grep -I` skips binary files; a file with no line is absent. */
 export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<string, number> | null {
-  const result = git(root, ['grep', '-z', '-I', '-c', '-e', '', commit, '--']);
+  const result = git(root, ['grep', '--no-color', '-z', '-I', '-c', '-e', '', commit, '--']);
   // Exit 1 is "no line matched": a commit with no text file.
   if (result.status === 1) return new Map();
   if (result.status !== 0) return null;
@@ -65,7 +65,7 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
   return lines;
 }
 
-/** `archctx resolve` reads the worktree model, so its owners describe the commit's model only when that model is clean. */
+/** `archctx resolve` and `archctx deps` read the worktree model, so they describe the commit's model only when that model is clean. */
 function modelWorktreeClean(root: string): boolean | null {
   const result = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', MODEL_ROOT]);
   return result.status === 0 ? result.stdout.length === 0 : null;
@@ -97,8 +97,7 @@ function resolveOwners(root: string, paths: readonly string[]): ReadonlyMap<stri
   return owners;
 }
 
-function readSizes(root: string, commit: string): ArchitectureMapSizeInput {
-  const clean = modelWorktreeClean(root);
+function readSizes(root: string, commit: string, clean: boolean | null): ArchitectureMapSizeInput {
   if (clean === null) return { state: 'unavailable', reason: 'git_read_failed' };
   if (!clean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
   const lines = readCommitLineCounts(root, commit);
@@ -111,7 +110,9 @@ function readSizes(root: string, commit: string): ArchitectureMapSizeInput {
 }
 
 /** Capability import counts from the CodeGraph index that the user built. This collector builds no index. */
-function readDependencies(root: string, commit: string): ArchitectureMapDependencyInput {
+function readDependencies(root: string, commit: string, clean: boolean | null): ArchitectureMapDependencyInput {
+  if (clean === null) return { state: 'unavailable', reason: 'dependencies_unavailable' };
+  if (!clean) return { state: 'unavailable', reason: 'model_worktree_dirty' };
   let value: unknown;
   try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, ['deps', '--json'], {}, ARCHCTX_TIMEOUT_MS, true).value; }
   catch { return { state: 'unavailable', reason: 'dependencies_unavailable' }; }
@@ -157,10 +158,11 @@ export function collectArchitectureMap(repositoryId: string, path: string, colle
   try { committed = readCommittedNativeContext(path); }
   catch { return { id: repositoryId, ok: false, reason: 'model_unavailable' }; }
   const { nodes, relations } = modelEntities(committed.context, realpathSync(path));
+  const clean = modelWorktreeClean(path);
   const snapshot = projectArchitectureMap({
     repository_id: repositoryId, commit: committed.commit, collected_at: collectedAt, nodes, relations,
-    sizes: readSizes(path, committed.commit),
-    dependencies: readDependencies(path, committed.commit),
+    sizes: readSizes(path, committed.commit, clean),
+    dependencies: readDependencies(path, committed.commit, clean),
   });
   return { id: repositoryId, ok: true, snapshot };
 }

@@ -24,7 +24,7 @@ export const ARCHITECTURE_MAP_SIZE_REASONS = ['model_worktree_dirty', 'ownership
 export type ArchitectureMapSizeReason = typeof ARCHITECTURE_MAP_SIZE_REASONS[number];
 
 /** Why import counts are missing. The collector never builds a CodeGraph index. */
-export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['code_facts_unavailable', 'code_facts_incomplete', 'code_facts_other_commit', 'dependencies_unavailable'] as const;
+export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['model_worktree_dirty', 'code_facts_unavailable', 'code_facts_incomplete', 'code_facts_other_commit', 'dependencies_unavailable'] as const;
 export type ArchitectureMapDependencyReason = typeof ARCHITECTURE_MAP_DEPENDENCY_REASONS[number];
 
 export interface ArchitectureMapNodeV1 {
@@ -110,6 +110,16 @@ function unique(ids: readonly string[]): boolean {
   return new Set(ids).size === ids.length;
 }
 
+/** The parent chain ends at a top-level node; a cycle, a self parent included, never does. */
+function reachesRoot(id: string, nodes: ReadonlyMap<string, ArchitectureMapNodeV1>): boolean {
+  const seen = new Set<string>();
+  for (let cursor: string | null = id; cursor !== null; cursor = nodes.get(cursor)?.parent ?? null) {
+    if (seen.has(cursor)) return false;
+    seen.add(cursor);
+  }
+  return true;
+}
+
 /** Shape, identity and referential integrity. Every reference names a node of this map. */
 export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   if (!map(value)) throw new Error('architecture_map_invalid');
@@ -117,7 +127,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   const nodes = new Map(result.nodes.map(entry => [entry.id, entry]));
   const capability = (nodeId: string) => nodes.get(nodeId)?.kind === 'capability';
   if (nodes.size !== result.nodes.length || !unique(result.relations.map(entry => entry.id))
-    || result.nodes.some(entry => entry.parent !== null && (entry.parent === entry.id || !nodes.has(entry.parent)))
+    || result.nodes.some(entry => entry.parent !== null && !nodes.has(entry.parent)) || result.nodes.some(entry => !reachesRoot(entry.id, nodes))
     || result.relations.some(entry => !nodes.has(entry.source) || !nodes.has(entry.target))
     || (result.sizes.state === 'ok' && (!unique(result.sizes.nodes.map(entry => entry.id)) || result.sizes.nodes.some(entry => !nodes.has(entry.id))))
     || (result.dependencies.state === 'ok' && (!unique(result.dependencies.edges.map(entry => `${entry.source}\0${entry.target}`))

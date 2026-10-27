@@ -187,6 +187,7 @@ describe('architecture map', () => {
     refused(copy => { copy.nodes[0].path = '/Users/someone/repo'; });
     refused(copy => { copy.nodes.push(copy.nodes[0]); });
     refused(copy => { copy.nodes[2].parent = 'capability.gone.node'; });
+    refused(copy => { copy.nodes[0].parent = PART; });
     refused(copy => { copy.relations[0].target = 'capability.gone.node'; });
     refused(copy => { copy.sizes.nodes[0].id = 'capability.gone.node'; });
     refused(copy => { copy.sizes.nodes[0].files = 0; });
@@ -213,7 +214,8 @@ describe('architecture map', () => {
       // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
       fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
       const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z');
-      expect(dirty.ok && dirty.snapshot.sizes).toEqual({ state: 'unavailable', reason: 'model_worktree_dirty' });
+      expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
+        { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
