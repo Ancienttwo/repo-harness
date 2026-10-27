@@ -1,3 +1,5 @@
+import { globalConfigurationPath, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
+import { globalRuntimeScope, withRuntimeTransactionContext, type RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync, rmdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
@@ -8,7 +10,7 @@ import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, hostConfigurationRoot, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
-export interface UninstallOptions { target: 'codex' | 'claude' | 'both'; dryRun?: boolean; recoverInterrupted?: boolean; env?: NodeJS.ProcessEnv }
+export interface UninstallOptions { target: 'codex' | 'claude' | 'both'; dryRun?: boolean; recoverInterrupted?: boolean; env?: NodeJS.ProcessEnv; runtimeLock?: RuntimeTransactionContext }
 export interface UninstallItem { path: string; action: 'remove' | 'restore' | 'preserve' | 'unresolved'; reason: string }
 export interface UninstallResult { exitCode: number; status: 'complete' | 'partial'; dryRun: boolean; items: UninstallItem[]; lines: string[] }
 
@@ -35,6 +37,11 @@ function object(raw: string): Record<string, any> {
 
 /** Plan completely before writing; dry-run neither takes a filesystem lock nor creates receipts. */
 export function runUserUninstall(opts: UninstallOptions): UninstallResult {
+  if (opts.dryRun) return runUserUninstallLocked(opts);
+  return withRuntimeTransactionContext(globalRuntimeScope(opts.env), opts.runtimeLock, (runtimeLock) => runUserUninstallLocked({ ...opts, runtimeLock }));
+}
+
+function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   const env = opts.env ?? process.env;
   const home = hostConfigurationRoot(env);
   const items: UninstallItem[] = [];
@@ -226,7 +233,9 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       }
       for (const [path, content] of writes) {
         assertConfigurationPath(path, home);
-        if (content === null) { if (existsSync(path)) unlinkSync(path); }
+        if (path === globalConfigurationPath(env)) {
+          mutateGlobalConfiguration(env, () => ({ config: content === null ? null : object(content), value: undefined }), { runtimeLock: opts.runtimeLock });
+        } else if (content === null) { if (existsSync(path)) unlinkSync(path); }
         else writePrivateConfiguration(path, content, home);
       }
       for (const path of [...originals.keys()]) {

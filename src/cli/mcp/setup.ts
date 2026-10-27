@@ -1,6 +1,6 @@
 import { recordMcpRegistryChanges, withMcpSetupLock } from './setup-ownership';
 import { replaceConfigurationFragment, writeOwnedConfiguration } from '../installer/configuration-ownership';
-import { projectRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
 import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { isIP } from 'net';

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { readRepoHarnessRegistryStrictSnapshot, restoreRepoHarnessRegistryEntries } from '../../effects/repo-registry';
 import { assertConfigurationPath, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, saveConfigurationReceipt, writePrivateConfiguration } from '../installer/configuration-ownership';
-import { projectRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
 import { mcpLocalConfigPath, mcpOAuthDoctorClientPath, mcpOAuthPath, mcpOAuthTokenStorePath, mcpStorageDir, mcpTokenPath } from './auth';
 import { resolveMcpRepoRoot } from './repo';
 import { assertMcpStoragePath, readMcpRegistryReceipt, saveMcpRegistryReceipt, withMcpSetupLock } from './setup-ownership';
