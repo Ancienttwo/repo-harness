@@ -61,6 +61,17 @@ For a registered repo:
   precondition such as `expected_sha256`; new file creation requires an explicit
   must-not-exist precondition.
 
+## Amendment 2026-10-27 (#1028)
+
+The general repo API always refuses a path that has a `.git` segment, at any
+depth. The match ignores case (`.GIT` and `.Git` are refused), because git reads
+them as `.git` on a case-insensitive file system. The check runs on the logical
+path and on the physical path after realpath, for read and write tools. A write to `.git/hooks/*` or `.git/config`
+runs code on the next local `git` command, so a file-write grant must not reach
+the git directory. The refusal is `PATH_DENIED`. `repo_manifest` and `list_tree`
+do not list `.git` entries. `.ignore` stays the only content-level exclusion
+source outside the git directory.
+
 ## Tool Boundary
 
 Sprint 0 freezes the read contract for:
