@@ -194,4 +194,48 @@
   .module-graph__relations { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs text-kumo-subtle; }
   .module-graph__intent { @apply mx-2 text-kumo-default; }
   .module-graph__group ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-sm; }
+
+  .architecture-tabs { @apply inline-flex w-full max-w-full gap-0.5 overflow-x-auto rounded-lg bg-kumo-recessed p-0.5 sm:w-auto; }
+  .architecture-tabs [role="tab"] { @apply h-8 flex-1 cursor-pointer whitespace-nowrap rounded-md px-3 text-sm font-medium text-kumo-subtle transition-colors hover:text-kumo-default sm:flex-none; }
+  .architecture-tabs [role="tab"][aria-selected="true"] { @apply bg-kumo-base text-kumo-strong shadow-xs; }
+  .architecture-map-view { @apply flex min-w-0 flex-col gap-2; }
+  .architecture-map__source { overflow-wrap: anywhere; }
+  .architecture-map__gap { @apply rounded-lg bg-kumo-warning-tint p-3 text-sm text-kumo-default; }
+  .architecture-map { @apply grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]; }
+  .architecture-map__canvas { @apply h-[60vh] min-h-[24rem] min-w-0 overflow-hidden rounded-xl border; border-color: var(--rh-diagram-line); background: var(--rh-diagram-bg); }
+  .architecture-map__box, .architecture-map__group { @apply h-full w-full rounded-lg border text-xs; border-color: var(--rh-diagram-line); }
+  .architecture-map__box { @apply flex flex-col justify-center gap-0.5 overflow-hidden bg-kumo-base px-2.5; }
+  .architecture-map__box strong, .architecture-map__group-title strong { @apply truncate text-sm font-semibold text-kumo-strong; }
+  .architecture-map__group { @apply bg-kumo-recessed; }
+  .architecture-map__group-title { @apply flex items-baseline justify-between gap-2 overflow-hidden px-3 pt-2; }
+  .architecture-map__meta { @apply truncate text-kumo-subtle; }
+  .architecture-map__lines { @apply font-mono; }
+  [data-kind="external-system"].architecture-map__box { border-style: dashed; }
+  .architecture-map__box[data-selected], .architecture-map__group[data-selected] { border-width: 2px; border-color: var(--rh-accent); }
+  .architecture-map__legend, .architecture-map__zoom { @apply m-0 flex items-center gap-2 rounded-lg border bg-kumo-base p-1.5 text-xs; border-color: var(--rh-diagram-line); }
+  .architecture-map__legend { @apply max-w-[16rem] flex-col items-start gap-1; }
+  .architecture-map__legend div { @apply flex items-center gap-2; }
+  .architecture-map__legend dt { @apply w-6 text-center text-kumo-subtle; }
+  .architecture-map__legend dd { @apply m-0; }
+  .architecture-map__swatch { @apply inline-block w-6 border-t-2 align-middle; border-color: var(--text-color-kumo-subtle); }
+  .architecture-map__swatch--dashed { border-top-style: dashed; }
+  .architecture-map__swatch--external { @apply h-3 rounded-sm border-2 border-dashed; }
+  .architecture-map__zoom button { @apply h-7 min-w-7 cursor-pointer rounded-md px-1.5 text-kumo-default hover:bg-kumo-recessed; }
+  .architecture-map__inspector { @apply flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; overflow-wrap: anywhere; }
+  .architecture-map__inspector h3 { @apply text-sm font-semibold text-kumo-strong; }
+  .architecture-map__inspector h4 { @apply text-xs font-semibold text-kumo-subtle; }
+  .architecture-map__inspector ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs; }
+  .architecture-map__id { @apply text-xs text-kumo-subtle; }
+  @media (max-width: 47.5rem) { .architecture-map__legend { display: none; } }
 }
+
+/* React Flow's stylesheet is unlayered, so a rule for its classes inside a layer always loses. */
+.architecture-map .react-flow__handle { pointer-events: none; opacity: 0; }
+.architecture-map__edge .react-flow__edge-path { stroke: var(--text-color-kumo-subtle); stroke-opacity: .3; }
+.architecture-map__edge.is-dim .react-flow__edge-path { stroke-opacity: .08; }
+.architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
+.architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
+.architecture-map__edge .react-flow__edge-text { font-family: var(--font-mono); font-size: 11px; fill: var(--text-color-kumo-default); }
+.architecture-map .react-flow__edge-textbg { fill: var(--rh-diagram-bg); }
+.architecture-map .react-flow__attribution { background: transparent; font-size: 10px; }
+.architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
