@@ -39,10 +39,11 @@ load/exclude rules. Exclude `repo-harness-cross-review`,
 `review revoke` by default. Skip the root router's required `herdr` skill
 unless the host drives Herdr.
 
-## Aiphabee defaults on kitos-Mac-mini
+## repo-harness seat defaults on kitos-Mac-mini
 
-- Use checkout `/Users/kito/Projects/aiphabee`. Do not use `aip-main-open`.
-- Create new worktrees under `~/.herdr/worktrees/aiphabee/`.
+- Use checkout `/Users/kito/Projects/repo-harness`.
+- Create new worktrees under `~/.herdr/worktrees/repo-harness/`.
+- Other product repos keep their own checkout/worktree conventions outside this open-source guide.
 
 ## Cleanup implementation status
 
