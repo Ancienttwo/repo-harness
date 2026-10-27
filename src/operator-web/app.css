@@ -237,5 +237,5 @@
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
 .architecture-map__edge .react-flow__edge-text { font-family: var(--font-mono); font-size: 11px; fill: var(--text-color-kumo-default); }
 .architecture-map .react-flow__edge-textbg { fill: var(--rh-diagram-bg); }
-.architecture-map .react-flow__attribution { background: transparent; font-size: 10px; }
+.architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
