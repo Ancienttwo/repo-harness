@@ -83,7 +83,7 @@ function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-interface VerifiedCitation { readonly citation: DocCitationV1; readonly start_line: number; readonly end_line: number; readonly relocated: boolean }
+interface VerifiedCitation { readonly citation: DocCitationV1; readonly resolved: DocCitationV1; readonly relocated: boolean }
 
 /** Every citation is checked against one commit of the served docs view; that commit is the session base. */
 async function verifyCitations(reader: DocsReader, citations: readonly DocCitationV1[]): Promise<{ readonly base: string; readonly verified: VerifiedCitation[] }> {
@@ -105,7 +105,11 @@ async function verifyCitations(reader: DocsReader, citations: readonly DocCitati
     base = file.commit;
     const check = checkDocCitation(citation, file.text);
     if (check.state === 'stale') throw staleCitation();
-    verified.push({ citation, start_line: check.start_line, end_line: check.end_line, relocated: check.state === 'relocated' });
+    verified.push({
+      citation,
+      resolved: { ...citation, start_line: check.start_line, end_line: check.end_line, commit: file.commit, file_sha256: file.sha256 },
+      relocated: check.state === 'relocated',
+    });
   }
   return { base: base!, verified };
 }
@@ -212,11 +216,12 @@ async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDe
     throw error;
   }
 
-  const citations = verified.map(entry => ({ path: entry.citation.path, start_line: entry.start_line, end_line: entry.end_line, relocated: entry.relocated }));
+  const citations = verified.map(entry => ({ path: entry.resolved.path, start_line: entry.resolved.start_line, end_line: entry.resolved.end_line, relocated: entry.relocated }));
   writeSessionRecord(deps.env, sessionId, {
     protocol: 1, kind: 'docs_session', session_id: sessionId, state: 'created', created_at: new Date().toISOString(),
     repository_id: repo.id, runtime: input.runtime, branch, worktree: canonical, base_commit: base,
-    citations: verified.map(entry => ({ ...entry.citation, start_line: entry.start_line, end_line: entry.end_line, relocated: entry.relocated })),
+    // Submitted provenance and the verified location refer to different revisions after an edit.
+    citations: verified.map(entry => ({ ...entry.citation, resolved: { ...entry.resolved }, relocated: entry.relocated })),
     instruction: input.instruction,
   });
   return {

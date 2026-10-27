@@ -227,6 +227,26 @@ test('cited text that moved to other lines is accepted at its new lines', async 
   expect(answer.status).toBe(201);
   expect(answer.body.citations).toEqual([{ path: 'docs/guide.md', start_line: 5, end_line: 6, relocated: true }]);
   expect(answer.body.base_commit).toBe(h.head());
+  const record = JSON.parse(readFileSync(join(sessionsDir(h), answer.body.session_id, 'session.json'), 'utf8'));
+  expect(record.citations[0]).toMatchObject(citation);
+  const resolved = record.citations[0].resolved;
+  expect(resolved).toEqual(cite(`Intro line.\n\n${GUIDE}`, citation.path, 5, 6, h.head()));
+  const savedText = git(['show', `${resolved.commit}:${resolved.path}`], h.repo);
+  expect(hex(savedText)).toBe(resolved.file_sha256);
+  expect(hex(linesOf(savedText).slice(resolved.start_line - 1, resolved.end_line).join(''))).toBe(resolved.range_sha256);
+});
+
+test('an unchanged citation range retains its source and records the new file revision', async () => {
+  const h = await harness();
+  const citation = cite(GUIDE, 'docs/guide.md', 3, 4, h.head());
+  const updated = `${GUIDE}An added conclusion.\n`;
+  await h.commit(updated);
+  const answer = await h.post(request(h, [citation]));
+  expect(answer.status).toBe(201);
+  expect(answer.body.citations).toEqual([{ path: citation.path, start_line: 3, end_line: 4, relocated: false }]);
+  const record = JSON.parse(readFileSync(join(sessionsDir(h), answer.body.session_id, 'session.json'), 'utf8'));
+  expect(record.citations[0]).toMatchObject(citation);
+  expect(record.citations[0].resolved).toEqual(cite(updated, citation.path, 3, 4, h.head()));
 });
 
 test('the same request_id returns the stored session and creates one worktree', async () => {
