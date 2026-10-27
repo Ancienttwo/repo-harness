@@ -3,6 +3,7 @@ import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
+import { ArchitectureMap, type ArchitectureMapReader } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -236,16 +237,39 @@ function ModulePage({ detail, base, generation, onModule, t }: {
  * Read-only view of the committed architecture model. Every action is a command
  * for the Bot to copy; the board sends no request that acts on it.
  */
-export function ArchitectureWorkspace({ repositoryId, moduleId, onModule, refreshGeneration, t }: {
+type ArchitectureView = 'map' | 'modules';
+const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'modules'];
+
+function ViewTabs({ view, onChange, t }: { readonly view: ArchitectureView; readonly onChange: (view: ArchitectureView) => void; readonly t: OperatorTranslate }) {
+  return <div className="architecture-tabs" role="tablist" aria-label={t('architecture.views')}>
+    {ARCHITECTURE_VIEWS.map((item, index) => (
+      <button key={item} type="button" role="tab" id={`architecture-tab-${item}`} aria-controls="architecture-view" aria-selected={view === item} tabIndex={view === item ? 0 : -1}
+        onClick={() => onChange(item)}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') return;
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? ARCHITECTURE_VIEWS.length - 1
+            : (index + (event.key === 'ArrowRight' ? 1 : ARCHITECTURE_VIEWS.length - 1)) % ARCHITECTURE_VIEWS.length;
+          event.preventDefault(); onChange(ARCHITECTURE_VIEWS[next]!);
+          event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+        }}
+      >{t(`architecture.view.${item}`)}</button>
+    ))}
+  </div>;
+}
+
+export function ArchitectureWorkspace({ repositoryId, moduleId, onModule, refreshGeneration, readMap, t }: {
   readonly repositoryId: string;
   readonly moduleId: string | null;
   readonly onModule: (id: string | null) => void;
   readonly refreshGeneration: number;
+  /** The map route's reader; fixtures inject one. */
+  readonly readMap?: ArchitectureMapReader;
   readonly t: OperatorTranslate;
 }) {
+  const [view, setView] = useState<ArchitectureView>('map');
   const root = repositoryPath(repositoryId);
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
-  const index = useArchitectureRead(moduleId === null ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
+  const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
   const detail = useArchitectureRead(modulePath, decodeArchitectureModuleDetail, refreshGeneration);
   return <section className="architecture-workspace" aria-labelledby="architecture-heading">
     <header className="architecture-workspace__heading">
@@ -255,8 +279,13 @@ export function ArchitectureWorkspace({ repositoryId, moduleId, onModule, refres
       {(index.value ?? detail.value) && <p className="detail-quiet">{t('architecture.commit')} <code>{(index.value ?? detail.value)!.commit}</code></p>}
     </header>
     {moduleId === null ? <>
-      <ReadStatus read={index} loading="architecture.loading" t={t} />
-      {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
+      <ViewTabs view={view} onChange={setView} t={t} />
+      <div id="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
+        {view === 'map' ? <ArchitectureMap repositoryId={repositoryId} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} t={t} /> : <>
+          <ReadStatus read={index} loading="architecture.loading" t={t} />
+          {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
+        </>}
+      </div>
     </> : <>
       <ReadStatus read={detail} loading="architecture.module.loading" t={t} />
       {detail.value && modulePath && <ModulePage detail={detail.value} base={modulePath} generation={refreshGeneration} onModule={onModule} t={t} />}

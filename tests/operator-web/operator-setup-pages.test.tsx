@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
+import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
+import { fetchCliInventory } from '../../src/operator-web/CliPage';
 import type { SetupSnapshotV1 } from '../../src/core/setup/types';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
@@ -40,6 +42,9 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
+    readCliInventory: async () => unavailableCliInventory(),
+    readBotAccess: () => new Promise(() => {}),
+    readAgentsSettings: () => new Promise(() => {}),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     ...overrides,
   };
@@ -77,7 +82,7 @@ describe('setup fixtures', () => {
 
 describe('navigation', () => {
   test('setup pages have their own hash and refuse a parameter', () => {
-    for (const workspace of ['agents', 'skills', 'hooks'] as const) {
+    for (const workspace of ['agents', 'skills', 'hooks', 'cli'] as const) {
       expect(parseWorkspaceLocation(`#${workspace}`)).toEqual({ workspace, module: null, item: null });
       expect(workspaceHash({ workspace, module: null, item: null })).toBe(`#${workspace}`);
       expect(parseWorkspaceLocation(`#${workspace}/extra`).workspace).toBe('home');
@@ -127,7 +132,7 @@ describe('navigation', () => {
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['agents', 'agents'], ['skills', 'skills'],
-      ['hooks', 'hooks'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools']] as const;
+      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
         await act(async () => root?.unmount());
@@ -142,8 +147,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'architecture', 'system', 'tools']);
-    for (const later of ['settings', 'docs', 'sessions', 'recent', 'tests', 'cli', 'worktrees', 'bots']) {
+      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'system', 'tools', 'settings']);
+    for (const later of ['docs', 'sessions', 'recent', 'tests', 'worktrees']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });
@@ -237,6 +242,36 @@ describe('Agents page', () => {
 });
 
 describe('Skills page', () => {
+  test('closing a catalog drawer opened from Skills focuses the matching Tools row', async () => {
+    await mount('#skills', props(loadingSetup()));
+    const trigger = document.querySelector<HTMLButtonElement>('[data-tool="waza"] > button')!;
+    trigger.focus();
+    await act(async () => trigger.click());
+    expect(window.location.hash).toBe('#tools/waza');
+    expect(trigger.isConnected).toBe(false);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close details');
+    await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
+    expect(window.location.hash).toBe('#tools');
+    expect(document.querySelector('[data-tool-drawer]')).toBeNull();
+    expect(document.activeElement?.closest('[data-tool]')?.getAttribute('data-tool')).toBe('waza');
+  });
+
+  test('recommended skills remain separate from host projections and open catalog metadata', async () => {
+    await mount('#skills', props(loadingSetup()));
+    expect(all('[data-tool]').map(row => row.dataset.tool)).toEqual(['waza', 'herdr-skill', 'hai-stack']);
+    expect(all('[data-skill]')).toHaveLength(0);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-tool="waza"] button')!.click());
+    expect(window.location.hash).toBe('#tools/waza');
+    expect(text('[data-tool-drawer]')).toContain('tw93');
+    expect(text('[data-tool-drawer]')).toContain('planning · debugging · review');
+    expect(text('[data-tool-drawer]')).toContain('full');
+    for (const id of ['herdr-skill', 'hai-stack']) {
+      await act(async () => navLink('skills').click());
+      await act(async () => document.querySelector<HTMLButtonElement>(`[data-tool="${id}"] > button`)!.click());
+      expect(window.location.hash).toBe(`#tools/${id}`);
+      expect(document.querySelector('[data-tool-drawer]')?.getAttribute('data-tool-drawer')).toBe(id);
+    }
+  });
   test('abnormal skills come first and each host cell uses setup check words', async () => {
     await mount('#skills', props(degradedSetup(NOW)));
     const rows = all('[data-skill]');
@@ -273,6 +308,44 @@ describe('Skills page', () => {
 });
 
 describe('Hooks page', () => {
+  for (const locale of ['en', 'zh'] as const) {
+    for (const [calls, english] of [[1, '1 call'], [2, '2 calls']] as const) {
+      test(`hook usage count grammar: ${locale}, ${calls}`, async () => {
+        const snapshot = readySetup(NOW);
+        snapshot.hook_usage = {
+          window_hours: 24,
+          routes: [{ host: 'codex', event: 'PreToolUse', route_id: 'edit', calls, blocked: 0, last_blocked_at: null }],
+          recent_denials: [],
+        };
+        await mount('#hooks', props(decodeSetupSnapshot(snapshot), { initialLocale: locale }));
+        const expected = locale === 'en' ? `${english} · 0 blocked` : `${calls} 次调用 · 0 次拦截`;
+        expect(document.querySelector('[data-hook-usage="edit"] .tabular-nums')?.textContent).toBe(expected);
+      });
+    }
+  }
+
+  test('usage shows recorded counts per host and guard denials separately', async () => {
+    const snapshot = readySetup(NOW);
+    snapshot.hook_usage = {
+      window_hours: 24,
+      routes: [{ host: 'codex', event: 'PreToolUse', route_id: 'edit', calls: 7, blocked: 2, last_blocked_at: new Date(NOW).toISOString() }],
+      recent_denials: [{ at: new Date(NOW - 48 * 3600000).toISOString(), guard: 'RepoScopeGuard', reason: 'Denied [private path]' }],
+    };
+    await mount('#hooks', props(decodeSetupSnapshot(snapshot)));
+    expect(text('[data-hook-usage="edit"]')).toContain('7 calls · 2 blocked');
+    expect(text('[data-hook-usage="edit"]')).toContain('Codex');
+    expect(text('[data-hook-usage="edit"]')).toContain('PreToolUse.edit');
+    expect(text('[data-hook-denial]')).toContain('RepoScopeGuard');
+    expect(text('[data-hook-denial]')).toContain('Denied [private path]');
+    expect(text('[data-hook-denial]')).toContain(new Date(NOW - 48 * 3600000).toISOString());
+    expect(page().textContent).toContain('operator service repository');
+  });
+
+  test('missing usage stays unknown rather than zero', async () => {
+    await mount('#hooks', props({ ...readySetup(NOW), hook_usage: null }));
+    expect(page().textContent).toContain('Hook usage was not collected.');
+    expect(all('[data-hook-usage], [data-hook-denial]')).toHaveLength(0);
+  });
   test('routes group by event with per-host support, and mismatches list under their host', async () => {
     await mount('#hooks', props(degradedSetup(NOW)));
     expect(all('[data-hook-event]').map(row => row.getAttribute('data-hook-event'))).toEqual(['SessionStart', 'PreToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop']);
@@ -351,7 +424,7 @@ describe('Tools page', () => {
     await mount('', props(null, { readSetup: async () => { reads++; return readySetup(NOW); } }));
     const order = all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace'));
     expect(order.indexOf('tools')).toBe(order.indexOf('system') + 1);
-    expect(order.at(-1)).toBe('tools');
+    expect(all('[aria-labelledby="nav-group-observe"] a[data-workspace]').at(-1)?.getAttribute('data-workspace')).toBe('tools');
     await act(async () => navLink('tools').click());
     expect(window.location.hash).toBe('#tools');
     expect(navLink('tools').getAttribute('aria-current')).toBe('page');
@@ -361,8 +434,9 @@ describe('Tools page', () => {
 
   test('local tools and resources list with counts; no tool reads as installed', async () => {
     await mount('#tools', props(readySetup(NOW)));
-    expect(all('[data-tool-group]').map(group => group.getAttribute('data-tool-group'))).toEqual(['local_tool', 'resource']);
-    expect(text('#tools-local_tool-heading')).toBe('Local tools4');
+    expect(all('[data-tool-group]').map(group => group.getAttribute('data-tool-group'))).toEqual(['local_tool', 'skill', 'resource']);
+    expect(text('#tools-local_tool-heading')).toBe('Local tools1');
+    expect(text('#tools-skill-heading')).toBe('Recommended skills3');
     expect(text('#tools-resource-heading')).toBe('Recommended resources3');
     const status = Object.fromEntries(all('[data-tool]').map(item => [item.getAttribute('data-tool'), item.querySelector('[data-tool-status]')!.getAttribute('data-tool-status')]));
     expect(status).toEqual({ waza: 'unknown', codegraph: 'unknown', 'herdr-skill': 'unknown', 'hai-stack': 'na', shaders: 'na', 'awesome-design-md': 'na', 'claude-quickstarts': 'na' });
@@ -402,14 +476,134 @@ describe('Tools page', () => {
   });
 });
 
-test('setup pages carry no write, form or drag controls; buttons only copy', async () => {
+function cliSnapshot(): CliInventorySnapshotV1 {
+  return decodeCliInventory({
+    projection_version: 'repo-harness.cli-inventory.v1', status: 'ready', reason: null, collected_at: new Date(NOW).toISOString(),
+    entries: [{
+      id: 'npm:example', source: 'npm', package: 'example', version: '1.2.3', commands: ['example'],
+      location: '~/.local/bin', size_bytes: 1024, last_used_at: null, unused: null,
+      github: { repo: 'owner/example', candidates: [], stars: 42, archived: true, moved: true, monorepo: true },
+      deprecated: true, uninstall: { steps: ['example logout', 'npm rm -g example'], config: 'rm -rf ~/.config/example' },
+    }],
+  });
+}
+
+describe('CLI inventory page', () => {
+  for (const [locale, expected] of [['en', '1m ago'], ['zh', '1 分钟前']] as const) {
+    test(`last agent use is a localized relative time: ${locale}`, async () => {
+      const snapshot = cliSnapshot();
+      const at = new Date(Date.now() - 90_000).toISOString();
+      snapshot.entries[0]!.last_used_at = at;
+      await mount('#cli', props(null, { initialLocale: locale, readCliInventory: async () => snapshot }));
+      const time = document.querySelector('[data-cli-entry="npm:example"] time');
+      expect(time?.textContent).toBe(expected);
+      expect(time?.getAttribute('datetime')).toBe(at);
+    });
+  }
+
+  test('reads the cache only while CLI is open and copies removal steps without executing', async () => {
+    let reads = 0;
+    let setupReads = 0;
+    const copied: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { copied.push(text); } } });
+    await mount('', props(null, {
+      readSetup: async () => { setupReads++; return readySetup(NOW); },
+      readCliInventory: async () => { reads++; return cliSnapshot(); },
+    }));
+    expect(reads).toBe(0);
+    await act(async () => navLink('cli').click());
+    expect(window.location.hash).toBe('#cli');
+    expect(reads).toBe(1);
+    expect(setupReads).toBe(0);
+    expect(text('[data-cli-page]')).toContain('Shell history is not read.');
+    expect(text('[data-cli-unused="null"]')).toBe('Not enough agent-use records to judge');
+    for (const word of ['1.2.3', '1024 bytes', '42 stars', 'Whole repository', 'Archived upstream', 'Repository moved', 'Deprecated']) {
+      expect(text('[data-cli-entry]')).toContain(word);
+    }
+    expect(all('[data-cli-entry] a').map(link => link.getAttribute('href'))).toEqual(['https://github.com/owner/example']);
+    expect(all('[data-cli-removal] [data-command] code').map(node => node.textContent)).toEqual(['example logout', 'npm rm -g example', 'rm -rf ~/.config/example']);
+    expect(text('[data-cli-config]')).toContain('Separate removal');
+    const buttons = all('[data-cli-page] button');
+    expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
+    await act(async () => buttons[1]!.click());
+    expect(copied).toEqual(['npm rm -g example']);
+    expect(reads).toBe(1);
+    expect(all('[data-cli-page] form, [data-cli-page] input, [data-cli-page] [draggable="true"]')).toHaveLength(0);
+  });
+
+  test('unknown use, recent use, unused and ambiguous upstreams remain distinct', async () => {
+    const snapshot = cliSnapshot();
+    const first = snapshot.entries[0]!;
+    snapshot.entries.push({ ...first, id: 'manual:second', commands: ['second'], source: 'manual', unused: true, uninstall: null,
+      location: '[private path]', github: { repo: null, candidates: ['one/second', 'two/second'], monorepo: false, stars: null, archived: null, moved: false } });
+    snapshot.entries.push({ ...first, id: 'npm:third', commands: ['third'], unused: false, last_used_at: new Date(NOW - 60000).toISOString(), size_bytes: null, github: null });
+    await mount('#cli', props(null, { initialCliInventory: decodeCliInventory(snapshot) }));
+    expect(all('[data-cli-unused]').map(row => row.dataset.cliUnused)).toEqual(['null', 'true', 'false']);
+    expect(text('[data-cli-entry="manual:second"]')).toContain('No agent use in 90 days');
+    expect(text('[data-cli-entry="manual:second"]')).not.toContain('stars');
+    expect(text('[data-cli-entry="manual:second"]')).toContain('No uninstall command is available');
+    expect(all('[data-cli-entry="manual:second"] a')).toHaveLength(2);
+    expect(text('[data-cli-entry="npm:third"]')).toContain('Used in the last 90 days');
+  });
+
+  test('pending, unavailable, stale and empty collections never masquerade as current entries', async () => {
+    for (const [snapshot, state, entries] of [
+      [unavailableCliInventory(), 'pending', 0],
+      [unavailableCliInventory('collection_failed'), 'failed', 0],
+      [{ ...cliSnapshot(), status: 'stale', reason: 'collection_failed' }, 'stale', 1],
+      [{ ...cliSnapshot(), entries: [] }, 'ready', 0],
+    ] as const) {
+      await mount('#cli', props(null, { initialCliInventory: decodeCliInventory(snapshot) }));
+      expect(document.querySelector('[data-cli-page]')?.getAttribute('data-cli-state')).toBe(state);
+      expect(all('[data-cli-entry]')).toHaveLength(entries);
+      await act(async () => root?.unmount());
+      root = null; document.body.innerHTML = '';
+    }
+  });
+
+  test('an unreachable read fails; a failed refresh retains the last inventory with a warning', async () => {
+    const readCliInventory = async () => { throw new Error('private error'); };
+    await mount('#cli', props(null, { readCliInventory }));
+    expect(document.querySelector('[data-cli-page]')?.getAttribute('data-cli-state')).toBe('failed');
+    expect(text('[data-cli-page]')).not.toContain('private error');
+    await act(async () => root?.unmount());
+    root = null; document.body.innerHTML = '';
+    await mount('#cli', props(null, { readCliInventory, initialCliInventory: cliSnapshot() }));
+    await act(async () => navLink('tools').click());
+    await act(async () => navLink('cli').click());
+    expect(document.querySelector('[data-cli-page]')?.getAttribute('data-cli-state')).toBe('refresh-failed');
+    expect(all('[data-cli-entry]')).toHaveLength(1);
+    expect(text('[data-cli-page]')).toContain('Refresh failed');
+  });
+
+  test('the browser uses GET and rejects raw paths at the decoder boundary', async () => {
+    const originalFetch = globalThis.fetch;
+    const snapshot = cliSnapshot();
+    const requests: Array<[string, RequestInit | undefined]> = [];
+    globalThis.fetch = (async (url: string, options?: RequestInit) => {
+      requests.push([String(url), options]);
+      return new Response(JSON.stringify(snapshot), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const signal = new AbortController().signal;
+      expect(await fetchCliInventory(signal)).toEqual(snapshot);
+      expect(requests[0]![0]).toBe('/api/v1/cli-inventory');
+      expect(requests[0]![1]?.method ?? 'GET').toBe('GET');
+      expect(requests[0]![1]?.signal).toBe(signal);
+      snapshot.entries[0]!.location = '/Users/private-owner/bin';
+      await expect(fetchCliInventory(signal)).rejects.toThrow('cli inventory invalid: location');
+    } finally { globalThis.fetch = originalFetch; }
+  });
+});
+
+test('setup pages carry no write, form or drag controls', async () => {
   for (const hash of ['#agents', '#skills', '#hooks']) {
     await mount(hash, props(degradedSetup(NOW)));
     const main = document.querySelector('main')!;
     expect(main.querySelectorAll('form, input, select, textarea, [draggable="true"], [contenteditable]')).toHaveLength(0);
-    // Buttons either copy a command or disclose more of what is already shown.
+    // Buttons copy, disclose, or navigate to a recommended skill's catalog entry.
     const buttons = Array.from(main.querySelectorAll('button'));
-    expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy ') || button.hasAttribute('aria-expanded'))).toBe(true);
+    expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy ') || button.hasAttribute('aria-expanded') || button.matches('[data-tool-group="skill"] [data-tool] > button:only-child'))).toBe(true);
     await act(async () => root?.unmount());
     root = null; document.body.innerHTML = '';
   }

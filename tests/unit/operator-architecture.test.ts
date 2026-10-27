@@ -2,8 +2,19 @@ import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { parseArchitectureRequest } from '../../src/core/operator/architecture';
-import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureYaml } from '../helpers/module-repository';
-import { readFileSync, rmSync } from 'node:fs';
+import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
+import {
+  architectureModelDelta,
+  decodeArchitectureMap,
+  projectArchitectureMap,
+  projectTestCoverage,
+  withTestCoverage,
+  type ArchitectureMapLayersInput,
+  type ArchitectureMapNodeV1,
+} from '../../src/core/operator/architecture-map';
+import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
+import { collectArchitectureMap, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -138,4 +149,268 @@ test('accepts new model node kinds and reserves group for aggregate nodes', () =
   const withKind = (kind: unknown) => ({ ...detail, graph: { ...detail.graph, nodes: detail.graph.nodes.map(node => node.id === id ? { ...node, kind } : node) } });
   expect(decodeArchitectureModuleDetail(withKind('future-node-kind')).graph.nodes.find(node => node.id === id)?.kind).toBe('future-node-kind');
   for (const kind of ['', 'group', null, 7]) expect(() => decodeArchitectureModuleDetail(withKind(kind))).toThrow('architecture_module_detail_invalid');
+});
+
+describe('architecture map', () => {
+  const CAP = 'capability.pipeline.ledger';
+  const PART = 'component.pipeline.store';
+  const OTHER = 'capability.review.gate';
+  const mapNode = (nodeId: string, kind: string, parent: string | null = null): ArchitectureMapNodeV1 =>
+    ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary` });
+  const layers: ArchitectureMapLayersInput = {
+    changes: {
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2,
+      files: new Map([['src/store.ts', { added: 3, deleted: 1 }], ['src/ledger.ts', { added: 1, deleted: 0 }], ['README.md', { added: 2, deleted: 2 }]]),
+      owners: new Map<string, string | null>([['src/store.ts', PART], ['src/ledger.ts', CAP], ['README.md', null]]),
+      model: { state: 'ok', nodes_added: [PART], nodes_removed: ['component.pipeline.gone'], nodes_changed: [], relations_added: ['relation.a'], relations_removed: [], relations_changed: [] },
+    },
+    violations: {
+      debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
+      anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
+      dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
+    },
+    tests: { state: 'unavailable', reason: 'tests_pending' },
+  };
+  const input = {
+    repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z', layers,
+    nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
+    relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
+  };
+  const projected = () => projectArchitectureMap({
+    ...input,
+    sizes: { state: 'ok', lines: new Map([['src/store.ts', 30], ['src/ledger.ts', 12], ['README.md', 5], ['src/gate.ts', 0]]),
+      owners: new Map<string, string | null>([['src/store.ts', PART], ['src/ledger.ts', CAP], ['README.md', null], ['src/gate.ts', OTHER]]) },
+    dependencies: { state: 'ok', matrix: [{ from: CAP, to: OTHER, imports: 4 }, { from: OTHER, to: CAP, imports: 0 }, { from: CAP, to: CAP, imports: 9 }] },
+  });
+
+  test('a file counts for its owner and every ancestor; unowned files, self imports and zero counts are left out', () => {
+    const map = projected();
+    expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: CAP, files: 2, lines: 42 }, { id: OTHER, files: 1, lines: 0 }, { id: PART, files: 1, lines: 30 }] });
+    expect(map.dependencies).toEqual({ state: 'ok', edges: [{ source: CAP, target: OTHER, imports: 4 }] });
+    expect(map.nodes.map(entry => entry.id)).toEqual([CAP, OTHER, PART]);
+    expect(map.relations.map(entry => entry.id)).toEqual(['relation.a', 'relation.b']);
+    expect(decodeArchitectureMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
+  });
+
+  test('an owner the model does not name fails the projection; an unavailable source passes through with its reason', () => {
+    expect(() => projectArchitectureMap({ ...input, sizes: { state: 'ok', lines: new Map([['src/x.ts', 1]]), owners: new Map([['src/x.ts', 'capability.gone.node']]) },
+      dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' } })).toThrow('architecture_map_invalid');
+    const map = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_other_commit' } });
+    expect([map.sizes, map.dependencies]).toEqual([{ state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'code_facts_other_commit' }]);
+  });
+
+  test('the decoder refuses extra fields, broken references and imports that do not join two capabilities', () => {
+    const map = JSON.parse(JSON.stringify(projected()));
+    const refused = (change: (copy: typeof map) => void) => {
+      const copy = JSON.parse(JSON.stringify(map));
+      change(copy);
+      expect(() => decodeArchitectureMap(copy)).toThrow('architecture_map_invalid');
+    };
+    refused(copy => { copy.extra = 1; });
+    refused(copy => { copy.nodes[0].path = '/Users/someone/repo'; });
+    refused(copy => { copy.nodes.push(copy.nodes[0]); });
+    refused(copy => { copy.nodes[2].parent = 'capability.gone.node'; });
+    refused(copy => { copy.nodes[0].parent = PART; });
+    refused(copy => { copy.nodes[1].summary = 'Reads /opt/company/private.env'; });
+    refused(copy => { copy.nodes[1].name = 'C:\\Users\\someone\\secret'; });
+    refused(copy => { copy.relations[0].intent = 'Write [/home/someone/.ssh/key]'; });
+    refused(copy => { copy.relations[0].target = 'capability.gone.node'; });
+    refused(copy => { copy.sizes.nodes[0].id = 'capability.gone.node'; });
+    refused(copy => { copy.sizes.nodes[0].files = 0; });
+    refused(copy => { copy.dependencies.edges[0].target = PART; });
+    refused(copy => { copy.dependencies.edges[0].target = CAP; });
+    refused(copy => { copy.dependencies = { state: 'unavailable', reason: 'stale' }; });
+    refused(copy => { copy.commit = 'HEAD'; });
+  });
+
+  test('model prose never carries an absolute path, and a dirty source tree withholds import counts', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const nodeText = readFileSync(join(root, MODULE_NODE), 'utf8');
+      expect(nodeText).toContain('Read a committed module.');
+      fixtureWrite(root, MODULE_NODE, nodeText.replace('Read a committed module.', 'Reads /opt/company/private.env'));
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.nodes.find(entry => entry.id === MODULE_ID)?.summary).toBe('Reads [private path]');
+      expect(JSON.stringify(result.snapshot)).not.toContain('/opt/');
+      expect(result.snapshot.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // The CodeGraph index covers the working tree, so an uncommitted source edit withholds import counts; line counts stay.
+      fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
+      const edited = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      expect(edited.ok && [edited.snapshot.sizes.state, edited.snapshot.dependencies]).toEqual(['ok', { state: 'unavailable', reason: 'code_facts_worktree_dirty' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a checkout or edit between the two checks of a cycle drops the counts it can reach', () => {
+    const commit = 'c'.repeat(40);
+    const clean = { head: commit, modelClean: true, treeClean: true };
+    const read = { sizes: { state: 'ok', lines: new Map(), owners: new Map() }, dependencies: { state: 'ok', matrix: [] } } as const;
+    const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
+    expect(recheckCheckout(commit, clean, clean, read)).toEqual(read);
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, { ...clean, head: null }, clean, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ sizes: changed, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    expect(recheckCheckout(commit, clean, { ...clean, treeClean: null }, read)).toEqual({ sizes: read.sizes, dependencies: changed });
+    // An unavailable source keeps its own reason.
+    const dirty = { sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_worktree_dirty' } } as const;
+    expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, dirty)).toEqual(dirty);
+  });
+
+  test('the worker maps a committed model with git line counts, and imports fail closed without a CodeGraph index', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const commit = fixtureGit(root, ['rev-parse', 'HEAD']).trim();
+      expect(readCommitLineCounts(root, commit)?.get('src/module/read.ts')).toBe(1);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      const map = result.snapshot;
+      expect(map.commit).toBe(commit);
+      expect(map.nodes.map(entry => [entry.id, entry.parent])).toEqual([[MODULE_ID, null], ['component.module.core', MODULE_ID]]);
+      expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
+      expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: MODULE_ID, files: 2, lines: 2 }] });
+      expect(map.dependencies.state).toBe('unavailable');
+      expect(JSON.stringify(map)).not.toContain(root);
+      // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
+      fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
+      const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
+        { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+      expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.debt]).toEqual([
+        { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('today\'s changes sum along the parent chain, the model delta compares entities by id, and an unknown owner drops only that layer', () => {
+    const map = projected();
+    expect(map.layers.changes).toEqual({
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2, files: 3, unowned_files: 1,
+      nodes: [{ id: CAP, files: 2, added: 4, deleted: 1 }, { id: PART, files: 1, added: 3, deleted: 1 }],
+      model: (layers.changes as Extract<ArchitectureMapLayersInput['changes'], { state: 'ok' }>).model,
+      flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
+    });
+    // Parts with no read-only source in archctx 0.9.3 or on main carry a fixed reason.
+    expect([map.layers.pull_requests, map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
+      { state: 'unavailable', reason: 'pr_files_unavailable' }, { state: 'unavailable', reason: 'decisions_not_exported' },
+      { state: 'unavailable', reason: 'flows_check_writes_index' }, { state: 'unavailable', reason: 'layer_order_not_released' }]);
+    // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
+    const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, violations: { ...layers.violations, debt: { state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] } } } });
+    expect(anchorOnly.layers.violations.debt).toEqual({ state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] });
+    expect(architectureModelDelta(
+      { nodes: [{ id: 'a', summary: 'one' }, { id: 'b' }], relations: [{ id: 'r', intent: 'x' }] },
+      { nodes: [{ id: 'a', summary: 'two' }, { id: 'c' }], relations: [{ id: 'r', intent: 'x' }] },
+    )).toEqual({ nodes_added: ['c'], nodes_removed: ['b'], nodes_changed: ['a'], relations_added: [], relations_removed: [], relations_changed: [] });
+    const changes = layers.changes.state === 'ok' ? layers.changes : null;
+    const unknown = projectArchitectureMap({
+      ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, changes: { ...changes!, owners: new Map([['src/store.ts', 'capability.gone.node']]) } },
+    });
+    expect(unknown.layers.changes).toEqual({ state: 'unavailable', reason: 'ownership_unavailable' });
+    expect(unknown.layers.violations.debt.state).toBe('ok');
+  });
+
+  test('test coverage counts each projected file once per capability by its daily result', () => {
+    const file = (name: string, capabilities: string[]) => ({ file: `tests/${name}.test.ts`, capabilities: capabilities.map(capability => ({ id: capability, via: ['import' as const] })), command: `bun run test:files tests/${name}.test.ts --timeout 60000 --max-concurrency 1` });
+    const cases = (...results: ('passed' | 'failed' | 'skipped')[]) => results.map((result, index) => ({ suite: null, name: `case ${index}`, result, duration_ms: 1 }));
+    const snapshot: TestsSnapshotV1 = {
+      protocol: 1, kind: 'operator_tests', repository_id: 'repo_0123456789abcdef', collected_at: '2026-10-27T09:00:00.000Z',
+      run: { id: 41, attempt: 1, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z', conclusion: 'failure', channel: 'daily_full' },
+      projection: { state: 'ok', files: [file('both', [CAP, OTHER]), file('pass', [CAP]), file('skip', [CAP]), file('missing', [CAP])] },
+      results: { state: 'ok', files: [
+        { file: 'tests/both.test.ts', duration_ms: 3, cases: cases('passed', 'failed') },
+        { file: 'tests/pass.test.ts', duration_ms: 1, cases: cases('passed', 'skipped') },
+        { file: 'tests/skip.test.ts', duration_ms: 1, cases: cases('skipped') },
+      ] },
+      repairs: { state: 'unavailable', reason: 'repairs_unavailable' },
+    };
+    const nodes = projected().nodes;
+    const run = { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' };
+    expect(projectTestCoverage(nodes, { state: 'ready', snapshot })).toEqual({ state: 'ok', run, results: 'ok', capabilities: [
+      { id: CAP, files: 4, passed: 1, failed: 1, skipped: 1, no_result: 1 }, { id: OTHER, files: 1, passed: 0, failed: 1, skipped: 0, no_result: 0 }] });
+    // Without JUnit reports no file counts as passed.
+    expect(projectTestCoverage(nodes, { state: 'ready', snapshot: { ...snapshot, results: { state: 'unavailable', reason: 'junit_missing' } } })).toEqual({ state: 'ok', run, results: 'junit_missing', capabilities: [
+      { id: CAP, files: 4, passed: 0, failed: 0, skipped: 0, no_result: 4 }, { id: OTHER, files: 1, passed: 0, failed: 0, skipped: 0, no_result: 1 }] });
+    expect(projectTestCoverage(nodes, { state: 'ready', snapshot: { ...snapshot, projection: { state: 'ok', files: [file('part', [PART])] } } })).toEqual({ state: 'unavailable', reason: 'tests_model_mismatch' });
+    expect(projectTestCoverage(nodes, { state: 'ready', snapshot: { ...snapshot, projection: { state: 'unavailable', reason: 'projection_missing' } } })).toEqual({ state: 'unavailable', reason: 'projection_missing' });
+    expect(projectTestCoverage(nodes, { state: 'unavailable', reason: 'no_daily_run' })).toEqual({ state: 'unavailable', reason: 'no_daily_run' });
+    expect(withTestCoverage(projected(), { state: 'ready', snapshot }).layers.tests.state).toBe('ok');
+  });
+
+  test('the decoder refuses layer facts that name unknown nodes, private or escaping paths, or inconsistent counts', () => {
+    const map = JSON.parse(JSON.stringify(projected()));
+    map.layers.tests = { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [{ id: CAP, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] };
+    expect(decodeArchitectureMap(map)).toEqual(map);
+    const refused = (change: (copy: typeof map) => void) => {
+      const copy = JSON.parse(JSON.stringify(map));
+      change(copy);
+      expect(() => decodeArchitectureMap(copy)).toThrow('architecture_map_invalid');
+    };
+    refused(copy => { copy.layers.extra = { state: 'unavailable', reason: 'tests_pending' }; });
+    refused(copy => { copy.layers.changes.nodes[0].id = 'capability.gone.node'; });
+    refused(copy => { copy.layers.changes.unowned_files = 4; });
+    refused(copy => { copy.layers.changes.model.nodes_removed = [CAP]; });
+    refused(copy => { copy.layers.changes.model.relations_added = ['relation.gone']; });
+    refused(copy => { copy.layers.violations.debt.items[0].paths = ['/Users/someone/repo/src/orphan.ts']; });
+    refused(copy => { copy.layers.violations.debt.items[0].paths = ['src/../../outside.ts']; });
+    refused(copy => { copy.layers.violations.debt.items[0].kind = 'undeclared-dependency'; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
+    refused(copy => { copy.layers.violations.debt.items[1].nodes = [CAP, CAP]; });
+    refused(copy => { delete copy.layers.violations.layer_direction; });
+    refused(copy => { delete copy.layers.changes.flow_steps; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].id = 'capability.gone.node'; });
+    refused(copy => { copy.layers.violations.dependencies.edges[0].target = OTHER; });
+    refused(copy => { copy.layers.tests.capabilities[0].files = 3; });
+    refused(copy => { copy.layers.tests.capabilities[0].id = PART; });
+    refused(copy => { copy.layers.pull_requests = { state: 'ok', pulls: [] }; });
+    refused(copy => { copy.layers.decisions = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v1'; });
+  });
+
+  test('a checkout or edit during a cycle drops today\'s changes when the model moved and each violation check when the tree moved', () => {
+    const commit = 'c'.repeat(40);
+    const clean = { head: commit, modelClean: true, treeClean: true };
+    const read = { changes: layers.changes, violations: layers.violations };
+    const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
+    const allChanged = { debt: changed, anchors: changed, dependencies: changed };
+    expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
+    expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ changes: changed, violations: allChanged });
+    expect(localMidnight(new Date(2026, 9, 27, 18, 30))).toBe(new Date(2026, 9, 27).toISOString());
+  });
+
+  test('the worker reads today\'s first-parent changes with their owners and the model delta against the base commit', () => {
+    const root = realpathSync(moduleRepository());
+    const dated = (date: string, step: () => void) => {
+      process.env.GIT_AUTHOR_DATE = date;
+      process.env.GIT_COMMITTER_DATE = date;
+      try { step(); } finally { delete process.env.GIT_AUTHOR_DATE; delete process.env.GIT_COMMITTER_DATE; }
+    };
+    try {
+      dated('2026-10-20T00:00:00Z', () => fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--amend', '--no-edit', '--quiet']));
+      const base = fixtureGit(root, ['rev-parse', 'HEAD']);
+      dated('2026-10-27T12:00:00Z', () => {
+        fixtureWrite(root, MODULE_NODE, readFileSync(join(root, MODULE_NODE), 'utf8').replace('Read a committed module.', 'Read a module.'));
+        fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
+        fixtureCommit(root);
+      });
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z');
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layers.changes).toEqual({
+        state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1, files: 2, unowned_files: 1,
+        nodes: [{ id: MODULE_ID, files: 1, added: 2, deleted: 1 }],
+        model: { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [MODULE_ID], relations_added: [], relations_removed: [], relations_changed: [] },
+        flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
+      });
+      // The fixture has no CodeGraph index: each check that reads it says so; nothing is filled in, and no check syncs an index.
+      expect(result.snapshot.layers.violations.anchors).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'flows_check_writes_index' });
+      expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // A window that holds the whole history has no base commit.
+      const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z');
+      expect(all.ok && all.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'history_starts_today' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });

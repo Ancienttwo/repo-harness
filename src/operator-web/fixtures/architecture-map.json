@@ -1,0 +1,5650 @@
+{
+ "schema_version": "repo-harness.architecture-map.v2",
+ "repository_id": "repo_a5b76eee64af71c3",
+ "commit": "2698b8991d120735cb739dc25b171607d5d6d3d2",
+ "collected_at": "2026-10-27T18:06:18.000Z",
+ "nodes": [
+  {
+   "id": "capability.organization.publication",
+   "kind": "capability",
+   "name": "Publication Observations",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and records admitted manual feedback."
+  },
+  {
+   "id": "capability.organization.task-fleet",
+   "kind": "capability",
+   "name": "Task Fleet",
+   "status": "active",
+   "layer": "core",
+   "parent": null,
+   "summary": "Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage."
+  },
+  {
+   "id": "capability.public-surface.action-commands",
+   "kind": "capability",
+   "name": "Action Commands",
+   "status": "active",
+   "layer": "assets",
+   "parent": null,
+   "summary": "Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them."
+  },
+  {
+   "id": "capability.public-surface.adoption",
+   "kind": "capability",
+   "name": "Adoption",
+   "status": "active",
+   "layer": "core",
+   "parent": null,
+   "summary": "Plans and applies repository adoption through the canonical filesystem transaction boundary."
+  },
+  {
+   "id": "capability.public-surface.root-router",
+   "kind": "capability",
+   "name": "Root Router",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Routes repository-level product and agent context into capability-specific contracts."
+  },
+  {
+   "id": "capability.public-surface.strategy-reflection",
+   "kind": "capability",
+   "name": "Strategy Reflection",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Collects a bounded strategy context packet and validates inert strategic proposals on explicit request."
+  },
+  {
+   "id": "capability.runtime-harness.agent-runtime-effects",
+   "kind": "capability",
+   "name": "Agent Runtime Effects",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Owns admitted session-bound, at-most-once Agent Runtime Effect V2 for the closed Herdr CLI adapter, inbox notification and durable offer wake."
+  },
+  {
+   "id": "capability.runtime-harness.engineer-bindings",
+   "kind": "capability",
+   "name": "Engineer Bindings",
+   "status": "active",
+   "layer": "core",
+   "parent": null,
+   "summary": "Resolves tracked capability-backed Engineer Profile and SOP contracts and retains historical principal mapping and Claim Actor codecs."
+  },
+  {
+   "id": "capability.runtime-harness.engineer-scheduling",
+   "kind": "capability",
+   "name": "Engineer Scheduling",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Projects explicitly selected immutable provider WorkGraph V2 and exact dependency evidence for operator observations."
+  },
+  {
+   "id": "capability.runtime-harness.engineering-overlay",
+   "kind": "capability",
+   "name": "Engineering Overlay",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Projects provider scheduling, independently selected engineer profiles and exact admitted runtime evidence into read-only engineering and organization attention views."
+  },
+  {
+   "id": "capability.runtime-harness.evidence-ledger",
+   "kind": "capability",
+   "name": "Evidence Ledger",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports attested evidence and materializes handoff and resume recovery views."
+  },
+  {
+   "id": "capability.runtime-harness.external-source-intake",
+   "kind": "capability",
+   "name": "External Source Intake",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Owns immutable provider issue evidence and exact admitted-session provenance bindings without scheduling authority."
+  },
+  {
+   "id": "capability.runtime-harness.global-runtime-reconciliation",
+   "kind": "capability",
+   "name": "Global Runtime Reconciliation",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Reconciles the installed repo-harness runtime, its mandatory ArchContext closure, and profile-owned external tooling."
+  },
+  {
+   "id": "capability.runtime-harness.hook-adapters",
+   "kind": "capability",
+   "name": "Hook Adapters",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Installs and runs typed Claude and Codex host hook routes."
+  },
+  {
+   "id": "capability.runtime-harness.integration-acceptance",
+   "kind": "capability",
+   "name": "Integration Product Acceptance",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Binds approved requirement bytes, explicit canonical provider PR integration proofs, one exact Git candidate, evidence and the canonical acceptance receipt into immutable V2 product projections."
+  },
+  {
+   "id": "capability.runtime-harness.mcp-sidecar",
+   "kind": "capability",
+   "name": "MCP Sidecar",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Provides the local MCP sidecar and its repository access policy boundary."
+  },
+  {
+   "id": "capability.runtime-harness.operator",
+   "kind": "capability",
+   "name": "Operator Board",
+   "status": "active",
+   "layer": "web",
+   "parent": null,
+   "summary": "Provides bounded read-only HTTP views of registered provider issues, admitted sessions, planning and explicit task history."
+  },
+  {
+   "id": "capability.runtime-harness.refactor-program",
+   "kind": "capability",
+   "name": "Refactor Recommendations",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Shows measured ArchContext refactor suggestions with their evidence and records the user decision; it never executes a refactor."
+  },
+  {
+   "id": "capability.runtime-harness.task-agent-host",
+   "kind": "capability",
+   "name": "Task Agent Host",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output."
+  },
+  {
+   "id": "capability.runtime-mcp.chatgpt-browser",
+   "kind": "capability",
+   "name": "ChatGPT Browser Consult",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Runs local ChatGPT Web consult sessions through a pinned Oracle browser provider and projects the ChatGPT skill to hosts."
+  },
+  {
+   "id": "capability.runtime-mcp.general-repo-access",
+   "kind": "capability",
+   "name": "General Repository Access",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Exposes bounded read-only repository tools through MCP."
+  },
+  {
+   "id": "capability.verification.acceptance-review",
+   "kind": "capability",
+   "name": "Acceptance Review",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Runs the generic acceptance review through a persistent reviewer task agent and records one structured acceptance receipt."
+  },
+  {
+   "id": "capability.verification.codegraph-readiness",
+   "kind": "capability",
+   "name": "CodeGraph Readiness",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Resolves and verifies the repository CodeGraph runtime and index readiness."
+  },
+  {
+   "id": "capability.verification.evals-checks",
+   "kind": "capability",
+   "name": "Evals And Checks",
+   "status": "active",
+   "layer": "scripts",
+   "parent": null,
+   "summary": "Runs repository verification, contract gates, benchmarks, and evaluation suites."
+  },
+  {
+   "id": "capability.workflow-engine.contract-assets",
+   "kind": "capability",
+   "name": "Contract Assets",
+   "status": "active",
+   "layer": "assets",
+   "parent": null,
+   "summary": "Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and the standalone resolver projection."
+  },
+  {
+   "id": "capability.workflow-engine.execution-primitives",
+   "kind": "capability",
+   "name": "Execution Primitives",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It holds no workflow policy."
+  },
+  {
+   "id": "capability.workflow-engine.inspection-migration",
+   "kind": "capability",
+   "name": "Inspection And Migration",
+   "status": "active",
+   "layer": "scripts",
+   "parent": null,
+   "summary": "Inspects repository state and executes explicit initialization or migration plans."
+  },
+  {
+   "id": "capability.workflow-engine.workflow-state",
+   "kind": "capability",
+   "name": "Workflow State",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Resolves deterministic Effective State, provider issue and admitted session board observations, historical task identity, worktree safety and the continuation ledger."
+  },
+  {
+   "id": "component.acceptance-review.primary",
+   "kind": "component",
+   "name": "Generic Review Round",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.verification.acceptance-review",
+   "summary": "Composes the review packet, runs the isolated reviewer, validates its output and records the acceptance receipt."
+  },
+  {
+   "id": "component.action-commands.bundled-skills",
+   "kind": "component",
+   "name": "Bundled Skill Packages",
+   "status": "active",
+   "layer": "assets",
+   "parent": "capability.public-surface.action-commands",
+   "summary": "Holds the bundled skill packages that the manifest names as package sources."
+  },
+  {
+   "id": "component.action-commands.primary",
+   "kind": "component",
+   "name": "Command Facades and Manifest",
+   "status": "active",
+   "layer": "assets",
+   "parent": "capability.public-surface.action-commands",
+   "summary": "Holds the skill package manifest and the thin command facade skills that it projects."
+  },
+  {
+   "id": "component.action-commands.skill-surface-catalog",
+   "kind": "component",
+   "name": "Skill Surface Catalog",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.public-surface.action-commands",
+   "summary": "Parses the manifest into a closed catalog and computes the facade, external skill and host placement projections per profile."
+  },
+  {
+   "id": "component.adoption.primary",
+   "kind": "component",
+   "name": "Adoption Transaction",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.public-surface.adoption",
+   "summary": "Executes the reviewed apply repository adoption boundary."
+  },
+  {
+   "id": "component.agent-runtime-effects.journal",
+   "kind": "component",
+   "name": "Agent Runtime Effect Journal",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.agent-runtime-effects",
+   "summary": "Owns immutable admitted-v2 effect intent and observation chains, deterministic current repair and exact session, profile, admission and claim fences."
+  },
+  {
+   "id": "component.chatgpt-browser.primary",
+   "kind": "component",
+   "name": "Browser Consult Engine",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-mcp.chatgpt-browser",
+   "summary": "Assembles the prompt bundle, scans it, runs the Oracle or native provider and writes the session record."
+  },
+  {
+   "id": "component.codegraph-readiness.primary",
+   "kind": "component",
+   "name": "CodeGraph Readiness Check",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.verification.codegraph-readiness",
+   "summary": "Executes the reviewed verify codegraph readiness boundary."
+  },
+  {
+   "id": "component.contract-assets.capability-registry",
+   "kind": "component",
+   "name": "Capability Registry",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.workflow-engine.contract-assets",
+   "summary": "Maps capability authorities to registry metadata and resolves path owners through the selected authority."
+  },
+  {
+   "id": "component.contract-assets.contract-worktree-lifecycle",
+   "kind": "component",
+   "name": "Worktree Safety and Branch Delivery",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.workflow-engine.contract-assets",
+   "summary": "Starts isolated worktrees, ships branch-only PRs and removes only proven merged, clean and unowned worktrees."
+  },
+  {
+   "id": "component.contract-assets.planning-helpers",
+   "kind": "component",
+   "name": "Planning Helpers",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.workflow-engine.contract-assets",
+   "summary": "Runs contract-listed planning, triage and factor-lab helpers through the protected helper runner."
+  },
+  {
+   "id": "component.contract-assets.primary",
+   "kind": "component",
+   "name": "Workflow Contract And Policy",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.workflow-engine.contract-assets",
+   "summary": "Holds the package workflow contract, the opt-in marker, the harness policy and the context map, and loads the contract fail closed."
+  },
+  {
+   "id": "component.contract-assets.template-projection",
+   "kind": "component",
+   "name": "Template Projection",
+   "status": "active",
+   "layer": "assets",
+   "parent": "capability.workflow-engine.contract-assets",
+   "summary": "Projects the standalone capability resolver, reference configs and template assets and drives repository init."
+  },
+  {
+   "id": "component.engineer-bindings.primary",
+   "kind": "component",
+   "name": "Engineer Profile Resolver",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.runtime-harness.engineer-bindings",
+   "summary": "Resolves tracked Engineer Profile and SOP contracts and derives the exact engineer contract revision without mutation."
+  },
+  {
+   "id": "component.engineer-scheduling.primary",
+   "kind": "component",
+   "name": "Provider Work Graph Reader",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.engineer-scheduling",
+   "summary": "Validates one provider WorkGraph V2 at its selected commit and path, then joins provider issue observations and exact dependency evidence without acquisition authority."
+  },
+  {
+   "id": "component.engineering-overlay.primary",
+   "kind": "component",
+   "name": "Engineering Overlay Read Model",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.runtime-harness.engineering-overlay",
+   "summary": "Owns admitted engineering and organization-attention projections, exact runtime/profile associations and explicit component consistency fences; it stores no mutable status."
+  },
+  {
+   "id": "component.evals-checks.ci-selection",
+   "kind": "component",
+   "name": "CI Selection And Report",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.verification.evals-checks",
+   "summary": "GitHub workflows, CI coverage selection, the local CI gate and the CI report."
+  },
+  {
+   "id": "component.evals-checks.evals-and-benchmarks",
+   "kind": "component",
+   "name": "Evals And Benchmarks",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.verification.evals-checks",
+   "summary": "Skill evaluations and the harness profile benchmark that produce effectiveness evidence."
+  },
+  {
+   "id": "component.evals-checks.primary",
+   "kind": "component",
+   "name": "Verification Check Execution",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.verification.evals-checks",
+   "summary": "Executes the Verification Plan of the current review admission with exact snapshot, process result and evidence binding."
+  },
+  {
+   "id": "component.evals-checks.test-suite",
+   "kind": "component",
+   "name": "Test Suite",
+   "status": "active",
+   "layer": "tests",
+   "parent": "capability.verification.evals-checks",
+   "summary": "The repository test files and the Bun test configuration; expandable by runtime boundary."
+  },
+  {
+   "id": "component.evals-checks.workflow-gates",
+   "kind": "component",
+   "name": "Workflow Gates",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.verification.evals-checks",
+   "summary": "Shell gates for task sync, task workflow and agent tooling."
+  },
+  {
+   "id": "component.evidence-ledger.primary",
+   "kind": "component",
+   "name": "Evidence Event Store",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.evidence-ledger",
+   "summary": "Owns the event log, fold, blob store, redaction, checkpoints, the attested importer, recovery views and the verification-plan executor; expandable after the verification-plan split."
+  },
+  {
+   "id": "component.execution-primitives.primary",
+   "kind": "component",
+   "name": "Bounded Process And Lock Primitives",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.workflow-engine.execution-primitives",
+   "summary": "Spawns supervised children and holds canonical directory locks under the Git common dir."
+  },
+  {
+   "id": "component.external-source-intake.immutable-evidence",
+   "kind": "component",
+   "name": "Immutable External Evidence Store",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.external-source-intake",
+   "summary": "Creates immutable provider observations, refresh receipts and admitted-session binding receipts under the Git common directory, rewrites the receipt head under the store lock and serves the bounded newest snapshot; keeps historical binding bytes separate from current evidence."
+  },
+  {
+   "id": "component.general-repo-access.primary",
+   "kind": "component",
+   "name": "Stable File Reader",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-mcp.general-repo-access",
+   "summary": "Executes the reviewed read a repository file boundary."
+  },
+  {
+   "id": "component.global-runtime-reconciliation.archctx-closure",
+   "kind": "component",
+   "name": "ArchContext Closure",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.global-runtime-reconciliation",
+   "summary": "Runs the pinned package-local archctx CLI on a trusted Node runtime, applies architecture projections and reads the committed model."
+  },
+  {
+   "id": "component.global-runtime-reconciliation.cli-root",
+   "kind": "component",
+   "name": "CLI Root and Diagnostics",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.global-runtime-reconciliation",
+   "summary": "Builds the repo-harness command tree, runs the update transactions and serves read-only doctor and setup check diagnostics."
+  },
+  {
+   "id": "component.global-runtime-reconciliation.primary",
+   "kind": "component",
+   "name": "Global Runtime Reconciler",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.global-runtime-reconciliation",
+   "summary": "Executes bounded install, exact dependency readback, runtime handshake, and profile-tool refresh."
+  },
+  {
+   "id": "component.global-runtime-reconciliation.release-packaging",
+   "kind": "component",
+   "name": "Release Packaging",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.runtime-harness.global-runtime-reconciliation",
+   "summary": "Owns the package manifest, the npm release gates, the tarball install smoke and the runtime evidence receipt."
+  },
+  {
+   "id": "component.hook-adapters.edit-guards",
+   "kind": "component",
+   "name": "Edit Guard Handlers",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.hook-adapters",
+   "summary": "The typed handler that guards edit paths, and the circuit breaker store."
+  },
+  {
+   "id": "component.hook-adapters.host-installer",
+   "kind": "component",
+   "name": "Host Adapter Installer",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.hook-adapters",
+   "summary": "Projects the route registry into user-level Claude and Codex adapter entries."
+  },
+  {
+   "id": "component.hook-adapters.primary",
+   "kind": "component",
+   "name": "Hook Route Runtime",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.hook-adapters",
+   "summary": "Resolves a host hook route to its one typed handler, shapes the host output and writes one telemetry record."
+  },
+  {
+   "id": "component.hook-adapters.session-lifecycle",
+   "kind": "component",
+   "name": "Session Lifecycle Handlers",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.hook-adapters",
+   "summary": "Typed handlers for session context, architecture debt, Stop recovery and subagent routes."
+  },
+  {
+   "id": "component.inspection-migration.primary",
+   "kind": "component",
+   "name": "Repository Inspector Process",
+   "status": "active",
+   "layer": "scripts",
+   "parent": "capability.workflow-engine.inspection-migration",
+   "summary": "Reports repository mode, drift signals and required decisions without writes, and holds the shell scaffold library."
+  },
+  {
+   "id": "component.integration-acceptance.primary",
+   "kind": "component",
+   "name": "Integration Acceptance Evidence Plane",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.integration-acceptance",
+   "summary": "Owns canonical immutable integration evidence and strict current-authority revalidation; it owns neither merge construction nor product verdicts."
+  },
+  {
+   "id": "component.mcp-sidecar.coding-profile",
+   "kind": "component",
+   "name": "Coding Profile Runtime",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.mcp-sidecar",
+   "summary": "Runs the opt-in coding tool block: managed worktree workspaces, file edits and bounded shell processes."
+  },
+  {
+   "id": "component.mcp-sidecar.host-setup",
+   "kind": "component",
+   "name": "CLI and Host Setup",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.mcp-sidecar",
+   "summary": "Owns the mcp CLI command, host setup for ChatGPT and Codex, the doctors and owned uninstall."
+  },
+  {
+   "id": "component.mcp-sidecar.primary",
+   "kind": "component",
+   "name": "Server and Tool Dispatch",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.mcp-sidecar",
+   "summary": "Builds one MCP server per context and dispatches every tool call to the exact profile tool block."
+  },
+  {
+   "id": "component.mcp-sidecar.repo-policy-registry",
+   "kind": "component",
+   "name": "Config Policy and Repository Registry",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.mcp-sidecar",
+   "summary": "Holds the user-level MCP config and credentials, the profile path policy, redaction, audit and the registered repository grants."
+  },
+  {
+   "id": "component.mcp-sidecar.transport-auth",
+   "kind": "component",
+   "name": "Transport and Authorization",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.mcp-sidecar",
+   "summary": "Serves MCP over stdio or HTTP and binds each HTTP session to a verified OAuth authorization."
+  },
+  {
+   "id": "component.operator.activity-feeds",
+   "kind": "component",
+   "name": "Setup and Activity Feeds",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Background collectors and projections for the development activity board and the setup pages."
+  },
+  {
+   "id": "component.operator.architecture-view",
+   "kind": "component",
+   "name": "Architecture View",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Committed architecture module views and the module CLI command."
+  },
+  {
+   "id": "component.operator.console-collectors",
+   "kind": "component",
+   "name": "Console Collectors",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Background collectors for the Bot access, notify status, docs, tests, task execution and architecture map views; each keeps an in-memory cache that a GET reads."
+  },
+  {
+   "id": "component.operator.primary",
+   "kind": "component",
+   "name": "Operator HTTP Reader",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Returns public JSON observations and typed failures; its only write route changes the agents section of the global configuration."
+  },
+  {
+   "id": "component.operator.view-projections",
+   "kind": "component",
+   "name": "Operator View Projections",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Pure projections, route parsers and strict decoders for every operator observation schema."
+  },
+  {
+   "id": "component.operator.web-console",
+   "kind": "component",
+   "name": "Operator Web Console",
+   "status": "active",
+   "layer": "web",
+   "parent": "capability.runtime-harness.operator",
+   "summary": "Prebuilt read-only browser console that renders operator JSON observations."
+  },
+  {
+   "id": "component.publication.primary",
+   "kind": "component",
+   "name": "PR Readiness and Integration Evidence",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.organization.publication",
+   "summary": "Observes canonical provider PR readiness and actual merge commit/tree evidence, and provides the canonical publication JSON and SHA-256 digest helpers."
+  },
+  {
+   "id": "component.publication.provider-feedback",
+   "kind": "component",
+   "name": "Provider Feedback",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.organization.publication",
+   "summary": "Owns admitted provider feedback orchestration, immutable feedback facts, delivery receipts and read-only repair projections; its fleet-layer location does not transfer Publication ownership."
+  },
+  {
+   "id": "component.refactor-program.archctx-provider",
+   "kind": "component",
+   "name": "Refactor ArchContext Provider Boundary",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.refactor-program",
+   "summary": "Runs the pinned package-local ArchContext scan, recommendation readback, record and decision commands."
+  },
+  {
+   "id": "component.root-router.primary",
+   "kind": "component",
+   "name": "Root Adoption Router",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.public-surface.root-router",
+   "summary": "Executes the reviewed route root initialization boundary."
+  },
+  {
+   "id": "component.strategy-reflection.primary",
+   "kind": "component",
+   "name": "Strategy Context Collector",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.public-surface.strategy-reflection",
+   "summary": "Reads strategy sources through one bounded request reader and validates proposals against the digest-bound packet."
+  },
+  {
+   "id": "component.task-agent-host.primary",
+   "kind": "component",
+   "name": "Herdr Task Session Host",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.runtime-harness.task-agent-host",
+   "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands, the installed persona and plugin assets, and the Herdr notify install record that names the notify session. Owns the pure pane-status contract, its plugin projection, and local blind-label I/O."
+  },
+  {
+   "id": "component.task-fleet.primary",
+   "kind": "component",
+   "name": "Fleet Task Observations and Board",
+   "status": "active",
+   "layer": "cli",
+   "parent": "capability.organization.task-fleet",
+   "summary": "Owns registry-scoped provider fleet commands and board projection with exact admitted session evidence."
+  },
+  {
+   "id": "component.task-fleet.task-inbox",
+   "kind": "component",
+   "name": "Task Inbox",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.organization.task-fleet",
+   "summary": "Owns admitted task messages, exact recipient delivery receipts and separate historical message, reply and activity readers."
+  },
+  {
+   "id": "component.workflow-state.continuation-ledger",
+   "kind": "component",
+   "name": "Continuation Ledger",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.workflow-engine.workflow-state",
+   "summary": "Routes the next loop action from read-only Effective State and stops a loop that makes no progress."
+  },
+  {
+   "id": "component.workflow-state.coordination-plane",
+   "kind": "component",
+   "name": "Provider Board Observations and Historical Worktree Safety",
+   "status": "active",
+   "layer": "effects",
+   "parent": "capability.workflow-engine.workflow-state",
+   "summary": "Joins provider issue observations and exact admitted sessions, retains historical canonical task parsers and guards exact worktree cleanup."
+  },
+  {
+   "id": "component.workflow-state.primary",
+   "kind": "component",
+   "name": "Effective State Resolver",
+   "status": "active",
+   "layer": "core",
+   "parent": "capability.workflow-engine.workflow-state",
+   "summary": "Projects plan, worktree and capability facts into Effective State and commits the shared version owner."
+  },
+  {
+   "id": "external.archctx",
+   "kind": "external-system",
+   "name": "ArchContext",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Architecture model CLI and daemon that validates the model, resolves path ownership and renders projections."
+  },
+  {
+   "id": "external.chatgpt",
+   "kind": "external-system",
+   "name": "ChatGPT",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Web assistant that the ChatGPT browser provider drives through Chrome or oracle."
+  },
+  {
+   "id": "external.claude-code",
+   "kind": "external-system",
+   "name": "Claude Code",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Agent host CLI that runs repo-harness hooks and the MCP server, and runs as a review or task agent."
+  },
+  {
+   "id": "external.codegraph",
+   "kind": "external-system",
+   "name": "CodeGraph",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Code index CLI that supplies symbol, call and import facts."
+  },
+  {
+   "id": "external.codex",
+   "kind": "external-system",
+   "name": "Codex CLI",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Agent host CLI that runs repo-harness hooks and the MCP server, and runs as a review or task agent."
+  },
+  {
+   "id": "external.git",
+   "kind": "external-system",
+   "name": "Git",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Version control CLI that owns commits, refs, worktrees and the common directory."
+  },
+  {
+   "id": "external.github",
+   "kind": "external-system",
+   "name": "GitHub",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Provider of issues, pull requests, checks, releases and CI runs; reached through the gh CLI and the REST API."
+  },
+  {
+   "id": "external.herdr",
+   "kind": "external-system",
+   "name": "Herdr",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Terminal multiplexer server that hosts task-agent and review panes."
+  },
+  {
+   "id": "external.npm-registry",
+   "kind": "external-system",
+   "name": "npm Registry",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Public package registry that publishes and serves the repo-harness release package, and answers the CLI inventory deprecation lookups (npm view <pkg> deprecated)."
+  },
+  {
+   "id": "namespace.host.developer",
+   "kind": "namespace",
+   "name": "Developer host",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "The user machine that runs every repo-harness process. repo-harness installs no launchd, systemd or cron unit and creates no container or mount."
+  },
+  {
+   "id": "process.agent-host",
+   "kind": "process",
+   "name": "Agent host",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Claude Code or Codex session that starts hook commands and stdio MCP servers."
+  },
+  {
+   "id": "process.cli",
+   "kind": "process",
+   "name": "CLI process",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "One short bun process per repo-harness command from a user shell or Bot."
+  },
+  {
+   "id": "process.herdr-server",
+   "kind": "process",
+   "name": "Herdr server",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "External Herdr server that owns panes and runs pane commands."
+  },
+  {
+   "id": "process.hook",
+   "kind": "process",
+   "name": "Hook process",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "One short bun process per host hook event; reads stdin JSON and answers on stdout."
+  },
+  {
+   "id": "process.mcp-coding-shell",
+   "kind": "process",
+   "name": "MCP coding shell",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Detached sh -c session that the MCP server starts for coding tools; at most four run, each for at most 30 minutes."
+  },
+  {
+   "id": "process.mcp-server",
+   "kind": "process",
+   "name": "MCP server",
+   "status": "active",
+   "layer": "cli",
+   "parent": null,
+   "summary": "Long-running repo-harness mcp serve process on stdio or loopback HTTP."
+  },
+  {
+   "id": "process.oar-review-host",
+   "kind": "process",
+   "name": "OAR review host",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Node process in a Herdr pane that runs one review session for at most three rounds."
+  },
+  {
+   "id": "process.operator-collector",
+   "kind": "process",
+   "name": "Operator collector",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Detached fleet, task-read and setup-check child processes, the resident git cat-file worker of each registered repository that resolves to one GitHub remote and a valid default-branch ref, and the gh, herdr, MCP doctor and package-manager probes of the background collectors; GET handlers read only their cached results."
+  },
+  {
+   "id": "process.operator-server",
+   "kind": "process",
+   "name": "Operator server",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Long-running repo-harness operator serve process with a read-only loopback HTTP API."
+  },
+  {
+   "id": "process.process-group-launcher",
+   "kind": "process",
+   "name": "Process group launcher",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Detached process group leader that starts the supervised helper, archctx, node probe or verification command."
+  },
+  {
+   "id": "process.process-supervisor",
+   "kind": "process",
+   "name": "Process supervisor",
+   "status": "active",
+   "layer": "effects",
+   "parent": null,
+   "summary": "Bounded supervisor that publishes the process group id before it starts the target and terminates the group on timeout, signal or parent exit."
+  },
+  {
+   "id": "process.vendor-cli",
+   "kind": "process",
+   "name": "Vendor reviewer CLI",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Claude or Codex reviewer runtime under sandbox-exec, started by the OAR review host."
+  }
+ ],
+ "relations": [
+  {
+   "id": "relation.acceptance-review.claude-code",
+   "kind": "calls",
+   "source": "capability.verification.acceptance-review",
+   "target": "external.claude-code",
+   "intent": "Run Claude Code as a sandboxed reviewer in the OAR review host."
+  },
+  {
+   "id": "relation.acceptance-review.codex",
+   "kind": "calls",
+   "source": "capability.verification.acceptance-review",
+   "target": "external.codex",
+   "intent": "Run Codex as a sandboxed reviewer in the OAR review host."
+  },
+  {
+   "id": "relation.acceptance-review.deployed-on.oar-review-host",
+   "kind": "deployed-on",
+   "source": "capability.verification.acceptance-review",
+   "target": "process.oar-review-host",
+   "intent": "Acceptance review runs review sessions in the OAR review host."
+  },
+  {
+   "id": "relation.acceptance-review.hook-adapters",
+   "kind": "calls",
+   "source": "capability.verification.acceptance-review",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Admit at most one persistent semantic review session per work package through the circuit breaker"
+  },
+  {
+   "id": "relation.acceptance-review.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.verification.acceptance-review",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Apply secret patterns to module review context."
+  },
+  {
+   "id": "relation.acceptance-review.imports.operator",
+   "kind": "depends-on",
+   "source": "capability.verification.acceptance-review",
+   "target": "capability.runtime-harness.operator",
+   "intent": "Use the architecture module view in review prompts."
+  },
+  {
+   "id": "relation.acceptance-review.primary",
+   "kind": "calls",
+   "source": "capability.verification.acceptance-review",
+   "target": "component.acceptance-review.primary",
+   "intent": "Run one generic acceptance review round for an admitted review campaign"
+  },
+  {
+   "id": "relation.acceptance-review.primary.evidence-ledger",
+   "kind": "calls",
+   "source": "component.acceptance-review.primary",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Canonicalize review records and load verification execution results"
+  },
+  {
+   "id": "relation.acceptance-review.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.acceptance-review.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold an exclusive directory lock around one generic review run"
+  },
+  {
+   "id": "relation.acceptance-review.primary.task-agent-host",
+   "kind": "calls",
+   "source": "component.acceptance-review.primary",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts"
+  },
+  {
+   "id": "relation.acceptance-review.primary.task-fleet",
+   "kind": "calls",
+   "source": "component.acceptance-review.primary",
+   "target": "capability.organization.task-fleet",
+   "intent": "Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending"
+  },
+  {
+   "id": "relation.acceptance-review.primary.workflow-state",
+   "kind": "reads",
+   "source": "component.acceptance-review.primary",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Observe Git and files read-only and resolve the workflow profile for the review subject"
+  },
+  {
+   "id": "relation.action-commands.imports.contract-assets",
+   "kind": "depends-on",
+   "source": "capability.public-surface.action-commands",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Read the workflow contract during skill version checks."
+  },
+  {
+   "id": "relation.action-commands.imports.evals-checks",
+   "kind": "depends-on",
+   "source": "capability.public-surface.action-commands",
+   "target": "capability.verification.evals-checks",
+   "intent": "Run the skill evaluation engine for routing checks."
+  },
+  {
+   "id": "relation.action-commands.primary",
+   "kind": "calls",
+   "source": "capability.public-surface.action-commands",
+   "target": "component.action-commands.primary",
+   "intent": "Install action command skills"
+  },
+  {
+   "id": "relation.action-commands.primary.bundled-skills",
+   "kind": "depends-on",
+   "source": "component.action-commands.primary",
+   "target": "component.action-commands.bundled-skills",
+   "intent": "Name bundled skill packages as manifest package sources"
+  },
+  {
+   "id": "relation.action-commands.skill-surface-catalog",
+   "kind": "calls",
+   "source": "capability.public-surface.action-commands",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Select the facade and host placement projection for a profile"
+  },
+  {
+   "id": "relation.action-commands.skill-surface-catalog.primary",
+   "kind": "reads",
+   "source": "component.action-commands.skill-surface-catalog",
+   "target": "component.action-commands.primary",
+   "intent": "Read manifest.json as the single catalog authority"
+  },
+  {
+   "id": "relation.adoption.imports.execution-primitives",
+   "kind": "depends-on",
+   "source": "capability.public-surface.adoption",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run bounded processes for adoption and file transactions."
+  },
+  {
+   "id": "relation.adoption.imports.global-runtime-reconciliation",
+   "kind": "depends-on",
+   "source": "capability.public-surface.adoption",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Use the legacy inventory during adoption planning."
+  },
+  {
+   "id": "relation.adoption.imports.hook-adapters",
+   "kind": "depends-on",
+   "source": "capability.public-surface.adoption",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Use installer setup during repository migration."
+  },
+  {
+   "id": "relation.adoption.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.public-surface.adoption",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Read registered repository identity for adoption planning."
+  },
+  {
+   "id": "relation.adoption.imports.workflow-state",
+   "kind": "depends-on",
+   "source": "capability.public-surface.adoption",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Resolve worktree locations during adoption planning."
+  },
+  {
+   "id": "relation.adoption.primary",
+   "kind": "calls",
+   "source": "capability.public-surface.adoption",
+   "target": "component.adoption.primary",
+   "intent": "Apply repository adoption"
+  },
+  {
+   "id": "relation.agent-host.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.agent-host",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.agent-host.spawns.hook",
+   "kind": "spawns",
+   "source": "process.agent-host",
+   "target": "process.hook",
+   "intent": "Execute the hook adapter command with the event JSON on stdin."
+  },
+  {
+   "id": "relation.agent-host.spawns.mcp-server",
+   "kind": "spawns",
+   "source": "process.agent-host",
+   "target": "process.mcp-server",
+   "intent": "Start the stdio MCP server as an MCP client."
+  },
+  {
+   "id": "relation.agent-runtime-effects.engineer-bindings",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Use canonical engineer JSON and digest helpers for profile evidence; do not resolve a legacy binding endpoint"
+  },
+  {
+   "id": "relation.agent-runtime-effects.engineer-scheduling",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "capability.runtime-harness.engineer-scheduling",
+   "intent": "Validate the whole offers document with the scheduling validator before a wake is armed"
+  },
+  {
+   "id": "relation.agent-runtime-effects.herdr",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "external.herdr",
+   "intent": "Start Herdr CLI agents for agent runtime effects."
+  },
+  {
+   "id": "relation.agent-runtime-effects.journal",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "component.agent-runtime-effects.journal",
+   "intent": "Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned"
+  },
+  {
+   "id": "relation.agent-runtime-effects.journal.execution-primitives",
+   "kind": "calls",
+   "source": "component.agent-runtime-effects.journal",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold exclusive directory locks under the Git common directory"
+  },
+  {
+   "id": "relation.agent-runtime-effects.mcp-sidecar",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Read the strict repo registry and the authorization revision for the wake fence"
+  },
+  {
+   "id": "relation.agent-runtime-effects.task-agent-host",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Observe the exact admitted task session and use its closed Herdr transport endpoint"
+  },
+  {
+   "id": "relation.agent-runtime-effects.task-fleet",
+   "kind": "calls",
+   "source": "capability.runtime-harness.agent-runtime-effects",
+   "target": "capability.organization.task-fleet",
+   "intent": "Read the exact Task message and delivery receipt before action admission and success."
+  },
+  {
+   "id": "relation.chatgpt-browser.chatgpt",
+   "kind": "calls",
+   "source": "capability.runtime-mcp.chatgpt-browser",
+   "target": "external.chatgpt",
+   "intent": "Drive ChatGPT sessions through Chrome or oracle."
+  },
+  {
+   "id": "relation.chatgpt-browser.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.runtime-mcp.chatgpt-browser",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Apply shared file policy to browser prompts and sessions."
+  },
+  {
+   "id": "relation.chatgpt-browser.primary",
+   "kind": "calls",
+   "source": "capability.runtime-mcp.chatgpt-browser",
+   "target": "component.chatgpt-browser.primary",
+   "intent": "Run a ChatGPT Web consult"
+  },
+  {
+   "id": "relation.claude-code.hook-adapters",
+   "kind": "calls",
+   "source": "external.claude-code",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Claude Code runs the installed repo-harness hook command for each hook event."
+  },
+  {
+   "id": "relation.cli-root.deployed-on.cli",
+   "kind": "deployed-on",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "process.cli",
+   "intent": "The CLI root dispatches commands in the per-command process."
+  },
+  {
+   "id": "relation.cli.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.cli",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.cli.spawns.process-supervisor",
+   "kind": "spawns",
+   "source": "process.cli",
+   "target": "process.process-supervisor",
+   "intent": "Run a bounded command through runProcess with a process group."
+  },
+  {
+   "id": "relation.codegraph-readiness.codegraph",
+   "kind": "calls",
+   "source": "capability.verification.codegraph-readiness",
+   "target": "external.codegraph",
+   "intent": "Run codegraph to check index readiness and read code facts."
+  },
+  {
+   "id": "relation.codegraph-readiness.imports.evals-checks",
+   "kind": "depends-on",
+   "source": "capability.verification.codegraph-readiness",
+   "target": "capability.verification.evals-checks",
+   "intent": "Use shared repository fixtures for CodeGraph resolver tests."
+  },
+  {
+   "id": "relation.codegraph-readiness.imports.execution-primitives",
+   "kind": "depends-on",
+   "source": "capability.verification.codegraph-readiness",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run bounded CodeGraph processes."
+  },
+  {
+   "id": "relation.codegraph-readiness.imports.hook-adapters",
+   "kind": "depends-on",
+   "source": "capability.verification.codegraph-readiness",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Use host locks and configuration ownership for CodeGraph setup."
+  },
+  {
+   "id": "relation.codegraph-readiness.primary",
+   "kind": "calls",
+   "source": "capability.verification.codegraph-readiness",
+   "target": "component.codegraph-readiness.primary",
+   "intent": "Verify CodeGraph readiness"
+  },
+  {
+   "id": "relation.codex.hook-adapters",
+   "kind": "calls",
+   "source": "external.codex",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Codex runs the installed repo-harness hook command for each hook event."
+  },
+  {
+   "id": "relation.contract-assets.contract-worktree-lifecycle.acceptance-review",
+   "kind": "calls",
+   "source": "component.contract-assets.contract-worktree-lifecycle",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Locate the acceptance receipt and the protected Git runtime"
+  },
+  {
+   "id": "relation.contract-assets.contract-worktree-lifecycle.archctx-closure",
+   "kind": "calls",
+   "source": "component.contract-assets.contract-worktree-lifecycle",
+   "target": "component.global-runtime-reconciliation.archctx-closure",
+   "intent": "Stop the architecture daemons of a checkout before closeout removes it"
+  },
+  {
+   "id": "relation.contract-assets.contract-worktree-lifecycle.execution-primitives",
+   "kind": "calls",
+   "source": "component.contract-assets.contract-worktree-lifecycle",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Resolve the configured Git binary for worktree lifecycle commands"
+  },
+  {
+   "id": "relation.contract-assets.contract-worktree-lifecycle.task-agent-host",
+   "kind": "calls",
+   "source": "component.contract-assets.contract-worktree-lifecycle",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Register and clean up task worktrees and read session artifacts"
+  },
+  {
+   "id": "relation.contract-assets.contract-worktree-lifecycle.workflow-state",
+   "kind": "calls",
+   "source": "component.contract-assets.contract-worktree-lifecycle",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock"
+  },
+  {
+   "id": "relation.contract-assets.imports.publication",
+   "kind": "depends-on",
+   "source": "capability.workflow-engine.contract-assets",
+   "target": "capability.organization.publication",
+   "intent": "Read publication merge readiness from the merge helper."
+  },
+  {
+   "id": "relation.contract-assets.planning-helpers",
+   "kind": "calls",
+   "source": "capability.workflow-engine.contract-assets",
+   "target": "component.contract-assets.planning-helpers",
+   "intent": "Run a contract-listed helper through repo-harness run"
+  },
+  {
+   "id": "relation.contract-assets.planning-helpers.acceptance-review",
+   "kind": "calls",
+   "source": "component.contract-assets.planning-helpers",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read the acceptance policy for planning helpers"
+  },
+  {
+   "id": "relation.contract-assets.planning-helpers.execution-primitives",
+   "kind": "calls",
+   "source": "component.contract-assets.planning-helpers",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run each helper as a bounded child process"
+  },
+  {
+   "id": "relation.contract-assets.primary",
+   "kind": "calls",
+   "source": "capability.workflow-engine.contract-assets",
+   "target": "component.contract-assets.primary",
+   "intent": "Project the workflow contract"
+  },
+  {
+   "id": "relation.contract-assets.primary.capability-registry",
+   "kind": "reads",
+   "source": "component.contract-assets.primary",
+   "target": "component.contract-assets.capability-registry",
+   "intent": "Check context map entries against the capability registry"
+  },
+  {
+   "id": "relation.contract-assets.template-projection",
+   "kind": "calls",
+   "source": "capability.workflow-engine.contract-assets",
+   "target": "component.contract-assets.template-projection",
+   "intent": "Run the helper and reference config projection sync"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.adoption",
+   "kind": "calls",
+   "source": "component.contract-assets.template-projection",
+   "target": "capability.public-surface.adoption",
+   "intent": "Plan and apply the transactional adoption for repository init"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.contract-assets.template-projection",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Ensure CodeGraph readiness during init"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.execution-primitives",
+   "kind": "calls",
+   "source": "component.contract-assets.template-projection",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run init steps as bounded child processes"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.hook-adapters",
+   "kind": "calls",
+   "source": "component.contract-assets.template-projection",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Read the install profile and project skills during init"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.operator-catalog",
+   "kind": "depends-on",
+   "source": "component.contract-assets.template-projection",
+   "target": "capability.runtime-harness.operator",
+   "intent": "Read the tool catalog to project the reference tooling table"
+  },
+  {
+   "id": "relation.contract-assets.template-projection.skill-surface-catalog",
+   "kind": "calls",
+   "source": "component.contract-assets.template-projection",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Read host skill placements for the bundled cross-review skills"
+  },
+  {
+   "id": "relation.engineer-bindings.execution-primitives",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-bindings",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "List tracked Engineer profile and SOP paths through the shared Git runner"
+  },
+  {
+   "id": "relation.engineer-bindings.imports.contract-assets",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineer-bindings",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Resolve capability contracts for Engineer profiles."
+  },
+  {
+   "id": "relation.engineer-bindings.imports.evidence-ledger",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineer-bindings",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Use canonical evidence JSON and evidence types for profiles and historical principal records."
+  },
+  {
+   "id": "relation.engineer-bindings.imports.global-runtime-reconciliation",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineer-bindings",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Read the architecture model for Engineer profiles."
+  },
+  {
+   "id": "relation.engineer-bindings.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-bindings",
+   "target": "component.engineer-bindings.primary",
+   "intent": "Resolve and validate tracked Engineer profiles"
+  },
+  {
+   "id": "relation.engineer-scheduling.acceptance-review",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Compute the acceptance authority fingerprint for a dependency"
+  },
+  {
+   "id": "relation.engineer-scheduling.engineer-bindings",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Resolve declared graph capabilities through the Engineer profile authority reader"
+  },
+  {
+   "id": "relation.engineer-scheduling.execution-primitives",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold exclusive directory locks under the Git common directory"
+  },
+  {
+   "id": "relation.engineer-scheduling.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Read registered repository identity for scheduling."
+  },
+  {
+   "id": "relation.engineer-scheduling.integration-acceptance",
+   "kind": "reads",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.runtime-harness.integration-acceptance",
+   "intent": "Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose"
+  },
+  {
+   "id": "relation.engineer-scheduling.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "component.engineer-scheduling.primary",
+   "intent": "Validate and project the immutable provider graph selected by exact commit and path"
+  },
+  {
+   "id": "relation.engineer-scheduling.publication",
+   "kind": "reads",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.organization.publication",
+   "intent": "Read cached publication receipts as dependency authority"
+  },
+  {
+   "id": "relation.engineer-scheduling.workflow-state",
+   "kind": "reads",
+   "source": "capability.runtime-harness.engineer-scheduling",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Read the canonical target ref for provider PR dependency and scheduling evidence"
+  },
+  {
+   "id": "relation.engineering-overlay.agent-runtime-effects",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "capability.runtime-harness.agent-runtime-effects",
+   "intent": "Observe exact current runtime-effect and reconciliation states without executing or repairing an effect"
+  },
+  {
+   "id": "relation.engineering-overlay.engineer-bindings",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Use canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores"
+  },
+  {
+   "id": "relation.engineering-overlay.imports.engineer-scheduling",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "capability.runtime-harness.engineer-scheduling",
+   "intent": "Resolve the registered repository before reading the overlay."
+  },
+  {
+   "id": "relation.engineering-overlay.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Read the repository registry for overlay observations."
+  },
+  {
+   "id": "relation.engineering-overlay.internal-observation",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "capability.runtime-harness.engineering-overlay",
+   "intent": "Within the existing engineering overlay collector, collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence; these are internal calls, not recursive invocation or a dependency on another capability"
+  },
+  {
+   "id": "relation.engineering-overlay.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.engineering-overlay",
+   "target": "component.engineering-overlay.primary",
+   "intent": "Validate and content-address the read-only Engineer and organization-attention projections"
+  },
+  {
+   "id": "relation.evals-checks.ci-selection.inspection-migration",
+   "kind": "calls",
+   "source": "component.evals-checks.ci-selection",
+   "target": "capability.workflow-engine.inspection-migration",
+   "intent": "Run test files through the shared runner in scripts/lib/ci-run-tests.sh"
+  },
+  {
+   "id": "relation.evals-checks.ci-selection.test-suite",
+   "kind": "calls",
+   "source": "component.evals-checks.ci-selection",
+   "target": "component.evals-checks.test-suite",
+   "intent": "Select affected test files and run them in isolated file jobs"
+  },
+  {
+   "id": "relation.evals-checks.ci-selection.workflow-gates",
+   "kind": "calls",
+   "source": "component.evals-checks.ci-selection",
+   "target": "component.evals-checks.workflow-gates",
+   "intent": "Run the task sync and task workflow gates in the governance lane"
+  },
+  {
+   "id": "relation.evals-checks.evals-and-benchmarks.execution-primitives",
+   "kind": "calls",
+   "source": "component.evals-checks.evals-and-benchmarks",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Take the expensive-run lock before a costly benchmark profile runs"
+  },
+  {
+   "id": "relation.evals-checks.evals-and-benchmarks.hook-adapters",
+   "kind": "reads",
+   "source": "component.evals-checks.evals-and-benchmarks",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Read hook event telemetry records to measure hook cost in profile benchmarks"
+  },
+  {
+   "id": "relation.evals-checks.github",
+   "kind": "calls",
+   "source": "capability.verification.evals-checks",
+   "target": "external.github",
+   "intent": "Report daily CI failures as repair issues through the GitHub API."
+  },
+  {
+   "id": "relation.evals-checks.imports.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Test Acceptance Review behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.action-commands",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.public-surface.action-commands",
+   "intent": "Test Action Commands behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.adoption",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.public-surface.adoption",
+   "intent": "Test Adoption behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.agent-runtime-effects",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.agent-runtime-effects",
+   "intent": "Test Agent Runtime Effects behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.chatgpt-browser",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-mcp.chatgpt-browser",
+   "intent": "Test ChatGPT Browser Consult behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.codegraph-readiness",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Test CodeGraph Readiness behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.engineer-bindings",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Test Engineer Bindings behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.engineer-scheduling",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.engineer-scheduling",
+   "intent": "Test Engineer Scheduling behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.engineering-overlay",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.engineering-overlay",
+   "intent": "Test Engineering Overlay behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.external-source-intake",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.external-source-intake",
+   "intent": "Test External Source Intake behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.global-runtime-reconciliation",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Test Global Runtime Reconciliation behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.integration-acceptance",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.integration-acceptance",
+   "intent": "Test Integration Product Acceptance behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.mcp-sidecar",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Test MCP Sidecar behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.operator",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.operator",
+   "intent": "Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract."
+  },
+  {
+   "id": "relation.evals-checks.imports.publication",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.organization.publication",
+   "intent": "Test PR Publication behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.refactor-program",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.refactor-program",
+   "intent": "Test Refactor Recommendations behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.root-router",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.public-surface.root-router",
+   "intent": "Test Root Router behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.strategy-reflection",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.public-surface.strategy-reflection",
+   "intent": "Test Strategy Reflection behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.task-agent-host",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Test Task Agent Host behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.task-fleet",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.organization.task-fleet",
+   "intent": "Test Task Fleet behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.imports.workflow-state",
+   "kind": "depends-on",
+   "source": "capability.verification.evals-checks",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Test Workflow State behavior through its source modules."
+  },
+  {
+   "id": "relation.evals-checks.primary",
+   "kind": "calls",
+   "source": "capability.verification.evals-checks",
+   "target": "component.evals-checks.primary",
+   "intent": "Execute a declared verification check"
+  },
+  {
+   "id": "relation.evals-checks.primary.contract-assets",
+   "kind": "calls",
+   "source": "component.evals-checks.primary",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Consume trusted PR checks for a base ref through the merge gate without rerunning commands"
+  },
+  {
+   "id": "relation.evals-checks.primary.evidence-ledger",
+   "kind": "calls",
+   "source": "component.evals-checks.primary",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Validate and execute verification plans through the evidence verification modules"
+  },
+  {
+   "id": "relation.evidence-ledger.adoption",
+   "kind": "calls",
+   "source": "capability.runtime-harness.evidence-ledger",
+   "target": "capability.public-surface.adoption",
+   "intent": "Resolve blob and log paths inside the repository with the shared path-safety helper"
+  },
+  {
+   "id": "relation.evidence-ledger.imports.hook-adapters",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.evidence-ledger",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Collect loop state inputs for recovery evidence."
+  },
+  {
+   "id": "relation.evidence-ledger.imports.workflow-state",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.evidence-ledger",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Read state artifacts and read-only observations for evidence."
+  },
+  {
+   "id": "relation.evidence-ledger.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.evidence-ledger",
+   "target": "component.evidence-ledger.primary",
+   "intent": "Append fold and checkpoint evidence events through one writer path"
+  },
+  {
+   "id": "relation.evidence-ledger.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.evidence-ledger.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold exclusive directory locks under the Git common directory and read the virtual tree"
+  },
+  {
+   "id": "relation.execution-primitives.deployed-on.process-supervisor",
+   "kind": "deployed-on",
+   "source": "capability.workflow-engine.execution-primitives",
+   "target": "process.process-supervisor",
+   "intent": "Execution primitives own the supervisor protocol."
+  },
+  {
+   "id": "relation.execution-primitives.git",
+   "kind": "calls",
+   "source": "capability.workflow-engine.execution-primitives",
+   "target": "external.git",
+   "intent": "Run git for refs, worktrees and the common directory."
+  },
+  {
+   "id": "relation.execution-primitives.primary",
+   "kind": "calls",
+   "source": "capability.workflow-engine.execution-primitives",
+   "target": "component.execution-primitives.primary",
+   "intent": "Run a bounded child process"
+  },
+  {
+   "id": "relation.external-source-intake.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read protected review admission sources for current source-binding validation"
+  },
+  {
+   "id": "relation.external-source-intake.github",
+   "kind": "reads",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "external.github",
+   "intent": "Read GitHub issues and comments as immutable intake evidence through gh."
+  },
+  {
+   "id": "relation.external-source-intake.immutable-evidence",
+   "kind": "calls",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "component.external-source-intake.immutable-evidence",
+   "intent": "Persist provider-neutral immutable observations and typed refresh receipts before deriving a read-only projection"
+  },
+  {
+   "id": "relation.external-source-intake.immutable-evidence.execution-primitives",
+   "kind": "calls",
+   "source": "component.external-source-intake.immutable-evidence",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold exclusive directory locks under the Git common directory"
+  },
+  {
+   "id": "relation.external-source-intake.mcp-sidecar",
+   "kind": "calls",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Read the strict repo registry snapshot for repository identity and authorization"
+  },
+  {
+   "id": "relation.external-source-intake.task-agent-host",
+   "kind": "calls",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding"
+  },
+  {
+   "id": "relation.external-source-intake.task-fleet",
+   "kind": "calls",
+   "source": "capability.runtime-harness.external-source-intake",
+   "target": "capability.organization.task-fleet",
+   "intent": "Reobserve exact admitted inbox context to bind source evidence to the same current provider issue"
+  },
+  {
+   "id": "relation.general-repo-access.primary",
+   "kind": "calls",
+   "source": "capability.runtime-mcp.general-repo-access",
+   "target": "component.general-repo-access.primary",
+   "intent": "Read a repository file"
+  },
+  {
+   "id": "relation.general-repo-access.primary.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.general-repo-access.primary",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Read CodeGraph index metadata through the adapter after path authorization"
+  },
+  {
+   "id": "relation.general-repo-access.primary.mcp-policy",
+   "kind": "calls",
+   "source": "component.general-repo-access.primary",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Resolve registered repositories then redact and audit through the shared MCP policy"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx",
+   "kind": "calls",
+   "source": "capability.runtime-harness.global-runtime-reconciliation",
+   "target": "external.archctx",
+   "intent": "Run the package-local archctx for model reads, ownership resolution and projections."
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.acceptance-review",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Build the module review prompt from the committed architecture model"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.evidence-ledger",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Canonicalize architecture closure records"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.execution-primitives",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run the archctx binary through the process runner"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.hook-adapters",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Write the private global configuration through the installer ownership writer"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.mcp-sidecar",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Resolve registered repositories for the model reader"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.archctx-closure.workflow-state",
+   "kind": "reads",
+   "source": "component.global-runtime-reconciliation.archctx-closure",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Parse Markdown headers of plans and contracts"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.acceptance-review",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Register the review command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.adoption",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.public-surface.adoption",
+   "intent": "Register the adoption-plan command and run the adoption plan for the setup check"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.archctx-closure",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "component.global-runtime-reconciliation.archctx-closure",
+   "intent": "Register the architecture-projection command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.chatgpt-browser",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-mcp.chatgpt-browser",
+   "intent": "Register the chatgpt command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Probe CodeGraph readiness for doctor"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.contract-assets",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Register the init and capability-context commands"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.engineer-bindings",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Register the engineer command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.external-source-intake",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.external-source-intake",
+   "intent": "Register the external-source command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.hook-adapters",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Register the install and status and security and hook commands and run host transactions with the install profile"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.integration-acceptance",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.integration-acceptance",
+   "intent": "Register the integration command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.mcp-sidecar",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Register the mcp command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.operator",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.operator",
+   "intent": "Register the operator command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.primary",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "component.global-runtime-reconciliation.primary",
+   "intent": "Register the update and upgrade commands and run the setup inside the candidate runtime"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.publication",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.organization.publication",
+   "intent": "Register the publication command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.refactor-program",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.refactor-program",
+   "intent": "Register the refactor command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.root-router",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.public-surface.root-router",
+   "intent": "Register the docs command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.skill-surface-catalog",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Parse the skill surface catalog for CLI commands"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.strategy-reflection",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.public-surface.strategy-reflection",
+   "intent": "Register the strategy command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.task-agent-host",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Register the herdr commands"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.task-fleet",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.organization.task-fleet",
+   "intent": "Register the fleet command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.cli-root.workflow-state",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.cli-root",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Register the state command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.imports.evals-checks",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.global-runtime-reconciliation",
+   "target": "capability.verification.evals-checks",
+   "intent": "Use shared test fixtures for global runtime checks."
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.npm-registry",
+   "kind": "reads",
+   "source": "capability.runtime-harness.global-runtime-reconciliation",
+   "target": "external.npm-registry",
+   "intent": "Check that a release version is published on the npm registry."
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.global-runtime-reconciliation",
+   "target": "component.global-runtime-reconciliation.primary",
+   "intent": "Reconcile and verify the selected global runtime closure"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.adoption",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.public-surface.adoption",
+   "intent": "Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.archctx-closure",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "component.global-runtime-reconciliation.archctx-closure",
+   "intent": "Configure the global architecture projection and verify the archctx daemon handshake"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Configure the exact CodeGraph CLI and MCP registration"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.contract-assets",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Sync the cross-review skills through the init command"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run processes and read lock owners during runtime reconciliation"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.hook-adapters",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Install host adapters and project skills through the install profile under the host lock"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.skill-surface-catalog",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Read external skill install groups from the skill surface catalog"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.primary.task-agent-host",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.primary",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Configure the required Herdr skill during global runtime setup"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.release-packaging.cli-root",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.release-packaging",
+   "target": "component.global-runtime-reconciliation.cli-root",
+   "intent": "Smoke the packed tarball CLI and hook binaries in a clean app"
+  },
+  {
+   "id": "relation.global-runtime-reconciliation.release-packaging.execution-primitives",
+   "kind": "calls",
+   "source": "component.global-runtime-reconciliation.release-packaging",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run installed binaries to read back runtime evidence"
+  },
+  {
+   "id": "relation.herdr-server.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.herdr-server",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.herdr-server.spawns.oar-review-host",
+   "kind": "spawns",
+   "source": "process.herdr-server",
+   "target": "process.oar-review-host",
+   "intent": "Run the review host bundle in a pane."
+  },
+  {
+   "id": "relation.hook-adapters.deployed-on.hook",
+   "kind": "deployed-on",
+   "source": "capability.runtime-harness.hook-adapters",
+   "target": "process.hook",
+   "intent": "Hook adapters run in the per-event hook process."
+  },
+  {
+   "id": "relation.hook-adapters.edit-guards.execution-primitives",
+   "kind": "calls",
+   "source": "component.hook-adapters.edit-guards",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Lock the circuit breaker records"
+  },
+  {
+   "id": "relation.hook-adapters.edit-guards.route-runtime",
+   "kind": "depends-on",
+   "source": "component.hook-adapters.edit-guards",
+   "target": "component.hook-adapters.primary",
+   "intent": "Implement the typed handler contract and read hook input through the shared parsers"
+  },
+  {
+   "id": "relation.hook-adapters.edit-guards.workflow-state",
+   "kind": "calls",
+   "source": "component.hook-adapters.edit-guards",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Canonicalize edit paths and resolve the owners of edited paths"
+  },
+  {
+   "id": "relation.hook-adapters.host-installer.adoption",
+   "kind": "calls",
+   "source": "component.hook-adapters.host-installer",
+   "target": "capability.public-surface.adoption",
+   "intent": "Share the managed hook command fingerprints with the adoption migration"
+  },
+  {
+   "id": "relation.hook-adapters.host-installer.execution-primitives",
+   "kind": "calls",
+   "source": "component.hook-adapters.host-installer",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold the runtime host transaction lock"
+  },
+  {
+   "id": "relation.hook-adapters.host-installer.global-runtime-reconciliation",
+   "kind": "calls",
+   "source": "component.hook-adapters.host-installer",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Report architecture projection readiness in status"
+  },
+  {
+   "id": "relation.hook-adapters.host-installer.route-runtime",
+   "kind": "calls",
+   "source": "component.hook-adapters.host-installer",
+   "target": "component.hook-adapters.primary",
+   "intent": "Project the route registry into managed adapter entries"
+  },
+  {
+   "id": "relation.hook-adapters.host-installer.skill-surface-catalog",
+   "kind": "calls",
+   "source": "component.hook-adapters.host-installer",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Read skill names and profile ownership from the skill surface catalog"
+  },
+  {
+   "id": "relation.hook-adapters.imports.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.hook-adapters",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read the diff fingerprint for mutation guards."
+  },
+  {
+   "id": "relation.hook-adapters.imports.task-agent-host",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.hook-adapters",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Resolve task role profiles during host installation."
+  },
+  {
+   "id": "relation.hook-adapters.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.hook-adapters",
+   "target": "component.hook-adapters.primary",
+   "intent": "Dispatch a host hook route to its typed handler"
+  },
+  {
+   "id": "relation.hook-adapters.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.hook-adapters.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run the process supervisor and group launcher entries"
+  },
+  {
+   "id": "relation.hook-adapters.primary.workflow-state",
+   "kind": "calls",
+   "source": "component.hook-adapters.primary",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Resolve effective state read-only at most once per hook event"
+  },
+  {
+   "id": "relation.hook-adapters.route-runtime.edit-guards",
+   "kind": "calls",
+   "source": "component.hook-adapters.primary",
+   "target": "component.hook-adapters.edit-guards",
+   "intent": "Bind the PreToolUse.edit route to the mutation guard handler"
+  },
+  {
+   "id": "relation.hook-adapters.route-runtime.global-runtime-reconciliation",
+   "kind": "calls",
+   "source": "component.hook-adapters.primary",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Write host output through the shared blocking writer"
+  },
+  {
+   "id": "relation.hook-adapters.route-runtime.session-lifecycle",
+   "kind": "calls",
+   "source": "component.hook-adapters.primary",
+   "target": "component.hook-adapters.session-lifecycle",
+   "intent": "Bind SessionStart and Stop and subagent and inbox routes to their typed handlers"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.adoption",
+   "kind": "calls",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "capability.public-surface.adoption",
+   "intent": "Check the one-release run summary cleanup paths with the shared path safety rules"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.evidence-ledger",
+   "kind": "calls",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Publish the evidence checkpoint and render handoff and resume from it"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.execution-primitives",
+   "kind": "calls",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold the native role evidence lock"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.route-runtime",
+   "kind": "depends-on",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "component.hook-adapters.primary",
+   "intent": "Implement the typed handler contract and read state through the event-scoped collector"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.task-fleet",
+   "kind": "calls",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "capability.organization.task-fleet",
+   "intent": "Render task inbox messages as untrusted session context"
+  },
+  {
+   "id": "relation.hook-adapters.session-lifecycle.workflow-state",
+   "kind": "calls",
+   "source": "component.hook-adapters.session-lifecycle",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Read Effective State snapshots, capability ownership and stored provider board slices for session context"
+  },
+  {
+   "id": "relation.hook.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.hook",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.hook.spawns.process-supervisor",
+   "kind": "spawns",
+   "source": "process.hook",
+   "target": "process.process-supervisor",
+   "intent": "Run archctx and node probes through the bundled supervisor entry."
+  },
+  {
+   "id": "relation.inspection-migration.primary",
+   "kind": "calls",
+   "source": "capability.workflow-engine.inspection-migration",
+   "target": "component.inspection-migration.primary",
+   "intent": "Inspect before migration"
+  },
+  {
+   "id": "relation.inspection-migration.primary.contract-assets",
+   "kind": "reads",
+   "source": "component.inspection-migration.primary",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Read directory and legacy path inventory from the package workflow contract"
+  },
+  {
+   "id": "relation.integration-acceptance.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.integration-acceptance",
+   "target": "component.integration-acceptance.primary",
+   "intent": "Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection"
+  },
+  {
+   "id": "relation.integration-acceptance.primary.acceptance-review",
+   "kind": "calls",
+   "source": "component.integration-acceptance.primary",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Locate the acceptance receipt for an integration candidate"
+  },
+  {
+   "id": "relation.integration-acceptance.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.integration-acceptance.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Resolve the Git common directory for integration records"
+  },
+  {
+   "id": "relation.integration-acceptance.publication",
+   "kind": "reads",
+   "source": "capability.runtime-harness.integration-acceptance",
+   "target": "capability.organization.publication",
+   "intent": "Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority"
+  },
+  {
+   "id": "relation.mcp-coding-shell.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.mcp-coding-shell",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.mcp-server.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.mcp-server",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.mcp-server.spawns.mcp-coding-shell",
+   "kind": "spawns",
+   "source": "process.mcp-server",
+   "target": "process.mcp-coding-shell",
+   "intent": "Spawn a coding shell session for an MCP coding tool call."
+  },
+  {
+   "id": "relation.mcp-server.spawns.process-supervisor",
+   "kind": "spawns",
+   "source": "process.mcp-server",
+   "target": "process.process-supervisor",
+   "intent": "Run workflow helpers through the helper runner."
+  },
+  {
+   "id": "relation.mcp-sidecar.agent-runtime-effects",
+   "kind": "calls",
+   "source": "capability.runtime-harness.mcp-sidecar",
+   "target": "capability.runtime-harness.agent-runtime-effects",
+   "intent": "Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority"
+  },
+  {
+   "id": "relation.mcp-sidecar.coding-profile.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.coding-profile",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Refresh the CodeGraph index after coding mutations"
+  },
+  {
+   "id": "relation.mcp-sidecar.coding-profile.execution-primitives",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.coding-profile",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Use the configured Git binary for coding workspaces"
+  },
+  {
+   "id": "relation.mcp-sidecar.coding-profile.repo-policy-registry",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.coding-profile",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Contain workspace paths against registered roots then redact and audit coding results"
+  },
+  {
+   "id": "relation.mcp-sidecar.coding-profile.task-agent-host",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.coding-profile",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Clean up task worktrees for coding workspaces"
+  },
+  {
+   "id": "relation.mcp-sidecar.coding-profile.workflow-state",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.coding-profile",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Clean up exact worktrees under the system worktree root"
+  },
+  {
+   "id": "relation.mcp-sidecar.deployed-on.mcp-server",
+   "kind": "deployed-on",
+   "source": "capability.runtime-harness.mcp-sidecar",
+   "target": "process.mcp-server",
+   "intent": "The MCP sidecar runs in the MCP server process."
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.chatgpt-browser",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "capability.runtime-mcp.chatgpt-browser",
+   "intent": "Read the canonical ChatGPT bridge reference from the packaged skill source"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.coding-profile",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "component.mcp-sidecar.coding-profile",
+   "intent": "List and clean up managed coding workspaces"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.execution-primitives",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold the MCP setup ownership lock"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.hook-adapters",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Reuse installer configuration ownership receipts and the runtime host lock"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.primary",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "component.mcp-sidecar.primary",
+   "intent": "Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.repo-policy-registry",
+   "kind": "writes",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Write the user-level config and credentials and set repository access grants"
+  },
+  {
+   "id": "relation.mcp-sidecar.host-setup.transport-auth",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.host-setup",
+   "target": "component.mcp-sidecar.transport-auth",
+   "intent": "Start the stdio or HTTP transport for mcp serve"
+  },
+  {
+   "id": "relation.mcp-sidecar.imports.contract-assets",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.mcp-sidecar",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Run declared helpers from MCP tools."
+  },
+  {
+   "id": "relation.mcp-sidecar.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.mcp-sidecar",
+   "target": "component.mcp-sidecar.primary",
+   "intent": "Dispatch an MCP tool call"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.chatgpt-browser",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.runtime-mcp.chatgpt-browser",
+   "intent": "Run the opt-in browser consult tools through the ChatGPT browser engine"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.codegraph-readiness",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.verification.codegraph-readiness",
+   "intent": "Construct the CodeGraph index adapter with repo-local binaries refused"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.coding-profile",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "component.mcp-sidecar.coding-profile",
+   "intent": "Build and dispatch the coding tool block and its process runtime"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Read the worktree topology for the PM server scope"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.general-repo-access",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.runtime-mcp.general-repo-access",
+   "intent": "Dispatch the general repository reader and writer tools"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.publication",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.organization.publication",
+   "intent": "Reopen and take over publications and read merge readiness"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.repo-policy-registry",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Resolve repositories and paths under the profile policy then redact and audit each result"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.task-agent-host",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.task-fleet",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.organization.task-fleet",
+   "intent": "Acquire fleet tasks and handle task steers from the MCP tools"
+  },
+  {
+   "id": "relation.mcp-sidecar.primary.workflow-state",
+   "kind": "reads",
+   "source": "component.mcp-sidecar.primary",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Resolve effective state read-only for the state MCP tools"
+  },
+  {
+   "id": "relation.mcp-sidecar.repo-policy-registry.execution-primitives",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.repo-policy-registry",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run Git for repository roots and lock guarded writes"
+  },
+  {
+   "id": "relation.mcp-sidecar.transport-auth.primary",
+   "kind": "calls",
+   "source": "component.mcp-sidecar.transport-auth",
+   "target": "component.mcp-sidecar.primary",
+   "intent": "Create one MCP server per authorized session and dispatch its tool calls"
+  },
+  {
+   "id": "relation.mcp-sidecar.transport-auth.repo-policy-registry",
+   "kind": "reads",
+   "source": "component.mcp-sidecar.transport-auth",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Load the local config and credentials at startup and recheck the profile on each new session"
+  },
+  {
+   "id": "relation.oar-review-host.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.oar-review-host",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.oar-review-host.spawns.vendor-cli",
+   "kind": "spawns",
+   "source": "process.oar-review-host",
+   "target": "process.vendor-cli",
+   "intent": "Start the reviewer runtime under sandbox-exec."
+  },
+  {
+   "id": "relation.operator-collector.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.operator-collector",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.operator-server.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.operator-server",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.operator-server.spawns.operator-collector",
+   "kind": "spawns",
+   "source": "process.operator-server",
+   "target": "process.operator-collector",
+   "intent": "Spawn bounded collector children that exchange JSON on stdin and stdout."
+  },
+  {
+   "id": "relation.operator.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read and reobserve protected current review admission for exact session discovery and current goal context"
+  },
+  {
+   "id": "relation.operator.activity-feeds.hook-adapters",
+   "kind": "reads",
+   "source": "component.operator.activity-feeds",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Read the hook route registry and install profile components for the Hooks and Agents pages"
+  },
+  {
+   "id": "relation.operator.activity-feeds.npm-registry",
+   "kind": "reads",
+   "source": "component.operator.activity-feeds",
+   "target": "external.npm-registry",
+   "intent": "Look up whether an npm package of the CLI inventory is deprecated, with cached and capped npm view calls."
+  },
+  {
+   "id": "relation.operator.activity-feeds.view-projections",
+   "kind": "calls",
+   "source": "component.operator.activity-feeds",
+   "target": "component.operator.view-projections",
+   "intent": "Reuse public agent-config text filtering and runtime source freshness rules"
+  },
+  {
+   "id": "relation.operator.architecture-view.model-reader",
+   "kind": "reads",
+   "source": "component.operator.architecture-view",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "List modules and export review prompts through the shared ArchitectureModelReader"
+  },
+  {
+   "id": "relation.operator.console-collectors.activity-feeds",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "component.operator.activity-feeds",
+   "intent": "Read the GitHub name and default branch of each repository from the Dev Activity cache for the docs ref and the daily CI run, and run the execution-state child through the setup collector's supervised process runner."
+  },
+  {
+   "id": "relation.operator.console-collectors.archctx",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "external.archctx",
+   "intent": "Read the committed model, the owner of each file and the capability import counts for the architecture map."
+  },
+  {
+   "id": "relation.operator.console-collectors.git",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "external.git",
+   "intent": "Read remote URLs from local config and docs blobs through a resident cat-file worker on local refs only, and the line counts of a commit for the architecture map."
+  },
+  {
+   "id": "relation.operator.console-collectors.github",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "external.github",
+   "intent": "Read the newest daily CI run, download its JUnit and test projection artifacts, and list open CI repair issues with gh."
+  },
+  {
+   "id": "relation.operator.console-collectors.herdr",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "external.herdr",
+   "intent": "Run herdr status, the session snapshot and the notify plugin list, config-dir and log list probes on collector cycles."
+  },
+  {
+   "id": "relation.operator.console-collectors.http-reader",
+   "kind": "calls",
+   "source": "component.operator.console-collectors",
+   "target": "component.operator.primary",
+   "intent": "Check the herdr status version and request session.snapshot through the Herdr observation transport."
+  },
+  {
+   "id": "relation.operator.console-collectors.mcp-sidecar",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Run mcp doctor without live registration and read the OAuth token store and the newest audit rows for Bot access, and read the strict repository registry snapshot for Bot access, docs and tests."
+  },
+  {
+   "id": "relation.operator.console-collectors.task-agent-host",
+   "kind": "reads",
+   "source": "component.operator.console-collectors",
+   "target": "component.task-agent-host.primary",
+   "intent": "Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records."
+  },
+  {
+   "id": "relation.operator.console-collectors.view-projections",
+   "kind": "calls",
+   "source": "component.operator.console-collectors",
+   "target": "component.operator.view-projections",
+   "intent": "Build cache values with the strict Bot access, notify, docs and tests decoders and the JUnit and projection parsers."
+  },
+  {
+   "id": "relation.operator.deployed-on.operator-server",
+   "kind": "deployed-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "process.operator-server",
+   "intent": "The operator board runs in the operator server process."
+  },
+  {
+   "id": "relation.operator.github",
+   "kind": "reads",
+   "source": "capability.runtime-harness.operator",
+   "target": "external.github",
+   "intent": "Collect pull request and CI activity, the newest daily CI run with its JUnit and test projection artifacts, the open CI repair issues, and the CLI inventory repository lookups through gh in background collectors."
+  },
+  {
+   "id": "relation.operator.http-reader.activity-feeds",
+   "kind": "calls",
+   "source": "component.operator.primary",
+   "target": "component.operator.activity-feeds",
+   "intent": "Start the bounded background collectors once and serve only their cached, re-decoded snapshots"
+  },
+  {
+   "id": "relation.operator.http-reader.console-collectors",
+   "kind": "calls",
+   "source": "component.operator.primary",
+   "target": "component.operator.console-collectors",
+   "intent": "Start the notify, Bot access, docs and tests collectors once, serve only their re-decoded caches, and send a docs file GET as one object request to the resident cat-file worker."
+  },
+  {
+   "id": "relation.operator.http-reader.engineer-scheduling",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "capability.runtime-harness.engineer-scheduling",
+   "intent": "Read the tracked work graph projection for the Planning view"
+  },
+  {
+   "id": "relation.operator.http-reader.engineering-overlay",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "capability.runtime-harness.engineering-overlay",
+   "intent": "Collect the engineering board for the Organization view"
+  },
+  {
+   "id": "relation.operator.http-reader.model-reader",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Read the committed architecture model through the shared ArchitectureModelReader"
+  },
+  {
+   "id": "relation.operator.http-reader.repo-registry",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Resolve a registered repository root from the strict repo-harness registry snapshot"
+  },
+  {
+   "id": "relation.operator.http-reader.view-projections",
+   "kind": "calls",
+   "source": "component.operator.primary",
+   "target": "component.operator.view-projections",
+   "intent": "Parse closed route requests and project or re-decode each observation before it leaves the server"
+  },
+  {
+   "id": "relation.operator.imports.action-commands",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.public-surface.action-commands",
+   "intent": "Read the skill catalog for the setup snapshot."
+  },
+  {
+   "id": "relation.operator.imports.engineer-bindings",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Use claim identity types for task activity."
+  },
+  {
+   "id": "relation.operator.imports.execution-primitives",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Read Git topology for task diffs and development activity."
+  },
+  {
+   "id": "relation.operator.imports.publication",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.organization.publication",
+   "intent": "Use publication readiness types in the Operator fixture."
+  },
+  {
+   "id": "relation.operator.imports.task-agent-host",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations"
+  },
+  {
+   "id": "relation.operator.imports.workflow-state",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.operator",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Read state types and artifacts for Operator projections."
+  },
+  {
+   "id": "relation.operator.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.operator",
+   "target": "component.operator.primary",
+   "intent": "Return a read-only HTTP observation."
+  },
+  {
+   "id": "relation.operator.primary.acceptance-review",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "component.acceptance-review.primary",
+   "intent": "Read the docs host platform and runtimes that a doc session may use."
+  },
+  {
+   "id": "relation.operator.primary.coordination-plane",
+   "kind": "calls",
+   "source": "component.operator.primary",
+   "target": "component.workflow-state.coordination-plane",
+   "intent": "Create a doc session worktree under the worktree topology lock of its clone."
+  },
+  {
+   "id": "relation.operator.primary.execution-primitives",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "component.execution-primitives.primary",
+   "intent": "Read the managed worktree root and its naming rule for a doc session worktree."
+  },
+  {
+   "id": "relation.operator.primary.task-fleet",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "capability.organization.task-fleet",
+   "intent": "Read retained per-repository task observations and the fleet board for the console"
+  },
+  {
+   "id": "relation.operator.view-projections.acceptance-review",
+   "kind": "depends-on",
+   "source": "component.operator.view-projections",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Decode the module review prompt shape that the review prompt builder declares"
+  },
+  {
+   "id": "relation.operator.view-projections.architecture-view",
+   "kind": "depends-on",
+   "source": "component.operator.view-projections",
+   "target": "component.operator.architecture-view",
+   "intent": "Decode the module index and module detail shapes that the architecture view declares"
+  },
+  {
+   "id": "relation.operator.view-projections.repo-policy-registry",
+   "kind": "reads",
+   "source": "component.operator.view-projections",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Read the shared secret token rules that redact doc session events."
+  },
+  {
+   "id": "relation.operator.view-projections.task-fleet",
+   "kind": "reads",
+   "source": "component.operator.view-projections",
+   "target": "capability.organization.task-fleet",
+   "intent": "Render fleet board errors and task message shapes"
+  },
+  {
+   "id": "relation.operator.web-console.activity-feeds",
+   "kind": "calls",
+   "source": "component.operator.web-console",
+   "target": "component.operator.activity-feeds",
+   "intent": "Decode the development activity and setup snapshots with the decoders the server uses"
+  },
+  {
+   "id": "relation.operator.web-console.http-reader",
+   "kind": "calls",
+   "source": "component.operator.web-console",
+   "target": "component.operator.primary",
+   "intent": "Fetch public JSON observations through GET and HEAD routes only"
+  },
+  {
+   "id": "relation.operator.web-console.view-projections",
+   "kind": "calls",
+   "source": "component.operator.web-console",
+   "target": "component.operator.view-projections",
+   "intent": "Decode each observation body with the shared strict core decoder before render"
+  },
+  {
+   "id": "relation.process-group-launcher.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.process-group-launcher",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.process-supervisor.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.process-supervisor",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.process-supervisor.spawns.process-group-launcher",
+   "kind": "spawns",
+   "source": "process.process-supervisor",
+   "target": "process.process-group-launcher",
+   "intent": "Spawn the detached launcher behind the fd 3 start barrier."
+  },
+  {
+   "id": "relation.publication.contract-assets",
+   "kind": "calls",
+   "source": "capability.organization.publication",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Read integration proof through the packaged worktree merge helper"
+  },
+  {
+   "id": "relation.publication.github",
+   "kind": "calls",
+   "source": "capability.organization.publication",
+   "target": "external.github",
+   "intent": "Read pull request readiness and post provider feedback through gh."
+  },
+  {
+   "id": "relation.publication.imports.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.organization.publication",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read the acceptance receipt for publication evidence."
+  },
+  {
+   "id": "relation.publication.primary",
+   "kind": "calls",
+   "source": "capability.organization.publication",
+   "target": "component.publication.primary",
+   "intent": "Derive fenced PR readiness, collect provider integration evidence and share the digest helpers without task ownership mutation"
+  },
+  {
+   "id": "relation.publication.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.publication.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Read the worktree topology and the Git common directory"
+  },
+  {
+   "id": "relation.publication.provider-feedback.execution-primitives",
+   "kind": "calls",
+   "source": "component.publication.provider-feedback",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Resolve the Git common directory for feedback records"
+  },
+  {
+   "id": "relation.publication.provider-feedback.primary",
+   "kind": "calls",
+   "source": "component.publication.provider-feedback",
+   "target": "component.publication.primary",
+   "intent": "Observe explicit provider PR identity and exact head/base through the shared readiness implementation before admitted feedback intake"
+  },
+  {
+   "id": "relation.publication.provider-feedback.task-agent-host",
+   "kind": "calls",
+   "source": "component.publication.provider-feedback",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Read the exact selected immutable task session for current feedback attribution"
+  },
+  {
+   "id": "relation.publication.provider-feedback.task-fleet",
+   "kind": "calls",
+   "source": "component.publication.provider-feedback",
+   "target": "capability.organization.task-fleet",
+   "intent": "Reobserve exact admitted inbox context and shared message claim identity before provider feedback writes"
+  },
+  {
+   "id": "relation.refactor-program.archctx-provider",
+   "kind": "calls",
+   "source": "capability.runtime-harness.refactor-program",
+   "target": "component.refactor-program.archctx-provider",
+   "intent": "Scan for structural observations and record user decisions through the pinned package-local ArchContext CLI"
+  },
+  {
+   "id": "relation.refactor-program.archctx-provider.evidence-ledger",
+   "kind": "calls",
+   "source": "component.refactor-program.archctx-provider",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Canonicalize refactor provider records"
+  },
+  {
+   "id": "relation.refactor-program.archctx-provider.global-runtime-reconciliation",
+   "kind": "calls",
+   "source": "component.refactor-program.archctx-provider",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Run the pinned package-local archctx CLI through the shared architecture provider"
+  },
+  {
+   "id": "relation.refactor-program.mcp-sidecar",
+   "kind": "calls",
+   "source": "capability.runtime-harness.refactor-program",
+   "target": "capability.runtime-harness.mcp-sidecar",
+   "intent": "Resolve the canonical repository path through the repo registry"
+  },
+  {
+   "id": "relation.root-router.primary",
+   "kind": "calls",
+   "source": "capability.public-surface.root-router",
+   "target": "component.root-router.primary",
+   "intent": "Route root initialization"
+  },
+  {
+   "id": "relation.strategy-reflection.primary",
+   "kind": "calls",
+   "source": "capability.public-surface.strategy-reflection",
+   "target": "component.strategy-reflection.primary",
+   "intent": "Collect strategy context and validate a proposal"
+  },
+  {
+   "id": "relation.strategy-reflection.primary.skill-surface-catalog",
+   "kind": "calls",
+   "source": "component.strategy-reflection.primary",
+   "target": "component.action-commands.skill-surface-catalog",
+   "intent": "Read the skill catalog to keep the strategy skill explicit-setup before projection"
+  },
+  {
+   "id": "relation.strategy-reflection.primary.workflow-state",
+   "kind": "reads",
+   "source": "component.strategy-reflection.primary",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Resolve effective state read-only for strategy context"
+  },
+  {
+   "id": "relation.task-agent-host.evidence-ledger",
+   "kind": "calls",
+   "source": "capability.runtime-harness.task-agent-host",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Hash request context and result bytes with the evidence canonical JSON"
+  },
+  {
+   "id": "relation.task-agent-host.herdr",
+   "kind": "calls",
+   "source": "capability.runtime-harness.task-agent-host",
+   "target": "external.herdr",
+   "intent": "Split and run Herdr panes for task agents and review hosts."
+  },
+  {
+   "id": "relation.task-agent-host.imports.hook-adapters",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.task-agent-host",
+   "target": "capability.runtime-harness.hook-adapters",
+   "intent": "Use host installation commands for Herdr skill setup."
+  },
+  {
+   "id": "relation.task-agent-host.primary",
+   "kind": "calls",
+   "source": "capability.runtime-harness.task-agent-host",
+   "target": "component.task-agent-host.primary",
+   "intent": "Start send and collect persistent Herdr task agents"
+  },
+  {
+   "id": "relation.task-agent-host.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.task-agent-host.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Run Git through the process runner and hold task session locks"
+  },
+  {
+   "id": "relation.task-agent-host.primary.repo-policy-registry",
+   "kind": "reads",
+   "source": "component.task-agent-host.primary",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Root the Herdr notify install record in the account-level repo-harness home."
+  },
+  {
+   "id": "relation.task-fleet.agent-runtime-effects",
+   "kind": "calls",
+   "source": "capability.organization.task-fleet",
+   "target": "capability.runtime-harness.agent-runtime-effects",
+   "intent": "Read task agent runtime effects as board observations only"
+  },
+  {
+   "id": "relation.task-fleet.engineer-bindings",
+   "kind": "calls",
+   "source": "capability.organization.task-fleet",
+   "target": "capability.runtime-harness.engineer-bindings",
+   "intent": "Validate principal claims and claim actor receipts before a steer reply is recorded"
+  },
+  {
+   "id": "relation.task-fleet.evidence-ledger",
+   "kind": "calls",
+   "source": "capability.organization.task-fleet",
+   "target": "capability.runtime-harness.evidence-ledger",
+   "intent": "Reuse canonical JSON and durable atomic append for task message records"
+  },
+  {
+   "id": "relation.task-fleet.primary",
+   "kind": "calls",
+   "source": "capability.organization.task-fleet",
+   "target": "component.task-fleet.primary",
+   "intent": "Project per-repository task observations and fleet board cards from the owning readers"
+  },
+  {
+   "id": "relation.task-fleet.primary.task-inbox",
+   "kind": "calls",
+   "source": "component.task-fleet.primary",
+   "target": "component.task-fleet.task-inbox",
+   "intent": "Send deliver and summarize task-addressed messages without lease mutation"
+  },
+  {
+   "id": "relation.task-fleet.primary.workflow-state",
+   "kind": "reads",
+   "source": "component.task-fleet.primary",
+   "target": "capability.workflow-engine.workflow-state",
+   "intent": "Read provider issue and admitted session board observations without Sprint or lease authority"
+  },
+  {
+   "id": "relation.task-fleet.publication",
+   "kind": "calls",
+   "source": "capability.organization.task-fleet",
+   "target": "capability.organization.publication",
+   "intent": "Read publication receipts readiness and provider feedback for fleet commands and board cards"
+  },
+  {
+   "id": "relation.task-fleet.repo-registry",
+   "kind": "reads",
+   "source": "capability.organization.task-fleet",
+   "target": "component.mcp-sidecar.repo-policy-registry",
+   "intent": "Read the strict repository registry snapshot for offer and board authorization"
+  },
+  {
+   "id": "relation.task-fleet.task-inbox.execution-primitives",
+   "kind": "calls",
+   "source": "component.task-fleet.task-inbox",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Hold exclusive directory locks under the Git common directory for the task inbox"
+  },
+  {
+   "id": "relation.task-fleet.task-inbox.task-agent-host",
+   "kind": "calls",
+   "source": "component.task-fleet.task-inbox",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Reobserve the exact task session and live admission before current inbox operations"
+  },
+  {
+   "id": "relation.vendor-cli.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.vendor-cli",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.workflow-state.continuation-ledger.execution-primitives",
+   "kind": "calls",
+   "source": "component.workflow-state.continuation-ledger",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Serialize attempt ledger appends under a directory lock and write them durably"
+  },
+  {
+   "id": "relation.workflow-state.continuation-ledger.primary",
+   "kind": "calls",
+   "source": "component.workflow-state.continuation-ledger",
+   "target": "component.workflow-state.primary",
+   "intent": "Project the continuation envelope from read-only Effective State"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane",
+   "kind": "calls",
+   "source": "capability.workflow-engine.workflow-state",
+   "target": "component.workflow-state.coordination-plane",
+   "intent": "Project provider boards and retain explicit historical task parsing and exact worktree safety"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane.continuation-ledger",
+   "kind": "calls",
+   "source": "component.workflow-state.coordination-plane",
+   "target": "component.workflow-state.continuation-ledger",
+   "intent": "Append claim attempt receipts and read owner ledgers as progress evidence"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane.execution-primitives",
+   "kind": "calls",
+   "source": "component.workflow-state.coordination-plane",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Take task and backlog locks, read the worktree topology, and write coordination records durably"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane.external-source-intake",
+   "kind": "calls",
+   "source": "component.workflow-state.coordination-plane",
+   "target": "capability.runtime-harness.external-source-intake",
+   "intent": "Read immutable provider issue observations and complete refresh receipts"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane.primary",
+   "kind": "calls",
+   "source": "component.workflow-state.coordination-plane",
+   "target": "component.workflow-state.primary",
+   "intent": "Read artifacts and owner Effective State through the shared resolver"
+  },
+  {
+   "id": "relation.workflow-state.coordination-plane.task-agent-host",
+   "kind": "reads",
+   "source": "component.workflow-state.coordination-plane",
+   "target": "capability.runtime-harness.task-agent-host",
+   "intent": "Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune"
+  },
+  {
+   "id": "relation.workflow-state.imports.acceptance-review",
+   "kind": "depends-on",
+   "source": "capability.workflow-engine.workflow-state",
+   "target": "capability.verification.acceptance-review",
+   "intent": "Read the diff fingerprint for Effective State."
+  },
+  {
+   "id": "relation.workflow-state.imports.global-runtime-reconciliation",
+   "kind": "depends-on",
+   "source": "capability.workflow-engine.workflow-state",
+   "target": "capability.runtime-harness.global-runtime-reconciliation",
+   "intent": "Resolve the helper platform for coordination worktrees."
+  },
+  {
+   "id": "relation.workflow-state.primary",
+   "kind": "calls",
+   "source": "capability.workflow-engine.workflow-state",
+   "target": "component.workflow-state.primary",
+   "intent": "Resolve Effective State under the state lock"
+  },
+  {
+   "id": "relation.workflow-state.primary.contract-assets",
+   "kind": "calls",
+   "source": "component.workflow-state.primary",
+   "target": "capability.workflow-engine.contract-assets",
+   "intent": "Match changed paths to capability ids through the pure capability registry"
+  },
+  {
+   "id": "relation.workflow-state.primary.execution-primitives",
+   "kind": "calls",
+   "source": "component.workflow-state.primary",
+   "target": "capability.workflow-engine.execution-primitives",
+   "intent": "Take the state lock and commit the version owner under the Git common dir"
+  }
+ ],
+ "sizes": {
+  "state": "ok",
+  "nodes": [
+   {
+    "id": "capability.organization.publication",
+    "files": 7,
+    "lines": 3003
+   },
+   {
+    "id": "capability.organization.task-fleet",
+    "files": 13,
+    "lines": 4470
+   },
+   {
+    "id": "capability.public-surface.action-commands",
+    "files": 61,
+    "lines": 7534
+   },
+   {
+    "id": "capability.public-surface.adoption",
+    "files": 25,
+    "lines": 5381
+   },
+   {
+    "id": "capability.public-surface.root-router",
+    "files": 16,
+    "lines": 5942
+   },
+   {
+    "id": "capability.public-surface.strategy-reflection",
+    "files": 9,
+    "lines": 1366
+   },
+   {
+    "id": "capability.runtime-harness.agent-runtime-effects",
+    "files": 4,
+    "lines": 1503
+   },
+   {
+    "id": "capability.runtime-harness.engineer-bindings",
+    "files": 9,
+    "lines": 648
+   },
+   {
+    "id": "capability.runtime-harness.engineer-scheduling",
+    "files": 3,
+    "lines": 1816
+   },
+   {
+    "id": "capability.runtime-harness.engineering-overlay",
+    "files": 2,
+    "lines": 555
+   },
+   {
+    "id": "capability.runtime-harness.evidence-ledger",
+    "files": 28,
+    "lines": 5656
+   },
+   {
+    "id": "capability.runtime-harness.external-source-intake",
+    "files": 10,
+    "lines": 1849
+   },
+   {
+    "id": "capability.runtime-harness.global-runtime-reconciliation",
+    "files": 52,
+    "lines": 20869
+   },
+   {
+    "id": "capability.runtime-harness.hook-adapters",
+    "files": 45,
+    "lines": 8065
+   },
+   {
+    "id": "capability.runtime-harness.integration-acceptance",
+    "files": 3,
+    "lines": 1184
+   },
+   {
+    "id": "capability.runtime-harness.mcp-sidecar",
+    "files": 35,
+    "lines": 11804
+   },
+   {
+    "id": "capability.runtime-harness.operator",
+    "files": 182,
+    "lines": 33080
+   },
+   {
+    "id": "capability.runtime-harness.refactor-program",
+    "files": 4,
+    "lines": 346
+   },
+   {
+    "id": "capability.runtime-harness.task-agent-host",
+    "files": 36,
+    "lines": 3511
+   },
+   {
+    "id": "capability.runtime-mcp.chatgpt-browser",
+    "files": 13,
+    "lines": 3996
+   },
+   {
+    "id": "capability.runtime-mcp.general-repo-access",
+    "files": 7,
+    "lines": 8551
+   },
+   {
+    "id": "capability.verification.acceptance-review",
+    "files": 25,
+    "lines": 5991
+   },
+   {
+    "id": "capability.verification.codegraph-readiness",
+    "files": 5,
+    "lines": 1367
+   },
+   {
+    "id": "capability.verification.evals-checks",
+    "files": 637,
+    "lines": 162873
+   },
+   {
+    "id": "capability.workflow-engine.contract-assets",
+    "files": 631,
+    "lines": 33131
+   },
+   {
+    "id": "capability.workflow-engine.execution-primitives",
+    "files": 19,
+    "lines": 2657
+   },
+   {
+    "id": "capability.workflow-engine.inspection-migration",
+    "files": 13,
+    "lines": 4554
+   },
+   {
+    "id": "capability.workflow-engine.workflow-state",
+    "files": 32,
+    "lines": 6008
+   },
+   {
+    "id": "component.acceptance-review.primary",
+    "files": 25,
+    "lines": 5991
+   },
+   {
+    "id": "component.action-commands.bundled-skills",
+    "files": 37,
+    "lines": 2782
+   },
+   {
+    "id": "component.action-commands.primary",
+    "files": 16,
+    "lines": 1446
+   },
+   {
+    "id": "component.action-commands.skill-surface-catalog",
+    "files": 8,
+    "lines": 3306
+   },
+   {
+    "id": "component.agent-runtime-effects.journal",
+    "files": 1,
+    "lines": 787
+   },
+   {
+    "id": "component.chatgpt-browser.primary",
+    "files": 12,
+    "lines": 3637
+   },
+   {
+    "id": "component.contract-assets.capability-registry",
+    "files": 495,
+    "lines": 10496
+   },
+   {
+    "id": "component.contract-assets.contract-worktree-lifecycle",
+    "files": 7,
+    "lines": 3404
+   },
+   {
+    "id": "component.contract-assets.planning-helpers",
+    "files": 20,
+    "lines": 4019
+   },
+   {
+    "id": "component.contract-assets.primary",
+    "files": 9,
+    "lines": 3812
+   },
+   {
+    "id": "component.contract-assets.template-projection",
+    "files": 97,
+    "lines": 10732
+   },
+   {
+    "id": "component.engineer-scheduling.primary",
+    "files": 3,
+    "lines": 1816
+   },
+   {
+    "id": "component.engineering-overlay.primary",
+    "files": 1,
+    "lines": 475
+   },
+   {
+    "id": "component.evals-checks.ci-selection",
+    "files": 14,
+    "lines": 2561
+   },
+   {
+    "id": "component.evals-checks.evals-and-benchmarks",
+    "files": 100,
+    "lines": 12566
+   },
+   {
+    "id": "component.evals-checks.primary",
+    "files": 4,
+    "lines": 419
+   },
+   {
+    "id": "component.evals-checks.test-suite",
+    "files": 516,
+    "lines": 145107
+   },
+   {
+    "id": "component.evals-checks.workflow-gates",
+    "files": 3,
+    "lines": 2220
+   },
+   {
+    "id": "component.evidence-ledger.primary",
+    "files": 27,
+    "lines": 5499
+   },
+   {
+    "id": "component.execution-primitives.primary",
+    "files": 19,
+    "lines": 2657
+   },
+   {
+    "id": "component.external-source-intake.immutable-evidence",
+    "files": 1,
+    "lines": 430
+   },
+   {
+    "id": "component.global-runtime-reconciliation.archctx-closure",
+    "files": 17,
+    "lines": 2796
+   },
+   {
+    "id": "component.global-runtime-reconciliation.cli-root",
+    "files": 5,
+    "lines": 2608
+   },
+   {
+    "id": "component.global-runtime-reconciliation.primary",
+    "files": 15,
+    "lines": 5323
+   },
+   {
+    "id": "component.global-runtime-reconciliation.release-packaging",
+    "files": 9,
+    "lines": 2035
+   },
+   {
+    "id": "component.hook-adapters.edit-guards",
+    "files": 4,
+    "lines": 753
+   },
+   {
+    "id": "component.hook-adapters.host-installer",
+    "files": 17,
+    "lines": 4425
+   },
+   {
+    "id": "component.hook-adapters.primary",
+    "files": 11,
+    "lines": 1269
+   },
+   {
+    "id": "component.hook-adapters.session-lifecycle",
+    "files": 9,
+    "lines": 1365
+   },
+   {
+    "id": "component.inspection-migration.primary",
+    "files": 11,
+    "lines": 4166
+   },
+   {
+    "id": "component.integration-acceptance.primary",
+    "files": 3,
+    "lines": 1184
+   },
+   {
+    "id": "component.mcp-sidecar.coding-profile",
+    "files": 3,
+    "lines": 2125
+   },
+   {
+    "id": "component.mcp-sidecar.host-setup",
+    "files": 5,
+    "lines": 2356
+   },
+   {
+    "id": "component.mcp-sidecar.primary",
+    "files": 7,
+    "lines": 2412
+   },
+   {
+    "id": "component.mcp-sidecar.repo-policy-registry",
+    "files": 12,
+    "lines": 2291
+   },
+   {
+    "id": "component.mcp-sidecar.transport-auth",
+    "files": 4,
+    "lines": 1692
+   },
+   {
+    "id": "component.operator.activity-feeds",
+    "files": 18,
+    "lines": 3736
+   },
+   {
+    "id": "component.operator.architecture-view",
+    "files": 2,
+    "lines": 185
+   },
+   {
+    "id": "component.operator.console-collectors",
+    "files": 11,
+    "lines": 2290
+   },
+   {
+    "id": "component.operator.primary",
+    "files": 29,
+    "lines": 5964
+   },
+   {
+    "id": "component.operator.view-projections",
+    "files": 25,
+    "lines": 3951
+   },
+   {
+    "id": "component.operator.web-console",
+    "files": 93,
+    "lines": 16538
+   },
+   {
+    "id": "component.publication.primary",
+    "files": 4,
+    "lines": 836
+   },
+   {
+    "id": "component.publication.provider-feedback",
+    "files": 3,
+    "lines": 2167
+   },
+   {
+    "id": "component.refactor-program.archctx-provider",
+    "files": 1,
+    "lines": 55
+   },
+   {
+    "id": "component.strategy-reflection.primary",
+    "files": 5,
+    "lines": 641
+   },
+   {
+    "id": "component.task-agent-host.primary",
+    "files": 31,
+    "lines": 3190
+   },
+   {
+    "id": "component.task-fleet.primary",
+    "files": 3,
+    "lines": 1649
+   },
+   {
+    "id": "component.task-fleet.task-inbox",
+    "files": 9,
+    "lines": 2756
+   },
+   {
+    "id": "component.workflow-state.continuation-ledger",
+    "files": 5,
+    "lines": 525
+   },
+   {
+    "id": "component.workflow-state.coordination-plane",
+    "files": 14,
+    "lines": 1929
+   },
+   {
+    "id": "component.workflow-state.primary",
+    "files": 13,
+    "lines": 3554
+   }
+  ]
+ },
+ "dependencies": {
+  "state": "ok",
+  "edges": [
+   {
+    "source": "capability.organization.publication",
+    "target": "capability.organization.task-fleet",
+    "imports": 3
+   },
+   {
+    "source": "capability.organization.publication",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 1
+   },
+   {
+    "source": "capability.organization.publication",
+    "target": "capability.verification.acceptance-review",
+    "imports": 2
+   },
+   {
+    "source": "capability.organization.publication",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 3
+   },
+   {
+    "source": "capability.organization.publication",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 1
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.organization.publication",
+    "imports": 6
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.agent-runtime-effects",
+    "imports": 2
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 2
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 6
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 1
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 2
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 4
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.verification.acceptance-review",
+    "imports": 5
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 7
+   },
+   {
+    "source": "capability.organization.task-fleet",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 3
+   },
+   {
+    "source": "capability.public-surface.action-commands",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.action-commands",
+    "target": "capability.verification.evals-checks",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.action-commands",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 3
+   },
+   {
+    "source": "capability.public-surface.adoption",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.strategy-reflection",
+    "target": "capability.public-surface.action-commands",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.strategy-reflection",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.public-surface.strategy-reflection",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 2
+   },
+   {
+    "source": "capability.public-surface.strategy-reflection",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.organization.task-fleet",
+    "imports": 6
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.runtime-harness.engineer-scheduling",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.agent-runtime-effects",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineer-bindings",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineer-bindings",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineer-bindings",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineer-bindings",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.organization.publication",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 5
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.integration-acceptance",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.operator",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.verification.acceptance-review",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 5
+   },
+   {
+    "source": "capability.runtime-harness.engineer-scheduling",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineering-overlay",
+    "target": "capability.runtime-harness.agent-runtime-effects",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineering-overlay",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.engineering-overlay",
+    "target": "capability.runtime-harness.engineer-scheduling",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.engineering-overlay",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.evidence-ledger",
+    "target": "capability.public-surface.adoption",
+    "imports": 6
+   },
+   {
+    "source": "capability.runtime-harness.evidence-ledger",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.evidence-ledger",
+    "target": "capability.verification.acceptance-review",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.evidence-ledger",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 15
+   },
+   {
+    "source": "capability.runtime-harness.evidence-ledger",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.organization.task-fleet",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.verification.acceptance-review",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.external-source-intake",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.organization.publication",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.organization.task-fleet",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.public-surface.action-commands",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.public-surface.adoption",
+    "imports": 15
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.public-surface.root-router",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.public-surface.strategy-reflection",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 40
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.integration-acceptance",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.operator",
+    "imports": 7
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.refactor-program",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.runtime-mcp.chatgpt-browser",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.verification.acceptance-review",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.verification.codegraph-readiness",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.verification.evals-checks",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 11
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 16
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.workflow-engine.inspection-migration",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.global-runtime-reconciliation",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 7
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.public-surface.action-commands",
+    "imports": 5
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.public-surface.adoption",
+    "imports": 6
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 10
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.verification.acceptance-review",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 14
+   },
+   {
+    "source": "capability.runtime-harness.hook-adapters",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 16
+   },
+   {
+    "source": "capability.runtime-harness.integration-acceptance",
+    "target": "capability.organization.publication",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.integration-acceptance",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.integration-acceptance",
+    "target": "capability.verification.acceptance-review",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.integration-acceptance",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.organization.publication",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 7
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.runtime-mcp.chatgpt-browser",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.runtime-mcp.general-repo-access",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.verification.codegraph-readiness",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 11
+   },
+   {
+    "source": "capability.runtime-harness.mcp-sidecar",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.organization.publication",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.organization.task-fleet",
+    "imports": 10
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.public-surface.action-commands",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.engineer-scheduling",
+    "imports": 4
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.engineering-overlay",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 10
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 10
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 7
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 20
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 31
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.verification.acceptance-review",
+    "imports": 7
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 22
+   },
+   {
+    "source": "capability.runtime-harness.operator",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 6
+   },
+   {
+    "source": "capability.runtime-harness.refactor-program",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.refactor-program",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.refactor-program",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 5
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.verification.acceptance-review",
+    "imports": 5
+   },
+   {
+    "source": "capability.runtime-harness.task-agent-host",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 14
+   },
+   {
+    "source": "capability.runtime-mcp.chatgpt-browser",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-mcp.chatgpt-browser",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 3
+   },
+   {
+    "source": "capability.runtime-mcp.chatgpt-browser",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 1
+   },
+   {
+    "source": "capability.runtime-mcp.general-repo-access",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-mcp.general-repo-access",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 21
+   },
+   {
+    "source": "capability.runtime-mcp.general-repo-access",
+    "target": "capability.verification.codegraph-readiness",
+    "imports": 2
+   },
+   {
+    "source": "capability.runtime-mcp.general-repo-access",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 2
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.organization.task-fleet",
+    "imports": 3
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 12
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 3
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.operator",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 17
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 13
+   },
+   {
+    "source": "capability.verification.acceptance-review",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 3
+   },
+   {
+    "source": "capability.verification.codegraph-readiness",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 2
+   },
+   {
+    "source": "capability.verification.codegraph-readiness",
+    "target": "capability.verification.evals-checks",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.codegraph-readiness",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.organization.publication",
+    "imports": 23
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.organization.task-fleet",
+    "imports": 39
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.public-surface.action-commands",
+    "imports": 14
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.public-surface.adoption",
+    "imports": 25
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.public-surface.root-router",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.public-surface.strategy-reflection",
+    "imports": 4
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.agent-runtime-effects",
+    "imports": 13
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.engineer-bindings",
+    "imports": 14
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.engineer-scheduling",
+    "imports": 10
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.engineering-overlay",
+    "imports": 3
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 87
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 40
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 39
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 124
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.integration-acceptance",
+    "imports": 4
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 65
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.operator",
+    "imports": 224
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.refactor-program",
+    "imports": 5
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 36
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.runtime-mcp.chatgpt-browser",
+    "imports": 7
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.verification.acceptance-review",
+    "imports": 76
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.verification.codegraph-readiness",
+    "imports": 1
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 31
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 57
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.workflow-engine.inspection-migration",
+    "imports": 5
+   },
+   {
+    "source": "capability.verification.evals-checks",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 63
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.organization.publication",
+    "imports": 2
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.organization.task-fleet",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.public-surface.action-commands",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.public-surface.adoption",
+    "imports": 5
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 12
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.hook-adapters",
+    "imports": 5
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.integration-acceptance",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.operator",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.runtime-mcp.general-repo-access",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.verification.acceptance-review",
+    "imports": 2
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.verification.codegraph-readiness",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.contract-assets",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 10
+   },
+   {
+    "source": "capability.workflow-engine.execution-primitives",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.execution-primitives",
+    "target": "capability.workflow-engine.workflow-state",
+    "imports": 2
+   },
+   {
+    "source": "capability.workflow-engine.inspection-migration",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.runtime-harness.evidence-ledger",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.runtime-harness.external-source-intake",
+    "imports": 6
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.runtime-harness.global-runtime-reconciliation",
+    "imports": 2
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.runtime-harness.mcp-sidecar",
+    "imports": 1
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.runtime-harness.task-agent-host",
+    "imports": 4
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.verification.acceptance-review",
+    "imports": 2
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.workflow-engine.contract-assets",
+    "imports": 5
+   },
+   {
+    "source": "capability.workflow-engine.workflow-state",
+    "target": "capability.workflow-engine.execution-primitives",
+    "imports": 21
+   }
+  ]
+ },
+ "layers": {
+  "changes": {
+   "state": "ok",
+   "since": "2026-10-26T16:00:00.000Z",
+   "base": "52e6cbafe95fdee1e64987129158ee43a9a50d9e",
+   "commits": 53,
+   "files": 428,
+   "unowned_files": 18,
+   "nodes": [
+    {
+     "id": "capability.organization.task-fleet",
+     "files": 1,
+     "added": 20,
+     "deleted": 4
+    },
+    {
+     "id": "capability.public-surface.adoption",
+     "files": 1,
+     "added": 17,
+     "deleted": 12
+    },
+    {
+     "id": "capability.public-surface.root-router",
+     "files": 4,
+     "added": 23,
+     "deleted": 11
+    },
+    {
+     "id": "capability.runtime-harness.global-runtime-reconciliation",
+     "files": 13,
+     "added": 746,
+     "deleted": 38
+    },
+    {
+     "id": "capability.runtime-harness.hook-adapters",
+     "files": 2,
+     "added": 187,
+     "deleted": 3
+    },
+    {
+     "id": "capability.runtime-harness.mcp-sidecar",
+     "files": 19,
+     "added": 834,
+     "deleted": 230
+    },
+    {
+     "id": "capability.runtime-harness.operator",
+     "files": 117,
+     "added": 16425,
+     "deleted": 507
+    },
+    {
+     "id": "capability.runtime-harness.task-agent-host",
+     "files": 7,
+     "added": 159,
+     "deleted": 12
+    },
+    {
+     "id": "capability.runtime-mcp.general-repo-access",
+     "files": 4,
+     "added": 197,
+     "deleted": 15
+    },
+    {
+     "id": "capability.verification.acceptance-review",
+     "files": 5,
+     "added": 469,
+     "deleted": 2
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "files": 53,
+     "added": 8357,
+     "deleted": 110
+    },
+    {
+     "id": "capability.workflow-engine.contract-assets",
+     "files": 179,
+     "added": 942,
+     "deleted": 55
+    },
+    {
+     "id": "capability.workflow-engine.execution-primitives",
+     "files": 3,
+     "added": 8,
+     "deleted": 3
+    },
+    {
+     "id": "capability.workflow-engine.inspection-migration",
+     "files": 1,
+     "added": 29,
+     "deleted": 1
+    },
+    {
+     "id": "capability.workflow-engine.workflow-state",
+     "files": 1,
+     "added": 35,
+     "deleted": 20
+    },
+    {
+     "id": "component.acceptance-review.primary",
+     "files": 5,
+     "added": 469,
+     "deleted": 2
+    },
+    {
+     "id": "component.contract-assets.capability-registry",
+     "files": 169,
+     "added": 686,
+     "deleted": 13
+    },
+    {
+     "id": "component.contract-assets.template-projection",
+     "files": 9,
+     "added": 82,
+     "deleted": 42
+    },
+    {
+     "id": "component.evals-checks.ci-selection",
+     "files": 3,
+     "added": 220,
+     "deleted": 5
+    },
+    {
+     "id": "component.evals-checks.test-suite",
+     "files": 50,
+     "added": 8137,
+     "deleted": 105
+    },
+    {
+     "id": "component.execution-primitives.primary",
+     "files": 3,
+     "added": 8,
+     "deleted": 3
+    },
+    {
+     "id": "component.global-runtime-reconciliation.archctx-closure",
+     "files": 2,
+     "added": 190,
+     "deleted": 6
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "files": 1,
+     "added": 7,
+     "deleted": 1
+    },
+    {
+     "id": "component.global-runtime-reconciliation.primary",
+     "files": 3,
+     "added": 340,
+     "deleted": 21
+    },
+    {
+     "id": "component.global-runtime-reconciliation.release-packaging",
+     "files": 3,
+     "added": 53,
+     "deleted": 2
+    },
+    {
+     "id": "component.hook-adapters.primary",
+     "files": 2,
+     "added": 187,
+     "deleted": 3
+    },
+    {
+     "id": "component.inspection-migration.primary",
+     "files": 1,
+     "added": 29,
+     "deleted": 1
+    },
+    {
+     "id": "component.mcp-sidecar.coding-profile",
+     "files": 1,
+     "added": 1,
+     "deleted": 1
+    },
+    {
+     "id": "component.mcp-sidecar.host-setup",
+     "files": 3,
+     "added": 64,
+     "deleted": 28
+    },
+    {
+     "id": "component.mcp-sidecar.primary",
+     "files": 4,
+     "added": 316,
+     "deleted": 25
+    },
+    {
+     "id": "component.mcp-sidecar.repo-policy-registry",
+     "files": 6,
+     "added": 97,
+     "deleted": 19
+    },
+    {
+     "id": "component.mcp-sidecar.transport-auth",
+     "files": 2,
+     "added": 257,
+     "deleted": 154
+    },
+    {
+     "id": "component.operator.activity-feeds",
+     "files": 17,
+     "added": 2001,
+     "deleted": 66
+    },
+    {
+     "id": "component.operator.console-collectors",
+     "files": 11,
+     "added": 2224,
+     "deleted": 87
+    },
+    {
+     "id": "component.operator.primary",
+     "files": 10,
+     "added": 1593,
+     "deleted": 17
+    },
+    {
+     "id": "component.operator.view-projections",
+     "files": 10,
+     "added": 2234,
+     "deleted": 0
+    },
+    {
+     "id": "component.operator.web-console",
+     "files": 67,
+     "added": 8299,
+     "deleted": 336
+    },
+    {
+     "id": "component.task-agent-host.primary",
+     "files": 7,
+     "added": 159,
+     "deleted": 12
+    },
+    {
+     "id": "component.task-fleet.primary",
+     "files": 1,
+     "added": 20,
+     "deleted": 4
+    },
+    {
+     "id": "component.workflow-state.coordination-plane",
+     "files": 1,
+     "added": 35,
+     "deleted": 20
+    }
+   ],
+   "model": {
+    "state": "ok",
+    "nodes_added": [
+     "component.operator.console-collectors",
+     "external.archctx",
+     "external.chatgpt",
+     "external.claude-code",
+     "external.codegraph",
+     "external.codex",
+     "external.git",
+     "external.github",
+     "external.herdr",
+     "external.npm-registry",
+     "namespace.host.developer",
+     "process.agent-host",
+     "process.cli",
+     "process.herdr-server",
+     "process.hook",
+     "process.mcp-coding-shell",
+     "process.mcp-server",
+     "process.oar-review-host",
+     "process.operator-collector",
+     "process.operator-server",
+     "process.process-group-launcher",
+     "process.process-supervisor",
+     "process.vendor-cli"
+    ],
+    "nodes_removed": [],
+    "nodes_changed": [
+     "capability.organization.publication",
+     "capability.organization.task-fleet",
+     "capability.public-surface.action-commands",
+     "capability.public-surface.adoption",
+     "capability.public-surface.root-router",
+     "capability.public-surface.strategy-reflection",
+     "capability.runtime-harness.agent-runtime-effects",
+     "capability.runtime-harness.engineer-bindings",
+     "capability.runtime-harness.engineer-scheduling",
+     "capability.runtime-harness.engineering-overlay",
+     "capability.runtime-harness.evidence-ledger",
+     "capability.runtime-harness.external-source-intake",
+     "capability.runtime-harness.global-runtime-reconciliation",
+     "capability.runtime-harness.hook-adapters",
+     "capability.runtime-harness.integration-acceptance",
+     "capability.runtime-harness.mcp-sidecar",
+     "capability.runtime-harness.operator",
+     "capability.runtime-harness.refactor-program",
+     "capability.runtime-harness.task-agent-host",
+     "capability.runtime-mcp.chatgpt-browser",
+     "capability.runtime-mcp.general-repo-access",
+     "capability.verification.acceptance-review",
+     "capability.verification.codegraph-readiness",
+     "capability.verification.evals-checks",
+     "capability.workflow-engine.contract-assets",
+     "capability.workflow-engine.execution-primitives",
+     "capability.workflow-engine.inspection-migration",
+     "capability.workflow-engine.workflow-state",
+     "component.acceptance-review.primary",
+     "component.action-commands.bundled-skills",
+     "component.action-commands.primary",
+     "component.action-commands.skill-surface-catalog",
+     "component.adoption.primary",
+     "component.agent-runtime-effects.journal",
+     "component.chatgpt-browser.primary",
+     "component.codegraph-readiness.primary",
+     "component.contract-assets.capability-registry",
+     "component.contract-assets.contract-worktree-lifecycle",
+     "component.contract-assets.planning-helpers",
+     "component.contract-assets.primary",
+     "component.contract-assets.template-projection",
+     "component.engineer-bindings.primary",
+     "component.engineer-scheduling.primary",
+     "component.engineering-overlay.primary",
+     "component.evals-checks.ci-selection",
+     "component.evals-checks.evals-and-benchmarks",
+     "component.evals-checks.primary",
+     "component.evals-checks.test-suite",
+     "component.evals-checks.workflow-gates",
+     "component.evidence-ledger.primary",
+     "component.execution-primitives.primary",
+     "component.external-source-intake.immutable-evidence",
+     "component.general-repo-access.primary",
+     "component.global-runtime-reconciliation.archctx-closure",
+     "component.global-runtime-reconciliation.cli-root",
+     "component.global-runtime-reconciliation.primary",
+     "component.global-runtime-reconciliation.release-packaging",
+     "component.hook-adapters.edit-guards",
+     "component.hook-adapters.host-installer",
+     "component.hook-adapters.primary",
+     "component.hook-adapters.session-lifecycle",
+     "component.inspection-migration.primary",
+     "component.integration-acceptance.primary",
+     "component.mcp-sidecar.coding-profile",
+     "component.mcp-sidecar.host-setup",
+     "component.mcp-sidecar.primary",
+     "component.mcp-sidecar.repo-policy-registry",
+     "component.mcp-sidecar.transport-auth",
+     "component.operator.activity-feeds",
+     "component.operator.architecture-view",
+     "component.operator.primary",
+     "component.operator.view-projections",
+     "component.operator.web-console",
+     "component.publication.primary",
+     "component.publication.provider-feedback",
+     "component.refactor-program.archctx-provider",
+     "component.root-router.primary",
+     "component.strategy-reflection.primary",
+     "component.task-agent-host.primary",
+     "component.task-fleet.primary",
+     "component.task-fleet.task-inbox",
+     "component.workflow-state.continuation-ledger",
+     "component.workflow-state.coordination-plane",
+     "component.workflow-state.primary"
+    ],
+    "relations_added": [
+     "relation.acceptance-review.claude-code",
+     "relation.acceptance-review.codex",
+     "relation.acceptance-review.deployed-on.oar-review-host",
+     "relation.agent-host.runs-in.host",
+     "relation.agent-host.spawns.hook",
+     "relation.agent-host.spawns.mcp-server",
+     "relation.agent-runtime-effects.herdr",
+     "relation.chatgpt-browser.chatgpt",
+     "relation.claude-code.hook-adapters",
+     "relation.cli-root.deployed-on.cli",
+     "relation.cli.runs-in.host",
+     "relation.cli.spawns.process-supervisor",
+     "relation.codegraph-readiness.codegraph",
+     "relation.codex.hook-adapters",
+     "relation.evals-checks.github",
+     "relation.execution-primitives.deployed-on.process-supervisor",
+     "relation.execution-primitives.git",
+     "relation.external-source-intake.github",
+     "relation.global-runtime-reconciliation.archctx",
+     "relation.global-runtime-reconciliation.npm-registry",
+     "relation.herdr-server.runs-in.host",
+     "relation.herdr-server.spawns.oar-review-host",
+     "relation.hook-adapters.deployed-on.hook",
+     "relation.hook.runs-in.host",
+     "relation.hook.spawns.process-supervisor",
+     "relation.mcp-coding-shell.runs-in.host",
+     "relation.mcp-server.runs-in.host",
+     "relation.mcp-server.spawns.mcp-coding-shell",
+     "relation.mcp-server.spawns.process-supervisor",
+     "relation.mcp-sidecar.deployed-on.mcp-server",
+     "relation.oar-review-host.runs-in.host",
+     "relation.oar-review-host.spawns.vendor-cli",
+     "relation.operator-collector.runs-in.host",
+     "relation.operator-server.runs-in.host",
+     "relation.operator-server.spawns.operator-collector",
+     "relation.operator.activity-feeds.npm-registry",
+     "relation.operator.console-collectors.activity-feeds",
+     "relation.operator.console-collectors.archctx",
+     "relation.operator.console-collectors.git",
+     "relation.operator.console-collectors.github",
+     "relation.operator.console-collectors.herdr",
+     "relation.operator.console-collectors.http-reader",
+     "relation.operator.console-collectors.mcp-sidecar",
+     "relation.operator.console-collectors.task-agent-host",
+     "relation.operator.console-collectors.view-projections",
+     "relation.operator.deployed-on.operator-server",
+     "relation.operator.github",
+     "relation.operator.http-reader.console-collectors",
+     "relation.operator.primary.acceptance-review",
+     "relation.operator.primary.coordination-plane",
+     "relation.operator.primary.execution-primitives",
+     "relation.operator.view-projections.repo-policy-registry",
+     "relation.process-group-launcher.runs-in.host",
+     "relation.process-supervisor.runs-in.host",
+     "relation.process-supervisor.spawns.process-group-launcher",
+     "relation.publication.github",
+     "relation.task-agent-host.herdr",
+     "relation.task-agent-host.primary.repo-policy-registry",
+     "relation.vendor-cli.runs-in.host"
+    ],
+    "relations_removed": [],
+    "relations_changed": [
+     "relation.evals-checks.imports.operator",
+     "relation.mcp-sidecar.primary.task-agent-host"
+    ]
+   },
+   "flow_steps": {
+    "state": "unavailable",
+    "reason": "change_impact_not_exported"
+   }
+  },
+  "violations": {
+   "debt": {
+    "state": "ok",
+    "items": [
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "src/effects/bot-registry.ts"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "src/effects/runtime/node-runtime.ts"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "src/cli/commands/upgrade-registered.ts"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "docs/control-bot-boundary.md"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "src/cli/commands/bots.ts"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "src/effects/runtime/os-account-home.ts"
+      ]
+     },
+     {
+      "kind": "unowned-path",
+      "nodes": [],
+      "paths": [
+       "docs/bot-onboarding.md"
+      ]
+     },
+     {
+      "kind": "ambiguous-owner",
+      "nodes": [
+       "capability.runtime-harness.mcp-sidecar",
+       "capability.workflow-engine.contract-assets",
+       "component.contract-assets.template-projection"
+      ],
+      "paths": [
+       "docs/reference-configs/herdr-orchestrator-mcp.md"
+      ]
+     }
+    ]
+   },
+   "flows": {
+    "state": "unavailable",
+    "reason": "flows_check_writes_index"
+   },
+   "anchors": {
+    "state": "ok",
+    "citations": 1142,
+    "nodes": []
+   },
+   "dependencies": {
+    "state": "ok",
+    "edges": [
+     {
+      "source": "capability.organization.publication",
+      "target": "capability.workflow-engine.workflow-state",
+      "imports": 1
+     },
+     {
+      "source": "capability.organization.task-fleet",
+      "target": "capability.runtime-harness.external-source-intake",
+      "imports": 1
+     },
+     {
+      "source": "capability.organization.task-fleet",
+      "target": "capability.verification.acceptance-review",
+      "imports": 5
+     },
+     {
+      "source": "capability.public-surface.action-commands",
+      "target": "capability.runtime-harness.global-runtime-reconciliation",
+      "imports": 1
+     },
+     {
+      "source": "capability.public-surface.adoption",
+      "target": "capability.workflow-engine.contract-assets",
+      "imports": 1
+     },
+     {
+      "source": "capability.public-surface.strategy-reflection",
+      "target": "capability.runtime-harness.global-runtime-reconciliation",
+      "imports": 1
+     },
+     {
+      "source": "capability.public-surface.strategy-reflection",
+      "target": "capability.workflow-engine.execution-primitives",
+      "imports": 2
+     },
+     {
+      "source": "capability.runtime-harness.engineer-scheduling",
+      "target": "capability.runtime-harness.external-source-intake",
+      "imports": 5
+     },
+     {
+      "source": "capability.runtime-harness.engineer-scheduling",
+      "target": "capability.runtime-harness.operator",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.engineer-scheduling",
+      "target": "capability.runtime-harness.task-agent-host",
+      "imports": 2
+     },
+     {
+      "source": "capability.runtime-harness.evidence-ledger",
+      "target": "capability.verification.acceptance-review",
+      "imports": 4
+     },
+     {
+      "source": "capability.runtime-harness.external-source-intake",
+      "target": "capability.runtime-harness.evidence-ledger",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.global-runtime-reconciliation",
+      "target": "capability.workflow-engine.inspection-migration",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.integration-acceptance",
+      "target": "capability.runtime-harness.evidence-ledger",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.operator",
+      "target": "capability.runtime-harness.evidence-ledger",
+      "imports": 10
+     },
+     {
+      "source": "capability.runtime-harness.task-agent-host",
+      "target": "capability.runtime-harness.engineer-bindings",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.task-agent-host",
+      "target": "capability.runtime-harness.global-runtime-reconciliation",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-harness.task-agent-host",
+      "target": "capability.verification.acceptance-review",
+      "imports": 5
+     },
+     {
+      "source": "capability.runtime-mcp.chatgpt-browser",
+      "target": "capability.runtime-harness.global-runtime-reconciliation",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-mcp.chatgpt-browser",
+      "target": "capability.workflow-engine.execution-primitives",
+      "imports": 1
+     },
+     {
+      "source": "capability.runtime-mcp.general-repo-access",
+      "target": "capability.runtime-harness.hook-adapters",
+      "imports": 2
+     },
+     {
+      "source": "capability.runtime-mcp.general-repo-access",
+      "target": "capability.workflow-engine.execution-primitives",
+      "imports": 2
+     },
+     {
+      "source": "capability.verification.acceptance-review",
+      "target": "capability.runtime-harness.external-source-intake",
+      "imports": 3
+     },
+     {
+      "source": "capability.workflow-engine.contract-assets",
+      "target": "capability.organization.task-fleet",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.contract-assets",
+      "target": "capability.runtime-harness.integration-acceptance",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.contract-assets",
+      "target": "capability.runtime-harness.mcp-sidecar",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.contract-assets",
+      "target": "capability.runtime-mcp.general-repo-access",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.execution-primitives",
+      "target": "capability.runtime-harness.mcp-sidecar",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.execution-primitives",
+      "target": "capability.workflow-engine.workflow-state",
+      "imports": 2
+     },
+     {
+      "source": "capability.workflow-engine.workflow-state",
+      "target": "capability.runtime-harness.evidence-ledger",
+      "imports": 1
+     },
+     {
+      "source": "capability.workflow-engine.workflow-state",
+      "target": "capability.runtime-harness.mcp-sidecar",
+      "imports": 1
+     }
+    ]
+   },
+   "layer_direction": {
+    "state": "unavailable",
+    "reason": "layer_order_not_released"
+   }
+  },
+  "pull_requests": {
+   "state": "unavailable",
+   "reason": "pr_files_unavailable"
+  },
+  "tests": {
+   "state": "ok",
+   "run": {
+    "id": 40417146381,
+    "head_sha": "45ae5ef93b56154543be62be93c538241baeee6a",
+    "created_at": "2026-10-26T23:04:20Z"
+   },
+   "results": "ok",
+   "capabilities": [
+    {
+     "id": "capability.organization.publication",
+     "files": 13,
+     "passed": 13,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.organization.task-fleet",
+     "files": 21,
+     "passed": 21,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.public-surface.action-commands",
+     "files": 20,
+     "passed": 20,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.public-surface.adoption",
+     "files": 19,
+     "passed": 19,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.public-surface.root-router",
+     "files": 2,
+     "passed": 2,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.public-surface.strategy-reflection",
+     "files": 2,
+     "passed": 2,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.agent-runtime-effects",
+     "files": 7,
+     "passed": 7,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.engineer-bindings",
+     "files": 8,
+     "passed": 8,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.engineer-scheduling",
+     "files": 9,
+     "passed": 9,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.engineering-overlay",
+     "files": 4,
+     "passed": 4,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.evidence-ledger",
+     "files": 42,
+     "passed": 42,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.external-source-intake",
+     "files": 20,
+     "passed": 20,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.global-runtime-reconciliation",
+     "files": 80,
+     "passed": 79,
+     "failed": 0,
+     "skipped": 1,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.hook-adapters",
+     "files": 68,
+     "passed": 68,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.integration-acceptance",
+     "files": 4,
+     "passed": 4,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.mcp-sidecar",
+     "files": 36,
+     "passed": 36,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.operator",
+     "files": 45,
+     "passed": 45,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.refactor-program",
+     "files": 3,
+     "passed": 3,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-harness.task-agent-host",
+     "files": 28,
+     "passed": 28,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-mcp.chatgpt-browser",
+     "files": 6,
+     "passed": 6,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.runtime-mcp.general-repo-access",
+     "files": 5,
+     "passed": 5,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.verification.acceptance-review",
+     "files": 42,
+     "passed": 42,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.verification.codegraph-readiness",
+     "files": 10,
+     "passed": 10,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "files": 46,
+     "passed": 46,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.workflow-engine.contract-assets",
+     "files": 61,
+     "passed": 60,
+     "failed": 0,
+     "skipped": 1,
+     "no_result": 0
+    },
+    {
+     "id": "capability.workflow-engine.execution-primitives",
+     "files": 36,
+     "passed": 35,
+     "failed": 0,
+     "skipped": 1,
+     "no_result": 0
+    },
+    {
+     "id": "capability.workflow-engine.inspection-migration",
+     "files": 24,
+     "passed": 24,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    },
+    {
+     "id": "capability.workflow-engine.workflow-state",
+     "files": 43,
+     "passed": 43,
+     "failed": 0,
+     "skipped": 0,
+     "no_result": 0
+    }
+   ]
+  },
+  "decisions": {
+   "state": "unavailable",
+   "reason": "decisions_not_exported"
+  }
+ }
+}

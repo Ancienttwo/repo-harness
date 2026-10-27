@@ -38,6 +38,8 @@ import {
   buildOperatorCommand,
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
+import { projectArchitectureMap, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 
 function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
   return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
@@ -521,6 +523,11 @@ describe('operator serve command and HTTP boundary', () => {
     mkdirSync(join(root, 'docs'));
     writeFileSync(join(root, 'docs/guide.md'), '# Guide\n');
     writeFileSync(join(root, '.env'), 'TOKEN=secret\n');
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src/private.ts'), 'private source\n');
+    symlinkSync('../.env', join(root, 'docs/env.md'));
+    symlinkSync('../.git/config', join(root, 'docs/git.md'));
+    symlinkSync('../src', join(root, 'docs/source'));
     gitIn('init', '-q', '-b', 'main'); gitIn('add', 'docs'); gitIn('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'seed');
     gitIn('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const commit = gitIn('rev-parse', 'HEAD');
@@ -546,16 +553,21 @@ describe('operator serve command and HTTP boundary', () => {
       const treeResponse = await get('/api/v1/repositories/repo-a/docs/tree');
       expect(treeResponse.status).toBe(200);
       expect(await treeResponse.json()).toEqual(tree);
+      expect(tree.files.map(entry => entry.path)).toEqual(['docs/guide.md']);
       const ok = await file('repo-a', 'path=docs/guide.md');
       expect(ok.status).toBe(200);
       expect(await ok.json()).toEqual({ protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
-        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n', worktree_differs: false });
+        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n',
+        lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
       const head = await file('repo-a', 'path=docs/guide.md', { method: 'HEAD' });
       expect(head.status).toBe(200);
       expect(await head.text()).toBe('');
 
       for (const [query, status, expected] of [
         ['path=.env', 403, 'path_denied'], ['path=docs/.env', 403, 'path_denied'], ['path=docs/../.env', 400, 'path_invalid'],
+        ['path=.git/config', 403, 'path_denied'], ['path=docs/.git/config', 403, 'path_denied'], ['path=docs/.GIT/config', 403, 'path_denied'],
+        ['path=src/private.ts', 403, 'path_denied'], ['path=docs/env.md', 403, 'path_escape'], ['path=docs/git.md', 403, 'path_escape'],
+        ['path=docs/source/private.ts', 403, 'path_escape'], ['path=docs%2F..%2F.env', 400, 'path_invalid'],
         ['path=' + encodeURIComponent(join(root, 'docs/guide.md')), 400, 'path_invalid'], ['path=docs/none.md', 404, 'not_found'],
         ['', 400, 'invalid_request'], ['path=docs/guide.md&path=docs/guide.md', 400, 'invalid_request'], ['path=docs/guide.md&ref=main', 400, 'invalid_request'],
       ] as const) {
@@ -1778,4 +1790,90 @@ test('session discovery is bounded read-only transport with a closed repository 
     expect((await fetch(path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
     expect(calls).toBe(1);
   } finally { await server.close(); }
+});
+
+describe('architecture map', () => {
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
+  const map: ArchitectureMapV1 = projectArchitectureMap({
+    repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
+    nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
+    relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layers: {
+      changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      tests: { state: 'unavailable', reason: 'tests_pending' },
+    },
+  });
+
+  test('the route reads only the injected cache and maps each unavailable state to its code', async () => {
+    let cache: ArchitectureMapRepositoryCache = { state: 'unavailable', reason: 'architecture_map_pending' };
+    const server = await startOperatorServer({ port: 0, read_architecture_map: () => cache });
+    const path = `${server.url}/api/v1/repositories/repo-a/architecture/map`;
+    const get = async (url = path) => { const response = await fetch(url); return { status: response.status, body: await response.json() as unknown }; };
+    try {
+      for (const [next, status, code] of [
+        [{ state: 'unavailable', reason: 'architecture_map_pending' }, 503, 'architecture_map_pending'],
+        [{ state: 'unavailable', reason: 'registry_unavailable' }, 503, 'registry_unavailable'],
+        [{ state: 'unavailable', reason: 'repository_not_found' }, 404, 'repository_not_found'],
+        [{ state: 'unavailable', reason: 'model_unavailable' }, 503, 'model_unavailable'],
+        // A cached map that fails the decoder is refused, not sent.
+        [{ state: 'ready', map: { ...map, nodes: [{ ...map.nodes[0]!, summary: 1 }] } }, 503, 'architecture_map_invalid'],
+      ] as const) {
+        cache = next as ArchitectureMapRepositoryCache;
+        const answer = await get();
+        expect(answer.status).toBe(status);
+        expect((answer.body as { error?: { code: string } }).error?.code).toBe(code);
+      }
+      cache = { state: 'ready', map };
+      expect(await get()).toEqual({ status: 200, body: map });
+      expect((await fetch(`${path}?commit=HEAD`)).status).toBe(400);
+      expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect((await fetch(path, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
+    } finally { await server.close(); }
+  });
+
+  test('the collector is pending, then serves the child map; a failed or foreign child result is unavailable', async () => {
+    const root = realpathSync(moduleRepository());
+    const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
+    const id = registry.ids[0]!;
+    const collector = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000 });
+    try {
+      expect(collector.read(id)).toEqual({ state: 'unavailable', reason: 'architecture_map_pending' });
+      await collector.settled();
+      const ready = collector.read(id);
+      expect(ready.state === 'ready' && ready.map.nodes.map(entry => entry.id)).toEqual([MODULE_ID, 'component.module.core']);
+      // The child has no tests cache; without a reader the tests layer stays pending.
+      expect(ready.state === 'ready' && ready.map.layers.tests).toEqual({ state: 'unavailable', reason: 'tests_pending' });
+      expect(collector.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
+    } finally { await collector.close(); }
+    for (const [run_process, reason] of [
+      [async () => ({ ok: false, code: 'failed' }), 'model_unavailable'],
+      [async () => ({ ok: true, stdout: JSON.stringify({ id: 'repo-other', ok: true, snapshot: map }) }), 'architecture_map_invalid'],
+      [async () => { throw new Error('spawn failed'); }, 'model_unavailable'],
+    ] as const) {
+      const failing = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: run_process as never });
+      try {
+        await failing.settled();
+        expect(failing.read(id)).toEqual({ state: 'unavailable', reason });
+      } finally { await failing.close(); }
+    }
+    // The tests layer comes from the tests collector's cache when the child's map arrives.
+    const child = async () => ({ ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) });
+    const withTests = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: child as never, read_tests: () => ({ state: 'unavailable', reason: 'no_daily_run' }) });
+    try {
+      await withTests.settled();
+      const read = withTests.read(id);
+      expect(read.state === 'ready' && read.map.layers.tests).toEqual({ state: 'unavailable', reason: 'no_daily_run' });
+    } finally { await withTests.close(); }
+    writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
+    const broken = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: async () => { throw new Error('not reached'); } });
+    try {
+      await broken.settled();
+      expect(broken.read(id)).toEqual({ state: 'unavailable', reason: 'registry_unavailable' });
+    } finally {
+      await broken.close();
+      rmSync(root, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
 });

@@ -20,6 +20,7 @@ import { terminateProcessGroup } from '../process-group-termination';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupReason, SetupSnapshotV1 } from '../../core/setup/types';
+import { decodeAgentRuntimeProbe, type AgentRuntimeProbeV1, type AgentRuntimesCacheV1, type AgentRuntimesReason } from '../../core/operator/agents-settings';
 
 export const SETUP_INTERVAL_MS = 10 * 60_000;
 export const SETUP_TIMEOUT_MS = 90_000;
@@ -27,6 +28,9 @@ const SETUP_STDOUT_LIMIT = 4 * 1024 * 1024;
 const SETUP_TERMINATION_GRACE_MS = 500;
 
 export const SETUP_CHILD_ARGV = Object.freeze([fileURLToPath(new URL('../../cli/commands/setup-check-child.ts', import.meta.url))] as const);
+/** The agent runtime probe child (G9). It runs in the same cycle, after setup check. */
+export const AGENT_RUNTIME_PROBE_ARGV = Object.freeze([fileURLToPath(new URL('./agent-runtime-probe-child.ts', import.meta.url))] as const);
+export const AGENT_RUNTIME_PROBE_TIMEOUT_MS = 60_000;
 
 export type SetupProcessFailure = 'timeout' | 'failed' | 'aborted';
 export type SetupProcessResult = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly code: SetupProcessFailure };
@@ -100,11 +104,15 @@ export interface SetupCollectorOptions {
   readonly interval_ms?: number;
   readonly timeout_ms?: number;
   readonly run_process?: SetupProcessRunner;
+  /** Also probe agent runtime installations in each cycle (operator serve). */
+  readonly agent_runtimes?: { readonly run_process?: SetupProcessRunner; readonly timeout_ms?: number };
 }
 
 export interface SetupCollectorHandle {
   /** Cache read only; never starts work. */
   readonly read: () => SetupSnapshotV1;
+  /** Agent runtime probe cache; `collection_pending` until the first probe settles, or always when the probe is off. */
+  readonly read_agent_runtimes: () => AgentRuntimesCacheV1;
   /** Resolves when the cycle in flight, if any, has settled. */
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -138,6 +146,32 @@ Promise<{ readonly ok: true; readonly snapshot: SetupSnapshotV1 } | { readonly o
   }
 }
 
+/** A probe snapshot from the probe child, or the fixed reason it is not one. */
+export async function collectAgentRuntimeProbe(options: {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly cwd?: string;
+  readonly run_process?: SetupProcessRunner;
+  readonly timeout_ms?: number;
+  readonly signal: AbortSignal;
+}): Promise<{ readonly ok: true; readonly probe: AgentRuntimeProbeV1 } | { readonly ok: false; readonly reason: AgentRuntimesReason | null }> {
+  const result = await (options.run_process ?? runSetupProcess)(AGENT_RUNTIME_PROBE_ARGV, {
+    cwd: options.cwd ?? process.cwd(),
+    env: childEnv(options.env ?? process.env),
+    timeout_ms: options.timeout_ms ?? AGENT_RUNTIME_PROBE_TIMEOUT_MS,
+    signal: options.signal,
+    service: 'agent-runtime-probe',
+  });
+  if (!result.ok) {
+    if (result.code === 'aborted') return { ok: false, reason: null };
+    return { ok: false, reason: result.code === 'timeout' ? 'probe_timeout' : 'probe_failed' };
+  }
+  try {
+    return { ok: true, probe: decodeAgentRuntimeProbe(JSON.parse(result.stdout)) };
+  } catch {
+    return { ok: false, reason: 'probe_invalid' };
+  }
+}
+
 /**
  * Collect at startup, then every interval after the previous cycle settles.
  * Cycles never overlap. A failed cycle keeps the last good data as `stale`.
@@ -149,6 +183,21 @@ export function startSetupCollector(options: SetupCollectorOptions = {}): SetupC
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
+  let runtimes: AgentRuntimesCacheV1 = { status: 'unavailable', reason: 'collection_pending' };
+  const probe = async (): Promise<void> => {
+    if (options.agent_runtimes === undefined || closed) return;
+    const outcome = await collectAgentRuntimeProbe({
+      env: options.env, cwd: options.cwd, run_process: options.agent_runtimes.run_process,
+      timeout_ms: options.agent_runtimes.timeout_ms, signal: controller.signal,
+    });
+    if (closed) return;
+    if (outcome.ok) runtimes = { status: 'ready', probe: outcome.probe };
+    else if (outcome.reason !== null) {
+      runtimes = runtimes.status === 'unavailable'
+        ? { status: 'unavailable', reason: outcome.reason }
+        : { status: 'stale', reason: outcome.reason, probe: runtimes.probe };
+    }
+  };
   const cycle = (): Promise<void> => {
     const failed = (reason: SetupReason) => {
       cache = lastGood === null ? unavailableSetupSnapshot(reason) : { ...lastGood, status: 'stale', reason };
@@ -163,6 +212,8 @@ export function startSetupCollector(options: SetupCollectorOptions = {}): SetupC
           failed(outcome.reason);
         }
       }, () => { if (!closed) failed('setup_check_failed'); })
+      .then(probe)
+      .catch(() => { /* A failed probe keeps the last probe cache. */ })
       .finally(() => {
         inflight = null;
         if (closed) return;
@@ -174,6 +225,7 @@ export function startSetupCollector(options: SetupCollectorOptions = {}): SetupC
   void cycle();
   return Object.freeze({
     read: () => cache,
+    read_agent_runtimes: () => runtimes,
     settled: () => inflight ?? Promise.resolve(),
     close: async () => {
       closed = true;

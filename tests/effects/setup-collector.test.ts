@@ -7,7 +7,9 @@ import { ROUTES } from '../../src/cli/hook/route-registry';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import { decodeSetupSnapshot } from '../../src/core/setup/decode';
 import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { AgentRuntimeProbeV1 } from '../../src/core/operator/agents-settings';
 import {
+  AGENT_RUNTIME_PROBE_ARGV,
   SETUP_CHILD_ARGV,
   SETUP_TIMEOUT_MS,
   collectSetupSnapshot,
@@ -106,6 +108,36 @@ setInterval(() => {}, 1000);
     const after = runs;
     await Bun.sleep(30);
     expect(runs).toBe(after);
+  });
+
+  test('probes agent runtimes after setup check in the same cycle and keeps the last good probe', async () => {
+    const probe: AgentRuntimeProbeV1 = { protocol: 1, kind: 'agent_runtime_probe', collected_at: '2026-10-27T00:00:00.000Z',
+      entries: [{ id: 'codex', group: 'default', installation: { kind: 'available', via: 'executable', version: 'codex-cli 0.164.0' } }] };
+    const order: string[] = [];
+    const probeResults: SetupProcessResult[] = [ok(probe), { ok: false, code: 'timeout' }, { ok: true, stdout: '{"protocol":1}' }];
+    const setupRun: SetupProcessRunner = async (argv) => { order.push(argv === SETUP_CHILD_ARGV ? 'setup' : 'other'); return ok(snapshot('2026-10-10T00:00:00.000Z')); };
+    const probeRun: SetupProcessRunner = async (argv, options) => {
+      order.push(argv === AGENT_RUNTIME_PROBE_ARGV ? 'probe' : 'other');
+      expect([options.timeout_ms, options.service]).toEqual([60_000, 'agent-runtime-probe']);
+      return probeResults.shift() ?? { ok: false, code: 'aborted' };
+    };
+    const collector = startSetupCollector({ run_process: setupRun, interval_ms: 1, agent_runtimes: { run_process: probeRun } });
+    try {
+      expect(collector.read_agent_runtimes()).toEqual({ status: 'unavailable', reason: 'collection_pending' });
+      await until(() => order.length >= 6);
+      expect(order.slice(0, 6)).toEqual(['setup', 'probe', 'setup', 'probe', 'setup', 'probe']);
+      await collector.settled();
+      expect(collector.read_agent_runtimes()).toEqual({ status: 'stale', reason: 'probe_invalid', probe });
+    } finally { await collector.close(); }
+
+    // Without the option, a cycle never starts the probe child.
+    const runs: (readonly string[])[] = [];
+    const plain = startSetupCollector({ run_process: async (argv) => { runs.push(argv); return ok(snapshot('2026-10-10T00:00:00.000Z')); }, interval_ms: 60_000 });
+    try {
+      await plain.settled();
+      expect(runs).toEqual([SETUP_CHILD_ARGV]);
+      expect(plain.read_agent_runtimes()).toEqual({ status: 'unavailable', reason: 'collection_pending' });
+    } finally { await plain.close(); }
   });
 
   test('keeps the last good snapshot with its age and a fixed reason code', async () => {

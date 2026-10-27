@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.repo-policy-registry
+kind: reads
+source: component.operator.view-projections
+target: component.mcp-sidecar.repo-policy-registry
+intent: "Read the shared secret token rules that redact doc session events."
