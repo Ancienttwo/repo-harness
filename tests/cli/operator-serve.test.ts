@@ -571,7 +571,7 @@ describe('operator serve command and HTTP boundary', () => {
       const branch = await file('repo-b', 'path=docs/guide.md');
       expect([branch.status, await code(branch)]).toEqual([503, 'default_branch_unknown']);
       // Either name can make the ref unsafe; the next action names both and says renaming fixes only the remote.
-      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; message: string; next_action: string } };
+      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; next_action: string } };
       expect(ref.error.code).toBe('ref_invalid');
       for (const words of ['remote', 'default branch name', 'fixes only a remote name']) expect(ref.error.next_action).toContain(words);
 
