@@ -825,7 +825,9 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
-      timeout_ms: 1_000,
+      // The retry starts a real collector process and real Git reads within this
+      // deadline. On a busy host that work took more than one second.
+      timeout_ms: 5_000,
       env: registry.env,
     });
     let writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
@@ -836,7 +838,7 @@ describe('operator serve command and HTTP boundary', () => {
       await Bun.sleep(30);
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
       const timedOut = await blocked;
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(Date.now() - startedAt).toBeLessThan(6_500);
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({ error: { code: 'fleet_snapshot_timeout' } });
 
