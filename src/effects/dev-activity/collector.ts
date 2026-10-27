@@ -14,7 +14,8 @@ import { basename, isAbsolute, sep } from 'node:path';
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
-import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivityPrFiles, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { isPublicRepoPath } from '../../core/operator/public-text';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
   projectDevActivity,
@@ -44,14 +45,15 @@ export const DEV_ACTIVITY_GIT_REMOTE_ARGV = Object.freeze(['--no-optional-locks'
 export const DEV_ACTIVITY_GIT_ORIGIN_HEAD_ARGV = Object.freeze(['--no-optional-locks', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'] as const);
 export const DEV_ACTIVITY_GH_REPO_VIEW_ARGV = Object.freeze(['repo', 'view', '--json', 'nameWithOwner,defaultBranchRef'] as const);
 const DEV_ACTIVITY_GH_PR_BASE_FIELDS = 'number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision';
-export const DEV_ACTIVITY_GH_OPEN_PR_FIELDS = `${DEV_ACTIVITY_GH_PR_BASE_FIELDS},statusCheckRollup`;
+export const DEV_ACTIVITY_GH_OPEN_PR_FIELDS = `${DEV_ACTIVITY_GH_PR_BASE_FIELDS},statusCheckRollup,headRefOid,changedFiles,files`;
 export const DEV_ACTIVITY_GH_CLOSED_PR_FIELDS = DEV_ACTIVITY_GH_PR_BASE_FIELDS;
 /**
  * PR authority rule: only PRs authored by the authenticated gh user
  * (`--author @me`) are collected, so third-party PRs in upstream clones never
  * become cards. Local worktree branches are always items, with or without a PR.
  *
- * Fetch only what the board displays. Open PRs carry CI (statusCheckRollup);
+ * Fetch only what the board and the architecture map's PR impact display. Open
+ * PRs carry CI (statusCheckRollup), the head commit and the changed files;
  * merged and closed-unmerged PRs are bounded to the shipped window by a GitHub
  * search date and carry no CI. The day-granular date is a superset bound; the
  * projection applies the exact window.
@@ -253,8 +255,23 @@ export function parseGhRepoView(stdout: string): { github: string; default_branc
   return { github, default_branch: ref === null || ref.name === '' ? null : str(ref.name) };
 }
 
-/** `withCi` is true only for the open query, the only one that requests statusCheckRollup. */
-export function parseGhPullRequests(stdout: string, withCi: boolean): DevActivityRawPullRequest[] {
+/**
+ * An open PR's changed files. gh lists at most 100; a shorter list than
+ * `changedFiles` is truncated, never complete. A bad file field marks only this
+ * PR, so the board keeps the rest of the query.
+ */
+function changedFilesOf(pr: Record<string, unknown>): DevActivityPrFiles {
+  if (!Array.isArray(pr.files) || !Number.isSafeInteger(pr.changedFiles)) return { state: 'unavailable', reason: 'files_missing' };
+  const paths = pr.files.map(file => (file !== null && typeof file === 'object' && typeof (file as Record<string, unknown>).path === 'string' ? (file as Record<string, string>).path : null));
+  if (paths.some(path => path === null || !isPublicRepoPath(path)) || new Set(paths).size !== paths.length || paths.length > (pr.changedFiles as number)) {
+    return { state: 'unavailable', reason: 'files_invalid' };
+  }
+  if (paths.length < (pr.changedFiles as number)) return { state: 'unavailable', reason: 'files_truncated' };
+  return { state: 'ok', paths: (paths as string[]).sort() };
+}
+
+/** `open` is true only for the open query, the only one that requests CI, the head commit and the changed files. */
+export function parseGhPullRequests(stdout: string, open: boolean): DevActivityRawPullRequest[] {
   const list = JSON.parse(stdout);
   if (!Array.isArray(list)) throw new Error('gh_output_invalid');
   return list.map((raw): DevActivityRawPullRequest => {
@@ -270,8 +287,10 @@ export function parseGhPullRequests(stdout: string, withCi: boolean): DevActivit
     return {
       number: pr.number as number, title: pr.title, url, state, is_draft: pr.isDraft,
       head_branch: str(pr.headRefName), base_branch: str(pr.baseRefName), merge_state: mergeState,
-      ci: withCi ? summarizeCiRollup(pr.statusCheckRollup ?? null) : null, review: reviewStateOf(pr.reviewDecision),
+      ci: open ? summarizeCiRollup(pr.statusCheckRollup ?? null) : null, review: reviewStateOf(pr.reviewDecision),
       created_at: isoTime(pr.createdAt), updated_at: isoTime(pr.updatedAt), merged_at: mergedAt, closed_at: optionalTime(pr.closedAt),
+      head_sha: open && typeof pr.headRefOid === 'string' && /^[0-9a-f]{40,64}$/u.test(pr.headRefOid) ? pr.headRefOid : null,
+      changed_files: open ? changedFilesOf(pr) : null,
     };
   });
 }
@@ -314,10 +333,10 @@ Promise<{ health: DevActivitySourceHealth; github: string | null; default_branch
   const [openArgv, mergedArgv, closedArgv] = devActivityGhPrListArgv(ctx.now()) as [readonly string[], readonly string[], readonly string[]];
   const truncated: DevActivityPrCategory[] = [];
   // A list is null when the category exceeds the query limit.
-  const list = async (argv: readonly string[], withCi: boolean): Promise<DevActivityRawPullRequest[] | null> => {
+  const list = async (argv: readonly string[], open: boolean): Promise<DevActivityRawPullRequest[] | null> => {
     const prs = await ctx.run('gh', argv, options);
     if (!prs.ok) throw Object.assign(new Error('gh_failed'), { code: prs.code });
-    const rows = parseGhPullRequests(prs.stdout, withCi);
+    const rows = parseGhPullRequests(prs.stdout, open);
     return rows.length > DEV_ACTIVITY_GH_PR_LIMIT ? null : rows;
   };
   const category = async (name: DevActivityPrCategory, argv: readonly string[]): Promise<DevActivityRawPullRequest[]> => {

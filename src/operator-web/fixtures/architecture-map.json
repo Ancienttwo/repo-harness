@@ -5404,8 +5404,103 @@
    }
   },
   "pull_requests": {
-   "state": "unavailable",
-   "reason": "pr_files_unavailable"
+   "state": "ok",
+   "observed_at": "2026-10-28T09:29:20.000Z",
+   "pull_requests": [
+    {
+     "number": 602,
+     "title": "Upgrade OAR to 0.45.1",
+     "url": "https://github.com/Ancienttwo/repo-harness/pull/602",
+     "head_sha": "6026026026026026026026026026026026026026",
+     "impact": {
+      "state": "ok",
+      "files": 3,
+      "unowned_files": 0,
+      "nodes": [
+       {
+        "id": "capability.runtime-harness.global-runtime-reconciliation",
+        "files": 3
+       },
+       {
+        "id": "component.global-runtime-reconciliation.release-packaging",
+        "files": 2
+       }
+      ]
+     }
+    },
+    {
+     "number": 603,
+     "title": "Observe pipeline phases on the board",
+     "url": "https://github.com/Ancienttwo/repo-harness/pull/603",
+     "head_sha": "6036036036036036036036036036036036036036",
+     "impact": {
+      "state": "ok",
+      "files": 3,
+      "unowned_files": 0,
+      "nodes": [
+       {
+        "id": "capability.runtime-harness.operator",
+        "files": 2
+       },
+       {
+        "id": "capability.verification.evals-checks",
+        "files": 1
+       },
+       {
+        "id": "component.evals-checks.test-suite",
+        "files": 1
+       },
+       {
+        "id": "component.operator.activity-feeds",
+        "files": 2
+       }
+      ]
+     }
+    },
+    {
+     "number": 604,
+     "title": "Capture Pi runtime status natively",
+     "url": "https://github.com/Ancienttwo/repo-harness/pull/604",
+     "head_sha": "6046046046046046046046046046046046046046",
+     "impact": {
+      "state": "unavailable",
+      "reason": "files_truncated"
+     }
+    },
+    {
+     "number": 608,
+     "title": "Rebuild the operator console for humans",
+     "url": "https://github.com/Ancienttwo/repo-harness/pull/608",
+     "head_sha": "6086086086086086086086086086086086086086",
+     "impact": {
+      "state": "ok",
+      "files": 4,
+      "unowned_files": 0,
+      "nodes": [
+       {
+        "id": "capability.runtime-harness.operator",
+        "files": 3
+       },
+       {
+        "id": "capability.verification.evals-checks",
+        "files": 1
+       },
+       {
+        "id": "component.evals-checks.test-suite",
+        "files": 1
+       },
+       {
+        "id": "component.operator.web-console",
+        "files": 3
+       }
+      ]
+     }
+    }
+   ],
+   "flow_steps": {
+    "state": "unavailable",
+    "reason": "change_impact_not_exported"
+   }
   },
   "tests": {
    "state": "ok",

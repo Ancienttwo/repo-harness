@@ -6,7 +6,10 @@ import type { ArchitectureMapImportV1, ArchitectureMapV1 } from '../core/operato
 export const MAP_LAYERS = ['changes', 'violations', 'pull_requests', 'tests', 'decisions'] as const;
 export type MapLayerId = typeof MAP_LAYERS[number];
 
-/** `change`: the node changed today; `danger`: a violation or a failed test; `success`: every test file passed; `muted`: tests without a result. */
+/**
+ * `change`: the node changed today, or in the chosen PR; `danger`: a violation or a failed test;
+ * `success`: every test file passed; `muted`: tests without a result, or a node that depends on a node the PR changes.
+ */
 export type MapMarkTone = 'change' | 'danger' | 'success' | 'muted';
 export interface MapMark { readonly tone: MapMarkTone; readonly label: string }
 
@@ -42,7 +45,24 @@ export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
   return counts;
 }
 
-export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId): MapLayerView {
+/** The open PR the PR impact layer shows first: the lowest number with impact data. */
+export function firstImpactPullRequest(map: ArchitectureMapV1): number | null {
+  const { pull_requests: pullRequests } = map.layers;
+  return pullRequests.state === 'ok' ? pullRequests.pull_requests.find(entry => entry.impact.state === 'ok')?.number ?? null : null;
+}
+
+/** Nodes with a model relation to a changed node, from the relations the map already holds. */
+export function pullRequestDependents(map: ArchitectureMapV1, changed: ReadonlySet<string>): Map<string, readonly string[]> {
+  const dependents = new Map<string, string[]>();
+  for (const relation of map.relations) {
+    if (!changed.has(relation.target) || changed.has(relation.source)) continue;
+    dependents.set(relation.source, [...(dependents.get(relation.source) ?? []), relation.target]);
+  }
+  return dependents;
+}
+
+/** `pullRequest` picks the PR that the PR impact layer marks; the other layers ignore it. */
+export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null = null): MapLayerView {
   const view = (marks: Map<string, MapMark>, edges: readonly ArchitectureMapImportV1[] = []): MapLayerView =>
     ({ available: true, marks, lit: withAncestors(map, marks.keys()), edges });
   if (layer === 'changes') {
@@ -64,6 +84,14 @@ export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId): MapLaye
       label: `${entry.passed}/${entry.files}`,
     }])));
   }
-  // Pull request impact and decisions have no source yet; the contract allows only their reason.
+  if (layer === 'pull_requests') {
+    const { pull_requests: pullRequests } = map.layers;
+    const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(entry => entry.number === pullRequest)?.impact : undefined;
+    if (impact?.state !== 'ok') return EMPTY;
+    const marks = new Map<string, MapMark>(impact.nodes.map(entry => [entry.id, { tone: 'change', label: String(entry.files) }]));
+    for (const id of pullRequestDependents(map, new Set(marks.keys())).keys()) marks.set(id, { tone: 'muted', label: '↳' });
+    return view(marks);
+  }
+  // Decisions have no source yet; the contract allows only their reason.
   return EMPTY;
 }
