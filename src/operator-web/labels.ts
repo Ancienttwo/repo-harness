@@ -1,4 +1,5 @@
 import { isOperatorMessageKey, relativeAge, type OperatorTranslate } from './i18n';
+import type { VerifiedTask } from './repository-reads';
 import type { DotTone } from './ui';
 
 /** A server enum outside the dictionary renders as its own text, never as an invented label. */
@@ -16,6 +17,12 @@ export function runtimeTone(state: string | null): DotTone {
   if (state === 'blocked') return 'warn';
   if (state === 'error') return 'danger';
   return 'neutral';
+}
+
+/** The agent of the first verified session, and how many more share the item's branch. */
+export function ownerAgents(tasks: readonly VerifiedTask[], t: OperatorTranslate): string {
+  const name = t(`setup.host.${tasks[0]!.agent}`);
+  return tasks.length > 1 ? `${name} +${tasks.length - 1}` : name;
 }
 
 /** "3 h", without the "observed … ago" frame. */

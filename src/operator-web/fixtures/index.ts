@@ -17,8 +17,8 @@ import {
   admittedTaskContextFixture,
 } from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
-import type { CiRepairsRead } from '../repository-reads';
-import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from './dev-activity';
+import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
+import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
@@ -63,6 +63,9 @@ export function fixtureProps(name: string): OperatorAppProps {
   const repairs = (repositoryId: string): CiRepairsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'artifacts_missing' }
     : repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'no_daily_run' }
       : { state: 'ok', issues: fixture === 'busy' ? [{ number: 1101, title: '[CI repair] daily full run failed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1101' }] : [] };
+  // degraded: the task session records could not be read.
+  const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
+    : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -81,5 +84,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialSetup: setup,
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
+    readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
   };
 }
