@@ -162,10 +162,12 @@ function RunLine({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; rea
 
 function TestsBody({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; readonly now: number; readonly t: OperatorTranslate }) {
   const rows = fileRows(snapshot);
-  const counts = { passed: 0, failed: 0, noResult: 0 };
+  // A file whose cases all skipped is a recorded result, not a file without one.
+  const counts = { passed: 0, failed: 0, skipped: 0, noResult: 0 };
   for (const row of rows) {
     if (row.rollup.kind === 'passed') counts.passed += 1;
     else if (row.rollup.kind === 'failed') counts.failed += 1;
+    else if (row.rollup.kind === 'skipped') counts.skipped += 1;
     else counts.noResult += 1;
   }
   const groups = new Map<string, FileRow[]>();
@@ -181,6 +183,7 @@ function TestsBody({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; r
       <p className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-kumo-default" data-tests-summary>
         <span className="flex items-center gap-1.5"><StatusDot tone="ok" />{t('tests.count.passed', { count: counts.passed })}</span>
         <span className="flex items-center gap-1.5"><StatusDot tone="danger" />{t('tests.count.failed', { count: counts.failed })}</span>
+        <span className="flex items-center gap-1.5"><StatusDot tone="warn" />{t('tests.count.skipped', { count: counts.skipped })}</span>
         <span className="flex items-center gap-1.5"><StatusDot tone="unknown" />{t('tests.count.noResult', { count: counts.noResult })}</span>
       </p>
       {snapshot.projection.state === 'unavailable' && <SectionNotice reason={snapshot.projection.reason} t={t} />}

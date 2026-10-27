@@ -141,6 +141,24 @@ describe('tests page', () => {
     expect(page().textContent).not.toContain('passed');
   });
 
+  test('a recorded skipped file is distinct from a file with no result', async () => {
+    const base = readyTests(NOW);
+    if (base.projection.state !== 'ok' || base.results.state !== 'ok') throw new Error('ready fixture must contain both artifacts');
+    const projection = base.projection.files[0]!;
+    const result = base.results.files.find(entry => entry.file === projection.file)!;
+    const snapshot = decodeTestsSnapshot({
+      ...base,
+      projection: { state: 'ok', files: [projection] },
+      results: { state: 'ok', files: [{ ...result, duration_ms: 0, cases: result.cases.filter(entry => entry.result === 'skipped') }] },
+    });
+    await mount('#tests', props({ state: 'ok', snapshot }));
+    expect(document.querySelector('[data-test-file]')?.getAttribute('data-test-result')).toBe('skipped');
+    const summary = document.querySelector('[data-tests-summary]')!.textContent ?? '';
+    expect(summary).toContain('1 skipped');
+    expect(summary).toContain('0 no result');
+    expect(summary).toContain('0 passed');
+  });
+
   test('a missing JUnit artifact keeps the inventory but shows every file as no result', async () => {
     await mount('#tests', props(withoutResults()));
     expect(document.querySelector('[data-tests-section-reason="junit_missing"]')).not.toBeNull();
