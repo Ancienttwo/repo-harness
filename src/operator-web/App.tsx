@@ -31,7 +31,7 @@ import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
-import { fetchCiRepairs, fetchRepositoryHead, useRepositoryHead, type CiRepairsReader, type RepositoryHeadReader } from './repository-reads';
+import { fetchCiRepairs, fetchRepositoryHead, fetchTestsSnapshot, useRepositoryHead, type CiRepairsReader, type RepositoryHeadReader, type TestsReader } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
 import {
@@ -43,6 +43,7 @@ import {
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
+import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
 import type { TaskActivityReader, TaskContextReader } from './TaskEvidence';
 import type { TaskHistoryReader } from './TaskHistory';
@@ -93,6 +94,8 @@ export interface OperatorAppProps {
   readonly readRepositoryHead?: RepositoryHeadReader;
   /** The tests route's open CI repair issues, for Home's "Today" section. */
   readonly readCiRepairs?: CiRepairsReader;
+  /** The read-only tests page's snapshot read, injectable on the same terms. */
+  readonly readTests?: TestsReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -199,6 +202,7 @@ export function OperatorApp({
   initialSetup,
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
+  readTests = fetchTestsSnapshot,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -364,7 +368,7 @@ export function OperatorApp({
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   // Single-repository pages name the repository they read; the board's task drawer names its item's repository.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture';
+  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
   const drawerItem = workspace === 'board' && place.item !== null ? devSnapshot?.items.find(item => item.id === place.item) ?? null : null;
   const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : drawerItem?.repository_id ?? null, refreshGeneration);
   const devRepositories = devSnapshot?.repositories ?? [];
@@ -432,6 +436,7 @@ export function OperatorApp({
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
           {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
+          {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}

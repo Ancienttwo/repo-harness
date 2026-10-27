@@ -4,6 +4,7 @@ import {
   CaretUpDownIcon,
   CpuIcon,
   DesktopIcon,
+  FlaskIcon,
   FoldersIcon,
   HouseIcon,
   KanbanIcon,
@@ -34,6 +35,7 @@ const NAV_ICON: Readonly<Record<NavWorkspace, ReactNode>> = {
   skills: <PuzzlePieceIcon size={16} />,
   hooks: <PlugsConnectedIcon size={16} />,
   architecture: <TreeStructureIcon size={16} />,
+  tests: <FlaskIcon size={16} />,
   system: <CpuIcon size={16} />,
   tools: <WrenchIcon size={16} />,
 };

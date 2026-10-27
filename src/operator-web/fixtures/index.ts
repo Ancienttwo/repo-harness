@@ -17,9 +17,11 @@ import {
   admittedTaskContextFixture,
 } from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
-import type { CiRepairsRead } from '../repository-reads';
+import { decodeTestsSnapshot } from '../../core/operator/tests';
+import type { CiRepairsRead, TestsRead } from '../repository-reads';
 import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { readyTests } from './tests';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -63,6 +65,10 @@ export function fixtureProps(name: string): OperatorAppProps {
   const repairs = (repositoryId: string): CiRepairsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'artifacts_missing' }
     : repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'no_daily_run' }
       : { state: 'ok', issues: fixture === 'busy' ? [{ number: 1101, title: '[CI repair] daily full run failed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1101' }] : [] };
+  // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
+  const tests = (repositoryId: string): TestsRead => fixture === 'busy'
+    ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
+    : { state: 'unavailable', reason: fixture === 'empty' ? 'tests_pending' : 'artifacts_missing' };
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -81,5 +87,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialSetup: setup,
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
+    readTests: repositoryId => Promise.resolve(tests(repositoryId)),
   };
 }

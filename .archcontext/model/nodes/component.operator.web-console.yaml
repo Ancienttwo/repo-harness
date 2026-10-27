@@ -8,7 +8,7 @@ layer: web
 summary: Prebuilt read-only browser console that renders operator JSON observations.
 responsibilities:
   - Fetch observations with GET only and decode each body with the shared core decoder before render.
-  - Render Home and the Board, Repositories, Agents, Skills, Hooks, Architecture, System and Tools pages in one side rail with a repository switch.
+  - Render Home and the Board, Repositories, Agents, Skills, Hooks, Architecture, Tests, System and Tools pages in one side rail with a repository switch.
   - Build the Paper and Ink themes, type styles, logo and pixel characters from the design system's tokens.json and asset files.
   - Show every action as a link or a copyable Bot command; never send a write request.
 source:
