@@ -12,8 +12,9 @@ boundary, workflow-tool boundary, and known limits.
 
 The registered repo whitelist is the repo authorization boundary. GPT-facing
 requests use `repo_id` and repo-relative paths; local absolute roots stay in the
-server-side registry. Inside a registered repo, `.ignore` is the only
-content-level exclusion rule for the general repo API.
+server-side registry. Inside a registered repo, the general repo API always
+refuses the git directory. Outside it, `.ignore` is the only content-level
+exclusion rule.
 
 CodeGraph is the indexed metadata and code-navigation backend. It is not the
 permission engine. Every path is checked by repo-harness before adapter calls,
@@ -45,10 +46,16 @@ Read/write access is an operator decision in the registry. Do not grant
 `read_write` for routine planning. Mutation calls retain revision preconditions
 and are denied for every `read_only` repo.
 
-`.ignore` is the only content filter for this API. Do not rely on `.gitignore`,
-file extensions, dotfile status, hidden directories, or CodeGraph indexing as an
-authorization rule. If a path must not be visible to GPT, put it in `.ignore` or
-do not register that repo.
+Every general repo tool refuses a path that has a `.git` segment, at any depth,
+with `PATH_DENIED`. The check runs on the logical path and on the physical path
+after realpath, for reads and writes. A write to `.git/hooks/*` or `.git/config`
+runs code on the next local `git` command. `repo_manifest` and `list_tree` do
+not list `.git` entries.
+
+Outside the git directory, `.ignore` is the only content filter for this API. Do
+not rely on `.gitignore`, file extensions, dotfile status, hidden directories, or
+CodeGraph indexing as an authorization rule. If a path must not be visible to
+GPT, put it in `.ignore` or do not register that repo.
 
 CodeGraph readiness is checked by:
 
@@ -83,8 +90,8 @@ Responses include consistency fields where relevant: `snapshot_id`,
 | `refresh_repo_index` | Sync CodeGraph after mutations and clear stale snapshots. | Yes |
 
 Stable error codes include `REPO_NOT_ALLOWED`, `WRITE_DISABLED`,
-`INVALID_RELATIVE_PATH`, `PATH_OUTSIDE_REPO`, `SYMLINK_ESCAPE`, `PATH_IGNORED`,
-`NOT_FOUND`, `NOT_A_FILE`, `BINARY_CONTENT`, `INVALID_RANGE`,
+`INVALID_RELATIVE_PATH`, `PATH_OUTSIDE_REPO`, `SYMLINK_ESCAPE`, `PATH_DENIED`,
+`PATH_IGNORED`, `NOT_FOUND`, `NOT_A_FILE`, `BINARY_CONTENT`, `INVALID_RANGE`,
 `PAYLOAD_LIMIT_REACHED`, `SNAPSHOT_STALE`, `INDEX_UNAVAILABLE`, `INDEX_STALE`,
 `REVISION_CONFLICT`, `TARGET_EXISTS`, `PARTIAL_FAILURE`, and
 `INTERNAL_ADAPTER_ERROR`.
