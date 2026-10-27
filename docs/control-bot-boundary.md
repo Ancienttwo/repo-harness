@@ -1,5 +1,16 @@
 # Control Bot integration boundary
 
+## Grok / minimal Bot profile
+
+A minimal Bot host loads `repo-harness-check` and lite working rules: brief,
+edit, targeted verification, and review by risk. Exclude by default
+`repo-harness-cross-review`, `repo-harness-herdr-portal`,
+`repo-harness-chatgpt`, and control `review admit` / `review revoke`.
+Exclude the root router's `requires: herdr` unless the host actually drives
+Herdr.
+
+## Control integration
+
 The upstream Bot authenticates the human and enforces current delegation before
 calling repo-harness. It must restrict this integration entrypoint to requests
 that it has authorized. repo-harness does not authenticate arbitrary JSON,
