@@ -26,10 +26,10 @@ describe("tool catalog decode", () => {
   test("the packaged catalog holds the P0 entries", () => {
     const entries = TOOL_CATALOG.tools.map((tool) => [tool.id, tool.kind, tool.detector]);
     expect(entries).toEqual([
-      ["waza", "local_tool", "waza"],
+      ["waza", "skill", "waza"],
       ["codegraph", "local_tool", "codegraph"],
-      ["herdr-skill", "local_tool", "herdr_skill"],
-      ["hai-stack", "local_tool", null],
+      ["herdr-skill", "skill", "herdr_skill"],
+      ["hai-stack", "skill", null],
       ["shaders", "resource", null],
       ["awesome-design-md", "resource", null],
       ["claude-quickstarts", "resource", null],

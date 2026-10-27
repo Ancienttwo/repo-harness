@@ -47,15 +47,14 @@ function ToolRow({ tool, onOpen, t }: { readonly tool: ToolCatalogEntry; readonl
   );
 }
 
-function ToolGroup({ kind, onOpen, t, children }: {
-  readonly kind: ToolKind; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate; readonly children?: ReactNode;
+export function ToolGroup({ kind, onOpen, t }: {
+  readonly kind: ToolKind; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
   const tools = TOOL_CATALOG.tools.filter(tool => tool.kind === kind);
   const headingId = `tools-${kind}-heading`;
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3 rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5" data-tool-group={kind}>
       <SectionTitle id={headingId} count={tools.length}>{t(`tools.group.${kind}`)}</SectionTitle>
-      {children}
       <div aria-hidden="true" className="hidden gap-3 border-b border-kumo-hairline px-3 pb-2 text-xs font-medium text-kumo-subtle md:grid md:grid-cols-[minmax(0,1fr)_10rem_7rem_7rem]">
         <span>{t('tools.column.name')}</span><span>{t('tools.column.category')}</span><span>{t('tools.column.status')}</span><span>{t('tools.column.license')}</span>
       </div>
@@ -98,6 +97,9 @@ function ToolDrawer({ tool, onClose, locale, t }: {
           <Fact label={t('tools.column.category')}><Badge variant="secondary">{t(`tools.category.${tool.category}`)}</Badge></Fact>
           <Fact label={t('tools.column.license')}>{tool.license ?? t('tools.licenseUnknown')}</Fact>
           <Fact label={t('tools.column.status')}><Status tool={tool} t={t} /></Fact>
+          <Fact label={t('tools.author')}>{tool.author}</Fact>
+          <Fact label={t('tools.tags')}>{tool.tags.join(' · ') || t('tools.tags.none')}</Fact>
+          <Fact label={t('tools.profiles')}>{tool.install_profiles.join(' · ') || t('tools.profiles.none')}</Fact>
         </dl>
         <p className="text-xs text-kumo-subtle" data-tool-status-reason>
           {status === 'unknown' ? t('tools.reason.unknown') : tool.kind === 'resource' ? t('tools.reason.resource') : t('tools.reason.noDetector')}
@@ -123,12 +125,12 @@ export function ToolsPage({ toolId, onOpen, onClose, locale, t }: PageProps) {
         <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.tools')}</h1>
         <p className="text-sm text-kumo-subtle">{t('tools.boundary')}</p>
       </header>
-      <ToolGroup kind="local_tool" onOpen={onOpen} t={t}>
-        <div className="flex flex-col gap-1.5 text-xs text-kumo-subtle">
+      <div className="flex flex-col gap-1.5 text-xs text-kumo-subtle">
           <p>{t('tools.local.statusNote')}</p>
           <CommandLine command={TOOLING_REPORT_COMMAND} t={t} className="w-fit max-w-full" />
-        </div>
-      </ToolGroup>
+      </div>
+      <ToolGroup kind="local_tool" onOpen={onOpen} t={t} />
+      <ToolGroup kind="skill" onOpen={onOpen} t={t} />
       <ToolGroup kind="resource" onOpen={onOpen} t={t} />
       {selected && <ToolDrawer tool={selected} onClose={onClose} locale={locale} t={t} />}
     </div>
