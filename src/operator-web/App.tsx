@@ -8,6 +8,8 @@ import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
 import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
+import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
+import { SettingsFreshness, SettingsPage } from './SettingsPage';
 import {
   DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
@@ -114,6 +116,9 @@ export interface OperatorAppProps {
   readonly readArchitectureMap?: ArchitectureMapReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
+  /** The agents section and runtime probe behind the Settings page, and its one write. */
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly writeAgentsSettings?: AgentsSettingsWriter;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -225,6 +230,8 @@ export function OperatorApp({
   readExecution = fetchExecution,
   readArchitectureMap,
   readBotAccess = fetchBotAccess,
+  readAgentsSettings = fetchAgentsSettings,
+  writeAgentsSettings = postAgentsSettings,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -262,6 +269,7 @@ export function OperatorApp({
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
   const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
+  const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, workspace === 'settings');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
@@ -445,6 +453,7 @@ export function OperatorApp({
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
             {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+              : workspace === 'settings' ? <SettingsFreshness view={agentsSettings.view} now={now} t={t} />
               : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
@@ -480,6 +489,7 @@ export function OperatorApp({
               </Suspense>}
           </>}
           {workspace === 'bots' && <BotsPage view={botAccess} now={now} t={t} />}
+          {workspace === 'settings' && <SettingsPage form={agentsSettings} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}

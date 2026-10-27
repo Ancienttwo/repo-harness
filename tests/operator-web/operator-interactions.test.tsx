@@ -1142,7 +1142,7 @@ describe('operator web interactions', () => {
     expect(text).toContain(fixtureTasks.blocked.task_label);
     expect(text).toContain('base_moved_since_verification');
     expect(text).toContain('repo-harness');
-    expect(text).toContain('read-only');
+    expect(text).toContain('read-only except Settings');
 
     await act(async () => buttonWithText('EN').click());
     expect(document.documentElement.lang).toBe('en');
