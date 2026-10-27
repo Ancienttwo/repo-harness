@@ -15,6 +15,7 @@ source:
   include:
     - src/operator-web/**
     - vite.operator.config.ts
+    - docs/design/operator-console/design-system/**
   entrypoints:
     - id: entrypoint.operator.web-dev-activity
       path: src/operator-web/dev-activity.ts
