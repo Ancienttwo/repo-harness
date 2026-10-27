@@ -106,7 +106,7 @@ describe('navigation', () => {
     await mount('', props(serve(ok(busyBotAccess(NOW)))));
     const setup = all('[aria-labelledby="nav-group-setup"] a[data-workspace]').map(link => link.getAttribute('data-workspace'));
     expect(setup.at(-1)).toBe('bots');
-    expect(setup.indexOf('bots')).toBe(setup.indexOf('hooks') + 1);
+    expect(setup.slice(setup.indexOf('hooks'), setup.indexOf('hooks') + 3)).toEqual(['hooks', 'cli', 'bots']);
     await act(async () => navLink('bots').click());
     expect(window.location.hash).toBe('#bots');
     expect(navLink('bots').getAttribute('aria-current')).toBe('page');
