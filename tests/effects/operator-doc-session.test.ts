@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
 import { docSessionCreateRoute, OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
-import { DocsReader } from '../../src/effects/operator/docs-reader';
+import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -44,7 +44,14 @@ interface Harness {
   branches: () => string[];
 }
 
-async function harness(options: { readonly session_id?: () => string; readonly platform?: NodeJS.Platform } = {}): Promise<Harness> {
+interface HarnessOptions {
+  readonly session_id?: () => string;
+  readonly platform?: NodeJS.Platform;
+  /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
+  readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
+}
+
+async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const repo = tmpWorkspace('operator-doc-session-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
@@ -64,7 +71,11 @@ async function harness(options: { readonly session_id?: () => string; readonly p
   reader.start();
   await reader.refresh();
   const route = docSessionCreateRoute({
-    env, docs_reader: id => (id === repositoryId ? reader : null),
+    env, docs_reader: (id) => {
+      if (id !== repositoryId) return null;
+      const around = options.around_file;
+      return around ? { file: (path: string) => around(path, () => reader.file(path)) } as unknown as DocsReader : reader;
+    },
     ...(options.session_id ? { new_session_id: options.session_id } : {}),
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
@@ -251,5 +262,75 @@ test('a citation check finds the cited lines, a unique move, or nothing', () => 
   expect(checkDocCitation({ ...at(1, 1), start_line: 40, end_line: 41 }, GUIDE)).toEqual({ state: 'stale' });
   // The last line has no line end; its bytes are still a whole line.
   expect(checkDocCitation(cite('a\nb', 'docs/x.md', 2, 2, 'c'.repeat(40)), 'a\nb')).toEqual({ state: 'current', start_line: 2, end_line: 2 });
+});
+
+test('two concurrent creations for one repository give one 201 and one 503 busy, and leave one worktree and one branch', async () => {
+  let entered!: () => void;
+  const inside = new Promise<void>((resolve) => { entered = resolve; });
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  let first = true;
+  // The first request waits inside its citation read, so the second one arrives while it holds the repository.
+  const h = await harness({ around_file: async (_path, read) => {
+    if (first) { first = false; entered(); await hold; }
+    return read();
+  } });
+  const citation = cite(GUIDE, 'docs/guide.md', 1, 1, h.head());
+  const pending = h.post(request(h, [citation]));
+  await inside;
+  const second = await h.post(request(h, [citation]));
+  release();
+  const answer = await pending;
+  expect(answer.status).toBe(201);
+  expect(second.status).toBe(503);
+  expect(second.body.error.code).toBe('busy');
+  expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
+  expect(h.branches()).toEqual([answer.body.branch]);
+});
+
+test('a citation may span 500 lines, and a citation of 501 lines is refused before anything runs', async () => {
+  const h = await harness();
+  const answer = await h.post(request(h, [{ ...cite(GUIDE, 'docs/guide.md', 1, 1, h.head()), start_line: 1, end_line: 501 }]));
+  expect(answer.status).toBe(400);
+  expect(answer.body.error.code).toBe('invalid_body');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
+  const long = Array.from({ length: 500 }, (_, index) => `line ${index + 1}\n`).join('');
+  await h.commit(long);
+  const accepted = await h.post(request(h, [cite(long, 'docs/guide.md', 1, 500, h.head())]));
+  expect(accepted.status).toBe(201);
+  expect(accepted.body.citations).toEqual([{ path: 'docs/guide.md', start_line: 1, end_line: 500, relocated: false }]);
+});
+
+test('a claim that git filled before it failed is kept, and the result is reconcile_required', async () => {
+  const h = await harness();
+  // The hook runs after the checkout is written, and its failure fails `git worktree add`.
+  writeFileSync(join(h.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('reconcile_required');
+  const kept = readdirSync(h.worktrees);
+  expect(kept).toHaveLength(1);
+  expect(readdirSync(join(h.worktrees, kept[0]!)).length).toBeGreaterThan(0);
+  expect(existsSync(sessionsDir(h))).toBe(false);
+});
+
+test('a docs view refresh between two citations of one request refuses it, and nothing is created', async () => {
+  let reads = 0;
+  let h!: Harness;
+  h = await harness({ around_file: async (_path, read) => {
+    const file = await read();
+    if (++reads === 1) await h.commit(`${GUIDE}Added later.\n`);
+    return file;
+  } });
+  const base = h.head();
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, base), cite(GUIDE, 'docs/guide.md', 3, 4, base)]));
+  expect(reads).toBe(2);
+  expect(answer.status).toBe(503);
+  expect(answer.body.error.code).toBe('docs_unavailable');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
