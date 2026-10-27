@@ -1,10 +1,11 @@
 // Strict, browser-safe decoder for GET /api/v1/dev-activity. Exact keys, closed
 // vocabularies, and no absolute-path-looking text outside `url`.
 
-import { isPublicDevActivityText } from '../operator/public-text';
+import { isPublicDevActivityText, isPublicRepoPath } from '../operator/public-text';
 import {
   DEV_ACTIVITY_ATTENTION_KINDS,
   DEV_ACTIVITY_COLUMNS,
+  DEV_ACTIVITY_PR_FILES_REASONS,
   DEV_ACTIVITY_PROJECTION,
   type DevActivitySnapshotV2,
 } from './types';
@@ -114,7 +115,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
     }
     nullable(i.pull_request, x => {
       const p = obj(x, ['number', 'title', 'url', 'state', 'is_draft', 'base_branch', 'merge_state', 'ci', 'review',
-        'updated_at', 'merged_at', 'closed_at'], 'pull_request');
+        'updated_at', 'merged_at', 'closed_at', 'head_sha', 'changed_files'], 'pull_request');
       if (count(p.number, 'pr number') < 1) fail('pr number');
       if (typeof p.title !== 'string') fail('pr title');
       githubUrl(p.url, 'pr url');
@@ -129,6 +130,19 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
       nullable(p.merged_at, y => time(y, 'merged_at'));
       nullable(p.closed_at, y => time(y, 'closed_at'));
       if ((p.state === 'merged') !== (p.merged_at !== null)) fail('merged_at');
+      // Only the open query asks gh for the head and the files; an open PR always says whether its list is complete.
+      nullable(p.head_sha, y => (typeof y === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(y) ? y : fail('pr head_sha')));
+      nullable(p.changed_files, y => {
+        const files = typeof y === 'object' && y !== null && (y as Record<string, unknown>).state === 'ok'
+          ? obj(y, ['state', 'paths'], 'changed_files') : obj(y, ['state', 'reason'], 'changed_files');
+        if (files.state === 'ok') {
+          const paths = array(files.paths, 'changed_files paths');
+          if (paths.some(path => typeof path !== 'string' || !isPublicRepoPath(path)) || new Set(paths).size !== paths.length) fail('changed_files paths');
+        } else if (files.state !== 'unavailable') fail('changed_files state');
+        else oneOf(files.reason, DEV_ACTIVITY_PR_FILES_REASONS, 'changed_files reason');
+        return files;
+      });
+      if ((p.state === 'open') !== (p.changed_files !== null) || (p.state !== 'open' && p.head_sha !== null)) fail('pr head');
       return p;
     });
     bool(i.cleanup_pending, 'cleanup_pending');

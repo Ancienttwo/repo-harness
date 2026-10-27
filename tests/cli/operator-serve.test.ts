@@ -38,7 +38,7 @@ import {
   buildOperatorCommand,
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
-import { projectArchitectureMap, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import { projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 
 function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
@@ -1793,10 +1793,17 @@ test('session discovery is bounded read-only transport with a closed repository 
 });
 
 describe('architecture map', () => {
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const map: ArchitectureMapV1 = projectArchitectureMap({
     repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
     nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layers: {
+      changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
+      violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      tests: { state: 'unavailable', reason: 'tests_pending' },
+    },
   });
 
   test('the route reads only the injected cache and maps each unavailable state to its code', async () => {
@@ -1836,6 +1843,8 @@ describe('architecture map', () => {
       await collector.settled();
       const ready = collector.read(id);
       expect(ready.state === 'ready' && ready.map.nodes.map(entry => entry.id)).toEqual([MODULE_ID, 'component.module.core']);
+      // The child has no tests cache; without a reader the tests layer stays pending.
+      expect(ready.state === 'ready' && ready.map.layers.tests).toEqual({ state: 'unavailable', reason: 'tests_pending' });
       expect(collector.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
     } finally { await collector.close(); }
     for (const [run_process, reason] of [
@@ -1849,6 +1858,45 @@ describe('architecture map', () => {
         expect(failing.read(id)).toEqual({ state: 'unavailable', reason });
       } finally { await failing.close(); }
     }
+    // The tests layer comes from the tests collector's cache when the child's map arrives.
+    const child = async () => ({ ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) });
+    const withTests = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: child as never, read_tests: () => ({ state: 'unavailable', reason: 'no_daily_run' }) });
+    try {
+      await withTests.settled();
+      const read = withTests.read(id);
+      expect(read.state === 'ready' && read.map.layers.tests).toEqual({ state: 'unavailable', reason: 'no_daily_run' });
+    } finally { await withTests.close(); }
+    // The open PRs reach the child in a private file that exists only while the child runs.
+    const source: ArchitecturePullRequestsSource = { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
+      { number: 5, title: 'Read more', url: 'https://github.com/acme/widgets/pull/5', head_sha: 'a'.repeat(40), changed_files: { state: 'ok', paths: ['src/a.ts'] } }] };
+    const handed: { file: string; text: string; mode: number }[] = [];
+    const reading = async (argv: readonly string[]) => {
+      handed.push({ file: argv[2]!, text: readFileSync(argv[2]!, 'utf8'), mode: lstatSync(argv[2]!).mode & 0o777 });
+      return child();
+    };
+    const pending: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_pending' };
+    for (const [read_pull_requests, expected] of [[() => source, source], [undefined, pending]] as const) {
+      const withPrs = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: reading as never, read_pull_requests });
+      try { await withPrs.settled(); } finally { await withPrs.close(); }
+      const last = handed.at(-1)!;
+      expect([JSON.parse(last.text), last.mode, existsSync(last.file)]).toEqual([expected, 0o600, false]);
+    }
+    // operator serve starts the first map cycle after Dev Activity's first cycle, so it reads that cycle's PRs.
+    let release!: () => void;
+    const devActivityFirstCycle = new Promise<void>(resolve => { release = resolve; });
+    let collected = false;
+    const ordered = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: reading as never,
+      read_pull_requests: () => (collected ? source : pending), first_cycle_after: devActivityFirstCycle });
+    try {
+      const before = handed.length;
+      await Bun.sleep(20);
+      expect([handed.length, ordered.read(id)]).toEqual([before, { state: 'unavailable', reason: 'architecture_map_pending' }]);
+      collected = true;
+      release();
+      await ordered.settled();
+      expect([handed.length - before, JSON.parse(handed.at(-1)!.text)]).toEqual([1, source]);
+      expect(ordered.read(id).state).toBe('ready');
+    } finally { await ordered.close(); }
     writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
     const broken = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: async () => { throw new Error('not reached'); } });
     try {
