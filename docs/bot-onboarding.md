@@ -51,9 +51,10 @@ When Worker-Herdr is the host doing first-connect:
 5. Apply the **post-seat cleanup HARD RULE — Owner RH, 2026-10-28**:
    - Worker-Herdr: when a seat reaches Done, close the panes and agents that
      you opened. Kill that seat's Codex/Claude/Pi/cua processes.
-   - tinkabot: after merge, prune merged or stale Herdr worktrees. Keep only
-     worktrees for still-open Draft PRs. Include a prune or kept-Draft line in
-     the merge report.
+   - tinkabot: after merge, auto-prune only **merged / clean / unowned**
+     worktrees (align `AGENTS.md`). Keep open Draft PR worktrees. Any other
+     deletion needs Owner approval. Include a prune or kept-Draft line in the
+     merge report.
    - CI Runner: never touch local worktrees.
    - One miss is an SOP breach.
 6. Do not relay a PM-owned go again. When PM owns the thread, stay silent
@@ -80,10 +81,18 @@ unless the host drives Herdr.
 
 ## repo-harness seat defaults on kitos-Mac-mini
 
-- Use checkout `/Users/kito/Projects/repo-harness`.
-- Create new worktrees under `~/.herdr/worktrees/repo-harness/`.
-- Other product repos keep their own checkout/worktree conventions outside
-  this open-source guide.
+**Herdr host seats** (Worker-Herdr panes on this machine):
+
+- Checkout: `/Users/kito/Projects/repo-harness`.
+- New Herdr worktrees: `~/.herdr/worktrees/repo-harness/`.
+
+**Harness-managed Claude/Codex task worktrees** (per `AGENTS.md`):
+
+- Path: `/tmp/repo-harness-wt-<slug>` (Windows: `os.tmpdir()`).
+- Do **not** conflate these with Herdr host worktrees above.
+
+Other product repos keep their own checkout/worktree conventions outside this
+open-source guide.
 
 ## Cleanup implementation status
 
