@@ -6,7 +6,7 @@
 // failure message, stack trace or CI path. The strict decoder serves the server
 // before it sends and the browser before it renders.
 
-import { isPublicDevActivityText, publicDevActivityText } from '../dev-activity/decode';
+import { isPublicDevActivityText, publicDevActivityText } from './public-text';
 
 export const OPERATOR_TESTS_KIND = 'operator_tests' as const;
 export const TEST_PROJECTION_SCHEMA = 'repo-harness.test-capability-projection/v1' as const;
