@@ -307,6 +307,22 @@ describe('Skills page', () => {
 });
 
 describe('Hooks page', () => {
+  for (const locale of ['en', 'zh'] as const) {
+    for (const [calls, english] of [[1, '1 call'], [2, '2 calls']] as const) {
+      test(`hook usage count grammar: ${locale}, ${calls}`, async () => {
+        const snapshot = readySetup(NOW);
+        snapshot.hook_usage = {
+          window_hours: 24,
+          routes: [{ host: 'codex', event: 'PreToolUse', route_id: 'edit', calls, blocked: 0, last_blocked_at: null }],
+          recent_denials: [],
+        };
+        await mount('#hooks', props(decodeSetupSnapshot(snapshot), { initialLocale: locale }));
+        const expected = locale === 'en' ? `${english} · 0 blocked` : `${calls} 次调用 · 0 次拦截`;
+        expect(document.querySelector('[data-hook-usage="edit"] .tabular-nums')?.textContent).toBe(expected);
+      });
+    }
+  }
+
   test('usage shows recorded counts per host and guard denials separately', async () => {
     const snapshot = readySetup(NOW);
     snapshot.hook_usage = {
@@ -472,6 +488,18 @@ function cliSnapshot(): CliInventorySnapshotV1 {
 }
 
 describe('CLI inventory page', () => {
+  for (const [locale, expected] of [['en', '1m ago'], ['zh', '1 分钟前']] as const) {
+    test(`last agent use is a localized relative time: ${locale}`, async () => {
+      const snapshot = cliSnapshot();
+      const at = new Date(Date.now() - 90_000).toISOString();
+      snapshot.entries[0]!.last_used_at = at;
+      await mount('#cli', props(null, { initialLocale: locale, readCliInventory: async () => snapshot }));
+      const time = document.querySelector('[data-cli-entry="npm:example"] time');
+      expect(time?.textContent).toBe(expected);
+      expect(time?.getAttribute('datetime')).toBe(at);
+    });
+  }
+
   test('reads the cache only while CLI is open and copies removal steps without executing', async () => {
     let reads = 0;
     let setupReads = 0;

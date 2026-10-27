@@ -52,7 +52,7 @@ function CliRow({ entry, now, t }: { readonly entry: CliInventoryEntry; readonly
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-kumo-subtle">{t('cli.location')}</dt><dd className="break-all font-mono">{entry.location}</dd>
       <dt className="text-kumo-subtle">{t('cli.size')}</dt><dd>{entry.size_bytes === null ? t('setup.unknown') : t('cli.bytes', { count: entry.size_bytes })}</dd>
-      <dt className="text-kumo-subtle">{t('cli.lastUsed')}</dt><dd>{entry.last_used_at === null ? t('cli.noUse') : <time dateTime={entry.last_used_at} title={entry.last_used_at}>{ageWords(entry.last_used_at, now, t)}</time>}</dd>
+      <dt className="text-kumo-subtle">{t('cli.lastUsed')}</dt><dd>{entry.last_used_at === null ? t('cli.noUse') : <time dateTime={entry.last_used_at} title={entry.last_used_at}>{t('cli.usedAgo', { age: ageWords(entry.last_used_at, now, t) })}</time>}</dd>
       <dt className="text-kumo-subtle">{t('cli.usage')}</dt><dd data-cli-unused={String(entry.unused)} className={entry.unused === true ? 'text-kumo-warning' : undefined}>
         {t(entry.unused === null ? 'cli.usageUnknown' : entry.unused ? 'cli.unused' : 'cli.used')}
       </dd>

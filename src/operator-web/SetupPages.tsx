@@ -432,7 +432,7 @@ export function HooksPage(props: PageProps) {
                 {snapshot.hook_usage.routes.map(row => <li key={`${row.host}:${row.event}:${row.route_id}`} data-hook-usage={row.route_id}
                   className="flex flex-wrap justify-between gap-2 py-2 text-sm">
                   <span className="break-all font-mono">{row.event}.{row.route_id} · {hostName(row.host, t)}</span>
-                  <span className="tabular-nums">{t('setup.hooks.counts', { calls: row.calls, blocked: row.blocked })}</span>
+                  <span className="tabular-nums">{t(row.calls === 1 ? 'setup.hooks.countsOne' : 'setup.hooks.counts', { calls: row.calls, blocked: row.blocked })}</span>
                 </li>)}
               </ul>
             )}
