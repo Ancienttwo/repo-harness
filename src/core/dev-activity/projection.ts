@@ -4,7 +4,8 @@
 // Every value comes from exactly one authority. A value without one is null.
 
 import { RUNTIME_STALE_AFTER_MS, type RuntimeOverlay } from '../operator/runtime-status';
-import { decodeDevActivitySnapshot, isPublicDevActivityText, publicDevActivityText } from './decode';
+import { isPublicDevActivityText, publicDevActivityText } from '../operator/public-text';
+import { decodeDevActivitySnapshot } from './decode';
 import {
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,

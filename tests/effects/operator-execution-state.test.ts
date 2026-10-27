@@ -45,12 +45,24 @@ function replaceProvider(dir: string, provider: { pid: number; identity: string 
   writeFileSync(join(dir, 'native-session.json'), JSON.stringify({ ...native, provider, session_binding_sha256: digest(binding) }));
 }
 
+/** A generic runtime binding has no task admission: remove it from every record that holds it. */
+function dropAdmission(dir: string) {
+  const binding = readJson(join(dir, 'binding.json'));
+  delete binding.task_admission;
+  writeFileSync(join(dir, 'binding.json'), JSON.stringify(binding));
+  const intent = readJson(join(dir, 'intent.json'));
+  delete intent.task_admission;
+  writeFileSync(join(dir, 'intent.json'), JSON.stringify(intent));
+  const native = readJson(join(dir, 'native-session.json'));
+  writeFileSync(join(dir, 'native-session.json'), JSON.stringify({ ...native, session_binding_sha256: digest(binding) }));
+}
+
 test('a fully consistent live session gives the agent, its pane and the follow-up commands', async () => {
   const f = await fixture();
   const snapshot = collectTaskExecutionStates(f.root);
   expect(snapshot).toMatchObject({ protocol: 1, kind: 'operator_task_execution' });
   expect(snapshot.executions).toEqual([{
-    state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654',
+    state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main',
     agent: 'codex', runtime: 'herdr', native_session_id: '0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f',
     herdr_pane: { session: 'fixture', workspace_id: 'fixture-primary-workspace', pane_id: 'fixture-deep-reasoner', agent_name: f.bound.binding.runtime === 'herdr' ? f.bound.binding.agent_name : '' },
   }]);
@@ -126,6 +138,13 @@ test('a session without a native session record, or with one for another binding
   expectReason('native_session_mismatch');
 });
 
+test('a verified session names its admitted branch, and a session without admission names none', async () => {
+  const f = await fixture();
+  expect(collectTaskExecutionStates(f.root).executions).toMatchObject([{ state: 'verified', issue_id: '987654', branch: 'main' }]);
+  dropAdmission(f.bound.dir);
+  expect(collectTaskExecutionStates(f.root).executions).toMatchObject([{ state: 'verified', issue_id: null, branch: null }]);
+});
+
 test('a repository without task sessions has an empty snapshot', () => {
   const root = tmpWorkspace('operator-execution-state-empty'); roots.push(root); initGitRepo(root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
@@ -133,7 +152,7 @@ test('a repository without task sessions has an empty snapshot', () => {
 });
 
 test('follow-up gives each host its own resume command and refuses an id that is not one shell word', () => {
-  const base = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: null, runtime: 'terminal' as const, herdr_pane: null };
+  const base = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: null, branch: null, runtime: 'terminal' as const, herdr_pane: null };
   expect(buildTaskFollowUp({ ...base, agent: 'claude', native_session_id: '5f0c1e2a-0000-4000-8000-000000000001' }).resume)
     .toEqual({ host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' });
   expect(buildTaskFollowUp({ ...base, agent: 'codex', native_session_id: 'thread; rm -rf ~' }))
@@ -173,7 +192,7 @@ test('the route shows the agent of a verified session with its follow-up, and no
   expect(status).toBe(200);
   const view = decodeTaskExecutionView(JSON.parse(text));
   expect(view).toMatchObject({ protocol: 1, kind: 'operator_task_execution', repository_id: c.id, unlisted_tasks: 0 });
-  expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', agent: 'codex', runtime: 'herdr',
+  expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main', agent: 'codex', runtime: 'herdr',
     follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
       herdr_pane: { session: 'fixture', workspace_id: 'fixture-primary-workspace', pane_id: 'fixture-deep-reasoner', agent_name: f.bound.binding.runtime === 'herdr' ? f.bound.binding.agent_name : '' } } }]);
   for (const hidden of [f.root, f.home, '/tmp', '/private']) expect(text).not.toContain(hidden);
@@ -330,7 +349,7 @@ test('the route reads only the injected cache and maps each unavailable state to
 });
 
 test('the public view leaves out a session whose task is not public text, and the decoder refuses forged follow-ups', () => {
-  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', agent: 'codex' as const, runtime: 'herdr' as const,
+  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'main', agent: 'codex' as const, runtime: 'herdr' as const,
     native_session_id: 'thread-1', herdr_pane: { session: 'main', workspace_id: 'w1', pane_id: 'w1:p1', agent_name: 'deep-reasoner' } };
   const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
     executions: [verified, { ...verified, task: '/Users/someone/private task' }, { ...verified, herdr_pane: { ...verified.herdr_pane, pane_id: '../x' } }] };
@@ -348,5 +367,24 @@ test('the public view leaves out a session whose task is not public text, and th
     { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, task_id: 'b'.repeat(64) } }] },
     { ...view, tasks: [{ state: 'unverified', task: entry.task, role: entry.role, reason: 'closed', follow_up: entry.follow_up }] },
     { ...view, unlisted_tasks: -1 },
+  ]) expect(() => decodeTaskExecutionView(forged)).toThrow('execution view invalid');
+});
+
+test('the public view names the branch of a verified task, leaves out a branch that is not public text, and the decoder checks it', () => {
+  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'feat/1007-drawer', agent: 'codex' as const,
+    runtime: 'terminal' as const, native_session_id: 'thread-1', herdr_pane: null };
+  const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
+    executions: [verified, { ...verified, task: 'b'.repeat(64), branch: null }, { ...verified, task: 'c'.repeat(64), branch: '/Users/someone/repo' }] };
+  const view = projectTaskExecutionView(snapshot, 'repo-a', null);
+  expect(view.unlisted_tasks).toBe(1);
+  expect(view.tasks.map(task => task.state === 'verified' ? task.branch : task.state)).toEqual(['feat/1007-drawer', null]);
+  expect(decodeTaskExecutionView(view)).toEqual(view);
+  const entry = view.tasks[0]!;
+  for (const forged of [
+    { ...view, tasks: [Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'branch'))] },
+    { ...view, tasks: [{ ...entry, branch: 'feat/x y' }] },
+    { ...view, tasks: [{ ...entry, branch: '-x' }] },
+    { ...view, tasks: [{ state: 'unverified', task: entry.task, role: entry.role, reason: 'closed', branch: 'main',
+      follow_up: { task_id: entry.task, resume: null, herdr_pane: null } }] },
   ]) expect(() => decodeTaskExecutionView(forged)).toThrow('execution view invalid');
 });

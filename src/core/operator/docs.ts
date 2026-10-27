@@ -44,8 +44,20 @@ export interface DocsFileV1 {
   readonly size: number;
   readonly sha256: string;
   readonly text: string;
+  readonly lines: readonly DocsLine[];
   /** The worktree copy is missing, is not the same regular file, or has other bytes. */
   readonly worktree_differs: boolean;
+}
+
+export interface DocsLine {
+  readonly number: number;
+  /** Original text, including its LF or CRLF terminator when present. */
+  readonly text: string;
+}
+
+/** One-based source lines. Empty files have no lines; a final LF adds no phantom line. */
+export function docsLines(text: string): DocsLine[] {
+  return (text.match(/[^\n]*\n|[^\n]+$/g) ?? []).map((line, index) => ({ number: index + 1, text: line }));
 }
 
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
@@ -98,7 +110,7 @@ export function decodeDocsTree(value: unknown): DocsTreeV1 {
 
 export function decodeDocsFile(value: unknown): DocsFileV1 {
   const d = decoder('docs file');
-  const v = d.obj(value, ['protocol', 'kind', 'repository_id', 'ref', 'commit', 'path', 'size', 'sha256', 'text', 'worktree_differs'], 'file');
+  const v = d.obj(value, ['protocol', 'kind', 'repository_id', 'ref', 'commit', 'path', 'size', 'sha256', 'text', 'lines', 'worktree_differs'], 'file');
   if (v.protocol !== 1 || v.kind !== OPERATOR_DOCS_FILE_KIND) d.fail('protocol');
   d.match(v.repository_id, REPOSITORY_ID, 'repository_id');
   d.match(v.ref, DOCS_REF, 'ref');
@@ -107,6 +119,12 @@ export function decodeDocsFile(value: unknown): DocsFileV1 {
   d.count(v.size, 'size');
   d.match(v.sha256, SHA256, 'sha256');
   if (typeof v.text !== 'string') d.fail('text');
+  const lines = docsLines(v.text as string);
+  if (!Array.isArray(v.lines) || v.lines.length !== lines.length) d.fail('lines');
+  for (const [index, raw] of (v.lines as unknown[]).entries()) {
+    const line = d.obj(raw, ['number', 'text'], 'line');
+    if (line.number !== lines[index].number || line.text !== lines[index].text) d.fail('line');
+  }
   if (typeof v.worktree_differs !== 'boolean') d.fail('worktree_differs');
   return value as DocsFileV1;
 }

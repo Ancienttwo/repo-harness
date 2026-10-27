@@ -22,17 +22,21 @@ function focusable(dialog: HTMLElement): HTMLElement[] {
  * inside the dialog, Escape closes, and closing returns focus to the trigger.
  * `identity` owns the lifecycle, so a refresh that replaces the subject's data
  * does not restart it. `onKey` receives other unmodified keys (j/k).
+ *
+ * `restoreFocus` names the focus destination for a caller whose trigger does
+ * not survive the open. It replaces the captured trigger; cleanup runs one.
  */
-export function useModalFocus({ dialogRef, closeRef, identity, onClose, onKey }: {
+export function useModalFocus({ dialogRef, closeRef, identity, onClose, onKey, restoreFocus }: {
   readonly dialogRef: RefObject<HTMLElement | null>;
   readonly closeRef: RefObject<HTMLElement | null>;
   readonly identity: string;
   readonly onClose: () => void;
   readonly onKey?: (event: KeyboardEvent) => void;
+  readonly restoreFocus?: () => void;
 }): void {
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const handlers = useRef({ onClose, onKey });
-  handlers.current = { onClose, onKey };
+  const handlers = useRef({ onClose, onKey, restoreFocus });
+  handlers.current = { onClose, onKey, restoreFocus };
   const firstOpen = useRef(true);
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -79,7 +83,9 @@ export function useModalFocus({ dialogRef, closeRef, identity, onClose, onKey }:
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
-      returnFocusRef.current?.focus();
+      const restore = handlers.current.restoreFocus;
+      if (restore) restore();
+      else returnFocusRef.current?.focus();
       returnFocusRef.current = null;
     };
   }, []);

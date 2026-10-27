@@ -34,7 +34,7 @@ export type ExecutionRepositoryCache =
 /** Each registered repository must resolve from its own path, whatever git variables the server has. */
 export function executionChildEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = { ...env, ...READ_ONLY_GIT_ENVIRONMENT };
-  for (const key of [...REPOSITORY_SELECTING_GIT_ENV, 'GIT_COMMON_DIR']) delete next[key];
+  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
   return next;
 }
 

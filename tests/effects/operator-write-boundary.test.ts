@@ -5,6 +5,7 @@ import {
   OPERATOR_REPOSITORY_SNAPSHOT_KIND,
   type OperatorRepositorySnapshotV1,
 } from '../../src/core/operator/repository-snapshot';
+import { OPERATOR_ARCHITECTURE_MAP_ROUTE } from '../../src/core/operator/architecture-map';
 import {
   OperatorRepositoryError,
   assertOperatorRepositorySnapshotIdentity,
@@ -37,6 +38,7 @@ import {
   OPERATOR_TASK_HISTORY_ROUTE,
   type OperatorRouteV1,
 } from '../../src/effects/operator/server';
+import { OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE } from '../../src/effects/operator/agents-settings-route';
 
 /**
  * The inventory claim under test is "zero browser writes". Probing a
@@ -61,13 +63,13 @@ function repositorySnapshot(
 }
 
 describe('operator structural write boundary', () => {
-  test('declares zero write routes and rejects every mutation verb even when mislabeled read-only', () => {
-    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual([]);
+  test('declares only the agent settings write route and rejects every mutation verb even when mislabeled read-only', () => {
+    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['settings_agents_write']);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
       const mutation: OperatorRouteV1 = { id: 'fake_write', method, pattern: '/api/v1/fleet/tasks/anything', write: false };
-      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['fake_write']);
+      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['settings_agents_write', 'fake_write']);
     }
-    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['get_write']);
+    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['settings_agents_write', 'get_write']);
   });
 
   test('the dispatcher admits only GET, HEAD and, for a write route, POST', async () => {
@@ -105,9 +107,12 @@ describe('operator structural write boundary', () => {
       'execution_state',
       'docs_tree',
       'docs_file',
+      'settings_agents',
+      'settings_agents_write',
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
+      'architecture_map',
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
@@ -134,9 +139,12 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('docs_tree')).toBe(OPERATOR_DOCS_TREE_ROUTE.source);
     expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
     expect(OPERATOR_ROUTES.filter(route => route.id.startsWith('docs_')).every(route => route.method === 'GET' && !route.write)).toBe(true);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents')).toEqual({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents_write')).toEqual({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true });
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'architecture_map')).toEqual({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false });
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);

@@ -1,6 +1,7 @@
 // Strict, browser-safe decoder for GET /api/v1/dev-activity. Exact keys, closed
 // vocabularies, and no absolute-path-looking text outside `url`.
 
+import { isPublicDevActivityText } from '../operator/public-text';
 import {
   DEV_ACTIVITY_ATTENTION_KINDS,
   DEV_ACTIVITY_COLUMNS,
@@ -21,24 +22,6 @@ export function unavailableDevActivitySnapshot(): DevActivitySnapshotV2 {
     projection_version: DEV_ACTIVITY_PROJECTION, status: 'unavailable', collected_at: null,
     repositories: [], unreadable_registrations: 0, items: [], attention: [],
   };
-}
-
-// A `/` starts an absolute path unless it follows a Unicode letter, number, mark or emoji,
-// `_`, `.`, `-` or another `/`. That keeps `feat/x`, `1/2` and `./rel` while catching paths
-// after any punctuation, such as `[/home/a]`, `,/tmp` or `~/repo`. A drive
-// letter starts a Windows path unless a word character precedes it.
-const PRIVATE_PATH_SPAN = '[^\\s"\'`)\\]>}]';
-const PRIVATE_PATH = new RegExp(`(?<![\\p{L}\\p{N}\\p{M}\\p{Extended_Pictographic}_./-])\\/${PRIVATE_PATH_SPAN}+|(?<![\\p{L}\\p{N}\\p{M}_])[A-Za-z]:[\\\\/]${PRIVATE_PATH_SPAN}*`, 'gu');
-
-/** Mask absolute-path-looking spans in free text. Paths never leave the host. */
-export function publicDevActivityText(value: string): string {
-  return value.replace(PRIVATE_PATH, '[private path]');
-}
-
-/** True when the value would pass the snapshot decoder's private-path guard. */
-export function isPublicDevActivityText(value: string): boolean {
-  PRIVATE_PATH.lastIndex = 0;
-  return !PRIVATE_PATH.test(value);
 }
 
 export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2 {

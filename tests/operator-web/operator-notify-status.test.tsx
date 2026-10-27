@@ -70,6 +70,6 @@ describe('notify plugin status panel', () => {
     expect(markup).toContain('disabled');
     expect(markup).toContain('no delivery recorded');
     expect(markup).not.toContain(SECRET);
-    expect(markup).toContain('read-only');
+    expect(markup).toContain('read-only except Settings');
   });
 });

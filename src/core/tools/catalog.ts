@@ -8,7 +8,7 @@
 import catalogJson from '../../../assets/tool-catalog.v1.json';
 
 export const TOOL_CATALOG_VERSION = 'repo-harness.tool-catalog.v1';
-export const TOOL_KINDS = ['resource', 'local_tool'] as const;
+export const TOOL_KINDS = ['resource', 'local_tool', 'skill'] as const;
 export const TOOL_CATEGORIES = ['frontend', 'design', 'agent_skills', 'code_navigation', 'orchestration', 'agent_reference'] as const;
 /** Same members and order as `INSTALL_PROFILES` (src/cli/installer/install-profile.ts). */
 export const TOOL_INSTALL_PROFILES = ['minimal', 'full'] as const;
@@ -123,5 +123,5 @@ export const TOOL_CATALOG: ToolCatalogV1 = decodeToolCatalog(catalogJson);
 export type ToolStatus = 'unknown' | 'na';
 
 export function toolStatus(entry: ToolCatalogEntry): ToolStatus {
-  return entry.kind === 'local_tool' && entry.detector !== null ? 'unknown' : 'na';
+  return entry.kind !== 'resource' && entry.detector !== null ? 'unknown' : 'na';
 }
