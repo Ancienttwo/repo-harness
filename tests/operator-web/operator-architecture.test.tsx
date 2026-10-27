@@ -8,7 +8,7 @@ import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
 import type { ArchitectureMapRead, ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
-import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapLayersInput, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
 import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
@@ -327,6 +327,24 @@ describe('architecture map', () => {
   const EXTERNAL = 'external.git';
   const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
   const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
+  const noModelDelta = { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [], relations_added: [], relations_removed: [], relations_changed: [] } as const;
+  const noLayers: ArchitectureMapLayersInput = {
+    changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+    violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+    tests: { state: 'unavailable', reason: 'tests_pending' },
+  };
+  const mapLayers: ArchitectureMapLayersInput = {
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
+      files: new Map([['src/ledger.ts', { added: 5, deleted: 2 }]]), owners: new Map([['src/ledger.ts', PART]]), model: noModelDelta },
+    violations: {
+      debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
+      anchors: noCodeFacts,
+      dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
+    },
+    tests: { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [
+      { id: CALLER, files: 2, passed: 1, failed: 0, skipped: 0, no_result: 1 }, { id: CENTER, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] },
+  };
   function mapFor(available = true): ArchitectureMapV1 {
     return projectArchitectureMap({
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
@@ -335,6 +353,7 @@ describe('architecture map', () => {
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
         : { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
+      layers: mapLayers,
     });
   }
   const reader = (read: ArchitectureMapRead): ArchitectureMapReader => async () => read;
@@ -355,7 +374,7 @@ describe('architecture map', () => {
       nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
       relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
     });
     for (const map of [mapFor(), nested, decodeArchitectureMap(recordedMap)]) {
       const layout = layoutArchitectureMap(map);
@@ -424,6 +443,51 @@ describe('architecture map', () => {
     expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');
     expect(document.querySelector('.architecture-map')).toBeNull();
   });
+
+  test('the map opens on today\'s changes, and each layer marks nodes from the collector\'s facts or states its reason', async () => {
+    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }) }));
+    const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    const layerButton = (layer: string) => document.querySelector<HTMLButtonElement>(`.architecture-layers [data-layer="${layer}"]`)!;
+    const choose = async (layer: string) => { await act(async () => layerButton(layer).click()); await settle(); };
+    const gaps = () => [...document.querySelectorAll('.architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`);
+    const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
+
+    expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
+    expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
+      .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:unavailable']);
+    expect([box(PART).getAttribute('data-tone'), box(PART).textContent]).toEqual(['change', expect.stringContaining('+5 −2')]);
+    // The change counts for the group too; nodes with nothing on the layer fade.
+    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['change', true, true]);
+    expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('1 files changed in 1 commits');
+    expect(notes()).toEqual(['flow_steps:change_impact_not_exported']);
+
+    await choose('violations');
+    expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
+    expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
+    expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
+    expect(notes()).toEqual(['violations.flows:flows_check_writes_index', 'violations.layer_direction:layer_order_not_released']);
+    expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
+
+    await choose('tests');
+    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).getAttribute('data-tone')]).toEqual(['danger', 'muted']);
+    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    expect(document.querySelector('[data-layer-facts="tests"]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
+
+    for (const [layer, reason] of [['pull_requests', 'pr_files_unavailable'], ['decisions', 'decisions_not_exported']] as const) {
+      await choose(layer);
+      expect([gaps(), notes()]).toEqual([[], [`${layer}:${reason}`]]);
+      expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+    }
+  });
+
+  test('a layer without data is still listed and says why', async () => {
+    await mount(workspace({ readMap: reader({ state: 'ok', map: projectArchitectureMap({ ...mapFor(), sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers }) }) }));
+    expect(document.querySelector('.architecture-map__gap[data-gap="changes"]')?.getAttribute('data-reason')).toBe('model_worktree_dirty');
+    expect([...document.querySelectorAll('.architecture-layers [data-state="unavailable"]')]).toHaveLength(5);
+    expect(document.querySelectorAll('[data-quiet]')).toHaveLength(0);
+  });
 });
 
 describe('workspace navigation', () => {
@@ -434,9 +498,9 @@ describe('workspace navigation', () => {
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
-  test('names Home and nine sections in three groups, starts on Home and keeps the repository page with its three tabs', async () => {
+  test('names Home, ten sections in three groups and Settings at the foot, starts on Home and keeps the repository page with its three tabs', async () => {
     await mount(app());
-    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Home', 'Board', 'Repositories', 'Agents', 'Skills', 'Hooks', 'Bots', 'Architecture', 'System', 'Tools']);
+    expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Home', 'Board', 'Repositories', 'Agents', 'Skills', 'Hooks', 'CLI', 'Bots', 'Architecture', 'System', 'Tools', 'Settings']);
     expect([...document.querySelectorAll('.workspace-nav [id^="nav-group-"]')].map(item => item.textContent)).toEqual(['Work', 'Setup', 'Observe']);
     expect(link('home').getAttribute('aria-current')).toBe('page');
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');

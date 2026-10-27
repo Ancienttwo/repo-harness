@@ -23,6 +23,7 @@ import { busyBotAccess, degradedBotAccess } from './bots';
 import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { agentsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
@@ -73,16 +74,25 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the task session records could not be read.
   const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
     : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
-  // degraded: the model is served with no line or import counts; empty: the first collection has not finished.
+  // degraded: the model is served with no line or import counts and no layer data; empty: the first collection has not finished.
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' || repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'architecture_map_pending' }
     : { state: 'ok', map: decodeArchitectureMap(fixture === 'busy' ? architectureMap : {
       ...architectureMap,
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
-      dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+      dependencies: noCodeFacts,
+      layers: {
+        ...architectureMap.layers,
+        changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+        violations: { ...architectureMap.layers.violations, debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+        tests: { state: 'unavailable', reason: 'github_unavailable' },
+      },
     }) };
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
+  // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
+  const agentsSettings = agentsSettingsStore(now, fixture);
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -104,5 +114,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
     readBotAccess: () => Promise.resolve(botAccess),
+    readAgentsSettings: agentsSettings.read,
+    writeAgentsSettings: agentsSettings.write,
   };
 }

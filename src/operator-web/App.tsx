@@ -8,6 +8,8 @@ import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
 import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
+import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
+import { SettingsFreshness, SettingsPage } from './SettingsPage';
 import {
   DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
@@ -55,6 +57,8 @@ import {
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
 import { ToolsPage } from './ToolsPage';
+import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
+import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
 import type { TaskActivityReader, TaskContextReader } from './TaskEvidence';
 import type { TaskHistoryReader } from './TaskHistory';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
@@ -100,6 +104,8 @@ export interface OperatorAppProps {
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
   readonly initialSetup?: SetupSnapshotV1;
+  readonly readCliInventory?: CliInventoryReader;
+  readonly initialCliInventory?: CliInventorySnapshotV1;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */
   readonly readRepositoryHead?: RepositoryHeadReader;
   /** The tests route's open CI repair issues, for Home's "Today" section. */
@@ -110,6 +116,9 @@ export interface OperatorAppProps {
   readonly readArchitectureMap?: ArchitectureMapReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
+  /** The agents section and runtime probe behind the Settings page, and its one write. */
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly writeAgentsSettings?: AgentsSettingsWriter;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -214,11 +223,15 @@ export function OperatorApp({
   initialNotifyStatus,
   readSetup = fetchSetup,
   initialSetup,
+  readCliInventory = fetchCliInventory,
+  initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
   readExecution = fetchExecution,
   readArchitectureMap,
   readBotAccess = fetchBotAccess,
+  readAgentsSettings = fetchAgentsSettings,
+  writeAgentsSettings = postAgentsSettings,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -256,8 +269,10 @@ export function OperatorApp({
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
   const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
+  const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, workspace === 'settings');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
+  const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
@@ -427,7 +442,7 @@ export function OperatorApp({
       data-state={state.kind}
       data-locale={locale}
       data-workspace={workspace}
-      lang={locale === 'zh' ? 'zh' : 'en'}
+      lang={locale}
     >
       <NavRail current={workspace} attention={attention} onOpen={openPlace} repositorySwitch={repositorySwitch}
         collapsed={railCollapsed} onToggleCollapsed={toggleRail} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer}
@@ -437,7 +452,8 @@ export function OperatorApp({
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
-            {workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+            {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+              : workspace === 'settings' ? <SettingsFreshness view={agentsSettings.view} now={now} t={t} />
               : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
@@ -450,8 +466,9 @@ export function OperatorApp({
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
-          {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} />}
+          {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
+          {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}
           {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
@@ -472,6 +489,7 @@ export function OperatorApp({
               </Suspense>}
           </>}
           {workspace === 'bots' && <BotsPage view={botAccess} now={now} t={t} />}
+          {workspace === 'settings' && <SettingsPage form={agentsSettings} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}

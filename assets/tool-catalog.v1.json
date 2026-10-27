@@ -4,7 +4,7 @@
     {
       "id": "waza",
       "name": "Waza",
-      "kind": "local_tool",
+      "kind": "skill",
       "category": "agent_skills",
       "url": "https://github.com/tw93/Waza",
       "author": "tw93",
@@ -50,7 +50,7 @@
     {
       "id": "herdr-skill",
       "name": "herdr skill",
-      "kind": "local_tool",
+      "kind": "skill",
       "category": "orchestration",
       "url": "https://github.com/herdrdev/herdr",
       "author": "herdrdev",
@@ -70,7 +70,7 @@
     {
       "id": "hai-stack",
       "name": "hai-stack",
-      "kind": "local_tool",
+      "kind": "skill",
       "category": "agent_skills",
       "url": "https://github.com/hylarucoder/hai-stack",
       "author": "hylarucoder",
