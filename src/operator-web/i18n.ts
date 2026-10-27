@@ -2082,7 +2082,7 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'bots.herdr.reason.herdr_status_failed': 'herdr status 运行失败。',
   'bots.herdr.reason.herdr_status_invalid': 'herdr status 的输出没通过校验。',
   'bots.herdr.reason.herdr_not_running': 'pane 状态不可用：服务没有运行。',
-  'bots.herdr.reason.herdr_version_mismatch': 'pane 执行状态不可用：herdr 版本与期望不一致。',
+  'bots.herdr.reason.herdr_version_mismatch': 'pane 状态不可用：herdr 版本与期望不一致。',
   'bots.herdr.reason.herdr_snapshot_failed': 'pane 状态不可用：会话快照读取失败。',
   'bots.herdr.reason.notify_session_missing': '没有 notify 安装记录，不知道读哪个 herdr 会话。',
   'bots.herdr.reason.notify_session_invalid': '读不到 notify 安装记录。',

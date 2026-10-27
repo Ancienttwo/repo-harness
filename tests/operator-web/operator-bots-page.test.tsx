@@ -238,10 +238,15 @@ describe('Bots page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('degraded sections each say what failed: Bot unknown is not unregistered, and a disabled plugin gives the install command for its session', async () => {
+  test('degraded sections each say what failed: a failed mcp doctor gives its command, Bot unknown is not unregistered, and a disabled plugin gives the install command for its session', async () => {
     await mount('#bots', props(serve(ok(degradedBotAccess(NOW)))));
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.textContent).toBe('mcp doctor timed out.');
+    expect(commands(mcp)).toEqual([
+      'repo-harness mcp doctor',
+      `repo-harness mcp clients revoke ${EXECUTOR_CLIENT}`,
+      'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write',
+    ]);
     expect(all('[data-oauth-client] [data-bot]', mcp).map(name => [name.getAttribute('data-bot'), name.textContent])).toEqual([['unknown', 'Bot unknown']]);
     expect(mcp.textContent).toContain('Unreadable client records, not listed: 1');
     expect(all('[data-last-call]', mcp).map(call => call.getAttribute('data-last-call'))).toEqual(['audit_unreadable', 'failed']);

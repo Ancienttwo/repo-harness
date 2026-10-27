@@ -68,7 +68,14 @@ function BotName({ label, t }: { readonly label: BotLabel; readonly t: OperatorT
 // --- MCP ---
 
 function McpServer({ mcp, t }: { readonly mcp: Snapshot['mcp']; readonly t: OperatorTranslate }) {
-  if (mcp.state !== 'ok') return <Line tone="danger" data-mcp-status={mcp.reason}>{t(`bots.mcp.reason.${mcp.reason}`)}</Line>;
+  if (mcp.state !== 'ok') {
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        <Line tone="danger" data-mcp-status={mcp.reason}>{t(`bots.mcp.reason.${mcp.reason}`)}</Line>
+        <CommandLine command={MCP_DOCTOR_COMMAND} t={t} className="max-w-full md:max-w-3xl" />
+      </div>
+    );
+  }
   const { doctor } = mcp;
   const warnings = [
     ...doctor.legacy_full_disk_read ? [t('bots.mcp.warn.legacyFullDisk')] : [],
