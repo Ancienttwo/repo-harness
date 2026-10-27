@@ -1768,7 +1768,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     const filesBeforeGet = readdirSync(root).sort();
     const url = stdout.trim();
     const response = await fetch(`${url}/api/v1/runtime/status`); expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready',
+    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', status: 'ready',
       badges: [], pane_observations: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
         observations: [{ scope: 'terminal', state: 'idle', event_received_at: heartbeat }] }] });
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);

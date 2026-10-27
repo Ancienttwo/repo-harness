@@ -1,5 +1,6 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, decodeRuntimePaneObservation, runtimePaneKey, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
-  unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type ProgramStatusV1, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation } from '../../core/operator/runtime-status';
+  unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type ProgramStatusV1, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimePaneObservation, type RuntimeUnavailableReason } from '../../core/operator/runtime-status';
+import { HerdrVersionMismatchError } from '../terminal/herdr-observation';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
 /** Select only documented structured pane fields. No title, cwd or text inference. */
@@ -30,13 +31,21 @@ export interface RuntimeSource {
   snapshot(epoch: number): Promise<RuntimeSnapshot>;
 }
 
+/** Preserve only the typed public version facts, never an arbitrary error message. */
+export function runtimeUnavailableReason(error: unknown): RuntimeUnavailableReason | null {
+  if (!(error instanceof HerdrVersionMismatchError)) return null;
+  const { expected, actual } = error.check;
+  return { code: 'herdr_version_mismatch', expected: { version: expected.version, protocol: expected.protocol, revision: expected.revision },
+    actual: { version: actual.version, protocol: actual.protocol } };
+}
+
 /** Explicit lifecycle outside GET. Events invalidate snapshots; they never update task state. */
 export function createRuntimeStatusObserver(source: RuntimeSource, now: () => number = Date.now) {
   let lifecycle = 0;
   let epoch = 0, version = 0, connected = false, started = false, subscribed = false, stopSubscription: (() => void) | null = null;
   let last: { snapshot: RuntimeSnapshot; at: string } | null = null;
   let pending: Promise<void> | null = null;
-  let failed = false;
+  let failed = false, reason: RuntimeUnavailableReason | null = null;
   const revisions = new Map<string, RuntimeObservation[]>();
   const cancelled = new Set<string>();
   const paneRevisions = new Map<string, RuntimePaneObservation[]>();
@@ -44,6 +53,7 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
     if (!started) return;
     version++;
     failed = true;
+    if (event !== 'updated') reason = null;
     if (event === 'reconnect' || event === 'events_lost') { epoch++; last = null; revisions.clear(); cancelled.clear(); paneRevisions.clear(); }
     connected = event !== 'disconnected';
     if (subscribed && connected) void Promise.resolve().then(refresh);
@@ -105,10 +115,16 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
         revisions.clear(); for (const [key, group] of retained) revisions.set(key, group);
         paneRevisions.clear(); for (const [key, group] of retainedPanes) paneRevisions.set(key, group);
         for (const [key, group] of next) if (group.length === 1 && group[0].state === 'cancelled') cancelled.add(key);
-        failed = false; return;
-      } catch { if (owner === lifecycle && started) failed = true; return; }
+        failed = false; reason = null; return;
+      } catch (error) {
+        if (owner === lifecycle && started) {
+          failed = true;
+          if (readVersion === version && readEpoch === epoch) reason = runtimeUnavailableReason(error);
+        }
+        return;
+      }
     }
-    if (owner === lifecycle && started) failed = true;
+    if (owner === lifecycle && started) { failed = true; reason = null; }
   }
   function refresh(): Promise<void> {
     if (!started || !connected || !subscribed) return Promise.resolve();
@@ -123,23 +139,23 @@ export function createRuntimeStatusObserver(source: RuntimeSource, now: () => nu
       if (started) throw new Error('runtime_already_started');
       if (lifecycle > 0) { epoch++; version++; last = null; revisions.clear(); cancelled.clear(); paneRevisions.clear(); }
       const owner = ++lifecycle;
-      started = true; connected = true; subscribed = false;
+      started = true; connected = true; subscribed = false; reason = null;
       try {
         const close = await source.subscribe(event => { if (owner === lifecycle && started) invalidate(event); });
         if (owner !== lifecycle || !started) { close(); return; }
         stopSubscription = close; subscribed = true; await refresh();
-      } catch {
-        if (owner === lifecycle) { started = false; subscribed = false; connected = false; failed = true; }
+      } catch (error) {
+        if (owner === lifecycle) { started = false; subscribed = false; connected = false; failed = true; reason = runtimeUnavailableReason(error); }
       }
     },
     refresh,
     invalidate,
     read(): RuntimeOverlay {
-      if (!last) return unavailableRuntimeOverlay(epoch);
+      if (!last) return unavailableRuntimeOverlay(epoch, structuredClone(reason));
       const overlay = projectRuntimeOverlay(last.snapshot.bindings, last.snapshot.observations, last.at, epoch, source.program_status, now(), connected, last.snapshot.unclaimed ?? 0, last.snapshot.pane_observations);
-      return failed ? { ...overlay, status: 'unavailable' } : overlay;
+      return failed ? { ...overlay, status: 'unavailable', reason: structuredClone(reason) } : overlay;
     },
-    stop() { lifecycle++; version++; started = false; subscribed = false; connected = false; failed = true; pending = null; stopSubscription?.(); stopSubscription = null; },
+    stop() { lifecycle++; version++; started = false; subscribed = false; connected = false; failed = true; reason = null; pending = null; stopSubscription?.(); stopSubscription = null; },
   };
 }
 
