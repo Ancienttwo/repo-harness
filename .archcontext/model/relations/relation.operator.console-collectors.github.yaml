@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.github
+kind: reads
+source: component.operator.console-collectors
+target: external.github
+intent: "Read the newest daily CI run, download its JUnit and test projection artifacts, and list open CI repair issues with gh."

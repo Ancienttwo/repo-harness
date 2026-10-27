@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.herdr
+kind: reads
+source: component.operator.console-collectors
+target: external.herdr
+intent: "Run herdr status, the session snapshot and the notify plugin list, config-dir and log list probes on collector cycles."

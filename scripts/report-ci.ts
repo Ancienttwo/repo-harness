@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody } from '../src/core/operator/tests';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -37,7 +38,7 @@ async function githubPages(api: GitHubAPI, path: string, field?: string): Promis
   throw new Error(`Provider pagination limit reached: ${path}`);
 }
 async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, requireOpen = false, evidenceMarker?: string): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
-  const marker = `<!-- ${key} -->`;
+  const marker = ciRepairIssueMarker(key);
   const evidence = evidenceMarker ? `${evidenceMarker}\n\n${body}` : body;
   // A reused issue records each new failure once, so it never shows only the first SHA and run.
   const recordEvidence = async (issue: Record<string, unknown>): Promise<void> => {
@@ -134,7 +135,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
   // The marker key stays the dedupe identity. An architecture repair only changes the title and body.
   const repair = async (identity: string, detail: string, requireOpen = false, cause?: { subject: string; body: string }): Promise<void> => {
-    const key = requireOpen ? `ci-repair:${identity}` : `ci-repair:${run.id}:${run.run_attempt}:${identity}`;
+    const key = requireOpen ? `${CI_REPAIR_KEY_PREFIX}${identity}` : `${CI_REPAIR_KEY_PREFIX}${run.id}:${run.run_attempt}:${identity}`;
     const action = cause ? `${cause.body}\n\nFollow this action in a repair PR. Do not weaken assertions.`
       : 'Investigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions.';
     try {
@@ -230,7 +231,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
   try {
     const open = await githubPages(api, `${root}/issues?state=open`);
     report.unresolved_repairs = open.filter(issue => !issue.pull_request && issue.state === 'open' && typeof issue.body === 'string'
-      && (issue.body.includes('<!-- ci-repair:') || issue.body.includes('<!-- ci-daily-missing:'))).map(issue => {
+      && isCiRepairIssueBody(issue.body)).map(issue => {
       if (!positive(issue.number) || typeof issue.html_url !== 'string') throw new Error('Open repair identity incomplete');
       return { issue_number: issue.number, url: issue.html_url, title: safeText(issue.title) };
     });
@@ -252,7 +253,7 @@ export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, sche
   const date = expectedAt.toISOString().slice(0, 10);
   const expected = expectedAt.getTime();
   if (now.getTime() < expected + 4 * 60 * 60 * 1000) throw new Error('Daily observation is before the four-hour deadline');
-  const key = `ci-daily-missing:${date}`;
+  const key = `${CI_DAILY_MISSING_KEY_PREFIX}${date}`;
   try {
     const runs = await githubPages(api, `${root}/actions/workflows/ci.yml/runs?event=schedule&created=${date}..${now.toISOString().slice(0, 10)}`, 'workflow_runs');
     const matching = runs.filter(run => {

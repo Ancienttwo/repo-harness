@@ -160,6 +160,8 @@ export interface CliInventoryInput {
   readonly seed: CliSeedCatalog;
   /** Command name -> epoch ms of its newest agent use. */
   readonly last_used: ReadonlyMap<string, number>;
+  /** Epoch ms of the oldest agent-use record; null when the telemetry has none. */
+  readonly usage_since: number | null;
   /** Lowercase `owner/repo` -> gh facts; absent or null when gh had none. */
   readonly github: ReadonlyMap<string, CliGithubFacts | null>;
   /** `<source>:<name>` -> the registry marks the package deprecated. */
@@ -199,8 +201,11 @@ export interface CliInventoryEntry {
   location: string;
   size_bytes: number | null;
   last_used_at: string | null;
-  /** No agent use in CLI_UNUSED_DAYS. */
-  unused: boolean;
+  /**
+   * No agent use in CLI_UNUSED_DAYS. Null when the use records start inside
+   * that window: no record of a use is then no proof of disuse.
+   */
+  unused: boolean | null;
   github: CliGithub | null;
   /** The manager or the registry marks the package deprecated, or the repository is archived. */
   deprecated: boolean;
@@ -299,6 +304,8 @@ interface Claimed { readonly record: CliPackageRecord | null; readonly seed: Cli
 export function projectCliInventory(input: CliInventoryInput): CliInventorySnapshotV1 {
   const { home, seed } = input;
   const nowMs = Date.parse(input.collected_at);
+  const windowStart = nowMs - CLI_UNUSED_DAYS * 86_400_000;
+  const covered = input.usage_since !== null && input.usage_since <= windowStart;
   const records = input.packages.filter(record => PACKAGE_NAME.test(record.name) && (record.version === null || VERSION.test(record.version)));
   const seedFor = (record: CliPackageRecord) => seed.tools.find(tool =>
     tool.packages.some(pkg => pkg.registry === REGISTRY_OF[record.source] && pkg.name === record.name)) ?? null;
@@ -332,6 +339,7 @@ export function projectCliInventory(input: CliInventoryInput): CliInventorySnaps
     const commands = files.map(file => file.name);
     const source: CliSource = record?.source ?? (seedTool !== null ? 'script' : 'manual');
     const lastUsed = Math.max(-Infinity, ...commands.map(name => input.last_used.get(name) ?? -Infinity));
+    const usedInWindow = Number.isFinite(lastUsed) && lastUsed >= windowStart;
     const github = resolveGithub(record, seedTool, commands, input);
     const removal = record !== null ? uninstallCommand(record)
       : source === 'script' && seedTool!.script_uninstall.length > 0 ? seedTool!.script_uninstall.join(' && ') : null;
@@ -347,7 +355,7 @@ export function projectCliInventory(input: CliInventoryInput): CliInventorySnaps
       location: displayPath(dirname(files[0]!.path), home),
       size_bytes: root === undefined ? null : input.sizes.get(root) ?? null,
       last_used_at: Number.isFinite(lastUsed) ? new Date(lastUsed).toISOString() : null,
-      unused: !Number.isFinite(lastUsed) || lastUsed < nowMs - CLI_UNUSED_DAYS * 86_400_000,
+      unused: usedInWindow ? false : covered ? true : null,
       github,
       deprecated: record?.deprecated === true || input.registry_deprecated.get(id) === true || github?.archived === true,
       uninstall: steps === null ? null : { steps: [...(seedTool?.before_uninstall ?? []), steps], config: seedTool?.config_uninstall ?? null },
@@ -429,7 +437,7 @@ export function decodeCliInventory(value: unknown): CliInventorySnapshotV1 {
     text(e.location, 'location');
     nullable(e.size_bytes, x => count(x, 'size_bytes'));
     nullable(e.last_used_at, x => time(x, 'last_used_at'));
-    bool(e.unused, 'unused');
+    nullable(e.unused, x => bool(x, 'unused'));
     bool(e.deprecated, 'deprecated');
     nullable(e.github, x => {
       const g = obj(x, ['repo', 'candidates', 'monorepo', 'stars', 'archived', 'moved'], 'github');

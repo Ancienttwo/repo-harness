@@ -1,4 +1,5 @@
 import { labelDecision } from '../../effects/terminal/herdr-decision.ts';
+import { HERDR_SESSION_NAME, writeNotifyInstallRecord } from '../../effects/terminal/herdr-notify-install.ts';
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import { constants, fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -67,7 +68,7 @@ function validateConfig(config: Record<string, string>): void {
   }
   if (config.TELEGRAM_BOT_TOKEN && !/^\d+:[A-Za-z0-9_-]+$/.test(config.TELEGRAM_BOT_TOKEN)) throw new Error('TELEGRAM_BOT_TOKEN is invalid.');
   if (config.TELEGRAM_CHAT_ID && !/^(?:-?\d+|@[A-Za-z0-9_]+)$/.test(config.TELEGRAM_CHAT_ID)) throw new Error('TELEGRAM_CHAT_ID is invalid.');
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(config.NOTIFY_SESSION)) throw new Error('Session name is invalid.');
+  if (!HERDR_SESSION_NAME.test(config.NOTIFY_SESSION!)) throw new Error('Session name is invalid.');
 }
 
 function herdr(args: string[], env: NodeJS.ProcessEnv): string {
@@ -182,6 +183,9 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   herdr([...prefix, 'link', source, '--disabled'], env);
   writeConfig(dir, config);
   herdr([...prefix, 'enable', PLUGIN_ID], env);
+  // Last step: the operator readers take the session only from this record.
+  try { writeNotifyInstallRecord(options.session); }
+  catch { throw new Error(`The plugin is enabled, but the install record was not written. Run: repo-harness herdr notify install --session ${options.session}`); }
   process.stdout.write('Herdr notify is installed. Default events: blocked.\n');
 }
 

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.console-collectors
+kind: calls
+source: component.operator.primary
+target: component.operator.console-collectors
+intent: "Start the notify, Bot access, docs and tests collectors once, serve only their re-decoded caches, and send a docs file GET as one object request to the resident cat-file worker."

@@ -50,6 +50,9 @@ The command asks Herdr for `plugin config-dir aimpact.webhook-notify`.
 It copies the shipped plugin to `source/` in that directory.
 It links that copy with `herdr plugin link --disabled`.
 It writes `.env` with file mode `600`. Then it enables the plugin.
+Last, it writes the session name to `~/.repo-harness/herdr/notify-install.json` with file mode `600`.
+The operator console takes the Herdr session only from that record and reads it on each collection.
+Without the record, the console shows `notify_session_missing`. Run install once to write it.
 The source copy stays in place when a package cache is removed.
 Run the command again to replace the config and update the source copy.
 Supply all values again. An omitted value removes that channel.

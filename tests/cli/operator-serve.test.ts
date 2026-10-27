@@ -10,7 +10,7 @@ import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/
 import { OperatorRepositoryError, readOperatorRepositorySnapshot } from '../../src/effects/operator/repository-snapshot';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
-import { chmodSync, watch, lstatSync } from 'node:fs';
+import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
 import { spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
@@ -21,6 +21,14 @@ import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import type { SetupSnapshotV1 } from '../../src/core/setup/types';
 import { ROUTES } from '../../src/cli/hook/route-registry';
+import type { BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
+import type { BotAccessCacheV1 } from '../../src/effects/operator/bot-access';
+import { CLI_INVENTORY_PROJECTION, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
+import { DocsReader } from '../../src/effects/operator/docs-reader';
+import type { DocsRepositoryCache } from '../../src/effects/operator/docs-collector';
+import type { DocsTreeV1 } from '../../src/core/operator/docs';
+import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
+import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 
 import {
   startOperatorServer,
@@ -354,6 +362,252 @@ describe('operator serve command and HTTP boundary', () => {
     } finally {
       await collecting.close();
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('serves only the Bot access and CLI inventory caches on GET, with typed unavailable states', async () => {
+    const bots: BotAccessSnapshotV1 = {
+      protocol: 1, kind: 'operator_bot_access', observed_at: '2026-10-27T00:00:00.000Z',
+      bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
+      mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
+      oauth: { state: 'missing' },
+      registry: { state: 'unavailable', reason: 'registry_unavailable' },
+      herdr: { state: 'unavailable', reason: 'notify_session_missing' },
+      notify: { state: 'unavailable', reason: 'notify_session_missing' },
+    };
+    const entry = { id: 'brew:gh', source: 'brew', package: 'gh', version: '2.62.0', commands: ['gh'], location: '~/.local/bin',
+      size_bytes: null, last_used_at: null, unused: true, github: null, deprecated: false, uninstall: null };
+    const inventory = { projection_version: CLI_INVENTORY_PROJECTION, status: 'ready', reason: null, collected_at: '2026-10-27T00:00:00.000Z', entries: [entry] } as CliInventorySnapshotV1;
+    let botCache: BotAccessCacheV1 = { state: 'pending' };
+    let cli: unknown = inventory;
+    let reads = 0;
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(),
+      read_bot_access: () => { reads++; return botCache; }, read_cli_inventory: () => { reads++; return cli as CliInventorySnapshotV1; } });
+    const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
+    try {
+      const pending = await get('/api/v1/bot-access');
+      expect(pending.status).toBe(503);
+      expect(await pending.json()).toEqual({ error: { code: 'bot_access_pending', message: expect.any(String), next_action: expect.any(String) } });
+      botCache = { state: 'failed', reason: 'bot_access_failed' };
+      const failed = await get('/api/v1/bot-access');
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toEqual({ error: { code: 'bot_access_unavailable', message: expect.any(String), next_action: expect.any(String) } });
+      botCache = { state: 'ok', snapshot: bots };
+      const ready = await get('/api/v1/bot-access');
+      expect(ready.status).toBe(200);
+      expect(ready.headers.get('cache-control')).toBe('no-store');
+      expect(await ready.json()).toEqual(bots);
+      botCache = { state: 'ok', snapshot: { ...bots, registry: { state: 'ok', authorization_revision: 1, registry_revision: `sha256:${'0'.repeat(64)}`,
+        repos: [{ repo_id: 'repo-a', label: '/Users/someone/repo', access_mode: 'read_only', last_audit: { state: 'missing' } }] } } };
+      const invalid = await get('/api/v1/bot-access');
+      expect(invalid.status).toBe(503);
+      const invalidText = await invalid.text();
+      expect(JSON.parse(invalidText)).toMatchObject({ error: { code: 'bot_access_invalid' } });
+      expect(invalidText).not.toContain('/Users/');
+
+      expect(await (await get('/api/v1/cli-inventory')).json()).toEqual(inventory);
+      cli = { ...inventory, entries: [{ ...entry, location: '/Users/someone/.local/bin' }] };
+      const leaked = await (await get('/api/v1/cli-inventory')).text();
+      expect(JSON.parse(leaked)).toEqual(unavailableCliInventory('collection_failed'));
+      expect(leaked).not.toContain('/Users/');
+
+      for (const path of ['/api/v1/bot-access', '/api/v1/cli-inventory']) {
+        const head = await get(path, { method: 'HEAD' });
+        expect(head.status).toBe(path === '/api/v1/bot-access' ? 503 : 200);
+        expect(await head.text()).toBe('');
+        expect((await get(`${path}?repo=x`)).status).toBe(400);
+        expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+        expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+        for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+        expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      }
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(spawnSyncSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+      // One read per GET above, including the bot_access_unavailable case.
+      expect(reads).toBe(8);
+    } finally {
+      spawnSpy.mockRestore();
+      spawnSyncSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+    }
+
+    // Without a collector both routes report pending, never empty data.
+    const bare = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot() });
+    try {
+      expect(await (await fetch(`${bare.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'bot_access_pending' } });
+      expect(await (await fetch(`${bare.url}/api/v1/cli-inventory`)).json()).toEqual(unavailableCliInventory('collection_pending'));
+    } finally { await bare.close(); }
+
+    // The serve collectors take the session only from the install record: HERDR_SESSION in the server
+    // environment neither fails Bot access at start nor stands in for a missing record.
+    const home = mkdtempSync(join(tmpdir(), 'rh-serve-notify-session-'));
+    const collecting = await startOperatorServer({ port: 0, notify_collector: true, collect_fleet_board: async () => snapshot(),
+      env: { ...process.env, REPO_HARNESS_HOME: home, HERDR_SESSION: 'pane-session' } });
+    try {
+      let notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
+      for (let attempt = 0; attempt < 200 && notify.error.code === 'notify_status_pending'; attempt++) {
+        await Bun.sleep(25);
+        notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
+      }
+      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `repo-harness herdr notify install --session <name>`.' });
+    } finally { await collecting.close(); rmSync(home, { recursive: true, force: true }); }
+  });
+
+  test('serves tests only from the collector cache, with typed unavailable states', async () => {
+    const tests: TestsSnapshotV1 = {
+      protocol: 1, kind: 'operator_tests', repository_id: 'repo-a', collected_at: '2026-10-27T00:00:00.000Z',
+      run: { id: 100, attempt: 1, head_sha: 'b'.repeat(40), created_at: '2026-10-25T21:35:21Z', conclusion: 'success', channel: 'daily_full' },
+      projection: { state: 'unavailable', reason: 'projection_missing' },
+      results: { state: 'ok', files: [{ file: 'tests/a.test.ts', duration_ms: 5, cases: [{ suite: null, name: 'works', result: 'passed', duration_ms: 1 }] }] },
+      repairs: { state: 'ok', issues: [] },
+    };
+    let cache: TestsRepositoryCache = { state: 'unavailable', reason: 'tests_pending' };
+    let reads = 0;
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_tests: id => { reads++; return id === 'repo-a' ? cache : { state: 'unavailable', reason: 'repository_not_found' }; } });
+    const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
+    try {
+      for (const [state, status] of [
+        [{ state: 'unavailable', reason: 'tests_pending' }, 503],
+        [{ state: 'unavailable', reason: 'no_daily_run' }, 503],
+        [{ state: 'unavailable', reason: 'artifacts_missing' }, 503],
+        [{ state: 'unavailable', reason: 'default_branch_unknown' }, 503],
+      ] as const) {
+        cache = state;
+        const response = await get('/api/v1/repositories/repo-a/tests');
+        expect(response.status).toBe(status);
+        expect(await response.json()).toEqual({ error: { code: state.reason, message: expect.any(String), next_action: expect.any(String) } });
+      }
+      expect((await get('/api/v1/repositories/repo-b/tests')).status).toBe(404);
+      cache = { state: 'ready', snapshot: tests };
+      const ready = await get('/api/v1/repositories/repo-a/tests');
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toEqual(tests);
+      cache = { state: 'ready', snapshot: { ...tests, results: { state: 'ok', files: [{ file: 'tests/a.test.ts', duration_ms: 5, cases: [{ suite: null, name: 'at /Users/someone/repo', result: 'passed', duration_ms: 1 }] }] } } };
+      const invalid = await get('/api/v1/repositories/repo-a/tests');
+      expect(invalid.status).toBe(503);
+      const invalidText = await invalid.text();
+      expect(JSON.parse(invalidText)).toMatchObject({ error: { code: 'tests_invalid' } });
+      expect(invalidText).not.toContain('/Users/');
+
+      const path = '/api/v1/repositories/repo-a/tests';
+      expect((await get(path, { method: 'HEAD' })).status).toBe(503);
+      expect((await get(`${path}?run=1`)).status).toBe(400);
+      expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+      expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+      expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+      // One cache read per admitted GET or HEAD above.
+      expect(reads).toBe(8);
+    } finally {
+      spawnSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+    }
+  });
+
+  test('serves the docs tree from the cache and a file from the resident reader, with typed refusals', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-docs-')));
+    const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    const gitIn = (...args: string[]) => spawnSync('git', args, { cwd: root, env: gitEnv, encoding: 'utf8' }).stdout.trim();
+    mkdirSync(join(root, 'docs'));
+    writeFileSync(join(root, 'docs/guide.md'), '# Guide\n');
+    writeFileSync(join(root, '.env'), 'TOKEN=secret\n');
+    gitIn('init', '-q', '-b', 'main'); gitIn('add', 'docs'); gitIn('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'seed');
+    gitIn('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    const commit = gitIn('rev-parse', 'HEAD');
+    const reader = new DocsReader({ root, ref: 'refs/remotes/origin/main', env: gitEnv });
+    reader.start();
+    const listing = await reader.refresh();
+    const tree: DocsTreeV1 = { protocol: 1, kind: 'operator_docs_tree', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
+      collected_at: '2026-10-27T00:00:00.000Z', files: listing.files };
+    let pending: DocsRepositoryCache | null = null;
+    const hung = { file: () => new Promise(() => {}) } as unknown as DocsReader;
+    const read_docs = (id: string): DocsRepositoryCache => pending ?? (id === 'repo-a' ? { state: 'ready', tree, reader }
+      : id === 'repo-b' ? { state: 'unavailable', reason: 'default_branch_unknown' }
+        : id === 'repo-ref' ? { state: 'unavailable', reason: 'ref_invalid' }
+        : id === 'repo-hung' ? { state: 'ready', tree: { ...tree, repository_id: 'repo-hung' }, reader: hung }
+          : { state: 'unavailable', reason: 'repository_not_found' });
+    const spawnSpy = spyOn(childProcess, 'spawn');
+    const execFileSpy = spyOn(childProcess, 'execFile');
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1_000, collect_fleet_board: async () => snapshot(), read_docs });
+    const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
+    const file = (repo: string, query: string, init?: RequestInit) => get(`/api/v1/repositories/${repo}/docs/file?${query}`, init);
+    const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
+    try {
+      const treeResponse = await get('/api/v1/repositories/repo-a/docs/tree');
+      expect(treeResponse.status).toBe(200);
+      expect(await treeResponse.json()).toEqual(tree);
+      const ok = await file('repo-a', 'path=docs/guide.md');
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
+        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n', worktree_differs: false });
+      const head = await file('repo-a', 'path=docs/guide.md', { method: 'HEAD' });
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe('');
+
+      for (const [query, status, expected] of [
+        ['path=.env', 403, 'path_denied'], ['path=docs/.env', 403, 'path_denied'], ['path=docs/../.env', 400, 'path_invalid'],
+        ['path=' + encodeURIComponent(join(root, 'docs/guide.md')), 400, 'path_invalid'], ['path=docs/none.md', 404, 'not_found'],
+        ['', 400, 'invalid_request'], ['path=docs/guide.md&path=docs/guide.md', 400, 'invalid_request'], ['path=docs/guide.md&ref=main', 400, 'invalid_request'],
+      ] as const) {
+        const response = await file('repo-a', query);
+        expect([query, response.status]).toEqual([query, status]);
+        const text = await response.text();
+        expect(JSON.parse(text).error.code).toBe(expected);
+        expect(text).not.toContain(root);
+      }
+      expect((await get('/api/v1/repositories/repo-a/docs/tree?ref=main')).status).toBe(400);
+      const missing = await get('/api/v1/repositories/repo-x/docs/tree');
+      expect([missing.status, await code(missing)]).toEqual([404, 'repository_not_found']);
+      const branch = await file('repo-b', 'path=docs/guide.md');
+      expect([branch.status, await code(branch)]).toEqual([503, 'default_branch_unknown']);
+      // Either name can make the ref unsafe; the next action names both and says renaming fixes only the remote.
+      const ref = (await (await get('/api/v1/repositories/repo-ref/docs/tree')).json()) as { error: { code: string; next_action: string } };
+      expect(ref.error.code).toBe('ref_invalid');
+      for (const words of ['remote', 'default branch name', 'fixes only a remote name']) expect(ref.error.next_action).toContain(words);
+
+      // One read in flight fills the cap; it times out, and a client that leaves frees its slot.
+      const slow = file('repo-hung', 'path=docs/guide.md');
+      await Bun.sleep(50);
+      const busy = await file('repo-a', 'path=docs/guide.md');
+      expect([busy.status, await code(busy)]).toEqual([503, 'docs_busy']);
+      const late = await slow;
+      expect([late.status, await code(late)]).toEqual([504, 'docs_timeout']);
+      const leaving = new AbortController();
+      const abandoned = file('repo-hung', 'path=docs/guide.md', { signal: leaving.signal }).catch(() => null);
+      await Bun.sleep(50);
+      leaving.abort();
+      await abandoned;
+      await Bun.sleep(50);
+      expect((await file('repo-a', 'path=docs/guide.md')).status).toBe(200);
+
+      for (const path of ['/api/v1/repositories/repo-a/docs/tree', '/api/v1/repositories/repo-a/docs/file?path=docs/guide.md']) {
+        expect((await get(path, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+        expect((await get(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+        for (const site of ['cross-site', 'same-site']) expect((await get(path, { headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
+        expect((await get(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      }
+      pending = { state: 'unavailable', reason: 'docs_pending' };
+      const notYet = await get('/api/v1/repositories/repo-a/docs/tree');
+      expect([notYet.status, await code(notYet)]).toEqual([503, 'docs_pending']);
+      // The resident process already ran: no GET started a process.
+      expect(spawnSpy).not.toHaveBeenCalled();
+      expect(execFileSpy).not.toHaveBeenCalled();
+    } finally {
+      spawnSpy.mockRestore();
+      execFileSpy.mockRestore();
+      await server.close();
+      reader.close();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -1257,6 +1511,14 @@ function architectureFiles(root: string, path = ''): Record<string, string> {
   }
   return result;
 }
+// macOS FSEvents can deliver a write seconds late, to a watch that started
+// after the write. Each event keeps the path of its write. Move a tree after
+// its setup writes, so a watch on the new path gets only the later writes.
+function watchedPath(path: string): string {
+  const moved = `${path}-watched`;
+  renameSync(path, moved);
+  return moved;
+}
 function architectureGit(scratch: string, slow = false) {
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   const log = join(scratch, 'git.jsonl');
@@ -1315,13 +1577,15 @@ function assertArchitectureArgv(records: ReturnType<typeof architectureArgv>): v
 }
 
 test('architecture GET and HEAD match CLI digests and keep closed argv with zero file changes', async () => {
-  const root = realpathSync(moduleRepository());
+  const fixture = realpathSync(moduleRepository());
   const scratch = mkdtempSync('/tmp/oui-b-argv-');
-  const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
-  const base = fixtureGit(root, ['rev-parse', 'HEAD']);
-  fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(root);
+  const base = fixtureGit(fixture, ['rev-parse', 'HEAD']);
+  fixtureWrite(fixture, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(fixture);
+  const root = watchedPath(fixture);
+  const registered = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const registry = { ids: registered.ids, home: watchedPath(registered.home) };
   const git = architectureGit(scratch);
-  const env = { ...process.env, ...registry.env, ...git.env };
+  const env = { ...process.env, REPO_HARNESS_HOME: registry.home, ...git.env };
   const before = architectureFiles(root), registryBefore = architectureFiles(registry.home);
   const changes: string[] = [];
   const watchers = [root, registry.home].map(path => watch(path, { recursive: true }, (kind, file) => changes.push(`${kind}:${file}`)));
@@ -1465,6 +1729,9 @@ test('architecture prompt keeps public absolute-path examples in CLI digest pari
 
 test('operator serve admits explicit native capture snapshots without Herdr or pipeline setup', async () => {
   const root = mkdtempSync(join(tmpdir(), 'rh-operator-native-cli-'));
+  // The server's own HOME: its background collectors (setup, Bot access, CLI inventory) and their
+  // child tools write caches there, so `root` holds only the two inputs and any write a GET makes.
+  const home = mkdtempSync(join(tmpdir(), 'rh-operator-native-home-'));
   const configPath = join(root, 'runtime.json'), sourcePath = join(root, 'capture.json');
   const heartbeat = new Date().toISOString();
   writeFileSync(sourcePath, JSON.stringify({ protocol: 'repo-harness.runtime-capture.v1', source_id: 'cli-source',
@@ -1476,7 +1743,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
   const sourceBefore = readFileSync(sourcePath), configBefore = readFileSync(configPath);
   const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
   const child = spawn(process.execPath, [cli, 'operator', 'serve', '--port', '0', '--runtime-status-config', configPath], {
-    cwd: root, env: { ...process.env, HOME: root, TMPDIR: root, REPO_HARNESS_HOME: root }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: home, env: { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '';
   child.stdout.on('data', bytes => { stdout += bytes.toString(); }); child.stderr.on('data', bytes => { stderr += bytes.toString(); });
@@ -1493,7 +1760,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
-  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } rmSync(root, { recursive: true, force: true }); }
+  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home]) rmSync(path, { recursive: true, force: true }); }
 });
 
 test('session discovery is bounded read-only transport with a closed repository selector', async () => {

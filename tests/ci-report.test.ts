@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isCiRepairIssueBody } from '../src/core/operator/tests';
 import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
@@ -81,6 +82,8 @@ test.each(['failure', 'cancelled', 'timed_out'])('completed %s run keys one read
   expect(first.repairs).toEqual([{ key: 'ci-repair:job:Daily test', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
   const persisted = JSON.parse(readFileSync(join(f.root, 'repair-issues.json'), 'utf8'));
   expect(persisted).toHaveLength(1); expect(persisted[0].body).toContain(f.after);
+  // The operator tests route finds open repairs with the same rule the writer keys them by.
+  expect(isCiRepairIssueBody(persisted[0].body)).toBe(true);
   expect(first.unresolved_repairs?.map(issue => issue.issue_number)).toEqual([1]);
   const second = await reportCI('test/repo', 12, f.api);
   expect(second.repairs[0]?.delivery).toBe('reused'); expect(f.issues).toHaveLength(1);
@@ -134,6 +137,7 @@ test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', ev
   };
   const first = await watchDailyCI('test/repo', new Date('2026-10-03T23:30:00Z'), api, '0 19 * * *');
   expect(first.delivery).toBe('created'); expect(first.sha).toBe('a'.repeat(40));
+  expect(isCiRepairIssueBody(issues[0].body)).toBe(true);
   expect(first.observation).toBe(runs.length ? 'deadline-exceeded' : 'not-started');
   const late = await watchDailyCI('test/repo', new Date('2026-10-04T00:05:00Z'), api, '0 19 * * *');
   expect(late.delivery).toBe('reused'); expect(late.date).toBe('2026-10-03'); expect(issues).toHaveLength(1);

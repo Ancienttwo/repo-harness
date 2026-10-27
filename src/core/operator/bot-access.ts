@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import type { NotifyPresence, NotifyStatusV1 } from './notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_SESSION_REASONS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifySessionReason, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -107,15 +107,17 @@ export interface BotAccessSnapshotV1 {
   readonly registry: { readonly state: 'ok'; readonly authorization_revision: number; readonly registry_revision: string; readonly repos: readonly RegistryRepoProjection[] }
     | BotAccessUnavailable<'registry_unavailable' | 'registry_invalid'>;
   readonly herdr: {
+    readonly state: 'ok';
     readonly session: string;
     readonly status: { readonly state: 'ok'; readonly value: HerdrStatusProjection } | BotAccessUnavailable<'herdr_status_failed' | 'herdr_status_invalid'>;
     readonly snapshot: { readonly state: 'ok'; readonly value: HerdrSnapshotProjection } | BotAccessUnavailable<'herdr_not_running' | 'herdr_version_mismatch' | 'herdr_snapshot_failed'>;
-  };
+  } | BotAccessUnavailable<NotifySessionReason>;
   readonly notify: {
     readonly state: 'ok';
     readonly status: NotifyStatusV1;
     readonly channels: Readonly<Record<'webhook' | 'slack' | 'discord' | 'telegram', NotifyPresence>>;
-  } | BotAccessUnavailable<'notify_status_failed'>;
+    readonly deliveries: NotifyChannelDeliveriesV1;
+  } | BotAccessUnavailable<'notify_status_pending' | NotifyUnavailableReason>;
 }
 
 const VERSION_TEXT = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
@@ -288,4 +290,178 @@ export function projectHerdrSnapshot(value: unknown, directory: BotDirectory): H
     panes: (snapshot.panes as unknown[]).length,
     agents: agents.sort((a, b) => a.pane_id.localeCompare(b.pane_id)),
   };
+}
+
+const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u;
+const HERDR_REVISION_TEXT = /^[0-9a-f]{40}$/u;
+const SLACK_BOT_ID_TEXT = /^[A-Z][A-Z0-9]{2,31}$/u;
+const BOT_HOST_TEXT = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
+const REPO_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const REVISION_DIGEST = /^sha256:[0-9a-f]{64}$/u;
+const DELIVERY_STATES: readonly NotifyDeliveryState[] = ['succeeded', 'failed', 'unsupported', 'unavailable', 'missing'];
+
+/**
+ * The one strict decoder of `BotAccessSnapshotV1`, for the server before it
+ * sends the cache and for the browser before it renders. Every object must have
+ * exactly its fields, and every string its grammar; anything else throws.
+ */
+export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
+  const fail = (what: string): never => { throw new Error(`bot access invalid: ${what}`); };
+  const obj = (v: unknown, keys: readonly string[], what: string): Json => {
+    const record = object(v);
+    if (!record || Object.keys(record).sort().join(',') !== [...keys].sort().join(',')) return fail(what);
+    return record;
+  };
+  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
+  const match = (v: unknown, grammar: RegExp, what: string): string => (typeof v === 'string' && grammar.test(v) ? v : fail(what));
+  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
+  const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T => (values.includes(v as T) ? v as T : fail(what));
+  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
+  const whole = (v: unknown, what: string): number => (integer(v) ?? fail(what));
+  /** A section is `{state:'ok', ...fields}`, one of `others`, or `{state:'unavailable', reason}` with an allowed reason. */
+  const section = (v: unknown, what: string, fields: readonly string[], reasons: readonly string[], others: readonly string[] = []): Json => {
+    const state = object(v)?.state;
+    if (state === 'unavailable') { oneOf(obj(v, ['state', 'reason'], what).reason, reasons, `${what} reason`); return {}; }
+    if (typeof state === 'string' && others.includes(state)) { obj(v, ['state'], what); return {}; }
+    return state === 'ok' ? obj(v, ['state', ...fields], what) : fail(`${what} state`);
+  };
+  const attribution = (v: unknown, what: string): void => {
+    const state = object(v)?.state;
+    if (state === 'registered') match(obj(v, ['state', 'bot_id'], what).bot_id, BOT_ID_TEXT, what);
+    else if (state === 'unregistered' || state === 'unavailable') obj(v, ['state'], what);
+    else fail(what);
+  };
+
+  const v = obj(value, ['protocol', 'kind', 'observed_at', 'bots', 'mcp', 'oauth', 'registry', 'herdr', 'notify'], 'snapshot');
+  if (v.protocol !== 1 || v.kind !== 'operator_bot_access') fail('protocol');
+  match(v.observed_at, ISO_TIME, 'observed_at');
+
+  const bots = section(v.bots, 'bots', ['bots'], ['bot_registry_invalid']);
+  if (bots.bots !== undefined) {
+    for (const raw of array(bots.bots, 'bots')) {
+      const bot = obj(raw, ['bot_id', 'name', 'host', 'mcp_client_id', 'slack_bot_id', 'herdr_agent'], 'bot');
+      match(bot.bot_id, BOT_ID_TEXT, 'bot_id');
+      if (typeof bot.name !== 'string' || bot.name.length === 0 || bot.name.length > 64 || bot.name.trim() !== bot.name || /[\x00-\x1f\x7f]/u.test(bot.name)) fail('bot name');
+      match(bot.host, BOT_HOST_TEXT, 'bot host');
+      nullable(bot.mcp_client_id, x => match(x, CLIENT_ID_TEXT, 'bot mcp_client_id'));
+      nullable(bot.slack_bot_id, x => match(x, SLACK_BOT_ID_TEXT, 'bot slack_bot_id'));
+      nullable(bot.herdr_agent, x => match(x, HERDR_AGENT_TEXT, 'bot herdr_agent'));
+    }
+  }
+
+  const mcp = section(v.mcp, 'mcp', ['doctor'], ['mcp_doctor_failed', 'mcp_doctor_timeout', 'mcp_doctor_invalid']);
+  if (mcp.doctor !== undefined) {
+    const d = obj(mcp.doctor, ['status', 'package_version', 'config_version_ok', 'auth_mode', 'auth_configured', 'capabilities', 'registered_repo_count',
+      'allowed_root_count', 'unsafe_allowed_root_count', 'legacy_full_disk_read', 'authorization_revision', 'codex', 'chatgpt'], 'doctor');
+    oneOf(d.status, ['ready_local', 'ready_user', 'not_adopted'] as const, 'doctor status');
+    nullable(d.package_version, x => match(x, VERSION_TEXT, 'doctor package_version'));
+    oneOf(d.auth_mode, ['oauth', 'bearer', 'url-token', 'missing'] as const, 'doctor auth_mode');
+    for (const key of ['config_version_ok', 'auth_configured', 'legacy_full_disk_read'] as const) bool(d[key], `doctor ${key}`);
+    for (const key of ['registered_repo_count', 'allowed_root_count', 'unsafe_allowed_root_count'] as const) whole(d[key], `doctor ${key}`);
+    nullable(d.authorization_revision, x => whole(x, 'doctor authorization_revision'));
+    const capabilities = obj(d.capabilities, ['workspace_reader', 'workflow_planner', 'workflow_executor', 'workspace_coder'], 'doctor capabilities');
+    for (const flagValue of Object.values(capabilities)) bool(flagValue, 'doctor capability');
+    for (const flagValue of Object.values(obj(d.codex, ['cli_available', 'configured'], 'doctor codex'))) bool(flagValue, 'doctor codex');
+    for (const flagValue of Object.values(obj(d.chatgpt, ['server_name_configured', 'public_endpoint_configured'], 'doctor chatgpt'))) bool(flagValue, 'doctor chatgpt');
+  }
+
+  const oauth = section(v.oauth, 'oauth', ['clients', 'unreadable_clients'], ['oauth_unreadable'], ['missing']);
+  if (oauth.clients !== undefined) {
+    whole(oauth.unreadable_clients, 'oauth unreadable_clients');
+    for (const raw of array(oauth.clients, 'oauth clients')) {
+      const client = obj(raw, ['client_id', 'bot', 'issued_at', 'profiles', 'expires_at'], 'oauth client');
+      match(client.client_id, CLIENT_ID_TEXT, 'client_id');
+      attribution(client.bot, 'client bot');
+      nullable(client.issued_at, x => match(x, ISO_TIME, 'client issued_at'));
+      nullable(client.expires_at, x => match(x, ISO_TIME, 'client expires_at'));
+      for (const profile of array(client.profiles, 'client profiles')) match(profile, PROFILE_TEXT, 'client profile');
+    }
+  }
+
+  const registry = section(v.registry, 'registry', ['authorization_revision', 'registry_revision', 'repos'], ['registry_unavailable', 'registry_invalid']);
+  if (registry.repos !== undefined) {
+    whole(registry.authorization_revision, 'registry authorization_revision');
+    match(registry.registry_revision, REVISION_DIGEST, 'registry_revision');
+    for (const raw of array(registry.repos, 'registry repos')) {
+      const repo = obj(raw, ['repo_id', 'label', 'access_mode', 'last_audit'], 'registry repo');
+      match(repo.repo_id, REPO_ID_TEXT, 'repo_id');
+      nullable(repo.label, x => match(x, NAME_TEXT, 'repo label'));
+      oneOf(repo.access_mode, ['read_only', 'read_write'] as const, 'repo access_mode');
+      const audit = section(repo.last_audit, 'last_audit', ['entry'], ['audit_unreadable'], ['missing']);
+      if (audit.entry !== undefined) {
+        const entry = obj(audit.entry, ['at', 'tool', 'status', 'bot'], 'audit entry');
+        match(entry.at, ISO_TIME, 'audit at');
+        match(entry.tool, TOOL_TEXT, 'audit tool');
+        oneOf(entry.status, ['ok', 'blocked', 'failed'] as const, 'audit status');
+        attribution(entry.bot, 'audit bot');
+      }
+    }
+  }
+
+  // Without an install record there is no session to ask, so the section is unavailable as a whole.
+  const herdr = section(v.herdr, 'herdr', ['session', 'status', 'snapshot'], NOTIFY_SESSION_REASONS);
+  if (herdr.session !== undefined) {
+    match(herdr.session, NAME_TEXT, 'herdr session');
+    const status = section(herdr.status, 'herdr status', ['value'], ['herdr_status_failed', 'herdr_status_invalid']);
+    if (status.value !== undefined) {
+      const value = obj(status.value, ['client', 'server'], 'herdr status value');
+      const client = obj(value.client, ['version', 'protocol'], 'herdr client');
+      nullable(client.version, x => match(x, VERSION_TEXT, 'herdr client version'));
+      nullable(client.protocol, x => whole(x, 'herdr client protocol'));
+      const server = obj(value.server, ['status', 'version', 'restart_needed'], 'herdr server');
+      const running = oneOf(server.status, ['running', 'not_running', 'unknown'] as const, 'herdr server status') === 'running';
+      bool(server.restart_needed, 'herdr restart_needed');
+      if ((server.version === null) === running) fail('herdr server version');
+      nullable(server.version, x => {
+        const version = obj(x, ['state', 'expected', 'actual'], 'herdr version');
+        oneOf(version.state, ['aligned', 'mismatch'] as const, 'herdr version state');
+        const expected = obj(version.expected, ['version', 'protocol', 'revision'], 'herdr expected');
+        match(expected.version, VERSION_TEXT, 'herdr expected version');
+        whole(expected.protocol, 'herdr expected protocol');
+        match(expected.revision, HERDR_REVISION_TEXT, 'herdr expected revision');
+        const actual = obj(version.actual, ['version', 'protocol'], 'herdr actual');
+        nullable(actual.version, y => match(y, VERSION_TEXT, 'herdr actual version'));
+        nullable(actual.protocol, y => whole(y, 'herdr actual protocol'));
+        return version;
+      });
+    }
+    const snapshot = section(herdr.snapshot, 'herdr snapshot', ['value'], ['herdr_not_running', 'herdr_version_mismatch', 'herdr_snapshot_failed']);
+    if (snapshot.value !== undefined) {
+      const value = obj(snapshot.value, ['workspaces', 'tabs', 'panes', 'agents'], 'herdr snapshot value');
+      for (const key of ['workspaces', 'tabs', 'panes'] as const) whole(value[key], `herdr ${key}`);
+      for (const raw of array(value.agents, 'herdr agents')) {
+        const agent = obj(raw, ['pane_id', 'agent', 'name', 'agent_status', 'bot'], 'herdr agent');
+        match(agent.pane_id, HERDR_ID_TEXT, 'herdr pane_id');
+        nullable(agent.agent, x => match(x, NAME_TEXT, 'herdr agent kind'));
+        nullable(agent.name, x => match(x, HERDR_AGENT_TEXT, 'herdr agent name'));
+        oneOf(agent.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const, 'herdr agent_status');
+        attribution(agent.bot, 'herdr agent bot');
+      }
+    }
+  }
+
+  const notify = section(v.notify, 'notify', ['status', 'channels', 'deliveries'], ['notify_status_pending', ...NOTIFY_UNAVAILABLE_REASONS]);
+  if (notify.status !== undefined) {
+    // Checked in place, like every other section: the decoder returns `value`, so a key it does not name must fail here.
+    const status = obj(notify.status, ['protocol', 'kind', 'plugin_id', 'linked', 'enabled', 'config', 'last_delivery', 'observed_at'], 'notify status');
+    if (status.protocol !== 1) fail('notify status protocol');
+    oneOf(status.kind, ['operator_notify_status'] as const, 'notify status kind');
+    oneOf(status.plugin_id, [NOTIFY_PLUGIN_ID] as const, 'notify plugin_id');
+    oneOf(status.linked, ['linked', 'missing'] as const, 'notify linked');
+    oneOf(status.enabled, ['enabled', 'disabled', 'missing'] as const, 'notify enabled');
+    for (const presence of Object.values(obj(status.config, NOTIFY_STATUS_KEYS, 'notify config'))) oneOf(presence, ['configured', 'missing'] as const, 'notify config presence');
+    const last = obj(status.last_delivery, ['at', 'result'], 'notify last_delivery');
+    nullable(last.at, x => match(x, ISO_TIME, 'notify last_delivery at'));
+    oneOf(last.result, DELIVERY_STATES, 'notify last_delivery result');
+    match(status.observed_at, ISO_TIME, 'notify observed_at');
+    const channels = obj(notify.channels, NOTIFY_CHANNELS, 'notify channels');
+    for (const presence of Object.values(channels)) oneOf(presence, ['configured', 'missing'] as const, 'notify channel');
+    const deliveries = obj(notify.deliveries, NOTIFY_CHANNELS, 'notify deliveries');
+    for (const raw of Object.values(deliveries)) {
+      const delivery = obj(raw, ['at', 'result'], 'notify delivery');
+      nullable(delivery.at, x => match(x, ISO_TIME, 'notify delivery at'));
+      oneOf(delivery.result, DELIVERY_STATES, 'notify delivery result');
+    }
+  }
+  return value as BotAccessSnapshotV1;
 }

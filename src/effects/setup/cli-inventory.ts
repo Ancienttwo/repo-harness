@@ -48,11 +48,13 @@ function probeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
-export function createCliProbe(env: NodeJS.ProcessEnv): CliProbe {
+/** An aborted `signal` kills the running probe and makes every later one return null at once. */
+export function createCliProbe(env: NodeJS.ProcessEnv, signal?: AbortSignal): CliProbe {
   const childEnv = probeEnv(env);
   return argv => new Promise((settle) => {
+    if (signal?.aborted) { settle(null); return; }
     execFile(argv[0]!, argv.slice(1), {
-      env: childEnv, timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_STDOUT_LIMIT, windowsHide: true, encoding: 'utf8',
+      env: childEnv, timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_STDOUT_LIMIT, windowsHide: true, encoding: 'utf8', signal, killSignal: 'SIGKILL',
     }, (error, stdout) => settle(error ? null : stdout));
   });
 }
@@ -83,11 +85,49 @@ interface ProbeContext {
   readonly home: string;
 }
 
+/**
+ * A manager that is present but whose listing failed or did not parse. The
+ * cycle fails, so the collector keeps its last good data as `stale` instead
+ * of a `ready` list without that manager's tools.
+ */
+export class CliListingError extends Error {
+  constructor(readonly manager: string) {
+    super(`cli_listing_failed: ${manager}`);
+    this.name = 'CliListingError';
+  }
+}
+
+/** True when `name` is an executable file in a PATH directory. A probe that returns null cannot tell "absent" from "failed". */
+async function onPath(name: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  for (const dir of (env.PATH ?? '').split(':')) {
+    if (!isAbsolute(dir)) continue;
+    try {
+      const target = await stat(join(dir, name));
+      if (target.isFile() && (target.mode & 0o111) !== 0) return true;
+    } catch { /* not in this directory */ }
+  }
+  return false;
+}
+
+/** The parsed listing of a present manager; a missing or unparsable one fails the cycle. */
+async function listing<T>(context: ProbeContext, manager: string, argv: readonly string[], parse: (text: string) => T | null): Promise<T | null> {
+  const text = await context.probe(argv);
+  const parsed = text === null ? null : parse(text);
+  if (parsed !== null) return parsed;
+  if (await onPath(manager, context.env)) throw new CliListingError(manager);
+  return null;
+}
+const jsonObject = (text: string): Record<string, unknown> | null => {
+  const value = json(text);
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+};
+
 /** Formulae and casks. A formula not installed on request is a dependency: it claims its files and is not listed. */
 async function brewPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
   const prefix = str(await probe(['brew', '--prefix']));
-  const info = record(json(await probe(['brew', 'info', '--json=v2', '--installed'])));
   if (prefix === null) return [];
+  const info = jsonObject(await probe(['brew', 'info', '--json=v2', '--installed']) ?? '');
+  if (info === null || !Array.isArray(info.formulae)) throw new CliListingError('brew');
   const formulae = (Array.isArray(info.formulae) ? info.formulae : []).map(record).flatMap((f): CliPackageRecord[] => {
     const installed = (Array.isArray(f.installed) ? f.installed : []).map(record);
     const name = str(f.name);
@@ -113,14 +153,18 @@ async function brewPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]
 
 async function npmPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
   const root = str(await probe(['npm', 'root', '-g']));
-  const list = record(json(await probe(['npm', 'ls', '-g', '--json', '--depth=0'])));
   if (root === null) return [];
+  const list = jsonObject(await probe(['npm', 'ls', '-g', '--json', '--depth=0']) ?? '');
+  if (list === null) throw new CliListingError('npm');
   return Object.keys(record(list.dependencies)).map(name => nodePackage('npm', name, join(root, name)));
 }
 
-async function pnpmPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
-  const list = json(await probe(['pnpm', 'ls', '-g', '--json', '--depth=0']));
-  return (Array.isArray(list) ? list : []).map(record).flatMap(project => Object.entries(record(project.dependencies)).flatMap(([name, dep]) => {
+async function pnpmPackages(context: ProbeContext): Promise<CliPackageRecord[]> {
+  const list = await listing(context, 'pnpm', ['pnpm', 'ls', '-g', '--json', '--depth=0'], text => {
+    const value = json(text);
+    return Array.isArray(value) ? value : null;
+  });
+  return (list ?? []).map(record).flatMap(project => Object.entries(record(project.dependencies)).flatMap(([name, dep]) => {
     const path = str(record(dep).path);
     return path === null ? [] : [nodePackage('pnpm', name, path)];
   }));
@@ -132,8 +176,8 @@ async function bunPackages({ env, home }: ProbeContext): Promise<CliPackageRecor
   return Object.keys(record(readPackageJson(global).dependencies)).map(name => nodePackage('bun', name, join(global, 'node_modules', name)));
 }
 
-async function pipxPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
-  const venvs = record(record(json(await probe(['pipx', 'list', '--json']))).venvs);
+async function pipxPackages(context: ProbeContext): Promise<CliPackageRecord[]> {
+  const venvs = record((await listing(context, 'pipx', ['pipx', 'list', '--json'], jsonObject))?.venvs);
   return Object.entries(venvs).flatMap(([name, venv]): CliPackageRecord[] => {
     const main = record(record(record(venv).metadata).main_package);
     const app = str(record((Array.isArray(main.app_paths) ? main.app_paths : [])[0]).__Path__);
@@ -144,16 +188,18 @@ async function pipxPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]
 
 async function uvPackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
   const dir = str(await probe(['uv', 'tool', 'dir']));
+  if (dir === null) return [];
   const list = await probe(['uv', 'tool', 'list']);
-  if (dir === null || list === null) return [];
+  if (list === null) throw new CliListingError('uv');
   return list.split('\n').flatMap((line): CliPackageRecord[] => {
     const match = /^([A-Za-z0-9][A-Za-z0-9._-]*) v(\S+)/u.exec(line);
     return match === null ? [] : [{ source: 'uv', dependency: false, name: match[1]!, version: match[2]!, roots: [join(dir, match[1]!)], files: [], urls: [], deprecated: false }];
   });
 }
 
-async function cargoPackages({ probe, env, home }: ProbeContext): Promise<CliPackageRecord[]> {
-  const list = await probe(['cargo', 'install', '--list']);
+async function cargoPackages(context: ProbeContext): Promise<CliPackageRecord[]> {
+  const { env, home } = context;
+  const list = await listing(context, 'cargo', ['cargo', 'install', '--list'], text => text);
   if (list === null) return [];
   const bin = join(env.CARGO_HOME || join(home, '.cargo'), 'bin');
   const records: { name: string; version: string; files: string[] }[] = [];
@@ -165,8 +211,8 @@ async function cargoPackages({ probe, env, home }: ProbeContext): Promise<CliPac
   return records.map(r => ({ source: 'cargo', dependency: false, name: r.name, version: r.version, roots: [], files: r.files, urls: [], deprecated: false }));
 }
 
-async function misePackages({ probe }: ProbeContext): Promise<CliPackageRecord[]> {
-  const tools = record(json(await probe(['mise', 'ls', '--installed', '--json'])));
+async function misePackages(context: ProbeContext): Promise<CliPackageRecord[]> {
+  const tools = record(await listing(context, 'mise', ['mise', 'ls', '--installed', '--json'], jsonObject));
   return Object.entries(tools).flatMap(([name, versions]) => (Array.isArray(versions) ? versions : []).map(record).flatMap((item): CliPackageRecord[] => {
     const path = str(item.install_path);
     return path === null ? [] : [{ source: 'mise', dependency: false, name, version: str(item.version), roots: [path], files: [], urls: [], deprecated: false }];
@@ -208,10 +254,14 @@ export async function scanPath(pathValue: string): Promise<CliPathExecutable[]> 
   return out;
 }
 
-/** Newest agent use per command name from hook telemetry `command_names`, inside the unused window. */
-export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: number): Map<string, number> {
-  const since = nowMs - CLI_UNUSED_DAYS * 86_400_000;
+/**
+ * Newest agent use per command name from hook telemetry `command_names`,
+ * inside the unused window, and the time of the oldest such record.
+ */
+export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: number): { readonly last_used: Map<string, number>; readonly since: number | null } {
+  const windowStart = nowMs - CLI_UNUSED_DAYS * 86_400_000;
   const usage = new Map<string, number>();
+  let oldest: number | null = null;
   for (const source of sources) {
     let lines: Iterable<string> | null;
     try { lines = readSegmentedLog(join(source.repo_root, source.telemetry_path), source.repo_root); } catch { continue; }
@@ -220,11 +270,13 @@ export function readCommandUsage(sources: readonly CliUsageSource[], nowMs: numb
       if (!line.includes('"command_names":["')) continue;
       const r = record(json(line));
       const at = typeof r.started_at === 'string' ? Date.parse(r.started_at) : Number.NaN;
-      if (!Number.isFinite(at) || at < since || at > nowMs || !Array.isArray(r.command_names)) continue;
+      if (!Number.isFinite(at) || at > nowMs || !Array.isArray(r.command_names)) continue;
+      if (oldest === null || at < oldest) oldest = at;
+      if (at < windowStart) continue;
       for (const name of r.command_names) if (typeof name === 'string' && at > (usage.get(name) ?? -Infinity)) usage.set(name, at);
     }
   }
-  return usage;
+  return { last_used: usage, since: oldest };
 }
 
 /** Bytes under `root`; null past the entry budget or when unreadable. */
@@ -269,7 +321,12 @@ export interface CliInventoryOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly probe?: CliProbe;
   readonly seed?: CliSeedCatalog;
-  readonly usage_sources?: readonly CliUsageSource[];
+  /**
+   * The repositories whose hook telemetry gives agent use, read once per
+   * cycle so a registry change applies without a restart. A throw fails the
+   * cycle: without a source, no tool is known to be unused.
+   */
+  readonly usage_sources?: () => readonly CliUsageSource[];
   readonly cache?: CliInventoryCache;
   readonly now?: () => number;
 }
@@ -307,13 +364,15 @@ export async function collectCliInventory(options: CliInventoryOptions = {}): Pr
     if (bytes !== null) sizes.set(root, bytes);
   }
 
+  const usage = readCommandUsage(options.usage_sources?.() ?? [], now);
   const input = {
     collected_at: new Date(now).toISOString(),
     home,
     packages,
     path_executables: pathExecutables,
     seed: options.seed ?? CLI_SEED,
-    last_used: readCommandUsage(options.usage_sources ?? [], now),
+    last_used: usage.last_used,
+    usage_since: usage.since,
     sizes,
   };
   const local = projectCliInventory({ ...input, github: new Map(), registry_deprecated: new Map() });
@@ -357,13 +416,16 @@ export interface CliInventoryCollectorHandle {
  */
 export function startCliInventoryCollector(options: CliInventoryOptions & { readonly interval_ms?: number } = {}): CliInventoryCollectorHandle {
   const cache = options.cache ?? createCliInventoryCache();
+  // Closing aborts the probes, so a server shutdown does not wait for a cycle of network lookups.
+  const abort = new AbortController();
+  const probe = options.probe ?? createCliProbe(options.env ?? process.env, abort.signal);
   let current = unavailableCliInventory('collection_pending');
   let lastGood: CliInventorySnapshotV1 | null = null;
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
-    inflight = collectCliInventory({ ...options, cache })
+    inflight = collectCliInventory({ ...options, cache, probe })
       .then((snapshot) => {
         if (closed) return;
         lastGood = snapshot;
@@ -387,6 +449,7 @@ export function startCliInventoryCollector(options: CliInventoryOptions & { read
     close: async () => {
       closed = true;
       clearTimeout(timer);
+      abort.abort();
       await inflight;
     },
   });

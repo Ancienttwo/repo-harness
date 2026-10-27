@@ -3,17 +3,19 @@
 //
 // Sources: `repo-harness mcp doctor --json` (never `--live`, which registers
 // and saves an OAuth client), the Bot registry, the MCP OAuth token store, the repository
-// registry, the newest MCP audit row of each registered repository, `herdr
-// status --json` and the `session.snapshot` socket method, and the notify
-// plugin status. Every source passes through a projection in
-// `core/operator/bot-access`, so the cache holds no secret, absolute path,
-// stderr or environment value. Nothing here writes: the OAuth store and the
+// registry, the newest MCP audit row of each registered repository, the Herdr
+// notify install record (the session), `herdr status --json` and the
+// `session.snapshot` socket method, and the notify
+// collector's cache (that collector owns the notify probes). Every source
+// passes through a projection in `core/operator/bot-access`, so the cache
+// holds no secret, absolute path, stderr or environment value. Nothing here writes: the OAuth store and the
 // segmented audit log are read directly, without their writers' load or lock.
 
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, parse } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -31,9 +33,11 @@ import {
   type RegistryRepoProjection,
 } from '../../core/operator/bot-access';
 import { readBotRegistry } from '../bot-registry';
-import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError, repoHarnessHome } from '../repo-registry';
+import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
+import { repoHarnessHome } from '../repo-harness-home';
+import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
 import { herdrVersionCheck, requestHerdrObservation, type HerdrJson } from '../terminal/herdr-observation';
-import { readNotifyChannelStatus, type NotifyChannelStatus, type NotifyStatusReadInput } from './notify-status';
+import type { NotifyCacheV1 } from './notify-collector';
 
 const runFile = promisify(execFile);
 
@@ -43,6 +47,13 @@ const STDOUT_LIMIT = 4 * 1024 * 1024;
 const OAUTH_STORE_LIMIT = 4 * 1024 * 1024;
 const AUDIT_TAIL_BYTES = 64 * 1024;
 const SNAPSHOT_DEADLINE_MS = 5_000;
+
+/**
+ * Working directory of every child. The doctor reports on the repository that
+ * contains its cwd; the root is no repository, so the result is the user-scope
+ * MCP setup, whatever directory started the server.
+ */
+export const BOT_ACCESS_CWD = parse(homedir()).root;
 
 /** The store `McpOAuthTokenStore` persists and the log `writeMcpAuditEntry` appends; tests pin both against their writers. */
 export const MCP_OAUTH_TOKEN_STORE_FILE = 'mcp.oauth-tokens.json';
@@ -71,14 +82,14 @@ export const runBotAccessCommand: BotAccessCommand = async (file, args, options)
 
 export interface BotAccessReadInput {
   readonly env?: NodeJS.ProcessEnv;
-  readonly cwd?: string;
-  /** The Herdr session that runs the Bots and the notify plugin. Defaults to the session Herdr itself selects. */
-  readonly session?: string;
   readonly now?: () => Date;
   readonly timeout_ms?: number;
   readonly run_command?: BotAccessCommand;
-  readonly read_notify?: (input: NotifyStatusReadInput) => Promise<NotifyChannelStatus>;
+  /** The notify collector cache. That collector owns the notify probes; this one runs none. */
+  readonly read_notify: () => NotifyCacheV1;
 }
+
+type SectionInput = Required<Pick<BotAccessReadInput, 'env' | 'timeout_ms' | 'run_command'>> & { readonly cwd: string };
 
 function withoutHerdr(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env };
@@ -86,7 +97,7 @@ function withoutHerdr(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-async function mcpSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cwd' | 'timeout_ms' | 'run_command'>>): Promise<BotAccessSnapshotV1['mcp']> {
+async function mcpSection(input: SectionInput): Promise<BotAccessSnapshotV1['mcp']> {
   const env: NodeJS.ProcessEnv = { ...input.env, NO_COLOR: '1' };
   delete env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE;
   const result = await input.run_command(process.execPath, MCP_DOCTOR_ARGV, { cwd: input.cwd, env, timeout_ms: input.timeout_ms });
@@ -182,80 +193,102 @@ async function registrySection(env: NodeJS.ProcessEnv, directory: BotDirectory):
   return { state: 'ok', authorization_revision: snapshot.authorizationRevision, registry_revision: snapshot.registryRevision, repos };
 }
 
-async function herdrSection(input: Required<Pick<BotAccessReadInput, 'env' | 'cwd' | 'timeout_ms' | 'run_command'>> & { readonly session: string; readonly directory: BotDirectory }): Promise<BotAccessSnapshotV1['herdr']> {
-  const result = await input.run_command('herdr', ['--session', input.session, 'status', '--json'], {
+/** The Herdr session is the one `herdr notify install` recorded; without a record nothing is asked. */
+async function herdrSection(input: SectionInput & { readonly directory: BotDirectory }): Promise<BotAccessSnapshotV1['herdr']> {
+  const record = await readNotifyInstallSession(input.env);
+  if (record.state === 'missing') return { state: 'unavailable', reason: 'notify_session_missing' };
+  if (record.state === 'invalid') return { state: 'unavailable', reason: 'notify_session_invalid' };
+  const { session } = record;
+  const result = await input.run_command('herdr', ['--session', session, 'status', '--json'], {
     cwd: input.cwd, env: withoutHerdr(input.env), timeout_ms: input.timeout_ms,
   });
-  if (!result.ok) return { session: input.session, status: { state: 'unavailable', reason: 'herdr_status_failed' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
+  if (!result.ok) return { state: 'ok', session, status: { state: 'unavailable', reason: 'herdr_status_failed' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
   let raw: HerdrJson, value;
   try {
     raw = JSON.parse(result.stdout) as HerdrJson;
     value = projectHerdrStatus(raw, herdrVersionCheck);
   } catch {
-    return { session: input.session, status: { state: 'unavailable', reason: 'herdr_status_invalid' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
+    return { state: 'ok', session, status: { state: 'unavailable', reason: 'herdr_status_invalid' }, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
   }
   const status = { state: 'ok', value } as const;
-  if (value.server.status !== 'running') return { session: input.session, status, snapshot: { state: 'unavailable', reason: 'herdr_not_running' } };
+  if (value.server.status !== 'running') return { state: 'ok', session, status, snapshot: { state: 'unavailable', reason: 'herdr_not_running' } };
   // An unpinned server's snapshot schema is unverified, so it is not read.
-  if (value.server.version?.state !== 'aligned') return { session: input.session, status, snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' } };
+  if (value.server.version?.state !== 'aligned') return { state: 'ok', session, status, snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' } };
   // Herdr names the socket of the session it answered for. The path stays inside this function.
   const socket = (raw.server as HerdrJson).socket;
-  if (typeof socket !== 'string' || !isAbsolute(socket)) return { session: input.session, status, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
+  if (typeof socket !== 'string' || !isAbsolute(socket)) return { state: 'ok', session, status, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
   try {
     const reply = await requestHerdrObservation({ socket_path: socket, deadline_ms: SNAPSHOT_DEADLINE_MS }, 'session.snapshot');
     if (reply.type !== 'session_snapshot') throw new Error('herdr_snapshot_type');
-    return { session: input.session, status, snapshot: { state: 'ok', value: projectHerdrSnapshot(reply.snapshot, input.directory) } };
+    return { state: 'ok', session, status, snapshot: { state: 'ok', value: projectHerdrSnapshot(reply.snapshot, input.directory) } };
   } catch {
-    return { session: input.session, status, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
+    return { state: 'ok', session, status, snapshot: { state: 'unavailable', reason: 'herdr_snapshot_failed' } };
   }
 }
 
-async function notifySection(read: NonNullable<BotAccessReadInput['read_notify']>, env: NodeJS.ProcessEnv, session: string, now: Date): Promise<BotAccessSnapshotV1['notify']> {
-  try {
-    const { status, channels } = await read({ env, session, now });
-    return { state: 'ok', status, channels };
-  } catch {
-    return { state: 'unavailable', reason: 'notify_status_failed' };
-  }
+function notifySection(cache: NotifyCacheV1): BotAccessSnapshotV1['notify'] {
+  if (cache.state === 'pending') return { state: 'unavailable', reason: 'notify_status_pending' };
+  if (cache.state === 'unavailable') return { state: 'unavailable', reason: cache.reason };
+  const { status, channels, deliveries } = cache.value;
+  return { state: 'ok', status, channels, deliveries };
 }
 
-/** One collection cycle. Each section fails on its own; the cycle itself does not throw. */
-export async function collectBotAccess(input: BotAccessReadInput = {}): Promise<BotAccessSnapshotV1> {
+/** One collection cycle. Each section fails on its own. */
+export async function collectBotAccess(input: BotAccessReadInput): Promise<BotAccessSnapshotV1> {
   const env = { ...process.env, ...input.env };
-  const session = input.session ?? (env.HERDR_SESSION || 'default');
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(session)) throw new Error('bot_access_session');
   const now = (input.now ?? (() => new Date()))();
-  const base = { env, cwd: input.cwd ?? process.cwd(), timeout_ms: input.timeout_ms ?? BOT_ACCESS_TIMEOUT_MS, run_command: input.run_command ?? runBotAccessCommand };
+  const base = { env, cwd: BOT_ACCESS_CWD, timeout_ms: input.timeout_ms ?? BOT_ACCESS_TIMEOUT_MS, run_command: input.run_command ?? runBotAccessCommand };
   // One registry read per cycle, so every attribution in a snapshot agrees.
   const directory = botDirectory(env);
   const bots: BotAccessSnapshotV1['bots'] = directory.state === 'ok' ? { state: 'ok', bots: projectBots(directory) } : { state: 'unavailable', reason: 'bot_registry_invalid' };
-  const [mcp, oauth, registry, herdr, notify] = await Promise.all([
+  const [mcp, oauth, registry, herdr] = await Promise.all([
     mcpSection(base),
     oauthSection(env, now, directory),
     registrySection(env, directory),
-    herdrSection({ ...base, session, directory }),
-    notifySection(input.read_notify ?? readNotifyChannelStatus, env, session, now),
+    herdrSection({ ...base, directory }),
   ]);
+  const notify = notifySection(input.read_notify());
   return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, oauth, registry, herdr, notify };
 }
 
+/**
+ * The collector cache. `bot_access_failed` means a cycle threw before any
+ * snapshot existed; the next good cycle replaces it.
+ */
+export type BotAccessCacheV1 =
+  | { readonly state: 'pending' }
+  | { readonly state: 'failed'; readonly reason: 'bot_access_failed' }
+  | { readonly state: 'ok'; readonly snapshot: BotAccessSnapshotV1 };
+
 export interface BotAccessCollectorHandle {
-  /** Cache read only; never starts work. `null` until the first cycle settles. */
-  readonly read: () => BotAccessSnapshotV1 | null;
+  /** Cache read only; never starts work. */
+  readonly read: () => BotAccessCacheV1;
   /** Resolves when the cycle in flight, if any, has settled. */
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
 
 /** Collect at startup, then every interval after the previous cycle settles. Cycles never overlap. */
-export function startBotAccessCollector(options: BotAccessReadInput & { readonly interval_ms?: number } = {}): BotAccessCollectorHandle {
-  let cache: BotAccessSnapshotV1 | null = null;
+export interface BotAccessCollectorOptions extends BotAccessReadInput {
+  readonly interval_ms?: number;
+  /**
+   * The first cycle starts after this settles. The server passes the notify
+   * collector's first cycle, so the first snapshot does not read its cache while it is still pending.
+   */
+  readonly first_cycle_after?: Promise<void>;
+}
+
+export function startBotAccessCollector(options: BotAccessCollectorOptions): BotAccessCollectorHandle {
+  let cache: BotAccessCacheV1 = { state: 'pending' };
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
   const cycle = (): Promise<void> => {
     inflight = collectBotAccess(options)
-      .then(snapshot => { if (!closed) cache = snapshot; }, () => { /* keep the last snapshot */ })
+      .then(snapshot => { if (!closed) cache = { state: 'ok', snapshot }; }, () => {
+        // An unexpected failure keeps the last snapshot; it is no reason to show nothing.
+        if (!closed && cache.state !== 'ok') cache = { state: 'failed', reason: 'bot_access_failed' };
+      })
       .finally(() => {
         inflight = null;
         if (closed) return;
@@ -264,7 +297,8 @@ export function startBotAccessCollector(options: BotAccessReadInput & { readonly
       });
     return inflight;
   };
-  void cycle();
+  if (options.first_cycle_after === undefined) void cycle();
+  else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
   return Object.freeze({
     read: () => cache,
     settled: () => inflight ?? Promise.resolve(),

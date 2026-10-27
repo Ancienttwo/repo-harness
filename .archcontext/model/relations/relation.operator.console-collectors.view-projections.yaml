@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.view-projections
+kind: calls
+source: component.operator.console-collectors
+target: component.operator.view-projections
+intent: "Build cache values with the strict Bot access, notify, docs and tests decoders and the JUnit and projection parsers."
