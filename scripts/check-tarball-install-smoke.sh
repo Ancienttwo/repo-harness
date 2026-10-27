@@ -6,7 +6,9 @@ cd "$ROOT"
 
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')"
-TMP_DIR="$(mktemp -d /tmp/rh-tarball-smoke.XXXXXX)"
+# Use the same native /tmp root as the nested Node/Bun isolation policy.
+# Git Bash maps /tmp elsewhere on Windows.
+TMP_DIR="$(bun -e 'const fs = require("node:fs"); const path = require("node:path"); const root = path.resolve("/tmp"); fs.mkdirSync(root, { recursive: true }); console.log(fs.mkdtempSync(path.join(fs.realpathSync(root), "rh-tarball-smoke.")).replaceAll("\\", "/"));')"
 OPERATOR_PID=""
 # Every step runs with a temporary HOME and harness home. The smoke must not
 # register its temporary repositories in the real ~/.repo-harness registry.
