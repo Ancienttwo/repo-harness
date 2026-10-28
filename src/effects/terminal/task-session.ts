@@ -841,7 +841,8 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
       'Inspect tracked changes, untracked files and commits not in the merged PR. Gitignored files do not count as content.',
       'Keep and report remaining content, locks or unknown state. Do not auto-commit or push.',
       'For a merged, clean, unlocked worktree, hand closeout to the orchestrator in the primary checkout.',
-      'The orchestrator must use the existing contract-worktree cleanup path to close the runtime, release the active-worktree marker and remove the worktree and branch.',
+      'Acknowledge that inspection is complete, then exit the agent. The orchestrator must confirm agent exit and close its dispatch-owned split pane under existing authority; leave the workspace root shell for runtime cleanup.',
+      'The orchestrator must use existing runtime cleanup and exact branch/path removal to release the binding and active-worktree marker and remove the worktree and branch. Keep and report attached or unknown runtime state.',
       'This notice grants no new merge, push or deletion authority. Report the closeout result.',
     ].join('\n');
     // A timeout can follow accepted input. Record the attempt before transport and never replay it.

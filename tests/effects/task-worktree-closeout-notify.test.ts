@@ -6,6 +6,7 @@ import { mockOfflineHerdr } from '../helpers/engineer-runtime-fixture';
 import { commitAll, initGitRepo, run, tmpWorkspaceIn } from '../helpers/repo-fixture';
 import { cleanupTaskWorktree, notifyTaskWorktreeMerged, startTaskAgent } from '../../src/effects/terminal/task-session';
 import { removeExactWorktree } from '../../src/effects/state/coordination-worktree-topology';
+import { herdrCommand, herdrMutation } from '../../src/effects/terminal/herdr';
 
 const roots: string[] = [];
 const restores: Array<() => void> = [];
@@ -21,15 +22,15 @@ afterEach(async () => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-async function fixture() {
+async function fixture(branch = 'codex/owner') {
   const base = tmpWorkspaceIn('/tmp', 'mn'); roots.push(base);
   const root = join(base, 'repo'), home = join(base, 'home'), checkout = join(base, 'repo-wt-owner');
   mkdirSync(root); mkdirSync(home); initGitRepo(root);
   writeFileSync(join(root, '.gitignore'), '.ai/\n.env\n');
   writeFileSync(join(root, 'file'), 'base'); commitAll(root, 'base');
-  expect(run('git', ['worktree', 'add', '-b', 'codex/owner', checkout], root).status).toBe(0);
+  expect(run('git', ['worktree', 'add', '-b', branch, checkout], root).status).toBe(0);
   writeFileSync(join(checkout, 'file'), 'merged'); commitAll(checkout, 'owner change');
-  expect(run('git', ['merge', '--ff-only', 'codex/owner'], root).status).toBe(0);
+  expect(run('git', ['merge', '--ff-only', branch], root).status).toBe(0);
   const merge = run('git', ['rev-parse', 'HEAD'], root).stdout.trim();
   const spec = { task: 'owner-task', role: 'worker', harness_kind: 'codex',
     endpoint: { session: 'fixture', home }, parent_pane: 'fixture-parent-worker', args: [], max_requests: 1 };
@@ -45,10 +46,13 @@ async function fixture() {
   const original = offline.transport.getMockImplementation()!;
   const prompts: string[][] = [];
   let mode = 'live';
+  let workspaceOpened = false;
   offline.transport.mockImplementation((...args) => {
     const command = args[1];
     const response = (result: object) => ({ pid: process.pid, status: 0, signal: null, stdout: Buffer.from(JSON.stringify({ id: 'fixture', result })), stderr: Buffer.alloc(0), output: [] });
     if (mode === 'unreachable') throw new Error('fixture_endpoint_unreachable');
+    if (command[0] === 'pane' && command[1] === 'close') { mode = 'owner-closed'; return response({}); }
+    if (command[0] === 'workspace' && command[1] === 'close') { mode = 'workspace-closed'; return response({}); }
     if (command[0] === 'agent' && command[1] === 'prompt') {
       expect(args[0]).toEqual(spec.endpoint);
       prompts.push([...command]);
@@ -61,12 +65,25 @@ async function fixture() {
       return response({ agents: mode === 'gone' ? [] : [agent] });
     }
     if (mode === 'gone' && command[0] === 'pane' && command[1] === 'list') return response({ panes: [] });
-    if (mode === 'gone' && command[0] === 'workspace' && command[1] === 'list') return response({ workspaces: [] });
+    if (['gone', 'workspace-closed'].includes(mode) && command[0] === 'workspace' && command[1] === 'list') return response({ workspaces: [] });
     if (command[0] === 'pane' && command[1] === 'process-info') return response({ process_info: {
       shell_pid: process.ppid, foreground_process_group_id: provider.pid,
       foreground_processes: [{ pid: provider.exitCode === null && provider.signalCode === null ? provider.pid : process.ppid }],
     } });
     const result = original(...args);
+    if (command[0] === 'worktree' && command[1] === 'open') {
+      workspaceOpened = true;
+      const value = JSON.parse(result.stdout.toString()); value.result.already_open = false;
+      return response(value.result);
+    }
+    if (!workspaceOpened && command[0] === 'workspace' && command[1] === 'list') {
+      const value = JSON.parse(result.stdout.toString());
+      return response({ workspaces: value.result.workspaces.filter((space: { workspace_id: string }) => space.workspace_id !== 'fixture-workspace') });
+    }
+    if (mode === 'owner-closed' && command[0] === 'pane' && command[1] === 'list') {
+      const value = JSON.parse(result.stdout.toString());
+      return response({ panes: value.result.panes.filter((pane: { pane_id: string }) => pane.pane_id === spec.parent_pane) });
+    }
     if (mode === 'foreign-cwd' && command[0] === 'pane' && command[1] === 'list') {
       const value = JSON.parse(result.stdout.toString());
       for (const pane of value.result.panes) pane.foreground_cwd = root;
@@ -78,9 +95,14 @@ async function fixture() {
   const binding = await startTaskAgent(checkout, spec, { start: async (_endpoint, name) => { agentName = name; offline.nameAgent(name); } });
   mkdirSync(join(checkout, '.ai/harness'), { recursive: true });
   writeFileSync(join(checkout, '.ai/harness/active-worktree'), checkout + '\n');
-  const notice = { pr: 993, merge_sha: merge, worktree: checkout, branch: 'codex/owner' };
+  const notice = { pr: 993, merge_sha: merge, worktree: checkout, branch };
   return { root, checkout, spec, binding, prompts, notice, setMode(value: string) { mode = value; },
     notify: () => notifyTaskWorktreeMerged(root, binding.pane_id, notice),
+    async completeOwner() {
+      provider.kill('SIGTERM');
+      await new Promise<void>(resolve => provider.once('exit', () => resolve()));
+      herdrMutation(herdrCommand(spec.endpoint, ['pane', 'close', '--pane', binding.pane_id]));
+    },
     remove: () => removeExactWorktree(root, { worktree: checkout, branch: notice.branch, head_sha: merge,
       target_ref: 'main', target_oid: merge, merge_commit_sha: merge }, { closeout: true }),
   };
@@ -109,11 +131,21 @@ test('wrong checkout, branch or malformed merge readback cannot notify another o
   expect(f.prompts).toHaveLength(0);
 });
 
-test('ordinary Herdr workers need only their existing workspace binding and dispatch pane attribution', async () => {
-  const f = await fixture();
+test('ordinary worker exits its owned pane before live-workspace cleanup and exact public removal of a feat branch', async () => {
+  const f = await fixture('feat/owner');
   rmSync(join(f.root, '.ai/harness/runs/task-agents'), { recursive: true });
   expect(await f.notify()).toEqual({ status: 'notified' });
   expect(f.prompts).toHaveLength(1);
+  expect(await cleanupTaskWorktree(f.root, f.checkout)).toMatchObject({ status: 'cleanup_pending', reason: 'extra_panes' });
+  await f.completeOwner();
+  expect(await cleanupTaskWorktree(f.root, f.checkout)).toEqual({ status: 'closed', pids: [] });
+  const cli = join(import.meta.dir, '../../src/cli/index.ts');
+  const removal = run(process.execPath, [cli, 'run', 'contract-worktree-runtime', 'remove-exact',
+    '--repo', f.root, '--worktree', f.checkout, '--branch', f.notice.branch, '--head', f.notice.merge_sha,
+    '--target', 'main', '--target-oid', f.notice.merge_sha, '--merge', f.notice.merge_sha], f.root);
+  expect(removal.status).toBe(0);
+  expect(existsSync(f.checkout)).toBe(false);
+  expect(run('git', ['show-ref', '--verify', '--quiet', 'refs/heads/feat/owner'], f.root).status).not.toBe(0);
 });
 
 test('closed pane falls back to the existing closeout which releases binding, marker, checkout and branch', async () => {
