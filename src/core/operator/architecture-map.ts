@@ -4,10 +4,10 @@
 // their owners with `archctx resolve`, and the capability import counts with
 // `archctx deps`. The layers come from the same cycle: `archctx impact` from the
 // last commit before local midnight to the map commit, `archctx debt`, `docs
-// anchors` and `flows check --no-sync`, `archctx impact --paths-from` for each
-// open PR's changed files from the Dev Activity cache, and the tests collector's
-// cache. archctx owns ownership, impact, dependency, flow, decision, anchor and
-// layer-order facts; this module only sums line counts along the model's `parent` chain and
+// anchors`, `flows check --no-sync` and `constraints check`, `archctx impact
+// --paths-from` for each open PR's changed files from the Dev Activity cache, and
+// the tests collector's cache. archctx owns ownership, impact, dependency, flow,
+// decision, anchor, layer-order and layer-direction facts; this module only sums line counts along the model's `parent` chain and
 // checks the shape. The strict decoder serves the server before it sends and the
 // browser before it renders.
 
@@ -16,7 +16,7 @@ import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-reques
 import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
-export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v4' as const;
+export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v5' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
 /** Why a repository's map cannot be served. Each maps to one HTTP status in the route. */
@@ -71,11 +71,14 @@ export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[numbe
 export const ARCHITECTURE_LAYER_ORDER_REASONS = ['model_layers_undeclared'] as const;
 export type ArchitectureLayerOrderReason = typeof ARCHITECTURE_LAYER_ORDER_REASONS[number];
 /**
- * Why imports against the layer order are not shown: the model declares no
- * ordered `model.layers`, or it does and the collector does not read the
- * layer-direction constraint check.
+ * Why imports against the layer order are not shown: a violation check reason;
+ * the model declares no ordered `model.layers`; the committed model has no
+ * `layer-direction` constraint; or archctx found an import endpoint that no
+ * layered node owns, so its answer is undetermined.
  */
-export const ARCHITECTURE_LAYER_DIRECTION_REASONS = ['model_layers_undeclared', 'layer_direction_not_read'] as const;
+export const ARCHITECTURE_LAYER_DIRECTION_REASONS = [
+  ...ARCHITECTURE_VIOLATION_REASONS, 'model_layers_undeclared', 'layer_direction_undeclared', 'layer_endpoint_unclassified',
+] as const;
 export type ArchitectureLayerDirectionReason = typeof ARCHITECTURE_LAYER_DIRECTION_REASONS[number];
 /** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
 export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
@@ -104,6 +107,14 @@ export interface ArchitectureMapRelationV1 {
 export interface ArchitectureMapSizeV1 { readonly id: string; readonly files: number; readonly lines: number }
 /** Imports from one capability into another, from `archctx deps`. */
 export interface ArchitectureMapImportV1 { readonly source: string; readonly target: string; readonly imports: number }
+/** File imports from `source` into `target` that `archctx constraints check` reports against the layer order: `target_layer` is above `source_layer`. */
+export interface ArchitectureLayerViolationV1 {
+  readonly source: string;
+  readonly target: string;
+  readonly source_layer: string;
+  readonly target_layer: string;
+  readonly imports: number;
+}
 
 export type ArchitectureMapSizesV1 =
   | { readonly state: 'ok'; readonly nodes: readonly ArchitectureMapSizeV1[] }
@@ -228,8 +239,8 @@ export interface ArchitectureViolationsLayerV1 {
   readonly anchors: Section<{ readonly citations: number; readonly nodes: readonly { readonly id: string; readonly findings: number }[] }, ArchitectureViolationReason>;
   /** `archctx deps` rows that archctx marks undeclared: imports with no model relation behind them. */
   readonly dependencies: Section<{ readonly edges: readonly ArchitectureMapImportV1[] }, ArchitectureViolationReason>;
-  /** Imports against the layer order. */
-  readonly layer_direction: Gap<ArchitectureLayerDirectionReason>;
+  /** `archctx constraints check` for the committed `layer-direction` constraints: the import edges it read, and the node pairs that import against the layer order. */
+  readonly layer_direction: Section<{ readonly imports: number; readonly edges: readonly ArchitectureLayerViolationV1[] }, ArchitectureLayerDirectionReason> | ArchctxRefusalV1;
 }
 
 /** One architecture decision record from `archctx export native`; free text is masked like model prose. */
@@ -370,7 +381,9 @@ const violations = object({
   }, ARCHITECTURE_VIOLATION_REASONS), refusal),
   anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
-  layer_direction: reason(ARCHITECTURE_LAYER_DIRECTION_REASONS),
+  layer_direction: either(section({
+    imports: count, edges: list(object({ source: id, target: id, source_layer: match(LAYER), target_layer: match(LAYER), imports: positive })),
+  }, ARCHITECTURE_LAYER_DIRECTION_REASONS), refusal),
 });
 const singleLine = prose(match(/^[^\r\n]{1,4096}$/u));
 const decisions = object({
@@ -458,6 +471,21 @@ function pullRequestImpactValid(value: unknown, index: MapIndex, path: Check = r
   return impact.state !== 'ok' || impactValid(impact, index, nodeId => index.nodes.has(nodeId));
 }
 
+/**
+ * A layer-direction answer needs the map's layer order. Each pair is one node pair
+ * of this map, each layer is that node's model layer, and the target's layer is
+ * above the source's.
+ */
+function layerDirectionValid(map: ArchitectureMapV1, nodes: ReadonlyMap<string, ArchitectureMapNodeV1>): boolean {
+  const direction = map.layers.violations.layer_direction;
+  if (direction.state !== 'ok') return true;
+  if (map.layer_order.state !== 'ok') return false;
+  const rank = new Map(map.layer_order.layers.map((layer, index) => [layer, index]));
+  return unique(direction.edges.map(entry => `${entry.source}\0${entry.target}`)) && direction.edges.every(entry =>
+    nodes.get(entry.source)?.layer === entry.source_layer && nodes.get(entry.target)?.layer === entry.target_layer
+    && (rank.get(entry.target_layer) ?? Infinity) < (rank.get(entry.source_layer) ?? -Infinity));
+}
+
 /** Shape, identity and referential integrity. Every reference names a node of this map, except a removed model entity. */
 export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   if (!map(value)) throw new Error('architecture_map_invalid');
@@ -482,6 +510,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
     || (violations.flows.state === 'ok' && !known(violations.flows.unprovable.map(entry => entry.id), capability))
     || (violations.anchors.state === 'ok' && !known(violations.anchors.nodes.map(entry => entry.id)))
     || (violations.dependencies.state === 'ok' && !importEdges(violations.dependencies.edges))
+    || !layerDirectionValid(result, nodes)
     || (pulls.state === 'ok' && (!unique(pulls.pull_requests.map(entry => String(entry.number))) || pulls.pull_requests.some(entry => !pullRequestImpactValid(entry.impact, index)
       || (entry.impact.state === 'ok' ? entry.head_sha === null : (entry.head_sha === null) !== (entry.impact.reason === 'head_missing')))))
     || (tests.state === 'ok' && (!known(tests.capabilities.map(entry => entry.id), capability)
@@ -685,7 +714,7 @@ export function projectArchitectureMap(input: {
         flows: violations.flows.state === 'ok' ? { ...violations.flows, unprovable: byId(violations.flows.unprovable) } : violations.flows,
         anchors: violations.anchors.state === 'ok' ? { ...violations.anchors, nodes: byId(violations.anchors.nodes) } : violations.anchors,
         dependencies: violations.dependencies.state === 'ok' ? { state: 'ok', edges: byEdge(violations.dependencies.edges) } : violations.dependencies,
-        layer_direction: violations.layer_direction,
+        layer_direction: violations.layer_direction.state === 'ok' ? { ...violations.layer_direction, edges: byEdge(violations.layer_direction.edges) } : violations.layer_direction,
       },
       pull_requests: projectPullRequests(input.layers.pull_requests, index),
       tests: input.layers.tests,
