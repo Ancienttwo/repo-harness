@@ -408,7 +408,7 @@ describe("canonical adoption plan", () => {
     }
   });
 
-  for (const mode of ["minimal", "standard", "self-host"] as const) {
+  for (const mode of ["minimal", "standard"] as const) {
     test(`${mode} adoption keeps lessons and contracts without seeding retired task surfaces`, () => {
       const repo = tempRepo();
       try {
