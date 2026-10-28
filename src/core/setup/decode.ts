@@ -19,17 +19,17 @@ import {
   SETUP_SNAPSHOT_STATUSES,
   SKILL_PROJECTION_STATES,
   type SetupReason,
-  type SetupSnapshotV1,
+  type SetupSnapshotV2,
 } from './types';
 
-export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV1 {
+export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV2 {
   return {
     projection_version: SETUP_PROJECTION, status: 'unavailable', reason, collected_at: null,
     setup_status: null, summary: null, checks: [], hosts: [], skills: [], hooks: [], hook_usage: null, fleet: [],
   };
 }
 
-export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
+export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
   const fail = (what: string): never => { throw new Error(`setup projection invalid: ${what}`); };
   const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
@@ -206,5 +206,5 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
     || (v.hooks as unknown[]).length || hookUsage !== null || (v.fleet as unknown[]).length)) {
     fail('unavailable snapshot carries data');
   }
-  return v as unknown as SetupSnapshotV1;
+  return v as unknown as SetupSnapshotV2;
 }

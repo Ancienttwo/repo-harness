@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
-import type { SetupSnapshotV1 } from '../core/setup/types';
+import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
@@ -103,7 +103,7 @@ export interface OperatorAppProps {
   readonly initialNotifyStatus?: NotifyStatusV1;
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
-  readonly initialSetup?: SetupSnapshotV1;
+  readonly initialSetup?: SetupSnapshotV2;
   readonly readCliInventory?: CliInventoryReader;
   readonly initialCliInventory?: CliInventorySnapshotV1;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */

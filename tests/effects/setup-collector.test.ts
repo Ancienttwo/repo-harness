@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { ROUTES } from '../../src/cli/hook/route-registry';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import { decodeSetupSnapshot } from '../../src/core/setup/decode';
-import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { SetupSnapshotV2 } from '../../src/core/setup/types';
 import type { AgentRuntimeProbeV1 } from '../../src/core/operator/agents-settings';
 import {
   AGENT_RUNTIME_PROBE_ARGV,
@@ -27,7 +27,7 @@ import { FAILURE_LOG_FILE } from '../../src/effects/state/resolve-effective-stat
 import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
-function snapshot(collectedAt: string): SetupSnapshotV1 {
+function snapshot(collectedAt: string): SetupSnapshotV2 {
   return projectSetupSnapshot({
     collected_at: collectedAt, setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
     checks: [{ id: 'doctor.cli-version', title: 'repo-harness CLI version', status: 'ok', detail: '0.21.1' }],

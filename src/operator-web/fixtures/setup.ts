@@ -9,7 +9,7 @@ import type {
   SetupHookEvent,
   SetupSkill,
   SetupSkillHostRow,
-  SetupSnapshotV1,
+  SetupSnapshotV2,
 } from '../../core/setup/types';
 
 const ok = (state: 'ok link' | 'ok copy' = 'ok link'): SetupSkillHostRow => ({ state, ok: true });
@@ -71,9 +71,9 @@ const FLEET: readonly (Omit<SetupFleetRole, 'hosts'>)[] = [
 ];
 
 
-export function readySetup(now: number): SetupSnapshotV1 {
+export function readySetup(now: number): SetupSnapshotV2 {
   return {
-    projection_version: 'repo-harness.setup.v1', status: 'ready', reason: null,
+    projection_version: 'repo-harness.setup.v2', status: 'ready', reason: null,
     collected_at: new Date(now - 3 * 60_000).toISOString(),
     setup_status: 'attention',
     summary: { ok: 33, warn: 1, fail: 0, na: 3, needs_agent: 1 },
@@ -104,7 +104,7 @@ export function readySetup(now: number): SetupSnapshotV1 {
 }
 
 /** The last good read is 25 minutes old, the newest run timed out, and the machine has drifted. */
-export function degradedSetup(now: number): SetupSnapshotV1 {
+export function degradedSetup(now: number): SetupSnapshotV2 {
   const skills = readySkills();
   const replace = (name: string, next: SetupSkill) => { skills[skills.findIndex(row => row.name === name)] = next; };
   replace('repo-harness-ship', skill('repo-harness-ship', ok(), bad('missing')));
@@ -112,7 +112,7 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
   replace('obsidian-memory', skill('obsidian-memory', bad('dangling link'), ok()));
   replace('think', skill('think', bad('ok copy'), ok('ok copy')));
   return {
-    projection_version: 'repo-harness.setup.v1', status: 'stale', reason: 'setup_check_timeout',
+    projection_version: 'repo-harness.setup.v2', status: 'stale', reason: 'setup_check_timeout',
     collected_at: new Date(now - 25 * 60_000).toISOString(),
     setup_status: 'blocked',
     summary: { ok: 28, warn: 2, fail: 2, na: 3, needs_agent: 1 },
@@ -162,6 +162,6 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
 }
 
 /** The first background run has not finished. */
-export function loadingSetup(): SetupSnapshotV1 {
+export function loadingSetup(): SetupSnapshotV2 {
   return unavailableSetupSnapshot('collection_pending');
 }

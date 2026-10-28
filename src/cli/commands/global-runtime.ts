@@ -1,5 +1,6 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { installPiPackage } from '../installer/pi-package';
+import { realPathOrResolved } from '../../effects/path-identity';
 import type { SkillHost } from '../../effects/host-skill-roots';
 import type { ManagedInstallSurface } from '../installer/install-profile';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
@@ -191,14 +192,6 @@ function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: st
     ...(env ?? process.env),
     PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
   };
-}
-
-function realPathOrResolved(pathValue: string): string {
-  try {
-    return realpathSync(pathValue);
-  } catch (_error) {
-    return resolve(pathValue);
-  }
 }
 
 function pathIsWithin(candidate: string, root: string): boolean {

@@ -19,7 +19,7 @@ import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/deco
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
-import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { SetupSnapshotV2 } from '../../src/core/setup/types';
 import { ROUTES } from '../../src/cli/hook/route-registry';
 import type { BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import type { BotAccessCacheV1 } from '../../src/effects/operator/bot-access';
@@ -324,7 +324,7 @@ describe('operator serve command and HTTP boundary', () => {
 
   test('serves only the setup cache on GET and never runs setup check on the request path', async () => {
     let reads = 0;
-    const ready: SetupSnapshotV1 = projectSetupSnapshot({
+    const ready: SetupSnapshotV2 = projectSetupSnapshot({
       collected_at: '2026-10-10T00:00:00.000Z', setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
       checks: [], check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_summaries: new Map(),
       routes: ROUTES, fleet_roles: [], fleet_hosts: null, hook_usage: null,
@@ -332,7 +332,7 @@ describe('operator serve command and HTTP boundary', () => {
     let current: unknown = ready;
     const spawnSpy = spyOn(childProcess, 'spawn');
     const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_setup: () => { reads++; return current as SetupSnapshotV1; } });
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_setup: () => { reads++; return current as SetupSnapshotV2; } });
     try {
       const response = await fetch(`${server.url}/api/v1/setup`);
       expect(response.status).toBe(200);

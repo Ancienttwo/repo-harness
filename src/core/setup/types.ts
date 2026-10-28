@@ -5,7 +5,7 @@
 // packaged agent fleet. Values that have no authority are null; consumers must
 // not infer them. Free text is redacted with `publicAgentConfigText`.
 
-export const SETUP_PROJECTION = 'repo-harness.setup.v1' as const;
+export const SETUP_PROJECTION = 'repo-harness.setup.v2' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
 export const SETUP_HOSTS = ['claude', 'codex', 'pi'] as const;
@@ -172,7 +172,7 @@ export interface SetupFleetRole {
   hosts: SetupPerHost<'installed' | 'missing' | null>;
 }
 
-export interface SetupSnapshotV1 {
+export interface SetupSnapshotV2 {
   projection_version: typeof SETUP_PROJECTION;
   status: SetupSnapshotStatus;
   /** Null exactly when status is ready. */

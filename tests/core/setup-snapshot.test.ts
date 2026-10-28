@@ -5,7 +5,7 @@ import { ROUTES } from '../../src/cli/hook/route-registry';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { summarizeHookUsage } from '../../src/core/setup/hook-usage';
 import { projectSetupSnapshot, type SetupProjectionInput } from '../../src/core/setup/projection';
-import { SETUP_HOSTS, type SetupSnapshotV1 } from '../../src/core/setup/types';
+import { SETUP_HOSTS, type SetupSnapshotV2 } from '../../src/core/setup/types';
 
 const FAKE_SECRETS = ['sk-proj-FAKEFAKEFAKEFAKEFAKEFAKE0001', 'ghp_FAKEFAKEFAKEFAKEFAKEFAKE0002', 'hunter2-fake-password'];
 
@@ -89,6 +89,11 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
 }
 
 describe('setup snapshot projection', () => {
+  test('emits setup v2 and rejects a v1 snapshot', () => {
+    const snapshot = projectSetupSnapshot(input());
+    expect(snapshot.projection_version).toBe('repo-harness.setup.v2');
+    expect(() => decodeSetupSnapshot({ ...snapshot, projection_version: 'repo-harness.setup.v1' })).toThrow();
+  });
   test('Pi has version and detection facts with no adapter or fleet authority', () => {
     const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input({
       checks: [{ id: 'doctor.pi-path', title: 'Pi', status: 'ok', detail: 'on PATH' },
@@ -204,7 +209,7 @@ describe('hook usage summary', () => {
 });
 
 describe('setup snapshot decoder', () => {
-  const ready = (): SetupSnapshotV1 => projectSetupSnapshot(input());
+  const ready = (): SetupSnapshotV2 => projectSetupSnapshot(input());
   const rejects = (mutate: (snapshot: any) => void) => {
     const snapshot = structuredClone(ready()) as any;
     mutate(snapshot);

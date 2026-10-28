@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { tmpWorkspace } from '../helpers/repo-fixture';
+import { copyPackageRuntimeFixture, tmpWorkspace } from '../helpers/repo-fixture';
 import { installPiPackage, piPackagePresent, piUserPackageSources, runPi } from '../../src/cli/installer/pi-package';
 import { readInstalledProfile, recordPiInstallOwnership, type ManagedInstallSurface } from '../../src/cli/installer/install-profile';
 import { hostSkillRoot } from '../../src/effects/host-skill-roots';
@@ -85,6 +85,26 @@ default: process.exit(99);
 }
 
 describe('Pi package and skill installation', () => {
+  test('rejects a relative agent directory before any skill tree is created', () => fixture(f => {
+    copyPackageRuntimeFixture(ROOT, f.source);
+    const result = spawnSync(process.execPath, [join(f.source, 'src/cli/index.ts'), 'install', '--profile', 'minimal', '--no-cli', '--no-external-skills', '--no-codegraph', '--json'],
+      { cwd: f.root, env: { ...f.env, PI_CODING_AGENT_DIR: 'rel-agent' }, encoding: 'utf8', timeout: 60_000 });
+    expect(result.status).toBe(1);
+    expect(result.stderr + result.stdout).toContain('PI_CODING_AGENT_DIR');
+    expect(existsSync(join(f.source, 'rel-agent'))).toBe(false);
+    expect(existsSync(join(f.root, 'rel-agent'))).toBe(false);
+    expect(existsSync(join(f.home, '.codex/skills'))).toBe(false);
+    expect(existsSync(join(f.home, '.claude/skills'))).toBe(false);
+  }));
+
+  test('names the Bun requirement instead of launching a TypeScript child under Node', () => fixture(f => {
+    const descriptor = Object.getOwnPropertyDescriptor(process.versions, 'bun')!;
+    try {
+      Object.defineProperty(process.versions, 'bun', { value: undefined, configurable: true });
+      expect(checkPiHost(f.env).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', detail: 'PI_CAPABILITY_PROBE_REQUIRES_BUN' });
+    } finally { Object.defineProperty(process.versions, 'bun', descriptor); }
+  }));
+
   test('list parsing keeps the final user section and ignores output noise and project entries', () => {
     expect(piUserPackageSources('added 2 packages\n  unrelated install output\nUser packages:\n  old\nUser packages:\n  ../current\n    /absolute/current\ninstall notice\nProject packages:\n  ../project')).toEqual(['../current']);
     expect(() => piUserPackageSources('  ../unscoped')).toThrow('PI_PACKAGE_LIST_INVALID');
@@ -114,7 +134,7 @@ describe('Pi package and skill installation', () => {
     expect(configureRequiredHerdrSkill('both', env).status).toBe('ok');
     expect(existsSync(join(agent, 'skills/herdr/SKILL.md'))).toBe(true);
     const invalid = configureRequiredHerdrSkill('both', { ...env, PI_CODING_AGENT_DIR: 'relative-agent' });
-    expect(invalid).toMatchObject({ status: 'failed', detail: expect.stringContaining('non-canonical host skill root') });
+    expect(invalid).toMatchObject({ status: 'failed', detail: expect.stringContaining('PI_CODING_AGENT_DIR') });
   }));
 
   test('package identity compares real paths across a symlinked source', () => fixture(f => {
@@ -141,6 +161,27 @@ describe('Pi package and skill installation', () => {
     path: source, components: ['host-adapters'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
     type: 'pi-package', managed_marker: 'pi-package-source', content_hash: null, symlink_target: null,
   });
+
+  test('removes a stale relative entry when its package directory is missing', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    f.write(join(f.root, 'packages.json'), JSON.stringify(['npm:other-package', relative(f.env.PI_CODING_AGENT_DIR, f.source)]));
+    recordPiInstallOwnership([packageSurface(f.source)], f.env);
+    rmSync(f.source, { recursive: true });
+    const result = runUserUninstall({ target: 'both', env: f.env });
+    expect(result.exitCode).toBe(0);
+    expect(f.argv().filter(args => args[0] === 'remove')).toEqual([['remove', f.source]]);
+    expect(JSON.parse(readFileSync(join(f.root, 'packages.json'), 'utf8'))).toEqual(['npm:other-package']);
+    expect(readInstalledProfile(f.env)).toBeNull();
+  }));
+
+  test('doctor reports a missing package directory without a raw filesystem error', () => fixture(f => {
+    f.write(join(f.root, 'packages.json'), JSON.stringify([relative(f.env.PI_CODING_AGENT_DIR, f.source)]));
+    rmSync(f.source, { recursive: true });
+    const check = checkPiHost(f.env).find(c => c.id === 'pi-package')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('package directory missing');
+    expect(check.detail).not.toContain('ENOENT');
+  }));
 
   test('unconfirmed removal keeps the Pi package ownership ledger for retry', () => fixture(f => {
     recordInstallOwnership([], f.env);
