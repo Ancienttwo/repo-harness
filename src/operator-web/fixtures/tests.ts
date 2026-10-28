@@ -18,6 +18,13 @@ function result(file: string, duration_ms: number, cases: { suite: string | null
   return { file, duration_ms, cases };
 }
 
+/** The open `[CI repair]` issue this repository has; Home and the Tests page must name the same one. */
+export const readyRepairIssue = {
+  number: 1101,
+  title: '[CI repair] daily full run failed',
+  url: 'https://github.com/Ancienttwo/repo-harness/issues/1101',
+};
+
 /** A finished daily run: three files with results (one failing) and one file the run has no entry for. */
 export function readyTests(now: number): TestsSnapshotV1 {
   return {
@@ -60,6 +67,6 @@ export function readyTests(now: number): TestsSnapshotV1 {
         ]),
       ],
     },
-    repairs: { state: 'ok', issues: [] },
+    repairs: { state: 'ok', issues: [readyRepairIssue] },
   };
 }

@@ -9,7 +9,7 @@ import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import type { TestsRead, TestsReader } from '../../src/operator-web/repository-reads';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
-import { readyTests } from '../../src/operator-web/fixtures/tests';
+import { readyRepairIssue, readyTests } from '../../src/operator-web/fixtures/tests';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -181,6 +181,32 @@ describe('tests page', () => {
     expect(summary).toContain('4 no result');
     expect(summary).toContain('0 passed');
     for (const row of all('[data-test-file]')) expect(row.textContent).not.toContain('passed');
+  });
+
+  test('the open CI repair issues render on the page and are never silently dropped', async () => {
+    await mount('#tests', props(okRead()));
+    const repairs = document.querySelector('[data-tests-repairs]')!;
+    expect(repairs).not.toBeNull();
+    expect(repairs.getAttribute('data-tests-repairs')).toBe('1');
+    const link = document.querySelector('[data-tests-repair="1101"] a');
+    expect(link?.getAttribute('href')).toBe(readyRepairIssue.url);
+    expect(link?.textContent).toContain('#1101');
+    expect(link?.textContent).toContain('[CI repair] daily full run failed');
+  });
+
+  test('an unreadable repairs section warns with its reason instead of claiming there are none', async () => {
+    const base = readyTests(NOW);
+    await mount('#tests', props({ state: 'ok', snapshot: decodeTestsSnapshot({ ...base, repairs: { state: 'unavailable', reason: 'repairs_unavailable' } }) }));
+    const reason = document.querySelector('[data-tests-repairs-reason="repairs_unavailable"]');
+    expect(reason?.textContent).toContain('The CI repair issues could not be read');
+    expect(document.querySelector('[data-tests-repairs]')).toBeNull();
+    expect(document.querySelector('[data-tests-page]')!.textContent).not.toContain('No open CI repair issue');
+  });
+
+  test('an empty repair list says so explicitly', async () => {
+    await mount('#tests', props({ state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(NOW), repairs: { state: 'ok', issues: [] } }) }));
+    expect(document.querySelector('[data-tests-repairs]')!.getAttribute('data-tests-repairs')).toBe('0');
+    expect(document.querySelector('[data-tests-page]')!.textContent).toContain('No open CI repair issue');
   });
 
   test('a missing projection keeps the results and names the gap', async () => {

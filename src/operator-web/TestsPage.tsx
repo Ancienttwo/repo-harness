@@ -8,7 +8,7 @@ import {
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { useTestsSnapshot, type TestsRead, type TestsReader } from './repository-reads';
-import { Age, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
+import { Age, CommandLine, ExternalLink, SectionTitle, StatusDot, type DotTone } from './ui';
 
 export interface TestsPageProps {
   /** The repository the page reads; the page names itself when none is selected. */
@@ -160,6 +160,31 @@ function RunLine({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; rea
   );
 }
 
+/** Open `[CI repair]` issues for this repository, or the reason the collector could not read them (1-TESTS-P1). */
+function RepairsSection({ repairs, t }: { readonly repairs: TestsSnapshotV1['repairs']; readonly t: OperatorTranslate }) {
+  if (repairs.state === 'unavailable') {
+    return (
+      <p className="flex items-center gap-1.5 text-sm text-kumo-warning" data-tests-repairs-reason={repairs.reason}>
+        <StatusDot tone="warn" />{t(`tests.reason.${repairs.reason}`)}
+      </p>
+    );
+  }
+  return (
+    <section aria-label={t('tests.repairs.heading')} className="flex min-w-0 flex-col gap-2" data-tests-repairs={repairs.issues.length}>
+      <SectionTitle count={repairs.issues.length}>{t('tests.repairs.heading')}</SectionTitle>
+      {repairs.issues.length === 0
+        ? <p className="text-sm text-kumo-subtle">{t('tests.repairs.none')}</p>
+        : <ul className="flex flex-col gap-1 text-sm text-kumo-default">
+          {repairs.issues.map(issue => (
+            <li key={issue.url} data-tests-repair={issue.number}>
+              <ExternalLink href={issue.url}>#{issue.number} {issue.title}</ExternalLink>
+            </li>
+          ))}
+        </ul>}
+    </section>
+  );
+}
+
 function TestsBody({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; readonly now: number; readonly t: OperatorTranslate }) {
   const rows = fileRows(snapshot);
   // A file whose cases all skipped is a recorded result, not a file without one.
@@ -188,6 +213,7 @@ function TestsBody({ snapshot, now, t }: { readonly snapshot: TestsSnapshotV1; r
       </p>
       {snapshot.projection.state === 'unavailable' && <SectionNotice reason={snapshot.projection.reason} t={t} />}
       {snapshot.results.state === 'unavailable' && <SectionNotice reason={snapshot.results.reason} t={t} />}
+      <RepairsSection repairs={snapshot.repairs} t={t} />
       {[...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([directory, list]) => (
         <DirectoryGroup key={directory} directory={directory} rows={list} t={t} />
       ))}
