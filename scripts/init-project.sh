@@ -192,7 +192,6 @@ create_structure() {
         mkdir -p docs/architecture
     fi
     mkdir -p tasks/archive
-    mkdir -p tasks/contracts
     mkdir -p plans/archive
     mkdir -p .ai/context
     mkdir -p .ai/harness/checks

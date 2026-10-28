@@ -9,7 +9,7 @@ responsibilities:
   - "Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence."
   - "Read only explicitly enabled, bounded manual GitHub policy and persist provider observations under the Git common directory."
   - "Bind one exact eligible provider observation revision to the same provider repository and issue in an explicit admitted session, after repeated registry and current admission validation."
-  - "Project admitted binding source, session and authorization drift; expose old V1 bindings only through explicit history without current-authority fallback."
+  - "Project admitted binding source, session and authorization drift. Retired V1 bindings remain stored without a runtime reader."
   - "Fail closed on unavailable or incomplete provider reads and persist the typed attempt receipt when storage is available."
   - "Render provider content only through the explicit untrusted-source context boundary."
   - "Exclude provider writeback, task generation, comments, polling, UI, MCP, and non-GitHub adapters."

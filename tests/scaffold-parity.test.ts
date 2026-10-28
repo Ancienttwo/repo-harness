@@ -51,7 +51,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/harness/triage/.gitkeep",
         "./.ai/harness/worktrees/.gitkeep",
         "./.ai/hooks/README.md",
-        "./.claude/templates/contract.template.md",
         "./.claude/templates/design-brief.template.md",
         "./.claude/templates/plan.template.md",
         "./.claude/templates/prd.template.md",
@@ -123,17 +122,6 @@ describe("create-project-dirs scaffold parity", () => {
       expect(template).toContain("do not infer execution ownership from planning files");
       expect(template).toContain("## Evidence Contract");
       expect(template).toContain("**State/progress path**");
-
-      const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
-      expect(contractTemplate).toContain("## Workflow Inventory");
-      expect(contractTemplate).toContain("Completion gate: Execute the active admitted verification plan");
-      expect(contractTemplate).toContain("they are not execution authority");
-      expect(contractTemplate).toContain("## Acceptance Policy");
-      expect(contractTemplate).toContain("## Delegation Contract");
-      expect(contractTemplate).toContain("permission_scope:");
-      expect(contractTemplate).toContain("roles:");
-      expect(contractTemplate).toContain("preferred:\n      - subagent\n    fallback: null");
-      expect(contractTemplate).toContain("## Falsifier");
 
       const runtimeConsole = readFileSync(
         join(ROOT, "assets/project-structures/ai-native-runtime-console.txt"),

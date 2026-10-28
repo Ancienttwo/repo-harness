@@ -12,11 +12,6 @@ import {
   type ExternalSourceRefreshReceiptV1,
   type ProviderIssueObservationV1,
 } from '../../core/external-sources/issue-observation';
-import {
-  canonicalExternalSourceBindingReceiptBytes,
-  validateExternalSourceBindingReceipt,
-  type ExternalSourceBindingReceiptV1,
-} from '../../core/external-sources/binding';
 import { syncDirectoryDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -42,7 +37,6 @@ interface StorePaths {
   readonly root: string;
   readonly observations: string;
   readonly receipts: string;
-  readonly bindings: string;
   readonly locks: string;
 }
 
@@ -53,7 +47,7 @@ function fail(code: ExternalSourceStoreErrorCode, message: string, cause?: unkno
 function pathsFor(repoRoot: string): StorePaths {
   const common = resolve(resolveGitCommonDirectory(repoRoot));
   const root = join(common, EXTERNAL_SOURCE_STORE_RELATIVE_ROOT);
-  return Object.freeze({ common, root, observations: join(root, 'observations'), receipts: join(root, 'receipts'), bindings: join(root, 'bindings'), locks: join(root, 'locks') });
+  return Object.freeze({ common, root, observations: join(root, 'observations'), receipts: join(root, 'receipts'), locks: join(root, 'locks') });
 }
 
 function pathSegments(root: string, target: string): string[] {
@@ -86,7 +80,7 @@ function ensureDirectory(common: string, target: string, create: boolean): boole
 }
 
 function ensureStore(paths: StorePaths): void {
-  for (const path of [paths.root, paths.observations, paths.receipts, paths.bindings, paths.locks]) ensureDirectory(paths.common, path, true);
+  for (const path of [paths.root, paths.observations, paths.receipts, paths.locks]) ensureDirectory(paths.common, path, true);
 }
 
 function regularFile(path: string, label: string): void {
@@ -405,24 +399,6 @@ export function readLatestExternalSourceSnapshot(repoRoot: string, limits: Exter
     return value;
   });
   return Object.freeze({ receipt, observations: Object.freeze(observations) });
-}
-
-export function listHistoricalExternalSourceBindingReceipts(repoRoot: string): readonly ExternalSourceBindingReceiptV1[] {
-  const paths = pathsFor(repoRoot);
-  if (!ensureDirectory(paths.common, paths.bindings, false)) return Object.freeze([]);
-  const records: ExternalSourceBindingReceiptV1[] = [];
-  for (const name of jsonFiles(paths.bindings)) {
-    const raw = readRaw(join(paths.bindings, name), 'external source binding receipt');
-    try {
-      const value = validateExternalSourceBindingReceipt(JSON.parse(raw));
-      if (canonicalExternalSourceBindingReceiptBytes(value) !== raw) fail('external_source_store_invalid', 'external source binding receipt is non-canonical');
-      records.push(value);
-    } catch (error) {
-      if (error instanceof ExternalSourceStoreError) throw error;
-      fail('external_source_store_invalid', 'external source binding receipt is malformed', error);
-    }
-  }
-  return Object.freeze(records.sort((left, right) => left.bound_at.localeCompare(right.bound_at) || left.binding_id.localeCompare(right.binding_id)));
 }
 
 export function externalSourceStoreRoot(repoRoot: string): string {

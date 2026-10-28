@@ -97,7 +97,6 @@ const CANONICAL_SYMBOL_OWNERS: Readonly<Record<string, string>> = {
   planSlugFromPath: 'src/core/state/artifact-parsers.ts',
   artifactStemFromPlan: 'src/core/state/artifact-parsers.ts',
   evidenceContractComplete: 'src/core/state/artifact-parsers.ts',
-  planContractRelationshipConflicts: 'src/core/state/artifact-parsers.ts',
   EffectiveStateV1: 'src/core/state/types.ts',
   EffectiveState: 'src/core/state/types.ts',
   EffectiveStateInputs: 'src/core/state/project-effective-state.ts',
@@ -138,7 +137,7 @@ const PROCESS_EXECUTION_CALLS = new Set([
   'spawnSync',
 ]);
 
-const CLI_AUTHORITY_NAME = /^(?:(?:calculate|compute|derive|parse|validate|match|resolve).*WorkflowProfile|(?:parse|validate|match|resolve).*Capability(?:Registry|Path|Paths)|(?:extract|parse).*(?:AllowedPaths|ArtifactAuthority|WorkflowArtifact)|(?:get|parse|resolve).*PlanStatus|artifactStemFromPlan(?:Path)?|evidenceContractComplete|planContractRelationshipConflicts|markdown(?:Header|Bullet|Section|SectionHeader)|firstOpenTask|parseIsoOrLocalTimestamp)$/i;
+const CLI_AUTHORITY_NAME = /^(?:(?:calculate|compute|derive|parse|validate|match|resolve).*WorkflowProfile|(?:parse|validate|match|resolve).*Capability(?:Registry|Path|Paths)|(?:extract|parse).*(?:AllowedPaths|ArtifactAuthority|WorkflowArtifact)|(?:get|parse|resolve).*PlanStatus|artifactStemFromPlan(?:Path)?|evidenceContractComplete|markdown(?:Header|Bullet|Section|SectionHeader)|firstOpenTask|parseIsoOrLocalTimestamp)$/i;
 const SNAPSHOT_AUTHORITY_NAME = /(?:markdown|allowedpaths|parseiso|firstopentask|state(?:lock|cache|version)|git(?:common|dir|head|rev|status)|readfilesync|writefilesync|renameSync|spawnSync|execSync)/i;
 const SNAPSHOT_FORBIDDEN_IMPORT = /(?:artifact-parsers|workflow\/profile|capabilities\/registry|state-lock|git-state-version-store|collect-state-inputs)/;
 

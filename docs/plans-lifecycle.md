@@ -13,8 +13,9 @@ The policy and its generators change together. `assets/workflow-contract.v1.json
 owns adoption paths. The adoption planner and init scripts project those paths.
 `new-plan.sh` creates planning content. `archive-workflow.sh` no longer reads or
 rewrites todos, notes or review files. `maintenance-triage.sh` still reads lessons.
-Existing contract generation, binding receipts and parsers remain in place.
-Their removal is #1114 and is on HOLD. This cleanup does not invoke the legacy
+Task contract generation, V1 binding history reads and unused relationship parsers
+are retired by #1114. Current source bindings use V2 admitted sessions.
+This cleanup does not invoke the legacy
 plan/contract archive command or migrate deleted plans into an archive tree.
 
 ## Downstream migration
@@ -33,12 +34,15 @@ checkout at a time. Nothing scans the fleet in CI or touches a remote.
 3. `repo-harness init` refreshes `.ai/harness/workflow-contract.json`; the new
    projection has no `deferredGoalLedger`.
 
-`tasks/contracts/` and `contract.template.md` stay until #1114. Preserve
-`lessonsLog` at `tasks/lessons.md`. Freeze an edited todos file with a historical
+Init does not create `tasks/contracts/` or install `contract.template.md`.
+Init leaves existing contract files and templates untouched. An explicit upgrade
+can refresh a template whose bytes match a shipped fingerprint. It backs up the
+prior bytes. Preserve `lessonsLog` at `tasks/lessons.md`.
+Freeze an edited todos file with a historical
 banner; do not convert its checkboxes automatically. Record real remaining work
 in Issues.
 
-Verify a fresh init and an upgrade: lessons and contracts remain available;
+Verify a fresh init and an upgrade: lessons remain available; contracts,
 notes/reviews/example task layouts and todos are not generated. Run archive with
 a historical todos file and confirm its bytes do not change. Review each repo's
 diff in its own PR. Do not add a runtime fallback for retired contract fields.

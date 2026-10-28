@@ -13,7 +13,7 @@ import { version as PACKAGE_VERSION } from '../../../package.json';
 import { gitExecFileSync } from '../git/runner';
 
 const MODEL_ROOT = '.archcontext/model';
-const DOC_INDEX = [['plans', 'plan'], ['tasks/contracts', 'contract']] as const;
+const DOC_INDEX = [['plans', 'plan']] as const;
 const REGULAR_FILE = new Set(['100644', '100755']);
 const SNAPSHOT_CACHE_SIZE = 4;
 type ModelFile<T> = { path: string; value: T };
@@ -168,7 +168,7 @@ export class ArchitectureModelReader {
   private readonly nodes: ModelFile<ModelNode>[];
   private readonly relations: ModelFile<ModelRelation>[];
   private readonly flows: ModelFile<ModelFlow>[];
-  private readonly docs: { path: string; kind: 'contract' | 'plan'; bytes: Buffer; capability: string | null; status: string | null }[];
+  private readonly docs: { path: string; kind: 'plan'; bytes: Buffer; capability: string | null; status: string | null }[];
   private readonly budget: number;
 
   constructor(cwd: string, options: ArchctxProviderOptions = {}) {
@@ -202,7 +202,7 @@ export class ArchitectureModelReader {
         }
       }
     }
-    // Only active plan and contract directories belong to this index. Their names
+    // Only root plan documents belong to this index. Their names
     // come from the Git tree and are checked only when a module links them.
     this.docs = docIndex.map(({ path, kind }) => {
       const bytes = this.snapshot.bytes(path), text = bytes.toString('utf8');

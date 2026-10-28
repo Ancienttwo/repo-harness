@@ -263,7 +263,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
     expect(sharedLib).toContain("check:task-workflow");
-    expect(sharedLib).toContain("contract.template.md");
+    expect(sharedLib).not.toContain("contract.template.md");
     expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(content).toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
@@ -333,7 +333,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");
     expect(content).not.toContain("install_skill_factory_files");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(content).not.toContain("# Deferred Goal Ledger");
@@ -355,7 +355,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("pi_install_helpers");
     expect(content).toContain("pi_install_templates");
     expect(content).not.toContain("install_workflow_contract");
-    expect(sharedLib).toContain("contract.template.md");
+    expect(sharedLib).not.toContain("contract.template.md");
     expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
     expect(contract.helpers.scripts).toContain("verify-contract.sh");
@@ -423,7 +423,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".skill-factory-state.json");
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(content).not.toContain("# Deferred Goal Ledger");
