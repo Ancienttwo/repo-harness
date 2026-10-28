@@ -182,12 +182,18 @@ export function deleteUnpublishedTrash(directory: string, deadline: number): voi
   rmdirSync(directory);
 }
 
-/** A failed preflight has not moved data. Its unused approval must not block other work. */
+/**
+ * A failed preflight or an interrupted publisher has not moved data. Its unused
+ * approval must not block other work or authorize a later rename. An empty
+ * container left by an interruption is unpublished trash.
+ */
 export function discardWorktreeTrashApproval(receipt: WorktreeTrashReceipt, deadline: number): void {
   if (present(trashPayload(receipt))) throw new Error('renamed approval cannot be discarded');
   if (readdirSync(receipt.directory).some(name => name !== RECEIPT)) throw new Error('approval container has unknown contents');
   checkDeadline(deadline);
   unlinkSync(join(receipt.directory, RECEIPT));
+  syncDirectoryDurably(receipt.directory);
   checkDeadline(deadline);
   rmdirSync(receipt.directory);
+  syncDirectoryDurably(dirname(receipt.directory));
 }

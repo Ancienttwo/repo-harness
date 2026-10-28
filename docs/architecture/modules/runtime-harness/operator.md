@@ -199,8 +199,12 @@ fresh process scan; a changed row is skipped and kept. The local branch goes wit
 the worktree; remote branches stay. HTTP runs the effect in a supervised child
 process (`runSetupProcess`, 20 s process-group deadline), so sync Git never blocks
 the serve event loop. A child timeout, crash or invalid output after the intent
-record is `reconcile_required`; the sweep's trash receipt finishes an interrupted
-removal. Approval of non-green rows comes with the cleanup session (5.2).
+record is `reconcile_required`. Trash recovery, shared by the sweep and the cleanup,
+finishes a removal from its receipt only when the payload was already renamed. A
+receipt whose live source was never renamed is discarded durably, with the sweep note
+`unused approval discarded; source kept for fresh selection`; that source is removed
+only by a later fresh selection under the full green predicate. Approval of non-green
+rows comes with the cleanup session (5.2).
 
 Creation paths write lifecycle records in the clone's common Git directory under
 `repo-harness/worktree-records`. Contract recovery metadata and MCP/session bindings

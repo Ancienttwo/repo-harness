@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { join, basename } from 'node:path';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 import { entries, inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
+import { prepareWorktreeTrash, renameWorktreeToTrash, worktreeTrashNames } from '../../src/effects/state/worktree-trash';
 import { worktreeId, recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { decodeWorktrees } from '../../src/core/operator/worktrees';
@@ -264,6 +265,53 @@ describe('green worktree cleanup effect', () => {
       expect(result.items).toEqual([{ id: row.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'skipped', reason: 'process_in_use' }]);
       expect(existsSync(join(f.tree, 'feature.txt')) && f.branchExists('feature')).toBe(true);
       expect(readdirSync(f.root)).toEqual(['repo-wt-feature']);
+    } finally { f.cleanup(); }
+  });
+
+  /** A second green tree whose removal published its trash approval and then stopped, as after a SIGKILL at `intent`. */
+  function interruptedApproval(f: ReturnType<typeof cleanupFixture>) {
+    const other = join(f.root, 'repo-wt-other');
+    f.git(f.main, 'worktree', 'add', '-b', 'other', other, 'feature');
+    writeFileSync(join(other, 'other.txt'), 'other'); commitAll(other, 'other');
+    const head = f.git(other, 'rev-parse', 'HEAD');
+    f.git(f.main, 'update-ref', 'refs/remotes/origin/main', head);
+    expect(f.row('repo-wt-other').judgment).toBe('green');
+    const common = resolveGitCommonDirectory(f.main);
+    const receipt = prepareWorktreeTrash(common, realpathSync(f.root), {
+      worktree: realpathSync(other), branch: 'other', head_sha: head, target_ref: 'refs/remotes/origin/main', target_oid: head, merge_commit_sha: head,
+    }, f.git(other, 'rev-parse', '--absolute-git-dir'));
+    return { other, receipt, common };
+  }
+
+  test.each(['ignored data', 'occupying process'])('an unused trash approval of an unselected tree that later gained %s does not remove it', change => {
+    const f = cleanupFixture();
+    try {
+      const { other, receipt } = interruptedApproval(f);
+      const occupant = { pid: 99, cwd: join(other, 'src') };
+      if (change === 'ignored data') writeFileSync(join(other, '.env'), 'private');
+      const probe: WorktreeProcessProbe = () => change === 'ignored data' ? [] : [occupant];
+      const green = f.row('repo-wt-feature');
+      const result = f.clean([green.id], f.digest('repo-wt-feature'), probe);
+      expect(result.items).toEqual([{ id: green.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'removed', reason: null }]);
+      expect(existsSync(f.tree)).toBe(false);
+      expect(existsSync(join(other, 'other.txt')) && f.branchExists('other')).toBe(true);
+      if (change === 'ignored data') expect(readFileSync(join(other, '.env'), 'utf8')).toBe('private');
+      expect(f.git(f.main, 'worktree', 'list', '--porcelain')).toContain(realpathSync(other));
+      expect(existsSync(receipt.directory)).toBe(false);
+    } finally { f.cleanup(); }
+  });
+
+  test('a trash approval whose payload was already renamed still completes before the selected removal', () => {
+    const f = cleanupFixture();
+    try {
+      const { other, receipt, common } = interruptedApproval(f);
+      renameWorktreeToTrash(receipt);
+      expect(existsSync(other)).toBe(false);
+      const green = f.row('repo-wt-feature');
+      const result = f.clean([green.id], f.digest('repo-wt-feature'));
+      expect(result.items.map(item => item.outcome)).toEqual(['removed']);
+      expect(existsSync(f.tree) || f.branchExists('feature') || f.branchExists('other')).toBe(false);
+      expect(worktreeTrashNames(common, realpathSync(f.root))).toEqual([]);
     } finally { f.cleanup(); }
   });
 

@@ -499,15 +499,23 @@ function trashLifecycle(common: string, receipt: WorktreeTrashReceipt) {
   return record;
 }
 
-function resumeSweepTrashAttempt(context: SweepContext, directory: string): void {
+function resumeSweepTrashAttempt(context: SweepContext, directory: string): 'resumed' | 'unused approval discarded' {
   let receipt: WorktreeTrashReceipt | null = null;
+  let unused = false;
   withWorktreeTopologyLock(context.main, () => {
     assertTrashIsUnregistered(context, directory);
     receipt = readWorktreeTrash(context.common, context.managedRoot, directory);
     if (!receipt) deleteUnpublishedTrash(directory, context.limits.deadline);
     else if (!context.managed(receipt.expected.worktree)) throw new Error('trash source is outside the managed pattern');
+    else if (!pathExists(trashPayload(receipt)) && pathExists(receipt.expected.worktree)) {
+      // An approval that never renamed its source must not authorize a later
+      // first rename: the live source re-enters fresh selection under the full green predicate.
+      discardWorktreeTrashApproval(receipt, context.limits.deadline);
+      unused = true;
+    }
   }, context.limits);
-  if (!receipt) return;
+  if (unused) return 'unused approval discarded';
+  if (!receipt) return 'resumed';
   const approved: WorktreeTrashReceipt = receipt;
   if (branchExists(context, approved.expected.branch)) commitSweepRemoval(context, approved.expected, approved);
   withWorktreeTopologyLock(context.main, () => {
@@ -522,10 +530,11 @@ function resumeSweepTrashAttempt(context: SweepContext, directory: string): void
     endWorktreeRecord(context.common, trashLifecycle(context.common, current), 'removed');
     deleteWorktreeTrash(current, context.trashDeadline, context.options);
   }, context.limits);
+  return 'resumed';
 }
 
-function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' | 'approval discarded' {
-  try { resumeSweepTrashAttempt(context, directory); return 'resumed'; }
+function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' | 'unused approval discarded' | 'approval discarded' {
+  try { return resumeSweepTrashAttempt(context, directory); }
   catch (error) {
     if (pathExists(join(directory, 'worktree'))) throw error;
     let discarded = false;
@@ -632,7 +641,12 @@ function recoverSweepTrash(context: SweepContext, notes: string[]): { readonly r
   for (const directory of trash.slice(0, 8)) {
     try { assertOwnedTrashDirectory(directory); }
     catch (error) { ignored = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
-    try { timeout(context.limits); const outcome = resumeSweepTrash(context, directory); if (outcome === 'resumed') resumed++; notes.push(`${directory}: ${outcome}`); }
+    try {
+      timeout(context.limits);
+      const outcome = resumeSweepTrash(context, directory);
+      if (outcome === 'resumed') resumed++;
+      notes.push(`${directory}: ${outcome === 'unused approval discarded' ? 'unused approval discarded; source kept for fresh selection' : outcome}`);
+    }
     catch (error) {
       if (error instanceof WorktreeTrashBudgetReached) notes.push(`${directory}: pending; ${error.message}`);
       else { blocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }

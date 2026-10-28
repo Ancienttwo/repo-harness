@@ -5,7 +5,9 @@ import { basename, join, resolve } from 'node:path';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
-import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import type { WorktreeView, WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import { cleanCommand, greenCleanupBatches, worktreeListOutput } from '../../src/cli/commands/worktrees';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
@@ -104,4 +106,26 @@ test('clean removes exactly the green selection, replays a reused request id and
   const audit = readFileSync(join(f.home, 'operator/audit.jsonl'), 'utf8');
   // Wrong digest, clean and the new request ran; the replay did not.
   expect(audit.split('\n').filter(Boolean).map(line => JSON.parse(line).phase)).toEqual(Array.from({ length: 3 }, () => ['intent', 'result']).flat());
+});
+
+test('human output splits 17 green rows into commands that each pass the request decoder, and JSON keeps one green selection', () => {
+  const view = (index: number): WorktreeView => ({
+    id: `wt_${index.toString(16).padStart(64, '0')}`, repository_id: 'repo_0123456789abcdef', directory: `repo-wt-${index}`, branch: `task-${index}`,
+    source: 'manual', judgment: 'green', reasons: [], size_bytes: null, size_observed_at: null, process_count: 0, dirty_files: 0, ignored_entries: 0,
+    unpushed_commits: 0, merge: 'ancestor', record: null,
+  });
+  const rows = Array.from({ length: 17 }, (_, index) => view(16 - index));
+  const snapshot: WorktreesSnapshot = { version: 1, status: 'ready', collected_at: '2026-10-28T00:00:00.000Z', unassigned: [],
+    repositories: [{ repository_id: 'repo_0123456789abcdef', display_name: 'repo', status: 'ready', worktrees: rows }] };
+  const batches = greenCleanupBatches(snapshot);
+  expect(batches.map(batch => batch.ids.length)).toEqual([16, 1]);
+  const ids = rows.map(row => row.id).sort();
+  expect(batches.flatMap(batch => batch.ids)).toEqual(ids);
+  for (const batch of batches) {
+    const command = cleanCommand(batch.ids, batch.digest).split(' ');
+    const request = decodeWorktreeCleanupRequest({ ids: command[command.indexOf('--ids') + 1]!.split(','), expected_digest: command[command.indexOf('--expected-digest') + 1]! });
+    expect(request.expected_digest).toBe(selectionDigest(rows.filter(row => batch.ids.includes(row.id)).map(worktreeDigestRow)));
+  }
+  const output = worktreeListOutput(snapshot);
+  expect(output.green).toEqual({ ids, digest: selectionDigest(rows.map(worktreeDigestRow)) });
 });

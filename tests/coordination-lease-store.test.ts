@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as childProcess from 'child_process';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
@@ -675,11 +676,38 @@ describe('exact cleanup and contract-worktree start sweep', () => {
         expect(readdirSync(join(directory, 'worktree')).length).toBeLessThan(3);
       }
       const next = sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh });
-      expect(next).toContain('resumed=1'); expect(existsSync(directory)).toBe(false);
+      // An unused approval is discarded; the unchanged green source is then removed by fresh selection.
+      if (step === 'intent') expect(next).toContain(`${directory}: unused approval discarded; source kept for fresh selection`);
+      else expect(next).toContain('resumed=1');
+      expect(existsSync(directory)).toBe(false);
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
       expect(f.git('worktree', 'list', '--porcelain')).not.toContain(f.path);
       expect(existsSync(outside)).toBe(true); expect(f.git('branch', '--list', 'outside')).toContain('outside');
     } finally { f.cleanup(); }
+  }, 20000);
+
+  test.each(['ignored data', 'occupying process'])('W1 an unused intent approval never removes a source that later gained %s', async change => {
+    const f = fixture(); try {
+      const directory = await interruptSweep(f, 'intent');
+      expect(existsSync(f.path)).toBe(true);
+      // A second green tree created after the interrupt; fresh selection removes it.
+      const second = join(f.managed, 'repo-wt-second'); f.git('worktree', 'add', '-q', '-b', 'codex/second', second);
+      writeFileSync(join(second, 'second'), 'second\n'); f.git('-C', second, 'add', 'second'); f.git('-C', second, 'commit', '-qm', 'second change');
+      f.git('merge', '--ff-only', 'codex/second'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      if (change === 'ignored data') {
+        appendFileSync(join(f.root, '.git/info/exclude'), '.env\n');
+        writeFileSync(join(f.path, '.env'), 'private\n');
+      } else setControlledWorktreeProcesses([{ pid: 4242, cwd: join(f.path, 'src') }]);
+      const next = sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh });
+      expect(next).toContain(`${directory}: unused approval discarded; source kept for fresh selection`);
+      expect(next).toContain(`${f.path}: kept; ${change === 'ignored data' ? 'ignored_data' : 'process_in_use'}`);
+      expect(existsSync(directory)).toBe(false);
+      expect(existsSync(join(f.path, '.gitignore'))).toBe(true);
+      if (change === 'ignored data') expect(readFileSync(join(f.path, '.env'), 'utf8')).toBe('private\n');
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      expect(f.git('worktree', 'list', '--porcelain')).toContain(f.path);
+      expect(existsSync(second)).toBe(false); expect(f.git('branch', '--list', 'codex/second')).toBe('');
+    } finally { setControlledWorktreeProcesses([]); f.cleanup(); }
   }, 20000);
 
   test('W1 deadline expiry during trash deletion leaves data that the next sweep finishes', () => {
