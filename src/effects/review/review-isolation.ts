@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync, symlinkSync, readlinkSync } from 'node:fs';
+import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
 
@@ -42,9 +42,9 @@ function readAuthBytes(path: string): Buffer {
   } finally { closeSync(fd); }
 }
 
-/** Pi reads its existing login through a read-only reference. Native history,
- * settings packages and user extensions never enter the review agent directory. */
-export function preparePiHome(output: string, sourceHome: string): string {
+/** Owner-only projection: native history, packages and user extensions stay out.
+ * A selected OAuth login must outlive the run without refreshing its source. */
+export function preparePiHome(output: string, sourceHome: string, runWindowMs: number, reuse = false): { home: string; auth_copied: boolean; mode: '0600' } {
   const home = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(home, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -52,26 +52,42 @@ export function preparePiHome(output: string, sourceHome: string): string {
   const stat = lstatSync(home);
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_home_unsafe');
   const source = join(realpathSync(sourceHome), '.pi', 'agent');
-  const models = join(source, 'models.json'), destination = join(home, 'models.json');
-  if (existsSync(models) && !existsSync(destination)) {
-    const bytes = readAuthBytes(models);
-    try { writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 }); } finally { bytes.fill(0); }
-  }
-  const settings = join(source, 'settings.json'), selectedSettings = join(home, 'settings.json');
-  if (existsSync(settings) && !existsSync(selectedSettings)) {
+  const copyConfig = (name: string, bytes?: Buffer) => {
+    const destination = join(home, name);
+    if (existsSync(destination)) {
+      const copied = readAuthBytes(destination);
+      try { if (!bytes || !copied.equals(bytes)) throw new Error('review_pi_config_changed'); }
+      finally { copied.fill(0); }
+    } else if (bytes) writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 });
+  };
+  const models = join(source, 'models.json');
+  const modelBytes = existsSync(models) ? readAuthBytes(models) : undefined;
+  try { copyConfig('models.json', modelBytes); } finally { modelBytes?.fill(0); }
+  const settings = join(source, 'settings.json');
+  let provider: string | undefined;
+  if (existsSync(settings)) {
     const bytes = readAuthBytes(settings);
     try {
       const { defaultProvider, defaultModel, defaultThinkingLevel } = JSON.parse(bytes.toString('utf8'));
-      writeFileSync(selectedSettings, JSON.stringify({ defaultProvider, defaultModel, defaultThinkingLevel }), { flag: 'wx', mode: 0o600 });
+      provider = defaultProvider;
+      copyConfig('settings.json', Buffer.from(JSON.stringify({ defaultProvider, defaultModel, defaultThinkingLevel })));
     } finally { bytes.fill(0); }
+  } else copyConfig('settings.json');
+  const auth = join(source, 'auth.json'), destination = join(home, 'auth.json');
+  if (!reuse && !existsSync(auth)) return { home, auth_copied: false, mode: '0600' };
+  if (typeof provider !== 'string' || !provider) throw new Error('review_pi_provider_unverified');
+  if (reuse) {
+    const copied = lstatSync(destination);
+    if (!copied.isFile() || copied.isSymbolicLink() || copied.uid !== process.getuid?.() || (copied.mode & 0o777) !== 0o600) throw new Error('review_auth_copy_unsafe');
   }
-  const auth = join(source, 'auth.json'), reference = join(home, 'auth.json');
-  if (existsSync(auth)) {
-    const target = realpathSync(auth);
-    if (!existsSync(reference)) symlinkSync(target, reference);
-    if (!lstatSync(reference).isSymbolicLink() || readlinkSync(reference) !== target) throw new Error('review_pi_auth_reference_changed');
-  }
-  return home;
+  const bytes = readAuthBytes(reuse ? destination : auth);
+  try {
+    const entry = JSON.parse(bytes.toString('utf8'))[provider];
+    if (!entry) return { home, auth_copied: false, mode: '0600' };
+    if (entry.type === 'oauth' && (typeof entry.expires !== 'number' || !Number.isFinite(entry.expires) || entry.expires <= Date.now() + runWindowMs)) throw new Error('review_access_expires_within_run');
+    if (!reuse) writeFileSync(destination, JSON.stringify({ [provider]: entry }), { flag: 'wx', mode: 0o600 });
+    return { home, auth_copied: true, mode: '0600' };
+  } finally { bytes.fill(0); }
 }
 
 /** Owner-only credential preparation. Never called by the sandboxed host. */
@@ -113,9 +129,9 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
 }
 
 /** Delete only the isolated copy; never follow a directory link or touch source. */
-export function removeCopiedAuth(output: string): { status: 'removed' | 'absent' | 'cleanup_pending' } {
+export function removeCopiedAuth(output: string, kind: 'codex' | 'pi' = 'codex'): { status: 'removed' | 'absent' | 'cleanup_pending' } {
   try {
-    const home = join(ownedOutput(output), '.codex-home');
+    const home = join(ownedOutput(output), kind === 'pi' ? '.pi-agent' : '.codex-home');
     let stat;
     try { stat = lstatSync(home); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' }; throw error; }
     if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(home) !== home) return { status: 'cleanup_pending' };

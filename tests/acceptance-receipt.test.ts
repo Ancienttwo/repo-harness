@@ -669,6 +669,11 @@ darwinTest('explicit Pi review: scripted OAR fixture records its reported model 
   const { OarReviewHost } = await import('../src/effects/review/oar-review-host');
   const { bindNativeTaskSession } = await import('../src/effects/terminal/native-task-session');
   const f = reviewFixture(); f.verdict('PASS');
+  const nativeHome = join(f.options.endpoint.home, '.pi/agent');
+  mkdirSync(nativeHome, { recursive: true });
+  writeFileSync(join(nativeHome, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'reviewer' }));
+  const credentials = { 'fixture-provider': { type: 'api_key', key: 'fixture-only-key' }, other: { type: 'api_key', key: 'fixture-unused-key' } };
+  writeFileSync(join(nativeHome, 'auth.json'), JSON.stringify(credentials));
   let turns = 0;
   const session = await scriptedRuntime({ id: 'fixture-pi', model: 'fixture-provider/reviewer',
     turn: async ({ say }) => { turns++; say('[scripted OAR fixture opinion]'); } }).session({ kind: 'available', via: 'bundled' }, { cwd: f.reviewerRepo });
@@ -697,6 +702,12 @@ darwinTest('explicit Pi review: scripted OAR fixture records its reported model 
     expect(result.receipt.actual_harness).toBe('pi');
     expect(result.receipt.actual_model).toBe('fixture-provider/reviewer');
     expect((await verifyAcceptance({ root: f.root, authority: f.options.authority, authorityHome: f.home })).actual_harness).toBe('pi');
+    const owned = readSessionArtifact<{ task: string }>(join(reviewLocation(f.root, f.options.authority).dir, 'session.json'));
+    const copy = join(f.reviewerRepo, '.ai/harness/runs/task-agent-outbox', importedTaskDir(f.root, owned.task, 'deep-reasoner').split('/').pop()!, '.pi-agent/auth.json');
+    expect(JSON.parse(readFileSync(copy, 'utf8'))).toEqual({ 'fixture-provider': credentials['fixture-provider'] });
+    await closeReview(f.root, f.options.authority, false, f.home, { ...effects, dispose: async () => { await host.dispose(); } });
+    expect(existsSync(copy)).toBe(false);
+    expect(JSON.parse(readFileSync(join(nativeHome, 'auth.json'), 'utf8'))).toEqual(credentials);
   } finally { await host.dispose(); }
 });
 

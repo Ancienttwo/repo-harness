@@ -362,8 +362,8 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
   }
 });
 
-test('Pi review home copies models only and references credentials without copying them', async () => {
-  const { mkdirSync, symlinkSync, readdirSync, readlinkSync } = await import('node:fs');
+test('Pi review home projects model settings and copies only the selected provider credential', async () => {
+  const { mkdirSync, symlinkSync, readdirSync } = await import('node:fs');
   const { preparePiHome } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('pi-review-home'); roots.push(root);
   const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
@@ -371,17 +371,65 @@ test('Pi review home copies models only and references credentials without copyi
   for (const name of ['models.json', 'auth.json', 'settings.json']) writeFileSync(join(agent, name), '{}');
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model',
     defaultThinkingLevel: 'high', packages: ['unsafe-package'], extensions: ['unsafe-extension'], skills: ['unsafe-skill'] }));
+  const credentials = { 'fixture-provider': { type: 'api_key', key: 'fixture-selected-key' }, other: { type: 'api_key', key: 'fixture-other-key' } };
+  writeFileSync(join(agent, 'auth.json'), JSON.stringify(credentials));
   for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
-  const home = preparePiHome(output, source);
+  const prepared = preparePiHome(output, source, 60000), home = prepared.home;
   expect(lstatSync(home).mode & 0o777).toBe(0o700);
   expect(readdirSync(home).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
-  expect(lstatSync(join(home, 'auth.json')).isSymbolicLink()).toBe(true);
-  expect(readlinkSync(join(home, 'auth.json'))).toBe(join(agent, 'auth.json'));
+  expect(lstatSync(join(home, 'auth.json')).isSymbolicLink()).toBe(false);
+  expect(lstatSync(join(home, 'auth.json')).mode & 0o777).toBe(0o600);
+  expect(JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8'))).toEqual({ 'fixture-provider': credentials['fixture-provider'] });
+  expect(JSON.parse(readFileSync(join(agent, 'auth.json'), 'utf8'))).toEqual(credentials);
   expect(readFileSync(join(home, 'models.json'), 'utf8')).toBe('{}');
-  expect(preparePiHome(output, source)).toBe(home);
+  expect(preparePiHome(output, source, 60000, true)).toEqual(prepared);
+  const noCredentialOutput = join(root, 'no-selected-credential'); mkdirSync(noCredentialOutput);
+  writeFileSync(join(agent, 'auth.json'), JSON.stringify({ other: credentials.other }));
+  const noCredential = preparePiHome(noCredentialOutput, source, 60000);
+  expect(noCredential.auth_copied).toBe(false);
+  expect(existsSync(join(noCredential.home, 'auth.json'))).toBe(false);
   const unsafe = join(root, 'unsafe'); mkdirSync(unsafe); symlinkSync(home, join(unsafe, '.pi-agent'));
-  expect(() => preparePiHome(unsafe, source)).toThrow('review_pi_home_unsafe');
+  expect(() => preparePiHome(unsafe, source, 60000)).toThrow('review_pi_home_unsafe');
+});
+
+test('Pi review home rejects changes to copied model and projected settings bytes on reuse', async () => {
+  const { mkdirSync } = await import('node:fs');
+  const { preparePiHome } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-config-integrity'); roots.push(root);
+  const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  writeFileSync(join(agent, 'models.json'), '{}');
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
+  const { home } = preparePiHome(output, source, 60000);
+  for (const name of ['models.json', 'settings.json']) {
+    const path = join(home, name), original = readFileSync(path);
+    writeFileSync(path, '{"provider":"changed"}');
+    expect(() => preparePiHome(output, source, 60000)).toThrow('review_pi_config_changed');
+    writeFileSync(path, original);
+  }
+});
+
+test('Pi OAuth must outlive the run; selected copies use the shared cleanup states', async () => {
+  const { mkdirSync } = await import('node:fs');
+  const { preparePiHome, removeCopiedAuth } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-oauth-window'); roots.push(root);
+  const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
+  const auth = join(agent, 'auth.json');
+  writeFileSync(auth, JSON.stringify({ fixture: { type: 'oauth', access: 'fixture-access', refresh: 'fixture-refresh', expires: Date.now() + 30000 } }));
+  expect(() => preparePiHome(output, source, 60000)).toThrow('review_access_expires_within_run');
+  expect(existsSync(join(output, '.pi-agent/auth.json'))).toBe(false);
+  writeFileSync(auth, JSON.stringify({ fixture: { type: 'oauth', access: 'fixture-access', refresh: 'fixture-refresh', expires: Date.now() + 3600000 } }));
+  const sourceBytes = readFileSync(auth);
+  const { home } = preparePiHome(output, source, 60000);
+  expect(existsSync(join(home, 'auth.json'))).toBe(true);
+  expect(removeCopiedAuth(output, 'pi').status).toBe('removed');
+  expect(removeCopiedAuth(output, 'pi').status).toBe('absent');
+  expect(readFileSync(auth).equals(sourceBytes)).toBe(true);
+  mkdirSync(join(home, 'auth.json'));
+  expect(removeCopiedAuth(output, 'pi').status).toBe('cleanup_pending');
 });
 
 darwinTest('Pi subprocess fixture: OAR argv and inherited Seatbelt deny source, native state, credentials and signals', async () => {
@@ -392,8 +440,11 @@ darwinTest('Pi subprocess fixture: OAR argv and inherited Seatbelt deny source, 
   const owner = join(root, 'owner'), output = join(root, 'output'), sourceHome = join(root, 'home');
   mkdirSync(owner); mkdirSync(output); mkdirSync(join(sourceHome, '.pi/agent'), { recursive: true });
   const source = join(owner, 'source.txt'), native = join(sourceHome, '.pi/agent/state.json'), auth = join(sourceHome, '.pi/agent/auth.json');
-  for (const path of [source, native, auth]) writeFileSync(path, 'KEEP');
-  const agent = preparePiHome(output, sourceHome);
+  for (const path of [source, native]) writeFileSync(path, 'KEEP');
+  writeFileSync(auth, JSON.stringify({ fixture: { type: 'api_key', key: 'fixture-key' } }));
+  writeFileSync(join(sourceHome, '.pi/agent/settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
+  const agent = preparePiHome(output, sourceHome, 60000).home;
+  const authBytes = readFileSync(auth);
   const paths = { subject: owner, primary: owner, ownerRecord: owner, journal: owner, gitCommonDir: owner, output };
   const policyFile = join(owner, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
   const node = resolveNode24(), vendor = join(root, 'fixture-pi.cjs');
@@ -429,7 +480,8 @@ try{console.log(JSON.stringify({fixture:true,model:host.model('pi')}))}finally{a
   expect(observed.denied).toEqual([true, true, true, true]);
   expect(observed.child).toEqual([true, true, true, true]);
   expect(observed.signalDenied).toBe(true);
-  for (const path of [source, native, auth]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+  for (const path of [source, native]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+  expect(readFileSync(auth).equals(authBytes)).toBe(true);
 });
 
 test('default reviewer selection never selects Pi, including when the preferred executable is missing', async () => {

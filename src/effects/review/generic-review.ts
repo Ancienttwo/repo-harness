@@ -234,6 +234,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   const { root, primary, campaign, key, dir } = reviewLocation(options.repoRoot, options.authority);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
   let authOutput: string | undefined;
+  let authKind: 'codex' | 'pi' = 'codex';
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
     if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
@@ -308,7 +309,14 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       isolatedHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
-    if (session.actual_harness === 'pi') isolatedHome = preparePiHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
+    if (session.actual_harness === 'pi') {
+      authOutput = outbox; authKind = 'pi';
+      const marker = join(dir, 'auth-copy.json');
+      const prepared = preparePiHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir,
+        timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
+      isolatedHome = prepared.home;
+      if (prepared.auth_copied && !existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
+    }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: dir, journal: dir,
@@ -422,7 +430,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     return { status: output.verdict === 'PASS' ? 'accepted' as const : 'rejected' as const, round, output, receipt,
       projection, requested_harness: session.requested_harness, actual_harness: session.actual_harness, fallback_reason: session.fallback_reason };
   } catch (error) {
-    if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+    if (authOutput && removeCopiedAuth(authOutput, authKind).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
     throw error;
   } finally { lock.release(); }
 }
@@ -456,11 +464,15 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
   let authOutput: string | undefined;
+  let authKind: 'codex' | 'pi' = 'codex';
   try {
     return await locked(primary, dir, async () => {
       if (existsSync(join(dir, 'session.json'))) {
         const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-        if (owned.actual_harness === 'codex') authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+        if (owned.actual_harness === 'codex' || owned.actual_harness === 'pi') {
+          authKind = owned.actual_harness;
+          authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+        }
       }
       if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
       const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
@@ -489,6 +501,6 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
     }
     throw error;
   } finally {
-    if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+    if (authOutput && removeCopiedAuth(authOutput, authKind).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
   }
 }
