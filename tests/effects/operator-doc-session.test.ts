@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
+import { checkDocCitation, DOC_CITATION_BUDGET_CHARS, DOC_CITATION_BUDGET_HASHES, docCitationBudget, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
 import { OPERATOR_DOCS_TREE_KIND, type DocsTreeV1 } from '../../src/core/operator/docs';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
@@ -280,15 +280,50 @@ test('production routes admit exactly the settings write and the session create 
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
   const at = (start: number, end: number) => cite(GUIDE, 'docs/guide.md', start, end, 'c'.repeat(40));
-  expect(checkDocCitation(at(3, 4), GUIDE)).toEqual({ state: 'current', start_line: 3, end_line: 4 });
-  expect(checkDocCitation(at(3, 4), `x\n${GUIDE}`)).toEqual({ state: 'relocated', start_line: 4, end_line: 5 });
+  expect(checkDocCitation(at(3, 4), GUIDE, docCitationBudget())).toEqual({ state: 'current', start_line: 3, end_line: 4 });
+  expect(checkDocCitation(at(3, 4), `x\n${GUIDE}`, docCitationBudget())).toEqual({ state: 'relocated', start_line: 4, end_line: 5 });
   // Two copies of the cited text: no unique place, so the user must cite again.
   const twice = `${GUIDE}The operator reads docs.\nIt never writes main.\n`;
-  expect(checkDocCitation(at(3, 4), `x\n${twice}`)).toEqual({ state: 'stale' });
+  expect(checkDocCitation(at(3, 4), `x\n${twice}`, docCitationBudget())).toEqual({ state: 'stale' });
   // Lines past the end of the file.
-  expect(checkDocCitation({ ...at(1, 1), start_line: 40, end_line: 41 }, GUIDE)).toEqual({ state: 'stale' });
+  expect(checkDocCitation({ ...at(1, 1), start_line: 40, end_line: 41 }, GUIDE, docCitationBudget())).toEqual({ state: 'stale' });
   // The last line has no line end; its bytes are still a whole line.
-  expect(checkDocCitation(cite('a\nb', 'docs/x.md', 2, 2, 'c'.repeat(40)), 'a\nb')).toEqual({ state: 'current', start_line: 2, end_line: 2 });
+  expect(checkDocCitation(cite('a\nb', 'docs/x.md', 2, 2, 'c'.repeat(40)), 'a\nb', docCitationBudget())).toEqual({ state: 'current', start_line: 2, end_line: 2 });
+});
+
+test('a relocation that needs more hashes or more hashed text than the request budget stops as over_budget', () => {
+  // One cited line moved past more candidate lines than the hash count allows.
+  const filler = 'x\n'.repeat(DOC_CITATION_BUDGET_HASHES);
+  const moved = cite('target\n', 'docs/x.md', 1, 1, 'c'.repeat(40));
+  expect(checkDocCitation(moved, `${filler}target\n`, docCitationBudget())).toEqual({ state: 'over_budget' });
+  // The same move below the cap is found.
+  expect(checkDocCitation(moved, `${'x\n'.repeat(1_000)}target\n`, docCitationBudget())).toEqual({ state: 'relocated', start_line: 1_001, end_line: 1_001 });
+  // A 500-line range moved down: each candidate hashes the whole range, so the text cap ends the check first.
+  const block = Array.from({ length: 500 }, (_, index) => `${String(index).padStart(4, '0')} ${'b'.repeat(100)}\n`).join('');
+  const range = cite(block, 'docs/x.md', 1, 500, 'c'.repeat(40));
+  // Filler lines as long as the cited ones, so every candidate range is as long as the citation.
+  const shifted = `${`${'y'.repeat(105)}\n`.repeat(400)}${block}`;
+  expect(400 * block.length).toBeGreaterThan(DOC_CITATION_BUDGET_CHARS);
+  expect(checkDocCitation(range, shifted, docCitationBudget())).toEqual({ state: 'over_budget' });
+  // Only the budget refuses it: a larger one finds the unique move.
+  expect(checkDocCitation(range, shifted, { hashes: 1_000, chars: 1_000 * block.length })).toEqual({ state: 'relocated', start_line: 401, end_line: 900 });
+  // The checks of one request share the budget: a spent budget refuses even a current citation.
+  expect(checkDocCitation(range, block, { hashes: 0, chars: DOC_CITATION_BUDGET_CHARS })).toEqual({ state: 'over_budget' });
+  expect(checkDocCitation(range, block, { hashes: 1, chars: block.length })).toEqual({ state: 'current', start_line: 1, end_line: 500 });
+});
+
+test('a citation whose relocation exceeds the request hash budget is refused with 409 citation_stale before any git work, and nothing is created', async () => {
+  const h = await harness();
+  const block = Array.from({ length: 500 }, (_, index) => `${String(index).padStart(4, '0')} ${'b'.repeat(100)}\n`).join('');
+  await h.commit(block);
+  const citation = cite(block, 'docs/guide.md', 1, 500, h.head());
+  await h.commit(`${`${'y'.repeat(105)}\n`.repeat(400)}${block}`);
+  const answer = await h.post(request(h, [citation]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('citation_stale');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
 test('two concurrent creations for one repository give one 201 and one 503 busy, and leave one worktree and one branch', async () => {
@@ -373,6 +408,45 @@ test('git variables that select another repository do not move the branch or the
   expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(join(h.worktrees, answer.body.worktree))}\n`);
   expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads/docs/'], other)).toBe('');
   expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
+});
+
+test('a held `git worktree add` keeps the server answering: a health read completes while the creation waits', async () => {
+  const realGit = Bun.which('git');
+  expect(realGit).not.toBeNull();
+  const gate = tmpWorkspace('operator-doc-session-git-gate');
+  cleanups.push(() => rmSync(gate, { recursive: true, force: true }));
+  const started = join(gate, 'started');
+  const release = join(gate, 'release');
+  // A real git behind a wrapper that holds only the checkout until the test releases it.
+  const wrapper = join(gate, 'git');
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'if [ "$1" = worktree ] && [ "$2" = add ]; then',
+    `  : > '${started}'`,
+    `  while [ ! -e '${release}' ]; do sleep 0.02; done`,
+    'fi',
+    `exec '${realGit}' "$@"`,
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
+  let settled = false;
+  const creation = h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())])).finally(() => { settled = true; });
+  while (!existsSync(started)) await Bun.sleep(10);
+
+  const health = await fetch(`${h.url}/healthz`);
+  expect(health.status).toBe(200);
+  expect(settled).toBe(false);
+  expect(existsSync(release)).toBe(false);
+  // The topology lock stays held across the awaited checkout.
+  const topologyLock = join(h.repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+  expect(existsSync(topologyLock)).toBe(true);
+
+  writeFileSync(release, '');
+  const answer = await creation;
+  expect(answer.status).toBe(201);
+  expect(h.branches()).toEqual([answer.body.branch]);
+  expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
+  expect(existsSync(topologyLock)).toBe(false);
 });
 
 const AT = '2026-10-27T12:00:00.000Z';

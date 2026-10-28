@@ -12,15 +12,15 @@ import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { checkDocCitation, decodeDocCitation, type DocCitationV1 } from '../../core/operator/doc-citation';
+import { checkDocCitation, decodeDocCitation, docCitationBudget, type DocCitationV1 } from '../../core/operator/doc-citation';
 import type { JsonValue } from '../../core/evidence/types';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
-import { configuredGitBinary, gitExecFileSync, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { configuredGitBinary, gitExecFile, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { assertDocsHostPlatform, DOCS_HOST_MODEL_API } from '../review/docs-host-isolation';
-import { withWorktreeTopologyLock } from '../state/coordination-worktree-topology';
+import { withWorktreeTopologyLockAsync } from '../state/coordination-worktree-topology';
 import { DocsReadError, normalizeDocsPath, type DocsReader } from './docs-reader';
 import type { OperatorWriteRoute } from './write-channel';
 import { prepareOperatorStateDir } from './write-audit';
@@ -83,9 +83,14 @@ function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 interface VerifiedCitation { readonly citation: DocCitationV1; readonly resolved: DocCitationV1; readonly relocated: boolean }
 
-/** Every citation is checked against one commit of the served docs view; that commit is the session base. */
+/**
+ * Every citation is checked against one commit of the served docs view; that commit is the session base.
+ * The checks share one hash budget, so a request's synchronous hashing stays short.
+ * A relocation that would exceed it is refused as stale: citing the passage again makes the check cheap.
+ */
 async function verifyCitations(reader: DocsReader, citations: readonly DocCitationV1[]): Promise<{ readonly base: string; readonly verified: VerifiedCitation[] }> {
   let base: string | null = null;
+  const budget = docCitationBudget();
   const verified: VerifiedCitation[] = [];
   for (const citation of citations) {
     let file;
@@ -101,8 +106,8 @@ async function verifyCitations(reader: DocsReader, citations: readonly DocCitati
     // A refresh between two reads would mix commits; the request is retried, not merged.
     if (base !== null && file.commit !== base) throw docsUnavailable();
     base = file.commit;
-    const check = checkDocCitation(citation, file.text);
-    if (check.state === 'stale') throw staleCitation();
+    const check = checkDocCitation(citation, file.text, budget);
+    if (check.state === 'stale' || check.state === 'over_budget') throw staleCitation();
     verified.push({
       citation,
       resolved: { ...citation, start_line: check.start_line, end_line: check.end_line, commit: file.commit, file_sha256: file.sha256 },
@@ -122,15 +127,13 @@ function staleCitation(): OperatorWriteRefusal {
  * the planned name. The claim must resolve to a managed path before git runs.
  * A refused claim or a failed `git worktree add` removes the claim when it is
  * still the empty directory this call made. The caller holds the topology lock.
+ * Git runs asynchronously, so the server keeps answering during a slow checkout.
  */
-function addDocsWorktree(repoRoot: string, root: string, worktree: string, branch: string, base: string, env: NodeJS.ProcessEnv, deadline: number): string {
-  const git = (args: string[]) => gitExecFileSync(args, {
-    cwd: repoRoot, gitBin: configuredGitBinary(env), env: gitEnvironment(env), encoding: 'utf8',
-    timeout: Math.max(1, deadline - Date.now()), stdio: ['ignore', 'pipe', 'pipe'],
+async function addDocsWorktree(repoRoot: string, root: string, worktree: string, branch: string, base: string, env: NodeJS.ProcessEnv, deadline: number): Promise<string> {
+  const git = (args: string[]) => gitExecFile(args, {
+    cwd: repoRoot, gitBin: configuredGitBinary(env), env: gitEnvironment(env), timeout: Math.max(1, deadline - Date.now()),
   });
-  const branchExists = gitSpawnSync(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {
-    cwd: repoRoot, gitBin: configuredGitBinary(env), env: gitEnvironment(env), stdio: 'ignore', timeout: Math.max(1, deadline - Date.now()),
-  }).status === 0;
+  const branchExists = await git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
   if (branchExists) throw worktreeExists();
   try { mkdirSync(worktree, { mode: 0o700 }); }
   catch (error) {
@@ -154,7 +157,7 @@ function addDocsWorktree(repoRoot: string, root: string, worktree: string, branc
     throw new Error('doc session worktree claim resolved outside the managed root');
   }
   try {
-    git(['worktree', 'add', '-b', branch, canonical, base]);
+    await git(['worktree', 'add', '-b', branch, canonical, base]);
   } catch (error) {
     releaseClaim();
     throw error;
@@ -210,7 +213,8 @@ async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDe
   const deadline = Date.now() + DOC_SESSION_GIT_DEADLINE_MS;
   let canonical: string;
   try {
-    canonical = withWorktreeTopologyLock(primary, () => addDocsWorktree(primary, root, worktree, branch, base, deps.env, deadline), { deadline });
+    canonical = await withWorktreeTopologyLockAsync(primary, () => addDocsWorktree(primary, root, worktree, branch, base, deps.env, deadline),
+      { deadline, gitBin: configuredGitBinary(deps.env) });
   } catch (error) {
     if (error instanceof ExclusiveLockContentionError) throw refuse(503, 'busy', 'Another worktree change in this repository is running.', 'Retry with a new request_id.');
     throw error;
