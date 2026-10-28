@@ -8,7 +8,7 @@ import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSn
 import { readReviewAdmissionSource } from '../admission/admission-source';
 import { observeTaskInboxContext } from '../fleet/task-inbox';
 import { readTaskAgent } from '../terminal/task-session';
-import { listExternalSourceBindingReceipts, listHistoricalExternalSourceBindingReceipts,
+import { listExternalSourceBindingReceipts,
   listExternalSourceRefreshReceipts, listProviderIssueObservations, writeExternalSourceBindingReceipt } from './store';
 
 export interface BindExternalSourceInput {
@@ -91,13 +91,6 @@ export function listExternalSourceBindings(repositoryId: string, env?: NodeJS.Pr
   return { protocol: 2, kind: 'repo-harness-external-source-binding-projection', registered_repository_id: repositoryId,
     authorization_revision: registry.authorizationRevision, bindings };
 }
-export function listHistoricalExternalSourceBindings(repositoryId: string, env?: NodeJS.ProcessEnv) {
-  const repo = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(r => r.id === repositoryId);
-  if (!repo) throw new Error('registered repository is unknown');
-  return { protocol: 1, kind: 'repo-harness-historical-external-source-bindings', registered_repository_id: repositoryId,
-    bindings: listHistoricalExternalSourceBindingReceipts(repo.path).filter(r => r.registered_repository_id === repositoryId) };
-}
-
 export function externalSourceContext(repoRoot: string, repositoryId: string, sourceRevision: string): string {
   const matches = listProviderIssueObservations(repoRoot).filter((observation) => observation.registered_repository_id === repositoryId && observation.source_revision === sourceRevision);
   if (matches.length !== 1) throw new Error(`expected exactly one immutable observation for source revision ${sourceRevision}, found ${matches.length}`);

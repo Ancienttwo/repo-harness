@@ -96,18 +96,6 @@ export function globMatch(text: string, pattern: string): boolean {
   return new RegExp(`^${regexSource}$`).test(text);
 }
 
-/** Pure contract-scope decision over canonical repo-relative paths. */
-export function contractAllowsPath(
-  contractPath: string,
-  allowedPaths: readonly string[],
-  targetPath: string,
-): boolean {
-  if (targetPath === contractPath) return true;
-  return allowedPaths.some((pattern) => (
-    pattern.endsWith('/') ? targetPath.startsWith(pattern) : globMatch(targetPath, pattern)
-  ));
-}
-
 export function firstOpenTask(planText: string | null): string | null {
   if (!planText) return null;
   const match = planText.match(/^\s*- \[ \]\s+(.+?)\s*$/m);
@@ -179,23 +167,4 @@ export function evidenceContractComplete(planText: string | null): boolean {
     const value = line.slice(line.indexOf(':') + 1).trim();
     return Boolean(value) && !/^(tbd|todo|n\/a|none|unknown|\.\.\.)$/i.test(value);
   });
-}
-
-export function planContractRelationshipConflicts(
-  planPath: string | null,
-  contractPath: string | null,
-  planText: string | null,
-  contractText: string | null,
-): string[] {
-  if (!planPath) return [];
-  const conflicts: string[] = [];
-  const contractPlan = contractText ? markdownHeader(contractText, 'Plan') : null;
-  const planContract = planText ? markdownHeader(planText, 'Task Contract') : null;
-  if (contractText && contractPlan && contractPlan !== planPath) {
-    conflicts.push('contract_plan_relationship');
-  }
-  if (contractPath && planContract && planContract !== contractPath) {
-    conflicts.push('plan_contract_relationship');
-  }
-  return conflicts;
 }

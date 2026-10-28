@@ -6,7 +6,7 @@ import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError }
 import { ExternalSourcePolicyError, readExternalSourcesPolicy } from '../../effects/github/policy';
 import { ExternalSourceRefreshError, listExternalSourceProjection, refreshExternalSource } from '../../effects/external-sources/refresh';
 import { ExternalSourceStoreError } from '../../effects/external-sources/store';
-import { bindExternalSource, externalSourceContext, listExternalSourceBindings, listHistoricalExternalSourceBindings } from '../../effects/external-sources/binding';
+import { bindExternalSource, externalSourceContext, listExternalSourceBindings } from '../../effects/external-sources/binding';
 import { ExternalSourceBindingError } from '../../core/external-sources/binding';
 
 type Format = 'json' | 'text';
@@ -133,14 +133,6 @@ export function buildExternalSourceCommand(): Command {
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
     .option('--format <format>', 'json or text', 'text')
     .action(bindings);
-  command.command('historical-bindings')
-    .description('Read retired V1 binding receipts as history, without current authority')
-    .requiredOption('--repo <registered-repo-id>', 'Registered repository id')
-    .option('--format <format>', 'json or text', 'text')
-    .action((options: Options) => {
-      try { outputDocument(listHistoricalExternalSourceBindings(options.repo), options.format, 'HistoricalExternalSourceBindingsV1'); }
-      catch (error) { outputError(error); }
-    });
   command.command('context')
     .description('Render one immutable observation inside the sole explicit untrusted-source boundary')
     .requiredOption('--repo <registered-repo-id>', 'Registered repository id')

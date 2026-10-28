@@ -303,7 +303,6 @@ describe('state architecture boundary checker', () => {
           'export function getPlanStatus(): string { return "Executing"; }',
           'export function artifactStemFromPlanPath(): string { return "task"; }',
           'export function evidenceContractComplete(): boolean { return true; }',
-          'export function planContractRelationshipConflicts(): string[] { return []; }',
           '',
         ].join('\n'),
       );
@@ -314,7 +313,6 @@ describe('state architecture boundary checker', () => {
     ]);
     expect(messages(result, 'CANONICAL_SYMBOL_OWNER')).toEqual([
       expect.stringContaining('evidenceContractComplete'),
-      expect.stringContaining('planContractRelationshipConflicts'),
     ]);
   });
 

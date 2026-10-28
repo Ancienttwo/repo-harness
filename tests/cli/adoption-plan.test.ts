@@ -115,7 +115,8 @@ describe("canonical adoption plan", () => {
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai", "harness", "policy.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai", "hooks", "lib", "workflow-state.sh"))).toBe(false);
-      expect(existsSync(join(repo, ".claude", "templates", "contract.template.md"))).toBe(true);
+      expect(existsSync(join(repo, ".claude", "templates", "contract.template.md"))).toBe(false);
+      expect(existsSync(join(repo, "tasks", "contracts"))).toBe(false);
       expect(existsSync(join(repo, "docs", "reference-configs", "harness-overview.md"))).toBe(true);
       const scripts = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts;
       expect(scripts["check:task-workflow"]).toBeUndefined();
@@ -131,6 +132,24 @@ describe("canonical adoption plan", () => {
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
       cleanup(repo);
+    }
+  });
+
+  test("minimal and standard init preserve existing contract artifacts without generating them", () => {
+    for (const mode of ["minimal", "standard"] as const) {
+      const repo = tempRepo();
+      try {
+        expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode, apply: true })).ok).toBe(true);
+        expect(existsSync(join(repo, "tasks/contracts"))).toBe(false);
+        expect(existsSync(join(repo, ".claude/templates/contract.template.md"))).toBe(false);
+        mkdirSync(join(repo, "tasks/contracts"), { recursive: true });
+        mkdirSync(join(repo, ".claude/templates"), { recursive: true });
+        writeFileSync(join(repo, "tasks/contracts/history.contract.md"), "# Historical contract\n");
+        writeFileSync(join(repo, ".claude/templates/contract.template.md"), "# Local contract template\n");
+        expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode, apply: true })).ok).toBe(true);
+        expect(readFileSync(join(repo, "tasks/contracts/history.contract.md"), "utf8")).toBe("# Historical contract\n");
+        expect(readFileSync(join(repo, ".claude/templates/contract.template.md"), "utf8")).toBe("# Local contract template\n");
+      } finally { cleanup(repo); }
     }
   });
 
@@ -409,13 +428,13 @@ describe("canonical adoption plan", () => {
   });
 
   for (const mode of ["minimal", "standard"] as const) {
-    test(`${mode} adoption keeps lessons and contracts without seeding retired task surfaces`, () => {
+    test(`${mode} adoption keeps lessons without seeding retired task surfaces`, () => {
       const repo = tempRepo();
       try {
         const plan = planAdoption({ repoRoot: repo, mode, apply: true });
         expect(applyAdoptionPlan(plan).ok).toBe(true);
         expect(existsSync(join(repo, "tasks", "lessons.md"))).toBe(true);
-        expect(existsSync(join(repo, "tasks", "contracts"))).toBe(true);
+        expect(existsSync(join(repo, "tasks", "contracts"))).toBe(false);
         for (const path of ["todos.md", "notes", "reviews", "examples"]) {
           expect(existsSync(join(repo, "tasks", path))).toBe(false);
         }
