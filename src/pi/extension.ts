@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { VERSION, getPackageDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { probePiCapability, type PiCapability } from './compat';
 import { PiHookBridge, type PiHookRequest } from './hook-bridge';
@@ -22,10 +22,19 @@ type Session = {
 function probeRepoOptIn(cwd: string): 'opted-in' | 'inactive' | 'unknown' {
   try {
     const root = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3_000,
-    }).trim();
+      // Exit 128 has both inactive and unknown outcomes, so keep its diagnostics stable.
+      env: { ...process.env, LC_ALL: 'C' },
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 3_000,
+    }).replace(/\r?\n$/, '');
+    if (!isAbsolute(root) || /[\r\n\0]/.test(root)) return 'unknown';
     return existsSync(join(root, '.ai/harness/workflow-contract.json')) ? 'opted-in' : 'inactive';
-  } catch { return 'unknown'; }
+  } catch (error) {
+    const failure = error as { status?: number; stderr?: unknown } | null | undefined;
+    const stderr = failure?.stderr;
+    if (failure?.status === 128 && (typeof stderr === 'string' || Buffer.isBuffer(stderr))
+      && /not a git repository|detected dubious ownership/.test(stderr.toString())) return 'inactive';
+    return 'unknown';
+  }
 }
 
 /** Options supply deterministic capability and transport seams for SDK fixtures. */

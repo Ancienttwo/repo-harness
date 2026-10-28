@@ -476,9 +476,12 @@ private export or an unsupported version makes an opted-in session unavailable
 and blocks edit, write and bash with a fixed error code. A non-opt-in repository
 stays inactive. There is no local path parser or upper version bound.
 The opt-in probe uses `gitExecFileSync` from the shared Git runner with a
-three-second timeout. Only a successful repository probe without the marker
-leaves the session inactive. A failed or timed-out repository probe makes the
-session unknown and blocks edit, write and bash with `PI_HOST_REPO_PROBE_FAILED`.
+three-second timeout. A successful repository probe without the marker leaves
+the session inactive. Git exit 128 with `not a git repository` or `detected
+dubious ownership` also means inactive. The probe uses the C diagnostic locale
+and accepts one absolute root path. A timeout, missing Git binary, any other
+failed exit or malformed root output makes the session unknown and blocks edit,
+write and bash with `PI_HOST_REPO_PROBE_FAILED`.
 The first prompt reports that code as a hidden message; later prompts do not
 repeat it. A new session or reload probes again.
 
