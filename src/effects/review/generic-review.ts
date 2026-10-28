@@ -132,7 +132,7 @@ export async function probeReviewInstallation(kind: Harness, executable?: string
   const pi = kind === 'pi' ? executable ?? piExecutable() : undefined;
   if (kind === 'pi' && !pi) return { kind: 'not_found' };
   const { node, entry } = hostExecutable();
-  return JSON.parse(execFileSync(node, [entry, '--installation', kind, ...(pi ? [realpathSync(pi)] : [])], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
+  return JSON.parse(execFileSync(node, [entry, '--installation', kind, ...(pi ? [pi] : [])], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
     env: executable && kind !== 'pi' ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
 }
 const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApplicationHost, launched: terminalHostLaunched, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,

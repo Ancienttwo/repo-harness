@@ -377,7 +377,8 @@ test('Pi isolation fixture links native configuration without storing credential
   const source = join(root, 'home'), output = join(root, 'output'), agent = join(source, '.pi/agent');
   mkdirSync(agent, { recursive: true }); mkdirSync(output);
   for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
-  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ packages: ['fixture-package'], extensions: ['fixture-extension'] }));
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high',
+    packages: ['fixture-package'], extensions: ['fixture-extension'], httpProxy: 'http://fixture.invalid', defaultProjectTrust: 'always' }));
   writeFileSync(join(agent, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
   writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
   const directory = preparePiAgentDirectory(output, source);
@@ -386,9 +387,22 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   expect(readlinkSync(join(directory, 'models.json'))).toBe(join(agent, 'models.json'));
   expect(readlinkSync(join(directory, 'auth.json'))).toBe(join(agent, 'auth.json'));
-  expect(readlinkSync(join(directory, 'settings.json'))).toBe(join(agent, 'settings.json'));
+  expect(lstatSync(join(directory, 'settings.json')).isSymbolicLink()).toBe(false);
+  expect(lstatSync(join(directory, 'settings.json')).mode & 0o777).toBe(0o600);
+  expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
   expectNoStoredPiProbe(output);
   expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  const projectedSettings = readFileSync(join(directory, 'settings.json'), 'utf8');
+  const nativeSettings = JSON.parse(readFileSync(join(agent, 'settings.json'), 'utf8'));
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, packages: ['other-package'], httpProxy: 'http://other.invalid' }));
+  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  expect(readFileSync(join(directory, 'settings.json'), 'utf8')).toBe(projectedSettings);
+  writeFileSync(join(directory, 'settings.json'), projectedSettings + ' ');
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  writeFileSync(join(directory, 'settings.json'), projectedSettings);
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, defaultModel: 'changed-model' }));
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify(nativeSettings));
   unlinkSync(join(directory, 'models.json'));
   symlinkSync(join(agent, 'settings.json'), join(directory, 'models.json'));
   expect(() => preparePiAgentDirectory(output, source)).toThrow('models_changed');
@@ -416,6 +430,7 @@ test('Pi review source fixture uses custom agent directories and rejects relativ
     const output = join(root, `output-${index}`); mkdirSync(output);
     const directory = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
     for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
+    expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({});
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
     expect(readdirSync(directory)).toEqual([]);

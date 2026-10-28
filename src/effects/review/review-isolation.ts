@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync, symlinkSync, readlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
+import { isAbsolute, relative, sep, join, dirname } from 'node:path';
 import { piAgentDir } from '../pi-agent-dir';
 
 export interface ReviewIsolationPaths {
@@ -13,7 +13,7 @@ export interface ReviewIsolationPaths {
   readonly piAgentDirectory?: string;
 }
 
-/** Native model configuration and credentials stay at their source; the sandbox reads them through links. */
+/** Credentials stay at their source. Only the native model defaults are projected into private settings. */
 export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
@@ -26,14 +26,13 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
   for (const path of [dirname(source), source]) {
     if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('review_pi_source_unsafe');
   }
-  for (const name of ['models', 'settings']) {
-    const native = join(source, `${name}.json`), destination = join(directory, `${name}.json`);
-    if (existsSync(native)) {
-      const bytes = readAuthBytes(native); bytes.fill(0);
-      if (!existsSync(destination)) symlinkSync(native, destination);
-      if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== native) throw new Error(`review_pi_${name}_changed`);
-    } else if (existsSync(destination)) throw new Error(`review_pi_${name}_changed`);
-  }
+  const models = join(source, 'models.json'), destination = join(directory, 'models.json');
+  if (existsSync(models)) {
+    const bytes = readAuthBytes(models); bytes.fill(0);
+    if (!existsSync(destination)) symlinkSync(models, destination);
+    if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
+  } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
+  preparePiSettings(directory, source);
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
     const bytes = readAuthBytes(auth); bytes.fill(0);
@@ -44,6 +43,27 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
     if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
   }
   return directory;
+}
+
+function preparePiSettings(directory: string, source: string): void {
+  const native = join(source, 'settings.json'), destination = join(directory, 'settings.json');
+  let settings: Record<string, unknown> = {};
+  if (existsSync(native)) {
+    const bytes = readAuthBytes(native);
+    try {
+      const parsed: unknown = JSON.parse(bytes.toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+      settings = parsed as Record<string, unknown>;
+    } catch { throw new Error('review_pi_settings_source_invalid'); }
+    finally { bytes.fill(0); }
+  }
+  const projection = Object.fromEntries(['defaultProvider', 'defaultModel', 'defaultThinkingLevel']
+    .filter(key => Object.hasOwn(settings, key)).map(key => [key, settings[key]]));
+  const content = JSON.stringify(projection) + '\n';
+  if (!existsSync(destination)) writeFileSync(destination, content, { flag: 'wx', mode: 0o600 });
+  const stat = lstatSync(destination);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600
+    || readFileSync(destination, 'utf8') !== content) throw new Error('review_pi_settings_changed');
 }
 
 /** Unlink only output-local configuration references and the empty auth placeholder. Never follow links. */
