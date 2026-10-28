@@ -134,6 +134,8 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
     return checks;
   }
   try {
+    // The package requires Bun; this TypeScript child uses Bun's module loader.
+    if (!process.versions.bun) throw new Error('PI_CAPABILITY_PROBE_REQUIRES_BUN');
     let root = path.dirname(fs.realpathSync(executable));
     while (true) {
       const manifest = path.join(root, 'package.json');
@@ -158,7 +160,10 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   try {
     const source = bunGlobalPackageRoot(env);
     const present = source !== null && piPackagePresent(source, env);
-    checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: present ? 'ok' : 'warn', detail: present ? `present: ${source}` : 'missing; run: repo-harness install' });
+    const directoryMissing = source !== null && !fs.existsSync(source);
+    checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: present && !directoryMissing ? 'ok' : 'warn',
+      detail: directoryMissing ? `package directory missing: ${source}; run: repo-harness install`
+        : present ? `present: ${source}` : 'missing; run: repo-harness install' });
   } catch (error) {
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
   }

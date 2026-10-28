@@ -1,9 +1,10 @@
-import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs';
+import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { stripVTControlCharacters } from 'node:util';
 import { homedir } from 'node:os';
 import { piAgentDir } from '../../effects/pi-agent-dir';
+import { realPathOrResolved } from '../../effects/path-identity';
 
 export function piExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
   const extensions = process.platform === 'win32' ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : [''];
@@ -50,15 +51,9 @@ export function piUserPackageSources(output: string): readonly string[] {
 export function piPackagePresent(source: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const sources = piUserPackageSources(runPi(['list'], env));
   if (sources.length === 0) return false;
-  const expected = realpathSync(source);
+  const expected = realPathOrResolved(source);
   const agentDir = piAgentDir(env.HOME ?? env.USERPROFILE ?? homedir(), env);
-  return sources.some(entry => {
-    try { return realpathSync(resolve(agentDir, entry)) === expected; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return false;
-      throw error;
-    }
-  });
+  return sources.some(entry => realPathOrResolved(resolve(agentDir, entry)) === expected);
 }
 
 export interface PiPackageStep {
