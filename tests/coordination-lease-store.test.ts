@@ -6,6 +6,7 @@
  * would prove nothing about `mkdir` atomicity or the crash windows.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
+import { recordWorktree, readWorktreeRecordById } from '../src/effects/git/worktree-record';
 import * as fs from 'fs';
 import * as childProcess from 'child_process';
 import { execFileSync, spawn, spawnSync } from 'child_process';
@@ -234,11 +235,11 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     };
     mkdirSync(join(parent, 'home'));
     git('init', '-q', '-b', 'main'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.test');
-    writeFileSync(join(root, '.gitignore'), '.ai/\n'); writeFileSync(join(root, 'source'), 'base\n');
+    writeFileSync(join(root, '.gitignore'), '.ai/\nnode_modules/\n'); writeFileSync(join(root, 'source'), 'base\n');
     git('add', '.'); git('commit', '-qm', 'base');
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const path = join(managed, 'repo-wt-demo'); git('worktree', 'add', '-q', '-b', 'codex/demo', path);
-    writeFileSync(join(path, '.gitignore'), '.ai/\n# merged task change\n');
+    writeFileSync(join(path, '.gitignore'), '.ai/\nnode_modules/\n# merged task change\n');
     git('-C', path, 'add', '.gitignore'); git('-C', path, 'commit', '-qm', 'task change');
     git('merge', '--ff-only', 'codex/demo'); git('update-ref', 'refs/remotes/origin/main', 'HEAD');
     const head = git('rev-parse', 'HEAD');
@@ -262,12 +263,13 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { f.cleanup(); }
   });
 
-  test('sweep removes a merged clean checkout that holds an ignored evidence log', () => {
+  test('sweep retains a merged clean checkout that holds a non-rebuildable evidence log', () => {
     const f = fixture(); try {
       mkdirSync(join(f.path, '.ai/harness/evidence/events'), { recursive: true });
       writeFileSync(join(f.path, '.ai/harness/evidence/events/log.jsonl'), '{}\n');
-      expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('removed=1');
-      expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
+      expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('ignored_data');
+      expect(readFileSync(join(f.path, '.ai/harness/evidence/events/log.jsonl'), 'utf8')).toBe('{}\n');
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
     } finally { f.cleanup(); }
   });
 
@@ -293,12 +295,14 @@ describe('exact cleanup and contract-worktree start sweep', () => {
 
   test('W6 resume retires an identity left by SIGKILL after branch deletion', async () => {
     const f = fixture(); try {
+      const lifecycle = recordWorktree(f.root, f.path, { creator: 'contract', purpose: 'recovery regression' });
       withWorktreeTopologyLock(f.root, () => recordCreatedWorktree(f.root, f.path));
       const store = join(f.root, '.git/repo-harness/coordination/worktree-identities');
       await interruptSweep(f, 'branch-deleted');
       expect(readdirSync(store).filter(name => name.endsWith('.json'))).toHaveLength(1);
       expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('resumed=1');
       expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([]);
+      expect(readWorktreeRecordById(join(f.root, '.git'), lifecycle.id)?.end_state).toBe('removed');
     } finally { f.cleanup(); }
   }, 20000);
 
@@ -499,11 +503,12 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { f.cleanup(); }
   });
 
-  test('sweep accepts a squash absorbed branch through the shared merge authority', () => {
+  test('sweep accepts a remotely reachable squash absorbed branch through the shared merge authority', () => {
     const f = fixture(); try {
       writeFileSync(join(f.path, 'change'), 'absorbed\n');
       execFileSync('git', ['add', '.'], { cwd: f.path }); execFileSync('git', ['commit', '-qm', 'feature'], { cwd: f.path });
       f.git('merge', '--squash', 'codex/demo'); f.git('commit', '-qm', 'squash'); f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+      f.git('update-ref', 'refs/remotes/origin/demo', 'codex/demo');
       expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('removed=1');
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
     } finally { f.cleanup(); }
@@ -656,7 +661,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
   async function pendingTrashFixture() {
     const f = fixture();
     try {
-      const payload = join(f.path, '.ai/payload');
+      const payload = join(f.path, 'node_modules/payload');
       mkdirSync(payload, { recursive: true });
       for (let index = 0; index < 24; index++) writeFileSync(join(payload, `file-${index}`), 'trash data');
       const directory = await interruptSweep(f, 'branch-deleted');
@@ -724,7 +729,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
   test('W8 inline trash deletion leaves time for the next live worktree', () => {
     const f = fixture(); try {
       const other = addMergedSweepWorktree(f);
-      const payload = join(f.path, '.ai/payload');
+      const payload = join(f.path, 'node_modules/payload');
       mkdirSync(payload, { recursive: true });
       for (let index = 0; index < 24; index++) writeFileSync(join(payload, `file-${index}`), 'trash data');
       const result = sweepWithSlowDeletion(f);

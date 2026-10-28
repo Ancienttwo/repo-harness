@@ -124,6 +124,11 @@ sequenceDiagram
 
 ### 3.2 关键权衡
 
+合并通知使用现有 workspace binding 的 Herdr endpoint。派工记录或 PR 中的 pane ID
+指定负责 agent。发送前，`notifyTaskWorktreeMerged` 确认该 pane 在绑定的 workspace 内，
+且 live cwd 等于 checkout。marker 只记录路径，不提供 agent 身份。投递回执只记录
+提交状态，不构成新的归属记录。未知投递不重放。通知不授予删除权限。
+
 | 决策 | 权衡 |
 | --- | --- |
 | 每个 task 与 role 一个常驻 pane agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 是本能力最大的文件 |

@@ -1,9 +1,9 @@
 import { test, expect } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync, symlinkSync, statSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync, symlinkSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { configurationReceiptPath, readConfigurationReceipt, writeOwnedConfiguration, recordConfigurationChange, readConfigurationFragment, replaceConfigurationFragment } from '../../src/cli/installer/configuration-ownership';
-import { globalRuntimeScope, projectRuntimeScope, runtimeTransactionRoot, withRuntimeTransactionLock } from '../../src/cli/installer/runtime-host-lock';
+import { acquireRuntimeTransactionLock, globalRuntimeScope, projectRuntimeScope, runtimeTransactionRoot, withRuntimeTransactionLock } from '../../src/effects/locking/runtime-transaction-lock';
 
 function fixture(run: (home: string, env: NodeJS.ProcessEnv) => void) {
   const home = mkdtempSync(join(tmpdir(), 'configuration-ownership-'));
@@ -87,7 +87,7 @@ test('shared host lock serializes concurrent writers and retains both host recei
   const env = { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
   try {
     const modulePath = join(import.meta.dir, '../../src/cli/installer/configuration-ownership.ts');
-    const lockPath = join(import.meta.dir, '../../src/cli/installer/runtime-host-lock.ts');
+    const lockPath = join(import.meta.dir, '../../src/effects/locking/runtime-transaction-lock.ts');
     const signal = join(home, 'locked');
     const code = (host: string, delay: number) => `import {globalRuntimeScope, withRuntimeTransactionLock} from ${JSON.stringify(lockPath)}; import {writeOwnedConfiguration} from ${JSON.stringify(modulePath)}; import {writeFileSync} from 'fs'; withRuntimeTransactionLock(globalRuntimeScope(process.env),()=>{writeFileSync(${JSON.stringify(signal)},'ready'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,${delay}); writeOwnedConfiguration(${JSON.stringify(join(home, host === 'codex' ? '.codex/config.toml' : '.claude.json'))},${JSON.stringify(host === 'codex' ? 'default_mode_request_user_input = true\n' : '{"mcpServers":{"codegraph":{"command":"cg"}}}')},process.env.HOME);});`;
     const first = Bun.spawn(['bun', '-e', code('codex', 500)], { env, stdout: 'pipe', stderr: 'pipe' });
@@ -121,3 +121,123 @@ test.skipIf(process.platform === 'win32')('issue 922 the account scope keeps glo
   // A repository at the account home shares the account files, so it shares the account lock.
   expect(projectRuntimeScope(home, env)).toEqual(global);
 }));
+
+
+test('installer rollback refuses a competing configuration writer before it can report success', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'configuration-rollback-lock-'));
+  const env = { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
+  const path = join(home, '.repo-harness/config.json');
+  const brain = join(home, 'brain-new');
+  const modulePath = join(import.meta.dir, '../../src/cli/commands/brain-root.ts');
+  const code = `import {configureBrainRoot} from ${JSON.stringify(modulePath)}; try { configureBrainRoot(${JSON.stringify(brain)}, process.env); } catch (error) { console.error(error.code); process.exit(75); }`;
+  const { beginInstallHostTransaction, rollbackInstallHostTransaction } = await import('../../src/cli/installer/install-profile');
+  try {
+    mkdirSync(join(home, '.repo-harness'));
+    const original = JSON.stringify({ brainRoot: join(home, 'brain-old'), security: { mode: 'strict' } });
+    writeFileSync(path, original);
+    const lock = acquireRuntimeTransactionLock(globalRuntimeScope(env));
+    try {
+      const transaction = beginInstallHostTransaction([path], env, { runtimeLock: lock });
+      const child = Bun.spawn([process.execPath, '-e', code], { env, stdout: 'pipe', stderr: 'pipe' });
+      const stderr = await new Response(child.stderr).text();
+      expect(await child.exited).toBe(75);
+      expect(stderr).toContain('busy');
+      expect(readFileSync(path, 'utf8')).toBe(original);
+      lock.assertOwned();
+      rollbackInstallHostTransaction(transaction);
+      expect(readFileSync(path, 'utf8')).toBe(original);
+      expect(existsSync(brain)).toBe(false);
+    } finally { lock.release(); }
+    const child = Bun.spawn([process.execPath, '-e', code], { env, stdout: 'pipe', stderr: 'pipe' });
+    const stderr = await new Response(child.stderr).text();
+    expect(await child.exited, stderr).toBe(0);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ brainRoot: brain, security: { mode: 'strict' } });
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+
+test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('failed commit cleanup retains its lock and permits rollback', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'configuration-commit-cleanup-'));
+  const env = { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
+  const path = join(home, '.repo-harness/config.json');
+  const { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction } = await import('../../src/cli/installer/install-profile');
+  let transaction: ReturnType<typeof beginInstallHostTransaction> | undefined;
+  try {
+    mkdirSync(join(home, '.repo-harness'));
+    const original = JSON.stringify({ brainRoot: join(home, 'original'), security: { mode: 'strict' } });
+    writeFileSync(path, original);
+    transaction = beginInstallHostTransaction([path], env);
+    writeFileSync(path, JSON.stringify({ brainRoot: join(home, 'during-install') }));
+    chmodSync(transaction.backup_root, 0o500);
+    try {
+      expect(() => commitInstallHostTransaction(transaction!)).toThrow();
+    } finally { if (existsSync(transaction.backup_root)) chmodSync(transaction.backup_root, 0o700); }
+    const modulePath = join(import.meta.dir, '../../src/cli/commands/brain-root.ts');
+    const child = Bun.spawn([process.execPath, '-e', `import {configureBrainRoot} from ${JSON.stringify(modulePath)}; try { configureBrainRoot(${JSON.stringify(join(home, 'competing'))}, process.env); } catch (error) { console.error(error.code); process.exit(75); }`], { env, stdout: 'pipe', stderr: 'pipe' });
+    const stderr = await new Response(child.stderr).text();
+    expect(await child.exited).toBe(75);
+    expect(stderr).toContain('busy');
+    rollbackInstallHostTransaction(transaction);
+    transaction = undefined;
+    expect(readFileSync(path, 'utf8')).toBe(original);
+    const { configureBrainRoot } = await import('../../src/cli/commands/brain-root');
+    configureBrainRoot(join(home, 'after-rollback'), env);
+    expect(JSON.parse(readFileSync(path, 'utf8')).brainRoot).toBe(join(home, 'after-rollback'));
+  } finally {
+    if (transaction && existsSync(transaction.backup_root)) {
+      chmodSync(transaction.backup_root, 0o700);
+      rollbackInstallHostTransaction(transaction);
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('configuration writes preserve sibling sections and reject invalid input or foreign lock contexts', async () => {
+  const { configureBrainRoot } = await import('../../src/cli/commands/brain-root');
+  const { ensureGlobalArchitectureProjection } = await import('../../src/cli/commands/architecture-configuration');
+  const { applyAgentsSettings } = await import('../../src/effects/configuration/agents-configuration');
+  const { readGlobalConfiguration, mutateGlobalConfiguration } = await import('../../src/effects/configuration/global-configuration');
+  fixture((home, env) => {
+    const path = join(home, '.repo-harness/config.json');
+    mkdirSync(join(home, '.repo-harness'));
+    writeFileSync(path, JSON.stringify({ security: { mode: 'strict' } }));
+    configureBrainRoot(join(home, 'brain'), env);
+    expect(ensureGlobalArchitectureProjection(env).status).toBe('ok');
+    const before = readGlobalConfiguration(env);
+    applyAgentsSettings({ expected_revision: before.revision, changes: [{ runtime: 'codex', enabled: true, uses: ['docs'] }] }, ['codex'], env);
+    const result = readGlobalConfiguration(env);
+    expect(result.config).toMatchObject({ security: { mode: 'strict' }, brainRoot: join(home, 'brain'), architecture: { projection_provider: 'archctx' }, agents: { enabled: ['codex'] } });
+    expect(() => applyAgentsSettings({ expected_revision: before.revision, changes: [] }, ['codex'], env)).toThrow('changed after it was read');
+    expect(readGlobalConfiguration(env).revision).toBe(result.revision);
+    expect(() => mutateGlobalConfiguration(env, () => ({ config: {}, value: undefined }), {
+      runtimeLock: { scope: globalRuntimeScope(env), assertOwned() {} },
+    })).toThrow('does not own this scope');
+    expect(readGlobalConfiguration(env).revision).toBe(result.revision);
+    writeFileSync(path, '{invalid');
+    expect(() => configureBrainRoot(join(home, 'invalid-brain'), env)).toThrow('not a valid JSON object');
+    expect(readFileSync(path, 'utf8')).toBe('{invalid');
+    expect(existsSync(join(home, 'invalid-brain'))).toBe(false);
+  });
+});
+
+
+test.skipIf(process.platform !== 'win32')('Windows explicit configuration targets share the account lock', async () => {
+  const { configureBrainRoot } = await import('../../src/cli/commands/brain-root');
+  fixture((home) => {
+    const firstHome = join(home, 'first');
+    const secondHome = join(home, 'second');
+    mkdirSync(firstHome); mkdirSync(secondHome);
+    const first = { HOME: firstHome }, second = { HOME: secondHome };
+    expect(globalRuntimeScope(first)).toEqual(globalRuntimeScope(second));
+    const lock = acquireRuntimeTransactionLock(globalRuntimeScope(first));
+    try {
+      expect(() => configureBrainRoot(join(secondHome, 'brain'), second)).toThrow('runtime transaction');
+      expect(existsSync(join(firstHome, '.repo-harness/config.json'))).toBe(false);
+      expect(existsSync(join(secondHome, '.repo-harness/config.json'))).toBe(false);
+    } finally { lock.release(); }
+    const result = configureBrainRoot(join(secondHome, 'brain'), second);
+    expect(result.path).toBe(join(secondHome, '.repo-harness/config.json'));
+    expect(JSON.parse(readFileSync(result.path, 'utf8')).brainRoot).toBe(join(secondHome, 'brain'));
+    expect(existsSync(join(firstHome, '.repo-harness/config.json'))).toBe(false);
+  });
+});

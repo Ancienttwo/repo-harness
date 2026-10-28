@@ -1,7 +1,3 @@
-import { closeSync, constants, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
-
 import {
   EMPTY_AGENTS_CONFIG,
   decodeAgentsConfig,
@@ -10,17 +6,12 @@ import {
   type AgentsSettingsResultV1,
 } from '../../core/operator/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { syncDirectoryDurably } from '../atomic-append';
-import { globalConfigurationRevision, readGlobalConfiguration } from './global-configuration';
+import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfiguration } from './global-configuration';
 
-/**
- * The `agents` section of the host configuration document (G9). Its one
- * writer is the operator settings write route, which runs
- * `applyAgentsSettings` under the operator write lock of the `config` target.
- * Other writers of this file do not take that lock.
- */
+/** The operator target lock precedes the shared global runtime transaction lock. */
 
 export type AgentsConfigurationErrorCode =
+  | 'busy'
   | 'config_invalid'
   | 'config_is_link'
   | 'revision_conflict'
@@ -103,69 +94,21 @@ function changedKeys(current: AgentsConfigV1, next: AgentsConfigV1): string[] {
   ];
 }
 
-function revisionOnDisk(path: string): string {
-  try {
-    return globalConfigurationRevision(readFileSync(path));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
-    throw error;
-  }
-}
-
-/**
- * Replace the file only while it still has the revision the request read, so
- * another writer's change is never overwritten. A symlinked file is refused:
- * the rename would replace the link, not its target.
- */
-function replaceConfiguration(path: string, expectedRevision: string, bytes: Buffer): void {
-  const directory = dirname(path);
-  const created = mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (created !== undefined) syncDirectoryDurably(dirname(directory));
-  try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink()) throw new AgentsConfigurationError('config_is_link', 'The repo-harness configuration file is a symbolic link. The console writes only a regular file.');
-    if (!stat.isFile()) throw new AgentsConfigurationError('config_invalid', 'The repo-harness configuration file must be a regular file.');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
-  const fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-  try {
-    try {
-      if (writeSync(fd, bytes) !== bytes.byteLength) throw new Error('configuration was only partly written');
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    if (revisionOnDisk(path) !== expectedRevision) {
-      throw new AgentsConfigurationError('revision_conflict', 'The configuration changed after it was read.');
-    }
-    renameSync(temporary, path);
-    syncDirectoryDurably(directory);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-}
-
 export function applyAgentsSettings(
   request: AgentsSettingsRequestV1,
   knownRuntimes: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
 ): AgentsSettingsResultV1 {
-  let document: ReturnType<typeof readGlobalConfiguration>;
   try {
-    document = readGlobalConfiguration(env);
-  } catch {
-    throw new AgentsConfigurationError('config_invalid', 'The repo-harness configuration file is not a valid JSON object.');
+    const result = mutateGlobalConfiguration(env, (config) => {
+      const current = sectionOf(config);
+      const next = nextSection(current, request, new Set(knownRuntimes));
+      const changed = changedKeys(current, next);
+      return { ...(changed.length ? { config: { ...config, agents: next } } : {}), value: changed };
+    }, { expectedRevision: request.expected_revision });
+    return { config_revision: result.revision, changed_keys: result.value };
+  } catch (error) {
+    if (error instanceof GlobalConfigurationError) throw new AgentsConfigurationError(error.code, error.message);
+    throw error;
   }
-  if (document.revision !== request.expected_revision) {
-    throw new AgentsConfigurationError('revision_conflict', 'The configuration changed after it was read.');
-  }
-  const current = sectionOf(document.config);
-  const next = nextSection(current, request, new Set(knownRuntimes));
-  const changed = changedKeys(current, next);
-  if (changed.length === 0) return { config_revision: document.revision, changed_keys: [] };
-  const bytes = Buffer.from(`${JSON.stringify({ ...document.config, agents: next }, null, 2)}\n`, 'utf8');
-  replaceConfiguration(document.path, document.revision, bytes);
-  return { config_revision: globalConfigurationRevision(bytes), changed_keys: changed };
 }

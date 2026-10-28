@@ -6,7 +6,7 @@ CLI, pipeline, hook, or runtime registry. Do not install the pstack plugin.
 
 ## Plan and fixed inputs
 
-The parent plan is [the document handoff and reuse plan](../../../plans/plan-20261006-0910-document-handoff-pstack-reuse.md).
+The parent plan is the retired document-handoff design in git history.
 That plan is owned in a separate change and may not exist on this branch yet.
 
 - repo-harness base: `ef695fb9f964f29342ee6c98ce150601006eb40f`.

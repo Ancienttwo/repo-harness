@@ -21,18 +21,6 @@
       "status": "planned"
     },
     {
-      "id": "mkdir:tasks/reviews",
-      "kind": "mkdir",
-      "path": "tasks/reviews",
-      "status": "planned"
-    },
-    {
-      "id": "mkdir:tasks/notes",
-      "kind": "mkdir",
-      "path": "tasks/notes",
-      "status": "planned"
-    },
-    {
       "id": "mkdir:docs",
       "kind": "mkdir",
       "path": "docs",
@@ -112,13 +100,6 @@
       "ifMissing": true
     },
     {
-      "id": "writeFile:tasks/todos.md:ifMissing",
-      "kind": "writeFile",
-      "path": "tasks/todos.md",
-      "status": "planned",
-      "ifMissing": true
-    },
-    {
       "id": "writeFile:tasks/current.md:ifMissing",
       "kind": "writeFile",
       "path": "tasks/current.md",
@@ -147,20 +128,20 @@
     }
   ],
   "summary": {
-    "total": 23,
+    "total": 20,
     "byKind": {
-      "mkdir": 17,
-      "writeFile": 5,
+      "mkdir": 15,
+      "writeFile": 4,
       "appendManagedBlock": 1
     },
     "byStatus": {
-      "planned": 23
+      "planned": 20
     },
-    "plannedTotal": 23,
+    "plannedTotal": 20,
     "skippedTotal": 0,
     "failedTotal": 0,
     "userOwnedFilesTouched": 1,
-    "generatedFiles": 6,
+    "generatedFiles": 5,
     "repoHarnessOwnedFiles": 7,
     "requiresVerification": false
   },

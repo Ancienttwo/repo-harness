@@ -284,7 +284,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 
 - `1-BOTS-P1`：Given 有两个 MCP OAuth 客户端和一个 notify 插件，When 用户打开 Bots 页，Then 三条路（MCP、Slack 等通知渠道、herdr）各一节；MCP 一节每个客户端写名字、profile、授权仓库、读写模式、token 剩余天数、最近一次调用；改接入只给现有命令（`repo-harness mcp access set --repo <仓库> --mode …`）；第一期没有按 Bot 的列表（C14）。
 - `1-BOTS-N1`：Given Bots 页已加载，When 检查响应和页面，Then 没有 token、passphrase、webhook URL 和绝对路径；collector 不带 `--live`；页面没有派活或发消息的控件，也没有经 MCP 派活的入口。
-- `1-BOTS-F1`：Given 本机 herdr 是 0.9.5，When 页面加载，Then herdr 一节写「期望 0.9.3（fork add5f99a），实际 0.9.5」，执行状态标不可用，不写「没连上」。
+- `1-BOTS-F1`：Given 本机 herdr 低于观测 pin 0.9.5，When 页面加载，Then herdr 一节写「期望 0.9.5（schema 2ecf19a9），实际 0.9.3」，执行状态标不可用，不写「没连上」。
 - `3-BOTS-P1`：Given 第三期上线且 Bot 已用 `repo-harness bots register` 登记，When 用户查看 MCP 审计、任务消息和派活记录，Then 每条都对到 Bot 名；对不上的写「未登记」。
 - `3-BOTS-N1`：Given Slack 渠道已配置，When 用户查看 Slack 一节，Then 只显示是否配置、每个渠道最近一次投递的时间和结果、频道名和跳转链接；没有 Bot 之间对话的内容。
 

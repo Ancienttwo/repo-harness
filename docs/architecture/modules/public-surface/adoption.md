@@ -106,7 +106,8 @@ sequenceDiagram
 6. **失败关闭。** 非法路径、哈希不符、归属不明、不支持的 kind 都让流程停止或告警。流程不靠扩大删除范围继续。
 7. **保护用户归属。** `.gitignore` 只改受管区块（`src/core/adoption/managed-block.ts:54`）。hook 配置只删 repo-harness 自有的命令对象（`managed-hook-config.ts:49-53`）。known-generated 清理只删字节匹配声明指纹的文件。
 8. **manifest 与文件效果同属一个事务。** apply 在第一个失败的 operation 处停止，后续 operation 不执行。manifest 落盘后，executor 按 manifest 自动回滚已完成的 operation（`src/effects/fs-transaction.ts:697`）。manifest 写入失败也使事务失败并回滚（`:579`）。回滚只碰本事务拥有的目标，apply 之后的用户编辑不会被覆盖。`init` 文本报告给出回滚结果和未恢复的文件。
-9. **self-host apply 保持关闭。** `runAdoptionApply` 对 `mode === "self-host"` 返回 `self_host_review_required`（`adoption-plan.ts:151-160`）。`standard-plan.ts:841-842` 的不可执行 `runCheck` 是第二道防线。
+9. **self-host apply 保持关闭。** `runAdoptionApply` 对 `mode === "self-host"` 返回 `self_host_review_required`。`standard-plan.ts` 中 `buildStandardOperations` 的不可执行 `runCheck` 是第二道防线。
+10. **不再生成退役的 task artifacts。** adoption 不创建 todos、notes 或 reviews，不重写旧 todo 文件。lessons 和 contracts 仍保留；Issue/PR 持有当前工作状态。
 10. **目标仓库必须是明确的 Git 工作树。** `validateRepoAdoptionTarget` 拒绝 HOME，也拒绝不在 Git 工作树内的 cwd（`src/cli/repo-adoption/target.ts`）。`init` 和 `adoption-plan` 共用这一个校验。
 
 ### 3.2 关键权衡

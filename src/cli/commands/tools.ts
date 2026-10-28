@@ -1,4 +1,4 @@
-import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
+import { globalRuntimeScope, withRuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
 /**
  * `repo-harness tools` — explicit tool lifecycle commands.
  *

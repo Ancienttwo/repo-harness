@@ -134,7 +134,7 @@ fits better; if Y matters more, B fits better" — a recommendation is not:
 Record the user's pick as `user_evidence`:
 
 - If a plan is active, append it to that plan's
-  `tasks/notes/<plan-stem>.notes.md` — reuse the existing notes artifact, do
+  the PR description — reuse the existing notes artifact, do
   not create a new artifact type.
 - If no plan is active, record it as a one-line inline decision in the
   response instead.
@@ -225,7 +225,7 @@ so that claim is left to the user, not asserted.
 
 **User picks B.**
 
-**Step 4 — choice capture.** Recorded in `tasks/notes/<plan-stem>.notes.md`:
+**Step 4 — choice capture.** Recorded in the PR description:
 
 ```
 user_evidence: settings navigation = sidebar nav (option B)
@@ -235,7 +235,7 @@ closed_by: user (chose over tabs/accordion; ceiling-honored evidence in
 ```
 
 **Downstream.** The frontend task_profile / design-brief for the settings
-screen cites "sidebar nav, per `tasks/notes/<plan-stem>.notes.md`" as its
+screen cites "sidebar nav, per the PR description" as its
 decided direction — not the ImageGen preview.
 
 **Absent-user branch.** If nobody is present to choose after Step 3 presents

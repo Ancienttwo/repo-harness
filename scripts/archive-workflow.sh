@@ -348,7 +348,7 @@ predict_archive_manifest() {
   : > "$manifest_tmp"
   while IFS= read -r path; do
     case "$path" in
-      plans/archive/*.md|tasks/archive/contract-*.md|tasks/archive/review-*.md|tasks/archive/notes-*.md)
+      plans/archive/*.md|tasks/archive/contract-*.md)
         [[ -f "$scratch_repo/$path" && ! -L "$scratch_repo/$path" ]] || { rm -rf "$scratch"; return 1; }
         digest="$(sha256_file "$scratch_repo/$path")"
         printf '%s\t%s\n' "$path" "$digest" >> "$manifest_tmp"
@@ -517,50 +517,6 @@ plan_artifact_stem_from_parts() {
   fi
 }
 
-todo_is_deferred_ledger() {
-  local file="${1:-tasks/todos.md}"
-  [[ -f "$file" ]] || return 1
-  grep -Eq '^# Deferred Goal Ledger[[:space:]]*$' "$file" \
-    && grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' "$file" \
-    && grep -Eq '^## Deferred Goals[[:space:]]*$' "$file" \
-    && grep -Eq '\|[[:space:]]*Goal[[:space:]]*\|[[:space:]]*Why Deferred[[:space:]]*\|[[:space:]]*Tradeoff[[:space:]]*\|[[:space:]]*Revisit Trigger[[:space:]]*\|' "$file"
-}
-
-touch_deferred_ledger_update_marker() {
-  local file="${1:-tasks/todos.md}"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  awk '
-    BEGIN { updated = 0 }
-    !updated && /^> \*\*Updated\*\*:/ {
-      print "> **Updated**: (archive-workflow)"
-      updated = 1
-      next
-    }
-    { print }
-  ' "$file" > "$tmp_file"
-  mv "$tmp_file" "$file"
-}
-
-write_empty_deferred_ledger() {
-  cat > tasks/todos.md <<'TODO_EOF'
-# Deferred Goal Ledger
-
-> **Status**: Backlog
-> **Updated**: (archive-workflow)
-> **Scope**: Medium/long-term goals deferred from active plan execution
-
-Current plan tasks live in the active plan's `## Task Breakdown`.
-Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
-
-## Deferred Goals
-
-| Goal | Why Deferred | Tradeoff | Revisit Trigger |
-|------|--------------|----------|-----------------|
-| (none) | Archived workflow did not leave a deferred medium/long-term goal. | Keep the next slice clean. | Add a row when a real follow-up is postponed. |
-TODO_EOF
-}
-
 declared_artifact_value() {
   local source_file="$1" label="$2"
   awk -v label="$label" '
@@ -595,25 +551,13 @@ resolve_archive_artifacts() {
     fi
   fi
 
-  declared=""
-  if [[ -f "$contract_file" ]]; then
-    declared="$(declared_artifact_value "$contract_file" "Review File")"
-  fi
-  if [[ -n "$declared" ]]; then
-    validate_declared_artifact "$declared" "Review File" "tasks/reviews/" || return 1
-    review_file="$declared"
-  else
-    review_file="tasks/reviews/${artifact_stem}.review.md"
-    if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
-      review_file="tasks/reviews/${slug}.review.md"
-    fi
-  fi
+
 }
 
 apply_archive_workflow() {
   local completed_gate_mode="$1"
-  local plan_status archive_plan_path archive_todo notes_file archive_notes
-  local archive_contract archive_review cleared_active marker_file marker_value plan_key
+  local plan_status archive_plan_path
+  local archive_contract cleared_active marker_file marker_value plan_key
 
   resolve_archive_artifacts
   if [[ "$outcome" == "Completed" && "$completed_gate_mode" == *-required ]]; then
@@ -626,7 +570,7 @@ apply_archive_workflow() {
   fi
 
   archive_transaction_begin
-  mkdir -p plans/archive tasks/archive tasks/notes
+  mkdir -p plans/archive tasks/archive
 
   plan_status="Archived"
   if [[ "$outcome" == "Abandoned" ]]; then
@@ -637,68 +581,22 @@ apply_archive_workflow() {
   archive_plan_path="plans/archive/${plan_base}"
   archive_plan_path="$(unique_archive_path "$archive_plan_path")"
 
-  notes_file="tasks/notes/${artifact_stem}.notes.md"
-  if [[ ! -f "$notes_file" && -f "tasks/notes/${slug}.notes.md" ]]; then
-    notes_file="tasks/notes/${slug}.notes.md"
-  fi
-  archive_todo=""
-  archive_notes=""
   archive_contract=""
-  archive_review=""
-  if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
-    archive_todo="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
-  fi
-  if [[ -f "$notes_file" ]]; then
-    archive_notes="$(unique_archive_path "tasks/archive/notes-${timestamp}-${slug}.md")"
-  fi
   if [[ -f "$contract_file" ]]; then
     archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
-  fi
-  if [[ -f "$review_file" ]]; then
-    archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
   fi
 
   archive_projection_sources=()
   archive_projection_destinations=()
   archive_projection_add "$plan_file" "$archive_plan_path"
-  [[ -z "$archive_notes" ]] || archive_projection_add "$notes_file" "$archive_notes"
   [[ -z "$archive_contract" ]] || archive_projection_add "$contract_file" "$archive_contract"
-  [[ -z "$archive_review" ]] || archive_projection_add "$review_file" "$archive_review"
 
   write_archived_artifact "$plan_file" "$archive_plan_path" "plan" "$archive_plan_path"
   rm -f "$plan_file"
 
-  if [[ -n "$archive_todo" ]]; then
-    {
-      echo "> **Archived**: ${timestamp_human}"
-      echo "> **Related Plan**: ${archive_plan_path}"
-      echo "> **Outcome**: ${outcome}"
-      echo "> **Source Plan**: ${todo_source_plan:-"(none)"}"
-      echo "> **Parent Run ID**: ${parent_run_id}"
-      echo
-      rewrite_archive_projection_file tasks/todos.md
-    } > "$archive_todo"
-  fi
-
-  if [[ -n "$archive_notes" ]]; then
-    write_archived_artifact "$notes_file" "$archive_notes" "notes" "$archive_plan_path"
-    rm -f "$notes_file"
-  fi
-
   if [[ -n "$archive_contract" ]]; then
     write_archived_artifact "$contract_file" "$archive_contract" "contract" "$archive_plan_path"
     rm -f "$contract_file"
-  fi
-
-  if [[ -n "$archive_review" ]]; then
-    write_archived_artifact "$review_file" "$archive_review" "review" "$archive_plan_path"
-    rm -f "$review_file"
-  fi
-
-  if todo_is_deferred_ledger tasks/todos.md; then
-    touch_deferred_ledger_update_marker tasks/todos.md
-  else
-    write_empty_deferred_ledger
   fi
 
   cleared_active=0
@@ -840,7 +738,6 @@ slug="$(echo "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//')"
 original_artifact_stem="$(printf '%s' "$plan_base" | sed -E 's/^plan-//; s/\.md$//')"
 artifact_stem="$(plan_artifact_stem_from_parts "$plan_file" "$original_artifact_stem" "$slug")"
 parent_run_id="${parent_run_id_override:-${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}}}}"
-todo_source_plan="$(awk -F': ' '/^> \*\*Source Plan\*\*:/ {print $2; exit}' tasks/todos.md 2>/dev/null | xargs)"
 
 if [[ -n "$predict_manifest_output" ]]; then
   predict_archive_manifest "$predict_manifest_output" "$timestamp" "$timestamp_human" "$parent_run_id"

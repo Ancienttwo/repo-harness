@@ -110,8 +110,12 @@ test.each(["current", "sealed-terminal"])("native Completed archive validates re
     expect(rejected.stderr).toContain('AcceptanceReceipt gate failed');
     expect(existsSync(join(root, contract))).toBe(true);
     expect(existsSync(join(root, 'plans/archive/plan-demo.md'))).toBe(false);
+    const preservedPaths = ["tasks/todos.md", "tasks/reviews/demo.review.md"];
+    const before = preservedPaths.map(path => readFileSync(join(root, path)));
     const archived = run(join(runtime, "archive-workflow.sh"), [...args, "--verification", verification], root, env);
     expect(archived.status, archived.stdout + archived.stderr).toBe(0);
+    preservedPaths.forEach((path, index) => expect(readFileSync(join(root, path))).toEqual(before[index]));
+    expect(readdirSync(join(root, "tasks/archive")).every(name => name.startsWith("contract-"))).toBe(true);
     expect(existsSync(join(root, "plans/archive/plan-demo.md"))).toBe(true);
     expect(existsSync(join(root, verification))).toBe(true);
     expect(existsSync(join(root, ".ai/harness/evidence/events/log.jsonl"))).toBe(true);
@@ -478,15 +482,17 @@ describe("archive evidence gates", () => {
       expect(result.stderr).toContain("AcceptanceReceipt gate failed");
 
       writeWorkflowReview(cwd, "pass", "pass");
+      const reviewBefore = readFileSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"));
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(0);
+      expect(readFileSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"))).toEqual(reviewBefore);
       expect(existsSync(join(cwd, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"))).toBe(false);
-      expect(existsSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"))).toBe(true);
     });
   }, 30_000);
 
-  // Historical contract status and review projections are archived as data;
+  // Historical contract status is archived as data; review files stay in place;
   // only the native report and live protected admission gate Completed.
   test("sealed-terminal mode requires a native report and live admission even with a Fulfilled historical projection", () => {
     withTempRepo("sealed-terminal-archive", (cwd) => {
@@ -567,7 +573,8 @@ describe("archive evidence gates", () => {
       const manifest = readFileSync(output, "utf-8");
       expect(manifest).toContain("plans/archive/plan-20260711-1200-demo.md");
       expect(manifest).toContain("tasks/archive/contract-20260721-2256-demo.md");
-      expect(manifest).toContain("tasks/archive/review-20260721-2256-demo.md");
+      expect(manifest.trim().split("\n")).toHaveLength(2);
+      expect(manifest).not.toMatch(/tasks\/archive\/(?:review|notes|todo)-/);
     });
   }, 30_000);
 
@@ -658,7 +665,38 @@ describe("archive evidence gates", () => {
 
 
 describe("archive-workflow helper integration", () => {
-  test("archive-workflow should archive plan and todo with non-completion outcome metadata", () => {
+  test.each(["Abandoned", "Superseded"])("%s archive does not create absent todos, notes or reviews", (outcome) => {
+    withTempRepo("helper-archive-absent-artifacts", (cwd) => {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      copyHelpers(cwd);
+      const plan = "plans/plan-20260304-1500-demo.md";
+      const contract = "tasks/contracts/demo.contract.md";
+      const absentPaths = ["tasks/todos.md", "tasks/notes", "tasks/reviews"];
+      writeFileSync(join(cwd, plan), [
+        "# Plan: demo", "> **Status**: Executing",
+        `> **Task Contract**: ${contract}`,
+        "> **Task Review**: tasks/reviews/missing.review.md",
+        "> **Implementation Notes**: tasks/notes/missing.notes.md", "",
+      ].join("\n"));
+      writeFileSync(join(cwd, contract), [
+        "# Task Contract: demo",
+        "> **Review File**: tasks/reviews/missing.review.md",
+        "> **Notes File**: tasks/notes/missing.notes.md", "",
+      ].join("\n"));
+      absentPaths.forEach(path => expect(existsSync(join(cwd, path))).toBe(false));
+      const result = scriptRun("bash", ["scripts/archive-workflow.sh", "--plan", plan, "--outcome", outcome], cwd);
+      expect(result.status, result.stderr).toBe(0);
+      expect(existsSync(join(cwd, "plans/archive/plan-20260304-1500-demo.md"))).toBe(true);
+      const archived = readdirSync(join(cwd, "tasks/archive"));
+      expect(archived).toHaveLength(1);
+      expect(archived[0]).toMatch(/^contract-/);
+      expect(existsSync(join(cwd, contract))).toBe(false);
+      absentPaths.forEach(path => expect(existsSync(join(cwd, path))).toBe(false));
+    });
+  }, 30_000);
+
+  test("archive-workflow archives plan and contract while preserving todos, notes and reviews", () => {
     const cwd = tmpWorkspace("helper-archive");
     try {
       mkdirSync(join(cwd, "plans/archive"), { recursive: true });
@@ -677,6 +715,9 @@ describe("archive-workflow helper integration", () => {
       writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
       writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
 
+      const preservedPaths = ["tasks/todos.md", "tasks/notes/demo.notes.md", "tasks/reviews/demo.review.md"];
+      const before = preservedPaths.map(path => readFileSync(join(cwd, path)));
+
       const res = scriptRun(
         "bash",
         ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1500-demo.md", "--outcome", "Abandoned"],
@@ -688,29 +729,13 @@ describe("archive-workflow helper integration", () => {
       expect(existsSync(archivedPlan)).toBe(true);
       expect(readFileSync(archivedPlan, "utf-8")).toContain("**Status**: Abandoned");
 
-      const archivedTodos = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
-      expect(archivedTodos.length).toBeGreaterThanOrEqual(1);
-      const todoArchiveContent = readFileSync(join(cwd, "tasks/archive", archivedTodos[0]), "utf-8");
-      expect(todoArchiveContent).toContain("**Outcome**: Abandoned");
-      const archivedNotes = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("notes-"));
-      expect(archivedNotes.length).toBeGreaterThanOrEqual(1);
-      expect(readFileSync(join(cwd, "tasks/archive", archivedNotes[0]), "utf-8")).toContain("**Lifecycle**: notes");
-      expect(existsSync(join(cwd, "tasks/notes/demo.notes.md"))).toBe(false);
-      const archivedContracts = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("contract-"));
-      expect(archivedContracts.length).toBeGreaterThanOrEqual(1);
+      const archivedContracts = readdirSync(join(cwd, "tasks/archive"));
+      expect(archivedContracts).toHaveLength(1);
+      expect(archivedContracts[0]).toMatch(/^contract-/);
       expect(readFileSync(join(cwd, "tasks/archive", archivedContracts[0]), "utf-8")).toContain("**Lifecycle**: contract");
+      expect(readFileSync(join(cwd, "tasks/archive", archivedContracts[0]), "utf-8")).toContain("**Outcome**: Abandoned");
       expect(existsSync(join(cwd, "tasks/contracts/demo.contract.md"))).toBe(false);
-      const archivedReviews = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("review-"));
-      expect(archivedReviews.length).toBeGreaterThanOrEqual(1);
-      expect(readFileSync(join(cwd, "tasks/archive", archivedReviews[0]), "utf-8")).toContain("**Lifecycle**: review");
-      expect(existsSync(join(cwd, "tasks/reviews/demo.review.md"))).toBe(false);
-
-      const resetTodo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
-      expect(resetTodo).toContain("# Deferred Goal Ledger");
-      expect(resetTodo).toContain("**Status**: Backlog");
-      expect(resetTodo).toContain("## Deferred Goals");
-      expect(resetTodo).toContain("Revisit Trigger");
-      expect(resetTodo).not.toContain("## Review Section");
+      preservedPaths.forEach((path, index) => expect(readFileSync(join(cwd, path))).toEqual(before[index]));
 
       const current = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
       expect(current).toContain("# Current Status Snapshot");
@@ -721,7 +746,7 @@ describe("archive-workflow helper integration", () => {
     }
   }, 30_000);
 
-  test("archive-workflow rewrites one exact workflow family to collision-safe archive pointers", () => {
+  test("archive-workflow rewrites plan and contract pointers while preserving notes and reviews", () => {
     const cwd = tmpWorkspace("helper-archive-path-projection");
     try {
       mkdirSync(join(cwd, "plans/archive"), { recursive: true });
@@ -791,8 +816,10 @@ describe("archive-workflow helper integration", () => {
       writeFileSync(join(cwd, "tasks/todos.md"), `# Deferred Goal Ledger\n\n> **Status**: Backlog\n> **Updated**: now\n\n## Deferred Goals\n\n${plan}\n`);
 
       const beforePlanHash = hashVerificationPlan(parseVerificationPlanFromContractText(readFileSync(join(cwd, contract), "utf8")));
-      const collision = "tasks/archive/review-20990101-0101-demo.md";
-      writeFileSync(join(cwd, collision), "pre-existing review archive\n");
+      const preservedPaths = [review, notes, "tasks/todos.md"];
+      const before = preservedPaths.map(path => readFileSync(join(cwd, path)));
+      const collision = "tasks/archive/contract-20990101-0101-demo.md";
+      writeFileSync(join(cwd, collision), "pre-existing contract archive\n");
       const res = scriptRun(
         "bash",
         [
@@ -807,18 +834,14 @@ describe("archive-workflow helper integration", () => {
 
       const destinations = {
         plan: "plans/archive/plan-20260304-1502-demo.md",
-        contract: "tasks/archive/contract-20990101-0101-demo.md",
-        review: "tasks/archive/review-20990101-0101-demo-v2.md",
-        notes: "tasks/archive/notes-20990101-0101-demo.md",
+        contract: "tasks/archive/contract-20990101-0101-demo-v2.md",
       };
       for (const destination of Object.values(destinations)) {
         expect(existsSync(join(cwd, destination))).toBe(true);
       }
       const expectedPairs = [
         [plan, destinations.plan],
-        [notes, destinations.notes],
         [contract, destinations.contract],
-        [review, destinations.review],
       ];
       for (const destination of Object.values(destinations)) {
         const content = readFileSync(join(cwd, destination), "utf-8");
@@ -832,8 +855,16 @@ describe("archive-workflow helper integration", () => {
       expect(archivedContract).toContain(verificationSection);
       expect(hashVerificationPlan(parseVerificationPlanFromContractText(archivedContract))).toBe(beforePlanHash);
       expect(archivedContract).toContain(`> **Plan**: ${destinations.plan}`);
-      expect(archivedContract).toContain(`  - ${destinations.review}`);
-      expect(archivedContract).toContain(`    - ${destinations.notes}`);
+      expect(archivedContract).toContain(`  - ${review}`);
+      expect(archivedContract).toContain(`    - ${notes}`);
+      expect(archivedContract).toContain(`> **Review File**: \`${review}\``);
+      expect(archivedContract).toContain(`> **Notes File**: \`${notes}\``);
+      const archivedPlan = readFileSync(join(cwd, destinations.plan), "utf8");
+      expect(archivedPlan).toContain(`> **Task Review**: \`${review}\``);
+      expect(archivedPlan).toContain(`> **Implementation Notes**: \`${notes}\``);
+      preservedPaths.forEach((path, index) => expect(readFileSync(join(cwd, path))).toEqual(before[index]));
+      expect(readFileSync(join(cwd, collision), "utf8")).toBe("pre-existing contract archive\n");
+      expect(readdirSync(join(cwd, "tasks/archive"))).toHaveLength(2);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -882,9 +913,7 @@ describe("archive-workflow helper integration", () => {
 
       const markedEntries = readdirSync(join(cwd, "tasks/archive"));
       expect(markedEntries).toContain(`contract-${markerTimestamp}-demo.md`);
-      expect(markedEntries).toContain(`review-${markerTimestamp}-demo.md`);
-      expect(markedEntries).toContain(`notes-${markerTimestamp}-demo.md`);
-      expect(markedEntries).toContain(`todo-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toHaveLength(1);
 
       // Standalone invocation (no --timestamp): unchanged behavior, its own
       // fresh `date` call, never the marker from the previous invocation.
@@ -981,6 +1010,7 @@ describe("archive-workflow helper integration", () => {
         ].join("\n")
       );
 
+      const todoBefore = readFileSync(join(cwd, "tasks/todos.md"));
       const res = scriptRun(
         "bash",
         ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1505-demo.md", "--outcome", "Superseded"],
@@ -989,7 +1019,7 @@ describe("archive-workflow helper integration", () => {
       expect(res.status).toBe(0);
 
       const todo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("> **Updated**: (archive-workflow)");
+      expect(readFileSync(join(cwd, "tasks/todos.md"))).toEqual(todoBefore);
       expect(todo).toContain("Review archived legacy checklist");
       expect(todo).not.toContain("Archived workflow did not leave a deferred medium/long-term goal");
     } finally {
@@ -997,14 +1027,7 @@ describe("archive-workflow helper integration", () => {
     }
   }, 30_000);
 
-  // Sixth external review round: plan/notes/contract/review archive
-  // destinations all go through unique_archive_path (collision -> -v2
-  // suffix), but the todo destination was written with a direct `>`
-  // redirect, silently overwriting an existing archived todo snapshot on a
-  // same-timestamp-and-slug collision instead of suffixing like its three
-  // siblings.
-
-  test("archive-workflow suffixes a colliding todo archive destination instead of overwriting it", () => {
+  test("archive-workflow preserves an existing todo archive without creating another snapshot", () => {
     const cwd = tmpWorkspace("helper-archive-todo-collision");
     try {
       mkdirSync(join(cwd, "plans/archive"), { recursive: true });
@@ -1023,6 +1046,8 @@ describe("archive-workflow helper integration", () => {
       );
       writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] fresh todo row\n");
 
+      const todoBefore = readFileSync(join(cwd, "tasks/todos.md"));
+      const archiveBefore = readFileSync(join(cwd, "tasks/archive/todo-20990101-0000-demo.md"));
       const res = scriptRun(
         "bash",
         [
@@ -1037,13 +1062,14 @@ describe("archive-workflow helper integration", () => {
 
       const preserved = readFileSync(join(cwd, "tasks/archive/todo-20990101-0000-demo.md"), "utf-8");
       expect(preserved).toContain("pre-existing archived todo content");
+      expect(readFileSync(join(cwd, "tasks/archive/todo-20990101-0000-demo.md"))).toEqual(archiveBefore);
+      expect(readFileSync(join(cwd, "tasks/todos.md"))).toEqual(todoBefore);
 
       const suffixed = readdirSync(join(cwd, "tasks/archive")).filter(
         (name) => name.startsWith("todo-20990101-0000-demo-v") && name.endsWith(".md")
       );
-      expect(suffixed.length).toBe(1);
-      const suffixedContent = readFileSync(join(cwd, "tasks/archive", suffixed[0]), "utf-8");
-      expect(suffixedContent).toContain("fresh todo row");
+      expect(suffixed).toEqual([]);
+      expect(readdirSync(join(cwd, "tasks/archive"))).toEqual(["todo-20990101-0000-demo.md"]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

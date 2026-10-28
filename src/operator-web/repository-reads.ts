@@ -7,15 +7,20 @@ import {
   type TaskExecutionViewEntry,
   type TaskExecutionViewV1,
 } from '../core/operator/execution-state';
-import { decodeTestsSnapshot, TESTS_UNAVAILABLE_REASONS, type TestsUnavailableReason } from '../core/operator/tests';
+import {
+  decodeTestsSnapshot,
+  TESTS_UNAVAILABLE_REASONS,
+  type TestsSnapshotV1,
+  type TestsUnavailableReason,
+} from '../core/operator/tests';
 import { asApiError } from './fleet-api';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Per-repository GET reads outside the Fleet and Dev Activity snapshots: the
  * docs tree names the commit of the default branch, the tests route serves the
- * open CI repair issues, and the execution route serves the verified task
- * sessions. A refusal keeps its route code.
+ * open CI repair issues and the latest daily test results, and the execution
+ * route serves the verified task sessions. A refusal keeps its route code.
  */
 export type RepositoryHeadReader = (repositoryId: string, signal: AbortSignal) => Promise<string>;
 
@@ -53,7 +58,7 @@ export type CiRepairsRead =
   | { readonly state: 'unavailable'; readonly reason: CiRepairsReason };
 export type CiRepairsReader = (repositoryId: string, signal: AbortSignal) => Promise<CiRepairsRead>;
 
-function testsReason(code: string): CiRepairsReason {
+function testsReason(code: string): TestsUnavailableReason | 'unreachable' {
   return (TESTS_UNAVAILABLE_REASONS as readonly string[]).includes(code) ? code as TestsUnavailableReason : 'unreachable';
 }
 
@@ -150,4 +155,40 @@ export function itemOwner(executions: readonly ExecutionResult[] | null, item: P
   if (read.state === 'unavailable') return { state: 'unavailable', reason: read.reason };
   const tasks = read.view.tasks.filter((task): task is VerifiedTask => task.state === 'verified' && task.branch === item.branch);
   return tasks.length > 0 ? { state: 'verified', tasks } : { state: 'none' };
+}
+
+/** The tests page's read of one repository: a decoded snapshot or its route refusal. */
+export type TestsRead =
+  | { readonly state: 'ok'; readonly snapshot: TestsSnapshotV1 }
+  | { readonly state: 'unavailable'; readonly reason: TestsUnavailableReason | 'unreachable' };
+
+export type TestsReader = (repositoryId: string, signal: AbortSignal) => Promise<TestsRead>;
+
+/** One repository's tests read: a decoded snapshot, or a refusal whose code the browser knows; anything else is `unreachable`. */
+export async function fetchTestsSnapshot(repositoryId: string, signal: AbortSignal): Promise<TestsRead> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/tests`, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { state: 'unavailable', reason: 'unreachable' };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) return { state: 'unavailable', reason: testsReason(asApiError(body).code) };
+  try { return { state: 'ok', snapshot: decodeTestsSnapshot(body) }; } catch { return { state: 'unavailable', reason: 'tests_invalid' }; }
+}
+
+/** One read per repository; null until the read of the selected repository settles. */
+export function useTestsSnapshot(read: TestsReader, repositoryId: string | null, generation: number, enabled: boolean): TestsRead | null {
+  const [state, setState] = useState<{ readonly id: string; readonly read: TestsRead } | null>(null);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (repositoryId === null) return false;
+    const result = await read(repositoryId, signal);
+    if (signal.aborted) return false;
+    setState({ id: repositoryId, read: result });
+    // A typed refusal is an answer; only a request with no answer backs the loop off.
+    return result.state === 'ok' || result.reason !== 'unreachable';
+  }, [read, repositoryId]);
+  useObservationRefresh(observe, JSON.stringify(['tests-snapshot', repositoryId, generation]), { enabled });
+  return state !== null && state.id === repositoryId ? state.read : null;
 }
