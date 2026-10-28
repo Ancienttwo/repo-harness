@@ -14,6 +14,11 @@ import { collectOrphanWorktrees } from '../../src/effects/operator/worktree-orph
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
 import { worktreeProcesses, type LinuxWorktreeProcessProbe } from '../../src/effects/git/worktree-processes';
 
+// /proc/self/mountinfo lines as Linux prints them (proc_show_options writes the hidepid super option).
+const sysfsMount = '21 26 0:20 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw';
+const procMount = (superOptions: string) => `22 26 0:21 / /proc rw,nosuid,nodev,noexec,relatime shared:12 - proc proc ${superOptions}`;
+const mountInfo = (superOptions = 'rw') => `${sysfsMount}\n${procMount(superOptions)}\n`;
+
 function fixture() {
   const parent = tmpWorkspace('operator-worktrees');
   const main = join(parent, 'repo'), root = join(parent, 'managed'), home = join(parent, 'home');
@@ -37,7 +42,7 @@ describe('read-only worktree judgment and lifecycle', () => {
     const f = fixture();
     try {
       const module = join(import.meta.dir, '../../src/effects/git/worktree-processes.ts');
-      const script = `const { worktreeProcesses } = await import(${JSON.stringify(module)}); const rows = worktreeProcesses(Date.now() + 5000, { uid: 1001, entries: () => [String(process.pid), '42'], owner: () => 1001, cwd: pid => pid === String(process.pid) ? process.cwd() : '/' }); console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));`;
+      const script = `const { worktreeProcesses } = await import(${JSON.stringify(module)}); const rows = worktreeProcesses(Date.now() + 5000, { uid: 1001, entries: () => [String(process.pid), '42'], owner: () => 1001, cwd: pid => pid === String(process.pid) ? process.cwd() : '/', mountInfo: () => ${JSON.stringify(mountInfo())} }); console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));`;
       const output = execFileSync(process.execPath, ['-e', script], { cwd: f.tree, encoding: 'utf8', timeout: 6000 });
       expect(JSON.parse(output)).toEqual([]);
     } finally { f.cleanup(); }
@@ -47,6 +52,7 @@ describe('read-only worktree judgment and lifecycle', () => {
     const probe: LinuxWorktreeProcessProbe = {
       uid: 1001, entries: () => ['41', '42'], owner: () => 1001,
       cwd: pid => { if (pid === '42') throw Object.assign(new Error('denied cwd'), { code }); return '/checkout'; },
+      mountInfo: () => mountInfo(),
     };
     expect(worktreeProcesses(Date.now() + 5000, probe)).toBeNull();
   });
@@ -69,9 +75,48 @@ describe('read-only worktree judgment and lifecycle', () => {
         if (pid === '43' || pid === '44') throw Object.assign(new Error('vanished'), { code: pid === '43' ? 'ENOENT' : 'ESRCH' });
         return '/checkout';
       },
+      mountInfo: () => mountInfo(),
     };
     expect(worktreeProcesses(Date.now() + 5000, probe)).toEqual([{ pid: 41, cwd: '/checkout' }]);
     expect(read).toEqual(['41', '43', '44']);
+  });
+
+  const procMountProbe = (text: () => string): LinuxWorktreeProcessProbe => ({
+    uid: 1001, entries: () => ['41'], owner: () => 1001, cwd: () => '/checkout', mountInfo: text,
+  });
+
+  test.each(['hidepid=invisible', 'hidepid=2', 'hidepid=ptraceable', 'hidepid=4'])('a /proc mounted with %s makes the inventory unknown', option => {
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(() => mountInfo(`rw,${option},gid=1001`)))).toBeNull();
+  });
+
+  test.each(['rw', 'rw,hidepid=noaccess', 'rw,hidepid=1', 'rw,hidepid=off', 'rw,hidepid=0', 'rw,subset=pid'])('a /proc mounted with super options %s keeps the inventory', options => {
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(() => mountInfo(options)))).toEqual([{ pid: 41, cwd: '/checkout' }]);
+  });
+
+  test('more than one mount on /proc makes the inventory unknown, whatever the row order', () => {
+    const hiddenOnTop = `${mountInfo()}${procMount('rw,hidepid=invisible').replace('22 26', '40 22')}\n`;
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(() => hiddenOnTop))).toBeNull();
+    const tmpfsOnTop = `${mountInfo()}41 22 0:30 / /proc rw,relatime shared:20 - tmpfs tmpfs rw\n`;
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(() => tmpfsOnTop))).toBeNull();
+    // An older hidden mount moved on top of a newer plain mount keeps its earlier row.
+    const olderHiddenOnNewerParent = '22 40 0:21 / /proc rw - proc proc rw,hidepid=invisible\n40 26 0:30 / /proc rw - proc proc rw\n';
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(() => olderHiddenOnNewerParent))).toBeNull();
+  });
+
+  test.each([
+    ['an unreadable mountinfo', () => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); }],
+    ['a mountinfo without a /proc mount', () => `${sysfsMount}\n`],
+    ['a mountinfo line without the separator', () => `${sysfsMount}\n22 26 0:21 / /proc rw,nosuid shared:12 proc proc rw\n`],
+    ['empty /proc super options', () => '22 26 0:21 / /proc rw - proc proc \n'],
+    ['a field after the /proc super options', () => '22 26 0:21 / /proc rw - proc proc rw hidepid=2\n'],
+    ['a /proc row truncated after the source', () => '22 26 0:21 / /proc rw - proc proc\n'],
+    ['an empty /proc super option token', () => '22 26 0:21 / /proc rw - proc proc rw,,subset=pid\n'],
+    ['a malformed unrelated row', () => `${sysfsMount} extra\n${procMount('rw')}\n`],
+    ['a non-numeric mount ID', () => `${procMount('rw').replace('22 26', 'x 26')}\n`],
+    ['an unknown hidepid value', () => mountInfo('rw,hidepid=5')],
+    ['a bare hidepid option', () => mountInfo('rw,hidepid')],
+  ])('%s makes the inventory unknown', (_name, text) => {
+    expect(worktreeProcesses(Date.now() + 5000, procMountProbe(text as () => string))).toBeNull();
   });
 
   test('uses merge, ownership, loss and occupancy predicates without removing anything', () => {
