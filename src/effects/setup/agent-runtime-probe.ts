@@ -1,19 +1,29 @@
 // Agent runtime installation probe (G9). It runs in the setup collector's
 // probe child, never in the `operator serve` event loop: OAR's installation
-// probes start each runtime's executable, and OAR's root entry is large.
+// probes start each runtime's executable.
 //
-// The registry is OAR's default registry plus Mister Morph, a community
-// runtime that needs no extra package. Cursor and Pi Durable need optional
-// packages that repo-harness does not install, so they are not constructed;
-// the probe reports which package is missing.
+// Per-runtime entries supply OAR's default probes without loading its root.
+// Mister Morph still needs the community entry. Cursor construction leaves
+// its SDK loader unused; probing it and Pi Durable requires host packages.
 
-import { cursorInstallation, defaultRuntimes, type InstallationProbe, type InstallationSnapshot } from '@botiverse/oar';
+import type { InstallationProbe, InstallationSnapshot } from '@botiverse/oar/browser';
 import { createMorphRuntime } from '@botiverse/oar/community';
+import { antigravityRuntime } from '@botiverse/oar/runtimes/antigravity';
+import { claudeRuntime } from '@botiverse/oar/runtimes/claude';
+import { codexRuntime } from '@botiverse/oar/runtimes/codex';
+import { createCursorRuntime } from '@botiverse/oar/runtimes/cursor';
+import { grokRuntime } from '@botiverse/oar/runtimes/grok';
+import { kimiRuntime } from '@botiverse/oar/runtimes/kimi';
+import { opencodeRuntime } from '@botiverse/oar/runtimes/opencode';
+import { piRuntime } from '@botiverse/oar/runtimes/pi';
+import { qoderRuntime } from '@botiverse/oar/runtimes/qoder';
+import { qwenRuntime } from '@botiverse/oar/runtimes/qwen';
 
 import { publicAgentConfigText } from '../../core/operator/agent-config';
 import type { AgentRuntimeGroup, AgentRuntimeInstallationV1, AgentRuntimeProbeEntryV1, AgentRuntimeProbeV1 } from '../../core/operator/agents-settings';
 
 const PROBE_TIMEOUT_MS = 15_000;
+const CURSOR_SDK_PACKAGE = '@cursor/sdk';
 
 export interface ProbedRuntime {
   readonly id: string;
@@ -30,13 +40,14 @@ export interface HostDependencyRuntime {
 }
 
 export const HOST_DEPENDENCY_RUNTIMES: readonly HostDependencyRuntime[] = Object.freeze([
-  { id: 'cursor', package: '@cursor/sdk', installation: cursorInstallation },
+  { id: 'cursor', package: CURSOR_SDK_PACKAGE, installation: createCursorRuntime({ sdk: () => import(CURSOR_SDK_PACKAGE) }).installation },
   { id: 'pi-durable', package: '@earendil-works/pi-durable', installation: null },
 ]);
 
 export function registryRuntimes(): readonly ProbedRuntime[] {
   return [
-    ...defaultRuntimes.list().map(runtime => ({ id: runtime.id, group: 'default' as const, installation: runtime.installation })),
+    ...[antigravityRuntime, claudeRuntime, codexRuntime, grokRuntime, kimiRuntime, opencodeRuntime, piRuntime, qwenRuntime, qoderRuntime]
+      .map(runtime => ({ id: runtime.id, group: 'default' as const, installation: runtime.installation })),
     ...[createMorphRuntime()].map(runtime => ({ id: runtime.id, group: 'community' as const, installation: runtime.installation })),
   ];
 }

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { defaultRuntimes } from '@botiverse/oar';
 
 import {
   decodeAgentsConfig,
@@ -10,7 +11,7 @@ import {
   type AgentRuntimeProbeV1,
   type AgentRuntimesCacheV1,
 } from '../../src/core/operator/agents-settings';
-import { probeAgentRuntimes } from '../../src/effects/setup/agent-runtime-probe';
+import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
@@ -227,6 +228,11 @@ describe('agents config decoder', () => {
 });
 
 describe('agent runtime probe', () => {
+  test('keeps the default probe ids in OAR registry order', () => {
+    expect(registryRuntimes().filter(runtime => runtime.group === 'default').map(runtime => runtime.id))
+      .toEqual(defaultRuntimes.list().map(runtime => runtime.id));
+  });
+
   test('publishes no command path, redacts reasons and bounds every probe', async () => {
     const probe = await probeAgentRuntimes({
       runtimes: [
