@@ -51,21 +51,22 @@ function pull(now: number, slug: string, number: number, title: string, override
 function item(repositoryId: string, key: string, overrides: Partial<DevActivityItem> & Pick<DevActivityItem, 'title' | 'column'>): DevActivityItem {
   return {
     id: `${repositoryId}:${key}`, repository_id: repositoryId, branch: key, hidden: null, column_since: null,
-    worktrees: [], pull_request: null, cleanup_pending: false,
+    worktrees: [], pull_request: null,
     ...overrides,
   };
 }
 
-function merged(now: number, repositoryId: string, slug: string, number: number, branch: string, title: string, agoMs: number, cleanup = false): DevActivityItem {
+/** The worktree fixture judges the kept directory green; see fixtures/worktrees.ts. */
+function merged(now: number, repositoryId: string, slug: string, number: number, branch: string, title: string, agoMs: number, keptWorktree = false): DevActivityItem {
   const mergedAt = at(now, agoMs);
   return item(repositoryId, branch, {
-    title, column: 'shipped', column_since: mergedAt, cleanup_pending: cleanup,
-    worktrees: cleanup ? [worktree(branch.replace(/\//gu, '-'), 'c3', { ahead: null, behind: null })] : [],
+    title, column: 'shipped', column_since: mergedAt,
+    worktrees: keptWorktree ? [worktree(branch.replace(/\//gu, '-'), 'c3', { ahead: null, behind: null })] : [],
     pull_request: pull(now, slug, number, title, { state: 'merged', ci: null, review: 'approved', merge_state: 'UNKNOWN', updated_at: mergedAt, merged_at: mergedAt, closed_at: mergedAt }),
   });
 }
 
-/** Git/GitHub work, one attention row and one pending cleanup. Planned stays empty. */
+/** Git/GitHub work, one attention row and one merged branch whose worktree still exists. Planned stays empty. */
 export function busyDevActivity(now: number): DevActivitySnapshotV2 {
   const harness = 'Ancienttwo/repo-harness', site = 'acme/operator-site';
   const repositories: DevActivityRepository[] = [

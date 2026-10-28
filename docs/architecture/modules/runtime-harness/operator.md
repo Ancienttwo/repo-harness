@@ -175,6 +175,21 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
+The Worktree page reads `GET /api/v1/worktrees`. Background child processes collect
+Git topology, process cwd, merge proof and disk size. GET does no probes. The shared
+`inspectWorktree` predicate also gates live sweep selection. Unknown process state,
+unpublished commits and non-rebuildable ignored data prevent a green judgment.
+The browser gets stable opaque ids and directory names. Orphans without a retained
+Git pointer stay unassigned. Disk probes run at most once per directory incarnation
+per 15 minutes; a changed directory mtime makes the cached size unknown until then.
+
+Creation paths write lifecycle records in the clone's common Git directory under
+`repo-harness/worktree-records`. Contract recovery metadata and MCP/session bindings
+retain their operational fields; they do not supply the Console lifecycle view.
+Closeout records the end state. New MCP checkouts use `REPO_HARNESS_WORKTREE_ROOT`
+and the same naming rule as sweep. The retired MCP-specific root setting now fails
+with an instruction to use the shared setting. Existing paths remain readable.
+
 ### 3.1 必须保持的不变量
 
 环境页面复用 setup 与 CLI inventory 的缓存。`CliPage.tsx` 只在 CLI 页可见时读取 `/api/v1/cli-inventory`，并用 `decodeCliInventory` 校验。刷新失败保留上次数据并显示警告；`unused: null` 表示观察不足。卸载和配置删除分开显示为可复制命令。Hooks 页按事件、路由和宿主显示次数，guard 拒绝单独列出。Skills 页的宿主状态仍来自 setup check，推荐项来自 catalog 的 `skill` 类别。

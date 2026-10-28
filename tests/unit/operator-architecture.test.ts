@@ -460,7 +460,7 @@ describe('architecture map', () => {
     });
     const item = (repositoryId: string, branch: string, pr: ReturnType<typeof pull>) => ({
       id: `${repositoryId}:${branch}`, repository_id: repositoryId, branch, title: pr.title, column: 'verifying' as const, hidden: null,
-      column_since: at, worktrees: [], pull_request: pr, cleanup_pending: false,
+      column_since: at, worktrees: [], pull_request: pr,
     });
     const snapshot = (github: 'ok' | 'unavailable'): DevActivitySnapshotV2 => ({
       projection_version: 'repo-harness.dev-activity.v2', status: 'ready', collected_at: at, unreadable_registrations: 0, attention: [],

@@ -20,6 +20,7 @@ import {
 } from '@phosphor-icons/react';
 import { DEV_ACTIVITY_COLUMNS, type DevActivityAttention, type DevActivityColumn, type DevActivityItem, type DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import { nativeRuntimeFreshness, type NativeRuntimeSourceSummary } from '../core/operator/runtime-status';
+import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import {
   attentionItem,
   filterItems,
@@ -34,6 +35,7 @@ import { ItemDrawer } from './ItemDrawer';
 import { itemOwner, useExecutions, type ExecutionReader, type ExecutionResult, type ItemOwner } from './repository-reads';
 import type { RuntimeView } from './RuntimeBadges';
 import { Age, CommandLine, ExternalLink, SectionTitle, StatusDot } from './ui';
+import { reclaimableFor } from './worktrees';
 
 const ATTENTION_PREVIEW = 5;
 const RUNTIME_CONFIG_COMMAND = 'repo-harness operator serve --runtime-status-config <absolute-path>';
@@ -162,7 +164,7 @@ const CI_ICON: Readonly<Record<string, ReactNode>> = {
   pending: <CircleDashedIcon size={13} className="text-kumo-warning" />,
 };
 
-function ItemSignals({ item, owner, t }: { readonly item: DevActivityItem; readonly owner: ItemOwner; readonly t: OperatorTranslate }) {
+function ItemSignals({ item, worktrees, owner, t }: { readonly item: DevActivityItem; readonly worktrees: WorktreesSnapshot | null; readonly owner: ItemOwner; readonly t: OperatorTranslate }) {
   const pr = item.pull_request;
   const tree = item.worktrees[0] ?? null;
   const dirty = item.worktrees.some(row => row.dirty);
@@ -180,7 +182,7 @@ function ItemSignals({ item, owner, t }: { readonly item: DevActivityItem; reado
   if (dirty) signals.push(<span key="dirty" className="inline-flex items-center gap-1"><PencilSimpleIcon size={12} aria-hidden="true" />{t('card.dirty')}</span>);
   if (tree?.ahead) signals.push(<span key="ahead" className="inline-flex items-center gap-0.5" title={t('card.ahead', { count: tree.ahead })}><ArrowUpIcon size={11} aria-hidden="true" />{tree.ahead}<span className="sr-only"> {t('card.ahead', { count: tree.ahead })}</span></span>);
   if (tree?.behind) signals.push(<span key="behind" className="inline-flex items-center gap-0.5" title={t('card.behind', { count: tree.behind })}><ArrowDownIcon size={11} aria-hidden="true" />{tree.behind}<span className="sr-only"> {t('card.behind', { count: tree.behind })}</span></span>);
-  if (item.cleanup_pending) signals.push(<span key="cleanup" className="inline-flex items-center gap-1 text-kumo-subtle"><BroomIcon size={12} aria-hidden="true" />{t('card.cleanup')}</span>);
+  if (reclaimableFor(worktrees, item.repository_id, item.branch).length > 0) signals.push(<span key="cleanup" className="inline-flex items-center gap-1 text-kumo-subtle" data-reclaimable><BroomIcon size={12} aria-hidden="true" />{t('card.cleanup')}</span>);
   if (signals.length === 0) return null;
   return <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-kumo-default">{signals}</p>;
 }
@@ -195,8 +197,8 @@ function ColumnAge({ item, now, t }: { readonly item: DevActivityItem; readonly 
 }
 
 /** Show the title, repository, column clock and available Git/GitHub facts. */
-function ItemCard({ item, snapshot, owner, now, selected, onOpen, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly owner: ItemOwner; readonly now: number;
+function ItemCard({ item, snapshot, worktrees, owner, now, selected, onOpen, t }: {
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly worktrees: WorktreesSnapshot | null; readonly owner: ItemOwner; readonly now: number;
   readonly selected: boolean; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
   return (
@@ -215,7 +217,7 @@ function ItemCard({ item, snapshot, owner, now, selected, onOpen, t }: {
         <ColumnAge item={item} now={now} t={t} />
         {!item.column_since && !item.pull_request?.merged_at && item.branch && item.branch !== item.title && <span className="inline-flex min-w-0 items-center gap-1"><GitBranchIcon size={11} aria-hidden="true" /><span className="truncate font-mono">{item.branch}</span></span>}
       </p>
-      <ItemSignals item={item} owner={owner} t={t} />
+      <ItemSignals item={item} worktrees={worktrees} owner={owner} t={t} />
     </article>
   );
 }
@@ -258,9 +260,9 @@ function BoardToolbar({ filters, onFilters, searchRef, t }: {
 /** Long columns fold; Shipped folds sooner because it is history, not work. */
 const COLUMN_PREVIEW: Readonly<Record<DevActivityColumn, number>> = { planned: 12, building: 12, verifying: 12, ready_to_merge: 12, shipped: 6 };
 
-function BoardColumns({ columns, snapshot, executions, now, selectedId, mobileColumn, onMobileColumn, onOpen, t }: {
+function BoardColumns({ columns, snapshot, worktrees, executions, now, selectedId, mobileColumn, onMobileColumn, onOpen, t }: {
   readonly columns: ReadonlyMap<DevActivityColumn, readonly DevActivityItem[]>; readonly snapshot: DevActivitySnapshotV2;
-  readonly executions: readonly ExecutionResult[] | null; readonly now: number;
+  readonly worktrees: WorktreesSnapshot | null; readonly executions: readonly ExecutionResult[] | null; readonly now: number;
   readonly selectedId: string | null; readonly mobileColumn: DevActivityColumn; readonly onMobileColumn: (column: DevActivityColumn) => void;
   readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
@@ -299,7 +301,7 @@ function BoardColumns({ columns, snapshot, executions, now, selectedId, mobileCo
               </h3>
               {items.length === 0
                 ? <p className="px-1 pb-2 text-xs text-kumo-inactive">{t('column.empty')}</p>
-                : shown.map(item => <ItemCard key={item.id} item={item} snapshot={snapshot} owner={itemOwner(executions, item)} now={now} selected={item.id === selectedId} onOpen={onOpen} t={t} />)}
+                : shown.map(item => <ItemCard key={item.id} item={item} snapshot={snapshot} worktrees={worktrees} owner={itemOwner(executions, item)} now={now} selected={item.id === selectedId} onOpen={onOpen} t={t} />)}
               {items.length > limit && (
                 <button type="button" className="cursor-pointer rounded-md px-1 py-1 text-left text-xs text-kumo-link hover:underline" aria-expanded={open} onClick={() => toggle(column)} data-column-fold={column}>
                   {open ? t('column.fold') : t('column.more', { count: items.length - limit })}
@@ -321,9 +323,11 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
-export function Board({ view, runtime, readExecution, generation, filters, onFilters, itemId, onOpenItem, onCloseItem, now, t }: {
+export function Board({ view, runtime, worktrees, readExecution, generation, filters, onFilters, itemId, onOpenItem, onCloseItem, now, t }: {
   readonly view: DevActivityView;
   readonly runtime: RuntimeView;
+  /** The worktree collector's cache; null until it has data. The only source of the cleanup signal. */
+  readonly worktrees: WorktreesSnapshot | null;
   readonly readExecution: ExecutionReader;
   readonly generation: number;
   readonly filters: BoardFilters;
@@ -405,10 +409,11 @@ export function Board({ view, runtime, readExecution, generation, filters, onFil
           ? <BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness adopt --help" />
           : ready.items.length === 0
             ? <BoardState title={t('board.empty.title')} description={t('board.empty.body')} command="gh pr status" />
-            : <BoardColumns columns={columns} snapshot={ready} executions={executions} now={now} selectedId={itemId} mobileColumn={mobileColumn} onMobileColumn={setMobileColumn} onOpen={onOpenItem} t={t} />}
+            : <BoardColumns columns={columns} snapshot={ready} worktrees={worktrees} executions={executions} now={now} selectedId={itemId} mobileColumn={mobileColumn} onMobileColumn={setMobileColumn} onOpen={onOpenItem} t={t} />}
       </>}
       {itemId !== null && (
-        <ItemDrawer item={selected} snapshot={ready} executions={executions} itemId={itemId} now={now} onClose={onCloseItem} t={t} />
+        <ItemDrawer item={selected} snapshot={ready} reclaimable={selected ? reclaimableFor(worktrees, selected.repository_id, selected.branch) : []}
+          executions={executions} itemId={itemId} now={now} onClose={onCloseItem} t={t} />
       )}
     </div>
   );
