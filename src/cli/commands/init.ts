@@ -231,13 +231,16 @@ function syncBundledItemsAtHome(
       steps.push({ step, status: "failed", detail: "HOME is required to resolve host skill roots" });
       continue;
     }
+    const root = hostSkillRoot(home, host, env);
+    // Install initializes the optional Pi root. Generic sync must not opt in
+    // a new Pi host outside the install ownership transaction.
+    if (host === 'pi' && !existsSync(root)) continue;
     const source = join(sourceRoot, "assets", "skills", skill);
     const srcSkill = join(source, "SKILL.md");
     if (!existsSync(srcSkill)) {
       steps.push({ step, status: "skipped", detail: `bundled source not found at ${source}` });
       continue;
     }
-    const root = hostSkillRoot(home, host, env);
     const dest = join(root, skill);
     const destSkill = join(dest, "SKILL.md");
     mkdirSync(root, { recursive: true });
