@@ -9,12 +9,12 @@ import * as admissionSource from '../../src/effects/admission/admission-source';
 import { externalSourceBindingFixture } from '../helpers/external-source-binding-fixture';
 
 describe('external-source binding CLI contract', () => {
-  test('requires an explicit admitted session and keeps historical reads separate', () => {
+  test('requires an explicit admitted session', () => {
     const command = buildExternalSourceCommand();
     const bind = command.commands.find(candidate => candidate.name() === 'bind');
     expect(bind).toBeDefined();
     expect(bind!.options.map(option => option.long)).toEqual(['--repo', '--source-revision', '--session', '--format']);
-    for (const name of ['refresh', 'list', 'bindings', 'historical-bindings', 'context'])
+    for (const name of ['refresh', 'list', 'bindings', 'context'])
       expect(command.commands.find(candidate => candidate.name() === name)).toBeDefined();
   });
   test('binds immutable provider evidence to a real admitted session without a Sprint', async () => {
@@ -47,9 +47,6 @@ describe('external-source binding CLI contract', () => {
       await buildExternalSourceCommand().parseAsync(['bun', 'external-source', 'bindings', '--repo', f.repoId, '--format', 'json']);
       expect(process.exitCode, stderr).toBe(0);
       expect(JSON.parse(stdout).bindings[0].attention).toBe('none');
-      stdout = '';
-      await buildExternalSourceCommand().parseAsync(['bun', 'external-source', 'historical-bindings', '--repo', f.repoId, '--format', 'json']);
-      expect(JSON.parse(stdout).bindings).toEqual([]);
     } finally { process.exitCode = previous; out.mockRestore(); err.mockRestore(); source.mockRestore(); repos.mockRestore(); rmSync(f.directory, { recursive: true, force: true }); }
   });
 });

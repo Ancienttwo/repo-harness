@@ -9,7 +9,6 @@ import {
   markdownSectionHeader,
   parseAllowedPaths,
   parseIsoOrLocalTimestamp,
-  planContractRelationshipConflicts,
   planSlugFromPath,
   planStatusFromText,
   stripWrappingQuotes,
@@ -88,9 +87,7 @@ describe('Effective State artifact parsers', () => {
     )).toBe('20260715-1200-canonical-state-cutover');
   });
 
-  test('projects evidence completeness and plan-contract relationship conflicts', () => {
-    const planPath = 'plans/plan-20260715-1200-fixture.md';
-    const contractPath = 'tasks/contracts/20260715-1200-fixture.contract.md';
+  test('projects evidence completeness', () => {
     const evidence = [
       '## Evidence Contract',
       '- **State/progress path**: plan',
@@ -101,17 +98,5 @@ describe('Effective State artifact parsers', () => {
     ].join('\n');
     expect(evidenceContractComplete(evidence)).toBe(true);
     expect(evidenceContractComplete(evidence.replace('tests', 'todo'))).toBe(false);
-    expect(planContractRelationshipConflicts(
-      planPath,
-      contractPath,
-      `> **Task Contract**: ${contractPath}`,
-      `> **Plan**: ${planPath}`,
-    )).toEqual([]);
-    expect(planContractRelationshipConflicts(
-      planPath,
-      contractPath,
-      '> **Task Contract**: tasks/contracts/other.contract.md',
-      '> **Plan**: plans/plan-other.md',
-    )).toEqual(['contract_plan_relationship', 'plan_contract_relationship']);
   });
 });

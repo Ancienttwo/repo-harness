@@ -9,8 +9,8 @@ import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkS
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
-import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
-import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
+import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
 import { observeProviderBranchMergeCommit } from './coordination-provider-merge';
@@ -49,14 +49,30 @@ function git(root: string, args: string[], limits: Limits = {}): string {
   return gitExecFileSync(args, { cwd: root, gitBin: gitBinary(limits), env: withoutRepositorySelectingGitEnv(), encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
+const WORKTREE_TOPOLOGY_LOCK = 'repo-harness/coordination/locks/worktree-topology.lock';
+const topologyLockWait = (limits: Limits) => limits.deadline ? Math.max(1, Math.min(50, timeout(limits)!)) : undefined;
+
 /** Bind and destructive cleanup serialize across every worktree of this clone. */
 export function withWorktreeTopologyLock<T>(root: string, action: () => T, limits: Limits = {}): T {
   const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits), withoutRepositorySelectingGitEnv());
-  return withExclusiveDirectoryLock(common, 'repo-harness/coordination/locks/worktree-topology.lock', () => {
+  return withExclusiveDirectoryLock(common, WORKTREE_TOPOLOGY_LOCK, () => {
     cleanIdentityTemporaryFiles(common, Date.now(), limits);
     return action();
   },
-    { waitTimeoutMs: limits.deadline ? Math.max(1, Math.min(50, timeout(limits)!)) : undefined });
+    { waitTimeoutMs: topologyLockWait(limits) });
+}
+
+/** The same lock held across an asynchronous action, so an event-loop caller does not block while it holds it. */
+export async function withWorktreeTopologyLockAsync<T>(root: string, action: () => Promise<T>, limits: Limits = {}): Promise<T> {
+  const common = await resolveGitCommonDirectoryAsync(root, gitBinary(limits), timeout(limits), withoutRepositorySelectingGitEnv());
+  const handle = acquireExclusiveDirectoryLock(common, WORKTREE_TOPOLOGY_LOCK, { waitTimeoutMs: topologyLockWait(limits) });
+  try {
+    handle.assertOwned();
+    cleanIdentityTemporaryFiles(common, Date.now(), limits);
+    return await action();
+  } finally {
+    handle.release();
+  }
 }
 
 

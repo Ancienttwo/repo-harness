@@ -40,7 +40,9 @@ describe("new-plan helper integration", () => {
       expect(plan).toContain("## Workflow Inventory");
       expect(plan).toContain("## Promotion Gate");
       expect(plan).toContain("> **Artifact Level**: work-package");
-      expect(plan).toContain("> **Task Contract**:");
+      expect(plan).not.toContain("tasks/contracts/");
+      expect(plan).not.toContain("contract.template.md");
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
       expect(plan).not.toContain("tasks/reviews/");
       expect(plan).not.toContain("tasks/notes/");
       expect(plan).not.toContain("tasks/todos.md");

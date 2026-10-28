@@ -332,7 +332,6 @@ accepted suggestion goes through the normal plan and pull request workflow.
 ```bash
 repo-harness external-source refresh   # one bounded, explicitly enabled GitHub observation
 repo-harness external-source bind --repo <id> --source-revision <digest> --session <selector.json>
-repo-harness external-source historical-bindings --repo <id>  # retired V1 records only
 repo-harness external-source bindings  # binding edges and current drift attention
 ```
 

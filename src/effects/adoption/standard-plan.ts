@@ -23,7 +23,6 @@ const STANDARD_DIRS = [
   "plans/sprints",
   "tasks",
   "tasks/archive",
-  "tasks/contracts",
   "tasks/workstreams",
   "docs",
   "docs/researches",
@@ -59,7 +58,6 @@ const STANDARD_DIRS = [
 const MINIMAL_DIRS = [
   "plans",
   "tasks",
-  "tasks/contracts",
   "docs",
   ".ai/harness/checks",
   ".ai/harness/handoff",
@@ -600,7 +598,6 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
     "research.template.md",
     "spec.template.md",
     "plan.template.md",
-    "contract.template.md",
     "sprint.template.md",
     "prd.template.md",
     "design-brief.template.md",

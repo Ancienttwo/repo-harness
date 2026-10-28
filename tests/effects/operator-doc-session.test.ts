@@ -2,18 +2,19 @@ import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
+import { checkDocCitation, DOC_CITATION_BUDGET_CHARS, DOC_CITATION_BUDGET_HASHES, docCitationBudget, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
+import { OPERATOR_DOCS_TREE_KIND, type DocsTreeV1 } from '../../src/core/operator/docs';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
-import { docSessionCreateRoute, OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
+import { GIT_KILL_GRACE_MS, gitExecFile, GitExecError } from '../../src/effects/git/runner';
+import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
+import { withWorktreeTopologyLockAsync } from '../../src/effects/state/coordination-worktree-topology';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
-/** The inventory entry that binds the session route in tests; production OPERATOR_ROUTES has none. */
-const SESSIONS_INVENTORY: OperatorRouteV1 = { id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true };
 /** The inventory entry that binds the session events read in tests; production OPERATOR_ROUTES has none. */
 const SESSION_EVENTS_INVENTORY: OperatorRouteV1 = { id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false };
 const GUIDE = '# Guide\n\nThe operator reads docs.\nIt never writes main.\n\n## Next\n\nMore text.\n';
@@ -88,7 +89,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
   });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, SESSIONS_INVENTORY, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
@@ -275,22 +276,56 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit only the agent settings and worktree cleanup writes, so no session can be created through operator serve', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write']);
-  expect(OPERATOR_ROUTES.some(route => route.id === 'sessions_create')).toBe(false);
+test('production routes admit exactly the settings, worktree cleanup and session create writes', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create']);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
   const at = (start: number, end: number) => cite(GUIDE, 'docs/guide.md', start, end, 'c'.repeat(40));
-  expect(checkDocCitation(at(3, 4), GUIDE)).toEqual({ state: 'current', start_line: 3, end_line: 4 });
-  expect(checkDocCitation(at(3, 4), `x\n${GUIDE}`)).toEqual({ state: 'relocated', start_line: 4, end_line: 5 });
+  expect(checkDocCitation(at(3, 4), GUIDE, docCitationBudget())).toEqual({ state: 'current', start_line: 3, end_line: 4 });
+  expect(checkDocCitation(at(3, 4), `x\n${GUIDE}`, docCitationBudget())).toEqual({ state: 'relocated', start_line: 4, end_line: 5 });
   // Two copies of the cited text: no unique place, so the user must cite again.
   const twice = `${GUIDE}The operator reads docs.\nIt never writes main.\n`;
-  expect(checkDocCitation(at(3, 4), `x\n${twice}`)).toEqual({ state: 'stale' });
+  expect(checkDocCitation(at(3, 4), `x\n${twice}`, docCitationBudget())).toEqual({ state: 'stale' });
   // Lines past the end of the file.
-  expect(checkDocCitation({ ...at(1, 1), start_line: 40, end_line: 41 }, GUIDE)).toEqual({ state: 'stale' });
+  expect(checkDocCitation({ ...at(1, 1), start_line: 40, end_line: 41 }, GUIDE, docCitationBudget())).toEqual({ state: 'stale' });
   // The last line has no line end; its bytes are still a whole line.
-  expect(checkDocCitation(cite('a\nb', 'docs/x.md', 2, 2, 'c'.repeat(40)), 'a\nb')).toEqual({ state: 'current', start_line: 2, end_line: 2 });
+  expect(checkDocCitation(cite('a\nb', 'docs/x.md', 2, 2, 'c'.repeat(40)), 'a\nb', docCitationBudget())).toEqual({ state: 'current', start_line: 2, end_line: 2 });
+});
+
+test('a relocation that needs more hashes or more hashed text than the request budget stops as over_budget', () => {
+  // One cited line moved past more candidate lines than the hash count allows.
+  const filler = 'x\n'.repeat(DOC_CITATION_BUDGET_HASHES);
+  const moved = cite('target\n', 'docs/x.md', 1, 1, 'c'.repeat(40));
+  expect(checkDocCitation(moved, `${filler}target\n`, docCitationBudget())).toEqual({ state: 'over_budget' });
+  // The same move below the cap is found.
+  expect(checkDocCitation(moved, `${'x\n'.repeat(1_000)}target\n`, docCitationBudget())).toEqual({ state: 'relocated', start_line: 1_001, end_line: 1_001 });
+  // A 500-line range moved down: each candidate hashes the whole range, so the text cap ends the check first.
+  const block = Array.from({ length: 500 }, (_, index) => `${String(index).padStart(4, '0')} ${'b'.repeat(100)}\n`).join('');
+  const range = cite(block, 'docs/x.md', 1, 500, 'c'.repeat(40));
+  // Filler lines as long as the cited ones, so every candidate range is as long as the citation.
+  const shifted = `${`${'y'.repeat(105)}\n`.repeat(400)}${block}`;
+  expect(400 * block.length).toBeGreaterThan(DOC_CITATION_BUDGET_CHARS);
+  expect(checkDocCitation(range, shifted, docCitationBudget())).toEqual({ state: 'over_budget' });
+  // Only the budget refuses it: a larger one finds the unique move.
+  expect(checkDocCitation(range, shifted, { hashes: 1_000, chars: 1_000 * block.length })).toEqual({ state: 'relocated', start_line: 401, end_line: 900 });
+  // The checks of one request share the budget: a spent budget refuses even a current citation.
+  expect(checkDocCitation(range, block, { hashes: 0, chars: DOC_CITATION_BUDGET_CHARS })).toEqual({ state: 'over_budget' });
+  expect(checkDocCitation(range, block, { hashes: 1, chars: block.length })).toEqual({ state: 'current', start_line: 1, end_line: 500 });
+});
+
+test('a citation whose relocation exceeds the request hash budget is refused with 409 citation_stale before any git work, and nothing is created', async () => {
+  const h = await harness();
+  const block = Array.from({ length: 500 }, (_, index) => `${String(index).padStart(4, '0')} ${'b'.repeat(100)}\n`).join('');
+  await h.commit(block);
+  const citation = cite(block, 'docs/guide.md', 1, 500, h.head());
+  await h.commit(`${`${'y'.repeat(105)}\n`.repeat(400)}${block}`);
+  const answer = await h.post(request(h, [citation]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('citation_stale');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
 test('two concurrent creations for one repository give one 201 and one 503 busy, and leave one worktree and one branch', async () => {
@@ -375,6 +410,98 @@ test('git variables that select another repository do not move the branch or the
   expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(join(h.worktrees, answer.body.worktree))}\n`);
   expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads/docs/'], other)).toBe('');
   expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
+});
+
+/** An executable that runs `body` and then the real git with the same arguments. */
+function gitWrapper(prefix: string, body: (gate: string) => string[]): { readonly gate: string; readonly wrapper: string } {
+  const realGit = Bun.which('git');
+  expect(realGit).not.toBeNull();
+  const gate = tmpWorkspace(prefix);
+  cleanups.push(() => rmSync(gate, { recursive: true, force: true }));
+  const wrapper = join(gate, 'git');
+  writeFileSync(wrapper, ['#!/bin/sh', ...body(gate), `exec '${realGit}' "$@"`, ''].join('\n'), { mode: 0o755 });
+  return { gate, wrapper };
+}
+
+test('a held `git rev-parse --git-common-dir` or `git worktree add` keeps the server answering: a health read completes while the creation waits', async () => {
+  // Once armed, the wrapper holds each named call until the test releases it.
+  const hold = (gate: string, name: string, test: string) => [
+    `if [ -e '${gate}/armed' ] && ${test}; then`,
+    `  : > '${gate}/started-${name}'`,
+    `  while [ ! -e '${gate}/release-${name}' ]; do sleep 0.02; done`,
+    'fi',
+  ];
+  const { gate, wrapper } = gitWrapper('operator-doc-session-git-gate', (dir) => [
+    ...hold(dir, 'common', '[ "$1" = rev-parse ] && [ "$2" = --git-common-dir ]'),
+    ...hold(dir, 'checkout', '[ "$1" = worktree ] && [ "$2" = add ]'),
+  ]);
+  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
+  const topologyLock = join(h.repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+  writeFileSync(join(gate, 'armed'), '');
+  let settled = false;
+  const creation = h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())])).finally(() => { settled = true; });
+
+  // The common directory lookup runs before the topology lock is taken.
+  while (!existsSync(join(gate, 'started-common'))) await Bun.sleep(10);
+  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
+  expect(settled).toBe(false);
+  expect(existsSync(join(gate, 'started-checkout'))).toBe(false);
+  writeFileSync(join(gate, 'release-common'), '');
+
+  while (!existsSync(join(gate, 'started-checkout'))) await Bun.sleep(10);
+  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
+  expect(settled).toBe(false);
+  // The topology lock stays held across the awaited checkout.
+  expect(existsSync(topologyLock)).toBe(true);
+  writeFileSync(join(gate, 'release-checkout'), '');
+
+  const answer = await creation;
+  expect(answer.status).toBe(201);
+  expect(h.branches()).toEqual([answer.body.branch]);
+  expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
+  expect(existsSync(topologyLock)).toBe(false);
+});
+
+test('a git call that ignores SIGTERM is killed after the grace period, the call rejects after the child is gone, and the topology lock is released', async () => {
+  const { gate, wrapper } = gitWrapper('operator-doc-session-git-hang', (dir) => [
+    'if [ "$1" = hang ]; then',
+    "  trap '' TERM",
+    `  echo $$ > '${dir}/pid'`,
+    '  exec sleep 30',
+    'fi',
+  ]);
+  const repo = tmpWorkspace('operator-doc-session-hang-repo'); initGitRepo(repo);
+  cleanups.push(() => rmSync(repo, { recursive: true, force: true }));
+  const topologyLock = join(repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+  const timeout = 200;
+  let lockHeld = false;
+  const began = Date.now();
+  const failure = await withWorktreeTopologyLockAsync(repo, () => {
+    lockHeld = existsSync(topologyLock);
+    return gitExecFile(['hang'], { cwd: repo, gitBin: wrapper, timeout });
+  }, { gitBin: wrapper }).then(() => null, (error: unknown) => error);
+  const elapsed = Date.now() - began;
+
+  expect(lockHeld).toBe(true);
+  expect(failure).toBeInstanceOf(GitExecError);
+  expect((failure as GitExecError).timedOut).toBe(true);
+  // SIGTERM is ignored, so only the SIGKILL after the grace period ends the child.
+  expect(elapsed).toBeGreaterThanOrEqual(timeout + GIT_KILL_GRACE_MS);
+  expect(elapsed).toBeLessThan(timeout + GIT_KILL_GRACE_MS + 5_000);
+  const pid = Number(readFileSync(join(gate, 'pid'), 'utf8'));
+  expect(() => process.kill(pid, 0)).toThrow();
+  expect(existsSync(topologyLock)).toBe(false);
+});
+
+test('a `show-ref` probe that fails other than with exit 1 ends the creation before the claim, and nothing is created', async () => {
+  const { wrapper } = gitWrapper('operator-doc-session-git-show-ref', () => ['if [ "$1" = show-ref ]; then exit 128; fi']);
+  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('reconcile_required');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
 const AT = '2026-10-27T12:00:00.000Z';
@@ -631,5 +758,63 @@ test('production routes keep no session events read, so operator serve does not 
   const answer = await readEvents(h, sid);
   expect(answer.status).toBe(404);
   expect(answer.text).not.toContain('hidden');
+});
+
+test('the production inventory binds POST /api/v1/sessions to the server-built route over the injected docs cache', async () => {
+  const repo = tmpWorkspace('operator-doc-session-repo'); initGitRepo(repo);
+  mkdirSync(join(repo, 'docs'));
+  writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
+  commitAll(repo, 'docs');
+  git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
+  const home = tmpWorkspace('operator-doc-session-home');
+  const worktrees = realpathSync(tmpWorkspace('operator-doc-session-worktrees'));
+  const staticRoot = tmpWorkspace('operator-doc-session-ui');
+  writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+  const repositoryId = repoHarnessRepoIdFor(repo);
+  const at = new Date().toISOString();
+  writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
+    id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
+  }] }));
+  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
+  reader.start();
+  await reader.refresh();
+  const tree: DocsTreeV1 = {
+    protocol: 1, kind: OPERATOR_DOCS_TREE_KIND, repository_id: repositoryId, ref: 'refs/remotes/origin/main',
+    commit: git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(), collected_at: at,
+    files: [{ path: 'docs/guide.md', size: Buffer.byteLength(GUIDE), sha256: hex(GUIDE) }],
+  };
+  // No write_routes injection: the production OPERATOR_ROUTES entry binds the server-built handler.
+  const server = await startOperatorServer({
+    port: 0, static_root: staticRoot, env, docs_session_platform: 'darwin',
+    read_docs: () => ({ state: 'ready', tree, reader }),
+  });
+  const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
+  cleanups.push(async () => {
+    await server.close();
+    reader.close();
+    for (const dir of [repo, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
+  });
+  const post = async (citations: readonly DocCitationV1[]) => {
+    const response = await fetch(`${server.url}/api/v1/sessions`, {
+      method: 'POST',
+      headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations, instruction: 'Tighten the intro.' }),
+    });
+    return { status: response.status, body: JSON.parse(await response.text()) as Record<string, any> };
+  };
+
+  const stale = await post([cite(GUIDE.replace('The operator reads docs.', 'The operator reads nothing.'), 'docs/guide.md', 3, 4, tree.commit)]);
+  expect(stale.status).toBe(409);
+  expect(stale.body.error.code).toBe('citation_stale');
+  expect(readdirSync(worktrees)).toEqual([]);
+
+  const answer = await post([cite(GUIDE, 'docs/guide.md', 3, 4, tree.commit)]);
+  expect(answer.status).toBe(201);
+  expect(answer.body.kind).toBe('operator_docs_session');
+  const sid = answer.body.session_id as string;
+  expect(answer.body.branch).toBe(`docs/${sid.slice(0, 12)}`);
+  expect(readdirSync(worktrees)).toEqual([`${basename(repo)}-wt-docs-${sid.slice(0, 12)}`]);
+  expect(readFileSync(join(home, 'operator', 'sessions', sid, 'session.json'), 'utf8')).toContain('"docs_session"');
 });
 

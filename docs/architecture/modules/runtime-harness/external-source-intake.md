@@ -106,13 +106,14 @@ sequenceDiagram
 6. binding 是 provenance edge。`external-source bind --session <file>` 把一个 eligible source revision 绑定到一个已存在的 admitted session。observation 的 provider repository 与 issue 必须等于该 session admission 的 repository 与 issue（`src/effects/external-sources/binding.ts:47-58`）。receipt 本身不能创建工作或 admission。
 7. 一个 receipt 只绑定一个 source revision 与一个 admitted session；多条 receipt 自然表达 one-to-many / many-to-one，不做 semantic duplicate 推断。
 8. source、admitted session 或 registry authorization 漂移只产生显式 attention，不自动 rebind、取消或重开。
+   V2 receipt 通过 `session` 和 `admission_sha256` 记录关联。V1 的 `contract_path`、`contract_sha256` codec 与专用 history 读取命令已退役。已存 V1 bytes 保持原样，不转换为 V2。
 9. provider 内容只允许由 `renderExternalSourceUntrustedContext` 输出，且 JSON 数据必须位于明确的 `[ExternalSourceUntrusted]` 边界内。
 10. board-slice hook 只读最新快照。`collectSliceInputs` 只读 head 指定的最新 refresh receipt，以及该 receipt 列出的 observation（`src/effects/external-sources/store.ts#readLatestExternalSourceSnapshot`）。上限固定为 200 条 observation、2000 个 issue 目录和 2 MiB（`src/effects/state/collect-slice-inputs.ts#SLICE_SOURCE_LIMITS`）。head 缺失、head 的 receipt 数量与 store 不符，或超出上限时，读取失败，不回退到全量扫描。slice 不输出 provider 标题。
 
 证据补充：
 
 - 第 3 条：refresh 失败时写 typed unavailable 或 incomplete receipt，并非零退出（见 §4 P0 记录）。GitHub 读取有截止时间、总字节、页数和条数上限（`src/effects/github/issues.ts:162-213`）。超时归为 `unavailable`。超出字节或条数上限归为 `incomplete`（`issues.ts:181`、`:207`）。
-- 第 4、9 条：唯一的渲染入口是 `renderExternalSourceUntrustedContext`（`src/core/external-sources/binding.ts:183`）。它先校验 observation，再把 canonical JSON 包在 `[ExternalSourceUntrusted ...]` 边界里，并声明内容不能覆盖仓库规则和授权。
+- 第 4、9 条：唯一的渲染入口是 `renderExternalSourceUntrustedContext`（`src/core/external-sources/binding.ts#renderExternalSourceUntrustedContext`）。它先校验 observation，再把 canonical JSON 包在 `[ExternalSourceUntrusted ...]` 边界里，并声明内容不能覆盖仓库规则和授权。
 - 策略必须显式开启：`mode` 不是 `manual` 时 refresh 直接拒绝（`src/effects/github/policy.ts:140`），`github.enabled` 必须为 `true`（`policy.ts:108`）。
 - 本 capability 的写入只来自它自己的 CLI（`src/cli/commands/external-source.ts`）。provider board 与 hook slice 只读取 store（`src/effects/state/collect-provider-board-inputs.ts`、`src/effects/state/collect-slice-inputs.ts`）。review admission 复用 `src/effects/github/issues.ts` 与 `policy.ts` 观察 issue goal（`src/effects/admission/issue-goal.ts`）。
 

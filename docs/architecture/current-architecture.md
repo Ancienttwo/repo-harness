@@ -23,7 +23,7 @@ are implementation layers; scripts expose command entrypoints.
 | Execution, review and evidence | Bound processes; bind review/verification to exact subjects; keep ledger, checkpoints and publication facts | `src/effects/review/generic-review.ts`, `src/effects/evidence/`, `src/effects/terminal/` |
 | Architecture governance and projection | Model intent uses ChangeSets; policy selects one ownership resolver; rolling writer publishes generated output | `src/effects/architecture/`, `src/effects/architecture/archcontext-owners.ts`, architecture worker reference |
 | Shared primitives | Git, locks, process lifecycle, paths, durable writes and identity; callers supply task policy | `src/effects/git/`, `src/effects/locking/`, `src/effects/process-supervisor.ts` |
-| Historical compatibility | Retained canonical task codecs, Sprint row parsers and V1 source-binding receipts support explicit history reads; they are not current orchestration | `src/core/state/coordination-identity.ts`, `src/core/state/sprint-backlog-rows.ts`, `external-source historical-bindings`; product decision [#917](https://github.com/Ancienttwo/repo-harness/issues/917) |
+| Historical compatibility | Retained canonical task codecs and Sprint row parsers support explicit history reads. V1 source-binding bytes remain stored without a runtime reader. | `src/core/state/coordination-identity.ts`, `src/core/state/sprint-backlog-rows.ts`; product decision [#917](https://github.com/Ancienttwo/repo-harness/issues/917) |
 
 ```mermaid
 flowchart TB

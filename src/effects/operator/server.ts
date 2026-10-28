@@ -48,6 +48,7 @@ import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
+import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -163,6 +164,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
+  // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
+  Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -219,6 +222,8 @@ export interface OperatorServerOptions {
   readonly read_docs?: (repositoryId: string) => DocsRepositoryCache;
   /** Start the in-process docs collector (operator serve). Ignored when a cache reader is injected. */
   readonly docs_collector?: boolean;
+  /** The platform the docs session route checks. Production uses the host platform; only tests pass another. */
+  readonly docs_session_platform?: NodeJS.Platform;
   /** Tests cache reader by repository id. GET serves only this cache; it never calls GitHub. */
   readonly read_tests?: (repositoryId: string) => TestsRepositoryCache;
   /** Start the in-process tests collector (operator serve). Ignored when a cache reader is injected. */
@@ -1612,7 +1617,24 @@ export async function startOperatorServer(
   const writeToken = createOperatorWriteToken();
   const readAgentRuntimes = (): AgentRuntimesCacheV1 =>
     (options.read_agent_runtimes ?? setup?.read_agent_runtimes ?? (() => ({ status: 'unavailable', reason: 'collection_pending' } as const)))();
-  const writeRoutes = [agentsSettingsWriteRoute(readAgentRuntimes, options.env), worktreeCleanupWriteRoute(options.env), ...(options.write_routes ?? [])];
+  // An injected route (tests only; the serve CLI strips write_routes) replaces
+  // the production binding with the same id, so a test serves its own handler
+  // behind the production inventory entry.
+  const injectedWriteRoutes = options.write_routes ?? [];
+  const writeRoutes = [
+    agentsSettingsWriteRoute(readAgentRuntimes, options.env),
+    docSessionCreateRoute({
+      env: options.env ?? process.env,
+      platform: options.docs_session_platform,
+      // The same docs cache the docs GET routes serve; citations verify against it.
+      docs_reader: repositoryId => {
+        const cache = (options.read_docs ?? docs?.read)?.(repositoryId);
+        return cache?.state === 'ready' ? cache.reader : null;
+      },
+    }),
+    worktreeCleanupWriteRoute(options.env),
+  ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
+    .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
   // as a POST write route is a second authority, and a declared write route
   // without a handler is a broken contract, so the server refuses to start.

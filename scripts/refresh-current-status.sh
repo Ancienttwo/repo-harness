@@ -205,10 +205,6 @@ safe_plan_ref() {
   safe_repo_ref "$1" "$2" 'plan'
 }
 
-safe_sprint_ref() {
-  safe_repo_ref "$1" "$2" 'sprint'
-}
-
 safe_owner_ref() {
   local worktree="$1"
   local owner="$2"
@@ -345,68 +341,6 @@ workstream_summary() {
   [[ "$count" -gt 0 ]] || printf -- '- (none)\n'
 }
 
-sprint_backlog_progress() {
-  local sprint_file="$1"
-  awk -F '|' '
-    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
-    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
-    in_section && /^## / { exit }
-    !in_section { next }
-    /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      total++
-      cell = $(3 + off)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell)
-      if (cell ~ /^\[[xX]\]$/) done++
-    }
-    END { printf "%d/%d", done + 0, total + 0 }
-  ' "$sprint_file"
-}
-
-sprint_next_task() {
-  local sprint_file="$1"
-  awk -F '|' '
-    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
-    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
-    in_section && /^## / { exit }
-    !in_section { next }
-    /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      status = $(3 + off); task = $(4 + off)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
-      if (status == "[ ]") { print task; found = 1; exit }
-    }
-    END { if (!found) print "(none)" }
-  ' "$sprint_file"
-}
-
-sprint_summary() {
-  local marker sprint_path sprint_file sprint_ref status current_path
-  marker="$(json_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
-  if [[ ! -f "$marker" ]]; then
-    printf -- '- Sprint: (none)\n'
-    return 0
-  fi
-
-  current_path="$(pwd -P 2>/dev/null || pwd)"
-  sprint_path="$(read_marker_value "$marker" 2>/dev/null || true)"
-  if [[ -z "$sprint_path" ]]; then
-    printf -- '- Sprint: stale active-sprint marker -> (empty)\n'
-    return 0
-  fi
-  sprint_file="$(normalize_plan_path "$current_path" "$sprint_path")"
-  sprint_ref="$(safe_sprint_ref "$current_path" "$sprint_path")"
-  if [[ ! -f "$sprint_file" ]]; then
-    printf -- '- Sprint: stale active-sprint marker -> %s\n' "$sprint_ref"
-    return 0
-  fi
-
-  status="$(file_metadata_value "$sprint_file" "Status" || printf 'unknown')"
-  printf -- '- Sprint: `%s`\n' "$sprint_ref"
-  printf -- '- Sprint Status: %s\n' "${status:-unknown}"
-  printf -- '- Backlog: %s\n' "$(sprint_backlog_progress "$sprint_file")"
-  printf -- '- Next Sprint Task: %s\n' "$(sprint_next_task "$sprint_file")"
-}
-
 git_status_summary() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     printf 'not a git repository'
@@ -488,7 +422,7 @@ render_status() {
 > **Target Branch**: ${target}
 > **Stale After**: ${stale_after}
 > **Reason**: ${reason}
-> **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
+> **Derived From**: active-plan, workstreams, handoff, checks, git status
 
 This file is an ignored local read model derived from this worktree's artifacts. It is not tracked, not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
@@ -503,9 +437,6 @@ This file is an ignored local read model derived from this worktree's artifacts.
 ## Active Work
 
 ${active_work:-- (none)}
-## Active Sprint
-
-$(sprint_summary)
 ## Workstreams
 
 $(workstream_summary)
@@ -531,8 +462,6 @@ $(git_status_files)
 - Active marker: \`.ai/harness/active-plan\`
 - Active worktree marker: \`.ai/harness/active-worktree\`
 - PRDs: \`plans/prds/*.prd.md\`
-- Sprints: \`$(json_get '.sprints.dir' 'plans/sprints')/*.sprint.md\`
-- Active sprint marker: \`.ai/harness/sprint/active-sprint\`
 - Workstreams: \`tasks/workstreams/**/*.md\`
 - Handoff: \`.ai/harness/handoff/current.md\`
 - Verification: read-only native execution evaluation
