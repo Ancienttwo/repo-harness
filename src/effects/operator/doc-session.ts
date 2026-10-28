@@ -16,7 +16,7 @@ import { checkDocCitation, decodeDocCitation, docCitationBudget, type DocCitatio
 import type { JsonValue } from '../../core/evidence/types';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
-import { configuredGitBinary, gitExecFile, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { configuredGitBinary, gitExecFile, GitExecError, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { assertDocsHostPlatform, DOCS_HOST_MODEL_API } from '../review/docs-host-isolation';
@@ -133,7 +133,11 @@ async function addDocsWorktree(repoRoot: string, root: string, worktree: string,
   const git = (args: string[]) => gitExecFile(args, {
     cwd: repoRoot, gitBin: configuredGitBinary(env), env: gitEnvironment(env), timeout: Math.max(1, deadline - Date.now()),
   });
-  const branchExists = await git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, () => false);
+  // Only exit 1 means the ref is absent; a timeout or any other failure ends the request.
+  const branchExists = await git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(() => true, (error: unknown) => {
+    if (error instanceof GitExecError && error.status === 1) return false;
+    throw error;
+  });
   if (branchExists) throw worktreeExists();
   try { mkdirSync(worktree, { mode: 0o700 }); }
   catch (error) {

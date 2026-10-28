@@ -920,12 +920,10 @@ export const observationSpawnSync: typeof child.spawnSync = ((file: string, args
 }) as typeof child.spawnSync;
 import { basename } from 'node:path';
 import {
-  execFile as execFileRaw,
   execFileSync as execFileSyncRaw,
   spawn as spawnRaw,
   spawnSync as spawnSyncRaw,
   type ChildProcess,
-  type ExecFileOptions,
   type ExecFileSyncOptions,
   type ExecFileSyncOptionsWithBufferEncoding,
   type ExecFileSyncOptionsWithStringEncoding,
@@ -1050,17 +1048,94 @@ export function spawnGit(args: readonly string[], options: SpawnOptions & GitCal
   return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env });
 }
 
+/** Wait after SIGTERM before a timed-out async git call sends SIGKILL. */
+export const GIT_KILL_GRACE_MS = 1_000;
+const GIT_OUTPUT_MAX_BYTES = 1024 * 1024;
+
+/** Rejection of `gitExecFile`. `status` is the exit code; it is null after a signal, a timeout or a spawn failure. */
+export class GitExecError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly signal: NodeJS.Signals | null,
+    readonly timedOut: boolean,
+    readonly stderr: string,
+  ) {
+    super(message);
+    this.name = 'GitExecError';
+  }
+}
+
+export interface GitExecAsyncOptions extends GitCallFields {
+  readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly timeout?: number;
+}
+
 /**
  * Asynchronous `gitExecFileSync` for an event-loop caller: same binary and
- * timeout resolution, stdin closed, utf8 stdout. It rejects with execFile's
- * error on a non-zero exit, a signal or the timeout.
+ * timeout resolution, stdin ignored, utf8 stdout. At the timeout it sends
+ * SIGTERM, then SIGKILL after GIT_KILL_GRACE_MS. It settles only after the
+ * child exited, and rejects with GitExecError on a non-zero exit, a signal,
+ * the timeout, too much output or a spawn failure.
  */
-export function gitExecFile(args: readonly string[], options: ExecFileOptions & GitCallFields = {}): Promise<string> {
-  const { gitBin, env, direct: _direct, timeout, ...rest } = options;
+export function gitExecFile(args: readonly string[], options: GitExecAsyncOptions = {}): Promise<string> {
+  const { gitBin, env, cwd, timeout } = options;
   return new Promise((resolveOutput, reject) => {
-    const child = execFileRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env, timeout: resolveGitTimeout(timeout), encoding: 'utf8' },
-      (error, stdout) => { if (error) reject(error); else resolveOutput(stdout); });
-    child.stdin?.end();
+    const child = spawnRaw(resolveGitExecutable(gitBin, env), [...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let bytes = 0;
+    let exited: { readonly code: number | null; readonly signal: NodeJS.Signals | null } | null = null;
+    let timedOut = false;
+    let overflow = false;
+    let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const terminate = () => {
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), GIT_KILL_GRACE_MS);
+    };
+    const finish = (spawnError?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      clearTimeout(killTimer);
+      child.stdout!.destroy();
+      child.stderr!.destroy();
+      const errorText = Buffer.concat(stderr).toString('utf8');
+      const status = exited?.code ?? null;
+      const signal = exited?.signal ?? null;
+      if (spawnError) reject(new GitExecError(`git ${args[0] ?? ''} could not start: ${spawnError.message}`, null, null, false, ''));
+      else if (timedOut) reject(new GitExecError(`git ${args[0] ?? ''} timed out`, null, signal, true, errorText));
+      else if (overflow) reject(new GitExecError(`git ${args[0] ?? ''} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText));
+      else if (status !== 0) reject(new GitExecError(`git ${args[0] ?? ''} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText));
+      else resolveOutput(Buffer.concat(stdout).toString('utf8'));
+    };
+    const collect = (into: Buffer[]) => (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > GIT_OUTPUT_MAX_BYTES) {
+        if (!overflow) { overflow = true; terminate(); }
+        return;
+      }
+      into.push(chunk);
+    };
+    child.stdout!.on('data', collect(stdout));
+    child.stderr!.on('data', collect(stderr));
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      // A process that exited but left its pipes open to a descendant has nothing left to kill.
+      if (exited) finish();
+      else terminate();
+    }, resolveGitTimeout(timeout));
+    child.on('error', (error) => { if (child.pid === undefined) finish(error); });
+    child.on('exit', (code, signal) => {
+      exited = { code, signal };
+      if (timedOut || overflow) finish();
+    });
+    child.on('close', (code, signal) => {
+      exited ??= { code, signal };
+      finish();
+    });
   });
 }
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";

@@ -9,7 +9,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkS
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
-import { configuredGitBinary, resolveGitCommonDirectory } from '../git/common-directory';
+import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
 import { parseWorktreeTopology } from '../git/worktree-topology';
@@ -64,7 +64,7 @@ export function withWorktreeTopologyLock<T>(root: string, action: () => T, limit
 
 /** The same lock held across an asynchronous action, so an event-loop caller does not block while it holds it. */
 export async function withWorktreeTopologyLockAsync<T>(root: string, action: () => Promise<T>, limits: Limits = {}): Promise<T> {
-  const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits), withoutRepositorySelectingGitEnv());
+  const common = await resolveGitCommonDirectoryAsync(root, gitBinary(limits), timeout(limits), withoutRepositorySelectingGitEnv());
   const handle = acquireExclusiveDirectoryLock(common, WORKTREE_TOPOLOGY_LOCK, { waitTimeoutMs: topologyLockWait(limits) });
   try {
     handle.assertOwned();

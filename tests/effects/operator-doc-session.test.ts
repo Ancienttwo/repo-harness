@@ -6,10 +6,12 @@ import { checkDocCitation, DOC_CITATION_BUDGET_CHARS, DOC_CITATION_BUDGET_HASHES
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
 import { OPERATOR_DOCS_TREE_KIND, type DocsTreeV1 } from '../../src/core/operator/docs';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
+import { GIT_KILL_GRACE_MS, gitExecFile, GitExecError } from '../../src/effects/git/runner';
 import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
+import { withWorktreeTopologyLockAsync } from '../../src/effects/state/coordination-worktree-topology';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
@@ -410,43 +412,96 @@ test('git variables that select another repository do not move the branch or the
   expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
 });
 
-test('a held `git worktree add` keeps the server answering: a health read completes while the creation waits', async () => {
+/** An executable that runs `body` and then the real git with the same arguments. */
+function gitWrapper(prefix: string, body: (gate: string) => string[]): { readonly gate: string; readonly wrapper: string } {
   const realGit = Bun.which('git');
   expect(realGit).not.toBeNull();
-  const gate = tmpWorkspace('operator-doc-session-git-gate');
+  const gate = tmpWorkspace(prefix);
   cleanups.push(() => rmSync(gate, { recursive: true, force: true }));
-  const started = join(gate, 'started');
-  const release = join(gate, 'release');
-  // A real git behind a wrapper that holds only the checkout until the test releases it.
   const wrapper = join(gate, 'git');
-  writeFileSync(wrapper, [
-    '#!/bin/sh',
-    'if [ "$1" = worktree ] && [ "$2" = add ]; then',
-    `  : > '${started}'`,
-    `  while [ ! -e '${release}' ]; do sleep 0.02; done`,
+  writeFileSync(wrapper, ['#!/bin/sh', ...body(gate), `exec '${realGit}' "$@"`, ''].join('\n'), { mode: 0o755 });
+  return { gate, wrapper };
+}
+
+test('a held `git rev-parse --git-common-dir` or `git worktree add` keeps the server answering: a health read completes while the creation waits', async () => {
+  // Once armed, the wrapper holds each named call until the test releases it.
+  const hold = (gate: string, name: string, test: string) => [
+    `if [ -e '${gate}/armed' ] && ${test}; then`,
+    `  : > '${gate}/started-${name}'`,
+    `  while [ ! -e '${gate}/release-${name}' ]; do sleep 0.02; done`,
     'fi',
-    `exec '${realGit}' "$@"`,
-    '',
-  ].join('\n'), { mode: 0o755 });
+  ];
+  const { gate, wrapper } = gitWrapper('operator-doc-session-git-gate', (dir) => [
+    ...hold(dir, 'common', '[ "$1" = rev-parse ] && [ "$2" = --git-common-dir ]'),
+    ...hold(dir, 'checkout', '[ "$1" = worktree ] && [ "$2" = add ]'),
+  ]);
   const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
+  const topologyLock = join(h.repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+  writeFileSync(join(gate, 'armed'), '');
   let settled = false;
   const creation = h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())])).finally(() => { settled = true; });
-  while (!existsSync(started)) await Bun.sleep(10);
 
-  const health = await fetch(`${h.url}/healthz`);
-  expect(health.status).toBe(200);
+  // The common directory lookup runs before the topology lock is taken.
+  while (!existsSync(join(gate, 'started-common'))) await Bun.sleep(10);
+  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
   expect(settled).toBe(false);
-  expect(existsSync(release)).toBe(false);
-  // The topology lock stays held across the awaited checkout.
-  const topologyLock = join(h.repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
-  expect(existsSync(topologyLock)).toBe(true);
+  expect(existsSync(join(gate, 'started-checkout'))).toBe(false);
+  writeFileSync(join(gate, 'release-common'), '');
 
-  writeFileSync(release, '');
+  while (!existsSync(join(gate, 'started-checkout'))) await Bun.sleep(10);
+  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
+  expect(settled).toBe(false);
+  // The topology lock stays held across the awaited checkout.
+  expect(existsSync(topologyLock)).toBe(true);
+  writeFileSync(join(gate, 'release-checkout'), '');
+
   const answer = await creation;
   expect(answer.status).toBe(201);
   expect(h.branches()).toEqual([answer.body.branch]);
   expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
   expect(existsSync(topologyLock)).toBe(false);
+});
+
+test('a git call that ignores SIGTERM is killed after the grace period, the call rejects after the child is gone, and the topology lock is released', async () => {
+  const { gate, wrapper } = gitWrapper('operator-doc-session-git-hang', (dir) => [
+    'if [ "$1" = hang ]; then',
+    "  trap '' TERM",
+    `  echo $$ > '${dir}/pid'`,
+    '  exec sleep 30',
+    'fi',
+  ]);
+  const repo = tmpWorkspace('operator-doc-session-hang-repo'); initGitRepo(repo);
+  cleanups.push(() => rmSync(repo, { recursive: true, force: true }));
+  const topologyLock = join(repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+  const timeout = 200;
+  let lockHeld = false;
+  const began = Date.now();
+  const failure = await withWorktreeTopologyLockAsync(repo, () => {
+    lockHeld = existsSync(topologyLock);
+    return gitExecFile(['hang'], { cwd: repo, gitBin: wrapper, timeout });
+  }, { gitBin: wrapper }).then(() => null, (error: unknown) => error);
+  const elapsed = Date.now() - began;
+
+  expect(lockHeld).toBe(true);
+  expect(failure).toBeInstanceOf(GitExecError);
+  expect((failure as GitExecError).timedOut).toBe(true);
+  // SIGTERM is ignored, so only the SIGKILL after the grace period ends the child.
+  expect(elapsed).toBeGreaterThanOrEqual(timeout + GIT_KILL_GRACE_MS);
+  expect(elapsed).toBeLessThan(timeout + GIT_KILL_GRACE_MS + 5_000);
+  const pid = Number(readFileSync(join(gate, 'pid'), 'utf8'));
+  expect(() => process.kill(pid, 0)).toThrow();
+  expect(existsSync(topologyLock)).toBe(false);
+});
+
+test('a `show-ref` probe that fails other than with exit 1 ends the creation before the claim, and nothing is created', async () => {
+  const { wrapper } = gitWrapper('operator-doc-session-git-show-ref', () => ['if [ "$1" = show-ref ]; then exit 128; fi']);
+  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
+  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
+  expect(answer.status).toBe(409);
+  expect(answer.body.error.code).toBe('reconcile_required');
+  expect(readdirSync(h.worktrees)).toEqual([]);
+  expect(h.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
 const AT = '2026-10-27T12:00:00.000Z';
