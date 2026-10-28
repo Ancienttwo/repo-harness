@@ -5,7 +5,7 @@ import { VERSION, getPackageDir, type ExtensionAPI, type ExtensionContext } from
 import { probePiCapability, type PiCapability } from './compat';
 import { PiHookBridge, type PiHookRequest } from './hook-bridge';
 import type { PiHookOutput } from '../cli/hook/hook-protocol';
-import { gitExecFileSync } from '../effects/git/runner';
+import { gitExecFileSync, withoutRepositorySelectingGitEnv } from '../effects/git/runner';
 
 const REPO_PROBE_FAILED = 'PI_HOST_REPO_PROBE_FAILED' as const;
 
@@ -23,7 +23,7 @@ function probeRepoOptIn(cwd: string): 'opted-in' | 'inactive' | 'unknown' {
   try {
     const root = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       // Exit 128 has both inactive and unknown outcomes, so keep its diagnostics stable.
-      env: { ...process.env, LC_ALL: 'C' },
+      env: { ...withoutRepositorySelectingGitEnv(), LC_ALL: 'C' },
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 3_000,
     }).replace(/\r?\n$/, '');
     if (!isAbsolute(root) || /[\r\n\0]/.test(root)) return 'unknown';

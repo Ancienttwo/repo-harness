@@ -485,6 +485,10 @@ write and bash with `PI_HOST_REPO_PROBE_FAILED`.
 The first prompt reports that code as a hidden message; later prompts do not
 repeat it. A new session or reload probes again.
 
+The opt-in probe and hook child both use `withoutRepositorySelectingGitEnv`
+from `src/effects/git/runner.ts`. This shared boundary removes inherited Git
+repository selectors. Other Git configuration stays in the child environment.
+
 `src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
 The child receives stdin JSON and `HOOK_HOST=pi`, after inherited `HOOK_*`,
 `REPO_HARNESS_SOURCE_ROOT`, `REPO_HARNESS_HELPER_SOURCE_PATH` and

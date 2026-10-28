@@ -496,6 +496,33 @@ describe('Pi extension with the real Pi CLI', () => {
     } finally { f.cleanup(); }
   });
 
+  test('inherited Git selectors cannot redirect the opt-in probe or hook child to another repository', () => {
+    const f = fixture();
+    const foreign = join(f.root, '..', 'foreign-repo');
+    try {
+      mkdirSync(foreign);
+      initGitRepo(foreign);
+      expect(existsSync(join(foreign, '.ai/harness/workflow-contract.json'))).toBe(false);
+      f.env.GIT_DIR = join(foreign, '.git');
+      f.env.GIT_WORK_TREE = foreign;
+      print(f, [[
+        ['write', { path: '_ops/keep.txt', content: 'forbidden' }],
+        ['edit', { path: '_ops/keep.txt', edits: [{ oldText: 'protected', newText: 'changed' }] }],
+        ['bash', { command: 'printf changed > _ops/keep.txt' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/keep.txt", content: "forbidden"});' }],
+      ]], '-e', 'builtin:codemode', '--tools', '+codemode');
+      expect(readFileSync(join(f.root, '_ops/keep.txt'), 'utf8')).toBe(protectedBytes);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox',
+        'PreToolUse.edit blocked', 'PreToolUse.edit blocked', 'PreToolUse.bash blocked', 'PreToolUse.edit blocked',
+        'Stop.default',
+      ]);
+      expect(telemetry(f.root).filter(record => record.blocked)).toHaveLength(4);
+      expect(telemetry(f.root).every(record => record.host === 'pi')).toBe(true);
+      expect(telemetry(foreign)).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+
   test('RPC mode delivers session context once over two prompts, blocks a protected write and stops after an abort', async () => {
     const f = fixture();
     const child = spawn(process.env.REPO_HARNESS_NODE_BIN ?? 'node', piArgs('--mode', 'rpc'), {
@@ -583,11 +610,12 @@ describe('Pi hook child boundary', () => {
 
   test('identity and target environment is removed; hook configuration remains', async () => {
     const env = piHookEnvironment({ PATH: '/bin', HOOK_HOST: 'codex', HOOK_REPO_ROOT: '/other', HOOK_SESSION_ID: 'stale',
+      GIT_DIR: '/foreign/.git', GIT_WORK_TREE: '/foreign', GIT_CONFIG_GLOBAL: '/tmp/fixture-gitconfig',
       REPO_HARNESS_SOURCE_ROOT: '/stale-source', REPO_HARNESS_HELPER_SOURCE_PATH: '/stale-helper',
       REPO_HARNESS_TARGET_REPO_ROOT: '/stale-target', REPO_HARNESS_HOME: '/tmp/fixture-registry',
       REPO_HARNESS_GIT_BIN: '/tmp/fixture-git', REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun',
       REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected', HOME: '/tmp/fixture-home' });
-    expect(env).toEqual({ PATH: '/bin', HOME: '/tmp/fixture-home', HOOK_HOST: 'pi',
+    expect(env).toEqual({ PATH: '/bin', HOME: '/tmp/fixture-home', HOOK_HOST: 'pi', GIT_CONFIG_GLOBAL: '/tmp/fixture-gitconfig',
       REPO_HARNESS_HOME: '/tmp/fixture-registry', REPO_HARNESS_GIT_BIN: '/tmp/fixture-git',
       REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun', REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected' });
     const entry = childScript(`process.stdin.resume(); process.stdin.on('end', () => console.log(JSON.stringify(${JSON.stringify(wire)})));`);

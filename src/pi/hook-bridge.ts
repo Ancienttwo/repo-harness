@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
 import { PI_HOOK_PROTOCOL, type PiHookOutput } from '../cli/hook/hook-protocol';
+import { withoutRepositorySelectingGitEnv } from '../effects/git/runner';
 
 export const PI_HOOK_TIMEOUT_MS = 30_000;
 export const PI_HOOK_INPUT_BYTES = 16 * 1024 * 1024;
@@ -16,7 +17,7 @@ export interface PiHookRequest {
 }
 
 export function piHookEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('HOOK_')));
+  const childEnv = Object.fromEntries(Object.entries(withoutRepositorySelectingGitEnv(env)).filter(([key]) => !key.startsWith('HOOK_')));
   delete childEnv.REPO_HARNESS_SOURCE_ROOT;
   delete childEnv.REPO_HARNESS_HELPER_SOURCE_PATH;
   delete childEnv.REPO_HARNESS_TARGET_REPO_ROOT;
