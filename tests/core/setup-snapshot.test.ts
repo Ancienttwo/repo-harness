@@ -184,6 +184,21 @@ describe('hook usage summary', () => {
     expect(summary.routes).toEqual([{ host: 'claude', event: 'PreToolUse', route_id: 'bash', calls: 2, blocked: 1, last_blocked_at: '2026-10-10T10:00:00.000Z' }]);
   });
 
+  test('counts Pi calls per route and only on routes that Pi runs', () => {
+    const summary = summarizeHookUsage({
+      now_ms: NOW, routes: ROUTES, telemetry_protocol: HOOK_EVENT_TELEMETRY_PROTOCOL, failure_lines: [],
+      telemetry_lines: [
+        telemetry('pi', 'PreToolUse', 'edit', '2026-10-10T11:00:00.000Z', true),
+        telemetry('pi', 'PreToolUse', 'bash', '2026-10-10T11:00:00.000Z', false),
+        telemetry('pi', 'PreToolUse', 'subagent', '2026-10-10T11:00:00.000Z', false),
+      ],
+    });
+    expect(summary.routes).toEqual([
+      { host: 'pi', event: 'PreToolUse', route_id: 'edit', calls: 1, blocked: 1, last_blocked_at: '2026-10-10T11:00:00.000Z' },
+      { host: 'pi', event: 'PreToolUse', route_id: 'bash', calls: 1, blocked: 0, last_blocked_at: null },
+    ]);
+  });
+
   test('keeps only the newest ten denials', () => {
     const lines = Array.from({ length: 12 }, (_, index) => failure(`2026-10-10T${String(index).padStart(2, '0')}:00:00Z`, 'RepoScopeGuard', `denial ${index}`));
     const summary = summarizeHookUsage({ now_ms: NOW, routes: ROUTES, telemetry_protocol: HOOK_EVENT_TELEMETRY_PROTOCOL, telemetry_lines: [], failure_lines: lines });
