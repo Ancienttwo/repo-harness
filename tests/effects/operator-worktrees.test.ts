@@ -1,14 +1,14 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import * as childProcess from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
-import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
+import { entries, inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { worktreeId, recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { decodeWorktrees } from '../../src/core/operator/worktrees';
-import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
+import { collectRepositoryWorktrees, registeredWorktreePaths, repositoryWorktreeRow } from '../../src/effects/operator/worktree-collector-worker';
 import { startWorktreeCollector } from '../../src/effects/operator/worktree-collector';
 import { collectOrphanWorktrees } from '../../src/effects/operator/worktree-orphans-worker';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
@@ -191,10 +191,16 @@ describe('read-only worktree judgment and lifecycle', () => {
 function cleanupFixture() {
   const f = fixture();
   writeFileSync(join(f.home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [f.repo] }));
-  const rows = () => collectRepositoryWorktrees(f.repo, {}, f.env).snapshot.repositories[0]!.worktrees;
-  const row = (directory: string) => rows().find(item => item.directory === directory)!;
+  // The page row comes from the collector's row builder. The process inventory is
+  // injected: a runner whose /proc probe is unknown never shows a green row.
+  const row = (directory: string) => {
+    const common = resolveGitCommonDirectory(f.main), managed = realpathSync(f.root);
+    const found = registeredWorktreePaths(entries(f.main)).find(item => basename(item.path) === directory)!;
+    return repositoryWorktreeRow({ repo: f.repo, common, managed_root: managed, id: worktreeId(common, found.path), path: found.path, entry: found.entry,
+      size_bytes: null, size_observed_at: null, caller_cwd: null, env: f.env, deadline: Date.now() + 10_000, processes: [] });
+  };
   const digest = (...directories: string[]) => selectionDigest(directories.map(directory => worktreeDigestRow(row(directory))));
-  const clean = (ids: string[], expected: string, processes?: WorktreeProcessProbe) =>
+  const clean = (ids: string[], expected: string, processes: WorktreeProcessProbe = () => []) =>
     runWorktreeCleanup(decodeWorktreeCleanupRequest({ ids, expected_digest: expected }), { env: f.env, caller_cwd: f.main, deadline_ms: 30_000, processes });
   const refusal = (action: () => unknown): string => {
     try { action(); } catch (error) { if (error instanceof OperatorWriteRefusal) return `${error.status} ${error.code}`; throw error; }

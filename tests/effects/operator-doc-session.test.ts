@@ -275,8 +275,8 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit only the agent settings write, so no session can be created through operator serve', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['settings_agents_write']);
+test('production routes admit only the agent settings and worktree cleanup writes, so no session can be created through operator serve', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write']);
   expect(OPERATOR_ROUTES.some(route => route.id === 'sessions_create')).toBe(false);
 });
 

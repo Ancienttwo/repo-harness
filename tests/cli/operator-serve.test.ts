@@ -41,6 +41,10 @@ import {
 } from '../../src/cli/commands/operator';
 import { projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
+import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import { worktreeProcesses } from '../../src/effects/git/worktree-processes';
+import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
+import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
 
 function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
   return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
@@ -1958,34 +1962,46 @@ describe('worktree cleanup write route', () => {
     return { parent, main, root, tree, repo, env, server, post, audit, close: async () => { await server.close(); rmSync(parent, { recursive: true, force: true }); } };
   }
 
+  function cleanupRows(f: Awaited<ReturnType<typeof cleanupServer>>) {
+    const rows = collectRepositoryWorktrees(f.repo, {}, { ...process.env, ...f.env }).snapshot.repositories[0]!.worktrees;
+    const row = (directory: string) => rows.find(item => item.directory === directory)!;
+    return { row, digest: (directory: string) => selectionDigest([worktreeDigestRow(row(directory))]) };
+  }
+  // The child uses the real process inventory. Where it is unknown (null), no row is green, so the removal path needs a host that can prove occupancy.
+  const occupancyKnown = worktreeProcesses(Date.now() + 5_000) !== null;
+
   // POSIX only: trash ownership needs a uid, and the hold uses a shell script as Git.
-  test.skipIf(process.platform === 'win32')('removes a green worktree through the child effect, refuses a yellow one, and audits both', async () => {
-    const { collectRepositoryWorktrees } = await import('../../src/effects/operator/worktree-collector-worker');
-    const { selectionDigest } = await import('../../src/effects/operator/worktree-cleanup');
-    const { worktreeDigestRow } = await import('../../src/core/operator/worktree-cleanup');
+  test.skipIf(process.platform === 'win32')('refuses a yellow worktree through the child effect, audits it, and answers GET with 405', async () => {
     const f = await cleanupServer();
     try {
-      const rows = () => collectRepositoryWorktrees(f.repo, {}, { ...process.env, ...f.env }).snapshot.repositories[0]!.worktrees;
       const other = join(f.root, 'repo-wt-other');
       spawnSync('git', ['worktree', 'add', '--quiet', '-b', 'other', other, 'feature'], { cwd: f.main });
       writeFileSync(join(other, '.env'), 'private');
-      const green = rows().find(row => row.directory === 'repo-wt-feature')!, yellow = rows().find(row => row.directory === 'repo-wt-other')!;
-      expect([green.judgment, yellow.judgment]).toEqual(['green', 'yellow']);
-      const refused = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174101', ids: [yellow.id], expected_digest: selectionDigest([worktreeDigestRow(yellow)]) });
+      const { row, digest } = cleanupRows(f);
+      expect(row('repo-wt-other').judgment).toBe('yellow');
+      const refused = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174101', ids: [row('repo-wt-other').id], expected_digest: digest('repo-wt-other') });
       expect(refused.status).toBe(422);
       expect((await refused.json()).error.code).toBe('not_approved');
-      expect(existsSync(other)).toBe(true);
-      const removed = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174102', ids: [green.id], expected_digest: selectionDigest([worktreeDigestRow(green)]) });
+      expect(existsSync(other) && existsSync(f.tree)).toBe(true);
+      expect(f.audit().map(record => [record.phase, record.status ?? record.operation])).toEqual([['intent', 'worktrees_cleanup'], ['result', 422]]);
+      expect(readFileSync(join(f.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl'), 'utf8')).not.toContain(f.parent);
+      expect((await fetch(`${f.server.url}/api/v1/worktrees/cleanup`)).status).toBe(405);
+    } finally { await f.close(); }
+  });
+
+  test.skipIf(process.platform === 'win32' || !occupancyKnown)('removes a green worktree through the child effect and audits it', async () => {
+    const f = await cleanupServer();
+    try {
+      const { row, digest } = cleanupRows(f);
+      const green = row('repo-wt-feature');
+      expect(green.judgment).toBe('green');
+      const removed = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174102', ids: [green.id], expected_digest: digest('repo-wt-feature') });
       expect(removed.status).toBe(200);
       expect(await removed.json()).toEqual({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
         { id: green.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'removed', reason: null },
       ] });
       expect(existsSync(f.tree)).toBe(false);
-      expect(f.audit().map(record => [record.phase, record.status ?? record.operation])).toEqual([
-        ['intent', 'worktrees_cleanup'], ['result', 422], ['intent', 'worktrees_cleanup'], ['result', 200],
-      ]);
-      expect(readFileSync(join(f.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl'), 'utf8')).not.toContain(f.parent);
-      expect((await fetch(`${f.server.url}/api/v1/worktrees/cleanup`)).status).toBe(405);
+      expect(f.audit().map(record => [record.phase, record.status ?? record.operation])).toEqual([['intent', 'worktrees_cleanup'], ['result', 200]]);
     } finally { await f.close(); }
   });
 
