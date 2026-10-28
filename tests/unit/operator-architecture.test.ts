@@ -6,7 +6,6 @@ import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fi
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
   architectureModelDelta,
-  architecturePullRequestsSource,
   decodeArchitectureMap,
   decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
@@ -17,6 +16,7 @@ import {
   type ArchitecturePullRequestsSource,
 } from '../../src/core/operator/architecture-map';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
+import { architecturePullRequestsSource } from '../../src/core/dev-activity/architecture';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import { collectArchitectureMap, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
 import { join } from 'node:path';
