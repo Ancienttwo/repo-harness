@@ -24,7 +24,6 @@ import {
   type ArchitectureLayerDirectionReason,
   type ArchitectureMapUnavailableReason,
   type ArchitectureMapV1,
-  type ArchitectureViolationReason,
 } from '../core/operator/architecture-map';
 import {
   archctxCode,
@@ -214,6 +213,13 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
     if (violations.dependencies.state === 'ok') {
       for (const edge of violations.dependencies.edges.filter(item => item.source === nodeId)) {
         facts.push({ key: `undeclared-${edge.target}`, text: t('architecture.layer.node.undeclared', { name: names.get(edge.target) ?? edge.target, count: edge.imports }) });
+      }
+    }
+    if (violations.layer_direction.state === 'ok') {
+      for (const edge of violations.layer_direction.edges.filter(item => item.source === nodeId)) {
+        facts.push({ key: `layer-${edge.target}`, text: t('architecture.layer.node.layer_direction', {
+          name: names.get(edge.target) ?? edge.target, count: edge.imports, from: edge.source_layer, to: edge.target_layer,
+        }) });
       }
     }
   }
@@ -476,10 +482,17 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
     const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = violations;
     type Part = 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction';
     const text = (part: Part, reason: string) => t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason });
-    const gap = (part: Exclude<Part, 'layer_direction'>, missing: { readonly reason: ArchitectureViolationReason } | ArchctxRefusalV1) => missing.reason === 'archctx_error'
+    const gap = (part: Part, missing: { readonly reason: ArchitectureLayerDirectionReason } | ArchctxRefusalV1) => missing.reason === 'archctx_error'
       ? <Gap part={`violations.${part}`} reason={missing.reason} code={archctxCode(missing)}>{text(part, t('architecture.layer.reason.archctx_error', { code: archctxCode(missing) }))}</Gap>
       : <Gap part={`violations.${part}`} reason={missing.reason}>{text(part, t(`architecture.layer.reason.${missing.reason}`))}</Gap>;
-    const direction = (reason: ArchitectureLayerDirectionReason) => text('layer_direction', t(`architecture.layer.reason.${reason}`));
+    // No ordered layers or no layer-direction constraint is the model's setup, not a failed read.
+    const direction = layerDirection.state === 'ok'
+      ? <p>{t('architecture.layer.violations.layer_direction', {
+        count: layerDirection.edges.length, imports: layerDirection.edges.reduce((sum, edge) => sum + edge.imports, 0), checked: layerDirection.imports,
+      })}</p>
+      : layerDirection.reason === 'model_layers_undeclared' || layerDirection.reason === 'layer_direction_undeclared'
+        ? <Note part="violations.layer_direction" reason={layerDirection.reason}>{text('layer_direction', t(`architecture.layer.reason.${layerDirection.reason}`))}</Note>
+        : gap('layer_direction', layerDirection);
     const unowned = debt.state === 'ok' ? debt.items.filter(item => item.nodes.length === 0) : [];
     return <div className="architecture-layer-summary" data-layer-summary="violations">
       {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt)}
@@ -491,7 +504,7 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
         : gap('flows', flows)}
       {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors)}
       {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies)}
-      <Note part="violations.layer_direction" reason={layerDirection.reason}>{direction(layerDirection.reason)}</Note>
+      {direction}
     </div>;
   }
   if (layer === 'tests') {

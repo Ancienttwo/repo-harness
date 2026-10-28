@@ -1,5 +1,5 @@
 {
- "schema_version": "repo-harness.architecture-map.v4",
+ "schema_version": "repo-harness.architecture-map.v5",
  "repository_id": "repo_a5b76eee64af71c3",
  "commit": "2698b8991d120735cb739dc25b171607d5d6d3d2",
  "collected_at": "2026-10-27T18:06:18.000Z",
@@ -11383,8 +11383,9 @@
     ]
    },
    "layer_direction": {
-    "state": "unavailable",
-    "reason": "model_layers_undeclared"
+    "state": "ok",
+    "imports": 5635,
+    "edges": []
    }
   },
   "pull_requests": {

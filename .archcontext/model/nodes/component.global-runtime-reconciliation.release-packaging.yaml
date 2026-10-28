@@ -10,6 +10,7 @@ responsibilities:
   - Keep the package manifest, lockfile and TypeScript configuration.
   - Refuse a publish when the version already exists and run the hook and helper drift checks first.
   - Install the packed tarball in a clean app and smoke the CLI, hook and operator entrypoints.
+  - Verify the Pi extension declaration, optional SDK peer and same-package hook bundle in the packed tarball.
 source:
   include:
     - bun.lock
@@ -17,4 +18,5 @@ source:
     - scripts/check-npm-release.sh
     - scripts/check-release-published.sh
     - scripts/check-tarball-install-smoke.sh
+    - scripts/check-pi-package-smoke.ts
     - scripts/runtime-evidence-receipt.ts

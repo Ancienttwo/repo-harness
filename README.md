@@ -79,6 +79,22 @@ endpoints. See [runtime cutover](https://github.com/Ancienttwo/repo-harness/blob
 repo-harness install
 ```
 
+Pi is an optional host under the default `--target both`. When `pi` is on
+PATH, install and update register the installed repo-harness directory with
+`pi install <package-directory>`. An existing user package entry is retained.
+Missing Pi skips this step. Preview with `repo-harness install --dry-run --json`.
+The minimum Pi version is [MIN_PI_VERSION](src/pi/compat.ts); there is no upper bound.
+`repo-harness setup check` and `repo-harness update --check` report the version,
+path resolver capability, package entry and skill projection.
+
+Catalog skills use `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills` and the
+same profile selection and ownership rules as the other hosts. Uninstall removes
+only owned package entries and unchanged owned skills. Package commands use Pi's
+CLI; repo-harness does not write Pi settings, credentials or trust files.
+Pi covers session context, agent notices, edit/write, bash and Stop hooks.
+It has no fleet roles or subagent hooks. PowerShell, `!`/`!!` user shell,
+other extensions' file writes and third-party MCP writes are outside this coverage.
+
 On Windows, keep Git for Windows on the install/update `PATH`. That explicit
 ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
 the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's
@@ -332,7 +348,6 @@ accepted suggestion goes through the normal plan and pull request workflow.
 ```bash
 repo-harness external-source refresh   # one bounded, explicitly enabled GitHub observation
 repo-harness external-source bind --repo <id> --source-revision <digest> --session <selector.json>
-repo-harness external-source historical-bindings --repo <id>  # retired V1 records only
 repo-harness external-source bindings  # binding edges and current drift attention
 ```
 

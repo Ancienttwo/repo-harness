@@ -20,7 +20,7 @@ import {
   type SetupHostFacts,
   type SetupOverallStatus,
   type SetupSkill,
-  type SetupSnapshotV1,
+  type SetupSnapshotV2,
   type SetupSummary,
   type SkillProjectionState,
 } from './types';
@@ -52,12 +52,12 @@ export interface SetupRawSkillRow {
   readonly ok: boolean;
 }
 
-/** One `ROUTES` entry. */
+/** One `ROUTES` entry. Route hosts can include hosts outside SETUP_HOSTS; the projection reads only SETUP_HOSTS. */
 export interface SetupRawRoute {
   readonly event: string;
   readonly routeId: string;
   readonly matcher?: string;
-  readonly hosts?: readonly SetupHost[];
+  readonly hosts?: readonly string[];
 }
 
 /** `parseFrontmatter` output of one agents/fleet/*.md file. */
@@ -94,6 +94,13 @@ const packageText = (text: string | undefined): string | null =>
   (text === undefined || text.trim() === '' ? null : text.trim());
 
 function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: ReadonlyMap<string, SetupRawCheck>): SetupHostFacts {
+  if (host === 'pi') {
+    const check = checks.get('doctor.pi-path');
+    return check === undefined
+      ? { host, reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null, package_check: null }
+      : { host, reported: true, adapter_check: null, detected: check.status !== 'na', adapter: null, cli_version: input.cli_versions.pi ?? null,
+        package_check: checks.get('doctor.pi-package')?.status ?? null };
+  }
   const check = checks.get(`status.adapter.${host}`);
   const entry = input.adapters.find(adapter => adapter.id === host);
   if (check === undefined || entry === undefined) {
@@ -125,7 +132,7 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
 function skills(input: SetupProjectionInput): SetupSkill[] {
   const byName = new Map<string, { -readonly [H in SetupHost]: SetupSkill['hosts'][H] }>();
   for (const row of input.skill_rows ?? []) {
-    const hosts = byName.get(row.name) ?? { claude: null, codex: null };
+    const hosts = byName.get(row.name) ?? { claude: null, codex: null, pi: null };
     hosts[row.host] = { state: row.state, ok: row.ok };
     byName.set(row.name, hosts);
   }
@@ -151,7 +158,7 @@ function fleetMembership(value: unknown): Map<SetupHost, { installed: Set<string
   if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
   const strings = (list: unknown): string[] | null =>
     (Array.isArray(list) && list.every(item => typeof item === 'string') ? list as string[] : null);
-  for (const host of SETUP_HOSTS) {
+  for (const host of ['claude', 'codex'] as const) {
     const entry = (value as Record<string, unknown>)[host];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const installed = strings((entry as Record<string, unknown>).installed_agents);
@@ -179,13 +186,13 @@ function fleet(input: SetupProjectionInput): SetupFleetRole[] {
       description: packageText(role.description),
       model: packageText(role.model),
       effort: packageText(role.effort),
-      hosts: { claude: state('claude'), codex: state('codex') },
+      hosts: { claude: state('claude'), codex: state('codex'), pi: null },
     });
   }
   return roles;
 }
 
-export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshotV1 {
+export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshotV2 {
   const checks = new Map(input.checks.map(check => [check.id, check]));
   const problems: SetupCheck[] = [];
   for (const check of input.checks) {

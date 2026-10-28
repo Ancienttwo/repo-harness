@@ -3,4 +3,4 @@ id: relation.hook-adapters.host-installer.global-runtime-reconciliation
 kind: calls
 source: component.hook-adapters.host-installer
 target: capability.runtime-harness.global-runtime-reconciliation
-intent: "Report architecture projection readiness in status"
+intent: "Read the shared host skill roots for install projections and report architecture projection readiness in status"

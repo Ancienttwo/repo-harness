@@ -453,6 +453,72 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P2：`ROUTES` 现在有 6 条 tuple。Claude 装 5 条，Codex 装 5 条。`HOST_RENDERERS` 只有 Claude 与 Codex 两行。circuit breaker 只保留 `semantic-review` kind，`repair` 归入退役 kind。
 - P3：删除没有 host 的路径，不保留兼容层。edit-guards 改名为 Edit Guard Handlers。release-packaging 不再读 skill catalog，所以它到 skill-surface-catalog 的关系已删除。
 
+### Pi native hook host (2026-10-28, #1099)
+
+The model assigns `src/pi/**` to `component.hook-adapters.host-installer`,
+under `capability.runtime-harness.hook-adapters`. This keeps the native event
+adapter and host installation in the existing host boundary. The route runtime
+still owns the protocol renderer and typed dispatch. `external.pi` names the
+host that loads the extension; the installer calls that host's package CLI.
+
+`src/pi/extension.ts` maps Pi events into the existing route runtime. It calls
+SessionStart once per session and delivers the cached context at the first
+`before_agent_start` as a hidden custom message. The same prompt event calls
+`UserPromptSubmit.inbox`; `handler-registry.ts` uses the shared notice collector
+for both Codex and Pi. Edit and write map Pi's resolved `input.path` to
+`tool_input.file_path`. Bash maps `input.command`. Direct and codemode nested
+calls use the same `tool_call` boundary. `agent_settled`, including an aborted
+run, calls Stop. Pi does not use either subagent route.
+
+`src/pi/compat.ts` owns `MIN_PI_VERSION`. The session probe checks that floor
+and loads Pi's own `resolveToCwd` from the SDK package directory. A missing
+private export or an unsupported version makes an opted-in session unavailable
+and blocks edit, write and bash with a fixed error code. A non-opt-in repository
+stays inactive. There is no local path parser or upper version bound.
+The opt-in probe uses `gitExecFileSync` from the shared Git runner with a
+three-second timeout. A successful repository probe without the marker leaves
+the session inactive. Git exit 128 with `not a git repository` or `detected
+dubious ownership` also means inactive. The probe uses the C diagnostic locale
+and accepts one absolute root path. A timeout, missing Git binary, any other
+failed exit or malformed root output makes the session unknown and blocks edit,
+write and bash with `PI_HOST_REPO_PROBE_FAILED`.
+The first prompt reports that code as a hidden message; later prompts do not
+repeat it. A new session or reload probes again.
+
+The opt-in probe and hook child both use `withoutRepositorySelectingGitEnv`
+from `src/effects/git/runner.ts`. This shared boundary removes inherited Git
+repository selectors. Other Git configuration stays in the child environment.
+
+`src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
+The child receives stdin JSON and `HOOK_HOST=pi`, after inherited `HOOK_*`,
+`REPO_HARNESS_SOURCE_ROOT`, `REPO_HARNESS_HELPER_SOURCE_PATH` and
+`REPO_HARNESS_TARGET_REPO_ROOT` are removed. Other hook configuration passes
+through, including `REPO_HARNESS_HOME`. One protocol-1 object carries
+the decision back. The limits are 16 MiB stdin, 1 MiB stdout and 30 seconds per
+call. Child failure, invalid output, a timeout or a nonzero hook exit blocks
+the mapped tool. Cancellation stops only owned hook children and never retries
+an uncertain effect. Payload identity comes from Pi's session manager, a new
+run ID per prompt and the tool call ID. Late results cannot admit a tool in a
+replacement runtime. Existing hook telemetry records `host: "pi"`.
+
+The bridge adds one process start per mapped event. Process startup is the first
+expected throughput limit at higher call volume; telemetry supplies latency
+evidence before an in-process design is considered. The extension covers no
+Pi `powershell` on Windows, user `!`/`!!` shell, other-extension writes or third-party MCP writes.
+Bash retains the literal-write tripwire's parsing limits. Later extensions can
+still mutate arguments. The integration is not an OS sandbox.
+`permission.updatedInput` blocks with `PI_HOST_UPDATED_INPUT_UNSUPPORTED` until
+Pi input mutation has an approved contract. The private path resolver still
+needs a public upstream export. The real-SDK tests use a scripted provider
+fixture; real-provider acceptance belongs to parent integration.
+
+Pi uses native package registration instead of a managed JSON adapter. The
+existing managed-adapter flow therefore remains specific to Claude and Codex.
+`flow.hook-adapters.skill-projection` records the separate direct calls from
+`expectedSkillProjections` to the catalog's `hostSkillPlacements` and the shared
+`hostSkillRoot`. The event-to-Bun handoff crosses a process boundary; the model
+does not claim a direct CodeGraph call from the bridge to `runHook`.
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：

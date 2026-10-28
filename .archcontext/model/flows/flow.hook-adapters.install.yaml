@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.hook-adapters.install
 capabilityId: capability.runtime-harness.hook-adapters
-name: "Project routes into managed host adapter entries"
+name: "Project routes into managed Claude and Codex adapter entries"
 applicability: required
 participants:
   - id: host-installer
@@ -12,7 +12,7 @@ steps:
   - id: project-routes
     from: host-installer
     to: route-runtime
-    label: "Read the ordered routes for one host"
+    label: "Read the ordered routes for the selected Claude or Codex adapter"
     evidence:
       entrypointId: entrypoint.hook-adapters.managed-entries
       sourceSymbol: "buildManagedHooks"

@@ -127,7 +127,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/review.template.md");
     expect(contract.artifacts.requiredFiles).not.toContain("tasks/todos.md");
     expect(contract.artifacts.requiredFiles).toContain("tasks/lessons.md");
-    expect(contract.artifacts.requiredFiles).toContain(".claude/templates/contract.template.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/contract.template.md");
     expect(Object.hasOwn(contract.documents, "deferredGoalLedger")).toBe(false);
     expect(Object.hasOwn(contract.documents, "implementationNotesDirectory")).toBe(false);
     expect(Object.hasOwn(contract.adoptionTemplates?.files ?? {}, "deferredGoalLedger")).toBe(false);
@@ -138,7 +138,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/examples");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/modules");

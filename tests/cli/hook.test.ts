@@ -38,10 +38,29 @@ describe('hook host output fields', () => {
   });
 
   test('failed hooks drop both context fields and keep diagnostics', () => {
-    for (const renderer of Object.values(HOST_RENDERERS)) {
+    for (const renderer of [HOST_RENDERERS.claude, HOST_RENDERERS.codex]) {
       expect(renderer({ ...outcome, exitCode: 1, diagnostics: 'failed\n' }))
         .toEqual({ stdout: '', stderr: 'failed\n' });
     }
+  });
+
+  test('Pi writes one protocol object; a failure drops both context fields and a block is exit 2 or deny', () => {
+    const ok = HOST_RENDERERS.pi(outcome);
+    expect(ok.stdout.endsWith('\n')).toBe(true);
+    expect(JSON.parse(ok.stdout)).toEqual({
+      protocol: 1, event: 'SessionStart', route_id: 'default', exit_code: 0, reason: 'ok', decision: 'none',
+      additional_context: outcome.additionalContext, system_message: outcome.systemMessage, diagnostics: '',
+    });
+    const failed = HOST_RENDERERS.pi({ ...outcome, exitCode: 1, diagnostics: 'failed\n' });
+    expect(failed.stderr).toBe('failed\n');
+    expect(JSON.parse(failed.stdout)).toMatchObject({ exit_code: 1, decision: 'none', additional_context: null, system_message: null, diagnostics: 'failed\n' });
+    const edit = { ...outcome, event: 'PreToolUse' as const, routeId: 'edit' as const, additionalContext: null, systemMessage: undefined };
+    expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, exitCode: 2, reason: 'blocked' }).stdout).decision).toBe('block');
+    expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: { decision: 'deny', reason: 'x' } }).stdout).decision).toBe('block');
+    expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: { decision: 'allow', reason: 'x' } }).stdout).decision).toBe('allow');
+    expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: {
+      decision: 'allow', reason: 'x', updatedInput: { file_path: 'changed.txt' },
+    } }).stdout).updated_input).toEqual({ file_path: 'changed.txt' });
   });
 });
 

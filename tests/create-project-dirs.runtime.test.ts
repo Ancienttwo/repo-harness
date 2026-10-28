@@ -45,11 +45,11 @@ describe("create-project-dirs runtime smoke", () => {
       const deployReadme = readFileSync(join(cwd, "deploy/README.md"), "utf-8");
       expect(deployReadme).toContain("operations.deploy_sql");
       expect(deployReadme).toContain("direct children of `deploy/sql/`");
-      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
       expect(readFileSync(join(cwd, "tasks/lessons.md"), "utf-8")).toBe(adoptionTemplateFile(cwd, "lessonsLog").content);
-      expect(existsSync(join(cwd, ".claude/templates/contract.template.md"))).toBe(true);
+      expect(existsSync(join(cwd, ".claude/templates/contract.template.md"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/implementation-notes.template.md"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(false);
@@ -483,7 +483,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
       expect(policy.delegation.preferred_runners).toBeUndefined();
       expect(policy.delegation.fallback_runner).toBeUndefined();
-      expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
+      expect(policy.delegation.brief_source).toBe("approved task/session admission");
       expect(policy.delegation.rule).toBeUndefined();
       expect(policy.delegation.runner_rule).toBeUndefined();
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");

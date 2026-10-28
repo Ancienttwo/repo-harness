@@ -52,6 +52,14 @@ outcomes:
           entrypointId: entrypoint.global-runtime-reconciliation.update
           sourceSymbol: installHostAdapters
           sinkId: sink.global-runtime-reconciliation.host-adapters
+      - id: register-pi-package
+        from: reconciler
+        to: hook-adapters
+        label: Check and register the installed candidate's Pi package when the host selection enables it
+        evidence:
+          entrypointId: entrypoint.global-runtime-reconciliation.update
+          sourceSymbol: runGlobalRuntimeSetup
+          sinkId: sink.global-runtime-reconciliation.pi-package
     terminal:
       participant: reconciler
       label: Continue host runtime refresh

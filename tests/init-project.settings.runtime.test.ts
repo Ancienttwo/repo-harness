@@ -51,7 +51,7 @@ describe("init-project settings runtime", () => {
       expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);
-      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
