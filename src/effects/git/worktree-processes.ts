@@ -15,18 +15,23 @@ export interface LinuxWorktreeProcessProbe {
  * True only when the visible /proc mount lists every process. With
  * hidepid=invisible (2) or ptraceable (4), readdir skips a task this user cannot
  * ptrace, such as a non-dumpable same-UID process, so absence proves nothing.
+ * Any malformed row, an unknown hidepid value, or more than one mount on /proc
+ * (file order is not stack order) leaves the listing unproven.
  */
 function procListsEveryProcess(mountInfo: string): boolean {
-  let superOptions: string | null = null;
+  const procRows: string[][] = [];
   for (const line of mountInfo.split('\n').filter(Boolean)) {
     const fields = line.split(' ');
     const separator = fields.indexOf('-', 6);
-    if (separator < 0 || fields.length < separator + 4) return false;
-    // A later mount on the same point hides the earlier one; a non-proc top mount proves nothing.
-    if (fields[4] === '/proc') superOptions = fields[separator + 1] === 'proc' ? fields[separator + 3]! : null;
+    // Six fixed fields, optional fields, '-', then exactly fstype, source and super options.
+    if (separator < 0 || fields.length !== separator + 4 || fields.some(field => !field)) return false;
+    if (!/^\d+$/u.test(fields[0]!) || !/^\d+$/u.test(fields[1]!) || !/^\d+:\d+$/u.test(fields[2]!)) return false;
+    if (fields[4] === '/proc') procRows.push(fields.slice(separator + 1));
   }
-  if (superOptions === null) return false;
-  return !superOptions.split(',').some(option => /^hidepid=(?:invisible|ptraceable|2|4)$/u.test(option));
+  if (procRows.length !== 1) return false;
+  const [fstype, , superOptions] = procRows[0]!;
+  if (fstype !== 'proc') return false;
+  return superOptions!.split(',').every(option => option !== '' && (!option.startsWith('hidepid=') || /^hidepid=(?:off|noaccess|0|1)$/u.test(option)));
 }
 /** Null means occupancy could not be proved. Never turn a failed process probe into an empty list. */
 export function worktreeProcesses(deadline: number, linuxProbe?: LinuxWorktreeProcessProbe): WorktreeProcess[] | null {
