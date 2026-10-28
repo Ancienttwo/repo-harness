@@ -601,8 +601,6 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
     "spec.template.md",
     "plan.template.md",
     "contract.template.md",
-    "review.template.md",
-    "implementation-notes.template.md",
     "sprint.template.md",
     "prd.template.md",
     "design-brief.template.md",

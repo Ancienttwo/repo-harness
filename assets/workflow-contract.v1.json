@@ -265,8 +265,6 @@
       ".claude/templates/plan.template.md",
       ".claude/templates/research.template.md",
       ".claude/templates/contract.template.md",
-      ".claude/templates/review.template.md",
-      ".claude/templates/implementation-notes.template.md",
       "tasks/lessons.md",
       "docs/architecture/index.md",
       ".ai/context/context-map.json",
