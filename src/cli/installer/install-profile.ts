@@ -1306,13 +1306,15 @@ export function planInstallProfile(
   current: InstalledProfileState | null,
   env: NodeJS.ProcessEnv = process.env,
 ): InstallProfilePlan {
+  const packageRoot = bunGlobalPackageRoot(env);
+  if (packageRoot === null) throw new Error('Bun global package root unavailable: set HOME, USERPROFILE or BUN_INSTALL');
   const desired = PROFILE_COMPONENTS[profile];
   const installed = new Set(current?.components ?? []);
   const desiredSet = new Set(desired);
   return {
     hosts: INSTALL_HOSTS,
-    pi_package: planPiPackage(bunGlobalPackageRoot(env)!, true, env),
-    skill_projections: expectedSkillProjections(loadSkillSurfaceCatalog(), bunGlobalPackageRoot(env)!, env.HOME ?? homedir(), profile, env),
+    pi_package: planPiPackage(packageRoot, true, env),
+    skill_projections: expectedSkillProjections(loadSkillSurfaceCatalog(), packageRoot, env.HOME ?? env.USERPROFILE ?? homedir(), profile, env),
     protocol: 2,
     requested_profile: profile,
     current_profile: current?.profile ?? null,

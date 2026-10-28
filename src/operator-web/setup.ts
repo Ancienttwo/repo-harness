@@ -97,12 +97,14 @@ export function skillCell(row: SetupSkillHostRow | null): SkillCell {
   return row.state;
 }
 
-/** The setup check whose command repairs this host's adapter, when one carries a command. */
+/** The setup check whose command repairs this host's installation. */
 export function hostCommand(checks: readonly SetupCheck[], host: SetupHost): SetupCheck | null {
-  return checks.find(check => check.command !== null && (check.id === `status.adapter.${host}` || check.id === `doctor.${host}-adapter`)) ?? null;
+  return checks.find(check => check.command !== null && (check.id === `status.adapter.${host}` || check.id === `doctor.${host}-adapter`
+    || (host === 'pi' && check.id === 'doctor.pi-package'))) ?? null;
 }
 
 export type HostSentence =
+  | { readonly kind: 'package'; readonly status: NonNullable<Extract<SetupHostFacts, { host: 'pi' }>['package_check']> }
   | { readonly kind: 'not_reported' }
   | { readonly kind: 'not_detected' }
   | { readonly kind: 'not_inspected' }
@@ -113,6 +115,7 @@ export type HostSentence =
 export function hostSentence(host: SetupHostFacts): HostSentence {
   if (!host.reported) return { kind: 'not_reported' };
   if (host.detected === false) return { kind: 'not_detected' };
+  if (host.host === 'pi' && host.package_check !== null) return { kind: 'package', status: host.package_check };
   const adapter = host.adapter;
   if (adapter === null) return { kind: 'not_inspected' };
   if (!adapter.configured) return { kind: 'not_configured', managed: adapter.managed_entries, expected: adapter.expected_entries };

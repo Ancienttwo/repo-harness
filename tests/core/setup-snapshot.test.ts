@@ -91,12 +91,13 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
 describe('setup snapshot projection', () => {
   test('Pi has version and detection facts with no adapter or fleet authority', () => {
     const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input({
-      checks: [{ id: 'doctor.pi-path', title: 'Pi', status: 'ok', detail: 'on PATH' }],
+      checks: [{ id: 'doctor.pi-path', title: 'Pi', status: 'ok', detail: 'on PATH' },
+        { id: 'doctor.pi-package', title: 'Pi package', status: 'warn', detail: 'missing' }],
       cli_versions: { pi: '1.4.0' },
       skill_rows: [{ host: 'pi', name: 'repo-harness', state: 'ok link', ok: true }],
       fleet_hosts: { pi: { installed_agents: ['explorer'], missing_agents: [] } },
     })));
-    expect(snapshot.hosts[2]).toEqual({ host: 'pi', reported: true, adapter_check: null, detected: true, adapter: null, cli_version: '1.4.0' });
+    expect(snapshot.hosts[2]).toEqual({ host: 'pi', reported: true, adapter_check: null, detected: true, adapter: null, cli_version: '1.4.0', package_check: 'warn' });
     expect(snapshot.skills[0]?.hosts.pi).toEqual({ state: 'ok link', ok: true });
     expect(snapshot.fleet.every(role => role.hosts.pi === null)).toBe(true);
   });

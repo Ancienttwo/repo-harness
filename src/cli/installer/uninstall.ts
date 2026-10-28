@@ -239,6 +239,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
         assertConfigurationPath(dirname(path), surfaceRoot(path));
         if (fingerprint(path) !== expected) throw new Error(`configuration changed after preview: ${path}`);
       }
+      // A failed Pi readback stops before the ownership ledger is written.
       for (const source of piRemovals) removePiPackage(source, env);
       for (const surface of surfaceRemovals) {
         rmSync(surface.path, { recursive: true, force: true });

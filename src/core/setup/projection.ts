@@ -97,8 +97,9 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
   if (host === 'pi') {
     const check = checks.get('doctor.pi-path');
     return check === undefined
-      ? { host, reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null }
-      : { host, reported: true, adapter_check: null, detected: check.status !== 'na', adapter: null, cli_version: input.cli_versions.pi ?? null };
+      ? { host, reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null, package_check: null }
+      : { host, reported: true, adapter_check: null, detected: check.status !== 'na', adapter: null, cli_version: input.cli_versions.pi ?? null,
+        package_check: checks.get('doctor.pi-package')?.status ?? null };
   }
   const check = checks.get(`status.adapter.${host}`);
   const entry = input.adapters.find(adapter => adapter.id === host);

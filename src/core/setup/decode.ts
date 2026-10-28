@@ -92,7 +92,8 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
   const hosts = array(v.hosts, 'hosts');
   if (hasData ? hosts.length !== SETUP_HOSTS.length : hosts.length !== 0) fail('hosts');
   hosts.forEach((raw, index) => {
-    const h = obj(raw, ['host', 'reported', 'adapter_check', 'detected', 'adapter', 'cli_version'], 'host');
+    const keys = ['host', 'reported', 'adapter_check', 'detected', 'adapter', 'cli_version'];
+    const h = obj(raw, SETUP_HOSTS[index] === 'pi' ? [...keys, 'package_check'] : keys, 'host');
     if (h.host !== SETUP_HOSTS[index]) fail('host order');
     const reported = bool(h.reported, 'reported');
     const adapterCheck = nullable(h.adapter_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'adapter_check'));
@@ -117,6 +118,10 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
     if (reported && (detected === null || (h.host !== 'pi' && adapterCheck === null))) fail('reported host facts');
     if (detected === false && adapter !== null) fail('undetected host adapter');
     if (h.host === 'pi' && (adapter !== null || adapterCheck !== null)) fail('pi has no adapter file');
+    if (h.host === 'pi') {
+      const packageCheck = nullable(h.package_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'package_check'));
+      if (!reported && packageCheck !== null) fail('unreported host carries package facts');
+    }
   });
 
   const skillNames = new Set<string>();
