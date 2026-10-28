@@ -201,7 +201,7 @@ describe("Bootstrap Script Contracts", () => {
     const contract = JSON.parse(read("assets/workflow-contract.v1.json"));
 
     expect(content).toContain("create_contract_directories");
-    expect(content).toContain("cat > tasks/todos.md");
+    expect(content).not.toContain("cat > tasks/todos.md");
     expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
     expect(content).toContain("cat > docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
@@ -264,12 +264,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
     expect(sharedLib).toContain("check:task-workflow");
     expect(sharedLib).toContain("contract.template.md");
-    expect(sharedLib).toContain("implementation-notes.template.md");
+    expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(content).toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/heartbeat-triage.md");
-    expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
     expect(content).not.toContain("install_workflow_contract");
     expect(content).toContain("pi_install_hook_assets");
     expect(content).not.toContain("pi_install_hook_adapters");
@@ -301,8 +301,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).toContain(".ai/context/capability-source-map.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
-    expect(read("assets/templates/review.template.md")).toContain("## Acceptance Receipt Projection");
-    expect(sharedLib).toContain("AcceptanceReceipt");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
@@ -327,7 +325,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(legacyRootHelpers?.cleanupMode).toBe("generated_helper");
     expect(legacyRootHelpers?.paths).toContain("scripts/architecture-drift.sh");
     expect(legacyRootHelpers?.paths).toContain("scripts/check-task-workflow.sh");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/triage");
     expect(contract.agenticDevelopment.routing.productDiscovery).toBe("parent-agent:geju");
@@ -336,9 +334,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".memory-snapshot.json");
     expect(content).not.toContain("install_skill_factory_files");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
-    expect(content).toContain("# Deferred Goal Ledger");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
+    expect(content).not.toContain("# Deferred Goal Ledger");
     expect(content).not.toContain("PROJECT_SETTINGS_EOF");
     expect(content).not.toContain("\"$TOOL_INPUT\"");
     expect(content).not.toContain("\"$PROMPT\"");
@@ -350,7 +348,7 @@ describe("Bootstrap Script Contracts", () => {
     const contract = JSON.parse(read("assets/workflow-contract.v1.json"));
 
     expect(content).toContain("create_contract_directories");
-    expect(content).toContain("cat > tasks/todos.md");
+    expect(content).not.toContain("cat > tasks/todos.md");
     expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
     expect(content).toContain("docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
@@ -358,7 +356,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("pi_install_templates");
     expect(content).not.toContain("install_workflow_contract");
     expect(sharedLib).toContain("contract.template.md");
-    expect(sharedLib).toContain("implementation-notes.template.md");
+    expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
     expect(contract.helpers.scripts).toContain("verify-contract.sh");
     expect(contract.helpers.scripts).toContain("summarize-failures.sh");
@@ -393,8 +391,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/capture-plan.sh");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-run.ts");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/heartbeat-triage.sh");
-    expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
+    expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/triage");
@@ -426,9 +424,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
-    expect(content).toContain("# Deferred Goal Ledger");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
+    expect(content).not.toContain("# Deferred Goal Ledger");
     expect(content).not.toContain(".*/");
     expect(content).toContain("ensure_runtime_gitignore_block");
     expect(content).toContain("install_hook_settings_template");

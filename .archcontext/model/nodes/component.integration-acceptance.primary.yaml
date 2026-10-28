@@ -8,6 +8,4 @@ layer: cli
 summary: Owns canonical immutable integration evidence and strict current-authority revalidation; it owns neither merge construction nor product verdicts.
 source:
   include:
-    - "src/core/integration/product-acceptance.ts"
-    - "src/effects/integration/product-acceptance.ts"
-    - "src/cli/commands/integration.ts"
+    - src/cli/commands/integration.ts

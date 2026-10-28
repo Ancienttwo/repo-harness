@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.refactor-program.core-layer
+kind: component
+name: Refactor Recommendations (core)
+status: active
+parent: capability.runtime-harness.refactor-program
+layer: core
+summary: The core-layer files of Refactor Recommendations. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Refactor Recommendations so layer direction is checked per directory.
+source:
+  include:
+    - src/core/refactor/**

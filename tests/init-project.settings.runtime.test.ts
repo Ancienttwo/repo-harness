@@ -48,6 +48,10 @@ describe("init-project settings runtime", () => {
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(false);
       expect(readFileSync(join(cwd, "tasks/lessons.md"), "utf-8")).toBe(adoptionTemplateFile(cwd, "lessonsLog").content);
+      expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.acceptance-review.primary-cli
+kind: component
+name: Generic Review Round (cli)
+status: active
+parent: capability.verification.acceptance-review
+layer: cli
+summary: The cli-layer files of Generic Review Round. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Generic Review Round so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/review.ts

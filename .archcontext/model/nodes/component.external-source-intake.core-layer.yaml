@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.external-source-intake.core-layer
+kind: component
+name: External Source Intake (core)
+status: active
+parent: capability.runtime-harness.external-source-intake
+layer: core
+summary: The core-layer files of External Source Intake. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of External Source Intake so layer direction is checked per directory.
+source:
+  include:
+    - src/core/external-sources/**

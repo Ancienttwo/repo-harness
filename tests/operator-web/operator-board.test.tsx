@@ -8,6 +8,7 @@ import tokens from '../../docs/design/operator-console/design-system/tokens.json
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
+import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
@@ -23,8 +24,10 @@ import {
   emptyExecution,
   HARNESS_ID,
 } from '../../src/operator-web/fixtures/dev-activity';
+import { busyWorktrees, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { stableSnapshot } from '../../src/operator-web/fixture';
+import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
 let window: Window;
@@ -50,16 +53,30 @@ function installDom(url = 'http://127.0.0.1:4318/#board'): void {
 
 const NOW = Date.now();
 const busy = (): DevActivitySnapshotV2 => decodeDevActivitySnapshot(busyDevActivity(NOW));
+const trees = (): WorktreesSnapshot => decodeWorktrees(busyWorktrees(NOW));
+const MB = 1024 * 1024;
 
 function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
+  const worktrees = trees();
   return {
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
+    initialWorktrees: worktrees, readWorktrees: async () => worktrees,
     readExecution: async id => emptyExecution(id, NOW),
     ...overrides,
   };
+}
+
+type WorktreeRow = WorktreesSnapshot['repositories'][number]['worktrees'][number];
+
+/** The busy worktrees with rows edited by directory; the decoder checks the result. */
+function rejudged(edits: Readonly<Record<string, Partial<WorktreeRow>>>): WorktreesSnapshot {
+  const base = busyWorktrees(NOW);
+  return decodeWorktrees({ ...base, repositories: base.repositories.map(repository => ({
+    ...repository, worktrees: repository.worktrees.map(tree => ({ ...tree, ...edits[tree.directory] })),
+  })) });
 }
 
 /** The busy fixture's sessions: Codex on the console redesign, Claude Code on the pipeline observer, operator-site still collecting. */
@@ -340,7 +357,7 @@ describe('board page', () => {
     // Dev Activity lists `feat/c++`, but the view leaves out a session whose branch is not public text.
     const base = busy();
     const plus = { id: `${HARNESS_ID}:feat/c++`, repository_id: HARNESS_ID, branch: 'feat/c++', title: 'Build on a branch with a plus sign', column: 'building',
-      hidden: null, column_since: null, worktrees: [], pull_request: null, cleanup_pending: false };
+      hidden: null, column_since: null, worktrees: [], pull_request: null };
     const snapshot = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...base, items: [...base.items, plus] })));
     // chore/oar-0-45: its session's provider exited, so the view has it only as unverified.
     for (const branch of ['chore/oar-0-45', 'feat/c++']) {
@@ -417,6 +434,53 @@ describe('board page', () => {
     expect(stale.textContent).toContain('without a backup');
     expect(document.querySelectorAll('[data-repository]')).toHaveLength(2);
     expect(document.querySelector('[data-source-kind="github"]')?.getAttribute('data-source-status')).toBe('unavailable');
+  });
+
+  test('G23 the cleanup signal comes only from green worktrees of the same repository and branch', async () => {
+    const reclaimable = () => cards().filter(element => element.querySelector('[data-reclaimable]')).map(element => element.getAttribute('data-item-id')).sort();
+    await mount(<OperatorApp {...props(busy())} />);
+    // Green rows: feat/kanban-status and feat/pi-host in repo-harness, fix/footer in operator-site. Red, yellow and unassigned rows never join.
+    const site = busy().repositories[1]!.repository_id;
+    expect(reclaimable()).toEqual([`${HARNESS_ID}:feat/kanban-status`, `${HARNESS_ID}:feat/pi-host`, `${site}:fix/footer`].sort());
+    expect(card(`${HARNESS_ID}:feat/kanban-status`).textContent).toContain('worktree left over');
+
+    // The Dev Activity item still lists its worktree; a yellow verdict alone removes the signal.
+    await act(async () => root?.unmount());
+    const yellow = rejudged({ 'feat-kanban-status': { judgment: 'yellow', reasons: ['locked'] } });
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: yellow, readWorktrees: async () => yellow })} />);
+    expect(busy().items.find(item => item.id === `${HARNESS_ID}:feat/kanban-status`)!.worktrees).toHaveLength(1);
+    expect(card(`${HARNESS_ID}:feat/kanban-status`).querySelector('[data-reclaimable]')).toBeNull();
+
+    // A green row on the same branch name in another repository does not join.
+    await act(async () => root?.unmount());
+    const elsewhere = rejudged({ 'feat-kanban-status': { judgment: 'yellow', reasons: ['locked'] }, 'operator-site-wt-footer': { branch: 'feat/kanban-status' } });
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: elsewhere, readWorktrees: async () => elsewhere })} />);
+    expect(card(`${HARNESS_ID}:feat/kanban-status`).querySelector('[data-reclaimable]')).toBeNull();
+    expect(card(`${site}:fix/footer`).querySelector('[data-reclaimable]')).toBeNull();
+  });
+
+  test('G23 without worktree data no card claims a cleanup', async () => {
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: undefined, readWorktrees: async () => { throw new Error('down'); } })} />);
+    await settle();
+    expect(cards().length).toBeGreaterThan(5);
+    expect(document.querySelectorAll('[data-reclaimable]')).toHaveLength(0);
+    await act(async () => root?.unmount());
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: unavailableWorktrees(), readWorktrees: async () => unavailableWorktrees() })} />);
+    expect(document.querySelectorAll('[data-reclaimable]')).toHaveLength(0);
+  });
+
+  test('G23 the drawer names the green directories of its branch and nothing for a kept worktree', async () => {
+    const id = `${HARNESS_ID}:feat/kanban-status`;
+    installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
+    await mount(<OperatorApp {...props(busy())} />);
+    const note = document.querySelector('[role="dialog"] [data-reclaimable-worktrees]')!;
+    expect(note.getAttribute('data-reclaimable-worktrees')).toBe('1');
+    expect(note.textContent).toContain('(feat-kanban-status)');
+    expect(note.querySelector('[data-command] code')?.textContent).toBe('git worktree list');
+    await key('Escape');
+    await act(async () => card(`${HARNESS_ID}:feat/kanban-human-redesign`).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
+    expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Rebuild the operator console for humans');
+    expect(document.querySelector('[role="dialog"] [data-reclaimable-worktrees]')).toBeNull();
   });
 });
 
@@ -507,8 +571,11 @@ describe('home page', () => {
       return id === HARNESS_ID ? { state: 'ok', issues: [issue] } : { state: 'unavailable', reason: 'no_daily_run' };
     } })} />);
     await settle();
-    // Reclaimable space joins this section with the Worktree page (slice 1.7).
-    expect(Array.from(document.querySelectorAll('[data-today]')).map(row => row.getAttribute('data-today'))).toEqual(['merged', 'longest', 'failed', 'repairs']);
+    expect(Array.from(document.querySelectorAll('[data-today]')).map(row => row.getAttribute('data-today'))).toEqual(['merged', 'longest', 'failed', 'repairs', 'reclaimable']);
+    // Green: feat-kanban-status 612 MB, operator-site-wt-footer 210 MB, repo-harness-wt-pi-host unmeasured.
+    expect(todayRow('reclaimable').getAttribute('data-state')).toBe('ready');
+    expect(todayRow('reclaimable').textContent).toContain('822 MB · size unknown: 1');
+    expect(todayRow('reclaimable').querySelector('a[href="#worktrees"]')).not.toBeNull();
     expect(todayRow('merged').textContent).toContain('PRs merged: 1');
     expect(Array.from(todayRow('longest').querySelectorAll('ul a')).map(link => link.getAttribute('href')))
       .toEqual(snapshot.attention.map(row => `#board/${encodeURIComponent(row.subject_id)}`));
@@ -539,6 +606,23 @@ describe('home page', () => {
     expect(document.querySelector('[data-source-banner]')).toBeNull();
   });
 
+  test('1-WT-F1 reclaimable space on Home never counts an unmeasured size as 0 B and names a missing collection', async () => {
+    installDom(HOME_URL);
+    const unmeasured = rejudged({ 'feat-kanban-status': { size_bytes: null, size_observed_at: null }, 'operator-site-wt-footer': { judgment: 'yellow', reasons: ['locked'] } });
+    await mount(<OperatorApp {...props(busyToday(), { readCiRepairs: noRepairs, initialWorktrees: unmeasured, readWorktrees: async () => unmeasured })} />);
+    await settle();
+    expect(todayRow('reclaimable').textContent).toContain('size unknown: 2');
+    expect(todayRow('reclaimable').textContent).not.toContain('0 B');
+    await act(async () => root?.unmount());
+    root = null; document.body.innerHTML = '';
+
+    await mount(<OperatorApp {...props(busyToday(), { readCiRepairs: noRepairs, initialWorktrees: unavailableWorktrees(), readWorktrees: async () => unavailableWorktrees() })} />);
+    await settle();
+    expect(todayRow('reclaimable').getAttribute('data-state')).toBe('unavailable');
+    expect(todayRow('reclaimable').textContent).toContain('Unavailable');
+    for (const id of ['merged', 'longest', 'failed']) expect(todayRow(id).getAttribute('data-state')).toBe('ready');
+  });
+
   test('a failed GitHub source gets one banner with the source, the repository and the System page', async () => {
     installDom(HOME_URL);
     const base = busyToday();
@@ -564,6 +648,148 @@ describe('home page', () => {
     expect(document.querySelector('main')?.textContent).toContain('The operator service is not running');
     expect(document.querySelector('main')?.textContent).toContain('repo-harness operator serve');
     expect(document.querySelector('[data-operator-status]')?.getAttribute('data-operator-status')).toBe('unreachable');
+  });
+});
+
+const WORKTREES_URL = 'http://127.0.0.1:4318/#worktrees';
+const group = (id: string) => document.querySelector<HTMLElement>(`[data-worktree-group="${id}"]`)!;
+const worktreeRow = (directory: string) => Array.from(document.querySelectorAll<HTMLElement>('[data-worktree]'))
+  .find(row => row.querySelector('[data-directory]')?.textContent === directory)!;
+
+describe('worktree page', () => {
+  test('#worktrees is a Work page after Repositories and refuses a parameter', async () => {
+    expect(parseWorkspaceLocation('#worktrees')).toEqual({ workspace: 'worktrees', module: null, item: null });
+    expect(workspaceHash({ workspace: 'worktrees', module: null, item: null })).toBe('#worktrees');
+    expect(parseWorkspaceLocation('#worktrees/wt_0').workspace).toBe('home');
+    installDom(HOME_URL);
+    await mount(<OperatorApp {...props(busy(), { readCiRepairs: noRepairs })} />);
+    const work = Array.from(document.querySelectorAll('ul[aria-labelledby="nav-group-work"] a[data-workspace]')).map(link => link.getAttribute('data-workspace'));
+    expect(work).toEqual(['board', 'repositories', 'worktrees']);
+    await act(async () => document.querySelector<HTMLAnchorElement>('.workspace-nav a[data-workspace="worktrees"]')!.click());
+    expect(window.location.hash).toBe('#worktrees');
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('worktrees');
+    expect(document.querySelector('.workspace-nav a[data-workspace="worktrees"]')?.getAttribute('aria-current')).toBe('page');
+    expect(document.querySelector('[data-freshness]')?.getAttribute('data-freshness-source')).toBe('worktrees');
+    expect(document.querySelector('[data-freshness]')?.textContent).toBe('Worktrees collected 2m ago');
+  });
+
+  test('1-WT-P1 groups by repository with a disk bar, judgment counts and each row\'s facts', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    const site = busy().repositories[1]!.repository_id, docs = busy().repositories[2]!.repository_id;
+    expect(Array.from(document.querySelectorAll('[data-worktree-group]')).map(section => section.getAttribute('data-worktree-group'))).toEqual([HARNESS_ID, site, docs, 'unassigned']);
+    const harness = group(HARNESS_ID);
+    expect(harness.querySelector('h2')?.textContent).toBe('repo-harness8');
+    const counts = Object.fromEntries(Array.from(harness.querySelectorAll('[data-judgment-count]')).map(item => [item.getAttribute('data-judgment-count'), item.getAttribute('data-count')]));
+    expect(counts).toEqual({ green: '2', yellow: '4', red: '2' });
+    // The bar shares measured bytes only: green is the 612 MB row; pi-host has no size.
+    const segments = Object.fromEntries(Array.from(harness.querySelectorAll('[data-disk-segment]')).map(item => [item.getAttribute('data-disk-segment'), Number(item.getAttribute('data-bytes'))]));
+    expect(segments).toEqual({ green: 612 * MB, yellow: (380 + 96 + 254 + 41) * MB, red: (1843 + 702) * MB });
+    expect(document.querySelector('[data-reclaimable]')?.getAttribute('data-reclaimable')).toBe(String(822 * MB));
+    expect(document.querySelector('[data-reclaimable]')?.textContent).toBe('Reclaimable · 822 MB · size unknown: 1');
+
+    const kept = worktreeRow('repo-harness-wt-kanban-redesign');
+    expect(kept.getAttribute('data-judgment')).toBe('red');
+    expect(Array.from(kept.querySelectorAll('[data-reason]')).map(item => item.getAttribute('data-reason'))).toEqual(['process_in_use', 'dirty', 'unpushed']);
+    expect(kept.textContent).toContain('feat/kanban-human-redesign');
+    expect(kept.querySelector('[data-source]')?.textContent).toBe('contract worktree');
+    expect(kept.querySelector('[data-merge]')?.textContent).toBe('not merged');
+    expect(kept.querySelector('[data-processes]')?.textContent).toContain('processes using it: 2');
+    expect(kept.querySelector('[data-loss]')?.textContent).toBe('Would lose: unpushed commits: 3 · uncommitted files: 4');
+    expect(kept.querySelector('[data-size]')?.textContent).toBe('702 MB');
+    const record = kept.querySelector('details[data-record="open"]')!;
+    expect(record.hasAttribute('open')).toBe(false);
+    expect(record.querySelector('summary')?.textContent).toBe('Record · Rebuild the operator console for humans');
+    expect(record.textContent).toContain('#608');
+
+    const green = worktreeRow('feat-kanban-status');
+    expect(green.querySelectorAll('[data-reason]')).toHaveLength(0);
+    expect(green.querySelector('[data-merge]')?.textContent).toBe('merged on GitHub');
+    expect(green.querySelector('[data-processes]')).toBeNull();
+    expect(worktreeRow('repo-harness-wt-old-spike').querySelector('[data-record]')?.getAttribute('data-record')).toBe('none');
+    expect(worktreeRow('repo-harness-wt-old-spike').textContent).toContain('no branch');
+  });
+
+  test('1-WT-P1 directories no repository can claim list under Unassigned with unknown occupancy and no repository id', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    const unassigned = group('unassigned');
+    expect(unassigned.querySelector('h2')?.textContent).toBe('Unassigned directories2');
+    const orphan = worktreeRow('codex-91c2');
+    expect(unassigned.contains(orphan)).toBe(true);
+    expect(orphan.querySelector('[data-source]')?.textContent).toBe('Codex');
+    expect(orphan.querySelector('[data-processes]')?.getAttribute('data-processes')).toBe('unknown');
+    expect(orphan.querySelector('[data-loss]')?.textContent).toBe('Would lose: unpushed commits unknown · uncommitted files unknown · ignored entries unknown');
+    expect(worktreeRow('mcp-ws-4410').querySelector('[data-size]')?.textContent).toBe('size unknown');
+    expect(unassigned.textContent).not.toMatch(PRIVATE_LABEL);
+  });
+
+  test('1-WT-F1 a size du could not finish reads unknown with its last measurement and is never counted as 0 B', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    const timedOut = worktreeRow('repo-harness-wt-pi-host');
+    expect(timedOut.getAttribute('data-judgment')).toBe('green');
+    expect(timedOut.querySelector('[data-size]')?.getAttribute('data-size')).toBe('unknown');
+    expect(timedOut.querySelector('[data-size]')?.textContent).toBe('size unknown · last measured 3h ago');
+    expect(group(HARNESS_ID).querySelector('[data-judgment-count="green"]')?.textContent).toContain('612 MB · size unknown: 1');
+    expect(document.querySelector('main')?.textContent).not.toContain('0 B');
+  });
+
+  test('1-WT-N1 offers no selection, cleanup or agent control and shows no absolute path', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    const main = document.querySelector('main')!;
+    expect(main.querySelectorAll('input, select, textarea, form, button, [draggable="true"], [contenteditable], [data-write-action]')).toHaveLength(0);
+    for (const word of ['Clean', 'Delete', 'Remove', 'Prune', 'Let the agent']) expect(main.textContent).not.toContain(word);
+    for (const cell of main.querySelectorAll('[data-directory]')) expect(cell.textContent).not.toContain('/');
+    expect(main.textContent).not.toMatch(/(?:^|[\s(])(?:\/(?:Users|home|tmp|private|var)\/|~\/)/u);
+  });
+
+  test('pending, unreachable and partial collections each say so', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: unavailableWorktrees(), readWorktrees: async () => unavailableWorktrees() })} />);
+    expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('pending');
+    expect(document.querySelector('main')?.textContent).toContain('No worktree data yet');
+    expect(document.querySelector('[data-freshness]')?.textContent).toBe('No worktree collection yet');
+    await act(async () => root?.unmount());
+    root = null; document.body.innerHTML = '';
+
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: undefined, readWorktrees: async () => { throw new Error('down'); } })} />);
+    await settle();
+    expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('unreachable');
+    expect(document.querySelector('main')?.textContent).toContain('repo-harness operator serve');
+    expect(document.querySelector('[data-freshness]')?.getAttribute('data-freshness')).toBe('failed');
+    await act(async () => root?.unmount());
+    root = null; document.body.innerHTML = '';
+
+    const degraded = decodeWorktrees(degradedWorktrees(NOW));
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: degraded, readWorktrees: async () => degraded })} />);
+    expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('partial');
+    expect(document.querySelector('main')?.textContent).toContain('Some repositories could not be read');
+    const site = busy().repositories[1]!.repository_id;
+    expect(group(site).getAttribute('data-status')).toBe('unavailable');
+    expect(group(site).textContent).toContain('The worktrees of this repository could not be read.');
+    expect(document.querySelector('[data-worktree-group="unassigned"]')).toBeNull();
+    expect(document.querySelector('[data-freshness]')?.textContent).toBe('Worktrees collected 5m ago · repos unreadable: 1');
+  });
+
+  test('the worktree cache is read only on Home, Board and Worktree, and a failed refresh keeps the last rows', async () => {
+    installDom('http://127.0.0.1:4318/#repositories');
+    const snapshot = trees();
+    let reads = 0, fail = false;
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: undefined, readWorktrees: async () => { reads++; if (fail) throw new Error('down'); return snapshot; } })} />);
+    const go = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
+    expect(reads).toBe(0);
+    await go('worktrees');
+    expect(reads).toBe(1);
+    await go('repositories');
+    expect(reads).toBe(1);
+    fail = true;
+    await go('worktrees');
+    expect(reads).toBe(2);
+    expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('refresh-failed');
+    expect(document.querySelectorAll('[data-worktree]').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-freshness]')?.textContent).toBe('Refresh failed · showing worktrees from 2m ago');
   });
 });
 

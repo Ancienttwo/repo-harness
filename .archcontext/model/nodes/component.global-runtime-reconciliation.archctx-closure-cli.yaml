@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.archctx-closure-cli
+kind: component
+name: ArchContext Closure (cli)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: cli
+summary: The cli-layer files of ArchContext Closure. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of ArchContext Closure so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/architecture-*.ts

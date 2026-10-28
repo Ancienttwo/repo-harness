@@ -16,13 +16,13 @@ model:
   layout: "split"
   root: ".archcontext/model"
   layers:
+    - assets
     - tests
     - scripts
+    - web
     - cli
     - effects
-    - web
     - core
-    - assets
     - external
 privacy:
   cloudContentUpload: "deny"

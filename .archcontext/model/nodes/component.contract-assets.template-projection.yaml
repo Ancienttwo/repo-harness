@@ -18,10 +18,6 @@ source:
     - assets/plan-map.json
     - assets/versions.json
     - .claude/templates/**
-    - src/effects/source-projection.ts
-    - scripts/sync-helper-sources.ts
-    - scripts/sync-reference-configs.ts
-    - src/cli/commands/init.ts
   exclude:
     - assets/reference-configs/external-tooling.md
     - docs/reference-configs/external-tooling.md

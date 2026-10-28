@@ -1,5 +1,5 @@
 {
- "schema_version": "repo-harness.architecture-map.v3",
+ "schema_version": "repo-harness.architecture-map.v4",
  "repository_id": "repo_a5b76eee64af71c3",
  "commit": "2698b8991d120735cb739dc25b171607d5d6d3d2",
  "collected_at": "2026-10-27T18:06:18.000Z",
@@ -4725,6 +4725,19 @@
     "target": "capability.workflow-engine.execution-primitives",
     "imports": 21
    }
+  ]
+ },
+ "layer_order": {
+  "state": "ok",
+  "layers": [
+   "assets",
+   "tests",
+   "scripts",
+   "web",
+   "cli",
+   "effects",
+   "core",
+   "external"
   ]
  },
  "layers": {

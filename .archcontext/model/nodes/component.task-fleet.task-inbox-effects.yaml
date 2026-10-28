@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.task-fleet.task-inbox-effects
+kind: component
+name: Task Inbox (effects)
+status: active
+parent: capability.organization.task-fleet
+layer: effects
+summary: The effects-layer files of Task Inbox. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Task Inbox so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/fleet/task-*.ts

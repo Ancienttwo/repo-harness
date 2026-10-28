@@ -31,7 +31,7 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 ## Workflow Inventory
 
 - Source plan: `plans/plan-20260701-0930-check-task-sync-json-mode.md`
-- Deferred-goal ledger: `tasks/todos.md`
+- Current and deferred work: GitHub Issue/PR
 - Review file: `tasks/reviews/20260701-0930-check-task-sync-json-mode.review.md`
 - Notes file: `tasks/notes/20260701-0930-check-task-sync-json-mode.notes.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.

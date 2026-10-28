@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.codegraph-readiness.tests-layer
+kind: component
+name: CodeGraph Readiness (tests)
+status: active
+parent: capability.verification.codegraph-readiness
+layer: tests
+summary: The tests-layer files of CodeGraph Readiness. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the tests-layer source files of CodeGraph Readiness so layer direction is checked per directory.
+source:
+  include:
+    - tests/cli/codegraph-resolver.test.ts

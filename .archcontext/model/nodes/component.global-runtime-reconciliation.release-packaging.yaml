@@ -12,12 +12,9 @@ responsibilities:
   - Install the packed tarball in a clean app and smoke the CLI, hook and operator entrypoints.
 source:
   include:
-    - "package.json"
-    - "bun.lock"
-    - "tsconfig.json"
-    - "src/core/release/**"
-    - "src/effects/release/**"
-    - "scripts/check-npm-release.sh"
-    - "scripts/check-release-published.sh"
-    - "scripts/check-tarball-install-smoke.sh"
-    - "scripts/runtime-evidence-receipt.ts"
+    - bun.lock
+    - tsconfig.json
+    - scripts/check-npm-release.sh
+    - scripts/check-release-published.sh
+    - scripts/check-tarball-install-smoke.sh
+    - scripts/runtime-evidence-receipt.ts

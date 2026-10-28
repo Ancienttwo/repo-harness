@@ -15,14 +15,8 @@ responsibilities:
   - Execute the Verification Plan of the current review admission and catalog evals, and record execution facts until the verification-plan split after arch-context#296.
 source:
   include:
-    - "src/core/evidence/**"
-    - "src/effects/evidence/**"
-    - "scripts/evidence-gc.ts"
-    - "scripts/recovery-view-cli.ts"
-    - "scripts/decision-trail.ts"
-    - "scripts/prepare-handoff.sh"
-    - "scripts/prepare-codex-handoff.sh"
-    - "scripts/codex-handoff-resume.sh"
+    - src/core/evidence/**
+    - src/effects/evidence/**
   entrypoints:
     - id: entrypoint.evidence-ledger.attested-import
       path: "src/effects/evidence/attested-import.ts"

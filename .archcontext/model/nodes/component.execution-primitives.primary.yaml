@@ -10,11 +10,13 @@ responsibilities:
   - Spawn the supervisor and the process-group launcher, kill TERM then KILL, and reconcile the receipt with the exit status.
   - Keep the expensive-run lock while a process group is not confirmed dead.
   - Create lock directories one ancestor at a time and reject symlinks and identity changes.
+  - Keep one worktree lifecycle record per directory incarnation in the common Git directory, and read process cwd for sweep and console occupancy checks.
 source:
   include:
     - src/effects/process-*.ts
     - src/effects/expensive-run-lock.ts
     - src/effects/readonly-observation.ts
     - src/effects/atomic-append.ts
+    - src/effects/runtime/os-account-home.ts
     - src/effects/locking/**
     - src/effects/git/**

@@ -1,6 +1,7 @@
 # repo-harness
 
 ## Workflow
+- Follow [Plans lifecycle](docs/plans-lifecycle.md): open multi-PR intent in `plans/`, work in Issue/PR, proof in PR/CI, lessons in `tasks/lessons.md`. Keep todos historical; do not generate notes/reviews/example task trees or move expired plans to `plans/archive/`. Contract removal is #1114 HOLD.
 - For non-trivial work, follow the global Progressive Due Diligence rule (P1 map, P2 trace, P3 decision) before design decisions or code edits.
 - Keep root CLAUDE.md and AGENTS.md as standalone regular files; repeat shared rules in both and keep host-specific guidance separate.
 - Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.

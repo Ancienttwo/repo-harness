@@ -8,7 +8,7 @@
 
 ## Repo Role
 
-Keep pass/fail evidence in `tasks/reviews/<plan-stem>.review.md` and
+Keep pass/fail evidence in the PR body, CI and
 Verification Plan execution records. Use the external rubric for detailed scoring
 dimensions and review examples.
 

@@ -5,33 +5,30 @@
     { "id": "mkdir:plans", "kind": "mkdir", "path": "plans", "status": "planned" },
     { "id": "mkdir:tasks", "kind": "mkdir", "path": "tasks", "status": "planned" },
     { "id": "mkdir:tasks/contracts", "kind": "mkdir", "path": "tasks/contracts", "status": "planned" },
-    { "id": "mkdir:tasks/reviews", "kind": "mkdir", "path": "tasks/reviews", "status": "planned" },
-    { "id": "mkdir:tasks/notes", "kind": "mkdir", "path": "tasks/notes", "status": "planned" },
     { "id": "mkdir:docs", "kind": "mkdir", "path": "docs", "status": "planned" },
     { "id": "mkdir:.ai/harness/checks", "kind": "mkdir", "path": ".ai/harness/checks", "status": "planned" },
     { "id": "mkdir:.ai/harness/handoff", "kind": "mkdir", "path": ".ai/harness/handoff", "status": "planned" },
     { "id": "writeFile:docs/spec.md:ifMissing", "kind": "writeFile", "path": "docs/spec.md", "status": "planned", "ifMissing": true },
-    { "id": "writeFile:tasks/todos.md:ifMissing", "kind": "writeFile", "path": "tasks/todos.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:tasks/current.md:ifMissing", "kind": "writeFile", "path": "tasks/current.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:tasks/lessons.md:ifMissing", "kind": "writeFile", "path": "tasks/lessons.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:.ai/harness/workflow-contract.json:workflow-contract", "kind": "writeFile", "path": ".ai/harness/workflow-contract.json", "status": "planned" },
     { "id": "appendManagedBlock:.gitignore:repo-harness-generated-runtime", "kind": "appendManagedBlock", "path": ".gitignore", "status": "planned", "marker": "repo-harness generated-runtime" }
   ],
   "summary": {
-    "total": 14,
+    "total": 11,
     "byKind": {
-      "mkdir": 8,
-      "writeFile": 5,
+      "mkdir": 6,
+      "writeFile": 4,
       "appendManagedBlock": 1
     },
     "byStatus": {
-      "planned": 14
+      "planned": 11
     },
-    "plannedTotal": 14,
+    "plannedTotal": 11,
     "skippedTotal": 0,
     "failedTotal": 0,
     "userOwnedFilesTouched": 1,
-    "generatedFiles": 6,
+    "generatedFiles": 5,
     "repoHarnessOwnedFiles": 3,
     "requiresVerification": false
   },

@@ -48,7 +48,6 @@ For bugfix work, record the observed cause and reproduction; leave as-is otherwi
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`
-- Deferred-goal ledger: `tasks/todos.md`
 - Review file: `{{REVIEW_FILE}}`
 - Notes file: `{{NOTES_FILE}}`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
@@ -68,7 +67,6 @@ For bugfix work, record the observed cause and reproduction; leave as-is otherwi
 allowed_paths:
   - docs/spec.md
   - plans/
-  - tasks/todos.md
   - {{CONTRACT_FILE}}
   - {{REVIEW_FILE}}
   - {{NOTES_FILE}}

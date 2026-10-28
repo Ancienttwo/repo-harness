@@ -13,6 +13,8 @@ import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
+import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
+import { decodeWorktrees } from '../../src/core/operator/worktrees';
 import { degradedSetup, loadingSetup, readySetup } from '../../src/operator-web/fixtures/setup';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -35,6 +37,7 @@ function installDom(url = 'http://127.0.0.1:4318/'): void {
 
 const NOW = Date.now();
 const activity = decodeDevActivitySnapshot(busyDevActivity(NOW));
+const worktrees = decodeWorktrees(busyWorktrees(NOW));
 
 function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
@@ -47,6 +50,7 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     readAgentsSettings: () => new Promise(() => {}),
     readTests: async () => ({ state: 'unavailable', reason: 'tests_pending' }),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
+    initialWorktrees: worktrees, readWorktrees: async () => worktrees,
     ...overrides,
   };
 }
@@ -132,7 +136,7 @@ describe('navigation', () => {
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
-    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['agents', 'agents'], ['skills', 'skills'],
+    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['worktrees', 'worktrees'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
@@ -148,8 +152,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
-    for (const later of ['docs', 'sessions', 'recent', 'worktrees']) {
+      .toEqual(['home', 'board', 'repositories', 'worktrees', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
+    for (const later of ['docs', 'sessions', 'recent']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });

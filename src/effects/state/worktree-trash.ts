@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import type { ExactWorktreeCleanup } from './coordination-worktree-topology';
 import { worktreeTrashPrefix } from '../git/repository-identity';
+import { readWorktreeRecord } from '../git/worktree-record';
 
 /** Windows has no POSIX uid proof, even if a runtime exposes a compatibility method. */
 export function worktreeUid(platform: NodeJS.Platform = process.platform, probe: () => number | undefined = () => process.getuid?.()): number | undefined {
@@ -29,6 +30,7 @@ export interface WorktreeTrashReceipt {
   readonly git_directory: string;
   readonly git_directory_dev: number;
   readonly git_directory_ino: number;
+  readonly worktree_record_id?: string;
 }
 const RECEIPT = 'receipt.json';
 const TEMP = 'receipt.tmp';
@@ -61,6 +63,7 @@ export function trashPayload(receipt: WorktreeTrashReceipt): string {
 
 /** Publish the immutable approval before the first visible mutation. */
 export function prepareWorktreeTrash(common: string, managedRoot: string, expected: ExactWorktreeCleanup, gitDirectory: string): WorktreeTrashReceipt {
+  const lifecycle = readWorktreeRecord(common, expected.worktree);
   const original = assertOwnedTrashDirectory(expected.worktree);
   const registration = assertOwnedTrashDirectory(gitDirectory);
   if (dirname(gitDirectory) !== join(common, 'worktrees')) throw new Error('worktree registration is outside the documented Git layout');
@@ -74,6 +77,7 @@ export function prepareWorktreeTrash(common: string, managedRoot: string, expect
     uid: original.uid, container_dev: container.dev, container_ino: container.ino,
     worktree_dev: original.dev, worktree_ino: original.ino,
     git_directory: gitDirectory, git_directory_dev: registration.dev, git_directory_ino: registration.ino,
+    ...(lifecycle ? { worktree_record_id: lifecycle.id } : {}),
   };
   createFileExclusiveDurably(join(directory, TEMP), Buffer.from(JSON.stringify(receipt) + '\n'));
   renameSync(join(directory, TEMP), join(directory, RECEIPT));
@@ -103,6 +107,7 @@ export function readWorktreeTrash(common: string, managedRoot: string, directory
     || typeof record.git_directory !== 'string' || dirname(record.git_directory) !== join(common, 'worktrees')
     || !Number.isSafeInteger(record.git_directory_dev) || !Number.isSafeInteger(record.git_directory_ino)) throw new Error('trash receipt identity changed');
   const expected = record.expected;
+  if (record.worktree_record_id !== undefined && !/^wt_[a-f0-9]{64}$/u.test(record.worktree_record_id)) throw new Error('trash lifecycle identity invalid');
   if (!expected || typeof expected.worktree !== 'string' || dirname(expected.worktree) !== managedRoot
     || typeof expected.branch !== 'string' || !expected.branch || typeof expected.target_ref !== 'string'
     || ![expected.head_sha, expected.target_oid, expected.merge_commit_sha].every(value => typeof value === 'string' && /^[a-f0-9]{40,64}$/.test(value))) throw new Error('trash receipt has an invalid cleanup identity');

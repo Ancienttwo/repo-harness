@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.adoption.cli-layer
+kind: component
+name: Adoption (cli)
+status: active
+parent: capability.public-surface.adoption
+layer: cli
+summary: The cli-layer files of Adoption. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Adoption so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/adoption-plan.ts
+    - src/cli/repo-adoption/**
+    - src/cli/commands/migrate.ts

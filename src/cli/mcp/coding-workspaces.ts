@@ -12,8 +12,8 @@ import {
   statSync,
   writeFileSync,
 } from 'fs';
-import { tmpdir } from 'os';
-import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
+import { ensureManagedWorktreeRoot, managedWorktreeRoot } from '../../effects/git/managed-worktree';
+import { recordWorktree } from '../../effects/git/worktree-record';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import {
   isRepoHarnessAdoptedPath,
@@ -116,7 +116,17 @@ export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function codingWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env.REPO_HARNESS_MCP_WORKTREE_ROOT ?? join(systemWorktreeRoot(process.platform, tmpdir()), 'repo-harness-mcp-worktrees'));
+  assertNoRetiredWorktreeRoot(env);
+  return managedWorktreeRoot(env);
+}
+
+function ensureCodingWorktreeRoot(env: NodeJS.ProcessEnv): string {
+  assertNoRetiredWorktreeRoot(env);
+  return ensureManagedWorktreeRoot(env);
+}
+
+function assertNoRetiredWorktreeRoot(env: NodeJS.ProcessEnv): void {
+  if (env.REPO_HARNESS_MCP_WORKTREE_ROOT) throw new CodingWorkspaceError('WORKTREE_ROOT_RETIRED', 'Use REPO_HARNESS_WORKTREE_ROOT for every managed worktree.');
 }
 
 function toPosix(value: string): string {
@@ -550,16 +560,7 @@ export class CodingWorkspaceManager {
     if (mode === 'worktree') {
       const suffix = randomBytes(4).toString('hex');
       branch = `codex/mcp-${sanitizeBranchPart(basename(sourceRoot))}-${suffix}`;
-      root = join(codingWorktreeRoot(this.env), sanitizeBranchPart(basename(sourceRoot)), id);
-      const managedRoot = codingWorktreeRoot(this.env);
-      mkdirSync(managedRoot, { recursive: true, mode: 0o700 });
-      for (const directory of [managedRoot, dirname(root)]) {
-        if (directory !== managedRoot) mkdirSync(directory, { mode: 0o700, recursive: true });
-        const stat = lstatSync(directory);
-        if (!stat.isDirectory() || stat.isSymbolicLink() || (process.platform !== 'win32' && ((process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o022)))) {
-          throw new CodingWorkspaceError('WORKTREE_ROOT_UNSAFE', 'managed worktree root must be owned and private');
-        }
-      }
+      root = join(ensureCodingWorktreeRoot(this.env), `${basename(sourceRoot)}-wt-${id}`);
       try {
         lstatSync(root);
         throw new CodingWorkspaceError('WORKTREE_PATH_EXISTS', 'target worktree path already exists');
@@ -567,6 +568,8 @@ export class CodingWorkspaceManager {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
       mkdirSync(root, { mode: 0o700 });
+      // Persist the creation intent before Git can create a checkout with no record.
+      recordWorktree(sourceRoot, root, { creator: 'mcp', purpose: 'coding workspace', task_id: id });
       git(sourceRoot, ['worktree', 'add', '-b', branch, root, baseSha]);
       root = realpathSync(root);
       managed = true;

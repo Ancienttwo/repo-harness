@@ -1,4 +1,8 @@
-# Deferred Goal Ledger
+# Historical Deferred Goal Ledger
+
+> Frozen on 2026-10-29. This file is historical, not a work authority.
+> Track current and deferred work in GitHub Issues and PRs. Do not append here.
+> The old instructions below describe the retired workflow.
 
 Campaign execution moved to the existing [repo-harness](../SKILL.md) and [repo-harness-product](../assets/skills/repo-harness-product/SKILL.md) Bot skills on 2026-10-04. The BRC14 and BRC15 follow-ups are retired.
 

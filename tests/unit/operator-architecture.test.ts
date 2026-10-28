@@ -229,6 +229,7 @@ describe('architecture map', () => {
   };
   const input = {
     repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z', layers,
+    layer_order: { state: 'ok', layers: ['cli', 'core'] } as const,
     nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
     relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
   };
@@ -278,6 +279,14 @@ describe('architecture map', () => {
     refused(copy => { copy.dependencies.edges[0].target = CAP; });
     refused(copy => { copy.dependencies = { state: 'unavailable', reason: 'stale' }; });
     refused(copy => { copy.commit = 'HEAD'; });
+    // The layer order is archctx's `model.layers`: non-empty, unique, and it names every node layer.
+    refused(copy => { copy.layer_order.layers = []; });
+    refused(copy => { copy.layer_order.layers = ['core', 'core']; });
+    refused(copy => { copy.layer_order.layers = ['cli']; });
+    refused(copy => { copy.layer_order.layers = ['Core']; });
+    refused(copy => { copy.layer_order = { state: 'unavailable', reason: 'layer_order_not_read' }; });
+    refused(copy => { delete copy.layer_order; });
+    expect(decodeArchitectureMap({ ...map, layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' } }).layer_order.state).toBe('unavailable');
   });
 
   test('model prose never carries an absolute path, and a dirty source tree withholds import counts', () => {
@@ -334,6 +343,7 @@ describe('architecture map', () => {
       expect(map.layers.decisions).toEqual({ state: 'ok', items: [{ id: 'ADR-0001-committed-reads', title: 'Read committed modules', status: 'accepted', decided_at: null,
         applies_to: [MODULE_ID], supersedes: [], path: 'docs/adr/ADR-0001-committed-reads.md' }] });
       expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
+      expect(map.layer_order).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
       expect(JSON.stringify(map)).not.toContain(root);
       // Today's changes need a base before today and one commit inside the window.
       baseBeforeToday(root);
@@ -354,6 +364,25 @@ describe('architecture map', () => {
       const dirtyPrs = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z',
         { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [] });
       expect(dirtyPrs.ok && dirtyPrs.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'model_worktree_dirty' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('the worker takes the layer order from archctx\'s export of the committed manifest, and archctx refuses a node layer outside it', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const manifest = '.archcontext/manifest.yaml';
+      const declared = fixtureYaml({ schemaVersion: 'archcontext.manifest/v1', model: { layout: 'split', root: '.archcontext/model', layers: ['entry', 'core'] }, runtime: { contextBudgetBytes: 12288 } });
+      fixtureWrite(root, manifest, declared);
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layer_order).toEqual({ state: 'ok', layers: ['entry', 'core'] });
+      // The model now declares layers; the collector still does not read archctx's layer-direction check.
+      expect(result.snapshot.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'layer_direction_not_read' });
+      const core = '.archcontext/model/nodes/component.module.core.yaml';
+      fixtureWrite(root, core, fixtureYaml({ ...JSON.parse(readFileSync(join(root, core), 'utf8')), layer: 'web' }));
+      fixtureCommit(root);
+      expect(collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending)).toEqual({ id: 'repo_0123456789abcdef', ok: false, reason: 'model_unavailable' });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -460,7 +489,7 @@ describe('architecture map', () => {
     });
     const item = (repositoryId: string, branch: string, pr: ReturnType<typeof pull>) => ({
       id: `${repositoryId}:${branch}`, repository_id: repositoryId, branch, title: pr.title, column: 'verifying' as const, hidden: null,
-      column_since: at, worktrees: [], pull_request: pr, cleanup_pending: false,
+      column_since: at, worktrees: [], pull_request: pr,
     });
     const snapshot = (github: 'ok' | 'unavailable'): DevActivitySnapshotV2 => ({
       projection_version: 'repo-harness.dev-activity.v2', status: 'ready', collected_at: at, unreadable_registrations: 0, attention: [],
@@ -534,6 +563,7 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.decisions.items[0].title = 'Read /Users/someone/secret'; });
     refused(copy => { copy.layers.decisions.items[0].path = '/Users/someone/repo/docs/adr/ADR-0001-ledger.md'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v2'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v3'; });
   });
 
   test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
@@ -601,6 +631,29 @@ describe('architecture map', () => {
       // A window that holds the whole history has no base commit.
       const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z', pending);
       expect(all.ok && all.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'history_starts_today' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a PR impact deadline leaves the other map layers intact', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      baseBeforeToday(root);
+      const source: ArchitecturePullRequestsSource = {
+        state: 'ok', observed_at: '2026-10-27T12:59:00.000Z',
+        pull_requests: Array.from({ length: 3 }, (_, index) => ({
+          number: index + 1, title: 'Read more', url: `https://github.com/acme/module/pull/${index + 1}`,
+          head_sha: 'a'.repeat(40), changed_files: { state: 'ok', paths: ['src/module/read.ts'] },
+        })),
+      };
+      const baseline = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      const bounded = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source, 1);
+      if (!baseline.ok || !bounded.ok) throw new Error('worker failed');
+      const pulls = bounded.snapshot.layers.pull_requests;
+      expect(pulls.state === 'ok' && pulls.pull_requests.map(pr => pr.impact)).toEqual(
+        source.pull_requests.map(() => ({ state: 'unavailable', reason: 'archctx_failed' })),
+      );
+      expect(decodeArchitectureMap(bounded.snapshot)).toEqual(bounded.snapshot);
+      expect({ ...bounded.snapshot, layers: { ...bounded.snapshot.layers, pull_requests: baseline.snapshot.layers.pull_requests } }).toEqual(baseline.snapshot);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

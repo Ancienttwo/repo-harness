@@ -11,6 +11,7 @@ export const WORKSPACES = [
   { id: 'home', group: null },
   { id: 'board', group: 'work' },
   { id: 'repositories', group: 'work' },
+  { id: 'worktrees', group: 'work' },
   { id: 'agents', group: 'setup' },
   { id: 'skills', group: 'setup' },
   { id: 'hooks', group: 'setup' },
@@ -55,7 +56,7 @@ function decodeItem(value: string): string | null {
 export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   const [name, parameter, ...rest] = hash.replace(/^#/u, '').split('/');
   if (rest.length > 0) return HOME;
-  if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'settings' || name === 'tests') {
+  if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'settings' || name === 'tests') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
   }
   if (name === 'architecture') {
