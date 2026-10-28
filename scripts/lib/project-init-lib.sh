@@ -86,8 +86,6 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-> **Implementation Notes**: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 
 ## Agentic Routing
 - Selected route:
@@ -98,9 +96,6 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 - Active plan: `{{PLAN_FILE}}`
 - Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-- Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
-- Deferred-goal ledger: `tasks/todos.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
@@ -127,8 +122,6 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 ## Task Contracts
 - Contract file: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Review file: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-- Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. Do not infer active execution from the latest non-archived plan.
@@ -161,134 +154,6 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 ## Task Breakdown
 - [ ] ...
 EOF_TEMPLATE_PLAN
-)
-PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
-# Task Review: {{TASK_SLUG}}
-
-> **Status**: Pending
-> **Plan**: {{PLAN_FILE}}
-> **Contract**: {{CONTRACT_FILE}}
-> **Notes File**: {{NOTES_FILE}}
-> **Verification**: Select the native execution report explicitly.
-> **Last Updated**: {{TIMESTAMP}}
-> **Recommendation**: fail
-> **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
-> **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-
-## Human Review Card
-
-- Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
-- Intended files changed:
-- Actual files changed:
-- Commands passed:
-- Residual risks:
-- Reviewer action required: inspect diff and card
-- Rollback:
-
-## Verification Evidence
-
-- Waza /check run:
-- Commands run:
-- Manual checks:
-- Supporting artifacts:
-
-## Manual Check Evidence
-
-Copy each non-built-in contract `manual_checks` requirement exactly. Check it only after
-the observation is complete and replace the placeholder with concrete command output,
-screenshot/artifact path, or reviewer observation.
-
-- [ ] Exact manual_checks requirement
-  - Evidence: concrete observation, command output, screenshot path, or reviewer note
-
-## Acceptance Receipt Projection
-
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
-> **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
-
-- Summary: No AcceptanceReceipt has been recorded.
-- Findings: none
-
-## Behavior Diff Notes
-
-- ...
-
-## Residual Risks / Follow-ups
-
-- ...
-
-## Scorecard
-
-| Dimension | Score | Notes |
-|-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
-
-## Failing Items
-
-- ...
-
-## Retest Steps
-
-- Re-run:
-- Re-check:
-
-## Summary
-
-- ...
-EOF_TEMPLATE_REVIEW
-)
-PI_TEMPLATE_IMPLEMENTATION_NOTES=$(cat <<'EOF_TEMPLATE_IMPLEMENTATION_NOTES'
-# Implementation Notes: {{TASK_SLUG}}
-
-> **Status**: Active
-> **Plan**: {{PLAN_FILE}}
-> **Contract**: {{CONTRACT_FILE}}
-> **Review**: {{REVIEW_FILE}}
-> **Last Updated**: {{TIMESTAMP}}
-> **Lifecycle**: notes
-
-## Design Decisions
-
-- ...
-
-## Deviations From Plan Or Spec
-
-- None recorded.
-
-## Tradeoffs Considered
-
-| Option | Decision | Reason |
-|--------|----------|--------|
-| ... | ... | ... |
-
-## Open Questions
-
-- None.
-
-## Evidence Links
-
-- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Run snapshots: `.ai/harness/runs/`
-
-## Promotion Candidates
-
-- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
-- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
-- Promote to harness asset files only after verification across more than one task or fixture.
-EOF_TEMPLATE_IMPLEMENTATION_NOTES
 )
 PI_CONTEXT_PROFILE_DEFAULT="stable-root-progressive-subdir"
 PI_RECOVERY_PROFILE_DEFAULT="hybrid"
@@ -705,18 +570,6 @@ pi_install_templates() {
   else
     echo "canonical contract template is required: $templates_dir/contract.template.md" >&2
     return 1
-  fi
-
-  if [[ -f "$templates_dir/review.template.md" ]]; then
-    cp "$templates_dir/review.template.md" "$output_dir/review.template.md"
-  else
-    printf '%s\n' "$PI_TEMPLATE_REVIEW" > "$output_dir/review.template.md"
-  fi
-
-  if [[ -f "$templates_dir/implementation-notes.template.md" ]]; then
-    cp "$templates_dir/implementation-notes.template.md" "$output_dir/implementation-notes.template.md"
-  else
-    printf '%s\n' "$PI_TEMPLATE_IMPLEMENTATION_NOTES" > "$output_dir/implementation-notes.template.md"
   fi
 
   # Keep historical Sprint documents readable in downstream repositories.
@@ -1443,7 +1296,6 @@ pi_write_harness_policy() {
     "statuses": ["Draft", "Annotating", "Approved", "Executing", "Blocked", "Review", "Complete", "Completed", "Done", "Fulfilled", "Archived", "Abandoned", "Superseded"]
   },
   "tasks": {
-    "todo_file": "tasks/todos.md",
     "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches",
@@ -1465,7 +1317,7 @@ pi_write_harness_policy() {
     "dir": "_ref",
     "mode": "external-ignored",
     "commit_policy": "never commit _ref contents",
-    "rule": "use _ref as an occasional ignored external reference checkout cache for upstream/source comparison only; refresh from external sources instead of editing as product code; when it influences a decision, cite the source repo plus commit/tag and path in tasks/notes/ or docs/researches/"
+    "rule": "use _ref as an occasional ignored external reference checkout cache for upstream/source comparison only; refresh from external sources instead of editing as product code; when it influences a decision, cite the source repo plus commit/tag and path in docs/researches/"
   },
   "operations": {
     "dir": "deploy",
@@ -1503,19 +1355,13 @@ pi_write_harness_policy() {
     "dir": "tasks/workstreams",
     "scope": "capability",
     "projection": "local-contract-active-pointer-and-current-slice",
-    "todo_projection": "tasks/todos.md",
-    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; current plan execution lives in the plan Task Breakdown; tasks/todos.md records deferred goals only"
+    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; current plan execution lives in the plan Task Breakdown"
   },
   "information_lifecycle": {
-    "notes": {
-      "dir": "tasks/notes",
-      "purpose": "task-local implementation decisions, deviations, tradeoffs, and open questions",
-      "promotion": "archive on workflow close; promote only repeated or durable findings"
-    },
     "evidence": {
       "snapshots_dir": ".ai/harness/runs",
       "cache_globs": [".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"],
-      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
+      "purpose": "raw verification records and run snapshots are ignored runtime cache unless distilled into contracts or research"
     },
     "assets": {
       "sources": [".ai/harness/policy.json", "package:assets/workflow-contract.v1.json", ".ai/hooks/", "package:scripts", "docs/reference-configs/"],
@@ -1850,7 +1696,6 @@ pi_write_context_map() {
     "AGENTS.md",
     "docs/spec.md",
     "tasks/current.md",
-    "tasks/todos.md",
     "tasks/lessons.md",
     ".ai/context/capabilities.json",
     ".ai/harness/policy.json"
@@ -1932,7 +1777,6 @@ pi_ensure_harness_state_surface() {
   fi
 
   mkdir -p \
-    "$target_dir/tasks/notes" \
     "$target_dir/tasks/workstreams" \
     "$target_dir/.ai/context" \
     "$target_dir/.ai/harness/checks" \
@@ -1968,8 +1812,7 @@ pi_ensure_harness_state_surface() {
 Durable research reports live in this directory as topic-scoped Markdown files.
 
 Use `YYYYMMDD-topic.md` names when chronology matters, or `<topic>.md` for
-stable subject reports. Keep task-local implementation decisions in
-`tasks/notes/`, and keep repeated correction-derived rules in `tasks/lessons.md`.
+stable subject reports. Keep repeated correction-derived rules in `tasks/lessons.md`.
 RESEARCH_README_EOF
   fi
   if [[ ! -f "$target_dir/tasks/current.md" ]]; then

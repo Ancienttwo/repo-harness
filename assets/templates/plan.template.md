@@ -10,8 +10,6 @@
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-> **Implementation Notes**: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 
 ## Agentic Routing
 - Selected route:
@@ -22,9 +20,6 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 - Optional plan: `{{PLAN_FILE}}`
 - Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Sprint review: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-- Implementation notes: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
-- Deferred-goal ledger: `tasks/todos.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: the active approved admission and its `allowed_paths`; this plan and contract only propose scope.
@@ -52,8 +47,6 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 ## Task Contracts
 - Contract file: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Review file: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
-- Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
 - Planning selection is metadata only. Do not infer active execution from an active-plan marker or the latest non-archived plan.

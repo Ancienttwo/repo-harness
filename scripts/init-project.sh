@@ -193,8 +193,6 @@ create_structure() {
     fi
     mkdir -p tasks/archive
     mkdir -p tasks/contracts
-    mkdir -p tasks/reviews
-    mkdir -p tasks/notes
     mkdir -p plans/archive
     mkdir -p .ai/context
     mkdir -p .ai/harness/checks
@@ -232,23 +230,6 @@ All notable changes to this project will be documented in this file.
 *Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)*
 EOF
 
-    cat > tasks/todos.md << EOF
-# Deferred Goal Ledger
-
-> **Status**: Backlog
-> **Updated**: (initial)
-> **Scope**: Medium/long-term goals deferred from active plan execution
-
-Current plan tasks live in the active plan's \`## Task Breakdown\`.
-Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
-
-## Deferred Goals
-
-| Goal | Why Deferred | Tradeoff | Revisit Trigger |
-|------|--------------|----------|-----------------|
-| (none) | No deferred medium/long-term goal recorded yet. | Keep the first sprint bounded. | Add a row when a real follow-up is postponed. |
-EOF
-
     cat > tasks/current.md << EOF
 # Current Status Snapshot
 
@@ -280,8 +261,7 @@ EOF
 Durable research reports live in this directory as topic-scoped Markdown files.
 
 Use \`YYYYMMDD-topic.md\` names when chronology matters, or \`<topic>.md\` for
-stable subject reports. Keep task-local implementation decisions in
-\`tasks/notes/\`, and keep repeated correction-derived rules in \`tasks/lessons.md\`.
+stable subject reports. Keep repeated correction-derived rules in \`tasks/lessons.md\`.
 EOF
 
     local helper_names

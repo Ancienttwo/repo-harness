@@ -14,7 +14,6 @@ Program-level sprint container. The Source PRD summary and ordered backlog
 decompose product intent into ordered rows. Default to inline execution; select
 contract rows only for an explicitly requested contract workflow. Rows stay in
 the sprint backlog or an optional active plan Task Breakdown.
-`tasks/todos.md` stays the deferred-goal ledger and never carries this backlog.
 
 ## PRD
 
