@@ -2,10 +2,10 @@
 // vocabularies, and no absolute-path-looking text outside `url`.
 
 import { isPublicDevActivityText, isPublicRepoPath } from '../operator/public-text';
+import { PULL_REQUEST_FILES_REASONS } from '../operator/pull-request-files';
 import {
   DEV_ACTIVITY_ATTENTION_KINDS,
   DEV_ACTIVITY_COLUMNS,
-  DEV_ACTIVITY_PR_FILES_REASONS,
   DEV_ACTIVITY_PROJECTION,
   type DevActivitySnapshotV2,
 } from './types';
@@ -139,7 +139,7 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
           const paths = array(files.paths, 'changed_files paths');
           if (paths.some(path => typeof path !== 'string' || !isPublicRepoPath(path)) || new Set(paths).size !== paths.length) fail('changed_files paths');
         } else if (files.state !== 'unavailable') fail('changed_files state');
-        else oneOf(files.reason, DEV_ACTIVITY_PR_FILES_REASONS, 'changed_files reason');
+        else oneOf(files.reason, PULL_REQUEST_FILES_REASONS, 'changed_files reason');
         return files;
       });
       if ((p.state === 'open') !== (p.changed_files !== null) || (p.state !== 'open' && p.head_sha !== null)) fail('pr head');

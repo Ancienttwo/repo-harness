@@ -57,6 +57,7 @@ usage() {
 Usage:
   repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
+  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <pane-id> --pr <number> --merge <sha>
   repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
 
@@ -732,6 +733,9 @@ case "$command_name" in
     ;;
   cleanup)
     cleanup_worktree "$@"
+    ;;
+  notify-merged)
+    run_contract_runtime notify-merged --repo "$REPO_ROOT" "$@"
     ;;
   sweep)
     [[ $# -eq 0 ]] || { echo "contract-worktree: sweep takes no arguments" >&2; usage; exit 2; }
