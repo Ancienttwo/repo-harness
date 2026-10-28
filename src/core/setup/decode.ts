@@ -112,10 +112,11 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
       }
       return a;
     });
-    const version = nullable(h.cli_version, x => (typeof x === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.test(x) ? x : fail('cli_version')));
+    const version = nullable(h.cli_version, x => (typeof x === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(x) ? x : fail('cli_version')));
     if (!reported && (adapterCheck !== null || detected !== null || adapter !== null || version !== null)) fail('unreported host carries facts');
-    if (reported && (adapterCheck === null || detected === null)) fail('reported host facts');
+    if (reported && (detected === null || (h.host !== 'pi' && adapterCheck === null))) fail('reported host facts');
     if (detected === false && adapter !== null) fail('undetected host adapter');
+    if (h.host === 'pi' && (adapter !== null || adapterCheck !== null)) fail('pi has no adapter file');
   });
 
   const skillNames = new Set<string>();
@@ -193,6 +194,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
     nullable(r.model, x => packageScalar(x, 'role model'));
     nullable(r.effort, x => packageScalar(x, 'role effort'));
     perHost(r.hosts, x => nullable(x, y => oneOf(y, ['installed', 'missing'], 'role host')), 'role hosts');
+    if ((r.hosts as Record<string, unknown>).pi !== null) fail('pi has no fleet roles');
   }
 
   if (!hasData && ((v.checks as unknown[]).length || (v.skills as unknown[]).length

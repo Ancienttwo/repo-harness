@@ -40,6 +40,7 @@ import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surf
 import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
+import { piExecutable, piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -75,6 +76,7 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
 }
 
 export const INSTALL_PROFILES = ['minimal', 'full'] as const;
+export const INSTALL_HOSTS = ['claude', 'codex', 'pi'] as const;
 const AGENT_FLEET_FILE = new RegExp(`/(?:\\.codex|\\.claude)/agents/(?:${MANAGED_AGENTS.join('|')})\\.(?:toml|md)$`);
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
@@ -115,7 +117,7 @@ export interface ManagedInstallSurface {
   readonly authority: 'repo-harness-install-transaction';
   readonly removal: 'managed-surfaces-only';
   readonly path: string;
-  readonly type: 'directory-copy' | 'symlink' | 'managed-file';
+  readonly type: 'directory-copy' | 'symlink' | 'managed-file' | 'pi-package';
   readonly content_hash: string | null;
   readonly managed_marker: string | null;
   readonly symlink_target: string | null;
@@ -148,6 +150,9 @@ export interface InstallHostTransaction {
 }
 
 export interface InstallProfilePlan {
+  readonly hosts: typeof INSTALL_HOSTS;
+  readonly pi_package: PiPackageStep;
+  readonly skill_projections: ReturnType<typeof expectedSkillProjections>;
   readonly protocol: 2;
   readonly requested_profile: InstallProfile;
   readonly current_profile: InstallProfile | null;
@@ -396,10 +401,10 @@ function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCata
 
 const FACADE_NAME_PREFIX = 'repo-harness-';
 
-const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude'];
+const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude', 'pi'];
 
-function hostSkillRoots(home: string): readonly string[] {
-  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host));
+function hostSkillRoots(home: string, env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host, env));
 }
 
 /**
@@ -407,9 +412,9 @@ function hostSkillRoots(home: string): readonly string[] {
  * name that later leaves the catalog. The state reader accepts the same
  * bounded set, so a committed receipt stays readable until removal.
  */
-function isDiscoveredFacadePath(path: string, home: string): boolean {
+function isDiscoveredFacadePath(path: string, home: string, env: NodeJS.ProcessEnv): boolean {
   const name = basename(path);
-  return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(home).some((root) => join(root, name) === path);
+  return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(home, env).some((root) => join(root, name) === path);
 }
 
 function discoverManagedSurfaces(
@@ -431,7 +436,7 @@ function discoverManagedSurfaces(
   // A catalog facade can lack the prefix (obsidian-memory). Its copy needs
   // the same marker-based receipt as a prefixed facade copy.
   const facadeNames = new Set(catalog.packages.filter((pkg) => pkg.kind === 'facade').map((pkg) => pkg.name));
-  for (const root of hostSkillRoots(home)) {
+  for (const root of hostSkillRoots(home, env)) {
     const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), runtimeComponents);
     if (canonical) surfaces.push(canonical);
     if (!existsSync(root)) continue;
@@ -458,7 +463,7 @@ function discoverManagedSurfaces(
   // A matching stable package or staging link is ownership proof. Never
   // acquire an arbitrary link merely because the transaction found it.
   if (sourceRoot !== null) {
-    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile)) {
+    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile, env)) {
       if (!skillLinkMatches(projection.destination, projection.source)) continue;
       const pkg = catalog.packages.find(pkg => pkg.name === projection.name);
       const components = projection.staged
@@ -479,7 +484,10 @@ function discoverManagedSurfaces(
   return surfaces;
 }
 
-function surfaceIsCurrent(surface: ManagedInstallSurface): boolean {
+function surfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (surface.type === 'pi-package') {
+    try { return piPackagePresent(surface.path, env); } catch { return false; }
+  }
   if (!existsSync(surface.path)) return false;
   try {
     const stat = lstatSync(surface.path);
@@ -511,8 +519,8 @@ function surfaceIsCurrent(surface: ManagedInstallSurface): boolean {
 }
 
 /** Verify one recorded managed surface without requiring unrelated profile probes. */
-export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface): boolean {
-  return surfaceIsCurrent(surface);
+export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv = process.env): boolean {
+  return surfaceIsCurrent(surface, env);
 }
 
 /** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
@@ -636,6 +644,36 @@ export function recordRefreshedInstallOwnership(
   writeState({ ...current, package_version: installedPackageVersion(), ownership_manifest: ownershipManifest }, env);
 }
 
+export function recordPiInstallOwnership(surfaces: readonly ManagedInstallSurface[], env: NodeJS.ProcessEnv = process.env, transaction?: InstallHostTransaction): void {
+  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi package ownership');
+  const current = readInstalledProfile(env);
+  if (current === null) {
+    if (surfaces.length === 0) return;
+    throw new Error('Pi package ownership requires an installed profile');
+  }
+  const root = hostSkillRoot(env.HOME ?? homedir(), 'pi', env);
+  const skills = transaction ? transactionOwnedSurfaces(transaction, current).filter(surface => surface.path.startsWith(root + '/')) : [];
+  if (surfaces.length === 0 && skills.length === 0) return;
+  const ownership = new Map(current.ownership_manifest.map(surface => [`${surface.path}\0${surface.type}`, surface]));
+  for (const surface of [...surfaces, ...skills]) ownership.set(`${surface.path}\0${surface.type}`, surface);
+  writeState({ ...current, ownership_manifest: [...ownership.values()] }, env);
+}
+
+/** Candidate processes publish ownership into the same ledger as the parent. */
+export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
+  const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
+  const readSurfaces = (path: string): readonly ManagedInstallSurface[] => {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    return (raw.protocol === 1
+      ? parseLegacyStateBase(raw, path, env, 'invalid transaction install state')
+      : parseCurrentStateBase(raw, path, env, 'invalid transaction install state')).ownership_manifest;
+  };
+  const before = snapshot?.existed && snapshot.backup_path ? readSurfaces(snapshot.backup_path) : [];
+  const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
+  const state = installProfileStatePath(env);
+  return (existsSync(state) ? readSurfaces(state) : []).filter(surface => surface.type === 'pi-package' && !sources.has(surface.path));
+}
+
 export function assertInstallProfile(value: string): InstallProfile {
   if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
     throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
@@ -668,7 +706,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     configurationReceiptPath(home),
     join(home, '.agents', '.skill-lock.json'),
   ];
-  for (const root of hostSkillRoots(home)) {
+  for (const root of hostSkillRoots(home, env)) {
     for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
   }
   for (const skill of externalSkills) {
@@ -698,7 +736,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
  */
 export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const roots = syncSkillRoots(env, env.HOME ?? homedir());
-  return roots.claude === null ? [roots.codex] : [roots.codex, roots.claude];
+  return [roots.codex, roots.claude, roots.pi].filter((root): root is string => root !== null);
 }
 
 /**
@@ -795,9 +833,13 @@ function profileOwnedSkillsSet(): ReadonlySet<string> {
 function componentsForTransactionPath(path: string): readonly InstallComponent[] {
   const normalized = path.replaceAll('\\', '/');
   const name = normalized.split('/').at(-1) ?? '';
-  const ownedSkills = profileOwnedSkillsSet();
+  if (name === 'repo-harness' && normalized.includes('/skills/')) return ['effective-state', 'scope-worktree-check-guards', 'handoff'];
+  const catalog = loadSkillSurfaceCatalog();
+  const facade = catalog.packages.find(pkg => pkg.kind === 'facade' && pkg.name === name);
+  if (facade && normalized.includes('/skills/')) return [facade.component as InstallComponent];
+  const ownedSkills = new Set(catalogProfileOwnedSkillNames(catalog));
   const obsidianSelection = requiredExplicitExternalDependencyInstallGroups(
-    loadSkillSurfaceCatalog(),
+    catalog,
     'obsidian-memory',
     ['claude', 'codex'],
   );
@@ -807,7 +849,7 @@ function componentsForTransactionPath(path: string): readonly InstallComponent[]
   const obsidianSkills = new Set(obsidianSelection.groups.flatMap(({ skills }) => skills));
   if (obsidianSkills.has(name) && normalized.includes('/skills/')) return ['adaptive-workflow'];
   if (ownedSkills.has(name) && normalized.includes('/skills/')) {
-    const crossModelSkills = catalogProbeExpectations(loadSkillSurfaceCatalog()).crossModel;
+    const crossModelSkills = catalogProbeExpectations(catalog).crossModel;
     return crossModelSkills.includes(name)
       ? ['cross-model-acceptance']
       : ['planning-integrations'];
@@ -935,13 +977,19 @@ function validateManagedSurface(
   env: NodeJS.ProcessEnv,
 ): raw is ManagedInstallSurface {
   if (!isRecord(raw) || !Array.isArray(raw.components)) return false;
+  if (raw.type === 'pi-package') {
+    return raw.authority === 'repo-harness-install-transaction' && raw.removal === 'managed-surfaces-only'
+      && raw.path === bunGlobalPackageRoot(env) && raw.managed_marker === 'pi-package-source'
+      && raw.content_hash === null && raw.symlink_target === null
+      && raw.components.length === 1 && raw.components[0] === 'host-adapters';
+  }
   const allowedPaths = new Set(installProfileHostMutationPaths(env));
   return (
     raw.components.every((component) => ALL_COMPONENTS.includes(component as InstallComponent))
     && raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir()))
+    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1081,6 +1129,7 @@ export function planLegacyInstallProfileMigration(
   const installed = new Set(legacy.components);
   const desiredSet = new Set(desired);
   return {
+    ...planInstallProfile(profile, null, env),
     protocol: 2,
     requested_profile: profile,
     current_profile: null,
@@ -1234,7 +1283,8 @@ export function installedProfileStatus(
   // not before truthful presence can be reported.
   const ownershipGaps: InstallComponent[] = [];
   const surfaceDrift = state.ownership_manifest
-    .filter((surface) => !surfaceIsCurrent(surface))
+    .filter(surface => surface.type !== 'pi-package' || piExecutable(env) !== null)
+    .filter((surface) => !surfaceIsCurrent(surface, env))
     .map((surface) => surface.path);
   return {
     ...state,
@@ -1260,6 +1310,9 @@ export function planInstallProfile(
   const installed = new Set(current?.components ?? []);
   const desiredSet = new Set(desired);
   return {
+    hosts: INSTALL_HOSTS,
+    pi_package: planPiPackage(bunGlobalPackageRoot(env)!, true, env),
+    skill_projections: expectedSkillProjections(loadSkillSurfaceCatalog(), bunGlobalPackageRoot(env)!, env.HOME ?? homedir(), profile, env),
     protocol: 2,
     requested_profile: profile,
     current_profile: current?.profile ?? null,
@@ -1291,15 +1344,16 @@ export function applyInstallProfile(
   now = new Date(),
   transaction?: InstallHostTransaction,
   migrationSource?: LegacyInstalledProfileState,
-  options: { readonly agentFleetVerified?: boolean } = {},
+  options: { readonly agentFleetVerified?: boolean; readonly additionalSurfaces?: readonly ManagedInstallSurface[] } = {},
 ): { readonly plan: InstallProfilePlan; readonly state: InstalledProfileState } {
   const current = readInstalledProfile(env);
+  if (options.additionalSurfaces?.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi package ownership');
   const plan = planInstallProfile(profile, current, env);
   const desired = new Set(PROFILE_COMPONENTS[profile]);
   const discovered = discoverManagedSurfaces(profile, env);
   const previousOwnership = migrationSource?.ownership_manifest ?? current?.ownership_manifest ?? [];
   const preserved = previousOwnership.filter((surface) => (
-    surface.components.every((component) => desired.has(component)) && surfaceIsCurrent(surface)
+    surface.components.every((component) => desired.has(component)) && (surface.type === 'pi-package' || surfaceIsCurrent(surface, env))
   ));
   const transactionOwned = transaction
     ? transactionOwnedSurfaces(transaction, migrationSource ?? current)
@@ -1308,7 +1362,7 @@ export function applyInstallProfile(
   const ownershipManifest = [...new Map(
     // Current verified link projections own their component classification.
     // Historical records must not restore a retired or wrong component.
-    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
+    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned, ...(options.additionalSurfaces ?? []),
       ...discovered.filter(surface => surface.type === 'symlink')].map((surface) => [
       `${surface.path}\0${surface.managed_marker ?? surface.type}`,
       surface,

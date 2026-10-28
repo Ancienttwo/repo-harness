@@ -478,10 +478,11 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
+      pi: ["repo-harness-cross-review"],
     });
   });
 
@@ -490,6 +491,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(unconditional).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
+      pi: ["repo-harness-cross-review"],
     });
   });
 

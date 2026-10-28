@@ -17,6 +17,25 @@
 GitHub issue 和 PR 管理任务身份、范围和状态。
 仓库文件帮助 Claude 与 Codex 跨会话继续工作。
 
+## Pi
+
+Pi 是默认 `--target both` 下的可选 host。`pi` 在 PATH 上时，install 和
+update 用 `pi install <package-directory>` 注册已安装的 repo-harness 目录。
+已有用户 package entry 会保留，不会重复添加。缺少 Pi 时跳过此步骤。
+用 `repo-harness install --dry-run --json` 预览。
+最低 Pi 版本由 [MIN_PI_VERSION](src/pi/compat.ts) 定义，不设上限。
+`repo-harness setup check` 和 `repo-harness update --check` 报告版本、
+path resolver capability、package entry 和 skill projection。
+
+Catalog skills 投影到 `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills`，
+使用相同的 profile 选择和 ownership 规则。uninstall 只删除本工具拥有的
+package entry 和未被修改的 owned skills。package 操作通过 Pi CLI 执行；
+repo-harness 不写 Pi settings、credentials 或 trust 文件。
+Pi 覆盖 session context、agent notices、edit/write、bash 和 Stop hooks。
+Pi 不提供 fleet roles 或 subagent hooks。PowerShell、`!`/`!!` 用户 shell、
+其他 extension 的文件写入和第三方 MCP 写入不在此覆盖范围内。
+
+
 ## 安装
 
 前置条件：一个 Git working tree、`bun` 和可用的 `herdr`。完整的前置条件见

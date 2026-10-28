@@ -53,6 +53,7 @@ export function projectSetupBuild(build: SetupCheckBuild, options: {
 }): SetupSnapshotV1 {
   const doctorCheck = (id: string) => build.doctor.checks.find(check => check.id === id);
   const codexVersion = doctorCheck('codex-cli-version')?.version;
+  const piVersion = doctorCheck('pi-cli-version')?.version;
   const tools = build.tooling?.tools as Record<string, { hosts?: unknown }> | undefined;
   return projectSetupSnapshot({
     collected_at: options.collected_at,
@@ -61,7 +62,7 @@ export function projectSetupBuild(build: SetupCheckBuild, options: {
     checks: build.report.checks,
     check_commands: new Map([...build.check_actions].map(([checkId, action]) => [checkId, action.command])),
     adapters: build.status.targets,
-    cli_versions: codexVersion === undefined ? {} : { codex: codexVersion },
+    cli_versions: { ...(codexVersion === undefined ? {} : { codex: codexVersion }), ...(piVersion === undefined ? {} : { pi: piVersion }) },
     skill_rows: doctorCheck('skill-projection')?.skills ?? null,
     skill_summaries: skillSummaries(options.env),
     routes: ROUTES,
