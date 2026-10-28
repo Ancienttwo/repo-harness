@@ -239,6 +239,12 @@ with an instruction to use the shared setting. Existing paths remain readable.
 
 ## 4. 歷史決策記錄(append-only)
 
+### Layer order for layer-direction (2026-10-29, issue #1118)
+
+- ChangeSet `changeset.1118-model-layers-order-d` sets `model.layers` to `tests, scripts, cli, effects, web, core, assets, external`. It replaces the #1013 order, so the map bands follow the new list.
+- archctx `constraints check` reads `model.layers` as the allowed import direction: a layer imports only the layers below it. With this order the directory-level dry run and the node-level run after the #1125 split both give 0 violations.
+- web is below effects because operator-web imports only core and lower. assets is at the bottom because `src/core` imports `assets/*.json`.
+
 ### Layered architecture map (2026-10-29, issue #1013)
 
 - The map route serves `repo-harness.architecture-map.v4`. It adds `layer_order`: archctx's `model.layers` from the same `export native` read, or `model_layers_undeclared`. No local layer list and no name-based order.
