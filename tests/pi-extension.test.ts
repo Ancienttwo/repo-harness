@@ -41,13 +41,25 @@ function assistant(content: AssistantMessage['content'] = [], stopReason: Assist
   };
 }
 
+const GIT_PROBE_SCRIPTS = {
+  failure: 'process.exit(1);',
+  timeout: 'setInterval(() => {}, 1000);',
+  dubious: 'process.stderr.write("fatal: detected dubious ownership in repository\\n"); process.exit(128);',
+  other128: 'process.stderr.write("fatal: cannot read repository config\\n"); process.exit(128);',
+  wrongStatus: 'process.stderr.write("fatal: not a git repository\\n"); process.exit(1);',
+  empty: '',
+  relative: 'process.stdout.write("relative-root\\n");',
+  multiline: 'process.stdout.write("/tmp/first-root\\n/tmp/second-root\\n");',
+} as const;
+
 async function fixture(options: {
   optIn?: boolean;
+  gitRepo?: boolean;
   probe?: () => Promise<PiCapability>;
   bridge?: (env: NodeJS.ProcessEnv) => ObservedBridge;
   mode?: 'print' | 'json' | 'rpc';
   nativeEntry?: boolean;
-  gitProbe?: 'missing' | 'failure' | 'timeout';
+  gitProbe?: 'missing' | keyof typeof GIT_PROBE_SCRIPTS;
 } = {}) {
   const workspace = tmpWorkspace('pi-sdk-fixture');
   const root = join(workspace, 'repo');
@@ -55,7 +67,7 @@ async function fixture(options: {
   const agentDir = join(home, '.pi/agent');
   mkdirSync(root, { recursive: true });
   mkdirSync(agentDir, { recursive: true });
-  initGitRepo(root);
+  if (options.gitRepo !== false) initGitRepo(root);
   mkdirSync(join(root, '_ops'));
   writeFileSync(join(root, '_ops/x'), 'protected original\n');
   writeFileSync(join(root, 'normal.txt'), 'original\n');
@@ -65,7 +77,7 @@ async function fixture(options: {
     writeFileSync(join(root, '.ai/harness/workflow-contract.json'), '{}\n');
     writeFileSync(join(root, '.ai/harness/policy.json'), '{}\n');
   }
-  commitAll(root, 'SDK fixture');
+  if (options.gitRepo !== false) commitAll(root, 'SDK fixture');
   const bin = join(home, 'bin');
   mkdirSync(bin);
   writeFileSync(join(bin, 'repo-harness-hook'), '#!/bin/sh\n: > "$HOME/decoy-ran"\nexit 99\n');
@@ -126,7 +138,7 @@ async function fixture(options: {
   if (options.gitProbe) {
     const probeGit = join(bin, 'probe-git');
     if (options.gitProbe !== 'missing') {
-      writeFileSync(probeGit, `#!${process.execPath}\n${options.gitProbe === 'timeout' ? 'setInterval(() => {}, 1000);' : 'process.exit(1);'}\n`, { mode: 0o755 });
+      writeFileSync(probeGit, `#!${process.execPath}\n${GIT_PROBE_SCRIPTS[options.gitProbe]}\n`, { mode: 0o755 });
     }
     process.env.REPO_HARNESS_GIT_BIN = probeGit;
   }
@@ -285,7 +297,24 @@ describe('Pi real SDK with scripted provider fixture', () => {
     } finally { await f.close(); }
   });
 
-  test.each(['missing', 'failure', 'timeout'] as const)('repository probe %s blocks mutations and reports once', async (gitProbe) => {
+  test.each([
+    ['a non-Git directory with real Git', { gitRepo: false, optIn: false }],
+    ['dubious ownership exit 128', { gitProbe: 'dubious' }],
+  ] as const)('%s stays inactive and allows tools', async (_name, options) => {
+    let probes = 0;
+    const f = await fixture({ ...options, probe: async () => { probes++; throw new Error('must not probe'); } });
+    try {
+      expect((await f.tool('write', { path: 'normal.txt', content: 'written\n' })).isError).toBe(false);
+      expect((await f.tool('edit', { path: 'normal.txt', oldText: 'written', newText: 'edited' })).isError).toBe(false);
+      expect((await f.tool('bash', { command: 'printf shell > normal.txt' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('shell');
+      expect(probes).toBe(0);
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      expect(customMessages(f.session)).toHaveLength(0);
+    } finally { await f.close(); }
+  });
+
+  test.each(['missing', 'failure', 'timeout', 'other128', 'wrongStatus', 'empty', 'relative', 'multiline'] as const)('repository probe %s blocks mutations and reports once', async (gitProbe) => {
     let probes = 0;
     const f = await fixture({ gitProbe, probe: async () => {
       probes++;
