@@ -3,7 +3,9 @@
 ## Herdr Dispatch
 
 - Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
-- Cross-model peers run in visible Herdr panes through the herdr skill (`herdr agent start|prompt|wait|read`). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Never call the codex or claude CLI directly.
+- Claude, Codex and Pi peers run in visible Herdr panes through the herdr skill (`herdr agent start|prompt|wait|read`). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
+- Pi review uses an OAR RPC subprocess under Seatbelt. Its private agent directory contains model configuration and read-only credential access. User extensions, skills, context files, prompt templates and MCP are disabled. Pi selects its native model from the available provider configuration; the Receipt records OAR's actual `provider/model`, or null when unknown.
+- A cross-model claim compares the author's and reviewer's actual provider and model. Harness kind does not prove a model difference. Pi with the author's actual provider and model is a same-model review. An unknown actual model grants no cross-model claim. The review runtime records identity; it adds no cross-model gate.
 - Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply.
 - Send the root tests-and-implementation review to the other model through Herdr when it is available. Otherwise, run that read-only review in a separate same-model pane.
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.

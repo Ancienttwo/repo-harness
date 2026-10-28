@@ -1,5 +1,5 @@
 /** Task execution state that the operator shows only after every session record agrees. */
-export type ExecutionHost = 'claude' | 'codex';
+export type ExecutionHost = 'claude' | 'codex' | 'pi';
 export type UnverifiedExecutionReason =
   | 'closed' | 'binding_invalid' | 'binding_mismatch' | 'native_session_missing' | 'native_session_mismatch'
   | 'provider_exited' | 'provider_identity_lost';
@@ -32,7 +32,8 @@ export interface TaskFollowUp {
 
 // A pasted command must stay one argv word, whatever the host wrote as its session id.
 const SHELL_WORD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
-const RESUME = { claude: (id: string) => `claude --resume ${id}`, codex: (id: string) => `codex resume ${id}` } as const;
+const RESUME = { claude: (id: string) => `claude --resume ${id}`, codex: (id: string) => `codex resume ${id}`,
+  pi: (id: string) => `pi --resume ${id}` } as const;
 
 export function buildTaskFollowUp(execution: TaskExecution): TaskFollowUp {
   if (execution.state !== 'verified') return { task_id: execution.task, resume: null, herdr_pane: null };
@@ -137,7 +138,7 @@ export function decodeTaskExecutionView(value: unknown): TaskExecutionViewV1 {
     }
     if (entry.issue_id !== null) text(entry.issue_id, ISSUE_TEXT, 'issue_id');
     if (entry.branch !== null) text(entry.branch, BRANCH_TEXT, 'branch');
-    if (entry.agent !== 'claude' && entry.agent !== 'codex') fail('agent');
+    if (entry.agent !== 'claude' && entry.agent !== 'codex' && entry.agent !== 'pi') fail('agent');
     if (entry.runtime !== 'herdr' && entry.runtime !== 'terminal') fail('runtime');
     if (follow.resume !== null) {
       const resume = obj(follow.resume, ['host', 'command'], 'resume');
