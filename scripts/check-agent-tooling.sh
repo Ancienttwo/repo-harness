@@ -118,6 +118,7 @@ const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
+const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/herdr-skill-render.mjs"));
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
@@ -932,11 +933,20 @@ function detectRequiredHerdrSkill(herdrRuntime) {
   if (herdrRuntime.status === "present" && herdrRuntime.path) {
     const result = spawnSync(herdrRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
     if (result.status === 0 && result.stdout?.startsWith("---\nname: herdr\n") && result.stdout.includes("HERDR_ENV")) {
-      expected = result.stdout;
+      try { expected = renderHerdrSkill(result.stdout); }
+      catch (_) { /* Unsupported binary layout remains unavailable. */ }
     }
   }
-  const hosts = Object.fromEntries(SELECTED_HOSTS.map((host) => {
-    const skillFile = path.join(HOSTS[host].skillsDir, "herdr", "SKILL.md");
+  const skillRoots = SELECTED_HOSTS.map(host => [host, HOSTS[host].skillsDir]);
+  const sharedRoot = path.join(HOME, ".agents", "skills");
+  try {
+    fs.lstatSync(path.join(sharedRoot, "herdr"));
+    skillRoots.push(["shared", sharedRoot]);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const hosts = Object.fromEntries(skillRoots.map(([host, root]) => {
+    const skillFile = path.join(root, "herdr", "SKILL.md");
     let installed = null;
     let unreadable = false;
     try {
@@ -954,7 +964,7 @@ function detectRequiredHerdrSkill(herdrRuntime) {
   return {
     name: "herdr_skill",
     status,
-    reason: status === "present" ? "Release-matched skill is present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the installed Herdr binary.",
+    reason: status === "present" ? "Binary CLI reference and managed session policy are present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the binary CLI reference plus managed session policy.",
     source: "herdr --skill",
     required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
     hosts,

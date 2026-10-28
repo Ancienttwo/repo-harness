@@ -15,7 +15,7 @@ an explicitly assigned coding worker or a direct development session.
 Use `repo-harness state resolve --json` when active harness state is needed.
 Treat the returned state as authority; load only the files it names.
 Load the required `herdr` skill before controlling Herdr panes or agents.
-Only an agent inside a Herdr pane may run those control commands.
+Discover panes by task path through the Herdr skill, then use explicit targets for control.
 
 1. **setup** — bind the mode and target repo, then assign `repo-harness-setup`.
 2. **plan** — use `repo-harness-check` for scoped design or plan review.
