@@ -1,5 +1,4 @@
 import { VERSION, getPackageDir, type ExtensionAPI, type ExtensionContext, type ToolCallEvent } from '@earendil-works/pi-coding-agent';
-import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -7,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { boundedHookDiagnostic, type PiHookResult } from '../cli/hook/hook-protocol';
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../core/adoption/minimum-harness-version';
+import { gitExecFileSync } from '../effects/git/runner';
 import { probePiHost, type ToolPathResolver } from './compat';
 import { PiHookBridge } from './hook-bridge';
 
@@ -32,7 +32,7 @@ interface SessionState {
 
 function gitRoot(cwd: string): string | null {
   try {
-    return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    return gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000,
     }).trim() || null;
   } catch { return null; }

@@ -38,10 +38,14 @@ describe('hook host output fields', () => {
   });
 
   test('failed hooks drop both context fields and keep diagnostics', () => {
-    for (const renderer of Object.values(HOST_RENDERERS)) {
+    for (const renderer of [HOST_RENDERERS.claude, HOST_RENDERERS.codex]) {
       expect(renderer({ ...outcome, exitCode: 1, diagnostics: 'failed\n' }))
         .toEqual({ stdout: '', stderr: 'failed\n' });
     }
+    // Pi reads only stdout, so its one JSON result carries the diagnostics.
+    const pi = HOST_RENDERERS.pi({ ...outcome, exitCode: 1, diagnostics: 'failed\n' });
+    expect(pi.stderr).toBe('');
+    expect(JSON.parse(pi.stdout)).toMatchObject({ exit_code: 1, decision: 'none', additional_context: null, system_message: null, diagnostics: 'failed\n' });
   });
 });
 
