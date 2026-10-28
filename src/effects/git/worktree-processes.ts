@@ -31,7 +31,7 @@ function procListsEveryProcess(mountInfo: string): boolean {
   if (procRows.length !== 1) return false;
   const [fstype, , superOptions] = procRows[0]!;
   if (fstype !== 'proc') return false;
-  return superOptions!.split(',').every(option => option !== '' && (!option.startsWith('hidepid=') || /^hidepid=(?:off|noaccess|0|1)$/u.test(option)));
+  return superOptions!.split(',').every(option => option !== '' && (option.split('=')[0] !== 'hidepid' || /^hidepid=(?:off|noaccess|0|1)$/u.test(option)));
 }
 /** Null means occupancy could not be proved. Never turn a failed process probe into an empty list. */
 export function worktreeProcesses(deadline: number, linuxProbe?: LinuxWorktreeProcessProbe): WorktreeProcess[] | null {

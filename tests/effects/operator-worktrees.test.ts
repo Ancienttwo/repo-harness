@@ -114,6 +114,7 @@ describe('read-only worktree judgment and lifecycle', () => {
     ['a malformed unrelated row', () => `${sysfsMount} extra\n${procMount('rw')}\n`],
     ['a non-numeric mount ID', () => `${procMount('rw').replace('22 26', 'x 26')}\n`],
     ['an unknown hidepid value', () => mountInfo('rw,hidepid=5')],
+    ['a bare hidepid option', () => mountInfo('rw,hidepid')],
   ])('%s makes the inventory unknown', (_name, text) => {
     expect(worktreeProcesses(Date.now() + 5000, procMountProbe(text as () => string))).toBeNull();
   });
