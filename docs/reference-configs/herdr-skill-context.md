@@ -59,4 +59,3 @@ The configuration above owns session selection. The following CLI reference
 comes from the installed Herdr binary. In explicit-session mode, prefix every
 session-scoped example with `herdr --session <owned-session>` instead of bare
 `herdr`; examples using `--current` require inherited caller context.
-

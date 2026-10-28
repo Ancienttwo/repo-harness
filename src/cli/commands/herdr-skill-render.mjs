@@ -10,5 +10,5 @@ export function renderHerdrSkill(upstream) {
     throw new Error("herdr --skill has an unsupported CLI section layout");
   }
   const context = readFileSync(new URL("../../../assets/reference-configs/herdr-skill-context.md", import.meta.url), "utf8");
-  return context + upstream.slice(boundary + 1);
+  return context.trimEnd() + "\n\n" + upstream.slice(boundary + 1);
 }
