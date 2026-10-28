@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  ViewportPortal,
   type Edge,
   type Node,
   type NodeChange,
@@ -37,7 +38,7 @@ import {
   type MapLayerView,
   type MapMark,
 } from './architecture-map-layers';
-import { layoutArchitectureMap, type MapLayoutNode } from './architecture-map-layout';
+import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -132,6 +133,19 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 });
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
+
+/** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
+const MAP_BAND_LABEL = 28;
+
+/** A labelled rule above each layer's rows, in canvas coordinates. */
+function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: OperatorTranslate }) {
+  return <ViewportPortal>
+    {layout.bands.map(band => <div key={band.layer ?? ''} className="architecture-map__band" data-band={band.layer ?? ''}
+      style={{ transform: `translate(0px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width, height: MAP_BAND_LABEL }}>
+      {band.layer ?? t('architecture.map.unlayered')}
+    </div>)}
+  </ViewportPortal>;
+}
 
 function ZoomControls({ t }: { readonly t: OperatorTranslate }) {
   const flow = useReactFlow();
@@ -349,6 +363,7 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
+        <LayerBands layout={layout} t={t} />
         <Panel position="bottom-left"><Legend map={map} view={view} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
@@ -543,6 +558,7 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
       </p>
       {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
       {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
+      {map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
       <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
       <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
       <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>

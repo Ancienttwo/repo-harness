@@ -8,7 +8,7 @@ import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
 import type { ArchitectureMapRead, ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
-import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureMapLayersInput, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureLayerOrderV1, type ArchitectureMapLayersInput, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
 import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
@@ -331,6 +331,7 @@ describe('architecture map', () => {
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   const noCodeFactSteps = { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null } as const;
   const undeclaredLayers = { state: 'unavailable', reason: 'model_layers_undeclared' } as const;
+  const coreOnly = { state: 'ok', layers: ['core'] } as const;
   const noLayers: ArchitectureMapLayersInput = {
     changes: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' },
     pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
@@ -361,9 +362,9 @@ describe('architecture map', () => {
       { id: 'ADR-0002-naming', title: 'Name things plainly', status: null, decided_at: null, applies_to: [], supersedes: [], path: 'docs/adr/ADR-0002-naming.md' },
     ] },
   };
-  function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers): ArchitectureMapV1 {
+  function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers, layerOrder: ArchitectureLayerOrderV1 = coreOnly): ArchitectureMapV1 {
     return projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
@@ -391,6 +392,7 @@ describe('architecture map', () => {
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
       relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
+      layer_order: undeclaredLayers,
     });
     for (const map of [mapFor(), nested, decodeArchitectureMap(recordedMap)]) {
       const layout = layoutArchitectureMap(map);
@@ -428,6 +430,37 @@ describe('architecture map', () => {
     expect(bare.edges.every(edge => edge.imports === null)).toBe(true);
   });
 
+  test('with a layer order each layer is one band, top to bottom, and a relation against the order keeps the bands; without one there is no band', () => {
+    const below = (upper: { y: number; height: number }, lower: { y: number }) => upper.y + upper.height < lower.y;
+    // CALLER (cli) calls CENTER (core); the git read points from core to external; the extra relation points up, against the order.
+    const ordered = projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
+        { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
+      relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)],
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
+      layer_order: { state: 'ok', layers: ['cli', 'web', 'core', 'external'] },
+    });
+    const layout = layoutArchitectureMap(ordered);
+    // A declared layer with no node has no band; the model's unlayered nodes take the last band.
+    expect(layout.bands.map(band => band.layer)).toEqual(['cli', 'core', 'external', null]);
+    for (const [index, band] of layout.bands.slice(1).entries()) expect(below(layout.bands[index]!, band)).toBe(true);
+    const box = new Map(layout.nodes.map(item => [item.node.id, item]));
+    for (const item of layout.nodes.filter(entry => entry.node.parent === null)) {
+      const band = layout.bands.find(entry => entry.layer === item.node.layer)!;
+      expect(item.y >= band.y && item.y + item.height <= band.y + band.height).toBe(true);
+    }
+    expect(below(box.get(CALLER)!, box.get(CENTER)!) && below(box.get(CENTER)!, box.get(EXTERNAL)!) && below(box.get(EXTERNAL)!, box.get('process.loose')!)).toBe(true);
+    expect(layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers)).bands).toEqual([]);
+
+    // The recorded map of this repository: its bands follow the model's order, and top-level boxes do not overlap.
+    const recorded = decodeArchitectureMap(recordedMap);
+    const real = layoutArchitectureMap(recorded);
+    const used = new Set(recorded.nodes.filter(node => node.parent === null).map(node => node.layer));
+    expect(recorded.layer_order.state === 'ok' && real.bands.map(band => band.layer)).toEqual(recorded.layer_order.state === 'ok' ? recorded.layer_order.layers.filter(layer => used.has(layer)) : []);
+    for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
+  });
+
   test('the map is the default view and selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id) }));
@@ -437,6 +470,8 @@ describe('architecture map', () => {
     expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
     expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort()).toEqual([CALLER, CENTER, PART, EXTERNAL].sort());
     expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
+    // Every node is in the model's one declared layer, so the canvas draws one labelled band.
+    expect([...document.querySelectorAll('.architecture-map__band')].map(item => item.textContent)).toEqual(['core']);
     expect(document.querySelector('.architecture-map-view')?.textContent).toContain(COMMIT);
     // The base map has every source, so it states no gap. A part of the open layer that archctx
     // reports as unknown is stated inside that layer's summary, not as a base-map gap.
@@ -458,6 +493,11 @@ describe('architecture map', () => {
     // Only the base-map gaps; the open layer's own flow-step gap stays in its summary.
     expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
+    // A model without ordered layers keeps the unbanded layout and states why.
+    await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
+    await settle();
+    expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')])).toEqual([['layer_order', 'model_layers_undeclared']]);
+    expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
     await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
     await settle();
     expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');
