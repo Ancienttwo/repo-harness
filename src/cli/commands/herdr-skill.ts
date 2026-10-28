@@ -1,9 +1,10 @@
+import { renderHerdrSkill } from "./herdr-skill-render.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { hostSkillRoot, type SkillHost } from "../../effects/host-skill-roots";
+import { hostSkillRoot, stagedSkillRoot, type SkillHost } from "../../effects/host-skill-roots";
 import type { InstallTargetSpec } from "./install";
 
 const STEP = "configure required Herdr skill";
@@ -78,7 +79,7 @@ function cleanupStaleStages(root: string, remove: BackupCleanup): string[] {
   return notes;
 }
 
-/** Project the release-matched skill shipped by the required Herdr binary. */
+/** Project binary CLI instructions with the managed caller-context policy. */
 export function configureRequiredHerdrSkill(
   target: InstallTargetSpec,
   env: NodeJS.ProcessEnv = process.env,
@@ -88,16 +89,23 @@ export function configureRequiredHerdrSkill(
   if (result.status !== 0 || !result.stdout?.startsWith("---\nname: herdr\n") || !result.stdout.includes("HERDR_ENV")) {
     return { step: STEP, status: "failed", detail: "herdr --skill did not return the expected Herdr skill" };
   }
-  const content = result.stdout;
+  let content: string;
+  try { content = renderHerdrSkill(result.stdout); }
+  catch (error) {
+    return { step: STEP, status: "failed", detail: error instanceof Error ? error.message : String(error) };
+  }
   const home = env.HOME || homedir();
   const hosts: readonly SkillHost[] = target === "both" ? ["claude", "codex"] : [target];
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);
-    // Check every target before changing either host.
-    for (const host of hosts) {
-      const root = hostSkillRoot(home, host);
-      const canonicalRoot = hostSkillRoot(canonicalHome, host);
+    const roots = hosts.map(host => [hostSkillRoot(home, host), hostSkillRoot(canonicalHome, host)]);
+    // Codex can discover this shared copy as well as its host-specific copy.
+    if (hosts.includes("codex") && pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
+      roots.push([stagedSkillRoot(home), stagedSkillRoot(canonicalHome)]);
+    }
+    // Preflight all discoverable copies before writing any of them.
+    for (const [root, canonicalRoot] of roots) {
       const destination = join(root, "herdr");
       for (const [directory, expected] of [
         [dirname(root), dirname(canonicalRoot)],
