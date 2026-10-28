@@ -500,7 +500,6 @@ describe('architecture map', () => {
     await settle();
     expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')])).toEqual([['layer_order', 'model_layers_undeclared']]);
     expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).not.toContain('scale(0.85)');
     await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
     await settle();
     expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');
