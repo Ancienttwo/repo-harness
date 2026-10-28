@@ -42,16 +42,25 @@ function readAuthBytes(path: string): Buffer {
   } finally { closeSync(fd); }
 }
 
+/** Select the original native source before the child receives its isolated directory. */
+export async function reviewPiSourceDirectory(sourceHome: string): Promise<string> {
+  if (!process.env.PI_CODING_AGENT_DIR) return join(realpathSync(sourceHome), '.pi', 'agent');
+  // Resolve the native SDK from OAR's declared dependency, including its
+  // import-only export. Pi owns tilde and relative source-path semantics.
+  const { getAgentDir } = await import(import.meta.resolve('@earendil-works/pi-coding-agent', import.meta.resolve('@botiverse/oar')));
+  return resolve(getAgentDir());
+}
+
 /** Owner-only projection: native history, packages and user extensions stay out.
  * A selected OAuth login must outlive the run without refreshing its source. */
-export function preparePiHome(output: string, sourceHome: string, runWindowMs: number, reuse = false): { home: string; auth_copied: boolean; mode: '0600' } {
+export function preparePiHome(output: string, sourceDirectory: string, runWindowMs: number, reuse = false): { home: string; auth_copied: boolean; mode: '0600' } {
   const home = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(home, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
   const stat = lstatSync(home);
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_home_unsafe');
-  const source = join(realpathSync(sourceHome), '.pi', 'agent');
+  const source = resolve(sourceDirectory);
   const copyConfig = (name: string, bytes?: Buffer) => {
     const destination = join(home, name);
     if (existsSync(destination)) {
@@ -60,19 +69,27 @@ export function preparePiHome(output: string, sourceHome: string, runWindowMs: n
       finally { copied.fill(0); }
     } else if (bytes) writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 });
   };
-  const models = join(source, 'models.json');
-  const modelBytes = existsSync(models) ? readAuthBytes(models) : undefined;
-  try { copyConfig('models.json', modelBytes); } finally { modelBytes?.fill(0); }
-  const settings = join(source, 'settings.json');
+  const readConfig = (name: string) => {
+    const path = join(source, name);
+    if (!existsSync(path)) return undefined;
+    const bytes = readAuthBytes(path);
+    try { return JSON.parse(bytes.toString('utf8')); }
+    catch { throw new Error('review_pi_config_invalid'); }
+    finally { bytes.fill(0); }
+  };
+  const settings = readConfig('settings.json');
   let provider: string | undefined;
-  if (existsSync(settings)) {
-    const bytes = readAuthBytes(settings);
-    try {
-      const { defaultProvider, defaultModel, defaultThinkingLevel } = JSON.parse(bytes.toString('utf8'));
-      provider = defaultProvider;
-      copyConfig('settings.json', Buffer.from(JSON.stringify({ defaultProvider, defaultModel, defaultThinkingLevel })));
-    } finally { bytes.fill(0); }
+  if (settings !== undefined) {
+    const { defaultProvider, defaultModel, defaultThinkingLevel } = settings;
+    provider = defaultProvider;
+    copyConfig('settings.json', Buffer.from(JSON.stringify({ defaultProvider, defaultModel, defaultThinkingLevel })));
   } else copyConfig('settings.json');
+  const models = readConfig('models.json');
+  if (models !== undefined) {
+    if (typeof provider !== 'string' || !provider) throw new Error('review_pi_provider_unverified');
+    const selected = Buffer.from(JSON.stringify({ providers: { [provider]: models.providers?.[provider] } }));
+    try { copyConfig('models.json', selected); } finally { selected.fill(0); }
+  } else copyConfig('models.json');
   const auth = join(source, 'auth.json'), destination = join(home, 'auth.json');
   if (!reuse && !existsSync(auth)) return { home, auth_copied: false, mode: '0600' };
   if (typeof provider !== 'string' || !provider) throw new Error('review_pi_provider_unverified');
@@ -137,8 +154,12 @@ export function removeCopiedAuth(output: string, kind: 'codex' | 'pi' = 'codex')
     let stat;
     try { stat = lstatSync(home); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' }; throw error; }
     if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(home) !== home) return { status: 'cleanup_pending' };
-    try { unlinkSync(join(home, 'auth.json')); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' }; throw error; }
-    return { status: 'removed' };
+    let removed = false, pending = false;
+    for (const name of kind === 'pi' ? ['auth.json', 'models.json'] : ['auth.json']) {
+      try { unlinkSync(join(home, name)); removed = true; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') pending = true; }
+    }
+    return { status: pending ? 'cleanup_pending' : removed ? 'removed' : 'absent' };
   } catch { return { status: 'cleanup_pending' }; }
 }
 

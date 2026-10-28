@@ -372,9 +372,11 @@ test('Pi review home projects model settings and copies only the selected provid
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model',
     defaultThinkingLevel: 'high', packages: ['unsafe-package'], extensions: ['unsafe-extension'], skills: ['unsafe-skill'] }));
   const credentials = { 'fixture-provider': { type: 'api_key', key: 'fixture-selected-key' }, other: { type: 'api_key', key: 'fixture-other-key' } };
+  const models = { providers: { 'fixture-provider': { apiKey: 'fixture-selected-model-key' }, other: { apiKey: 'fixture-other-model-key' } } };
+  writeFileSync(join(agent, 'models.json'), JSON.stringify(models));
   writeFileSync(join(agent, 'auth.json'), JSON.stringify(credentials));
   for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
-  const prepared = preparePiHome(output, source, 60000), home = prepared.home;
+  const prepared = preparePiHome(output, agent, 60000), home = prepared.home;
   expect(lstatSync(home).mode & 0o777).toBe(0o700);
   expect(readdirSync(home).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
@@ -382,15 +384,15 @@ test('Pi review home projects model settings and copies only the selected provid
   expect(lstatSync(join(home, 'auth.json')).mode & 0o777).toBe(0o600);
   expect(JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8'))).toEqual({ 'fixture-provider': credentials['fixture-provider'] });
   expect(JSON.parse(readFileSync(join(agent, 'auth.json'), 'utf8'))).toEqual(credentials);
-  expect(readFileSync(join(home, 'models.json'), 'utf8')).toBe('{}');
-  expect(preparePiHome(output, source, 60000, true)).toEqual(prepared);
+  expect(JSON.parse(readFileSync(join(home, 'models.json'), 'utf8'))).toEqual({ providers: { 'fixture-provider': models.providers['fixture-provider'] } });
+  expect(preparePiHome(output, agent, 60000, true)).toEqual(prepared);
   const noCredentialOutput = join(root, 'no-selected-credential'); mkdirSync(noCredentialOutput);
   writeFileSync(join(agent, 'auth.json'), JSON.stringify({ other: credentials.other }));
-  const noCredential = preparePiHome(noCredentialOutput, source, 60000);
+  const noCredential = preparePiHome(noCredentialOutput, agent, 60000);
   expect(noCredential.auth_copied).toBe(false);
   expect(existsSync(join(noCredential.home, 'auth.json'))).toBe(false);
   const unsafe = join(root, 'unsafe'); mkdirSync(unsafe); symlinkSync(home, join(unsafe, '.pi-agent'));
-  expect(() => preparePiHome(unsafe, source, 60000)).toThrow('review_pi_home_unsafe');
+  expect(() => preparePiHome(unsafe, agent, 60000)).toThrow('review_pi_home_unsafe');
 });
 
 test('Pi review home rejects changes to copied model and projected settings bytes on reuse', async () => {
@@ -401,11 +403,11 @@ test('Pi review home rejects changes to copied model and projected settings byte
   mkdirSync(agent, { recursive: true }); mkdirSync(output);
   writeFileSync(join(agent, 'models.json'), '{}');
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
-  const { home } = preparePiHome(output, source, 60000);
+  const { home } = preparePiHome(output, agent, 60000);
   for (const name of ['models.json', 'settings.json']) {
     const path = join(home, name), original = readFileSync(path);
     writeFileSync(path, '{"provider":"changed"}');
-    expect(() => preparePiHome(output, source, 60000)).toThrow('review_pi_config_changed');
+    expect(() => preparePiHome(output, agent, 60000)).toThrow('review_pi_config_changed');
     writeFileSync(path, original);
   }
 });
@@ -417,19 +419,54 @@ test('Pi OAuth must outlive the run; selected copies use the shared cleanup stat
   const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
   mkdirSync(agent, { recursive: true }); mkdirSync(output);
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
+  writeFileSync(join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { apiKey: 'fixture-selected-model-key' }, other: { apiKey: 'fixture-other-model-key' } } }));
   const auth = join(agent, 'auth.json');
   writeFileSync(auth, JSON.stringify({ fixture: { type: 'oauth', access: 'fixture-access', refresh: 'fixture-refresh', expires: Date.now() + 30000 } }));
-  expect(() => preparePiHome(output, source, 60000)).toThrow('review_access_expires_within_run');
+  expect(() => preparePiHome(output, agent, 60000)).toThrow('review_access_expires_within_run');
   expect(existsSync(join(output, '.pi-agent/auth.json'))).toBe(false);
   writeFileSync(auth, JSON.stringify({ fixture: { type: 'oauth', access: 'fixture-access', refresh: 'fixture-refresh', expires: Date.now() + 3600000 } }));
   const sourceBytes = readFileSync(auth);
-  const { home } = preparePiHome(output, source, 60000);
+  const { home } = preparePiHome(output, agent, 60000);
   expect(existsSync(join(home, 'auth.json'))).toBe(true);
+  expect(Object.keys(JSON.parse(readFileSync(join(home, 'models.json'), 'utf8')).providers)).toEqual(['fixture']);
   expect(removeCopiedAuth(output, 'pi').status).toBe('removed');
+  expect(existsSync(join(home, 'models.json'))).toBe(false);
   expect(removeCopiedAuth(output, 'pi').status).toBe('absent');
   expect(readFileSync(auth).equals(sourceBytes)).toBe(true);
   mkdirSync(join(home, 'auth.json'));
+  writeFileSync(join(home, 'models.json'), '{}');
   expect(removeCopiedAuth(output, 'pi').status).toBe('cleanup_pending');
+  expect(existsSync(join(home, 'models.json'))).toBe(false);
+});
+
+test('Pi source selection honors the native override with or without a default directory', async () => {
+  const { mkdirSync } = await import('node:fs');
+  const { reviewPiSourceDirectory, preparePiHome } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-source-directory'); roots.push(root);
+  const sourceHome = join(root, 'home'), original = join(sourceHome, '.pi/agent'), custom = join(root, 'custom');
+  for (const path of [original, custom]) mkdirSync(path, { recursive: true });
+  writeFileSync(join(original, 'settings.json'), JSON.stringify({ defaultProvider: 'original', defaultModel: 'original-model' }));
+  writeFileSync(join(custom, 'settings.json'), JSON.stringify({ defaultProvider: 'custom', defaultModel: 'custom-model' }));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  try {
+    process.env.PI_CODING_AGENT_DIR = custom;
+    for (const [name, home] of [['different-default', sourceHome], ['missing-default', join(root, 'absent')]]) {
+      const output = join(root, name!); mkdirSync(output);
+      const source = await reviewPiSourceDirectory(home!);
+      expect(source).toBe(custom);
+      const prepared = preparePiHome(output, source, 60000);
+      expect(JSON.parse(readFileSync(join(prepared.home, 'settings.json'), 'utf8')).defaultProvider).toBe('custom');
+      expect(reviewSessionOptions('pi', output, prepared.home).env).toEqual({ PI_CODING_AGENT_DIR: prepared.home, OAR_PI_AGENT_DIR: null });
+    }
+    delete process.env.PI_CODING_AGENT_DIR;
+    const source = await reviewPiSourceDirectory(sourceHome);
+    expect(source).toBe(original);
+    const output = join(root, 'default'); mkdirSync(output);
+    const prepared = preparePiHome(output, source, 60000);
+    expect(JSON.parse(readFileSync(join(prepared.home, 'settings.json'), 'utf8')).defaultProvider).toBe('original');
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+  }
 });
 
 test('Pi malformed credential data fails with a fixed error instead of echoing its contents', async () => {
@@ -440,7 +477,7 @@ test('Pi malformed credential data fails with a fixed error instead of echoing i
   mkdirSync(agent, { recursive: true }); mkdirSync(output);
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
   writeFileSync(join(agent, 'auth.json'), 'fixtureCredentialValueNeverLog');
-  expect(() => preparePiHome(output, source, 60000)).toThrow(/^review_auth_source_invalid$/);
+  expect(() => preparePiHome(output, agent, 60000)).toThrow(/^review_auth_source_invalid$/);
   expect(existsSync(join(output, '.pi-agent/auth.json'))).toBe(false);
 });
 
@@ -455,7 +492,7 @@ darwinTest('Pi subprocess fixture: OAR argv and inherited Seatbelt deny source, 
   for (const path of [source, native]) writeFileSync(path, 'KEEP');
   writeFileSync(auth, JSON.stringify({ fixture: { type: 'api_key', key: 'fixture-key' } }));
   writeFileSync(join(sourceHome, '.pi/agent/settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
-  const agent = preparePiHome(output, sourceHome, 60000).home;
+  const agent = preparePiHome(output, join(sourceHome, '.pi/agent'), 60000).home;
   const authBytes = readFileSync(auth);
   const paths = { subject: owner, primary: owner, ownerRecord: owner, journal: owner, gitCommonDir: owner, output };
   const policyFile = join(owner, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
@@ -467,7 +504,7 @@ const targets=JSON.parse(process.env.FIXTURE_TARGETS);
 const denied=()=>targets.map(file=>{try{fs.writeFileSync(file,'CHANGED');return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}});
 const child=cp.spawnSync(process.execPath,['-e',"const fs=require('node:fs');console.log(JSON.stringify(JSON.parse(process.env.FIXTURE_TARGETS).map(file=>{try{fs.writeFileSync(file,'CHANGED');return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}})))"],{encoding:'utf8'});
 let signalDenied=false;try{process.kill(Number(process.env.FIXTURE_HOST_PID),'SIGUSR1')}catch(e){signalDenied=e.code==='EPERM'}
-fs.writeFileSync(path.join(process.cwd(),'fixture-evidence.json'),JSON.stringify({fixture:true,argv:process.argv.slice(2),denied:denied(),child:JSON.parse(child.stdout),signalDenied}));
+fs.writeFileSync(path.join(process.cwd(),'fixture-evidence.json'),JSON.stringify({fixture:true,argv:process.argv.slice(2),agentDirectory:process.env.PI_CODING_AGENT_DIR,denied:denied(),child:JSON.parse(child.stdout),signalDenied}));
 fs.writeFileSync(path.join(process.env.OAR_PI_RPC_DIRECTORY,'ready'),JSON.stringify({version:'1.4.0',modelRegistered:true}));
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);process.stdout.write(JSON.stringify({type:'response',id:m.id,command:m.type,success:true,data:{sessionId:'fixture-pi',thinkingLevel:'off',model:{provider:'fixture',id:'review'}}})+'\n')});
 `);
@@ -483,10 +520,11 @@ await assert.rejects(openReviewHost({...spec,launcher:${JSON.stringify(vendor)}}
 const host=await openReviewHost(spec,()=>{});
 try{console.log(JSON.stringify({fixture:true,model:host.model('pi')}))}finally{await host.dispose()}`);
   const result = spawnSync(node, ['--disable-sigusr1', driver], { encoding: 'utf8', timeout: 20000,
-    env: { ...process.env, TMPDIR: reviewHostTemporaryDirectory(output) } });
+    env: { ...process.env, PI_CODING_AGENT_DIR: join(sourceHome, '.pi/agent'), OAR_PI_AGENT_DIR: join(sourceHome, '.pi/agent'), TMPDIR: reviewHostTemporaryDirectory(output) } });
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ fixture: true, model: 'fixture/review' });
   const observed = JSON.parse(readFileSync(join(output, 'fixture-evidence.json'), 'utf8'));
+  expect(observed.agentDirectory).toBe(agent);
   for (const flag of ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-mcp', '--no-approve']) expect(observed.argv).toContain(flag);
   expect(observed.argv).toContain('--offline'); expect(observed.argv).toContain('-e');
   expect(observed.denied).toEqual([true, true, true, true]);

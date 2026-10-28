@@ -672,12 +672,15 @@ darwinTest('explicit Pi review: scripted OAR fixture records its reported model 
   const nativeHome = join(f.options.endpoint.home, '.pi/agent');
   mkdirSync(nativeHome, { recursive: true });
   writeFileSync(join(nativeHome, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'reviewer' }));
+  writeFileSync(join(nativeHome, 'models.json'), JSON.stringify({ providers: { 'fixture-provider': { apiKey: 'fixture-model-key' }, other: { apiKey: 'fixture-unused-model-key' } } }));
   const credentials = { 'fixture-provider': { type: 'api_key', key: 'fixture-only-key' }, other: { type: 'api_key', key: 'fixture-unused-key' } };
   writeFileSync(join(nativeHome, 'auth.json'), JSON.stringify(credentials));
   let turns = 0;
   const session = await scriptedRuntime({ id: 'fixture-pi', model: 'fixture-provider/reviewer',
     turn: async ({ say }) => { turns++; say('[scripted OAR fixture opinion]'); } }).session({ kind: 'available', via: 'bundled' }, { cwd: f.reviewerRepo });
   const host = new OarReviewHost(session, () => {});
+  const previousPiDirectory = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = nativeHome;
   try {
     const { model: _fixtureModel, ...baseEffects } = f.effects;
     const effects: ReviewEffects = { ...baseEffects,
@@ -705,14 +708,22 @@ darwinTest('explicit Pi review: scripted OAR fixture records its reported model 
     const owned = readSessionArtifact<{ task: string }>(join(reviewLocation(f.root, f.options.authority).dir, 'session.json'));
     const copy = join(f.reviewerRepo, '.ai/harness/runs/task-agent-outbox', importedTaskDir(f.root, owned.task, 'deep-reasoner').split('/').pop()!, '.pi-agent/auth.json');
     expect(JSON.parse(readFileSync(copy, 'utf8'))).toEqual({ 'fixture-provider': credentials['fixture-provider'] });
+    const copiedModels = join(resolve(copy, '..'), 'models.json');
+    expect(Object.keys(JSON.parse(readFileSync(copiedModels, 'utf8')).providers)).toEqual(['fixture-provider']);
     await closeReview(f.root, f.options.authority, false, f.home, { ...effects, dispose: async () => { await host.dispose(); } });
     expect(existsSync(copy)).toBe(false);
+    expect(existsSync(copiedModels)).toBe(false);
     expect(JSON.parse(readFileSync(join(nativeHome, 'auth.json'), 'utf8'))).toEqual(credentials);
-  } finally { await host.dispose(); }
+  } finally {
+    await host.dispose();
+    if (previousPiDirectory === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousPiDirectory;
+  }
 });
 
 darwinTest('Pi review rejects an unknown actual model with the existing error', async () => {
   const f = reviewFixture();
+  const previousPiDirectory = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = join(f.options.endpoint.home, '.pi/agent');
   const { model: _fixtureModel, ...baseEffects } = f.effects;
   const effects: ReviewEffects = { ...baseEffects, installation: async () => ({ kind: 'available', via: 'bundled' }),
     bindNative: input => ({ protocol: 1, kind: 'repo-harness-native-task-session', host: 'pi', native_session_id: 'fixture-native',
@@ -723,8 +734,12 @@ darwinTest('Pi review rejects an unknown actual model with the existing error', 
         JSON.stringify({ request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: null }));
       return request;
     } };
-  await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
-  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+  try {
+    await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
+    expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+  } finally {
+    if (previousPiDirectory === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousPiDirectory;
+  }
 });
 
 darwinTest('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {

@@ -18,7 +18,7 @@ import { taskRepository } from '../git/task-repository';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, preparePiHome, removeCopiedAuth } from './review-isolation';
+import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, preparePiHome, reviewPiSourceDirectory, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot, AvailableInstallation } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
@@ -312,7 +312,8 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (session.actual_harness === 'pi') {
       authOutput = outbox; authKind = 'pi';
       const marker = join(dir, 'auth-copy.json');
-      const prepared = preparePiHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir,
+      const sourceDirectory = await reviewPiSourceDirectory(options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
+      const prepared = preparePiHome(outbox, sourceDirectory,
         timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
       isolatedHome = prepared.home;
       if (prepared.auth_copied && !existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
