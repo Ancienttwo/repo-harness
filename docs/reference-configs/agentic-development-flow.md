@@ -47,7 +47,7 @@ Size PR CI by the diff, the same as step 4. A full suite on each small PR spends
   - Adapted from the pstack ketchup and recall skills (cursor/plugins, MIT, Lauren Tan).
 
 ## Lessons Retro
-`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. The retro and maintenance triage read the ledger. Sessions do not read it at start, and root files do not tell them to. A lesson reaches a session through its enforcer or through a rule promoted into the root files.
+`tasks/lessons.md` is the one lessons ledger. It has the role of a root `LESSONS.md`. Do not add a second lessons file. The retro and maintenance triage read the ledger. Sessions read its active lessons at start. Current code and evidence take precedence. Keep the path; do not move lessons to docs/.
 
 - The ledger keeps one watermark line before the first entry: `reviewed-through: <full commit SHA>`. If the line is missing, the first retro reviews the last 24 hours and adds it.
 - Each night, review the default-branch history after the watermark: `git log --first-parent <watermark>..origin/main`. Skip commits that change only `tasks/lessons.md`.

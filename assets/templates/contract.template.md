@@ -47,7 +47,6 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`
-- Deferred-goal ledger: `tasks/todos.md`
 - Review file: `{{REVIEW_FILE}}`
 - Notes file: `{{NOTES_FILE}}`
 - Run snapshots: `.ai/harness/runs/`
@@ -74,7 +73,6 @@ This is a proposal, not an admission payload. The upstream Bot supplies the comp
 allowed_paths:
   - docs/spec.md
   - plans/
-  - tasks/todos.md
   - {{CONTRACT_FILE}}
   - {{REVIEW_FILE}}
   - {{NOTES_FILE}}

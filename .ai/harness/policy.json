@@ -30,7 +30,6 @@
     ]
   },
   "tasks": {
-    "todo_file": "tasks/todos.md",
     "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches",
@@ -66,7 +65,7 @@
     "dir": "_ref",
     "mode": "external-ignored",
     "commit_policy": "never commit _ref contents",
-    "rule": "use _ref as an occasional ignored external reference checkout cache for upstream/source comparison only; refresh from external sources instead of editing as product code; when it influences a decision, cite the source repo plus commit/tag and path in tasks/notes/ or docs/researches/"
+    "rule": "use _ref as an occasional ignored external reference checkout cache for upstream/source comparison only; refresh from external sources instead of editing as product code; when it influences a decision, cite the source repo plus commit/tag and path in docs/researches/"
   },
   "operations": {
     "dir": "deploy",
@@ -115,22 +114,16 @@
     "dir": "tasks/workstreams",
     "scope": "capability",
     "projection": "off",
-    "todo_projection": "tasks/todos.md",
     "rule": "Historical workstream projections are archived. Ordinary progress and verification live in the PR description."
   },
   "information_lifecycle": {
-    "notes": {
-      "dir": "tasks/notes",
-      "purpose": "task-local implementation decisions, deviations, tradeoffs, and open questions",
-      "promotion": "archive on workflow close; promote only repeated or durable findings"
-    },
     "evidence": {
       "snapshots_dir": ".ai/harness/runs",
       "cache_globs": [
         ".ai/harness/checks/*.latest.json",
         ".ai/harness/checks/*.latest.md"
       ],
-      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
+      "purpose": "PR and CI hold verification and review; seat-local runs are runtime evidence."
     },
     "assets": {
       "sources": [

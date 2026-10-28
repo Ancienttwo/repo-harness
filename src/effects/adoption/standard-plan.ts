@@ -24,8 +24,6 @@ const STANDARD_DIRS = [
   "tasks",
   "tasks/archive",
   "tasks/contracts",
-  "tasks/reviews",
-  "tasks/notes",
   "tasks/workstreams",
   "docs",
   "docs/researches",
@@ -62,8 +60,6 @@ const MINIMAL_DIRS = [
   "plans",
   "tasks",
   "tasks/contracts",
-  "tasks/reviews",
-  "tasks/notes",
   "docs",
   ".ai/harness/checks",
   ".ai/harness/handoff",
@@ -301,7 +297,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       ],
     },
     tasks: {
-      todo_file: "tasks/todos.md",
       current_status_file: "tasks/current.md",
       lessons_file: "tasks/lessons.md",
       research_dir: "docs/researches",
@@ -433,7 +428,7 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 ## Workflow Contract
 
 - Use first principles, one source of truth, and no steady-state compatibility paths.
-- Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state and \`tasks/todos.md\` is the deferred-goal ledger.
+- Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state.
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Create task worktrees only at \`/tmp/<repo>-wt-<slug>\` (Windows: the OS temp directory): use \`repo-harness run contract-worktree start --plan <plan-file>\`, or \`git worktree add\` with that path. Never create one beside the main checkout (\`../\`).
 - Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.
@@ -465,7 +460,7 @@ function deployReadmeContent(): string {
 function researchReadmeContent(): string {
   return `# Research Reports
 
-Durable research reports live in this directory as topic-scoped Markdown files. Keep task-local implementation decisions in \`tasks/notes/\` and correction-derived rules in \`tasks/lessons.md\`.
+Durable research reports live in this directory as topic-scoped Markdown files. Keep correction-derived rules in \`tasks/lessons.md\`.
 `;
 }
 
@@ -483,10 +478,6 @@ Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
 `;
 }
 
-function isCanonicalDeferredLedger(content: string): boolean {
-  return /^# Deferred Goal Ledger\s*$/m.test(content) && /^> \*\*Status\*\*:\s*Backlog\s*$/m.test(content);
-}
-
 function archiveLegacyContent(repoRoot: string, operations: AdoptionOperation[], path: string, content: string, reason: string): void {
   const existing = fileContent(repoRoot, path);
   if (existing !== undefined) {
@@ -496,28 +487,6 @@ function archiveLegacyContent(repoRoot: string, operations: AdoptionOperation[],
     return;
   }
   operations.push(writeOperation(repoRoot, path, content, reason, { risk: "medium" }));
-}
-
-function addTodoMigrations(repoRoot: string, operations: AdoptionOperation[]): void {
-  const ledger = adoptionTemplateFile(repoRoot, "deferredGoalLedger");
-  const current = fileContent(repoRoot, "tasks/todos.md");
-  const legacyPlural = current !== undefined && !isCanonicalDeferredLedger(current) ? current : undefined;
-  const singular = fileContent(repoRoot, "tasks/todo.md");
-  if (legacyPlural !== undefined || singular !== undefined) {
-    const archive = "tasks/archive/legacy-tasks-todo.md";
-    const archived = [
-      legacyPlural === undefined ? undefined : `# Legacy Tasks Todos Import\n\n${legacyPlural.trimEnd()}\n`,
-      singular === undefined ? undefined : `# Legacy Tasks Todo Import\n\n${singular.trimEnd()}\n`,
-    ].filter((entry): entry is string => entry !== undefined).join("\n");
-    archiveLegacyContent(repoRoot, operations, archive, archived, "Archive legacy todo ledgers before normalizing the canonical deferred-goal ledger");
-  }
-  if (legacyPlural !== undefined) {
-    operations.push(writeOperation(repoRoot, ledger.path, ledger.content, "Normalize tasks/todos.md as the canonical deferred-goal ledger", { risk: "medium" }));
-  }
-  if (singular !== undefined) {
-    const move = moveOperation(repoRoot, "tasks/todo.md", "tasks/todo.md.migrated.bak", "Retire legacy singular todo file after archival");
-    if (move) operations.push(move);
-  }
 }
 
 function addLegacyDocumentMigrations(repoRoot: string, operations: AdoptionOperation[]): void {
@@ -632,8 +601,6 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
     "spec.template.md",
     "plan.template.md",
     "contract.template.md",
-    "review.template.md",
-    "implementation-notes.template.md",
     "sprint.template.md",
     "prd.template.md",
     "design-brief.template.md",
@@ -793,11 +760,10 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   for (const path of opts.mode === "minimal" ? MINIMAL_DIRS : STANDARD_DIRS) {
     operations.push(mkdirOperation(opts.repoRoot, path, "Ensure canonical repo-harness workflow directory exists"));
   }
-  for (const template of ["spec", "deferredGoalLedger", "currentStatus", "lessonsLog"] as const) {
+  for (const template of ["spec", "currentStatus", "lessonsLog"] as const) {
     const file = adoptionTemplateFile(opts.repoRoot, template);
     operations.push(writeOperation(opts.repoRoot, file.path, file.content, file.reason, { ifMissing: true }));
   }
-  addTodoMigrations(opts.repoRoot, operations);
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", renderWorkflowContractMarker(declaredMinimumHarnessVersion(fileContent(opts.repoRoot, ".ai/harness/workflow-contract.json"))), "Install the repo-harness opt-in marker"));
 
   const gitignore = fileContent(opts.repoRoot, ".gitignore") ?? "";
@@ -822,7 +788,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   }
   operations.push(writeOperation(opts.repoRoot, ".ai/context/context-map.json", jsonContent(jsonFile(opts.repoRoot, ".ai/context/context-map.json") ?? {
     version: 1,
-    root_context_files: ["CLAUDE.md", "AGENTS.md", "docs/spec.md", "tasks/current.md", "tasks/todos.md", ".ai/context/capabilities.json", ".ai/harness/policy.json"],
+    root_context_files: ["CLAUDE.md", "AGENTS.md", "docs/spec.md", "tasks/current.md", ".ai/context/capabilities.json", ".ai/harness/policy.json"],
     discoverable_contexts: [],
   }), "Install canonical context map when absent", { ifMissing: true }));
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/brain-manifest.json", jsonContent(jsonFile(opts.repoRoot, ".ai/harness/brain-manifest.json") ?? {
