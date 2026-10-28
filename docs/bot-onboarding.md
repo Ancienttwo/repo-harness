@@ -60,6 +60,40 @@ When Worker-Herdr is the host doing first-connect:
 6. Do not relay a PM-owned go again. When PM owns the thread, stay silent
    unless @mentioned.
 
+### Seat lifecycle and Event-wake (A)
+
+Seat states: **open → running → blocked (room widget) → done → closed**.
+
+Owner-locked completion order (anti-babysit):
+
+1. **Primary:** Worker-Herdr seat Done → short **room** report with PR, tip,
+   and evidence → close its own panes/agents. That room message wakes
+   tinkabot/Grok. Grok and tinkabot must not poll `herdr agent wait` or
+   babysit Codex; this burns Grok quota.
+2. **Inside the Worker-Herdr seat only:** at most **one** `herdr agent wait`,
+   with a hard timeout of **15–30 minutes**. On timeout, mark **blocked** and
+   post a room widget. **No chained waits.** Do not resume just to ping liveness.
+3. **Sparse routine fallback:** scan open seats, leftover panes, and worktrees
+   every few hours or daily. Report only when something is wrong; stay silent
+   when clean. Follow the report-only orphan audit below.
+
+Product/daemon `task_done` webhooks (for example, BYOK) are **not** a Herdr
+seat Done signal. Do not treat them as seat completion.
+
+### Dispatch brief: mandatory fields (HARD)
+
+Every coding / Herdr seat brief must include:
+
+- `product=` (this guide: `product=repo-harness`).
+- Checkout (absolute path) and worktree root.
+- Pane/agent ID: require the worker to return live IDs when seated.
+- Verify command.
+- Done → Worker-Herdr closes its own panes/agents.
+- Merge report = prune result or `kept open Draft #N`.
+
+Incomplete brief = do not seat. The brief's `product=` overrides paths for
+that seat. Other products get their paths from the brief only.
+
 ## Cursor Worker model lanes
 
 Cursor bills internal and external model pools separately. When routing to
@@ -76,8 +110,9 @@ Formal production coding stays with Worker-Herdr (Herdr), not cloud.
 Use [Control Bot integration boundary](control-bot-boundary.md) for lean
 load/exclude rules. Exclude `repo-harness-cross-review`,
 `repo-harness-herdr-portal`, `repo-harness-chatgpt`, and `review admit` /
-`review revoke` by default. Skip the root router's required `herdr` skill
-unless the host drives Herdr.
+`review revoke` by default. Only Worker-Herdr loads the `herdr` skill.
+Bots drive Herdr via Shell on the coding machine → local Herdr socket.
+Management bots do not sit inside TUI panes watching each other.
 
 ## repo-harness seat defaults on kitos-Mac-mini
 
@@ -91,10 +126,17 @@ unless the host drives Herdr.
 - Path: `/tmp/repo-harness-wt-<slug>` (Windows: `os.tmpdir()`).
 - Do **not** conflate these with Herdr host worktrees above.
 
-Other product repos keep their own checkout/worktree conventions outside this
-open-source guide.
+These defaults are for repo-harness only. Other product checkout/worktree
+paths must come from the dispatch brief, not this open-source guide.
 
 ## Cleanup implementation status
+
+**Orphan pane / worktree audit — report-only:** a sparse post-merge or
+scheduled audit may list leftover panes/agents opened by Worker-Herdr and
+orphan/merged worktrees. Do not auto-close or delete them. The only automatic
+deletion is tinkabot's merge-time prune of **merged / clean / unowned**
+worktrees; keep open Drafts. Other deletions need an Owner / room gate.
+The audit does not replace Worker-Herdr's own Done cleanup.
 
 The [pane auto-close plan](../plans/plan-20261005-pane-auto-close.md) is
 **Design-only**. Bot brief-pane auto-close is **NOT implemented**.
