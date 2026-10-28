@@ -74,6 +74,14 @@
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
     "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@cloudflare/kumo": "2.14.0",
     "@colbymchenry/codegraph": "1.6.2",
@@ -101,5 +109,10 @@
     "archctx-contracts": "0.9.4",
     "commander": "^15.0.0",
     "express": "^5.2.1"
+  },
+  "pi": {
+    "extensions": [
+      "./src/pi/extension.ts"
+    ]
   }
 }

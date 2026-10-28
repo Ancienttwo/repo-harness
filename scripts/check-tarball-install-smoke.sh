@@ -60,6 +60,10 @@ const required = [
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",
+  "dist/hook-entry.js",
+  "src/pi/extension.ts",
+  "src/pi/hook-bridge.ts",
+  "src/pi/compat.ts",
   "SKILL.md",
   "assets/skill-commands/repo-harness-check/SKILL.md",
   "assets/templates/helpers/capability-resolver.ts",
@@ -129,6 +133,35 @@ bun add "$TARBALL_PATH" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
+INSTALLED_PACKAGE="$APP_DIR/node_modules/$PACKAGE_NAME"
+
+# Pi loads the installed package through package.json#pi. Install it into an
+# isolated Pi agent directory with the Pi that the package's own dependency
+# tree resolves, then remove it again. The real Pi settings are never read.
+bun - "$INSTALLED_PACKAGE" <<'JS_EOF'
+const [, , root] = process.argv;
+const { existsSync } = await import("node:fs");
+const pkg = await Bun.file(`${root}/package.json`).json();
+const extensions = pkg.pi?.extensions;
+if (!Array.isArray(extensions) || extensions.length !== 1 || !existsSync(`${root}/${extensions[0]}`) || pkg.pi.skills !== undefined) {
+  console.error(`[tarball-smoke] ERROR: package.json#pi must name exactly the shipped extension and no skills: ${JSON.stringify(pkg.pi)}`);
+  process.exit(1);
+}
+if (pkg.peerDependencies?.["@earendil-works/pi-coding-agent"] !== "*" || pkg.peerDependenciesMeta?.["@earendil-works/pi-coding-agent"]?.optional !== true) {
+  console.error("[tarball-smoke] ERROR: @earendil-works/pi-coding-agent must be an optional peer with range *");
+  process.exit(1);
+}
+JS_EOF
+PI_CLI="$(cd "$INSTALLED_PACKAGE" && bun -e 'console.log(Bun.resolveSync("@earendil-works/pi-coding-agent/package.json", process.cwd()).replace(/package\.json$/u, "dist/bundle/cli.js"))')"
+PI_AGENT_DIR="$TMP_DIR/pi-agent"
+pi_smoke() { env PI_CODING_AGENT_DIR="$PI_AGENT_DIR" node "$PI_CLI" "$@" </dev/null; }
+pi_smoke install "$INSTALLED_PACKAGE" >/dev/null
+if ! pi_smoke list | grep -qxF "    $(cd "$INSTALLED_PACKAGE" && pwd -P)"; then
+  echo "[tarball-smoke] ERROR: pi list does not show the installed repo-harness package" >&2
+  pi_smoke list >&2 || true
+  exit 1
+fi
+pi_smoke remove "$INSTALLED_PACKAGE" >/dev/null
 # This smoke verifies the installed package runtime even when the operator shell
 # is configured to route development CLIs to another source checkout.
 unset REPO_HARNESS_SOURCE_ROOT
