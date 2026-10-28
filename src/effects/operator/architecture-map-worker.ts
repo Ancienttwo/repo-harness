@@ -9,10 +9,11 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
+import type { DependencyConstraintEvaluationV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
 import {
   ARCHCTX_REQUIRED_VERSION,
   decodeArchitectureDebtReport,
+  decodeConstraintEvaluation,
   decodeDocsAnchorsReport,
   decodeFlowSelectorCheck,
   decodeRefImpact,
@@ -28,6 +29,7 @@ import {
   type ArchitectureChangesLayerV1,
   type ArchitectureDebtItemV1,
   type ArchitectureDecisionsLayerV1,
+  type ArchitectureLayerViolationV1,
   type ArchitectureMapDependencyInput,
   type ArchitectureMapDependencyReason,
   type ArchitectureMapImportV1,
@@ -56,6 +58,7 @@ export type ArchitectureMapWorkerResult =
   | { readonly id: string; readonly ok: false; readonly reason: 'model_unavailable' };
 
 const MODEL_ROOT = '.archcontext/model';
+const CONSTRAINT_ROOT = `${MODEL_ROOT}/constraints`;
 /** `archctx resolve` echoes each node's footprint per path; this many paths stay well under its 8 MiB output cap. */
 const RESOLVE_BATCH = 2_000;
 const ARCHCTX_TIMEOUT_MS = 60_000;
@@ -98,7 +101,7 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
 
 /**
  * What archctx reads besides the commit. `archctx resolve`, `impact
- * --paths-from`, `deps`, `debt`, `docs anchors` and `flows check` read the
+ * --paths-from`, `deps`, `debt`, `docs anchors`, `flows check` and `constraints check` read the
  * worktree model, and the CodeGraph index covers the working tree, so their
  * answers describe the commit only while HEAD names it and the model, or the
  * whole tree, is clean. null: git could not answer.
@@ -180,7 +183,9 @@ export function recheckLayers(
   const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = read.violations;
   return {
     pull_requests: keepIf(read.pull_requests, model),
-    violations: { debt: keepIf(debt, tree), flows: keepIf(flows, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree), layer_direction: layerDirection },
+    violations: {
+      debt: keepIf(debt, tree), flows: keepIf(flows, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree), layer_direction: keepIf(layerDirection, tree),
+    },
   };
 }
 
@@ -421,6 +426,67 @@ function readFlows(root: string, capabilities: ReadonlySet<string>): Architectur
   };
 }
 
+/**
+ * Ids of the commit's `layer-direction` constraints. `constraints check` lists
+ * the ids it evaluated but not their rule, so the committed constraint files
+ * tell a layer-direction pass from a model with no such constraint. null: git
+ * could not read them.
+ */
+function layerDirectionConstraints(root: string, commit: string): ReadonlySet<string> | null {
+  const listed = git(root, ['ls-tree', '-z', '--name-only', commit, '--', `${CONSTRAINT_ROOT}/`]);
+  if (listed.status !== 0) return null;
+  const ids = new Set<string>();
+  for (const path of listed.stdout.toString('utf8').split('\0').filter(name => name.endsWith('.yaml') || name.endsWith('.yml'))) {
+    const blob = git(root, ['cat-file', 'blob', `${commit}:${path}`]);
+    if (blob.status !== 0) return null;
+    let constraint: unknown;
+    try { constraint = Bun.YAML.parse(blob.stdout.toString('utf8')); } catch { return null; }
+    if (isRecord(constraint) && isRecord(constraint.rule) && constraint.rule.type === 'layer-direction' && typeof constraint.id === 'string') ids.add(constraint.id);
+  }
+  return ids;
+}
+
+/**
+ * `archctx constraints check` for the commit's `layer-direction` constraints:
+ * file imports against `model.layers`, counted per owner pair. An endpoint that
+ * no layered node owns, or incomplete code facts, make the answer undetermined.
+ */
+function readLayerDirection(root: string, commit: string, checkout: CheckoutState, layers: readonly string[] | undefined, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['layer_direction'] {
+  if (layers === undefined) return { state: 'unavailable', reason: 'model_layers_undeclared' };
+  const gate = treeGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate === 'unreadable' ? 'archctx_failed' : gate };
+  const constraints = layerDirectionConstraints(root, commit);
+  if (constraints === null) return ARCHCTX_FAILED;
+  if (constraints.size === 0) return { state: 'unavailable', reason: 'layer_direction_undeclared' };
+  const read = runArchctx(root, ['constraints', 'check', '--json']);
+  if (!read.ok) return archctxGap(read.error);
+  const report = decoded(decodeConstraintEvaluation, read.data);
+  return report === null ? ARCHCTX_FAILED : layerDirectionSection(report, constraints, known);
+}
+
+/**
+ * The map's form of a `constraints check` report for the given layer-direction
+ * constraints. Violations of other constraints are left out. A constraint that
+ * archctx did not evaluate, or a violation without layers or with a node the
+ * map lacks, is `archctx_failed`.
+ */
+export function layerDirectionSection(report: DependencyConstraintEvaluationV1, constraints: ReadonlySet<string>, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['layer_direction'] {
+  if (![...constraints].every(constraint => report.constraintIds.includes(constraint))) return ARCHCTX_FAILED;
+  if (report.status === 'undetermined' || report.coverage !== 'complete') {
+    const reason = report.reasonCodes.includes('layer-endpoint-unclassified') ? 'layer_endpoint_unclassified'
+      : report.reasonCodes.some(code => code === 'code-facts-unavailable' || code === 'code-facts-stale') ? 'code_facts_unavailable' : 'code_facts_incomplete';
+    return { state: 'unavailable', reason };
+  }
+  const edges = new Map<string, ArchitectureLayerViolationV1>();
+  for (const violation of report.violations.filter(entry => constraints.has(entry.constraintId))) {
+    const { fromNode: source, toNode: target, fromLayer, toLayer } = violation;
+    if (fromLayer === undefined || toLayer === undefined || !known.has(source) || !known.has(target)) return ARCHCTX_FAILED;
+    const key = `${source}\0${target}`;
+    edges.set(key, { source, target, source_layer: fromLayer, target_layer: toLayer, imports: (edges.get(key)?.imports ?? 0) + 1 });
+  }
+  return { state: 'ok', imports: report.importEdgeCount, edges: [...edges.values()] };
+}
+
 /** The violation checks that read the CodeGraph index; each runs only on a clean tree at the commit. */
 function readViolations(root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>, capabilities: ReadonlySet<string>): Pick<CollectedViolations, 'debt' | 'flows' | 'anchors'> {
   const gate = treeGate(commit, checkout);
@@ -485,8 +551,7 @@ export function collectArchitectureMap(
     pull_requests: readPullRequests(path, commit, before, pullRequests, pullRequestBudgetMs),
     violations: {
       ...readViolations(path, commit, before, known, capabilities), dependencies: deps.undeclared,
-      // archctx checks layer direction only against ordered `model.layers`; the collector does not read that check.
-      layer_direction: { state: 'unavailable', reason: context.model.layers === undefined ? 'model_layers_undeclared' : 'layer_direction_not_read' },
+      layer_direction: readLayerDirection(path, commit, before, context.model.layers, known),
     },
   } as const;
   const after = readCheckoutState(path);
