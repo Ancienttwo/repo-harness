@@ -48,6 +48,7 @@ function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProp
     readCliInventory: async () => unavailableCliInventory(),
     readBotAccess: () => new Promise(() => {}),
     readAgentsSettings: () => new Promise(() => {}),
+    readTests: async () => ({ state: 'unavailable', reason: 'tests_pending' }),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
     ...overrides,
@@ -136,7 +137,7 @@ describe('navigation', () => {
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['worktrees', 'worktrees'], ['agents', 'agents'], ['skills', 'skills'],
-      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
+      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
         await act(async () => root?.unmount());
@@ -151,8 +152,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'worktrees', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'system', 'tools', 'settings']);
-    for (const later of ['docs', 'sessions', 'recent', 'tests']) {
+      .toEqual(['home', 'board', 'repositories', 'worktrees', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
+    for (const later of ['docs', 'sessions', 'recent']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });

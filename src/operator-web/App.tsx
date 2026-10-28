@@ -41,10 +41,12 @@ import {
   fetchCiRepairs,
   fetchExecution,
   fetchRepositoryHead,
+  fetchTestsSnapshot,
   useRepositoryHead,
   type CiRepairsReader,
   type ExecutionReader,
   type RepositoryHeadReader,
+  type TestsReader,
 } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
@@ -57,6 +59,7 @@ import {
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
+import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
 import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
@@ -125,6 +128,8 @@ export interface OperatorAppProps {
   /** The agents section and runtime probe behind the Settings page, and its one write. */
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly writeAgentsSettings?: AgentsSettingsWriter;
+  /** The read-only tests page's snapshot read, injectable on the same terms. */
+  readonly readTests?: TestsReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -258,6 +263,7 @@ export function OperatorApp({
   readBotAccess = fetchBotAccess,
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
+  readTests = fetchTestsSnapshot,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -277,7 +283,9 @@ export function OperatorApp({
   const workspace = place.workspace;
   const [systemMounted, setSystemMounted] = useState(workspace === 'system');
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
-  const fleetActive = workspace === 'repository' || workspace === 'architecture';
+  // Pages that name one repository: they activate the Fleet read and own the
+  // repository switch and docs-tree head.
+  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
 
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -344,7 +352,7 @@ export function OperatorApp({
     navigate(id, null, workspaceHash(next));
     setPlace(next);
   };
-  const busy = state.kind === 'loading' && fleetActive;
+  const busy = state.kind === 'loading' && singleRepository;
 
   const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const previous = snapshotForState(stateRef.current);
@@ -373,8 +381,8 @@ export function OperatorApp({
       return false;
     }
   }, [fetchSnapshot]);
-  // Fleet feeds the repository and architecture pages only; the Board reads development activity.
-  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: fleetActive });
+  // Fleet feeds the pages that name one repository; the Board reads development activity.
+  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: singleRepository });
   const refresh = () => {
     // Explicit refresh supersedes every scoped observation.
     setRepositorySnapshot({ kind: 'idle' });
@@ -427,8 +435,7 @@ export function OperatorApp({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  // Single-repository pages name the repository they read; the board's task drawer names its item's repository.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture';
+  // The board's task drawer names its item's repository.
   const drawerItem = workspace === 'board' && place.item !== null ? devSnapshot?.items.find(item => item.id === place.item) ?? null : null;
   const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : drawerItem?.repository_id ?? null, refreshGeneration);
   const devRepositories = devSnapshot?.repositories ?? [];
@@ -502,6 +509,7 @@ export function OperatorApp({
           {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}
           {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
+          {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
