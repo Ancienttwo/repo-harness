@@ -920,10 +920,12 @@ export const observationSpawnSync: typeof child.spawnSync = ((file: string, args
 }) as typeof child.spawnSync;
 import { basename } from 'node:path';
 import {
+  execFile as execFileRaw,
   execFileSync as execFileSyncRaw,
   spawn as spawnRaw,
   spawnSync as spawnSyncRaw,
   type ChildProcess,
+  type ExecFileOptions,
   type ExecFileSyncOptions,
   type ExecFileSyncOptionsWithBufferEncoding,
   type ExecFileSyncOptionsWithStringEncoding,
@@ -1046,6 +1048,20 @@ export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions =
 export function spawnGit(args: readonly string[], options: SpawnOptions & GitCallFields = {}): ChildProcess {
   const { gitBin, env, direct: _direct, ...rest } = options;
   return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env });
+}
+
+/**
+ * Asynchronous `gitExecFileSync` for an event-loop caller: same binary and
+ * timeout resolution, stdin closed, utf8 stdout. It rejects with execFile's
+ * error on a non-zero exit, a signal or the timeout.
+ */
+export function gitExecFile(args: readonly string[], options: ExecFileOptions & GitCallFields = {}): Promise<string> {
+  const { gitBin, env, direct: _direct, timeout, ...rest } = options;
+  return new Promise((resolveOutput, reject) => {
+    const child = execFileRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env, timeout: resolveGitTimeout(timeout), encoding: 'utf8' },
+      (error, stdout) => { if (error) reject(error); else resolveOutput(stdout); });
+    child.stdin?.end();
+  });
 }
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
