@@ -175,7 +175,7 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   };
   if (layer === 'changes' && changes.state === 'ok') {
     const lines = impactLines(changes, nodeId);
-    impactFacts(changes, files => t('architecture.layer.node.changes', { files, added: lines.added, deleted: lines.deleted })
+    impactFacts(changes, files => t('architecture.layer.node.changes', { files: counted(t, files, 'file'), added: lines.added, deleted: lines.deleted })
       + (lines.unknown > 0 ? ` ${t('architecture.layer.node.lines_unknown', { count: lines.unknown })}` : ''));
   }
   if (layer === 'violations') {
@@ -198,7 +198,7 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   }
   const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
   if (layer === 'pull_requests' && impact?.state === 'ok') {
-    impactFacts(impact, files => t('architecture.layer.node.pull_request', { files, number: pullRequest! }));
+    impactFacts(impact, files => t('architecture.layer.node.pull_request', { files: counted(t, files, 'file'), number: pullRequest! }));
   }
   if (layer === 'tests' && tests.state === 'ok') {
     const entry = tests.capabilities.find(item => item.id === nodeId);
@@ -230,7 +230,7 @@ function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
   if (selected === null) {
     return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>
       <p className="detail-quiet">{t('architecture.map.pick')}</p>
-      <p className="detail-quiet">{t('architecture.map.counts', { nodes: map.nodes.length, relations: map.relations.length })}</p>
+      <p className="detail-quiet">{t('architecture.map.counts', { nodes: counted(t, map.nodes.length, 'node'), relations: counted(t, map.relations.length, 'relation') })}</p>
     </aside>;
   }
   const { node } = selected;
@@ -357,6 +357,13 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   </div>;
 }
 
+type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision';
+
+/** "1 node", "2 nodes". `atLeast` marks a count that archctx cut at its limit. Only English inflects; Chinese keeps the bare number and its own classifier. */
+function counted(t: OperatorTranslate, count: number, unit: CountUnit, atLeast = false): string {
+  return `${atLeast ? '≥' : ''}${t(count === 1 ? `architecture.unit.${unit}One` : `architecture.unit.${unit}`, { count })}`;
+}
+
 /** A layer with no data shows as unavailable; it stays selectable so its reason can be read. */
 function layerAvailable(map: ArchitectureMapV1, layer: MapLayerId): boolean {
   return layer === 'violations' ? Object.values(map.layers.violations).some(part => part.state === 'ok') : map.layers[layer].state === 'ok';
@@ -399,7 +406,10 @@ function ImpactNotes({ part, impact, t }: { readonly part: string; readonly impa
     {steps.items !== null && steps.items.length > 0 && <ul data-flow-step-list={part}>
       {steps.items.map(item => <li key={`${item.flow}:${item.outcome ?? ''}:${item.step}`}><code>{item.flow}</code> · {item.step}{item.reason_codes.length > 0 && ` · ${item.reason_codes.join(', ')}`}</li>)}
     </ul>}
-    {truncated.length > 0 && <Note part={`${part}.truncated`} reason={truncated.join(' ')}>{t('architecture.layer.truncated', { parts: truncated.join(', ') })}</Note>}
+    {truncated.length > 0 && <Note part={`${part}.truncated`} reason={truncated.join(' ')}>{[
+      t('architecture.layer.truncated', { parts: truncated.map(item => t(`architecture.layer.truncated.part.${item}`)).join(', ') }),
+      ...(truncated.includes('paths') ? [t('architecture.layer.truncated.paths')] : []),
+    ].join(' ')}</Note>}
   </>;
 }
 
@@ -420,7 +430,11 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
     }
     const count = (kind: 'nodes' | 'relations' | 'flows', change: 'added' | 'removed' | 'changed') => changes.model.filter(item => item.kind === kind && item.change === change).length;
     return <div className="architecture-layer-summary" data-layer-summary="changes">
-      <p>{t('architecture.layer.changes.summary', { commits: changes.commits, files: changes.paths.length, unowned: changes.unowned_paths.length })}{' '}
+      <p>{t('architecture.layer.changes.summary', {
+        commits: counted(t, changes.commits, 'commit'),
+        files: counted(t, changes.paths.length, 'file', changes.truncated.paths),
+        unowned: `${changes.truncated.paths ? '≥' : ''}${changes.unowned_paths.length}`,
+      })}{' '}
         <time dateTime={changes.since}>{new Date(changes.since).toLocaleString()}</time> · <code>{changes.base.slice(0, 12)}</code></p>
       <p>{t('architecture.layer.changes.model', {
         nodesAdded: count('nodes', 'added'), nodesRemoved: count('nodes', 'removed'), nodesChanged: count('nodes', 'changed'),
@@ -478,7 +492,11 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
       {chosen && <p data-pull-request={chosen.number}>
         <a href={chosen.url} target="_blank" rel="noreferrer">#{chosen.number}</a>
         {chosen.head_sha !== null && <> · <code>{chosen.head_sha.slice(0, 12)}</code></>}
-        {chosen.impact.state === 'ok' && <> · {t('architecture.layer.pull_requests.impact', { files: chosen.impact.paths.length, nodes: chosen.impact.nodes.length, unowned: chosen.impact.unowned_paths.length })}</>}
+        {chosen.impact.state === 'ok' && <> · {t('architecture.layer.pull_requests.impact', {
+          files: counted(t, chosen.impact.paths.length, 'file', chosen.impact.truncated.paths),
+          nodes: counted(t, chosen.impact.nodes.length, 'node', chosen.impact.truncated.nodes),
+          unowned: `${chosen.impact.truncated.paths ? '≥' : ''}${chosen.impact.unowned_paths.length}`,
+        })}</>}
       </p>}
       {chosen?.impact.state === 'ok' && <ImpactNotes part="pull_request" impact={chosen.impact} t={t} />}
       {chosen?.impact.state === 'unavailable' && (chosen.impact.reason === 'archctx_error'
@@ -488,7 +506,7 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
   }
   const unapplied = decisions.items.filter(item => item.applies_to.length === 0);
   return <div className="architecture-layer-summary" data-layer-summary="decisions">
-    <p>{t('architecture.layer.decisions.summary', { count: decisions.items.length, applied: decisions.items.length - unapplied.length })}</p>
+    <p>{t('architecture.layer.decisions.summary', { count: counted(t, decisions.items.length, 'decision'), applied: decisions.items.length - unapplied.length })}</p>
     {unapplied.length > 0 && <details><summary>{t('architecture.layer.decisions.unapplied', { count: unapplied.length })}</summary>
       <ul>{unapplied.map(item => <li key={item.id}>{item.title} · <code>{item.path}</code></li>)}</ul>
     </details>}

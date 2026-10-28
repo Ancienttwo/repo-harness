@@ -44,9 +44,10 @@ export type ArchitectureMapDependencyReason = typeof ARCHITECTURE_MAP_DEPENDENCY
 /**
  * Today's changes read only commits, so they need no clean checkout. A
  * first-parent history that starts after midnight has no base commit;
- * `archctx_failed`: archctx did not run, or its answer broke its contract or the map's grammar.
+ * `archctx_failed`: archctx did not run, or its answer broke its contract or the map's grammar;
+ * `path_not_public`: archctx's answer is valid, but a path in it fails the public-path guard.
  */
-export const ARCHITECTURE_CHANGE_REASONS = ['git_read_failed', 'history_starts_today', 'archctx_failed'] as const;
+export const ARCHITECTURE_CHANGE_REASONS = ['git_read_failed', 'history_starts_today', 'archctx_failed', 'path_not_public'] as const;
 export type ArchitectureChangeReason = typeof ARCHITECTURE_CHANGE_REASONS[number];
 /** Each violation check reads the worktree model and the CodeGraph index, as import counts do. */
 export const ARCHITECTURE_VIOLATION_REASONS = [...ARCHITECTURE_MAP_DEPENDENCY_REASONS, 'archctx_failed'] as const;
@@ -61,8 +62,8 @@ export type ArchitectureTestReason = typeof ARCHITECTURE_TEST_REASONS[number];
  */
 export const ARCHITECTURE_PR_LAYER_REASONS = ['model_worktree_dirty', 'checkout_changed', 'git_read_failed', 'dev_activity_pending', 'dev_activity_unavailable'] as const;
 export type ArchitecturePullRequestsReason = typeof ARCHITECTURE_PR_LAYER_REASONS[number];
-/** One open PR without impact: gh gave no head commit or no complete file list, or archctx failed. */
-export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS, 'archctx_failed'] as const;
+/** One open PR without impact: gh gave no head commit or no complete file list, archctx failed, or a path in its valid answer fails the public-path guard. */
+export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS, 'archctx_failed', 'path_not_public'] as const;
 export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[number];
 /**
  * Why imports against the layer order are not shown: the model declares no
@@ -332,9 +333,9 @@ const tokens = list(match(ARCHCTX_TOKEN));
 /** The flow schema's step and outcome id grammar. */
 const localId = match(/^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*$/u);
 const flag = one(true, false);
-const impactFields = {
-  paths: list(object({ path: repoPath, added: nullable(count), deleted: nullable(count), owners: ids, reason_codes: tokens })),
-  unowned_paths: list(repoPath),
+const impactFields = (path: Check) => ({
+  paths: list(object({ path, added: nullable(count), deleted: nullable(count), owners: ids, reason_codes: tokens })),
+  unowned_paths: list(path),
   nodes: list(object({ id, files: positive })),
   dependents: list(object({ id, touched: id, relations: ids })),
   dependency_coverage: one('complete', 'partial'),
@@ -343,12 +344,15 @@ const impactFields = {
     items: nullable(list(object({ flow: id, step: localId, outcome: nullable(localId), reason_codes: tokens }))),
   }),
   truncated: object({ paths: flag, nodes: flag, relations: flag, flow_steps: flag, dependents: flag, model: flag }),
-};
+});
 const modelChange = object({
   kind: one('nodes', 'relations', 'flows'), id, change: one('added', 'removed', 'changed'), fields: list(match(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/u)),
 });
-const changes = either(section({ since: instant, base: commit, commits: count, model: list(modelChange), ...impactFields }, ARCHITECTURE_CHANGE_REASONS), refusal);
-const pullRequestImpact = either(section(impactFields, ARCHITECTURE_PR_REASONS), refusal);
+/** `path` checks every changed path; the decoder uses `repoPath`, and a projection uses `text` to tell a path-guard refusal from a broken answer. */
+const changesWith = (path: Check): Check => either(section({ since: instant, base: commit, commits: count, model: list(modelChange), ...impactFields(path) }, ARCHITECTURE_CHANGE_REASONS), refusal);
+const pullRequestImpactWith = (path: Check): Check => either(section(impactFields(path), ARCHITECTURE_PR_REASONS), refusal);
+const changes = changesWith(repoPath);
+const pullRequestImpact = pullRequestImpactWith(repoPath);
 const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
   flows: either(section({
@@ -420,8 +424,8 @@ function impactValid(impact: ArchitectureImpactV1, index: MapIndex, owner: (id: 
 }
 
 /** Today's changes: an added or changed node or relation is in the map, a removed one is not. Flows are not on the map. */
-function changesValid(value: unknown, index: MapIndex): boolean {
-  if (!changes(value)) return false;
+function changesValid(value: unknown, index: MapIndex, path: Check = repoPath): boolean {
+  if (!(path === repoPath ? changes : changesWith(path))(value)) return false;
   const layer = value as ArchitectureChangesLayerV1;
   if (layer.state !== 'ok') return true;
   const removed = new Set(layer.model.filter(entry => entry.kind === 'nodes' && entry.change === 'removed').map(entry => entry.id));
@@ -431,8 +435,8 @@ function changesValid(value: unknown, index: MapIndex): boolean {
 }
 
 /** One PR's impact names only nodes of the map commit's model. */
-function pullRequestImpactValid(value: unknown, index: MapIndex): boolean {
-  if (!pullRequestImpact(value)) return false;
+function pullRequestImpactValid(value: unknown, index: MapIndex, path: Check = repoPath): boolean {
+  if (!(path === repoPath ? pullRequestImpact : pullRequestImpactWith(path))(value)) return false;
   const impact = value as ArchitecturePullRequestImpactV1['impact'];
   return impact.state !== 'ok' || impactValid(impact, index, nodeId => index.nodes.has(nodeId));
 }
@@ -572,11 +576,23 @@ function rollUp<Counts extends Record<string, number>>(
 }
 
 const ARCHCTX_FAILED = { state: 'unavailable', reason: 'archctx_failed' } as const;
+const PATH_NOT_PUBLIC = { state: 'unavailable', reason: 'path_not_public' } as const;
 
-/** Each open PR keeps its impact only when it names nodes of the map; any other impact drops that PR to `archctx_failed`. */
+/**
+ * The reason an impact answer cannot be shown: valid except for a path that the
+ * public-path guard refuses is `path_not_public`; any other break is `archctx_failed`.
+ */
+function impactGap(valid: (path: Check) => boolean): typeof ARCHCTX_FAILED | typeof PATH_NOT_PUBLIC {
+  return valid(text) ? PATH_NOT_PUBLIC : ARCHCTX_FAILED;
+}
+
+/** Each open PR keeps its impact only when it names nodes of the map; any other impact drops that PR to `archctx_failed`, or to `path_not_public` when only a path is refused. */
 function projectPullRequests(layer: ArchitecturePullRequestsLayerV1, index: MapIndex): ArchitecturePullRequestsLayerV1 {
   if (layer.state === 'unavailable') return layer;
-  return { ...layer, pull_requests: layer.pull_requests.map(pr => (pullRequestImpactValid(pr.impact, index) ? pr : { ...pr, impact: ARCHCTX_FAILED })) };
+  return {
+    ...layer,
+    pull_requests: layer.pull_requests.map(pr => (pullRequestImpactValid(pr.impact, index) ? pr : { ...pr, impact: impactGap(path => pullRequestImpactValid(pr.impact, index, path)) })),
+  };
 }
 
 /** The tests collector's cache for one repository, as `tests-collector.ts` holds it. */
@@ -624,7 +640,8 @@ export function withTestCoverage(map: ArchitectureMapV1, source: ArchitectureTes
  * Builds the map. Line counts sum along the `parent` chain; an owner of a line
  * count that the model does not name fails the projection. An impact answer
  * that names a node or relation the model does not have drops today's changes,
- * or that PR's impact, to `archctx_failed`.
+ * or that PR's impact, to `archctx_failed`; one whose only fault is a path that
+ * the public-path guard refuses drops to `path_not_public`.
  */
 export function projectArchitectureMap(input: {
   readonly repository_id: string;
@@ -663,7 +680,7 @@ export function projectArchitectureMap(input: {
     sizes,
     dependencies,
     layers: {
-      changes: changesValid(input.layers.changes, index) ? input.layers.changes : ARCHCTX_FAILED,
+      changes: changesValid(input.layers.changes, index) ? input.layers.changes : impactGap(path => changesValid(input.layers.changes, index, path)),
       violations: {
         debt: violations.debt,
         flows: violations.flows.state === 'ok' ? { ...violations.flows, unprovable: byId(violations.flows.unprovable) } : violations.flows,

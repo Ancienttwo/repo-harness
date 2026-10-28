@@ -335,14 +335,20 @@ describe('architecture map', () => {
         applies_to: [MODULE_ID], supersedes: [], path: 'docs/adr/ADR-0001-committed-reads.md' }] });
       expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
       expect(JSON.stringify(map)).not.toContain(root);
+      // Today's changes need a base before today and one commit inside the window.
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => {
+        fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n');
+        fixtureCommit(root);
+      });
       // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
       fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
       const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
-      // Today's changes read only commits, so the edited model does not withhold them; this window holds the whole history.
-      expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.debt]).toEqual([
-        { state: 'unavailable', reason: 'history_starts_today' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+      // Today's changes read only commits, so the edited model does not withhold them.
+      expect(dirty.ok && [dirty.snapshot.layers.changes.state, dirty.snapshot.layers.violations.debt]).toEqual([
+        'ok', { state: 'unavailable', reason: 'model_worktree_dirty' }]);
       // A PR source passes through with its own reason; the PR owners would read the edited model, so a ready source is withheld.
       expect(dirty.ok && dirty.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'dev_activity_pending' });
       const dirtyPrs = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z',
@@ -375,6 +381,14 @@ describe('architecture map', () => {
     const unknown = withChanges({ ...changes!, paths: changes!.paths.map(entry => (entry.path === 'src/store.ts' ? { ...entry, owners: ['capability.gone.node'] } : entry)) });
     expect(unknown.layers.changes).toEqual(failed);
     expect(unknown.layers.violations.debt.state).toBe('ok');
+    // A valid answer with a path that the public-path guard refuses keeps its own reason, not archctx's.
+    for (const path of ['app/(marketing)/page.tsx', 'app/[slug]/page.tsx']) {
+      const notPublic = withChanges({ ...changes!, paths: [...changes!.paths, { path, added: 1, deleted: 0, owners: [], reason_codes: [] }], unowned_paths: [...changes!.unowned_paths, path] });
+      expect(notPublic.layers.changes).toEqual({ state: 'unavailable', reason: 'path_not_public' });
+      expect(notPublic.layers.violations.debt.state).toBe('ok');
+    }
+    // A path the guard refuses next to a broken owner is still a broken answer.
+    expect(withChanges({ ...changes!, paths: [...changes!.paths, { path: 'app/[slug]/page.tsx', added: 1, deleted: 0, owners: ['capability.gone.node'], reason_codes: [] }] }).layers.changes).toEqual(failed);
     // archctx's own refusal passes through with its codes.
     const refused = withChanges({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' });
     expect(decodeArchitectureMap(JSON.parse(JSON.stringify(refused))).layers.changes)
@@ -427,6 +441,13 @@ describe('architecture map', () => {
     expect(unknown.layers.pull_requests.state === 'ok' && unknown.layers.pull_requests.pull_requests.map(pr => [pr.number, pr.impact.state === 'unavailable' ? pr.impact.reason : 'ok']))
       .toEqual([[7, 'archctx_failed'], [8, 'files_truncated'], [9, 'head_missing'], [10, 'archctx_error']]);
     expect(unknown.layers.changes.state).toBe('ok');
+    // A valid PR answer with a path that the public-path guard refuses keeps its own reason.
+    const notPublic = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, pull_requests: { ...prs!, pull_requests: prs!.pull_requests.map(pr => (pr.number === 7
+        ? { ...pr, impact: { state: 'ok', ...prImpact, paths: [...prImpact.paths, { path: 'app/(marketing)/page.tsx', added: null, deleted: null, owners: [], reason_codes: [] }], unowned_paths: [...prImpact.unowned_paths, 'app/(marketing)/page.tsx'] } }
+        : pr)) } } });
+    expect(notPublic.layers.pull_requests.state === 'ok' && notPublic.layers.pull_requests.pull_requests.map(pr => [pr.number, pr.impact.state === 'unavailable' ? pr.impact.reason : 'ok']))
+      .toEqual([[7, 'path_not_public'], [8, 'files_truncated'], [9, 'head_missing'], [10, 'archctx_error']]);
   });
 
   test('the PR source takes only open PRs of a repository whose GitHub read is ok, and masks private paths in titles', () => {
@@ -613,6 +634,24 @@ describe('architecture map', () => {
       expect([changes.paths.length, changes.paths.at(-1)?.path, changes.nodes]).toEqual([1000, 'src/module/generated/file-0999.ts', [{ id: MODULE_ID, files: 1000 }]]);
       expect([changes.truncated, changes.dependency_coverage, changes.flow_steps.reason_codes]).toEqual([
         { paths: true, nodes: false, relations: false, flow_steps: false, dependents: false, model: false }, 'partial', ['impact-truncated', 'ref-code-facts-unavailable']]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a committed path that the public-path guard refuses leaves the layer or the PR with its own reason, not archctx\'s', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => {
+        fixtureWrite(root, 'app/(group)/page.tsx', 'export default function Page() { return null; }\n');
+        fixtureCommit(root);
+      });
+      const source: ArchitecturePullRequestsSource = { state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
+        { number: 6, title: 'Group page', url: 'https://github.com/acme/module/pull/6', head_sha: 'b'.repeat(40), changed_files: { state: 'ok', paths: ['app/(group)/page.tsx'] } }] };
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source);
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'path_not_public' });
+      const pulls = result.snapshot.layers.pull_requests;
+      expect(pulls.state === 'ok' && pulls.pull_requests.map(pr => pr.impact)).toEqual([{ state: 'unavailable', reason: 'path_not_public' }]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

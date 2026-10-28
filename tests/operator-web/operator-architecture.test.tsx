@@ -479,9 +479,9 @@ describe('architecture map', () => {
     expect([box(PART).getAttribute('data-tone'), box(PART).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '+5 −2 ?']);
     // archctx says the group depends on the changed component; nodes with nothing on the layer fade.
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', true, true]);
-    expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('2 files changed in 1 commits');
+    expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
     expect([gaps(), notes()]).toEqual([['changes.flow_steps:ref-code-facts-unavailable'], ['changes.truncated:paths']]);
-    expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for paths; these counts are lower bounds.');
+    expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for changed paths. File and line counts are lower bounds.');
     await act(async () => box(PART).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect(document.querySelector('[data-layer-facts="changes"]')?.textContent).toBe('2 files changed, +5 −2 lines (1 without a line count)assets/ledger.pngsrc/ledger.ts');
@@ -541,7 +541,7 @@ describe('architecture map', () => {
     expect([select.value, [...select.options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite', '#23 Odd path']]);
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
-    expect(summary).toContain('2 files changed in 1 nodes, 1 without an owner');
+    expect(summary).toContain('2 files changed in 1 node, 1 without an owner');
     // archctx marks only the changed component and the group that calls it; the caller is two hops away.
     const mark = (id: string) => [box(id).getAttribute('data-tone'), box(id).querySelector('.architecture-map__mark')?.textContent ?? null];
     expect([PART, CENTER].map(mark)).toEqual([['change', '1'], ['muted', '↳']]);

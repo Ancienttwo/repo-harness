@@ -41,7 +41,8 @@ Read the cheap signal first:
 3. ChangeSet receipt. When the diff changes files under `.archcontext/model/`,
    read the ChangeSet receipt JSON (`ledger receipt`) in the PR body. Compare each receipt
    `bodyHash` and file path with the changed model files at HEAD. A `bodyHash` is
-   not a Git blob id or a SHA-256 of the file bytes. A deletion has
+   `sha256:` plus the hex SHA-256 of the canonical JSON `{"body":"<file text>"}`
+   (keys sorted, UTF-8). It is not a Git blob id or a SHA-256 of the file bytes. A deletion has
    `bodyHash: missing`. Every changed model path must have a receipt record.
    The receipt is unsigned (`approvalAuthenticity: unverified`); it shows
    recorded content, not human approval.
