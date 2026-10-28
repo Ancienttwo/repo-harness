@@ -8,9 +8,9 @@
 export const SETUP_PROJECTION = 'repo-harness.setup.v1' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
-export const SETUP_HOSTS = ['claude', 'codex'] as const;
+export const SETUP_HOSTS = ['claude', 'codex', 'pi'] as const;
 export type SetupHost = typeof SETUP_HOSTS[number];
-/** One value per host, always both keys. */
+/** One value per host, always every key. */
 export type SetupPerHost<T> = { readonly [H in SetupHost]: T };
 
 export const SETUP_SNAPSHOT_STATUSES = ['ready', 'stale', 'unavailable'] as const;

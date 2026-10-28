@@ -209,7 +209,7 @@ describe('Agents page', () => {
     const checks = all('[data-check]');
     expect(checks.map(row => row.getAttribute('data-check'))).toEqual(['doctor.security-config', 'runtime.skills_cli']);
     expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('repo-harness security scan --json');
-    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex']);
+    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi']);
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
     expect(all('[data-fleet-role]')).toHaveLength(7);

@@ -262,7 +262,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
   }
 
   /** The bytes the host reads from fd 1 and fd 2 of `repo-harness-hook`. */
-  function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown, extraEnv: NodeJS.ProcessEnv = {}) {
+  function host(root: string, hostName: 'claude' | 'codex' | 'pi', event: string, route: string, input: unknown, extraEnv: NodeJS.ProcessEnv = {}) {
     const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
       cwd: root,
       input: JSON.stringify(input),
@@ -303,6 +303,47 @@ describe('host envelopes on the real hook entry (#678)', () => {
           expect(sessionContext).toContain('capability.core.owned');
         } else expect(sessionContext).not.toContain('[ArchitectureDebt]');
       }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 120_000);
+
+  test('Pi reads one JSON result from stdout and stderr stays empty', () => {
+    const root = owedFixture();
+    try {
+      const pi = (event: string, route: string, input: unknown) => {
+        const result = host(root, 'pi', event, route, { session_id: 'pi-session', run_id: 'run-pi-1', ...input as object });
+        expect(result.stderr).toBe('');
+        expect(result.stdout.endsWith('\n')).toBe(true);
+        expect(result.stdout.trim().split('\n')).toHaveLength(1);
+        const json = JSON.parse(result.stdout) as Record<string, unknown>;
+        expect(Object.keys(json)).toEqual(['protocol', 'event', 'route_id', 'exit_code', 'reason', 'decision', 'additional_context', 'system_message', 'diagnostics']);
+        expect(json).toMatchObject({ protocol: 1, event, route_id: route, exit_code: result.status });
+        return json;
+      };
+      expect(pi('PreToolUse', 'edit', { tool_name: 'Edit', tool_input: { file_path: join(root, 'src/owned/a.ts') } }))
+        .toMatchObject({ decision: 'allow', reason: 'ok', additional_context: expect.stringContaining('[CapabilityOwner]') });
+      const blocked = pi('PreToolUse', 'edit', { tool_name: 'Write', tool_input: { file_path: join(root, '_ops/x') } });
+      expect(blocked).toMatchObject({ exit_code: 2, decision: 'block', additional_context: null });
+      expect(blocked.diagnostics).toContain('_ops');
+      expect(pi('PreToolUse', 'bash', { tool_name: 'Bash', tool_input: { command: 'echo hi > _ops/x' }, cwd: root }))
+        .toMatchObject({ exit_code: 2, decision: 'block' });
+      expect(pi('PreToolUse', 'bash', { tool_name: 'Bash', tool_input: { command: 'echo hi' }, cwd: root }))
+        .toMatchObject({ exit_code: 0, decision: 'allow' });
+      // Pi delivers the notice at each run start, like Codex; the shared marker then holds it back at SessionStart.
+      const notice = pi('UserPromptSubmit', 'inbox', {});
+      expect(notice).toMatchObject({ exit_code: 0, decision: 'none' });
+      expect(notice.additional_context).toContain('[ArchitectureDebt]');
+      const session = pi('SessionStart', 'default', {});
+      expect(session).toMatchObject({ exit_code: 0, decision: 'none' });
+      expect(session.additional_context).toContain('[EditGuardScope]');
+      expect(pi('Stop', 'default', { aborted: true })).toMatchObject({ exit_code: 0, decision: 'none' });
+      const unsupported = pi('PreToolUse', 'subagent', { tool_name: 'Agent' });
+      expect(unsupported).toMatchObject({ exit_code: 2, reason: 'unsupported-host-route', decision: 'block' });
+      expect(unsupported.diagnostics).toContain('/reload');
+      const records = readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+      expect(records.filter(record => record.host === 'pi').map(record => `${record.event}.${record.route_id}`)).toEqual([
+        'PreToolUse.edit', 'PreToolUse.edit', 'PreToolUse.bash', 'PreToolUse.bash', 'UserPromptSubmit.inbox', 'SessionStart.default', 'Stop.default',
+      ]);
+      expect(records.every(record => record.session_id === 'pi-session' && record.run_id === 'run-pi-1')).toBe(true);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);
 

@@ -16,16 +16,16 @@ const ok = (state: 'ok link' | 'ok copy' = 'ok link'): SetupSkillHostRow => ({ s
 const bad = (state: SetupSkillHostRow['state']): SetupSkillHostRow => ({ state, ok: false });
 
 const HOOKS: SetupHookEvent[] = [
-  { event: 'SessionStart', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex'] }] },
+  { event: 'SessionStart', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
   { event: 'PreToolUse', routes: [
-    { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex'] },
+    { route_id: 'edit', matcher: 'Edit|Write', hosts: ['claude', 'codex', 'pi'] },
     { route_id: 'subagent', matcher: 'Agent', hosts: ['claude'] },
   ] },
   { event: 'UserPromptSubmit', routes: [
-    { route_id: 'inbox', matcher: null, hosts: ['claude', 'codex'] },
+    { route_id: 'inbox', matcher: null, hosts: ['claude', 'codex', 'pi'] },
   ] },
   { event: 'SubagentStart', routes: [{ route_id: 'context', matcher: null, hosts: ['codex'] }] },
-  { event: 'Stop', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex'] }] },
+  { event: 'Stop', routes: [{ route_id: 'default', matcher: null, hosts: ['claude', 'codex', 'pi'] }] },
 ];
 
 const SUMMARY: Readonly<Record<string, string>> = {
@@ -42,7 +42,7 @@ const SUMMARY: Readonly<Record<string, string>> = {
 };
 
 function skill(name: string, claude: SetupSkillHostRow | null, codex: SetupSkillHostRow | null): SetupSkill {
-  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex } };
+  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex, pi: null } };
 }
 
 function readySkills(): SetupSkill[] {
@@ -94,11 +94,12 @@ export function readySetup(now: number): SetupSnapshotV1 {
         adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'ok', detected: true, cli_version: '0.162.0',
         adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
+      { host: 'pi', reported: false, adapter_check: null, detected: null, cli_version: null, adapter: null },
     ],
     skills: readySkills(),
     hooks: HOOKS,
     hook_usage: null,
-    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed' } })),
+    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed', pi: null } })),
   };
 }
 
@@ -148,13 +149,14 @@ export function degradedSetup(now: number): SetupSnapshotV1 {
           { kind: 'field-mismatch', event: 'Stop', route_id: 'default', field: 'timeout' },
           { kind: 'unexpected', event: 'PreToolUse', route_id: null, field: null },
         ] } },
+      { host: 'pi', reported: false, adapter_check: null, detected: null, cli_version: null, adapter: null },
     ],
     skills,
     hooks: HOOKS,
     hook_usage: null,
     fleet: FLEET.map(role => ({
       ...role,
-      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed' },
+      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed', pi: null },
     })),
   };
 }
