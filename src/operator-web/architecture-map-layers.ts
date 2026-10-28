@@ -1,14 +1,15 @@
 // What each architecture map layer lights on the base map. The values are the
 // collector's own facts; this module only decides which node each one marks.
 
-import type { ArchitectureMapImportV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
+import type { ArchctxRefusalV1, ArchitectureMapImportV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 
 export const MAP_LAYERS = ['changes', 'violations', 'pull_requests', 'tests', 'decisions'] as const;
 export type MapLayerId = typeof MAP_LAYERS[number];
 
 /**
  * `change`: the node changed today, or in the chosen PR; `danger`: a violation or a failed test;
- * `success`: every test file passed; `muted`: tests without a result, or a node that depends on a node the PR changes.
+ * `success`: every test file passed; `muted`: tests without a result, a node that depends on a node the PR changes,
+ * or a node that decisions apply to.
  */
 export type MapMarkTone = 'change' | 'danger' | 'success' | 'muted';
 export interface MapMark { readonly tone: MapMarkTone; readonly label: string }
@@ -34,12 +35,18 @@ function withAncestors(map: ArchitectureMapV1, marked: Iterable<string>): Set<st
   return lit;
 }
 
-/** Violations per node: debt items, stale doc citations, undeclared imports. */
+/** archctx's error code, with its reason code when it gives one. */
+export function archctxCode(refusal: ArchctxRefusalV1): string {
+  return refusal.reason_code === null ? refusal.code : `${refusal.code} ${refusal.reason_code}`;
+}
+
+/** Violations per node: debt items, unprovable flow proofs, stale doc citations, undeclared imports. */
 export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
-  const { debt, anchors, dependencies } = map.layers.violations;
+  const { debt, flows, anchors, dependencies } = map.layers.violations;
   const counts = new Map<string, number>();
   const add = (id: string, count: number) => counts.set(id, (counts.get(id) ?? 0) + count);
   if (debt.state === 'ok') for (const item of debt.items) for (const id of item.nodes) add(id, 1);
+  if (flows.state === 'ok') for (const entry of flows.unprovable) add(entry.id, 1);
   if (anchors.state === 'ok') for (const entry of anchors.nodes) add(entry.id, entry.findings);
   if (dependencies.state === 'ok') for (const edge of dependencies.edges) add(edge.source, 1);
   return counts;
@@ -92,6 +99,7 @@ export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequ
     for (const id of pullRequestDependents(map, new Set(marks.keys())).keys()) marks.set(id, { tone: 'muted', label: '↳' });
     return view(marks);
   }
-  // Decisions have no source yet; the contract allows only their reason.
-  return EMPTY;
+  const decisions = new Map<string, number>();
+  for (const item of map.layers.decisions.items) for (const id of item.applies_to) decisions.set(id, (decisions.get(id) ?? 0) + 1);
+  return view(new Map([...decisions].map(([id, count]) => [id, { tone: 'muted', label: String(count) }])));
 }

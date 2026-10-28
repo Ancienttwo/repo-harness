@@ -18,11 +18,13 @@ import {
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
+  type ArchctxRefusalV1,
+  type ArchitectureLayerDirectionReason,
   type ArchitectureMapUnavailableReason,
   type ArchitectureMapV1,
   type ArchitectureViolationReason,
 } from '../core/operator/architecture-map';
-import { firstImpactPullRequest, MAP_LAYERS, mapLayerView, pullRequestDependents, type MapLayerId, type MapLayerView, type MapMark } from './architecture-map-layers';
+import { archctxCode, firstImpactPullRequest, MAP_LAYERS, mapLayerView, pullRequestDependents, type MapLayerId, type MapLayerView, type MapMark } from './architecture-map-layers';
 import { layoutArchitectureMap, type MapLayoutNode } from './architecture-map-layout';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
@@ -151,7 +153,7 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   readonly t: OperatorTranslate;
 }) {
   const facts: { key: string; text: string; paths?: readonly string[] }[] = [];
-  const { changes, violations, pull_requests: pullRequests, tests } = map.layers;
+  const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
   if (layer === 'changes' && changes.state === 'ok') {
     const entry = changes.nodes.find(item => item.id === nodeId);
     if (entry) facts.push({ key: 'changes', text: t('architecture.layer.node.changes', { files: entry.files, added: entry.added, deleted: entry.deleted }) });
@@ -159,6 +161,10 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   if (layer === 'violations') {
     if (violations.debt.state === 'ok') {
       violations.debt.items.filter(item => item.nodes.includes(nodeId)).forEach((item, index) => facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths }));
+    }
+    if (violations.flows.state === 'ok') {
+      const flows = violations.flows.unprovable.find(item => item.id === nodeId);
+      if (flows) facts.push({ key: 'flows', text: t('architecture.layer.node.flows', { count: flows.diagnostics }) });
     }
     if (violations.anchors.state === 'ok') {
       const anchors = violations.anchors.nodes.find(item => item.id === nodeId);
@@ -180,6 +186,11 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   if (layer === 'tests' && tests.state === 'ok') {
     const entry = tests.capabilities.find(item => item.id === nodeId);
     if (entry) facts.push({ key: 'tests', text: t('architecture.layer.node.tests', { files: entry.files, passed: entry.passed, failed: entry.failed, skipped: entry.skipped, noResult: entry.no_result }) });
+  }
+  if (layer === 'decisions') {
+    for (const item of decisions.items.filter(entry => entry.applies_to.includes(nodeId))) {
+      facts.push({ key: `decision-${item.id}`, text: item.status === null ? item.title : t('architecture.layer.node.decision', { title: item.title, status: item.status }), paths: [item.path] });
+    }
   }
   return <>
     <h4>{t(`architecture.layer.${layer}`)}</h4>
@@ -350,8 +361,9 @@ function LayerBar({ map, layer, onLayer, t }: {
   </div>;
 }
 
-function Gap({ part, reason, children }: { readonly part: string; readonly reason: string; readonly children: string }) {
-  return <p className="architecture-map__gap" data-gap={part} data-reason={reason}>{children}</p>;
+/** `code`: archctx's own error code when the gap is an archctx refusal. */
+function Gap({ part, reason, code, children }: { readonly part: string; readonly reason: string; readonly code?: string; readonly children: string }) {
+  return <p className="architecture-map__gap" data-gap={part} data-reason={reason} data-code={code}>{children}</p>;
 }
 
 /** A part that has no source until archctx or a collector provides one; a fixed limit, not a failed read. */
@@ -385,19 +397,24 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
   }
   if (layer === 'violations') {
     const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = violations;
-    const text = (part: 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction', reason: ArchitectureViolationReason | typeof flows.reason | typeof layerDirection.reason) =>
-      t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason: t(`architecture.layer.reason.${reason}`) });
-    const gap = (part: 'debt' | 'anchors' | 'dependencies', reason: ArchitectureViolationReason) => <Gap part={`violations.${part}`} reason={reason}>{text(part, reason)}</Gap>;
+    type Part = 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction';
+    const text = (part: Part, reason: string) => t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason });
+    const gap = (part: Exclude<Part, 'layer_direction'>, missing: { readonly reason: ArchitectureViolationReason } | ArchctxRefusalV1) => missing.reason === 'archctx_error'
+      ? <Gap part={`violations.${part}`} reason={missing.reason} code={archctxCode(missing)}>{text(part, t('architecture.layer.reason.archctx_error', { code: archctxCode(missing) }))}</Gap>
+      : <Gap part={`violations.${part}`} reason={missing.reason}>{text(part, t(`architecture.layer.reason.${missing.reason}`))}</Gap>;
+    const direction = (reason: ArchitectureLayerDirectionReason) => text('layer_direction', t(`architecture.layer.reason.${reason}`));
     const unowned = debt.state === 'ok' ? debt.items.filter(item => item.nodes.length === 0) : [];
     return <div className="architecture-layer-summary" data-layer-summary="violations">
-      {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt.reason)}
+      {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt)}
       {unowned.length > 0 && <details><summary>{t('architecture.layer.unowned', { count: unowned.length })}</summary>
         <ul>{unowned.flatMap(item => item.paths.map(path => <li key={`${item.kind}:${path}`}><code>{path}</code> · {t(`architecture.layer.debt.${item.kind}`)}</li>))}</ul>
       </details>}
-      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors.reason)}
-      {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies.reason)}
-      <Note part="violations.flows" reason={flows.reason}>{text('flows', flows.reason)}</Note>
-      <Note part="violations.layer_direction" reason={layerDirection.reason}>{text('layer_direction', layerDirection.reason)}</Note>
+      {flows.state === 'ok'
+        ? <p>{t('architecture.layer.violations.flows', { proven: flows.proven, selectors: flows.selectors, unprovable: flows.unprovable.length })}</p>
+        : gap('flows', flows)}
+      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors)}
+      {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies)}
+      <Note part="violations.layer_direction" reason={layerDirection.reason}>{direction(layerDirection.reason)}</Note>
     </div>;
   }
   if (layer === 'tests') {
@@ -432,7 +449,13 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
       <Note part="pull_requests.flow_steps" reason={pullRequests.flow_steps.reason}>{t(`architecture.layer.changes.flow_steps.${pullRequests.flow_steps.reason}`)}</Note>
     </div>;
   }
-  return <Note part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Note>;
+  const unapplied = decisions.items.filter(item => item.applies_to.length === 0);
+  return <div className="architecture-layer-summary" data-layer-summary="decisions">
+    <p>{t('architecture.layer.decisions.summary', { count: decisions.items.length, applied: decisions.items.length - unapplied.length })}</p>
+    {unapplied.length > 0 && <details><summary>{t('architecture.layer.decisions.unapplied', { count: unapplied.length })}</summary>
+      <ul>{unapplied.map(item => <li key={item.id}>{item.title} · <code>{item.path}</code></li>)}</ul>
+    </details>}
+  </div>;
 }
 
 /** The whole committed model on one canvas, with line and import counts from the map collector. */

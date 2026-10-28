@@ -11,6 +11,7 @@ import {
   projectionResultInvariantIssues,
   validateJsonSchema,
   type ArchitectureDebtReportV1,
+  type ArchitectureFlowSelectorCheckV1,
   type DocsAnchorsReportV1,
   type Json,
   type ProjectionApplyReadbackResultV1,
@@ -21,6 +22,7 @@ import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import architectureDebtSchema from 'archctx-contracts/schemas/runtime/architecture-debt.schema.json';
+import flowSelectorCheckSchema from 'archctx-contracts/schemas/runtime/flow-selector-check.schema.json';
 import nativeContextExportSchema from 'archctx-contracts/schemas/runtime/native-context-export.schema.json';
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
@@ -208,6 +210,11 @@ export function decodeArchitectureDebtReport(value: unknown): ArchitectureDebtRe
   const issues = architectureDebtReportIssues(report);
   if (issues.length > 0) throw new Error(`architecture debt report invalid: ${issues.join('; ')}`);
   return report;
+}
+
+/** ArchContext owns the `flows check` report contract; this applies its published schema. */
+export function decodeFlowSelectorCheck(value: unknown): ArchitectureFlowSelectorCheckV1 {
+  return decode(flowSelectorCheckSchema, value, 'flows check report') as unknown as ArchitectureFlowSelectorCheckV1;
 }
 
 export const ARCHITECTURE_DEBT_COMMAND = 'repo-harness architecture-debt --json';

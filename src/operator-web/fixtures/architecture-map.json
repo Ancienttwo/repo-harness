@@ -1,5 +1,5 @@
 {
- "schema_version": "repo-harness.architecture-map.v2",
+ "schema_version": "repo-harness.architecture-map.v3",
  "repository_id": "repo_a5b76eee64af71c3",
  "commit": "2698b8991d120735cb739dc25b171607d5d6d3d2",
  "collected_at": "2026-10-27T18:06:18.000Z",
@@ -5231,7 +5231,7 @@
    },
    "flows": {
     "state": "unavailable",
-    "reason": "flows_check_writes_index"
+    "reason": "code_facts_unavailable"
    },
    "anchors": {
     "state": "ok",
@@ -5400,7 +5400,7 @@
    },
    "layer_direction": {
     "state": "unavailable",
-    "reason": "layer_order_not_released"
+    "reason": "model_layers_undeclared"
    }
   },
   "pull_requests": {
@@ -5738,8 +5738,21 @@
    ]
   },
   "decisions": {
-   "state": "unavailable",
-   "reason": "decisions_not_exported"
+   "state": "ok",
+   "items": [
+    {
+     "id": "ADR-0001-general-repo-codegraph-access",
+     "title": "General Repo Access Through CodeGraph",
+     "status": "accepted",
+     "decided_at": null,
+     "applies_to": [
+      "capability.runtime-mcp.general-repo-access",
+      "capability.verification.codegraph-readiness"
+     ],
+     "supersedes": [],
+     "path": "docs/adr/ADR-0001-general-repo-codegraph-access.md"
+    }
+   ]
   }
  }
 }

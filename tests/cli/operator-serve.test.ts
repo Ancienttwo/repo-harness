@@ -1801,8 +1801,9 @@ describe('architecture map', () => {
     layers: {
       changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
       pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
-      violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' } },
       tests: { state: 'unavailable', reason: 'tests_pending' },
+      decisions: { state: 'ok', items: [] },
     },
   });
 

@@ -5,6 +5,7 @@ import { parseArchitectureRequest } from '../../src/core/operator/architecture';
 import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
+  archctxRefusal,
   architectureModelDelta,
   architecturePullRequestsSource,
   decodeArchitectureMap,
@@ -179,10 +180,16 @@ describe('architecture map', () => {
     },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
+      flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
+      layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' },
     },
     tests: { state: 'unavailable', reason: 'tests_pending' },
+    decisions: { state: 'ok', items: [
+      { id: 'ADR-0002-gate', title: 'Gate reviews', status: null, decided_at: null, applies_to: [OTHER], supersedes: ['ADR-0001-ledger'], path: 'docs/adr/ADR-0002-gate.md' },
+      { id: 'ADR-0001-ledger', title: 'Keep one ledger', status: 'accepted', decided_at: '2026-10-01', applies_to: [CAP, PART], supersedes: [], path: 'docs/adr/ADR-0001-ledger.md' },
+    ] },
   };
   const input = {
     repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z', layers,
@@ -272,9 +279,11 @@ describe('architecture map', () => {
     expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, dirty)).toEqual(dirty);
   });
 
-  test('the worker maps a committed model with git line counts, and imports fail closed without a CodeGraph index', () => {
+  test('the worker maps a committed model with git line counts and its decisions, and imports fail closed without a CodeGraph index', () => {
     const root = realpathSync(moduleRepository());
     try {
+      fixtureWrite(root, 'docs/adr/ADR-0001-committed-reads.md', `---\nschemaVersion: archcontext.adr/v1\ntitle: Read committed modules\nstatus: accepted\nappliesTo:\n  - ${MODULE_ID}\n---\n\n# ADR-0001\n`);
+      fixtureCommit(root);
       const commit = fixtureGit(root, ['rev-parse', 'HEAD']).trim();
       expect(readCommitLineCounts(root, commit)?.get('src/module/read.ts')).toBe(1);
       const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
@@ -285,6 +294,10 @@ describe('architecture map', () => {
       expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
       expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: MODULE_ID, files: 2, lines: 2 }] });
       expect(map.dependencies.state).toBe('unavailable');
+      // The decisions come from the same `export native` as the model; the fixture declares no ordered layers.
+      expect(map.layers.decisions).toEqual({ state: 'ok', items: [{ id: 'ADR-0001-committed-reads', title: 'Read committed modules', status: 'accepted', decided_at: null,
+        applies_to: [MODULE_ID], supersedes: [], path: 'docs/adr/ADR-0001-committed-reads.md' }] });
+      expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
       expect(JSON.stringify(map)).not.toContain(root);
       // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
       fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
@@ -309,10 +322,10 @@ describe('architecture map', () => {
       model: (layers.changes as Extract<ArchitectureMapLayersInput['changes'], { state: 'ok' }>).model,
       flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
     });
-    // Parts with no read-only source in archctx 0.9.3 or on main carry a fixed reason.
-    expect([map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
-      { state: 'unavailable', reason: 'decisions_not_exported' },
-      { state: 'unavailable', reason: 'flows_check_writes_index' }, { state: 'unavailable', reason: 'layer_order_not_released' }]);
+    // Decisions and flow proofs pass through sorted by id; layer direction keeps the collector's reason.
+    expect(map.layers.decisions.items.map(item => item.id)).toEqual(['ADR-0001-ledger', 'ADR-0002-gate']);
+    expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 2 }, { id: OTHER, diagnostics: 1 }] });
+    expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
     // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
     const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
       layers: { ...layers, violations: { ...layers.violations, debt: { state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] } } } });
@@ -328,6 +341,16 @@ describe('architecture map', () => {
     });
     expect(unknown.layers.changes).toEqual({ state: 'unavailable', reason: 'ownership_unavailable' });
     expect(unknown.layers.violations.debt.state).toBe('ok');
+  });
+
+  test('an archctx refusal keeps archctx\'s codes as opaque tokens of the archctx shape', () => {
+    const refusal = archctxRefusal('AC_SCHEMA_INVALID', 'native-document-marker-invalid');
+    expect(refusal).toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' });
+    expect(archctxRefusal('AC_PRECONDITION_FAILED', undefined)).toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_PRECONDITION_FAILED', reason_code: null });
+    for (const [code, reasonCode] of [['schema invalid', null], [7, null], ['AC_SCHEMA_INVALID', 'Bad Reason'], ['AC_SCHEMA_INVALID', 3]] as const) expect(archctxRefusal(code, reasonCode)).toBeNull();
+    const map = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, violations: { ...layers.violations, flows: refusal! } } });
+    expect(decodeArchitectureMap(JSON.parse(JSON.stringify(map))).layers.violations.flows).toEqual(refusal!);
   });
 
   test('test coverage counts each projected file once per capability by its daily result', () => {
@@ -425,7 +448,10 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['/Users/someone/repo/src/orphan.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['src/../../outside.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].kind = 'undeclared-dependency'; });
-    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
+    refused(copy => { copy.layers.violations.flows.unprovable[0].id = PART; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'archctx_error', code: 'schema invalid', reason_code: null }; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'Not_Kebab' }; });
+    refused(copy => { copy.layers.violations.layer_direction = { state: 'unavailable', reason: 'layer_order_not_released' }; });
     refused(copy => { copy.layers.violations.debt.items[1].nodes = [CAP, CAP]; });
     refused(copy => { delete copy.layers.violations.layer_direction; });
     refused(copy => { delete copy.layers.changes.flow_steps; });
@@ -443,7 +469,11 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.pull_requests.pull_requests[0].url = 'https://example.invalid/pull/7'; });
     refused(copy => { delete copy.layers.pull_requests.flow_steps; });
     refused(copy => { copy.layers.decisions = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
-    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v1'; });
+    refused(copy => { copy.layers.decisions.items[0].applies_to = ['capability.gone.node']; });
+    refused(copy => { copy.layers.decisions.items[1].id = copy.layers.decisions.items[0].id; });
+    refused(copy => { copy.layers.decisions.items[0].title = 'Read /Users/someone/secret'; });
+    refused(copy => { copy.layers.decisions.items[0].path = '/Users/someone/repo/docs/adr/ADR-0001-ledger.md'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v2'; });
   });
 
   test('a checkout or edit during a cycle drops today\'s changes when the model moved and each violation check when the tree moved', () => {
@@ -451,7 +481,8 @@ describe('architecture map', () => {
     const clean = { head: commit, modelClean: true, treeClean: true };
     const read = { changes: layers.changes, pull_requests: layers.pull_requests, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
-    const allChanged = { debt: changed, anchors: changed, dependencies: changed };
+    // Flow proofs read the CodeGraph index like the other checks; the layer-direction gap is fixed per model.
+    const allChanged = { debt: changed, flows: changed, anchors: changed, dependencies: changed, layer_direction: layers.violations.layer_direction };
     expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
     expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, pull_requests: changed, violations: allChanged });
     expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, pull_requests: read.pull_requests, violations: allChanged });
@@ -490,7 +521,7 @@ describe('architecture map', () => {
       });
       // The fixture has no CodeGraph index: each check that reads it says so; nothing is filled in, and no check syncs an index.
       expect(result.snapshot.layers.violations.anchors).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
-      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'flows_check_writes_index' });
+      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       // A window that holds the whole history has no base commit.
       const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z', pending);

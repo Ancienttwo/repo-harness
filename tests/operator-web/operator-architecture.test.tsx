@@ -329,11 +329,14 @@ describe('architecture map', () => {
   const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const noModelDelta = { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [], relations_added: [], relations_removed: [], relations_changed: [] } as const;
+  const undeclaredLayers = { state: 'unavailable', reason: 'model_layers_undeclared' } as const;
   const noLayers: ArchitectureMapLayersInput = {
     changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
     pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
-    violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+    violations: { debt: noCodeFacts, flows: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' },
+      anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: undeclaredLayers },
     tests: { state: 'unavailable', reason: 'tests_pending' },
+    decisions: { state: 'ok', items: [] },
   };
   const mapLayers: ArchitectureMapLayersInput = {
     changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
@@ -341,11 +344,17 @@ describe('architecture map', () => {
     pull_requests: { state: 'unavailable', reason: 'dev_activity_unavailable' },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
+      flows: { state: 'ok', selectors: 2, proven: 1, unproven: 1, used_unproven: 1, unprovable: [{ id: CENTER, diagnostics: 1 }] },
       anchors: noCodeFacts,
       dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
+      layer_direction: undeclaredLayers,
     },
     tests: { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [
       { id: CALLER, files: 2, passed: 1, failed: 0, skipped: 0, no_result: 1 }, { id: CENTER, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] },
+    decisions: { state: 'ok', items: [
+      { id: 'ADR-0001-router', title: 'Route through one router', status: 'accepted', decided_at: null, applies_to: [CALLER], supersedes: [], path: 'docs/adr/ADR-0001-router.md' },
+      { id: 'ADR-0002-naming', title: 'Name things plainly', status: null, decided_at: null, applies_to: [], supersedes: [], path: 'docs/adr/ADR-0002-naming.md' },
+    ] },
   };
   function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers): ArchitectureMapV1 {
     return projectArchitectureMap({
@@ -456,7 +465,7 @@ describe('architecture map', () => {
 
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
-      .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:unavailable']);
+      .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:ok']);
     expect([box(PART).getAttribute('data-tone'), box(PART).textContent]).toEqual(['change', expect.stringContaining('+5 −2')]);
     // The change counts for the group too; nodes with nothing on the layer fade.
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['change', true, true]);
@@ -466,8 +475,9 @@ describe('architecture map', () => {
     await choose('violations');
     expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
+    expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Flow proofs: 1 of 2 selectors proven; 1 capabilities cannot prove their flow.');
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
-    expect(notes()).toEqual(['violations.flows:flows_check_writes_index', 'violations.layer_direction:layer_order_not_released']);
+    expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
 
     await choose('tests');
@@ -480,8 +490,12 @@ describe('architecture map', () => {
     expect([gaps(), notes()]).toEqual([['pull_requests:dev_activity_unavailable'], []]);
     expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
     await choose('decisions');
-    expect([gaps(), notes()]).toEqual([[], ['decisions:decisions_not_exported']]);
-    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+    expect([gaps(), notes()]).toEqual([[], []]);
+    expect(document.querySelector('[data-layer-summary="decisions"]')?.textContent).toBe('2 decisions; 1 apply to model nodes.Decisions that apply to no node (1)Name things plainly · docs/adr/ADR-0002-naming.md');
+    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
+    await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    expect(document.querySelector('[data-layer-facts="decisions"]')?.textContent).toBe('Route through one router (accepted)docs/adr/ADR-0001-router.md');
   });
 
   test('PR impact marks the nodes the chosen PR changes and the nodes that depend on them, and a PR without a complete list says why', async () => {
@@ -529,8 +543,15 @@ describe('architecture map', () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: projectArchitectureMap({ ...mapFor(), sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers }) }) }));
     expect(document.querySelector('.architecture-map__gap[data-gap="changes"]')?.getAttribute('data-reason')).toBe('model_worktree_dirty');
-    expect([...document.querySelectorAll('.architecture-layers [data-state="unavailable"]')]).toHaveLength(5);
+    // Decisions come from the model export, so that layer always has data, even with no decision.
+    expect([...document.querySelectorAll('.architecture-layers [data-state="unavailable"]')].map(item => item.getAttribute('data-layer'))).toEqual(['changes', 'violations', 'pull_requests', 'tests']);
     expect(document.querySelectorAll('[data-quiet]')).toHaveLength(0);
+    // An archctx refusal shows archctx's own code.
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="violations"]')!.click());
+    await settle();
+    const flows = document.querySelector('.architecture-map__gap[data-gap="violations.flows"]')!;
+    expect([flows.getAttribute('data-reason'), flows.getAttribute('data-code'), flows.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-document-marker-invalid',
+      'Flow proofs: unknown, archctx refused with AC_SCHEMA_INVALID native-document-marker-invalid']);
   });
 });
 
