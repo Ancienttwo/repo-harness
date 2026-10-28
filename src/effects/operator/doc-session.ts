@@ -5,8 +5,8 @@
 // approval of its confirmation bypass first.
 //
 // The route runs only through the shared write run (lock, idempotency,
-// audit). Production OPERATOR_ROUTES admits no write route yet, because the
-// approved order opens the local config write (#1017) first.
+// audit). Production OPERATOR_ROUTES admits it after the local config write
+// (#1017) opened; the agent launch still waits for its own approval.
 
 import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync } from 'node:fs';
@@ -233,7 +233,7 @@ async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDe
   };
 }
 
-/** `POST /api/v1/sessions` for `kind: docs`. Tests admit it through their own route inventory. */
+/** `POST /api/v1/sessions` for `kind: docs`, served in production and replaced by id in tests. */
 export function docSessionCreateRoute(deps: DocSessionDependencies): OperatorWriteRoute {
   return {
     id: 'sessions_create',

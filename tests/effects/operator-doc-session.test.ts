@@ -4,16 +4,15 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { basename, join } from 'node:path';
 import { checkDocCitation, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
+import { OPERATOR_DOCS_TREE_KIND, type DocsTreeV1 } from '../../src/core/operator/docs';
 import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
-import { docSessionCreateRoute, OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
+import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
-/** The inventory entry that binds the session route in tests; production OPERATOR_ROUTES has none. */
-const SESSIONS_INVENTORY: OperatorRouteV1 = { id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true };
 /** The inventory entry that binds the session events read in tests; production OPERATOR_ROUTES has none. */
 const SESSION_EVENTS_INVENTORY: OperatorRouteV1 = { id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false };
 const GUIDE = '# Guide\n\nThe operator reads docs.\nIt never writes main.\n\n## Next\n\nMore text.\n';
@@ -88,7 +87,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
   });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, SESSIONS_INVENTORY, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
@@ -275,9 +274,8 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit only the agent settings write, so no session can be created through operator serve', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['settings_agents_write']);
-  expect(OPERATOR_ROUTES.some(route => route.id === 'sessions_create')).toBe(false);
+test('production routes admit exactly the settings write and the session create write', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['settings_agents_write', 'sessions_create']);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
@@ -631,5 +629,63 @@ test('production routes keep no session events read, so operator serve does not 
   const answer = await readEvents(h, sid);
   expect(answer.status).toBe(404);
   expect(answer.text).not.toContain('hidden');
+});
+
+test('the production inventory binds POST /api/v1/sessions to the server-built route over the injected docs cache', async () => {
+  const repo = tmpWorkspace('operator-doc-session-repo'); initGitRepo(repo);
+  mkdirSync(join(repo, 'docs'));
+  writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
+  commitAll(repo, 'docs');
+  git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
+  const home = tmpWorkspace('operator-doc-session-home');
+  const worktrees = realpathSync(tmpWorkspace('operator-doc-session-worktrees'));
+  const staticRoot = tmpWorkspace('operator-doc-session-ui');
+  writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+  const repositoryId = repoHarnessRepoIdFor(repo);
+  const at = new Date().toISOString();
+  writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
+    id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
+  }] }));
+  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
+  reader.start();
+  await reader.refresh();
+  const tree: DocsTreeV1 = {
+    protocol: 1, kind: OPERATOR_DOCS_TREE_KIND, repository_id: repositoryId, ref: 'refs/remotes/origin/main',
+    commit: git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(), collected_at: at,
+    files: [{ path: 'docs/guide.md', size: Buffer.byteLength(GUIDE), sha256: hex(GUIDE) }],
+  };
+  // No write_routes injection: the production OPERATOR_ROUTES entry binds the server-built handler.
+  const server = await startOperatorServer({
+    port: 0, static_root: staticRoot, env, docs_session_platform: 'darwin',
+    read_docs: () => ({ state: 'ready', tree, reader }),
+  });
+  const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
+  cleanups.push(async () => {
+    await server.close();
+    reader.close();
+    for (const dir of [repo, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
+  });
+  const post = async (citations: readonly DocCitationV1[]) => {
+    const response = await fetch(`${server.url}/api/v1/sessions`, {
+      method: 'POST',
+      headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations, instruction: 'Tighten the intro.' }),
+    });
+    return { status: response.status, body: JSON.parse(await response.text()) as Record<string, any> };
+  };
+
+  const stale = await post([cite(GUIDE.replace('The operator reads docs.', 'The operator reads nothing.'), 'docs/guide.md', 3, 4, tree.commit)]);
+  expect(stale.status).toBe(409);
+  expect(stale.body.error.code).toBe('citation_stale');
+  expect(readdirSync(worktrees)).toEqual([]);
+
+  const answer = await post([cite(GUIDE, 'docs/guide.md', 3, 4, tree.commit)]);
+  expect(answer.status).toBe(201);
+  expect(answer.body.kind).toBe('operator_docs_session');
+  const sid = answer.body.session_id as string;
+  expect(answer.body.branch).toBe(`docs/${sid.slice(0, 12)}`);
+  expect(readdirSync(worktrees)).toEqual([`${basename(repo)}-wt-docs-${sid.slice(0, 12)}`]);
+  expect(readFileSync(join(home, 'operator', 'sessions', sid, 'session.json'), 'utf8')).toContain('"docs_session"');
 });
 
