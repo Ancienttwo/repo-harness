@@ -169,7 +169,7 @@ describe('Bots page', () => {
     expect(commands(notify)).toEqual([]);
     const herdr = section('herdr');
     expect(herdr.querySelector('[data-herdr-server]')?.textContent).toBe('Server running · session main');
-    expect(herdr.querySelector('[data-herdr-version]')?.textContent).toBe('Version 0.9.3, as expected');
+    expect(herdr.querySelector('[data-herdr-version]')?.textContent).toBe('Version 0.9.5, as expected');
     expect(herdr.textContent).toContain('2 workspaces · 5 tabs · 7 panes');
     const agents = all('[data-herdr-agent]', herdr);
     expect(agents.map(row => [row.getAttribute('data-herdr-agent'), row.getAttribute('data-agent-status'), row.querySelector('[data-bot]')?.textContent])).toEqual([
@@ -181,8 +181,8 @@ describe('Bots page', () => {
 
   test('1-BOTS-F1 a newer local herdr shows the expected and the actual version and marks pane state unavailable, never "not connected"', async () => {
     for (const [locale, words, unavailable] of [
-      ['zh', '期望 0.9.3（fork add5f99a），实际 0.9.5', '不可用'],
-      ['en', 'Expected 0.9.3 (fork add5f99a), actual 0.9.5', 'unavailable'],
+      ['zh', '期望 0.9.5（schema 2ecf19a9），实际 0.9.3', '不可用'],
+      ['en', 'Expected 0.9.5 (schema 2ecf19a9), actual 0.9.3', 'unavailable'],
     ] as const) {
       await remount('#bots', props(serve(ok(degradedBotAccess(NOW))), locale));
       const herdr = section('herdr');
@@ -192,9 +192,9 @@ describe('Bots page', () => {
       expect(herdr.textContent).not.toMatch(/没连上|未连接|not connected/iu);
     }
     // Equal version names with another protocol carry the protocols, so the two sides never read the same.
-    const protocolOnly = edited(degradedBotAccess(NOW), raw => { raw.herdr.status.value.server.version.actual = { version: '0.9.3', protocol: 23 }; });
+    const protocolOnly = edited(degradedBotAccess(NOW), raw => { raw.herdr.status.value.server.version.actual = { version: '0.9.5', protocol: 23 }; });
     await remount('#bots', props(serve(ok(protocolOnly))));
-    expect(section('herdr').querySelector('[data-herdr-version="mismatch"]')?.textContent).toBe('Expected 0.9.3 protocol 22 (fork add5f99a), actual 0.9.3 protocol 23');
+    expect(section('herdr').querySelector('[data-herdr-version="mismatch"]')?.textContent).toBe('Expected 0.9.5 protocol 22 (schema 2ecf19a9), actual 0.9.5 protocol 23');
   });
 
   test('1-BOTS-N1 the fixtures show no token, passphrase, webhook URL or absolute path, and every control only copies a command', async () => {
