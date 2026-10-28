@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.pi-host.route-runtime
+kind: calls
+source: component.hook-adapters.pi-host
+target: component.hook-adapters.primary
+intent: "Run each Pi event as a hook route in the bundled hook entry and read the Pi JSON result"

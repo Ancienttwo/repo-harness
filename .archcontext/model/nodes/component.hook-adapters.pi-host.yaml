@@ -1,0 +1,27 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.pi-host
+kind: component
+name: "Pi Host Extension"
+status: active
+parent: capability.runtime-harness.hook-adapters
+layer: "cli"
+summary: "Maps Pi extension events to the hook routes and runs each route in the package's bundled hook."
+responsibilities:
+  - Probe the Pi version against MIN_PI_VERSION and Pi's own path resolver at session start; a failure blocks edit, write and bash in an opted-in repository.
+  - Map session_start, before_agent_start, tool_call and agent_settled to the SessionStart, UserPromptSubmit, PreToolUse and Stop routes, and block a tool call on a block, timeout, invalid result or bridge crash.
+  - Run each route in dist/hook-entry.js with Bun, with HOOK_HOST=pi, without inherited host identity, and validate the one JSON result.
+source:
+  include:
+    - "src/pi/**"
+  entrypoints:
+    - id: entrypoint.hook-adapters.pi-extension
+      path: "src/pi/extension.ts"
+      symbols:
+        - name: "repoHarnessPi"
+          sinks:
+            - id: sink.hook-adapters.pi-bridge
+              path: "src/pi/hook-bridge.ts"
+              symbol: "PiHookBridge"
+            - id: sink.hook-adapters.pi-probe
+              path: "src/pi/compat.ts"
+              symbol: "probePiHost"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.pi-host.global-runtime-reconciliation
+kind: calls
+source: component.hook-adapters.pi-host
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Compare the Pi version with the shared release version comparator"
