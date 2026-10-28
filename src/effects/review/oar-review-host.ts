@@ -1,6 +1,6 @@
 import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { claudeRuntime, codexRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
+import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,13 @@ import type { AvailableInstallation } from '@botiverse/oar';
 import { dirname } from 'node:path';
 import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
 import { promptWithOarObservation, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
+
+/** OAR owns RPC arguments and its explicit extension. Disable all ambient Pi resources. */
+export function piReviewRuntime(command: string): Runtime {
+  return createPiRuntime({ execution: 'subprocess', command,
+    args: ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates'],
+    projectTrusted: false, allowProjectPackageInstall: false });
+}
 
 export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');

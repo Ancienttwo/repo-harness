@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync } from 'node:fs';
+import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync, symlinkSync, readlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
 
@@ -9,6 +9,42 @@ export interface ReviewIsolationPaths {
   readonly journal: string;
   readonly gitCommonDir: string;
   readonly output: string;
+  readonly piAgentDirectory?: string;
+}
+
+/** Owner preparation copies model configuration only. The sandbox reads source credentials through a link. */
+export function preparePiAgentDirectory(output: string, sourceHome: string): string {
+  const directory = join(ownedOutput(output), '.pi-agent');
+  try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.()
+    || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
+  const source = join(realpathSync(sourceHome), '.pi', 'agent');
+  for (const path of [dirname(source), source]) {
+    if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('review_pi_source_unsafe');
+  }
+  const models = join(source, 'models.json'), destination = join(directory, 'models.json');
+  if (existsSync(models)) {
+    const bytes = readAuthBytes(models);
+    try {
+      if (!existsSync(destination)) writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 });
+      const copied = lstatSync(destination);
+      if (!copied.isFile() || copied.isSymbolicLink() || copied.uid !== process.getuid?.() || (copied.mode & 0o777) !== 0o600
+        || !readFileSync(destination).equals(bytes)) throw new Error('review_pi_models_changed');
+    } finally { bytes.fill(0); }
+  } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
+  const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
+  if (existsSync(auth)) {
+    const bytes = readAuthBytes(auth); bytes.fill(0);
+    if (!existsSync(link)) symlinkSync(auth, link);
+    if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
+  } else {
+    if (!existsSync(link)) writeFileSync(link, '{}', { flag: 'wx', mode: 0o600 });
+    if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
+  }
+  return directory;
 }
 
 export function inside(path: string, directory: string): boolean {
@@ -98,6 +134,14 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
     throw new Error('OAR_REVIEW_OUTPUT_UNSAFE');
   }
   const output = realpathSync(paths.output);
+  let piPolicy = '';
+  if (paths.piAgentDirectory !== undefined) {
+    const directory = paths.piAgentDirectory;
+    const stat = lstatSync(directory);
+    if (directory !== join(output, '.pi-agent') || stat.isSymbolicLink() || !stat.isDirectory()
+      || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
+    piPolicy = `(deny file-write* (literal ${JSON.stringify(join(directory, 'models.json'))}))\n`;
+  }
   const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir];
   for (const path of [paths.subject, ...protectedEntries]) {
     if (!isAbsolute(path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
@@ -115,7 +159,7 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
   const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;
   // macOS resolves DNS through this system socket. Other local services remain denied.
   const unixSockets = '(require-all (remote unix-socket) (require-not (remote unix-socket (path-literal "/private/var/run/mDNSResponder"))))';
-  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n`;
+  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n${piPolicy}`;
 
 }
 

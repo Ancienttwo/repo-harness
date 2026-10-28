@@ -361,6 +361,82 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
     expect(Object.keys(options).sort()).toEqual(['appendSystemPrompt','cwd','effort','model']);
   }
 });
+
+test('Pi isolation fixture copies only models and links credentials in an owned directory', async () => {
+  const { mkdirSync, chmodSync, symlinkSync, readlinkSync, readdirSync } = await import('node:fs');
+  const { preparePiAgentDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-home'); roots.push(root);
+  const source = join(root, 'home'), output = join(root, 'output'), agent = join(source, '.pi/agent');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ packages: ['fixture-package'], extensions: ['fixture-extension'] }));
+  writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
+  writeFileSync(join(agent, 'auth.json'), '{}');
+  const directory = preparePiAgentDirectory(output, source);
+  expect(lstatSync(directory).mode & 0o777).toBe(0o700);
+  expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json']);
+  expect(readFileSync(join(directory, 'models.json'), 'utf8')).toBe('{"providers":{}}');
+  expect(readlinkSync(join(directory, 'auth.json'))).toBe(join(agent, 'auth.json'));
+  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  writeFileSync(join(directory, 'models.json'), '{}');
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('models_changed');
+  chmodSync(directory, 0o755);
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('directory_unsafe');
+  const otherOutput = join(root, 'other'); mkdirSync(otherOutput); symlinkSync(agent, join(otherOutput, '.pi-agent'));
+  expect(() => preparePiAgentDirectory(otherOutput, source)).toThrow('directory_unsafe');
+});
+
+darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and paired denials', async () => {
+  const { mkdirSync, chmodSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const { preparePiAgentDirectory, reviewIsolationPolicy, prepareReviewLauncher, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-isolation'); roots.push(root);
+  const home = join(root, 'home'), source = join(root, 'source'), owner = join(root, 'owner'), output = join(root, 'output');
+  for (const path of [home, source, owner, output]) mkdirSync(path);
+  const agent = join(home, '.pi/agent'); mkdirSync(agent, { recursive: true });
+  const credential = join(agent, 'auth.json');
+  writeFileSync(credential, JSON.stringify({ openai: { type: 'api_key', key: 'fixture-key-no-provider-call' } }));
+  writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
+  mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
+  const directory = preparePiAgentDirectory(output, home);
+  const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json')];
+  for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
+  const initial = targets.map(path => readFileSync(path, 'utf8'));
+  const paths = { subject: source, primary: source, ownerRecord: owner, journal: owner, gitCommonDir: source, output, piAgentDirectory: directory };
+  const profile = join(owner, 'isolation.sb'); writeFileSync(profile, reviewIsolationPolicy(paths), { mode: 0o600 });
+  const node = resolveNode24(), fixture = join(root, 'fixture-pi.cjs'), capture = join(output, 'argv.jsonl');
+  const piCli = realpathSync(join(import.meta.resolve('@earendil-works/pi-coding-agent').replace('file://', ''), '..', 'cli.js'));
+  const probe = `()=>{const fs=require('node:fs');const denied=${JSON.stringify(targets)}.map(path=>{try{fs.writeFileSync(path,'CHANGED');return false}catch(e){return ['EPERM','EACCES'].includes(e.code)}});let signal=false;try{process.kill(${process.pid},'SIGCONT')}catch(e){signal=e.code==='EPERM'};return {denied,signal};}`;
+  writeFileSync(fixture, `#!${node}\nconst fs=require('node:fs'),cp=require('node:child_process');
+const argv=process.argv.slice(2);
+const check=${probe};
+const descendant=JSON.parse(cp.execFileSync(process.execPath,['-e',${JSON.stringify(`console.log(JSON.stringify((${probe})()))`)}],{encoding:'utf8'}));
+fs.appendFileSync(${JSON.stringify(capture)},JSON.stringify({fixture:true,argv,env:{PI_CODING_AGENT_DIR:process.env.PI_CODING_AGENT_DIR,OAR_PI_AGENT_DIR:process.env.OAR_PI_AGENT_DIR,OAR_PI_RPC_DIRECTORY:process.env.OAR_PI_RPC_DIRECTORY},own:check(),descendant})+'\\n');
+const child=cp.spawn(process.execPath,[${JSON.stringify(piCli)},...argv],{stdio:argv.includes('--version')?'inherit':['inherit','inherit','inherit',3]});child.on('exit',code=>process.exit(code??1));
+`); chmodSync(fixture, 0o700);
+  const launcher = prepareReviewLauncher(owner, profile, fixture);
+  const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
+  const worker = join(root, 'open.mjs');
+  writeFileSync(worker, `import assert from 'node:assert/strict';import {existsSync,readFileSync} from 'node:fs';
+import {piReviewRuntime,OarReviewHost} from ${JSON.stringify(entry)};
+const runtime=piReviewRuntime(${JSON.stringify(launcher)});
+const session=await runtime.session({kind:'available',via:'bundled'},{cwd:${JSON.stringify(output)},model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:${JSON.stringify(directory)},OAR_PI_AGENT_DIR:${JSON.stringify(directory)}}});
+const host=new OarReviewHost(session,()=>{});
+try{assert.ok(session.id);assert.equal(host.model('pi'),'openai/gpt-4o');const records=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse);const run=records.find(r=>r.argv.includes('--mode'));assert.ok(existsSync(run.env.OAR_PI_RPC_DIRECTORY+'/ready'));console.log(JSON.stringify({session_id:session.id,model:host.model('pi'),extension_ready:true}));}finally{await host.dispose();}
+`);
+  const result = spawnSync(node, [worker], { encoding: 'utf8', timeout: 30000,
+    env: { PATH: process.env.PATH, HOME: home, TMPDIR: reviewHostTemporaryDirectory(output) } });
+  expect(result.status, result.stderr).toBe(0);
+  const observed = JSON.parse(result.stdout);
+  expect(observed.extension_ready).toBe(true); expect(observed.model).toBe('openai/gpt-4o'); expect(observed.session_id).toBeTruthy();
+  const captures = readFileSync(capture, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const run = captures.find(row => row.argv.includes('--mode'));
+  for (const flag of ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-mcp', '--no-approve', '--offline']) expect(run.argv).toContain(flag);
+  expect(run.argv[run.argv.indexOf('--mode') + 1]).toBe('rpc'); expect(run.argv).toContain('-e');
+  expect(run.env.PI_CODING_AGENT_DIR).toBe(directory); expect(run.env.OAR_PI_AGENT_DIR).toBe(directory);
+  for (const row of captures) for (const evidence of [row.own, row.descendant]) { expect(evidence.denied).toEqual(targets.map(() => true)); expect(evidence.signal).toBe(true); }
+  expect(targets.map(path => readFileSync(path, 'utf8'))).toEqual(initial);
+}, 60000);
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
