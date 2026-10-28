@@ -12,11 +12,9 @@ source:
   include:
     - src/core/tools/catalog.ts
     - src/core/operator/**
-    - src/core/architecture/module-view.ts
     - src/core/setup/**
     - src/core/dev-activity/**
   exclude:
-    - src/core/architecture/module-view.ts
     - src/core/dev-activity/architecture.ts
     - src/core/dev-activity/brief.ts
     - src/core/dev-activity/decode.ts
@@ -49,6 +47,7 @@ source:
     - src/core/operator/task-diff.ts
     - src/core/operator/task-history.ts
     - src/core/operator/tests.ts
+    - src/core/operator/worktrees.ts
     - src/core/setup/cli-inventory.ts
     - src/core/setup/cli-seed.v1.json
     - src/core/setup/decode.ts

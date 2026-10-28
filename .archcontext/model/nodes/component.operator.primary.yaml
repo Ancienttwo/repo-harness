@@ -29,6 +29,9 @@ source:
     - src/effects/operator/execution-collector.ts
     - src/effects/operator/execution-state-worker.ts
     - src/effects/operator/execution-state.ts
+    - src/effects/operator/worktree-collector.ts
+    - src/effects/operator/worktree-collector-worker.ts
+    - src/effects/operator/worktree-orphans-worker.ts
     - src/effects/operator/architecture-map-collector.ts
     - src/effects/operator/architecture-map-worker.ts
   entrypoints:
