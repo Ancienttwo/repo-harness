@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { newPiPackagesSinceTransaction, recordPiInstallOwnership } from './installer/install-profile';
+import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -231,12 +231,12 @@ function runTransactionalProfileProjection(
       migrationSource = prepareProjection();
       result = runGlobalRuntimeSetup({ ...options, runtimeLock: lock });
     } catch (error) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
       throw error;
     }
     if (result.exitCode !== 0) {
-      rollbackNewPiPackages(result, transactionEnv, transaction);
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
     try {
@@ -245,24 +245,47 @@ function runTransactionalProfileProjection(
       commitInstallHostTransaction(transaction);
       return { result, state };
     } catch (error) {
-      try {
-        rollbackNewPiPackages(result, transactionEnv, transaction);
-        rollbackInstallHostTransaction(transaction);
-      } catch (rollbackError) {
-        throw new AggregateError([error, rollbackError], `install profile ${profile} failed and compensation was incomplete`);
-      }
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;
     }
   });
 }
 
-function newPiSurfaces(result: GlobalRuntimeResult) {
-  return result.steps.flatMap(step => step.owned_surface ? [step.owned_surface] : []);
+function newPiSurfaces(result?: GlobalRuntimeResult) {
+  return result?.steps.flatMap(step => step.owned_surface ? [step.owned_surface] : []) ?? [];
 }
 
-function rollbackNewPiPackages(result: GlobalRuntimeResult, env: NodeJS.ProcessEnv, transaction: ReturnType<typeof beginInstallHostTransaction>): void {
-  const sources = new Set([...newPiSurfaces(result), ...newPiPackagesSinceTransaction(transaction, env)].map(surface => surface.path));
-  for (const source of sources) removePiPackage(source, env);
+function compensatePiPackages(surfaces: Iterable<ManagedInstallSurface>, env: NodeJS.ProcessEnv) {
+  const unresolved: ManagedInstallSurface[] = [];
+  const failures: unknown[] = [];
+  for (const surface of surfaces) {
+    try { removePiPackage(surface.path, env); }
+    catch (error) { unresolved.push(surface); failures.push(error); }
+  }
+  return { unresolved, failures };
+}
+
+function rollbackRuntimeTransaction(
+  transaction: ReturnType<typeof beginInstallHostTransaction>, env: NodeJS.ProcessEnv,
+  profile: InstallProfile, cause: unknown, result?: GlobalRuntimeResult,
+): void {
+  const failures: unknown[] = [];
+  const surfaces = new Map(newPiSurfaces(result).map(surface => [surface.path, surface]));
+  try {
+    for (const surface of newPiPackagesSinceTransaction(transaction, env)) surfaces.set(surface.path, surface);
+  } catch (error) { failures.push(error); }
+  const compensation = compensatePiPackages(surfaces.values(), env);
+  const unresolved = compensation.unresolved;
+  failures.push(...compensation.failures);
+  // The filesystem contains the ownership ledger. Restore it even when Pi
+  // cleanup fails, then retain the unresolved external resources in that ledger.
+  try {
+    rollbackInstallHostTransaction(transaction, { unresolvedPi: unresolved.length ? { profile, surfaces: unresolved, env } : undefined });
+  } catch (error) { failures.push(error); }
+  if (failures.length) {
+    const errors = [cause, ...failures];
+    throw new AggregateError(errors, `runtime transaction failed and compensation was incomplete: ${errors.map(error => error instanceof Error ? error.message : String(error)).join('; ')}`);
+  }
 }
 
 function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
@@ -379,7 +402,15 @@ export function runCandidateRuntimeReconciliation(
     });
     return receipt;
   } catch (error) {
-    for (const surface of newPiSurfaces(runtime)) removePiPackage(surface.path, env);
+    const compensation = compensatePiPackages(newPiSurfaces(runtime), env);
+    // The parent must still see ownership when candidate cleanup fails, so
+    // its filesystem rollback can preserve the unresolved external effect.
+    try { recordUnresolvedPiOwnership(request.profile, compensation.unresolved, env, request.transaction_id); }
+    catch (ownershipError) { compensation.failures.push(ownershipError); }
+    if (compensation.failures.length) {
+      const errors = [error, ...compensation.failures];
+      throw new AggregateError(errors, `candidate reconciliation failed: ${errors.map(item => item instanceof Error ? item.message : String(item)).join('; ')}`);
+    }
     throw error;
   }
 }
@@ -410,17 +441,18 @@ export function runTransactionalRuntimeRefresh(
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
+    const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let result: GlobalRuntimeResult;
     try {
       result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
     } catch (error) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
       throw error;
     }
     if (result.exitCode !== 0) {
-      rollbackNewPiPackages(result, transactionEnv, transaction);
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`runtime refresh failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return result;
     }
     try {
@@ -429,12 +461,7 @@ export function runTransactionalRuntimeRefresh(
       commitInstallHostTransaction(transaction);
       return result;
     } catch (error) {
-      try {
-        rollbackNewPiPackages(result, transactionEnv, transaction);
-        rollbackInstallHostTransaction(transaction);
-      } catch (rollbackError) {
-        throw new AggregateError([error, rollbackError], 'runtime refresh failed and compensation was incomplete');
-      }
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;
     }
   });
