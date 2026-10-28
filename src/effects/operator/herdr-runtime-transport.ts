@@ -10,7 +10,7 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
   let programStatus: boolean | undefined;
   let globalClose: (() => void) | null = null, statusClose: (() => void) | null = null;
   let statusKey = '', retry: ReturnType<typeof setTimeout> | null = null;
-  let invalidate: (event: string) => void = () => {};
+  let invalidate: (event: string, error?: unknown) => void = () => {};
   const metadata = { source_host, herdr_session, source_revision: HERDR_OBSERVATION_REVISION };
   const globalSubscriptions = ['pane.created','pane.updated','pane.moved','pane.exited','pane.closed'].map(type => ({ type }));
   const lifecycleEvents: Record<string, string> = { pane_created: 'pane.created', pane_updated: 'pane.updated', pane_moved: 'pane.moved', pane_exited: 'pane.exited', pane_closed: 'pane.closed' };
@@ -37,8 +37,13 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
     closeConnections(); invalidate(code === 'events_lost' ? 'events_lost' : 'disconnected');
     const reconnect = async () => {
       retry = null; if (!active) return;
-      try { await ping(); if (!active) return; await connectGlobal(); if (active) invalidate('reconnect'); }
-      catch { if (active) retry = setTimeout(reconnect, 1000); }
+      const current = generation;
+      try {
+        await ping(); if (!active || current !== generation) return;
+        await connectGlobal(); if (active && current === generation) invalidate('reconnect');
+      } catch (error) {
+        if (active && current === generation) { invalidate('disconnected', error); retry = setTimeout(reconnect, 1000); }
+      }
     };
     retry = setTimeout(reconnect, 1000);
   }

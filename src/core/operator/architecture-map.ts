@@ -81,7 +81,7 @@ export interface ArchitectureMapNodeV1 {
   readonly kind: string;
   readonly name: string;
   readonly status: string;
-  /** The model's layer name. */
+  /** The model's layer name; the map shows it as a node attribute and does not order by layer. */
   readonly layer: string | null;
   readonly parent: string | null;
   readonly summary: string;

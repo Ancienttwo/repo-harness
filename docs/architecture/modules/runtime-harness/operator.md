@@ -239,20 +239,20 @@ sequenceDiagram
 - The user chose the source: the existing Dev Activity `gh pr list` open query also reads `headRefOid`, `changedFiles` and `files`. Dev Activity stays the one GitHub reader; no new reader or token.
 - An open PR record carries `head_sha` and `changed_files` (a complete list, or `files_missing`, `files_truncated` or `files_invalid`). A partial list never leaves the collector.
 - The map collector hands each repository's open PRs to its child in a private temporary file, because `runSetupProcess` gives the child no stdin. Owners come from `archctx resolve` at the map commit's model, under the same clean-model gate as today's changes.
-- Dependents come from the map's model relations in the browser. Flow-step impact stays `change_impact_not_exported` (Ancienttwo/arch-context#409).
+- Dependents come from the map's model relations in the browser. Flow-step impact stays `change_impact_not_exported` (Ancienttwo/arch-context#409): archctx 0.9.4 `impact` reports it, the collector does not call it.
 
 ### Architecture map layers (2026-10-28, issue #1014)
 
 - The map route serves `repo-harness.architecture-map.v2` with five layers. The map collector child reads today's changes, the model delta and the violations in the same cycle; the collector adds the tests layer from the tests collector cache.
 - Widen the console-collectors responsibility and the archctx relation intent. No new node, relation or route.
-- PR impact has no source on main (`pr_files_unavailable`). Decisions wait on Ancienttwo/arch-context#407 (`decisions_not_exported`).
-- The collector does not run `archctx flows check`: in 0.9.3 it runs `codegraph sync` on an existing index. Flow proofs show `flows_check_writes_index`.
+- PR impact has no source on main (`pr_files_unavailable`). Decisions wait on the collector reading the exported `appliesTo` nodes (`decisions_not_exported`, Ancienttwo/arch-context#407).
+- The collector does not run `archctx flows check`: without `--no-sync` it runs `codegraph sync` on an existing index. Flow proofs show `flows_check_writes_index`.
 
 ### Architecture base map (2026-10-27, issue #1013)
 
 - Add the architecture map GET route. It reads only the map collector cache.
 - Add the map collector and its child to `component.operator.console-collectors`. Primary excludes the two files. Add one collector sink to `startOperatorServer` and the relation from console-collectors to archctx.
-- archctx 0.9.3 orders layers by name only, so the map shows the layer as a node attribute and does not order by layer (Ancienttwo/arch-context#408).
+- The map shows the layer as a node attribute and does not order by layer (Ancienttwo/arch-context#408).
 
 ### Console collectors (2026-10-27, PR #1047, #1048, #1049, #1051, #1054)
 
