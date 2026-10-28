@@ -16,7 +16,7 @@ import { ROUTES } from '../hook/route-registry';
 import { resolveRepoRoot } from '../hook/runtime';
 import { PROFILE_COMPONENTS } from '../installer/install-profile';
 import { projectSetupSnapshot, type SetupRawFleetRole } from '../../core/setup/projection';
-import type { SetupHookUsage, SetupSnapshotV1 } from '../../core/setup/types';
+import type { SetupHookUsage, SetupSnapshotV2 } from '../../core/setup/types';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import { readHookUsage } from '../../effects/setup/hook-usage';
 import { parseFrontmatter } from '../../effects/terminal/task-role-profiles';
@@ -50,7 +50,7 @@ export function projectSetupBuild(build: SetupCheckBuild, options: {
   readonly collected_at: string;
   readonly fleet_dir?: string;
   readonly hook_usage?: SetupHookUsage | null;
-}): SetupSnapshotV1 {
+}): SetupSnapshotV2 {
   const doctorCheck = (id: string) => build.doctor.checks.find(check => check.id === id);
   const codexVersion = doctorCheck('codex-cli-version')?.version;
   const piVersion = doctorCheck('pi-cli-version')?.version;
@@ -84,7 +84,7 @@ function hookUsageAt(cwd: string, nowMs: number): SetupHookUsage | null {
 }
 
 /** Run the setup check builder exactly as `repo-harness setup check --target both` does (no --check-updates). */
-export function collectSetupSnapshotNow(options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV1 {
+export function collectSetupSnapshotNow(options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV2 {
   const env = options.env ?? process.env;
   const build = buildSetupCheck({ cwd: options.cwd, target: 'both', checkUpdates: false });
   const now = (options.now ?? Date.now)();

@@ -6,7 +6,7 @@ import { Window } from 'happy-dom';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
 import { fetchCliInventory } from '../../src/operator-web/CliPage';
-import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { SetupSnapshotV2 } from '../../src/core/setup/types';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
@@ -36,7 +36,7 @@ function installDom(url = 'http://127.0.0.1:4318/'): void {
 const NOW = Date.now();
 const activity = decodeDevActivitySnapshot(busyDevActivity(NOW));
 
-function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
+function props(setup: SetupSnapshotV2 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
@@ -73,7 +73,7 @@ afterEach(async () => {
 describe('setup fixtures', () => {
   test('every setup fixture passes the browser decoder and every named fixture carries one', () => {
     for (const snapshot of [readySetup(NOW), degradedSetup(NOW), loadingSetup()]) expect(() => decodeSetupSnapshot(snapshot)).not.toThrow();
-    for (const name of FIXTURE_NAMES) expect(fixtureProps(name).initialSetup?.projection_version).toBe('repo-harness.setup.v1');
+    for (const name of FIXTURE_NAMES) expect(fixtureProps(name).initialSetup?.projection_version).toBe('repo-harness.setup.v2');
     expect(fixtureProps('busy').initialSetup?.status).toBe('ready');
     expect(fixtureProps('empty').initialSetup?.reason).toBe('collection_pending');
     expect(fixtureProps('degraded').initialSetup?.status).toBe('stale');
@@ -183,7 +183,7 @@ describe('topbar freshness', () => {
   });
 
   test('stale, pending and failed setup reads say so in the line', async () => {
-    const cases: readonly [SetupSnapshotV1, string, string][] = [
+    const cases: readonly [SetupSnapshotV2, string, string][] = [
       [degradedSetup(NOW), 'stale', 'Showing setup check from 25m ago · last read failed · 5 need attention'],
       [loadingSetup(), 'pending', 'Reading configuration…'],
       [unavailableSetupSnapshot('setup_check_timeout'), 'failed', 'Setup check unavailable · setup check did not finish within 90 s'],

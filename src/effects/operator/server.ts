@@ -6,7 +6,7 @@ import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../..
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { startSetupCollector } from '../setup/collector';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
-import type { SetupSnapshotV1 } from '../../core/setup/types';
+import type { SetupSnapshotV2 } from '../../core/setup/types';
 import { startBotAccessCollector, type BotAccessCacheV1 } from './bot-access';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
 import { startCliInventoryCollector, type CliUsageSource } from '../setup/cli-inventory';
@@ -191,7 +191,7 @@ export interface OperatorServerOptions {
   /** Start the in-process Dev Activity collector (operator serve). Ignored when a cache reader is injected. */
   readonly dev_activity_collector?: boolean;
   /** Setup snapshot cache reader. GET serves only this cache; it never runs setup check. */
-  readonly read_setup?: () => SetupSnapshotV1;
+  readonly read_setup?: () => SetupSnapshotV2;
   /** Start the in-process setup collector (operator serve). Ignored when a cache reader is injected. */
   readonly setup_collector?: boolean;
   /** Bot access cache reader. GET serves only this cache; it never runs the doctor or Herdr. */
@@ -1783,7 +1783,7 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Setup accepts no query selectors.'), headOnly);
         return;
       }
-      let setupSnapshot: SetupSnapshotV1;
+      let setupSnapshot: SetupSnapshotV2;
       try {
         setupSnapshot = decodeSetupSnapshot((options.read_setup ?? setup?.read ?? unavailableSetupSnapshot)());
       } catch {

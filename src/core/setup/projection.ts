@@ -20,7 +20,7 @@ import {
   type SetupHostFacts,
   type SetupOverallStatus,
   type SetupSkill,
-  type SetupSnapshotV1,
+  type SetupSnapshotV2,
   type SetupSummary,
   type SkillProjectionState,
 } from './types';
@@ -192,7 +192,7 @@ function fleet(input: SetupProjectionInput): SetupFleetRole[] {
   return roles;
 }
 
-export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshotV1 {
+export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshotV2 {
   const checks = new Map(input.checks.map(check => [check.id, check]));
   const problems: SetupCheck[] = [];
   for (const check of input.checks) {
