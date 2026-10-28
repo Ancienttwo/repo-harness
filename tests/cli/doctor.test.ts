@@ -615,7 +615,7 @@ describe('doctor skill projection', () => {
     if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
     // The pre-row CLI line format, frozen: the rows must regenerate it byte for byte.
     const frozenLine = (projection: SkillProjection, state: string, ledgerDrift: boolean): string => {
-      const fix = `repo-harness install --profile full --target ${projection.host}`;
+      const fix = `repo-harness install --profile full --target ${projection.host === 'pi' ? 'both' : projection.host}`;
       const shown = state === 'ok link' ? `ok link -> ${projection.source}` : state;
       const problems: string[] = [];
       if (!shown.startsWith('ok ')) {

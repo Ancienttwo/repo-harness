@@ -11,6 +11,8 @@ import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledPr
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/setup/types';
+import { MIN_PI_VERSION, piVersionSupported } from '../../pi/compat';
+import { piExecutable, piPackagePresent, runPi } from '../installer/pi-package';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -121,6 +123,48 @@ function checkPath(): DoctorCheckResult {
     status: 'warn',
     detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package. Opted-in repositories require repo-harness-hook.`,
   };
+}
+
+export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult[] {
+  const executable = piExecutable(env);
+  const checks: DoctorCheckResult[] = [{ id: 'pi-path', describe: 'Pi on PATH', status: executable ? 'ok' : 'na', detail: executable ?? 'pi not found on PATH' }];
+  if (!executable) {
+    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package']) checks.push({ id, describe: id, status: 'na', detail: 'pi not found on PATH' });
+    return checks;
+  }
+  try {
+    const version = runPi(['--version'], env);
+    checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: piVersionSupported(version) ? 'ok' : 'fail',
+      detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}`,
+      ...(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version) ? { version } : {}) });
+  } catch (error) {
+    checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: 'fail', detail: String((error as Error).message) });
+  }
+  try {
+    let root = path.dirname(fs.realpathSync(executable));
+    while (true) {
+      const manifest = path.join(root, 'package.json');
+      if (fs.existsSync(manifest) && JSON.parse(fs.readFileSync(manifest, 'utf8')).name === '@earendil-works/pi-coding-agent') break;
+      const parent = path.dirname(root);
+      if (parent === root) throw new Error('Pi package root unavailable');
+      root = parent;
+    }
+    const resolver = path.join(root, 'dist/core/tools/path-utils.js');
+    const result = spawnSync(process.execPath, ['-e', 'const m = await import(process.argv[1]); process.exit(typeof m.resolveToCwd === "function" ? 0 : 1)', resolver],
+      { cwd: env.HOME, env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (result.error || result.status !== 0) throw new Error('resolver unavailable');
+    checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: 'ok', detail: 'resolveToCwd is available' });
+  } catch {
+    checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: 'fail', detail: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' });
+  }
+  try {
+    const source = bunGlobalPackageRoot(env);
+    const present = source !== null && piPackagePresent(source, env);
+    checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: present ? 'ok' : 'warn', detail: present ? `present: ${source}` : 'missing; run: repo-harness install' });
+  } catch (error) {
+    checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
+  }
+  return checks;
 }
 
 function checkVersion(): DoctorCheckResult {
@@ -529,7 +573,7 @@ interface SkillProjectionJudgment {
 /** CLI text projection of one judgment. Only `ok link` names its target. */
 function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, profile: string): string {
   const { destination, source, host } = projection;
-  const fix = `repo-harness install --profile ${profile} --target ${host}`;
+  const fix = `repo-harness install --profile ${profile} --target ${host === 'pi' ? 'both' : host}`;
   const problems: string[] = [];
   if (!row.state.startsWith('ok ')) {
     const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
@@ -569,11 +613,11 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
     if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
     const judgments: SkillProjectionJudgment[] = [];
-    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile)) {
+    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile, env)) {
       if (target !== 'both' && target !== projection.host) continue;
       const state = skillProjectionState(projection, contract);
       const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];
-      const ledgerDrift = records.some(surface => !managedInstallSurfaceIsCurrent(surface));
+      const ledgerDrift = records.some(surface => !managedInstallSurfaceIsCurrent(surface, env));
       judgments.push({
         row: { host: projection.host, name: projection.name, state, ok: state.startsWith('ok ') && !ledgerDrift },
         projection,
@@ -660,6 +704,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
   checks.push(checkVersion());
   checks.push(checkSkillProjection(target));
   checks.push(checkCodexCliVersion());
+  if (target === 'both') checks.push(...checkPiHost());
   checks.push(checkCliUpdate(target));
   for (const target of ALL_TARGETS) {
     if (target.supportsLocation('global')) {

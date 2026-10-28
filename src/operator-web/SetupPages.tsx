@@ -38,6 +38,7 @@ interface PageProps { readonly view: SetupView; readonly now: number; readonly t
 const HOST_ICON: Readonly<Record<SetupHost, ReactNode>> = {
   claude: <ChatCircleDotsIcon size={16} aria-hidden="true" />,
   codex: <TerminalWindowIcon size={16} aria-hidden="true" />,
+  pi: <TerminalWindowIcon size={16} aria-hidden="true" />,
 };
 
 const CHECK_TONE: Readonly<Record<SetupCheckStatus, DotTone>> = { ok: 'ok', warn: 'warn', fail: 'danger', needs_agent: 'warn', na: 'neutral' };

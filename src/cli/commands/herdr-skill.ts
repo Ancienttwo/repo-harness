@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { hostSkillRoot, stagedSkillRoot, type SkillHost } from "../../effects/host-skill-roots";
+import { hostSkillRoot, stagedSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import type { InstallTargetSpec } from "./install";
 
 const STEP = "configure required Herdr skill";
@@ -95,11 +95,11 @@ export function configureRequiredHerdrSkill(
     return { step: STEP, status: "failed", detail: error instanceof Error ? error.message : String(error) };
   }
   const home = env.HOME || homedir();
-  const hosts: readonly SkillHost[] = target === "both" ? ["claude", "codex"] : [target];
+  const hosts: readonly SkillHost[] = target === "both" ? SKILL_HOSTS : [target];
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);
-    const roots = hosts.map(host => [hostSkillRoot(home, host), hostSkillRoot(canonicalHome, host)]);
+    const roots = hosts.map(host => [hostSkillRoot(home, host, env), hostSkillRoot(canonicalHome, host, env)]);
     // Codex can discover this shared copy as well as its host-specific copy.
     if (hosts.includes("codex") && pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
       roots.push([stagedSkillRoot(home), stagedSkillRoot(canonicalHome)]);

@@ -2,7 +2,8 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { stagedSkillRoot } from '../../effects/host-skill-roots';
+import { stagedSkillRoot, hostSkillRoot } from '../../effects/host-skill-roots';
+import { piExecutable, piPackagePresent, removePiPackage } from './pi-package';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
@@ -41,6 +42,9 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   const writes = new Map<string, string | null>();
   const originals = new Map<string, string | null>();
   const surfaceRemovals: ManagedInstallSurface[] = [];
+  const piRemovals: string[] = [];
+  const piSkills = hostSkillRoot(home, 'pi', env);
+  const surfaceRoot = (path: string) => path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
   const removedSurfaces = new Set<ManagedInstallSurface>();
   const remember = (path: string): void => { if (!originals.has(path)) originals.set(path, fingerprint(path)); };
   const read = (path: string): string => writes.has(path) ? writes.get(path) ?? '' : existsSync(path) ? readFileSync(path, 'utf8') : '';
@@ -113,6 +117,20 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
 
   for (const surface of state?.ownership_manifest ?? []) {
     if (!selected(surface.path, opts.target, home)) continue;
+    if (surface.type === 'pi-package') {
+      try {
+        if (piExecutable(env) === null) {
+          items.push({ path: surface.path, action: 'preserve', reason: 'pi not found on PATH; package removal skipped; ownership retained for retry' });
+          continue;
+        }
+        if (piPackagePresent(surface.path, env)) {
+          piRemovals.push(surface.path);
+          items.push({ path: surface.path, action: 'remove', reason: 'transaction-owned Pi package entry through pi remove' });
+        }
+        removedSurfaces.add(surface);
+      } catch (error) { unresolved(surface.path, (error as Error).message); }
+      continue;
+    }
     if (surface.managed_marker === MANAGED_TAG) {
       if (!items.some((item) => item.path === surface.path && item.action === 'unresolved')) removedSurfaces.add(surface);
       continue;
@@ -125,15 +143,15 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       }
     }
     if (!surface.path.startsWith(join(home, '.codex') + '/') && !surface.path.startsWith(join(home, '.claude') + '/')
-      && !surface.path.startsWith(join(home, '.agents') + '/') && surface.path !== join(home, '.claude.json')) {
+      && !surface.path.startsWith(join(home, '.agents') + '/') && !surface.path.startsWith(piSkills + '/') && surface.path !== join(home, '.claude.json')) {
       items.push({ path: surface.path, action: 'preserve', reason: 'package-manager installation retained; remove separately after configuration cleanup' });
       continue;
     }
     try {
       // A receipt may own the final symlink, but never a symlinked parent directory.
-      assertConfigurationPath(dirname(surface.path), home);
+      assertConfigurationPath(dirname(surface.path), surfaceRoot(surface.path));
       if (!fileExists(surface.path)) { removedSurfaces.add(surface); continue; }
-      if (!managedInstallSurfaceIsCurrent(surface)) { unresolved(surface.path, 'owned surface changed since installation; preserved'); continue; }
+      if (!managedInstallSurfaceIsCurrent(surface, env)) { unresolved(surface.path, 'owned surface changed since installation; preserved'); continue; }
       if (surface.managed_marker === 'codegraph-config-projection') {
         assertConfigurationPath(surface.path, home);
         let next = read(surface.path);
@@ -205,7 +223,7 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   const statePath = installProfileStatePath(env);
   if (state) {
     const pending = state.ownership_manifest.filter((surface) => !removedSurfaces.has(surface));
-    if (opts.target === 'both' && !items.some((item) => item.action === 'unresolved')) change(statePath, null, 'installed profile retired');
+    if (opts.target === 'both' && !pending.some(surface => surface.type === 'pi-package') && !items.some((item) => item.action === 'unresolved')) change(statePath, null, 'installed profile retired');
     else if (removedSurfaces.size) change(statePath, `${JSON.stringify({ ...state, ownership_manifest: pending, previous: null }, null, 2)}\n`, 'retain remaining ownership for retry/other host');
   }
   const restored = receipt.changes.filter((entry) => entry.active && !remaining.includes(entry));
@@ -218,9 +236,10 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
   if (!opts.dryRun) {
     try {
       for (const [path, expected] of originals) {
-        assertConfigurationPath(dirname(path), home);
+        assertConfigurationPath(dirname(path), surfaceRoot(path));
         if (fingerprint(path) !== expected) throw new Error(`configuration changed after preview: ${path}`);
       }
+      for (const source of piRemovals) removePiPackage(source, env);
       for (const surface of surfaceRemovals) {
         rmSync(surface.path, { recursive: true, force: true });
       }

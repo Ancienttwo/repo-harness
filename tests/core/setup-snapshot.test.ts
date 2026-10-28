@@ -89,6 +89,17 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
 }
 
 describe('setup snapshot projection', () => {
+  test('Pi has version and detection facts with no adapter or fleet authority', () => {
+    const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input({
+      checks: [{ id: 'doctor.pi-path', title: 'Pi', status: 'ok', detail: 'on PATH' }],
+      cli_versions: { pi: '1.4.0' },
+      skill_rows: [{ host: 'pi', name: 'repo-harness', state: 'ok link', ok: true }],
+      fleet_hosts: { pi: { installed_agents: ['explorer'], missing_agents: [] } },
+    })));
+    expect(snapshot.hosts[2]).toEqual({ host: 'pi', reported: true, adapter_check: null, detected: true, adapter: null, cli_version: '1.4.0' });
+    expect(snapshot.skills[0]?.hosts.pi).toEqual({ state: 'ok link', ok: true });
+    expect(snapshot.fleet.every(role => role.hosts.pi === null)).toBe(true);
+  });
   test('projects one setup check build into the public contract', () => {
     const snapshot = decodeSetupSnapshot(projectSetupSnapshot(input()));
     expect(snapshot.status).toBe('ready');
@@ -109,16 +120,16 @@ describe('setup snapshot projection', () => {
     });
     expect(snapshot.hosts[0]).toMatchObject({ host: 'claude', adapter_check: 'ok', cli_version: null });
     expect(snapshot.skills).toEqual([
-      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false } } },
-      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false } } },
+      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null } },
+      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null } },
     ]);
     expect(snapshot.hooks.flatMap(event => event.routes.map(route => `${event.event}.${route.route_id}`)))
       .toEqual(ROUTES.map(route => `${route.event}.${route.routeId}`));
     expect(snapshot.hooks.map(event => event.event)).not.toContain('SubagentStop');
-    expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual(['claude', 'codex']);
+    expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual([...SETUP_HOSTS]);
     expect(snapshot.fleet).toEqual([
-      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed' } },
-      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed' } },
+      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed', pi: null } },
+      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed', pi: null } },
     ]);
   });
 

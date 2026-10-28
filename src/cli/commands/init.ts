@@ -32,7 +32,7 @@ import {
   probeExpectations as catalogProbeExpectations,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { hostSkillRoot } from "../../effects/host-skill-roots";
+import { hostSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
 import { ensureCodegraph } from "../tools/codegraph";
@@ -48,7 +48,7 @@ const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
  * Host-scoped skills bundled under `assets/skills/<skill>`. The cross-review
  * skill is host-aware; task-agent owns persistent plan consultation.
  */
-type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
+type BundledHostSkill = { skill: string; host: SkillHost; step: string };
 
 /**
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
@@ -84,7 +84,7 @@ function crossReviewSkillsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyArr
   const crossModel = new Set(catalogProbeExpectations(catalog).crossModel);
   const placements = catalogHostSkillPlacements(catalog);
   const entries: BundledHostSkill[] = [];
-  for (const host of ["claude", "codex"] as const) {
+  for (const host of SKILL_HOSTS) {
     for (const skill of placements[host]) {
       const step = crossModel.has(skill) ? `cross-review skill ${skill}` : `external-brain skill ${skill}`;
       entries.push({ skill, host, step });
@@ -237,7 +237,7 @@ function syncBundledItemsAtHome(
       steps.push({ step, status: "skipped", detail: `bundled source not found at ${source}` });
       continue;
     }
-    const root = hostSkillRoot(home, host);
+    const root = hostSkillRoot(home, host, env);
     const dest = join(root, skill);
     const destSkill = join(dest, "SKILL.md");
     mkdirSync(root, { recursive: true });
