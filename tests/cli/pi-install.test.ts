@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import { installPiPackage, piPackagePresent, piUserPackageSources, runPi } from '../../src/cli/installer/pi-package';
@@ -11,6 +11,9 @@ import { dependencies } from '../../package.json';
 import { runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import { runUserUninstall } from '../../src/cli/installer/uninstall';
+import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
+import { piAgentDir } from '../../src/effects/pi-agent-dir';
+import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -27,10 +30,17 @@ function createFixture(root: string) {
   const source = join(home, '.bun/install/global/node_modules/repo-harness');
   const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
   const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PI_CODING_AGENT_DIR: join(root, 'pi-config'),
-    PATH: `${bin}:${process.env.PATH}`, PI_FIXTURE_ROOT: root, PI_FIXTURE_VERSION: '1.4.0', REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
+    PATH: `${bin}:${process.env.PATH}`, PI_PACKAGE_DIR: undefined, PI_FIXTURE_ROOT: root, PI_FIXTURE_VERSION: '1.4.0', REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
   write(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0', dependencies, pi: { extensions: ['./extension.ts'] } }));
   symlinkSync(join(ROOT, 'node_modules'), join(source, 'node_modules'), 'dir');
-  write(join(host, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', type: 'module' }));
+  write(join(host, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.4.0', type: 'module', main: './dist/index.js' }));
+  write(join(host, 'dist/index.js'), `import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+export function getPackageDir() { return process.env.PI_PACKAGE_DIR || fileURLToPath(new URL('../',import.meta.url)); }
+let metadata={};
+try { metadata=JSON.parse(readFileSync(getPackageDir()+'/package.json','utf8')); } catch(error) { if(error.code!=='ENOENT') throw error; }
+export const VERSION=process.env.PI_PACKAGE_DIR ? metadata.version || '0.0.0' : process.env.PI_FIXTURE_VERSION || metadata.version || '0.0.0';
+`);
   write(join(host, 'dist/core/tools/path-utils.js'), 'export function resolveToCwd(path) { return path; }');
   write(join(root, 'packages.json'), JSON.stringify(['npm:other-package']));
   write(join(env.PI_CODING_AGENT_DIR, 'settings.json'), '{"theme":"user","packages":["npm:other-package"]}\n');
@@ -55,7 +65,9 @@ case 'install':
   entries.push(relative(agentDir,args[1])); writeFileSync(file,JSON.stringify(entries));
   if(process.env.PI_FIXTURE_FAIL_INSTALL==='1') process.exit(1);
   break;
-case 'remove': writeFileSync(file,JSON.stringify(entries.filter(p=>p.startsWith('npm:')||resolve(agentDir,p)!==resolve(args[1])))); break;
+case 'remove':
+  if(process.env.PI_FIXTURE_KEEP_ENTRY==='1') break;
+  writeFileSync(file,JSON.stringify(entries.filter(p=>p.startsWith('npm:')||resolve(agentDir,p)!==resolve(args[1])))); break;
 default: process.exit(99);
 }
 `);
@@ -73,6 +85,44 @@ default: process.exit(99);
 }
 
 describe('Pi package and skill installation', () => {
+  test('list parsing keeps the final user section and ignores output noise and project entries', () => {
+    expect(piUserPackageSources('added 2 packages\n  unrelated install output\nUser packages:\n  old\nUser packages:\n  ../current\n    /absolute/current\ninstall notice\nProject packages:\n  ../project')).toEqual(['../current']);
+    expect(() => piUserPackageSources('  ../unscoped')).toThrow('PI_PACKAGE_LIST_INVALID');
+  });
+
+  test('an explicit environment never borrows the parent Bun installation', () => fixture(f => {
+    const previous = process.env.BUN_INSTALL;
+    try {
+      process.env.BUN_INSTALL = join(f.root, 'parent-bun');
+      expect(bunGlobalPackageRoot({ HOME: f.home })).toBe(f.source);
+      expect(bunGlobalPackageRoot({})).toBeNull();
+      expect(bunGlobalPackageRoot({ USERPROFILE: f.home })).toBe(f.source);
+      expect(bunGlobalPackageRoot()).toBe(join(f.root, 'parent-bun/install/global/node_modules/repo-harness'));
+    } finally {
+      if (previous === undefined) delete process.env.BUN_INSTALL; else process.env.BUN_INSTALL = previous;
+    }
+  }));
+
+  test('tilde agent directories share package identity and skill projection paths', () => fixture(f => {
+    const env = { ...f.env, PI_CODING_AGENT_DIR: '~/pi-agent' };
+    const agent = join(f.home, 'pi-agent');
+    expect(piAgentDir(f.home, env)).toBe(agent);
+    expect(piAgentDir(f.home, { PI_CODING_AGENT_DIR: '~' })).toBe(f.home);
+    expect(hostSkillRoot(f.home, 'pi', env)).toBe(join(agent, 'skills'));
+    expect(installPiPackage(f.source, true, env).status).toBe('ok');
+    expect(piPackagePresent(f.source, env)).toBe(true);
+    expect(configureRequiredHerdrSkill('both', env).status).toBe('ok');
+    expect(existsSync(join(agent, 'skills/herdr/SKILL.md'))).toBe(true);
+    const invalid = configureRequiredHerdrSkill('both', { ...env, PI_CODING_AGENT_DIR: 'relative-agent' });
+    expect(invalid).toMatchObject({ status: 'failed', detail: expect.stringContaining('non-canonical host skill root') });
+  }));
+
+  test('package identity compares real paths across a symlinked source', () => fixture(f => {
+    const alias = join(f.root, 'package-alias');
+    symlinkSync(f.source, alias, 'dir');
+    f.write(join(f.root, 'packages.json'), JSON.stringify([relative(f.env.PI_CODING_AGENT_DIR, alias)]));
+    expect(piPackagePresent(f.source, f.env)).toBe(true);
+  }));
   test('relative Pi entry shape is recorded and detected after install', () => fixture(f => {
     expect(installPiPackage(f.source, true, f.env)).toMatchObject({ status: 'ok', created: true });
     const source = relative(f.env.PI_CODING_AGENT_DIR, f.source);
@@ -91,6 +141,25 @@ describe('Pi package and skill installation', () => {
     path: source, components: ['host-adapters'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
     type: 'pi-package', managed_marker: 'pi-package-source', content_hash: null, symlink_target: null,
   });
+
+  test('unconfirmed removal keeps the Pi package ownership ledger for retry', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    expect(installPiPackage(f.source, true, f.env).created).toBe(true);
+    recordPiInstallOwnership([packageSurface(f.source)], f.env);
+    const result = runUserUninstall({ target: 'both', env: { ...f.env, PI_FIXTURE_KEEP_ENTRY: '1' } });
+    expect(result.exitCode).toBe(1);
+    expect(result.items.some(item => item.action === 'unresolved' && item.reason.includes('PI_PACKAGE_REMOVE_NOT_RECORDED'))).toBe(true);
+    expect(readInstalledProfile(f.env)?.ownership_manifest).toContainEqual(packageSurface(f.source));
+    expect(piPackagePresent(f.source, f.env)).toBe(true);
+    expect(f.argv().filter(args => args[0] === 'remove')).toEqual([['remove', f.source]]);
+  }));
+
+  test('an unreadable package list preserves ownership instead of retiring the ledger', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    recordPiInstallOwnership([packageSurface(f.source)], f.env);
+    expect(runUserUninstall({ target: 'both', env: { ...f.env, PI_FIXTURE_BAD_LIST: '1' } }).exitCode).toBe(1);
+    expect(readInstalledProfile(f.env)?.ownership_manifest).toContainEqual(packageSurface(f.source));
+  }));
 
   test('failed candidate handoff compensates the new entry recorded in the shared ledger', () => fixture(f => {
     recordInstallOwnership([], f.env);
@@ -197,7 +266,14 @@ describe('Pi package and skill installation', () => {
     expect(checkPiHost({ ...f.env, PI_FIXTURE_VERSION: '2.0.0' }).find(c => c.id === 'pi-cli-version')?.status).toBe('ok');
     expect(checkPiHost({ ...f.env, PI_FIXTURE_VERSION: '2.0.0-beta+build' }).find(c => c.id === 'pi-cli-version')).toMatchObject({ status: 'ok', version: '2.0.0-beta+build' });
     f.write(join(f.host, 'dist/core/tools/path-utils.js'), 'export const resolveToCwd = null;');
-    expect(checkPiHost(f.env).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', detail: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' });
+    expect(checkPiHost(f.env).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' } });
+    const empty = join(f.root, 'empty-package');
+    mkdirSync(empty);
+    expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_UNSUPPORTED_VERSION' } });
+    f.write(join(empty, 'package.json'), JSON.stringify({ version: '1.4.0' }));
+    expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' } });
+    f.write(join(empty, 'dist/core/tools/path-utils.js'), 'export function resolveToCwd(path) { return path; }');
+    expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'ok', capability: { state: 'ready' } });
     expect(checkPiHost({ ...f.env, PATH: '' }).every(c => c.status === 'na')).toBe(true);
   }));
 });

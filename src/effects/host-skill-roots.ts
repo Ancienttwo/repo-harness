@@ -1,4 +1,5 @@
 import { join } from 'path';
+import { piAgentDir } from './pi-agent-dir';
 
 /**
  * Host skill root rules. Every host skill writer derives its root here:
@@ -10,7 +11,7 @@ export const SKILL_HOSTS = ['claude', 'codex', 'pi'] as const;
 export type SkillHost = (typeof SKILL_HOSTS)[number];
 
 export function hostSkillRoot(home: string, host: SkillHost, env: Readonly<Record<string, string | undefined>> = process.env): string {
-  if (host === 'pi') return join(env.PI_CODING_AGENT_DIR || join(home, '.pi', 'agent'), 'skills');
+  if (host === 'pi') return join(piAgentDir(home, env), 'skills');
   return join(home, `.${host}`, 'skills');
 }
 

@@ -206,6 +206,7 @@ function mismatchText(mismatch: SetupHookMismatch, t: OperatorTranslate): string
 function sentenceText(facts: SetupHostFacts, t: OperatorTranslate): string {
   const sentence = hostSentence(facts);
   switch (sentence.kind) {
+    case 'package': return t(`setup.host.piPackage.${sentence.status}`);
     case 'not_reported': return t('setup.host.notReported', { host: hostName(facts.host, t) });
     case 'not_detected': return t('setup.host.notDetected');
     case 'not_inspected': return t('setup.host.notInspected');
@@ -220,6 +221,7 @@ function sentenceText(facts: SetupHostFacts, t: OperatorTranslate): string {
 }
 
 function hostTone(facts: SetupHostFacts): DotTone {
+  if (facts.host === 'pi') return facts.package_check === null ? 'neutral' : CHECK_TONE[facts.package_check];
   return facts.adapter_check === null ? 'neutral' : CHECK_TONE[facts.adapter_check];
 }
 

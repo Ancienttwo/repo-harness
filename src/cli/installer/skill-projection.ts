@@ -4,8 +4,9 @@ import { facadesForProfile, hostSkillPlacements, type SkillSurfaceCatalog, type 
 import { hostSkillRoot, stagedSkillRoot, SKILL_HOSTS, type SkillHost } from '../../effects/host-skill-roots';
 
 export function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
-  const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL;
-  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
+  const selected = env === undefined ? process.env : env;
+  const bunInstall = selected.BUN_INSTALL;
+  const home = selected.HOME ?? selected.USERPROFILE;
   const bunRoot = bunInstall ? resolve(bunInstall) : home ? join(resolve(home), ".bun") : null;
   return bunRoot ? join(bunRoot, "install", "global", "node_modules", "repo-harness") : null;
 }

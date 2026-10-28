@@ -72,8 +72,7 @@ export interface SetupAdapterFacts {
   mismatches: SetupHookMismatch[];
 }
 
-export interface SetupHostFacts {
-  host: SetupHost;
+export type SetupHostFacts = {
   /** False when setup check has no install check for this host. Then every other field is null. */
   reported: boolean;
   /** Status of the `status.adapter.<host>` check. */
@@ -84,7 +83,7 @@ export interface SetupHostFacts {
   adapter: SetupAdapterFacts | null;
   /** Host CLI version only when setup check measured it. */
   cli_version: string | null;
-}
+} & ({ host: 'pi'; package_check: SetupCheckStatus | null } | { host: Exclude<SetupHost, 'pi'> });
 
 /** The `skillProjectionState` vocabulary in src/cli/commands/doctor.ts. Link targets are never exposed. */
 export const SKILL_PROJECTION_STATES = [

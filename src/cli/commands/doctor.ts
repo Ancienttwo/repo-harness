@@ -11,8 +11,8 @@ import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledPr
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/setup/types';
-import { MIN_PI_VERSION, piVersionSupported } from '../../pi/compat';
-import { piExecutable, piPackagePresent, runPi } from '../installer/pi-package';
+import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
+import { piExecutable, piPackagePresent } from '../installer/pi-package';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -47,8 +47,9 @@ export interface DoctorCheckResult {
   detail: string;
   /** `skill-projection` only: the typed per-skill judgments that `detail` is generated from. */
   skills?: SkillProjectionRow[];
-  /** `codex-cli-version` only: the parsed CLI version. */
+  /** Parsed host CLI version when measured. */
   version?: string;
+  capability?: { state: PiCapability['state']; code?: PiHostUnavailableCode };
 }
 
 /** One per-skill judgment of the skill projection check. Paths stay in the CLI text only. */
@@ -133,14 +134,6 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
     return checks;
   }
   try {
-    const version = runPi(['--version'], env);
-    checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: piVersionSupported(version) ? 'ok' : 'fail',
-      detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}`,
-      ...(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version) ? { version } : {}) });
-  } catch (error) {
-    checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: 'fail', detail: String((error as Error).message) });
-  }
-  try {
     let root = path.dirname(fs.realpathSync(executable));
     while (true) {
       const manifest = path.join(root, 'package.json');
@@ -149,13 +142,18 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
       if (parent === root) throw new Error('Pi package root unavailable');
       root = parent;
     }
-    const resolver = path.join(root, 'dist/core/tools/path-utils.js');
-    const result = spawnSync(process.execPath, ['-e', 'const m = await import(process.argv[1]); process.exit(typeof m.resolveToCwd === "function" ? 0 : 1)', resolver],
+    const child = fileURLToPath(new URL('../../effects/setup/pi-capability-child.ts', import.meta.url));
+    const result = spawnSync(process.execPath, [child, root],
       { cwd: env.HOME, env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.error || result.status !== 0) throw new Error('resolver unavailable');
-    checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: 'ok', detail: 'resolveToCwd is available' });
-  } catch {
-    checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: 'fail', detail: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' });
+    if (result.error || result.status !== 0) throw new Error(result.error?.message || result.stderr.trim() || 'Pi SDK probe failed');
+    const { version, ...capability } = JSON.parse(result.stdout) as { version: string; state: PiCapability['state']; code?: PiHostUnavailableCode };
+    checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: piVersionSupported(version) ? 'ok' : 'fail',
+      detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}`,
+      ...(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version) ? { version } : {}) });
+    checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: capability.state === 'ready' ? 'ok' : 'fail',
+      detail: capability.state === 'ready' ? capability.state : `${capability.state}: ${capability.code}`, capability });
+  } catch (error) {
+    for (const id of ['pi-cli-version', 'pi-capability']) checks.push({ id, describe: id, status: 'fail', detail: (error as Error).message });
   }
   try {
     const source = bunGlobalPackageRoot(env);

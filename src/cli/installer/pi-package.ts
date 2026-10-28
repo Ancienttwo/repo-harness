@@ -1,7 +1,9 @@
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs';
 import { delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { stripVTControlCharacters } from 'node:util';
+import { homedir } from 'node:os';
+import { piAgentDir } from '../../effects/pi-agent-dir';
 
 export function piExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
   const extensions = process.platform === 'win32' ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : [''];
@@ -33,21 +35,30 @@ export function runPi(args: readonly string[], env: NodeJS.ProcessEnv = process.
 /** Pi 1.4 list prints sources at two spaces and resolved paths at four. */
 export function piUserPackageSources(output: string): readonly string[] {
   if (output === 'No packages installed.') return [];
-  let scope: 'user' | 'project' | null = null;
-  const sources: string[] = [];
-  for (const line of output.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    if (line === 'User packages:') { scope = 'user'; continue; }
-    if (line === 'Project packages:') { scope = 'project'; continue; }
-    if (scope === null || !/^  \S/.test(line) && !/^    \S/.test(line)) throw new Error('PI_PACKAGE_LIST_INVALID');
-    if (scope === 'user' && /^  \S/.test(line)) sources.push(line.slice(2).replace(/ \(filtered\)$/, ''));
+  const lines = output.split(/\r?\n/);
+  const start = lines.lastIndexOf('User packages:');
+  if (start < 0) {
+    if (lines.includes('Project packages:')) return [];
+    throw new Error('PI_PACKAGE_LIST_INVALID');
   }
-  if (scope === null) throw new Error('PI_PACKAGE_LIST_INVALID');
-  return sources;
+  const nextHeader = lines.findIndex((line, index) => index > start && (line === 'User packages:' || line === 'Project packages:'));
+  return lines.slice(start + 1, nextHeader < 0 ? undefined : nextHeader)
+    .filter(line => /^  \S/.test(line))
+    .map(line => line.slice(2).replace(/ \(filtered\)$/, ''));
 }
 
 export function piPackagePresent(source: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  return piUserPackageSources(runPi(['list'], env)).some(entry => entry === source);
+  const sources = piUserPackageSources(runPi(['list'], env));
+  if (sources.length === 0) return false;
+  const expected = realpathSync(source);
+  const agentDir = piAgentDir(env.HOME ?? env.USERPROFILE ?? homedir(), env);
+  return sources.some(entry => {
+    try { return realpathSync(resolve(agentDir, entry)) === expected; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') return false;
+      throw error;
+    }
+  });
 }
 
 export interface PiPackageStep {

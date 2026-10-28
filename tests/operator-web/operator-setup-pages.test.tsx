@@ -200,6 +200,20 @@ describe('topbar freshness', () => {
 });
 
 describe('Agents page', () => {
+  test.each([
+    ['ok', 'Detected · repo-harness package installed'],
+    ['warn', 'Detected · repo-harness package missing'],
+    ['fail', 'Detected · package check failed'],
+  ] as const)('Pi reports its package entry state (%s) and repair command', async (status, sentence) => {
+    const snapshot = readySetup(NOW);
+    snapshot.hosts[2] = { host: 'pi', reported: true, detected: true, cli_version: '1.4.0', adapter: null, adapter_check: null, package_check: status };
+    if (status !== 'ok') snapshot.checks.push({ id: 'doctor.pi-package', status, title: 'Pi package entry', detail: 'Package entry needs repair', command: 'repo-harness install --target both' });
+    await mount('#agents', props(snapshot));
+    expect(text('[data-host-row="pi"] [data-host-sentence]')).toBe(sentence);
+    if (status !== 'ok') expect(text('[data-host-row="pi"] [data-command]')).toContain('repo-harness install --target both');
+    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
+  });
+
   test('one status line, a copyable command per item, and one row per host', async () => {
     await mount('#agents', props(readySetup(NOW)));
     expect(page().getAttribute('data-setup-state')).toBe('ready');
