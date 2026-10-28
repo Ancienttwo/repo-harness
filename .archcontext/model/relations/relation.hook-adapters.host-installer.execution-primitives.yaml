@@ -3,4 +3,4 @@ id: relation.hook-adapters.host-installer.execution-primitives
 kind: calls
 source: component.hook-adapters.host-installer
 target: capability.workflow-engine.execution-primitives
-intent: "Hold the runtime host transaction lock"
+intent: "Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner"

@@ -455,6 +455,12 @@ does not inspect legacy command shapes, so there is no dual-read path.
 
 ### Pi native hook host (2026-10-28, #1099)
 
+The model assigns `src/pi/**` to `component.hook-adapters.host-installer`,
+under `capability.runtime-harness.hook-adapters`. This keeps the native event
+adapter and host installation in the existing host boundary. The route runtime
+still owns the protocol renderer and typed dispatch. `external.pi` names the
+host that loads the extension; the installer calls that host's package CLI.
+
 `src/pi/extension.ts` maps Pi events into the existing route runtime. It calls
 SessionStart once per session and delivers the cached context at the first
 `before_agent_start` as a hidden custom message. The same prompt event calls
@@ -469,6 +475,8 @@ and loads Pi's own `resolveToCwd` from the SDK package directory. A missing
 private export or an unsupported version makes an opted-in session unavailable
 and blocks edit, write and bash with a fixed error code. A non-opt-in repository
 stays inactive. There is no local path parser or upper version bound.
+The opt-in probe uses `gitExecFileSync` from the shared Git runner with a
+three-second timeout. A failed repository probe leaves the session inactive.
 
 `src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
 The child receives stdin JSON and `HOOK_HOST=pi`, after inherited `HOOK_*`,
@@ -492,6 +500,13 @@ still mutate arguments. The integration is not an OS sandbox.
 Pi input mutation has an approved contract. The private path resolver still
 needs a public upstream export. The real-SDK tests use a scripted provider
 fixture; real-provider acceptance belongs to parent integration.
+
+Pi uses native package registration instead of a managed JSON adapter. The
+existing managed-adapter flow therefore remains specific to Claude and Codex.
+`flow.hook-adapters.skill-projection` records the separate direct calls from
+`expectedSkillProjections` to the catalog's `hostSkillPlacements` and the shared
+`hostSkillRoot`. The event-to-Bun handoff crosses a process boundary; the model
+does not claim a direct CodeGraph call from the bridge to `runHook`.
 
 ## 5. 验证面
 

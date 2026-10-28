@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: external.pi
+kind: external-system
+name: Pi Coding Agent
+status: active
+layer: external
+summary: Runs the repo-harness native event extension and loads projected skills; its CLI owns package registration and removal.

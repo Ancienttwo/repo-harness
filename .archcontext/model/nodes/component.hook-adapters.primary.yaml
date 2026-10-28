@@ -9,7 +9,7 @@ summary: "Resolves a host hook route to its one typed handler, shapes the host o
 responsibilities:
   - Keep the ordered ROUTES registry and the one typed handler binding per route.
   - Check the opt-in marker, parse the host payload and resolve the hook identity once, and resolve Effective State at most once per event.
-  - Render typed handler results for Claude and Codex through one host table, including the SessionStart context budget.
+  - Render typed handler results for Claude, Codex and Pi through one host table, including the SessionStart context budget.
   - Append one loop-engine-hook-event/v2 record per handled event and rotate the bounded log archive.
 source:
   include:

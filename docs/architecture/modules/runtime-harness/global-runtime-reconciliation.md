@@ -231,6 +231,28 @@ CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` �
 - `scripts/axr5-archctx-clean-room.ts` 归入 archctx-closure 的依据只有文件名和归属提议 §1d。它是否仍被 CI 或发布流程调用？没有记录。
 - `package.json` 的版本被多个模块直接读取（`model-reader.ts:14`、`src/cli/commands/status.ts:37`、`install-profile.ts:1333`、`src/cli/mcp/version.ts:5`）。这些读取没有建模为关系。是否需要一个版本读取入口？没有记录。
 
+### Pi package and shared host roots (2026-10-29, #1099)
+
+`src/cli/commands/global-runtime.ts` calls `installPiPackage` only after the
+mandatory setup steps succeed. It passes the installed candidate's package
+directory and enables the Pi step for the combined host target when host
+adapters are enabled. `flow.global-runtime-reconciliation.primary` records
+that direct call. Host Installer owns `src/cli/installer/pi-package.ts` and
+the native Pi list, install and remove operations. Only a newly created package
+entry grants repo-harness removal ownership. Pi owns its settings and trust.
+
+Global Runtime Reconciler owns `src/effects/host-skill-roots.ts`. Its
+`hostSkillRoot` selects the Pi skills directory from `PI_CODING_AGENT_DIR` or
+the user's `.pi/agent` directory. Install projections and doctor use this same
+root authority. Doctor reports the Pi version, resolver capability, package
+entry and skill projection; the setup snapshot projects these observations.
+
+Release Packaging owns `scripts/check-pi-package-smoke.ts`. The check packs the
+current package without lifecycle scripts and compares the extension metadata,
+optional SDK peer, source files and hook bundle with the extracted tarball.
+It does not read the skill catalog. The retired release-to-catalog relation and
+the old Pi package sync script remain absent.
+
 ## 4. 歷史決策記錄(append-only)
 
 ### 依赖回读与安全对账（2026-08-11，PR #176）

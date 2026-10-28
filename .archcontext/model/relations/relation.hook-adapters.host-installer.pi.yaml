@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.pi
+kind: calls
+source: component.hook-adapters.host-installer
+target: external.pi
+intent: Use Pi list, install and remove for the exact package source, without writing Pi settings or bypassing trust.

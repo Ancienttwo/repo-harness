@@ -8,7 +8,7 @@ layer: "scripts"
 summary: "Parses the manifest into a closed catalog and computes the facade, external skill and host placement projections per profile."
 responsibilities:
   - Parse and validate manifest.json without file or process access.
-  - Compute the profile and host projections that installers, doctor and the routing eval consume.
+  - Compute the Claude, Codex and Pi profile and host projections that installers, doctor and the routing eval consume; leave filesystem roots and writes to their owners.
   - Check the skill version pins.
 source:
   include:

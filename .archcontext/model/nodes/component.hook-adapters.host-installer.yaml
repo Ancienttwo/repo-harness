@@ -5,14 +5,18 @@ name: "Host Adapter Installer"
 status: active
 parent: capability.runtime-harness.hook-adapters
 layer: "cli"
-summary: "Projects the route registry into user-level Claude and Codex adapter entries."
+summary: "Projects Claude and Codex adapters, maps Pi events through the hook bridge, and owns host package and skill installation."
 responsibilities:
-  - Build and compare managed hook entries for each host from the route registry.
+  - Build and compare managed Claude and Codex hook entries from the ordered route registry.
+  - Map Pi session, prompt, direct and nested tool events to the shared hook process; enforce the capability probe, wire limits and stale-result boundary.
+  - Install and remove the native Pi package entry through Pi CLI commands, and record removal ownership only for a newly created source.
+  - Project the catalog-selected skills to Claude, Codex and Pi roots without a second Pi package skill declaration.
   - Apply and roll back install profiles under the runtime host lock.
   - Report host install status and scan local hook and task configurations for injection surfaces without mutation.
 source:
   include:
     - "src/cli/installer/**"
+    - "src/pi/**"
     - "src/effects/managed-tree.ts"
     - "src/cli/commands/install.ts"
     - "src/cli/commands/status.ts"
@@ -26,3 +30,22 @@ source:
             - id: sink.hook-adapters.routes-for-host
               path: "src/cli/hook/route-registry.ts"
               symbol: "routesForHost"
+    - id: entrypoint.hook-adapters.pi-extension
+      path: "src/pi/extension.ts"
+      symbols:
+        - name: "repoHarnessPi"
+          sinks:
+            - id: sink.hook-adapters.pi-registration
+              path: "src/pi/extension.ts"
+              symbol: "registerPiHooks"
+    - id: entrypoint.hook-adapters.skill-projection
+      path: "src/cli/installer/skill-projection.ts"
+      symbols:
+        - name: "expectedSkillProjections"
+          sinks:
+            - id: sink.hook-adapters.skill-placements
+              path: "src/core/skill-surface/catalog.ts"
+              symbol: "hostSkillPlacements"
+            - id: sink.hook-adapters.skill-root
+              path: "src/effects/host-skill-roots.ts"
+              symbol: "hostSkillRoot"

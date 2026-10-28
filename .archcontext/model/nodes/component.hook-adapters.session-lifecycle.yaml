@@ -10,7 +10,7 @@
   "responsibilities": [
     "Build SessionStart sections from Effective State and the session providers.",
     "Publish the evidence checkpoint and render handoff and resume at Stop.",
-    "Select, bound and dedupe architecture debt for SessionStart, Claude Stop and Codex UserPromptSubmit, including worker sessions.",
+    "Select, bound and dedupe architecture debt for SessionStart, Claude Stop and Codex or Pi UserPromptSubmit, including worker sessions.",
     "Keep host rendering separate and preserve the installed UserPromptSubmit inbox tuple.",
     "Record native subagent starts and stamp the return-channel contract onto Claude Agent spawn prompts."
   ],

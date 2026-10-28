@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.pi.hook-adapters
+kind: calls
+source: external.pi
+target: capability.runtime-harness.hook-adapters
+intent: Pi loads the native extension, which sends mapped session, prompt and tool events to the same-package Bun hook process.

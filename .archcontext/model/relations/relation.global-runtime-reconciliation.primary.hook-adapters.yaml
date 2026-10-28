@@ -3,4 +3,4 @@ id: relation.global-runtime-reconciliation.primary.hook-adapters
 kind: calls
 source: component.global-runtime-reconciliation.primary
 target: capability.runtime-harness.hook-adapters
-intent: "Install host adapters and project skills through the install profile under the host lock"
+intent: "Install host adapters, project owned host skills, and register the Pi package from the installed candidate after mandatory setup succeeds"

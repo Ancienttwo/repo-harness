@@ -1,0 +1,52 @@
+schemaVersion: archcontext.flow/v1
+id: flow.hook-adapters.skill-projection
+capabilityId: capability.runtime-harness.hook-adapters
+name: Resolve owned skill destinations for Claude, Codex and Pi
+applicability: required
+participants:
+  - id: host-installer
+    nodeId: component.hook-adapters.host-installer
+  - id: skill-catalog
+    nodeId: component.action-commands.skill-surface-catalog
+  - id: host-roots
+    nodeId: capability.runtime-harness.global-runtime-reconciliation
+steps:
+  - id: select-placements
+    from: host-installer
+    to: skill-catalog
+    label: Read the profile-selected host placements from the catalog
+    evidence:
+      entrypointId: entrypoint.hook-adapters.skill-projection
+      sourceSymbol: expectedSkillProjections
+      sinkId: sink.hook-adapters.skill-placements
+outcomes:
+  - id: success
+    kind: success
+    label: Each selected skill has one source and destination per host
+    steps:
+      - id: resolve-root
+        from: host-installer
+        to: host-roots
+        label: Resolve the host root, including the Pi agent directory override
+        evidence:
+          entrypointId: entrypoint.hook-adapters.skill-projection
+          sourceSymbol: expectedSkillProjections
+          sinkId: sink.hook-adapters.skill-root
+    terminal:
+      participant: host-installer
+      label: Return deterministic skill projections for install ownership and doctor checks
+  - id: error
+    kind: error
+    label: A dependency failure interrupts the projection
+    steps:
+      - id: propagate-catalog-failure
+        from: host-installer
+        to: skill-catalog
+        label: Propagate a failed catalog lookup without inventing host placements
+        evidence:
+          entrypointId: entrypoint.hook-adapters.skill-projection
+          sourceSymbol: expectedSkillProjections
+          sinkId: sink.hook-adapters.skill-placements
+    terminal:
+      participant: host-installer
+      label: Return the dependency failure to the installer or doctor caller

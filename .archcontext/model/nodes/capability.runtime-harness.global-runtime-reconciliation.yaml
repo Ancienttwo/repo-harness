@@ -12,6 +12,7 @@ responsibilities:
   - Fail closed before later host mutations when the mandatory runtime closure cannot be reconciled.
   - Own the CLI composition root, the doctor and setup check diagnostics and the retired-surface upgrade.
   - Own the architecture projection command and the shared archctx provider and model reader.
+  - Own the shared Claude, Codex and Pi skill root rules and the doctor checks for Pi version, resolver capability, package registration and skill projection.
   - Own the release gates, the package manifest and the runtime evidence receipt.
 source:
   include:
@@ -50,6 +51,7 @@ source:
     - "scripts/check-npm-release.sh"
     - "scripts/check-release-published.sh"
     - "scripts/check-tarball-install-smoke.sh"
+    - "scripts/check-pi-package-smoke.ts"
     - "scripts/runtime-evidence-receipt.ts"
     - "install.sh"
     - "install.ps1"
@@ -70,6 +72,9 @@ source:
             - id: sink.global-runtime-reconciliation.architecture-configuration
               path: "src/cli/commands/architecture-configuration.ts"
               symbol: "ensureGlobalArchitectureProjection"
+            - id: sink.global-runtime-reconciliation.pi-package
+              path: "src/cli/installer/pi-package.ts"
+              symbol: "installPiPackage"
         - name: "installHostAdapters"
           sinks:
             - id: sink.global-runtime-reconciliation.host-adapters
