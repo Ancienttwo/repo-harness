@@ -1,3 +1,4 @@
+import { controlledWorktreeProcessPreload } from './helpers/controlled-worktree-processes';
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "child_process";
 import {
@@ -557,7 +558,10 @@ describe("contract-worktree sweep", () => {
       writeFileSync(join(dirty, "wip.txt"), "preserve me\n");
       expect(run("git", ["worktree", "lock", locked], cwd).status).toBe(0);
 
-      const result = run("bash", ["scripts/contract-worktree.sh", "sweep"], cwd, { REPO_HARNESS_WORKTREE_ROOT: parent });
+      const bun = join(parent, 'controlled-bun');
+      const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+      writeFileSync(bun, `#!/bin/sh\nexec ${quote(process.execPath)} --preload ${quote(controlledWorktreeProcessPreload)} "$@"\n`, { mode: 0o700 });
+      const result = run("bash", ["scripts/contract-worktree.sh", "sweep"], cwd, { REPO_HARNESS_WORKTREE_ROOT: parent, REPO_HARNESS_BUN_BIN: bun });
       expect(result.status, result.stdout + result.stderr).toBe(0);
       expect(result.stdout).toContain("[WorktreeSweep] removed=2 pruned=0 kept=2");
       expect(result.stdout).toContain(`${merged}: removed`);
