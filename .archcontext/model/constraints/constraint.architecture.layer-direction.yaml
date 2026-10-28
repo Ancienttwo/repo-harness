@@ -1,0 +1,8 @@
+schemaVersion: archcontext.constraint/v1
+id: constraint.architecture.layer-direction
+name: Layer direction
+severity: warning
+scope: {}
+rule:
+  type: layer-direction
+rationale: A file may import only files in its own layer or a lower layer of model.layers. Tests and scripts sit on top and may import any layer; core and assets sit below the runtime layers and may not import them.

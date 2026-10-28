@@ -19,7 +19,8 @@ import {
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { architecturePullRequestsSource } from '../../src/core/dev-activity/architecture';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
-import { collectArchitectureMap, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
+import { collectArchitectureMap, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
+import { decodeConstraintEvaluation } from '../../src/core/architecture/projection';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -219,7 +220,8 @@ describe('architecture map', () => {
       flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
-      layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' },
+      // Every fixture node is in `core`, so no pair can import against the order.
+      layer_direction: { state: 'ok', imports: 12, edges: [] },
     },
     tests: { state: 'unavailable', reason: 'tests_pending' },
     decisions: { state: 'ok', items: [
@@ -286,7 +288,9 @@ describe('architecture map', () => {
     refused(copy => { copy.layer_order.layers = ['Core']; });
     refused(copy => { copy.layer_order = { state: 'unavailable', reason: 'layer_order_not_read' }; });
     refused(copy => { delete copy.layer_order; });
-    expect(decodeArchitectureMap({ ...map, layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' } }).layer_order.state).toBe('unavailable');
+    // Without an order there is no layer-direction answer either.
+    const unordered = { state: 'unavailable', reason: 'model_layers_undeclared' };
+    expect(decodeArchitectureMap({ ...map, layer_order: unordered, layers: { ...map.layers, violations: { ...map.layers.violations, layer_direction: unordered } } }).layer_order.state).toBe('unavailable');
   });
 
   test('model prose never carries an absolute path, and a dirty source tree withholds import counts', () => {
@@ -377,8 +381,16 @@ describe('architecture map', () => {
       const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       if (!result.ok) throw new Error('worker failed');
       expect(result.snapshot.layer_order).toEqual({ state: 'ok', layers: ['entry', 'core'] });
-      // The model now declares layers; the collector still does not read archctx's layer-direction check.
-      expect(result.snapshot.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'layer_direction_not_read' });
+      // The model declares layers but no layer-direction constraint, so there is nothing to check.
+      expect(result.snapshot.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'layer_direction_undeclared' });
+      // A committed layer-direction constraint runs `archctx constraints check`; the fixture has no CodeGraph index.
+      fixtureWrite(root, '.archcontext/model/constraints/constraint.module.layer-direction.yaml', fixtureYaml({
+        schemaVersion: 'archcontext.constraint/v1', id: 'constraint.module.layer-direction', name: 'Layer direction', severity: 'warning',
+        scope: {}, rule: { type: 'layer-direction' }, rationale: 'Entry may import core; core may not import entry.',
+      }));
+      fixtureCommit(root);
+      const constrained = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      expect(constrained.ok && constrained.snapshot.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       const core = '.archcontext/model/nodes/component.module.core.yaml';
       fixtureWrite(root, core, fixtureYaml({ ...JSON.parse(readFileSync(join(root, core), 'utf8')), layer: 'web' }));
       fixtureCommit(root);
@@ -390,10 +402,10 @@ describe('architecture map', () => {
     const map = projected();
     // No local roll-up, owner choice or model diff: the layer is archctx's answer.
     expect(map.layers.changes).toEqual(layers.changes);
-    // Decisions and flow proofs pass through sorted by id; layer direction keeps the collector's reason.
+    // Decisions and flow proofs pass through sorted by id; layer direction keeps the collector's answer.
     expect(map.layers.decisions.items.map(item => item.id)).toEqual(['ADR-0001-ledger', 'ADR-0002-gate']);
     expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 2 }, { id: OTHER, diagnostics: 1 }] });
-    expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
+    expect(map.layers.violations.layer_direction).toEqual({ state: 'ok', imports: 12, edges: [] });
     // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
     const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
       layers: { ...layers, violations: { ...layers.violations, debt: { state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] } } } });
@@ -564,6 +576,62 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.decisions.items[0].path = '/Users/someone/repo/docs/adr/ADR-0001-ledger.md'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v2'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v3'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v4'; });
+    refused(copy => { copy.layers.violations.layer_direction = { state: 'unavailable', reason: 'layer_direction_not_read' }; });
+  });
+
+  test('the layer-direction layer names map nodes in their own layers, and only imports up the layer order', () => {
+    const map = JSON.parse(JSON.stringify(projected()));
+    // `cli` is above `core`: an import from a `core` node into a `cli` node goes against the order.
+    map.nodes.find((entry: ArchitectureMapNodeV1) => entry.id === OTHER).layer = 'cli';
+    map.layers.violations.layer_direction = { state: 'ok', imports: 12, edges: [{ source: CAP, target: OTHER, source_layer: 'core', target_layer: 'cli', imports: 2 }] };
+    expect(decodeArchitectureMap(map)).toEqual(map);
+    const refused = (change: (copy: typeof map) => void) => {
+      const copy = JSON.parse(JSON.stringify(map));
+      change(copy);
+      expect(() => decodeArchitectureMap(copy)).toThrow('architecture_map_invalid');
+    };
+    refused(copy => { copy.layers.violations.layer_direction.edges[0].target = 'capability.gone.node'; });
+    refused(copy => { copy.layers.violations.layer_direction.edges[0].target_layer = 'core'; });
+    refused(copy => { copy.layers.violations.layer_direction.edges[0].source_layer = 'cli'; });
+    refused(copy => { copy.layers.violations.layer_direction.edges[0] = { source: OTHER, target: CAP, source_layer: 'cli', target_layer: 'core', imports: 2 }; });
+    refused(copy => { copy.layers.violations.layer_direction.edges.push(copy.layers.violations.layer_direction.edges[0]); });
+    refused(copy => { copy.layers.violations.layer_direction.edges[0].imports = 0; });
+    refused(copy => { copy.layer_order = { state: 'unavailable', reason: 'model_layers_undeclared' }; });
+    // A model with no ordered layers, or no layer-direction constraint, is a fixed note, not a failed read.
+    for (const reason of ['model_layers_undeclared', 'layer_direction_undeclared', 'layer_endpoint_unclassified'] as const) {
+      expect(decodeArchitectureMap({ ...map, layers: { ...map.layers, violations: { ...map.layers.violations, layer_direction: { state: 'unavailable', reason } } } })
+        .layers.violations.layer_direction).toEqual({ state: 'unavailable', reason });
+    }
+  });
+
+  test('a constraints check report becomes one edge per owner pair for the layer-direction constraints only', () => {
+    const LAYER = 'constraint.architecture.layer-direction';
+    const violation = (fromPath: string, constraintId = LAYER) => ({
+      constraintId, fromPath, toPath: 'src/cli/index.ts', fromNode: CAP, toNode: OTHER, fromLayer: 'core', toLayer: 'cli', severity: 'warning' as const,
+    });
+    const report = (fields: Record<string, unknown> = {}) => decodeConstraintEvaluation({
+      schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [],
+      constraintIds: [LAYER, 'constraint.architecture.no-ui'], importEdgeCount: 40, unresolvedImports: [],
+      violations: [violation('src/core/a.ts'), violation('src/core/b.ts'),
+        { ...violation('src/core/c.ts', 'constraint.architecture.no-ui'), fromLayer: undefined, toLayer: undefined }],
+      ...fields,
+    });
+    const known = new Set([CAP, OTHER, PART]);
+    const layered = new Set([LAYER]);
+    expect(layerDirectionSection(report(), layered, known)).toEqual({ state: 'ok', imports: 40,
+      edges: [{ source: CAP, target: OTHER, source_layer: 'core', target_layer: 'cli', imports: 2 }] });
+    const failed = { state: 'unavailable', reason: 'archctx_failed' } as const;
+    expect(layerDirectionSection(report({ constraintIds: ['constraint.architecture.no-ui'] }), layered, known)).toEqual(failed);
+    expect(layerDirectionSection(report(), layered, new Set([CAP]))).toEqual(failed);
+    expect(layerDirectionSection(report({ violations: [{ ...violation('src/core/a.ts'), toLayer: undefined }] }), layered, known)).toEqual(failed);
+    // An undetermined answer keeps archctx's cause.
+    const undetermined = (reasonCodes: string[]) => layerDirectionSection(report({ status: 'undetermined', coverage: 'partial', reasonCodes, violations: [] }), layered, known);
+    expect(undetermined(['layer-endpoint-unclassified'])).toEqual({ state: 'unavailable', reason: 'layer_endpoint_unclassified' });
+    expect(undetermined(['code-facts-stale'])).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+    expect(undetermined(['unresolved-import'])).toEqual({ state: 'unavailable', reason: 'code_facts_incomplete' });
+    expect(() => report({ status: 'unknown' })).toThrow('archctx constraints check status is invalid');
+    expect(() => report({ reasonCodes: ['not-a-code'] })).toThrow('archctx constraints check reason codes are invalid');
   });
 
   test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
@@ -572,8 +640,8 @@ describe('architecture map', () => {
     // Today's changes read only commits, so the recheck does not take them.
     const read = { pull_requests: layers.pull_requests, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
-    // Flow proofs read the CodeGraph index like the other checks; the layer-direction gap is fixed per model.
-    const allChanged = { debt: changed, flows: changed, anchors: changed, dependencies: changed, layer_direction: layers.violations.layer_direction };
+    // Flow proofs and the layer-direction check read the CodeGraph index like the other checks.
+    const allChanged = { debt: changed, flows: changed, anchors: changed, dependencies: changed, layer_direction: changed };
     expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
     expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ pull_requests: changed, violations: allChanged });
     expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ pull_requests: read.pull_requests, violations: allChanged });
