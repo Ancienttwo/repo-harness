@@ -252,12 +252,12 @@ const AGENT_TONE: Readonly<Record<HerdrAgentStatus, DotTone>> = { idle: 'neutral
 function versionWords(status: HerdrStatusProjection, t: OperatorTranslate): string | null {
   const version = status.server.version;
   if (version === null) return null;
-  const fork = version.expected.revision.slice(0, 8);
-  if (version.state === 'aligned') return t('bots.herdr.aligned', { version: version.expected.version, fork });
+  const schema = version.expected.revision.slice(0, 8);
+  if (version.state === 'aligned') return t('bots.herdr.aligned', { version: version.expected.version });
   const actualName = version.actual.version ?? t('bots.herdr.unknownVersion');
-  if (version.expected.version !== version.actual.version) return t('bots.herdr.mismatch', { expected: version.expected.version, fork, actual: actualName });
+  if (version.expected.version !== version.actual.version) return t('bots.herdr.mismatch', { expected: version.expected.version, schema, actual: actualName });
   return t('bots.herdr.mismatch', {
-    expected: `${version.expected.version} protocol ${version.expected.protocol}`, fork, actual: `${actualName} protocol ${version.actual.protocol ?? '?'}`,
+    expected: `${version.expected.version} protocol ${version.expected.protocol}`, schema, actual: `${actualName} protocol ${version.actual.protocol ?? '?'}`,
   });
 }
 

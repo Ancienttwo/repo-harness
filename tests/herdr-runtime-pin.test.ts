@@ -3,6 +3,7 @@ import { describe, expect, test, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
+import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from "../src/core/operator/herdr-pin";
 
 /**
  * `.ai/harness/policy.json#external_tooling.herdr` is the single herdr runtime
@@ -100,6 +101,33 @@ describe("herdr runtime pin has one source of truth", () => {
         .map((line) => line.trim());
       expect(block.slice(1), seedPath).toEqual(expected.slice(1));
     }
+  });
+
+  test("the install floor equals the observation pin, because observation matches the version exactly", () => {
+    // A lower floor would let setup install a server that observation then rejects.
+    expect(readPolicy().external_tooling.herdr.min_version).toBe(HERDR_OBSERVATION_VERSION);
+  });
+
+  test("the runtime status doc restates the pin it describes", () => {
+    const doc = readFileSync(join(ROOT, 'docs/kanban-runtime-status.md'), 'utf8');
+    expect(doc).toContain(`requires reported version ${HERDR_OBSERVATION_VERSION} and protocol ${HERDR_OBSERVATION_PROTOCOL}`);
+    expect(doc).toContain(`requires exactly ${HERDR_OBSERVATION_VERSION} and protocol ${HERDR_OBSERVATION_PROTOCOL}`);
+    expect(doc).toContain(`upstream v${HERDR_OBSERVATION_VERSION} \`${HERDR_OBSERVATION_REVISION}\``);
+  });
+
+  test("the browser bundle reads the pin instead of restating it", () => {
+    // operator-web builds without Node built-ins, so the pin must stay in core.
+    const pin = readFileSync(join(ROOT, 'src/core/operator/herdr-pin.ts'), 'utf8');
+    expect(pin).not.toMatch(/from '(node:|\.[^']*(effects|operator-web)\b)/);
+    // The fixture's expected pin is what went stale before, so it must derive.
+    // Reported client and server versions stay literals: they are scenario data.
+    const fixture = readFileSync(join(ROOT, 'src/operator-web/fixtures/bots.ts'), 'utf8');
+    const expected = fixture.split('\n').find(line => line.startsWith('const EXPECTED = '));
+    expect(expected).toBeDefined();
+    expect(expected).toContain('HERDR_OBSERVATION_VERSION');
+    expect(expected).toContain('HERDR_OBSERVATION_PROTOCOL');
+    expect(expected).toContain('HERDR_OBSERVATION_REVISION');
+    expect(fixture).not.toMatch(/[0-9a-f]{40}/);
   });
 });
 

@@ -1,6 +1,7 @@
 // Bot access fixtures. Each passes the strict decoder. Like the collector's
 // projection, none holds a token, passphrase, webhook URL or local path.
 import type { BotAccessSnapshotV1 } from '../../core/operator/bot-access';
+import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from '../../core/operator/herdr-pin';
 import { NOTIFY_PLUGIN_ID, type NotifyDeliveryV1, type NotifyStatusV1 } from '../../core/operator/notify-status';
 import { HARNESS_ID } from './dev-activity';
 
@@ -13,7 +14,7 @@ const DAY = 86_400_000;
 const at = (time: number) => new Date(time).toISOString();
 
 /** The observation pin the server compares a running Herdr server against. */
-const EXPECTED = { version: '0.9.3', protocol: 22, revision: 'add5f99a8351e66464f9abec0920778303f0e885' };
+const EXPECTED = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
 export const HERMES_CLIENT = '3f6c1a2e-8b9d-4e5f-a1b2-c3d4e5f60718';
 export const EXECUTOR_CLIENT = '9b2d7e41-5a6c-4f80-b3d2-1e0f9a8c7b65';
@@ -57,8 +58,8 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
     herdr: {
       state: 'ok', session: 'main',
       status: { state: 'ok', value: {
-        client: { version: '0.9.3', protocol: 22 },
-        server: { status: 'running', version: { state: 'aligned', expected: EXPECTED, actual: { version: '0.9.3', protocol: 22 } }, restart_needed: false },
+        client: { version: '0.9.5', protocol: 22 },
+        server: { status: 'running', version: { state: 'aligned', expected: EXPECTED, actual: { version: '0.9.5', protocol: 22 } }, restart_needed: false },
       } },
       snapshot: { state: 'ok', value: { workspaces: 2, tabs: 5, panes: 7, agents: [
         { pane_id: 'w1:p1', agent: 'claude', name: 'hermes', agent_status: 'idle', bot: { state: 'registered', bot_id: 'hermes' } },
@@ -76,7 +77,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
 
 /**
  * The Bot registry and `mcp doctor` fail, one audit log is unreadable, the
- * notify plugin is disabled, and Herdr runs the newer upstream 0.9.5 (1-BOTS-F1).
+ * notify plugin is disabled, and Herdr runs an older 0.9.3 server (1-BOTS-F1).
  */
 export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
   return {
@@ -95,7 +96,7 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
       state: 'ok', session: 'main',
       status: { state: 'ok', value: {
         client: { version: '0.9.5', protocol: 22 },
-        server: { status: 'running', version: { state: 'mismatch', expected: EXPECTED, actual: { version: '0.9.5', protocol: 22 } }, restart_needed: false },
+        server: { status: 'running', version: { state: 'mismatch', expected: EXPECTED, actual: { version: '0.9.3', protocol: 22 } }, restart_needed: false },
       } },
       snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
     },
