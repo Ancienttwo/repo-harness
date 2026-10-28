@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import {
@@ -13,7 +14,7 @@ import {
   PiHookBridge, piHookEnvironment, PI_HOOK_INPUT_BYTES, PI_HOOK_OUTPUT_BYTES, type PiHookRequest,
 } from '../src/pi/hook-bridge';
 import type { PiHookOutput } from '../src/cli/hook/hook-protocol';
-import { commitAll, initGitRepo, tmpWorkspace } from './helpers/repo-fixture';
+import { commitAll, initGitRepo, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
 import { writeNoticeRegistry } from './helpers/agent-notice';
 
 const buildRoot = tmpWorkspace('pi-hook-bundle');
@@ -384,6 +385,189 @@ describe('Pi real SDK with scripted provider fixture', () => {
       await f.tool('write', { path: 'normal.txt', content: 'new runtime' });
       expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('new runtime');
     } finally { release(); await f.close(); }
+  });
+});
+
+describe('Pi extension with the real Pi CLI', () => {
+  // The CLI, tools and hook child are real; only the model is a fixture.
+  const root = join(import.meta.dir, '..');
+  const packageDir = join(root, 'node_modules/@earendil-works/pi-coding-agent');
+  const pi = join(packageDir, 'dist/bundle/cli.js');
+  const extension = join(root, 'src/pi/extension.ts');
+  const provider = join(import.meta.dir, 'fixtures/pi/scripted-provider.ts');
+  const protectedBytes = 'protected seed\n';
+  type Call = [string, Record<string, unknown>];
+
+  function fixture(optIn = true) {
+    const base = tmpWorkspace('pi-cli-host');
+    const repo = join(base, 'repo');
+    const home = join(base, 'home');
+    mkdirSync(repo);
+    mkdirSync(home);
+    initGitRepo(repo);
+    writeFileSync(join(repo, 'README.md'), 'seed\n');
+    writeFileSync(join(repo, '.gitignore'), '_ops/\n.ai/harness/runs/\n.ai/harness/state/\n.ai/harness/handoff/\n.ai/harness/journal/\n.ai/harness/checks/\n.ai/harness/failures/\n.ai/harness/events.jsonl\n');
+    if (optIn) {
+      mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai/harness/workflow-contract.json'), '{}\n');
+      writeFileSync(join(repo, '.ai/harness/policy.json'), '{}\n');
+    }
+    commitAll(repo, 'seed');
+    mkdirSync(join(repo, '_ops'));
+    writeFileSync(join(repo, '_ops/keep.txt'), protectedBytes);
+    const log = join(base, 'provider.jsonl');
+    const env = sandboxEnv({ HOME: home, BUN_INSTALL: join(home, '.bun'), REPO_HARNESS_HOME: join(home, '.repo-harness'),
+      PI_CODING_AGENT_DIR: join(home, '.pi/agent'), PI_PACKAGE_DIR: packageDir,
+      PI_FIXTURE_LOG: log, REPO_HARNESS_WORKFLOW_PROFILE: 'routine', NO_COLOR: '1', FORCE_COLOR: '0' });
+    return { root: repo, env, log, cleanup: () => rmSync(base, { recursive: true, force: true }) };
+  }
+
+  function piArgs(...extra: string[]): string[] {
+    return [pi, '--no-session', '--offline', '-ne', '-e', extension, '-e', provider,
+      '--provider', 'fixture', '--model', 'scripted', ...extra];
+  }
+
+  function print(f: ReturnType<typeof fixture>, runs: Call[][], ...extra: string[]) {
+    const result = spawnSync(process.env.REPO_HARNESS_NODE_BIN ?? 'node', piArgs(...extra, '-p', 'Run the fixture tools.'), {
+      cwd: f.root, encoding: 'utf8', env: { ...f.env, PI_FIXTURE_CALLS: JSON.stringify(runs) }, input: '', timeout: 50_000,
+    });
+    if (result.status !== 0) throw new Error(`pi failed (${result.status}):\n${result.stdout}\n${result.stderr}`);
+    return result;
+  }
+
+  function telemetry(repo: string): Array<Record<string, unknown>> {
+    const file = join(repo, '.ai/harness/runs/hook-events.jsonl');
+    return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
+  }
+  function routes(repo: string): string[] {
+    return telemetry(repo).map(record => `${record.event}.${record.route_id}${record.blocked ? ' blocked' : ''}`);
+  }
+  function transcripts(log: string): string[] {
+    return readFileSync(log, 'utf8').trim().split('\n');
+  }
+  const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+
+  test('print mode admits normal edits and blocks protected edit, write, bash and nested codemode writes', () => {
+    const f = fixture();
+    try {
+      const result = print(f, [[
+        ['write', { path: 'ok.txt', content: 'normal' }],
+        ['edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'edited' }] }],
+        ['write', { path: '_ops/new.txt', content: 'forbidden' }],
+        ['edit', { path: '_ops/keep.txt', edits: [{ oldText: 'protected', newText: 'changed' }] }],
+        ['bash', { command: 'printf changed > _ops/keep.txt' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/nested.txt", content: "forbidden"}); return "nested";' }],
+        ['codemode', { code: 'await tools.write({path: "nested-ok.txt", content: "nested"}); return "nested";' }],
+      ]], '-e', 'builtin:codemode', '--tools', '+codemode');
+      expect(result.stdout).toBe('Done.\n');
+      expect(readFileSync(join(f.root, 'ok.txt'), 'utf8')).toBe('normal');
+      expect(readFileSync(join(f.root, 'README.md'), 'utf8')).toBe('edited\n');
+      expect(readFileSync(join(f.root, 'nested-ok.txt'), 'utf8')).toBe('nested');
+      expect(readFileSync(join(f.root, '_ops/keep.txt'), 'utf8')).toBe(protectedBytes);
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(existsSync(join(f.root, '_ops/nested.txt'))).toBe(false);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox',
+        'PreToolUse.edit', 'PreToolUse.edit', 'PreToolUse.edit blocked', 'PreToolUse.edit blocked', 'PreToolUse.bash blocked',
+        'PreToolUse.edit blocked', 'PreToolUse.edit', 'Stop.default',
+      ]);
+      expect(telemetry(f.root).every(record => record.host === 'pi')).toBe(true);
+      const runIds = new Set(telemetry(f.root).filter(record => record.event !== 'SessionStart').map(record => record.run_id));
+      expect(runIds.size).toBe(1);
+      const final = transcripts(f.log).at(-1)!;
+      expect(occurrences(final, '[EditGuardScope]')).toBe(1);
+      expect(final).toContain('Claude and Pi Bash have a literal-write tripwire only');
+      expect(final).toContain('OpsPrivateGuard');
+    } finally { f.cleanup(); }
+  });
+
+  test('JSON mode keeps stdout to Pi events and still blocks a protected write', () => {
+    const f = fixture();
+    try {
+      const result = print(f, [[['write', { path: '_ops/new.txt', content: 'forbidden' }]]], '--mode', 'json');
+      for (const line of result.stdout.trim().split('\n')) {
+        const event = JSON.parse(line);
+        expect(typeof event.type).toBe('string');
+        expect(event.protocol).toBeUndefined();
+      }
+      expect(result.stdout).not.toContain('repo-harness-hook');
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(routes(f.root)).toContain('PreToolUse.edit blocked');
+    } finally { f.cleanup(); }
+  });
+
+  test('RPC mode delivers session context once over two prompts, blocks a protected write and stops after an abort', async () => {
+    const f = fixture();
+    const child = spawn(process.env.REPO_HARNESS_NODE_BIN ?? 'node', piArgs('--mode', 'rpc'), {
+      cwd: f.root, env: { ...f.env, PI_FIXTURE_CALLS: JSON.stringify([
+        [['write', { path: '_ops/new.txt', content: 'forbidden' }]],
+        [['bash', { command: 'printf started; exec sleep 60' }]],
+      ]) }, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const events: Array<Record<string, unknown>> = [];
+    const waiters: Array<() => void> = [];
+    let buffer = '';
+    let stderr = '';
+    let failure: Error | undefined;
+    const wake = () => { for (const resolve of waiters.splice(0)) resolve(); };
+    const closed = new Promise<void>(resolve => child.once('close', () => { failure ??= new Error(`Pi RPC exited before the expected event: ${stderr}`); wake(); resolve(); }));
+    child.once('error', error => { failure = error; wake(); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      let index: number;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (!line.trim()) continue;
+        try { events.push(JSON.parse(line)); }
+        catch { failure = new Error(`Pi RPC wrote invalid JSON: ${line}`); }
+        wake();
+      }
+    });
+    const deadline = setTimeout(() => { failure = new Error(`Pi RPC fixture timed out: ${stderr}`); wake(); }, 50_000);
+    const until = async (match: (event: Record<string, unknown>) => boolean, from: number) => {
+      while (!events.slice(from).some(match)) {
+        if (failure) throw failure;
+        await new Promise<void>(resolve => waiters.push(resolve));
+      }
+      return events.length;
+    };
+    const send = (command: Record<string, unknown>) => child.stdin.write(`${JSON.stringify(command)}\n`);
+    try {
+      send({ id: 'p1', type: 'prompt', message: 'Write the file.' });
+      const mark = await until(event => event.type === 'agent_settled', 0);
+      send({ id: 'p2', type: 'prompt', message: 'Run the command.' });
+      await until(event => event.type === 'tool_execution_update', mark);
+      send({ id: 'a1', type: 'abort' });
+      await until(event => event.type === 'agent_settled' && event.aborted === true, mark);
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox', 'PreToolUse.edit blocked', 'Stop.default',
+        'UserPromptSubmit.inbox', 'PreToolUse.bash', 'Stop.default',
+      ]);
+      expect(new Set(telemetry(f.root).filter(record => record.event === 'Stop').map(record => record.run_id)).size).toBe(2);
+      const final = transcripts(f.log).at(-1)!;
+      expect(occurrences(final, '[EditGuardScope]')).toBe(1);
+    } finally {
+      clearTimeout(deadline);
+      child.stdin.end();
+      child.kill('SIGTERM');
+      const force = setTimeout(() => child.kill('SIGKILL'), 3_000);
+      await closed;
+      clearTimeout(force);
+      f.cleanup();
+    }
+  });
+
+  test('a repository without the opt-in marker stays inactive', () => {
+    const f = fixture(false);
+    try {
+      print(f, [[['write', { path: '_ops/new.txt', content: 'outside the harness' }]]]);
+      expect(readFileSync(join(f.root, '_ops/new.txt'), 'utf8')).toBe('outside the harness');
+      expect(telemetry(f.root)).toEqual([]);
+      expect(transcripts(f.log).some(text => text.includes('[EditGuardScope]'))).toBe(false);
+    } finally { f.cleanup(); }
   });
 });
 
