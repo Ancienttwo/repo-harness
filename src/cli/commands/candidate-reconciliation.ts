@@ -34,7 +34,7 @@ import {
   runtimeTransactionLockRelativePath,
   runtimeTransactionRoot,
   type RuntimeTransactionScope,
-} from '../installer/runtime-host-lock';
+} from '../../effects/locking/runtime-transaction-lock';
 
 export const CANDIDATE_RECONCILIATION_PROTOCOL = 1;
 export const CANDIDATE_RECONCILIATION_CAPABILITY_PROTOCOL = 1;

@@ -23,6 +23,7 @@ export const OPERATOR_SETTINGS_AGENTS_ROUTE = /^\/api\/v1\/settings\/agents$/u;
 const CONFIG_ACTION = 'Fix the agents section of ~/.repo-harness/config.json, then reload the page.';
 
 export const AGENTS_CONFIGURATION_FAILURES: Readonly<Record<AgentsConfigurationErrorCode, { readonly status: number; readonly next_action: string }>> = Object.freeze({
+  busy: { status: 503, next_action: 'Wait for the runtime transaction to end, then send the change with a new request_id.' },
   config_invalid: { status: 503, next_action: CONFIG_ACTION },
   config_is_link: { status: 409, next_action: 'Edit the agents section in the file that ~/.repo-harness/config.json links to, or replace the link with a regular file.' },
   revision_conflict: { status: 409, next_action: 'Reload the settings, then apply your change again.' },

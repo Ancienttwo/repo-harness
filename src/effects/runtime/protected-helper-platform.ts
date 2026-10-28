@@ -1,18 +1,15 @@
 import {
-  chmodSync,
   existsSync,
   lstatSync,
-  mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
   type Stats,
 } from 'fs';
 import { userInfo } from 'os';
 import { dirname, isAbsolute, join, win32 } from 'path';
 import { dlopen, FFIType, ptr } from 'bun:ffi';
+import { mutateGlobalConfiguration } from '../configuration/global-configuration';
+import type { RuntimeTransactionContext } from '../locking/runtime-transaction-lock';
 
 export const WINDOWS_PROTECTED_HELPER_CONFIG_KEY = 'protectedHelperRuntime';
 
@@ -480,38 +477,11 @@ export function protectedHelperRuntimeEnv(runtime: ProtectedHelperPlatform): Nod
 export function writeWindowsProtectedHelperContract(
   contract: WindowsProtectedHelperContract,
   home = userInfo().homedir,
+  runtimeLock?: RuntimeTransactionContext,
 ): { path: string; changed: boolean } {
-  const configPath = windowsProtectedHelperConfigPath(home);
-  const configDirectory = dirname(configPath);
-  let current: Record<string, unknown> = {};
-  if (existsSync(configDirectory)) {
-    const stat = lstatSync(configDirectory);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new Error(`repo-harness user config directory must be a non-symlink directory: ${configDirectory}`);
-    }
-  }
-  if (existsSync(configPath)) {
-    const stat = lstatSync(configPath);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw new Error(`repo-harness user config must be a non-symlink regular file: ${configPath}`);
-    }
-    const parsed = JSON.parse(readFileSync(realpathSync(configPath), 'utf-8')) as unknown;
-    if (!isRecord(parsed)) throw new Error(`repo-harness user config root must be an object: ${configPath}`);
-    current = parsed;
-  }
-  const previous = current[WINDOWS_PROTECTED_HELPER_CONFIG_KEY];
-  if (JSON.stringify(previous) === JSON.stringify(contract)) return { path: configPath, changed: false };
-  mkdirSync(configDirectory, { recursive: true });
-  const temporary = `${configPath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    writeFileSync(temporary, `${JSON.stringify({ ...current, [WINDOWS_PROTECTED_HELPER_CONFIG_KEY]: contract }, null, 2)}\n`, {
-      encoding: 'utf-8',
-      mode: 0o600,
-    });
-    chmodSync(temporary, 0o600);
-    renameSync(temporary, configPath);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-  return { path: configPath, changed: true };
+  const result = mutateGlobalConfiguration({ HOME: home }, (current) => {
+    if (JSON.stringify(current[WINDOWS_PROTECTED_HELPER_CONFIG_KEY]) === JSON.stringify(contract)) return { value: undefined };
+    return { config: { ...current, [WINDOWS_PROTECTED_HELPER_CONFIG_KEY]: contract }, value: undefined };
+  }, { runtimeLock });
+  return { path: result.path, changed: result.changed };
 }

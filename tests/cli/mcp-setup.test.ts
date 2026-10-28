@@ -13,7 +13,7 @@ import {
   runMcpSetupChatgpt,
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
-import { projectRuntimeScope, withRuntimeTransactionLock } from '../../src/cli/installer/runtime-host-lock';
+import { projectRuntimeScope, withRuntimeTransactionLock } from '../../src/effects/locking/runtime-transaction-lock';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { startMcpStdio } from '../../src/cli/mcp/transports/stdio';
 import { callMcpTool } from '../../src/cli/mcp/tools';
