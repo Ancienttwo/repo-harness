@@ -598,8 +598,7 @@ Recommended runtime layout:
 ```
 
 This uses the existing ignored run-evidence surface. Durable conclusions should
-be promoted into `tasks/reviews/<task>.review.md`, `tasks/contracts/`,
-`tasks/notes/`, or project documentation instead of committing raw provider
+be distilled into the PR body, CI evidence, or project documentation instead of committing raw provider
 artifacts by default.
 
 Minimal manifest shape:

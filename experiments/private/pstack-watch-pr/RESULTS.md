@@ -24,7 +24,7 @@ added. Do not turn this result into an automatic third stage.
 - `results.json` is the detailed machine-readable result. `comparison.test.ts`
   produces the comparison fields as a single JSON log line.
 - The parent plan is
-  [document handoff and reuse](../../../plans/plan-20261006-0910-document-handoff-pstack-reuse.md).
+  the retired document-handoff design in git history.
   It is a separate change and can be absent on this branch.
 
 The source review found no module-load process or network call in these four

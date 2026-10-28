@@ -3,7 +3,7 @@
 Status: design record. Issue #910 deleted the Stage A pure API
 (`src/core/messages/document-handoff.ts`) because no CLI, MCP, hook, Bot, or
 task-agent dispatch used it. A later pilot must implement this contract again.
-See the [implementation plan](../../plans/plan-20261006-0910-document-handoff-pstack-reuse.md).
+The retired implementation plan is retained in git history.
 
 ## Human → Bot → Coding Agent
 

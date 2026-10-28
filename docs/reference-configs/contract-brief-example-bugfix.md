@@ -46,7 +46,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Workflow Inventory
 
 - Source plan: (none — golden reference example)
-- Deferred-goal ledger: `tasks/todos.md`
+- Current and deferred work: GitHub Issue/PR
 - Review file: `tasks/reviews/example-fix-empty-label.review.md`
 - Notes file: `tasks/notes/example-fix-empty-label.notes.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.

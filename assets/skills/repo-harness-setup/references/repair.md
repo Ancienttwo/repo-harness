@@ -6,7 +6,7 @@ Run the shared preflight in `../SKILL.md` first.
 ## Protocol
 
 1. Reproduce the failure and name the failing surface.
-2. Trace the failing path, such as `settings.json -> repo-harness-hook -> route registry -> typed handler` or `plans/ -> tasks/todos.md -> tasks/contracts/`.
+2. Trace the failing path, such as `settings.json -> repo-harness-hook -> route registry -> typed handler` or `Issue/PR -> planning intent -> verification`.
 3. Apply the smallest targeted fix.
 4. Re-run the failing check and the relevant workflow gate.
 

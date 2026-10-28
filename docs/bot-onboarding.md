@@ -138,7 +138,13 @@ deletion is tinkabot's merge-time prune of **merged / clean / unowned**
 worktrees; keep open Drafts. Other deletions need an Owner / room gate.
 The audit does not replace Worker-Herdr's own Done cleanup.
 
-The [pane auto-close plan](../plans/plan-20261005-pane-auto-close.md) is
-**Design-only**. Bot brief-pane auto-close is **NOT implemented**.
-Until that plan ships, this guide, bot profiles, and the lite skill define
-cleanup ownership.
+Bot brief-pane auto-close is **NOT implemented**. The Design-only plan was
+deleted; git history retains it. This guide, bot profiles, and the lite skill
+define cleanup ownership.
+
+## Task artifacts
+
+Follow [Plans lifecycle](plans-lifecycle.md): `plans/` holds open multi-PR
+intent, Issue/PR holds work, PR/CI holds proof, and `tasks/lessons.md` holds
+lessons. Keep todos historical. Do not create notes/reviews/example task trees
+or move expired plans into `plans/archive/`. Contract cleanup is #1114 HOLD.

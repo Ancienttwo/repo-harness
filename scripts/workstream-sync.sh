@@ -288,7 +288,7 @@ Track durable multi-session progress for \`${capability_id}\` without inflating 
 
 ## Notes
 
-- Project the current slice into \`tasks/todos.md\` for a single session.
+- Track the current slice and deferred work in GitHub Issue/PR.
 - Keep architecture facts in \`${architecture_module}\`; keep execution progress here.
 EOF_WORKSTREAM
 fi
