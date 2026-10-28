@@ -99,7 +99,7 @@ function doctorReport(root: string) {
 
 function herdrStatus(root: string, server: { status: string; version: string | null; protocol: number | null; socket: string }) {
   return {
-    client: { version: '0.9.5', protocol: 23, binary: join(root, 'bin', 'herdr'), session: 'bots' },
+    client: { version: '0.9.3', protocol: 23, binary: join(root, 'bin', 'herdr'), session: 'bots' },
     server: { ...server, running: server.status === 'running', compatible: true, session: 'bots', restart_needed: false },
     update: { restart_needed: false },
   };
@@ -124,7 +124,7 @@ describe('Bot access collector', () => {
     try {
       const socket = join(f.root, 'herdr.sock');
       const { calls, run } = recorder(async (file, args) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.5', protocol: 23, socket })) }
+        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.3', protocol: 23, socket })) }
         : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
       const notifyCalls: unknown[] = [];
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run,
@@ -146,8 +146,8 @@ describe('Bot access collector', () => {
       expect(snapshot.herdr).toEqual({
         state: 'ok',
         session: 'bots',
-        status: { state: 'ok', value: { client: { version: '0.9.5', protocol: 23 }, server: { status: 'running', restart_needed: false, version: {
-          state: 'mismatch', expected: { version: '0.9.3', protocol: 22, revision: 'add5f99a8351e66464f9abec0920778303f0e885' }, actual: { version: '0.9.5', protocol: 23 },
+        status: { state: 'ok', value: { client: { version: '0.9.3', protocol: 23 }, server: { status: 'running', restart_needed: false, version: {
+          state: 'mismatch', expected: { version: '0.9.5', protocol: 22, revision: '2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01' }, actual: { version: '0.9.3', protocol: 23 },
         } } } },
         snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
       });
@@ -195,7 +195,7 @@ describe('Bot access collector', () => {
       connection.on('data', chunk => {
         const request = JSON.parse(chunk.toString().trim());
         connection.write(JSON.stringify({ id: request.id, result: { type: 'session_snapshot', snapshot: {
-          version: '0.9.3', protocol: 22, layouts: [],
+          version: '0.9.5', protocol: 22, layouts: [],
           workspaces: [{ workspace_id: 'w1', label: 'private-workspace-label' }],
           tabs: [{ tab_id: 't1', label: 'private-tab-label' }, { tab_id: 't2', label: 'x' }],
           panes: [{ pane_id: 'w1:p1', cwd: join(f.root, 'cwd') }, { pane_id: 'w1:p2', cwd: join(f.root, 'cwd') }],
@@ -209,7 +209,7 @@ describe('Bot access collector', () => {
     await new Promise<void>(resolve => server.listen(socket, resolve));
     try {
       const { run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.3', protocol: 22, socket })) }
+        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.5', protocol: 22, socket })) }
         : { ok: false, code: 'timeout' });
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: () => ({ state: 'unavailable', reason: 'herdr_unavailable' }) });
       expect(herdrOk(snapshot).snapshot).toEqual({ state: 'ok', value: { workspaces: 1, tabs: 2, panes: 2, agents: [

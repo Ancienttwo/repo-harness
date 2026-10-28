@@ -13,6 +13,7 @@ import {
   devActivityGhPrDayArgvs,
   DEV_ACTIVITY_GH_PR_LIMIT,
   DEV_ACTIVITY_GH_REPO_VIEW_ARGV,
+  parseGhPullRequests,
   type DevActivityProcessRunner,
 } from '../../src/effects/dev-activity/collector';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
@@ -96,6 +97,7 @@ function prJson(head: string, overrides: Record<string, unknown> = {}): Record<s
     url: 'https://github.com/acme/widgets/pull/7', createdAt: new Date(Date.now() - 2 * DAY).toISOString(),
     updatedAt: new Date(Date.now() - DAY).toISOString(), mergedAt: null, closedAt: null, mergeStateStatus: 'CLEAN',
     reviewDecision: 'APPROVED', statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+    headRefOid: 'c'.repeat(40), changedFiles: 1, files: [{ path: 'src/widgets.ts', additions: 3, deletions: 1 }],
     ...overrides,
   };
 }
@@ -336,9 +338,29 @@ process.exit(0);
 describe('dev activity collector bounds', () => {
   test('PR queries are author-scoped and bounded to the shipped window by the collector clock', () => {
     const [open, merged, closed] = devActivityGhPrListArgv(Date.parse('2026-10-10T12:00:00.000Z')).map(argv => argv.join(' '));
-    expect(open).toBe('pr list --state open --author @me --limit 201 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision,statusCheckRollup');
+    expect(open).toBe('pr list --state open --author @me --limit 201 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision,statusCheckRollup,headRefOid,changedFiles,files');
     expect(merged).toBe('pr list --state merged --author @me --limit 201 --search merged:>=2026-10-03 --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
     expect(closed).toBe('pr list --state closed --author @me --limit 201 --search closed:>=2026-10-03 is:unmerged --json number,title,state,isDraft,headRefName,baseRefName,url,createdAt,updatedAt,mergedAt,closedAt,mergeStateStatus,reviewDecision');
+  });
+
+  test('an open PR keeps its head and a complete file list; a short, missing or bad list is a reason, never a partial list', () => {
+    const parse = (overrides: Record<string, unknown>, open = true) => parseGhPullRequests(JSON.stringify([prJson('feat/a', overrides)]), open)[0]!;
+    const many = (count: number) => Array.from({ length: count }, (_, index) => ({ path: `src/f${String(index).padStart(3, '0')}.ts` }));
+    expect(parse({ changedFiles: 2, files: [{ path: 'src/b.ts' }, { path: 'README.md' }] })).toMatchObject({
+      head_sha: 'c'.repeat(40), changed_files: { state: 'ok', paths: ['README.md', 'src/b.ts'] } });
+    // gh lists at most 100 files; a PR with more is truncated, not complete.
+    expect(parse({ changedFiles: 150, files: many(100) }).changed_files).toEqual({ state: 'unavailable', reason: 'files_truncated' });
+    expect(parse({ changedFiles: 100, files: many(100) }).changed_files?.state).toBe('ok');
+    expect(parse({ files: undefined }).changed_files).toEqual({ state: 'unavailable', reason: 'files_missing' });
+    expect(parse({ changedFiles: undefined }).changed_files).toEqual({ state: 'unavailable', reason: 'files_missing' });
+    for (const files of [[{ path: '/Users/me/repo/x.ts' }], [{ path: '../x.ts' }], [{ name: 'x.ts' }], [{ path: 'x.ts' }, { path: 'x.ts' }]]) {
+      expect(parse({ changedFiles: files.length, files }).changed_files).toEqual({ state: 'unavailable', reason: 'files_invalid' });
+    }
+    expect(parse({ changedFiles: 0, files: [{ path: 'x.ts' }] }).changed_files).toEqual({ state: 'unavailable', reason: 'files_invalid' });
+    expect(parse({ headRefOid: 'main' }).head_sha).toBeNull();
+    // The merged and closed queries ask for neither.
+    const merged = parse({ state: 'MERGED', mergedAt: new Date().toISOString(), closedAt: new Date().toISOString() }, false);
+    expect([merged.head_sha, merged.changed_files]).toEqual([null, null]);
   });
 
   test('caps repository concurrency and passes only constant argv', async () => {
@@ -375,6 +397,21 @@ describe('dev activity collector bounds', () => {
     }
   });
 
+  test('a first cycle that fails ends the pending state with an unavailable snapshot', async () => {
+    const f = fixture(['one'], 0);
+    try {
+      const collector = startDevActivityCollector({
+        env: f.env, interval_ms: 60_000, now: () => Date.parse('2026-10-28T09:00:00.000Z'),
+        run_process: async () => { throw new Error('spawn failed'); },
+      });
+      await collector.settled();
+      await collector.close();
+      expect(collector.read()).toMatchObject({ status: 'unavailable', collected_at: '2026-10-28T09:00:00.000Z', repositories: [], items: [] });
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   test('serves unavailable before the first cycle, then the cache; close stops the timer', async () => {
     const f = fixture(['one'], 0);
     try {
@@ -384,7 +421,7 @@ describe('dev activity collector bounds', () => {
       const collector = startDevActivityCollector({
         env: f.env,
         interval_ms: 20,
-        read_runtime: () => { reads++; return { projection_version: 'repo-harness.runtime-overlay.v4', status: 'unavailable', observed_at: null, source_epoch: 0, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [], native_sources: [] }; },
+        read_runtime: () => { reads++; return { projection_version: 'repo-harness.runtime-overlay.v5', status: 'unavailable', reason: null, observed_at: null, source_epoch: 0, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [], native_sources: [] }; },
         run_process: async () => { await gate; return { ok: false, code: 'failed' }; },
       });
       expect(collector.read()).toMatchObject({ status: 'unavailable', collected_at: null, items: [], repositories: [] });

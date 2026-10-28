@@ -5,7 +5,7 @@ name: Console Collectors
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Background collectors for the Bot access, notify status, docs, tests, task execution and worktree views; each keeps an in-memory cache that a GET reads.
+summary: Background collectors for the Bot access, notify status, docs, tests, task execution, worktree and architecture map views, with the map's layers; each keeps an in-memory cache that a GET reads.
 responsibilities:
   - Own the Herdr notify probes in one notify collector; the notify route and the Bot access collector read its cache, and a failed probe is unavailable with a reason code.
   - Collect Bot access from the MCP doctor, the Bot registry, the OAuth token store, the repository registry, the newest audit rows and Herdr status; the first cycle starts after the first notify cycle.
@@ -14,6 +14,7 @@ responsibilities:
   - Take each repository's GitHub name and default branch only from the Dev Activity cache; a missing name is unavailable with a reason code.
   - Collect the task execution state of every registered repository in one child process through the setup collector's supervised runner, whose process group the deadline and server close kill, with the repository-selecting git variables removed; a session is verified only when its binding hash, native session record and process identity agree and it has no closed record, and a failed, timed-out or thrown cycle makes every repository unavailable.
   - Collect worktree topology, lifecycle records, merge proof, process cwd and low-frequency disk sizes in bounded child processes. Use the sweep predicate for the three-color judgment and expose only opaque ids, basenames and validated public facts.
+  - Collect the architecture map of every registered repository in one child process per repository through the setup collector's supervised runner: the committed model from archctx export native, the line counts of the commit's tracked text files from git, their owners from archctx resolve and the capability import counts from archctx deps. The same child reads the map layers. It reads today's first-parent changes from git with their owners from archctx resolve and the model delta from archctx export native at the base commit, and the violations from archctx debt, docs anchors and the undeclared rows of archctx deps; it never runs archctx flows check, which syncs the CodeGraph index. An edited worktree model, a dirty tree, a checkout during the cycle, or a missing, partial or other-commit CodeGraph index makes that fact unavailable with a reason code; the collector builds no index. The same child resolves the owners of the open pull requests' changed files, which the collector hands it in a private temporary file from the Dev Activity cache. The tests layer comes from the tests collector cache in the server process.
 source:
   include:
     - src/effects/operator/bot-access.ts
@@ -28,3 +29,5 @@ source:
     - src/effects/operator/worktree-collector.ts
     - src/effects/operator/worktree-collector-worker.ts
     - src/effects/operator/worktree-orphans-worker.ts
+    - src/effects/operator/architecture-map-collector.ts
+    - src/effects/operator/architecture-map-worker.ts

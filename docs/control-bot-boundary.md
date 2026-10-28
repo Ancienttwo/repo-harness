@@ -2,6 +2,8 @@
 
 ## Grok / minimal Bot profile
 
+Use the [GrokBot init auto-exec guide](bot-onboarding.md) on connect.
+
 A minimal Bot host loads `repo-harness-check` and lite working rules: brief,
 edit, targeted verification, and review by risk. Exclude by default
 `repo-harness-cross-review`, `repo-harness-herdr-portal`,

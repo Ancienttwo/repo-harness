@@ -5,12 +5,12 @@ name: Operator Web Console
 status: active
 parent: capability.runtime-harness.operator
 layer: web
-summary: Prebuilt read-only browser console that renders operator JSON observations.
+summary: Prebuilt browser console that renders operator JSON observations and sends the one agent settings write.
 responsibilities:
-  - Fetch observations with GET only and decode each body with the shared core decoder before render.
-  - Render Home and the Board, Repositories, Agents, Skills, Hooks, Architecture, System and Tools pages in one side rail with a repository switch.
+  - Fetch observations with GET and decode each body with the shared core decoder before render.
+  - Render Home and the Board, Repositories, Agents, Skills, Hooks, CLI, Bots, Architecture, System and Tools pages in one side rail with a repository switch, and the Settings page at the foot of the rail.
   - Build the Paper and Ink themes, type styles, logo and pixel characters from the design system's tokens.json and asset files.
-  - Show every action as a link or a copyable Bot command; never send a write request.
+  - Only the Settings page writes, through one POST /api/v1/settings/agents that carries the draft's changes, the revision it read and a request_id; after reconcile_required it locks the form until a reload. Every other action is a link or a copyable Bot command.
 source:
   include:
     - src/operator-web/**

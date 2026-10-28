@@ -3,7 +3,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
-import { publicDevActivityText } from '../../core/dev-activity/decode';
+import { publicDevActivityText } from '../../core/operator/public-text';
 import { decodeWorktrees, type WorktreeLifecycle, type WorktreesSnapshot, type WorktreeSource, type WorktreeView } from '../../core/operator/worktrees';
 import { managedWorktreeRoot, isManagedWorktreePath } from '../git/managed-worktree';
 import { resolveGitCommonDirectory } from '../git/common-directory';

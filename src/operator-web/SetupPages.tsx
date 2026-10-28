@@ -29,6 +29,7 @@ import {
   type SkillCell,
 } from './setup';
 import { CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
+import { ToolGroup } from './ToolsPage';
 
 export type SetupPage = 'agents' | 'skills' | 'hooks';
 
@@ -325,9 +326,10 @@ function SkillRow({ skill, t }: { readonly skill: SetupSkill; readonly t: Operat
   );
 }
 
-export function SkillsPage(props: PageProps) {
+export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string) => void }) {
   const { t } = props;
   return (
+    <>
     <SetupFrame page="skills" {...props}>
       {snapshot => {
         const skills = orderSkills(snapshot.skills);
@@ -357,6 +359,8 @@ export function SkillsPage(props: PageProps) {
         );
       }}
     </SetupFrame>
+    <ToolGroup kind="skill" onOpen={props.onOpenTool} t={t} />
+    </>
   );
 }
 
@@ -419,6 +423,30 @@ export function HooksPage(props: PageProps) {
     <SetupFrame page="hooks" {...props}>
       {snapshot => <>
         <ManagedEntries snapshot={snapshot} t={t} />
+        <Card labelledBy="setup-usage-heading">
+          <SectionTitle id="setup-usage-heading">{t('setup.hooks.usage')}</SectionTitle>
+          {snapshot.hook_usage === null ? <p className="text-sm text-kumo-subtle">{t('setup.hooks.usageUnknown')}</p> : <>
+            <p className="text-xs text-kumo-subtle">{t('setup.hooks.usageScope', { hours: snapshot.hook_usage.window_hours })}</p>
+            {snapshot.hook_usage.routes.length === 0 ? <p className="text-sm text-kumo-subtle">{t('setup.hooks.noCalls')}</p> : (
+              <ul className="divide-y divide-kumo-hairline">
+                {snapshot.hook_usage.routes.map(row => <li key={`${row.host}:${row.event}:${row.route_id}`} data-hook-usage={row.route_id}
+                  className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+                  <span className="break-all font-mono">{row.event}.{row.route_id} · {hostName(row.host, t)}</span>
+                  <span className="tabular-nums">{t(row.calls === 1 ? 'setup.hooks.countsOne' : 'setup.hooks.counts', { calls: row.calls, blocked: row.blocked })}</span>
+                </li>)}
+              </ul>
+            )}
+            <h3 className="text-sm font-medium">{t('setup.hooks.denials')}</h3>
+            {snapshot.hook_usage.recent_denials.length === 0 ? <p className="text-sm text-kumo-subtle">{t('setup.hooks.noDenials')}</p> : (
+              <ul className="divide-y divide-kumo-hairline">
+                {snapshot.hook_usage.recent_denials.map((row, index) => <li key={index} data-hook-denial className="py-2 text-sm [overflow-wrap:anywhere]">
+                  <p className="text-xs text-kumo-subtle"><time dateTime={row.at}>{row.at}</time> · {row.guard}</p>
+                  <p>{row.reason}</p>
+                </li>)}
+              </ul>
+            )}
+          </>}
+        </Card>
         <Card labelledBy="setup-routes-heading">
           <SectionTitle id="setup-routes-heading" count={snapshot.hooks.reduce((total, event) => total + event.routes.length, 0)}>{t('setup.hooks.routes')}</SectionTitle>
           {snapshot.hooks.length === 0 ? <p className="text-sm text-kumo-subtle">{t('setup.hooks.empty')}</p> : (

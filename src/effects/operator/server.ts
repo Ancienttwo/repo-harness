@@ -16,6 +16,8 @@ import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV
 import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
 import { startTestsCollector, type TestsRepositoryCache } from './tests-collector';
 import { startExecutionCollector, type ExecutionRepositoryCache } from './execution-collector';
+import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from './architecture-map-collector';
+import { architecturePullRequestsSource, decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
 import { decodeTaskExecutionView, type ExecutionStateUnavailableReason } from '../../core/operator/execution-state';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
@@ -40,6 +42,10 @@ import { terminateProcessGroup, type ProcessGroupTermination } from '../process-
 import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
+import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
+import { AgentsConfigurationError } from '../configuration/agents-configuration';
+import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
+import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -150,9 +156,13 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
+  // The first write route: it changes only the host config's `agents` section.
+  Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
+  Object.freeze({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
 
@@ -213,6 +223,10 @@ export interface OperatorServerOptions {
   readonly read_execution_state?: (repositoryId: string) => ExecutionRepositoryCache;
   /** Start the in-process execution-state collector (operator serve). Ignored when a cache reader is injected. */
   readonly execution_collector?: boolean;
+  /** Architecture map cache reader by repository id. GET serves only this cache; it runs no archctx or git. */
+  readonly read_architecture_map?: (repositoryId: string) => ArchitectureMapRepositoryCache;
+  /** Start the in-process architecture map collector (operator serve). Ignored when a cache reader is injected. */
+  readonly architecture_map_collector?: boolean;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -227,13 +241,15 @@ export interface OperatorServerOptions {
     input: OperatorRepositorySnapshotReaderInput,
   ) => Promise<OperatorRepositorySnapshotV1>;
   /**
-   * Write routes admitted for POST. Each one must match a `POST`, `write: true`
-   * entry of the route inventory, or the server does not start. Production
-   * passes none: no business write is open yet.
+   * Write routes admitted for POST in addition to the production ones. Each
+   * one must match a `POST`, `write: true` entry of the route inventory, or the
+   * server does not start. Only tests pass this.
    */
   readonly write_routes?: readonly OperatorWriteRoute[];
   /** The route inventory write routes bind to. Production uses OPERATOR_ROUTES; only tests inject another. */
   readonly route_inventory?: readonly OperatorRouteV1[];
+  /** Agent runtime probe cache reader. GET and POST settings read only this cache; neither probes. */
+  readonly read_agent_runtimes?: () => AgentRuntimesCacheV1;
 }
 
 export interface OperatorServerHandle {
@@ -404,6 +420,14 @@ const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly stat
   artifact_too_large: { status: 503, message: 'A test artifact is larger than the collector reads.', next_action: 'Check the size of the junit-daily and test-projection artifacts.' },
   artifact_download_failed: { status: 503, message: 'A test artifact could not be downloaded.', next_action: 'Check `gh auth status`, then wait for the next collection.' },
   tests_invalid: { status: 503, message: 'The test results failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
+};
+
+const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+  architecture_map_pending: { status: 503, message: 'The architecture map is not collected yet.', next_action: 'Retry in a minute.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
+  model_unavailable: { status: 503, message: 'The committed architecture model could not be read.', next_action: 'Run `repo-harness architecture-projection status --json` in the repository.' },
+  architecture_map_invalid: { status: 503, message: 'The architecture map failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
 };
 
 const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -1582,9 +1606,12 @@ export async function startOperatorServer(
   };
 
   const writeToken = createOperatorWriteToken();
-  const writeRoutes = options.write_routes ?? [];
+  const readAgentRuntimes = (): AgentRuntimesCacheV1 =>
+    (options.read_agent_runtimes ?? setup?.read_agent_runtimes ?? (() => ({ status: 'unavailable', reason: 'collection_pending' } as const)))();
+  const writeRoutes = [agentsSettingsWriteRoute(readAgentRuntimes, options.env), ...(options.write_routes ?? [])];
   // The inventory is the one write authority: a handler it does not declare
-  // as a POST write route is a second authority, so the server refuses to start.
+  // as a POST write route is a second authority, and a declared write route
+  // without a handler is a broken contract, so the server refuses to start.
   const routeInventory = options.route_inventory ?? OPERATOR_ROUTES;
   for (const route of writeRoutes) {
     const entry = routeInventory.find(candidate => candidate.id === route.id);
@@ -1592,6 +1619,14 @@ export async function startOperatorServer(
       throw new OperatorServerError('invalid_argument', `write route ${JSON.stringify(route.id)} has no matching POST write entry in the route inventory`, 400);
     }
   }
+  for (const entry of routeInventory) {
+    if (entry.write && !writeRoutes.some(route => route.id === entry.id)) {
+      throw new OperatorServerError('invalid_argument', `route inventory entry ${JSON.stringify(entry.id)} has no write route`, 400);
+    }
+  }
+  // Doc session events are served only when the inventory declares them; production OPERATOR_ROUTES does not yet.
+  const sessionEventsRead = routeInventory.some(entry => entry.id === 'session_events' && entry.method === 'GET' && !entry.write
+    && entry.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source);
   const matchWriteRoute = (pathname: string): { readonly route: OperatorWriteRoute; readonly params: readonly string[] } | null => {
     for (const route of writeRoutes) {
       const match = route.path.exec(pathname);
@@ -1666,7 +1701,8 @@ export async function startOperatorServer(
       else sendJson(response, reply.status, reply.body, false, replyHeaders);
       return;
     }
-    if (writeMatch !== null) {
+    // A write path may also be a read resource; only a write-only path refuses GET.
+    if (writeMatch !== null && !routeInventory.some(entry => entry.method === 'GET' && entry.pattern === pathname)) {
       sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only POST is supported.'), headOnly, {
         Allow: OPERATOR_WRITE_ALLOWED_METHODS,
       });
@@ -1690,6 +1726,18 @@ export async function startOperatorServer(
       }, ARCHITECTURE_FAILURES, 'architecture', undefined, code =>
         code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
           : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422, request);
+      return;
+    }
+
+    const sessionEvents = sessionEventsRead ? OPERATOR_SESSION_EVENTS_ROUTE.exec(pathname) : null;
+    if (sessionEvents !== null) {
+      const keys = [...url.searchParams.keys()];
+      if (keys.some(key => key !== 'after') || keys.length > 1) { sendJson(response, 400, { code: 'invalid_cursor' }, headOnly); return; }
+      try { sendJson(response, 200, readDocSessionEvents(options.env ?? process.env, sessionEvents[1]!, url.searchParams.get('after')), headOnly); }
+      catch (error) {
+        const code = error instanceof DocSessionEventsError && (error.code === 'invalid_cursor' || error.code === 'session_not_found') ? error.code : 'events_unavailable';
+        sendJson(response, code === 'invalid_cursor' ? 400 : code === 'session_not_found' ? 404 : 503, { code }, headOnly);
+      }
       return;
     }
 
@@ -1760,6 +1808,21 @@ export async function startOperatorServer(
         setupSnapshot = unavailableSetupSnapshot('setup_check_invalid');
       }
       sendJson(response, 200, setupSnapshot, headOnly);
+      return;
+    }
+
+    if (pathname === OPERATOR_SETTINGS_AGENTS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Agent settings accept no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, readAgentsSettings(readAgentRuntimes, options.env), headOnly);
+      } catch (error) {
+        if (!(error instanceof AgentsConfigurationError)) throw error;
+        sendRefusal(request, response, AGENTS_CONFIGURATION_FAILURES[error.code].status,
+          errorBody(error.code, error.message, AGENTS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
+      }
       return;
     }
 
@@ -1914,6 +1977,28 @@ export async function startOperatorServer(
       return;
     }
 
+    const architectureMapRoute = OPERATOR_ARCHITECTURE_MAP_ROUTE.exec(pathname);
+    if (architectureMapRoute !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The architecture map accepts no query parameters.'), headOnly);
+        return;
+      }
+      const cache = (options.read_architecture_map ?? architectureMap?.read ?? (() => ({ state: 'unavailable', reason: 'architecture_map_pending' }) as const))(architectureMapRoute[1]!);
+      if (cache.state !== 'ready') {
+        const refusal = ARCHITECTURE_MAP_UNAVAILABLE[cache.reason];
+        sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
+        return;
+      }
+      let map;
+      try { map = decodeArchitectureMap(cache.map); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('architecture_map_invalid', ARCHITECTURE_MAP_UNAVAILABLE.architecture_map_invalid.message), headOnly);
+        return;
+      }
+      sendJson(response, 200, map, headOnly);
+      return;
+    }
+
     const executionRoute = OPERATOR_EXECUTION_STATE_ROUTE.exec(pathname);
     if (executionRoute !== null) {
       if (url.search !== '') {
@@ -2025,7 +2110,7 @@ export async function startOperatorServer(
       read_runtime: options.read_runtime_status ?? runtimeService?.read ?? null,
     })
     : null;
-  const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env }) : null;
+  const setup = options.setup_collector && !options.read_setup ? startSetupCollector({ env: options.env, agent_runtimes: {} }) : null;
   const botAccessCollects = options.bot_access_collector === true && !options.read_bot_access;
   const notify = (options.notify_collector || botAccessCollects) && !options.read_notify ? startNotifyCollector({ env: options.env }) : null;
   const botAccess = botAccessCollects
@@ -2039,6 +2124,14 @@ export async function startOperatorServer(
     : null;
   const execution = options.execution_collector && !options.read_execution_state ? startExecutionCollector({ env: options.env }) : null;
   const worktrees = options.worktree_collector && !options.read_worktrees ? startWorktreeCollector({ env: options.env }) : null;
+  const architectureMap = options.architecture_map_collector && !options.read_architecture_map
+    ? startArchitectureMapCollector({
+      env: options.env,
+      read_pull_requests: repositoryId => architecturePullRequestsSource((options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot)(), repositoryId),
+      read_tests: options.read_tests ?? tests?.read,
+      first_cycle_after: devActivity?.settled(),
+    })
+    : null;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;
@@ -2065,6 +2158,7 @@ export async function startOperatorServer(
       void tests?.close();
       void execution?.close();
       void worktrees?.close();
+      void architectureMap?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -2091,7 +2185,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

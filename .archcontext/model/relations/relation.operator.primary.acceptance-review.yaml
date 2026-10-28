@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.acceptance-review
+kind: reads
+source: component.operator.primary
+target: component.acceptance-review.primary
+intent: "Read the docs host platform and runtimes that a doc session may use."

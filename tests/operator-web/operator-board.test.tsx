@@ -13,9 +13,17 @@ import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/ope
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
-import type { CiRepairsReader } from '../../src/operator-web/repository-reads';
+import { fetchExecution, itemOwner, type CiRepairsReader, type ExecutionReader } from '../../src/operator-web/repository-reads';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
-import { busyDevActivity, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, HARNESS_ID } from '../../src/operator-web/fixtures/dev-activity';
+import {
+  busyDevActivity,
+  busyExecution,
+  busyRuntimeOverlay,
+  degradedDevActivity,
+  emptyDevActivity,
+  emptyExecution,
+  HARNESS_ID,
+} from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { stableSnapshot } from '../../src/operator-web/fixture';
@@ -56,6 +64,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
+    readExecution: async id => emptyExecution(id, NOW),
     ...overrides,
   };
 }
@@ -69,6 +78,11 @@ function rejudged(edits: Readonly<Record<string, Partial<WorktreeRow>>>): Worktr
     ...repository, worktrees: repository.worktrees.map(tree => ({ ...tree, ...edits[tree.directory] })),
   })) });
 }
+
+/** The busy fixture's sessions: Codex on the console redesign, Claude Code on the pipeline observer, operator-site still collecting. */
+const sessions: ExecutionReader = async id => busyExecution(id, NOW);
+const followUp = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="drawer-follow-up"]')!;
+const drawerAt = (id: string) => installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
 
 async function mount(element: React.ReactElement): Promise<void> {
   const container = document.createElement('div');
@@ -117,6 +131,46 @@ describe('board data rules', () => {
     expect(documentTitle(3)).toBe('(3) repo-harness');
     expect(documentTitle(0)).toBe('repo-harness');
     expect(documentTitle(null)).toBe('repo-harness');
+  });
+
+  test('an item takes a verified session only from the same repository and branch', () => {
+    const read = busyExecution(HARNESS_ID, NOW);
+    const site = busy().repositories[1]!.repository_id;
+    const executions = [{ repository_id: HARNESS_ID, ...read }, { repository_id: site, ...emptyExecution(site, NOW) }];
+    expect(itemOwner(executions, { repository_id: HARNESS_ID, branch: 'feat/kanban-human-redesign' })).toMatchObject({ state: 'verified', tasks: [{ agent: 'codex', role: 'implementer' }] });
+    expect(itemOwner(executions, { repository_id: site, branch: 'feat/kanban-human-redesign' })).toEqual({ state: 'none' });
+    expect(itemOwner(executions, { repository_id: HARNESS_ID, branch: 'feat/kanban-human' })).toEqual({ state: 'none' });
+    expect(itemOwner(null, { repository_id: HARNESS_ID, branch: 'feat/kanban-human-redesign' })).toEqual({ state: 'reading' });
+  });
+
+  test('the execution reader keeps each route refusal and maps any other answer to a reason, never to an empty view', async () => {
+    const read = busyExecution(HARNESS_ID, NOW);
+    if (read.state !== 'ok') throw new Error('the busy fixture serves repo-harness');
+    const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
+    const answers: (() => Response)[] = [
+      () => Response.json(read.view),
+      () => Response.json({ ...read.view, tasks: [{ ...read.view.tasks[0], branch: 'feat/x y' }] }),
+      refusal('execution_state_pending', 503),
+      refusal('repository_not_found', 404),
+      refusal('execution_state_unavailable', 503),
+      refusal('execution_state_invalid', 503),
+      refusal('a_code_from_a_newer_server', 503),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+      requests.push(`${options?.method ?? 'GET'} ${String(url)}`);
+      return answers[requests.length - 1]!();
+    }) as typeof fetch;
+    try {
+      const results = [];
+      for (const _ of answers) results.push(await fetchExecution(HARNESS_ID, new AbortController().signal));
+      expect(results.map(result => result.state === 'ok' ? result.view.tasks.length : result.reason)).toEqual([
+        3, 'execution_state_invalid', 'execution_state_pending', 'repository_not_found', 'execution_state_unavailable', 'execution_state_invalid', 'unreachable', 'unreachable',
+      ]);
+      expect(new Set(requests)).toEqual(new Set([`GET /api/v1/repositories/${HARNESS_ID}/execution`]));
+    } finally { globalThis.fetch = original; }
   });
 });
 
@@ -267,6 +321,89 @@ describe('board page', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('This item is no longer on the board');
   });
 
+  test('1-TASK-P1 a verified session gives the owner row and a copyable pane, resume command and task id', async () => {
+    drawerAt(`${HARNESS_ID}:feat/kanban-human-redesign`);
+    const copied: string[] = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
+    await mount(<OperatorApp {...props(busy(), { readExecution: sessions })} />);
+    await settle();
+    const owner = followUp().querySelector('[data-owner="verified"]')!;
+    for (const part of ['Codex', 'verified', 'implementer', 'Read-only observation']) expect(owner.textContent).toContain(part);
+    expect(owner.querySelector('[data-dot="active"]')).not.toBeNull();
+    expect(followUp().textContent).toContain('w2:p1');
+    expect(followUp().textContent).toContain('main · w2');
+    expect(followUp().querySelector('[data-command] code')?.textContent).toBe('codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f');
+    // 1-TASK-N1: copy buttons only; nothing here can reach the session.
+    expect(followUp().querySelectorAll('input, textarea, select, form, [contenteditable], [data-write-action]')).toHaveLength(0);
+    const buttons = Array.from(followUp().querySelectorAll('button'));
+    expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
+    for (const button of buttons) await act(async () => button.click());
+    expect(copied).toEqual(['w2:p1', 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
+
+    await act(async () => root?.unmount());
+    root = null;
+    drawerAt(`${HARNESS_ID}:feat/pipeline-observer`);
+    await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh', readExecution: sessions })} />);
+    await settle();
+    expect(followUp().querySelector('[data-owner="verified"]')?.textContent).toContain('Claude Code');
+    expect(followUp().textContent).toContain('只读观测');
+    expect(followUp().querySelector('[data-command] code')?.textContent).toBe('claude --resume 5f0c1e2a-0000-4000-8000-000000000001');
+    // A terminal session has no Herdr pane to show.
+    expect(followUp().textContent).not.toContain('Herdr pane');
+    expect(followUp().textContent).toContain('pipeline-observer');
+  });
+
+  test('1-TASK-F1 without a verified session on the item branch the drawer says so, with no agent name and no command', async () => {
+    // Dev Activity lists `feat/c++`, but the view leaves out a session whose branch is not public text.
+    const base = busy();
+    const plus = { id: `${HARNESS_ID}:feat/c++`, repository_id: HARNESS_ID, branch: 'feat/c++', title: 'Build on a branch with a plus sign', column: 'building',
+      hidden: null, column_since: null, worktrees: [], pull_request: null };
+    const snapshot = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...base, items: [...base.items, plus] })));
+    // chore/oar-0-45: its session's provider exited, so the view has it only as unverified.
+    for (const branch of ['chore/oar-0-45', 'feat/c++']) {
+      drawerAt(`${HARNESS_ID}:${branch}`);
+      await mount(<OperatorApp {...props(snapshot, { initialLocale: 'zh', readExecution: sessions })} />);
+      await settle();
+      const none = followUp().querySelector('[data-owner="none"]')!;
+      expect(none.textContent).toBe('没有已验证的会话');
+      expect(none.querySelector('[data-dot="unknown"]')).not.toBeNull();
+      for (const name of ['Codex', 'Claude Code', 'implementer']) expect(followUp().textContent).not.toContain(name);
+      expect(followUp().querySelectorAll('[data-command], button')).toHaveLength(0);
+      await act(async () => root?.unmount());
+      root = null;
+    }
+  });
+
+  test('the drawer states a read in flight, a pending collection and an unreadable route, never as no session', async () => {
+    const site = busy().repositories[1]!.repository_id;
+    const states: [string, ExecutionReader, string, string][] = [
+      [`${HARNESS_ID}:feat/kanban-human-redesign`, () => new Promise(() => {}), 'reading', 'Reading…'],
+      [`${site}:fix/csp-header`, sessions, 'pending', 'Task execution state is not collected yet'],
+      [`${HARNESS_ID}:feat/kanban-human-redesign`, async () => ({ state: 'unavailable', reason: 'execution_state_unavailable' }), 'unavailable',
+        'Task execution state unavailable · The task session records could not be read'],
+    ];
+    for (const [id, readExecution, state, text] of states) {
+      drawerAt(id);
+      await mount(<OperatorApp {...props(busy(), { readExecution })} />);
+      await settle();
+      expect(followUp().querySelector(`[data-owner="${state}"]`)?.textContent).toBe(text);
+      expect(followUp().querySelectorAll('[data-owner="none"], [data-owner="verified"], [data-command], button')).toHaveLength(0);
+      // A card names no agent unless the route answered with a verified session.
+      expect(card(id).querySelector('[data-agent]')).toBeNull();
+      await act(async () => root?.unmount());
+      root = null;
+    }
+  });
+
+  test('a card names the agent of its verified session, and no other card names one', async () => {
+    await mount(<OperatorApp {...props(busy(), { readExecution: sessions })} />);
+    await settle();
+    expect(card(`${HARNESS_ID}:feat/kanban-human-redesign`).querySelector('[data-agent="verified"]')?.textContent).toBe('Codex');
+    expect(card(`${HARNESS_ID}:feat/pipeline-observer`).querySelector('[data-agent="verified"] [data-dot="active"]')).not.toBeNull();
+    const named = cards().filter(element => element.querySelector('[data-agent]') !== null).map(element => element.getAttribute('data-item-id'));
+    expect(named).toEqual([`${HARNESS_ID}:feat/kanban-human-redesign`, `${HARNESS_ID}:feat/pipeline-observer`]);
+  });
+
   test('states an empty queue and an unconnected agent source in one line each, with the command', async () => {
     await mount(<OperatorApp {...props(decodeDevActivitySnapshot(emptyDevActivity(NOW)))} />);
     expect(document.querySelector('.needs-you')?.textContent).toContain('Nothing is waiting on you.');
@@ -395,6 +532,19 @@ describe('home page', () => {
     await act(async () => rows[0]!.querySelector<HTMLAnchorElement>(`a[href="#board/${encodeURIComponent(snapshot.attention[0]!.subject_id)}"]`)!.click());
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
     expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Observe pipeline phases on the board');
+  });
+
+  test('1-HOME-P1 a row whose item has a verified session names its agent; every other row stays agent unknown', async () => {
+    installDom(HOME_URL);
+    await mount(<OperatorApp {...props(waitingThree(), { initialLocale: 'zh', readCiRepairs: noRepairs, readExecution: sessions })} />);
+    await settle();
+    const agents = (group: string) => Array.from(document.querySelectorAll(`section[aria-labelledby="${group}"] [data-agent]`)).map(cell => cell.textContent);
+    expect(agents('home-waiting')).toEqual(['Claude Code', 'Codex', 'agent 未知']);
+    expect(document.querySelector('[data-attention-kind="changes_requested"] [data-agent="verified"] [data-dot="active"]')).not.toBeNull();
+    // Continue: repo-harness has no session on its branch and operator-site is still collecting.
+    const continuing = agents('home-continue');
+    expect(continuing.length).toBeGreaterThan(0);
+    expect(new Set(continuing)).toEqual(new Set(['agent 未知']));
   });
 
   test('1-HOME-N1 offers no document session input, agent picker or start button, and Continue lists tasks only', async () => {

@@ -3,6 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpat
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import { REPOSITORY_SELECTING_GIT_ENV, spawnGit } from '../git/runner';
+import { docsLines, type DocsLine } from '../../core/operator/docs';
 
 /**
  * Read-only `docs/**` reader for the operator console (PRD G7).
@@ -51,6 +52,7 @@ export interface DocsFile {
   size: number;
   sha256: string;
   text: string;
+  lines: DocsLine[];
   /** The worktree copy is missing, is not the same regular file, or has other bytes. */
   worktree_differs: boolean;
 }
@@ -71,6 +73,7 @@ type PathKind = 'dir' | 'escape' | 'other';
 type Listing = { commit: string; files: Map<string, { oid: string; facts: BlobFacts }>; kinds: Map<string, PathKind>; tree: DocsTree };
 type TreeEntry = { mode: string; name: string; oid: string };
 type BlobFacts = { size: number; sha256: string; text: boolean };
+type PhysicalFile = { path: string; absolute: string; dev: number; ino: number };
 type Pending = { resolve: (value: GitObject | null) => void; reject: (error: DocsReadError) => void; contents: boolean; timer: ReturnType<typeof setTimeout> };
 
 const REGULAR_FILE = new Set(['100644', '100755']);
@@ -121,7 +124,7 @@ function sha256(bytes: Buffer): string {
 }
 
 function utf8(bytes: Buffer): string | null {
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return null; }
+  try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return null; }
 }
 
 /**
@@ -318,7 +321,7 @@ export class DocsReader {
    */
   async file(input: unknown): Promise<DocsFile> {
     const path = normalizeDocsPath(input);
-    const worktree = this.physical(path);
+    this.physical(path);
     const listing = this.listing;
     if (listing === null) throw new DocsReadError('pending');
     // A committed symlink or submodule on the path can point anywhere.
@@ -337,9 +340,12 @@ export class DocsReader {
     if (!entry.facts.text) throw new DocsReadError('not_text', path);
     const blob = await this.worker.contents(entry.oid);
     if (!blob?.bytes || blob.type !== 'blob' || sha256(blob.bytes) !== entry.facts.sha256) throw new DocsReadError('git_read_failed', path);
+    // The worktree can change while the resident worker answers the object request.
+    const worktree = this.physical(path);
+    const text = utf8(blob.bytes)!;
     return {
-      path, commit: listing.commit, size: blob.size, sha256: entry.facts.sha256, text: utf8(blob.bytes)!,
-      worktree_differs: worktree === null || worktree.path !== path || !this.sameBytes(worktree.absolute, blob.bytes),
+      path, commit: listing.commit, size: blob.size, sha256: entry.facts.sha256, text, lines: docsLines(text),
+      worktree_differs: worktree === null || worktree.path !== path || !this.sameBytes(path, worktree, blob.bytes),
     };
   }
 
@@ -397,7 +403,7 @@ export class DocsReader {
    * against the allow and deny lists. Returns null when the worktree has no
    * entry at the path. A dangling or looping symlink is an escape.
    */
-  private physical(path: string): { path: string; absolute: string } | null {
+  private physical(path: string): PhysicalFile | null {
     const parts = path.split('/');
     for (let count = parts.length; count >= 1; count--) {
       const logical = resolve(this.root, ...parts.slice(0, count));
@@ -415,18 +421,30 @@ export class DocsReader {
       if (scoped === '' || scoped === '..' || scoped.startsWith(`..${sep}`) || isAbsolute(scoped)) throw new DocsReadError('path_escape', path);
       const physical = [...scoped.split(sep), ...parts.slice(count)].join('/');
       if (!inDocs(physical) || docsPathDenied(physical)) throw new DocsReadError('path_escape', path);
-      return count === parts.length ? { path: physical, absolute: real } : null;
+      if (count !== parts.length) return null;
+      try {
+        const stat = lstatSync(real);
+        if (stat.isSymbolicLink()) throw new DocsReadError('path_escape', path);
+        return { path: physical, absolute: real, dev: stat.dev, ino: stat.ino };
+      } catch (error) {
+        if (error instanceof DocsReadError) throw error;
+        if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null;
+        throw new DocsReadError('git_read_failed', path);
+      }
     }
     return null;
   }
 
-  private sameBytes(absolute: string, expected: Buffer): boolean {
+  private sameBytes(path: string, worktree: PhysicalFile, expected: Buffer): boolean {
     let fd: number;
     // O_NONBLOCK: opening a FIFO or device would otherwise block the event loop before fstat can reject it.
-    try { fd = openSync(absolute, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); } catch { return false; }
+    try { fd = openSync(worktree.absolute, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); }
+    catch { this.physical(path); return false; }
     try {
       const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size !== expected.length) return false;
+      const current = this.physical(path);
+      if (!current || current.absolute !== worktree.absolute || current.dev !== worktree.dev || current.ino !== worktree.ino
+        || stat.dev !== worktree.dev || stat.ino !== worktree.ino || !stat.isFile() || stat.size !== expected.length) return false;
       const actual = Buffer.alloc(expected.length + 1);
       let read = 0;
       while (read < actual.length) {
@@ -434,7 +452,11 @@ export class DocsReader {
         if (count === 0) break;
         read += count;
       }
-      return read === expected.length && actual.subarray(0, read).equals(expected);
+      const after = fstatSync(fd);
+      const final = this.physical(path);
+      return final !== null && final.absolute === worktree.absolute && final.dev === stat.dev && final.ino === stat.ino
+        && after.size === stat.size && after.mtimeMs === stat.mtimeMs && after.ctimeMs === stat.ctimeMs
+        && read === expected.length && actual.subarray(0, read).equals(expected);
     } finally {
       closeSync(fd);
     }

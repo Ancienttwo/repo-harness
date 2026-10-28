@@ -1,4 +1,4 @@
-import { isPublicDevActivityText } from '../dev-activity/decode';
+import { isPublicDevActivityText } from './public-text';
 
 export const WORKTREE_SOURCES = ['contract', 'mcp', 'task', 'portal', 'manual', 'claude', 'codex', 'unknown'] as const;
 export type WorktreeSource = typeof WORKTREE_SOURCES[number];

@@ -6,8 +6,18 @@ import { BoardState } from './Board';
 import { Mascot } from './brand';
 import { attentionItem, failedSources, repositoryLabel, truncatedCategories, type DevActivityView } from './dev-activity';
 import type { OperatorTranslate } from './i18n';
-import { ageWords } from './labels';
-import { useCiRepairs, type CiRepairsReader, type CiRepairsReason, type CiRepairsResult } from './repository-reads';
+import { ageWords, ownerAgents } from './labels';
+import {
+  itemOwner,
+  useCiRepairs,
+  useExecutions,
+  type CiRepairsReader,
+  type CiRepairsReason,
+  type CiRepairsResult,
+  type ExecutionReader,
+  type ExecutionResult,
+  type ItemOwner,
+} from './repository-reads';
 import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
@@ -45,9 +55,10 @@ function where(snapshot: DevActivitySnapshotV2, item: DevActivityItem | null, re
   return [repositoryLabel(snapshot.repositories, repositoryId), subject].filter(Boolean).join(' · ');
 }
 
-/** No route serves a verified agent for a task yet, so every row says so (PRD G2). */
-function AgentUnknown({ t }: { readonly t: OperatorTranslate }) {
-  return <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-subtle" data-agent="unknown"><StatusDot tone="unknown" />{t('home.agentUnknown')}</span>;
+/** The verified agent of a row's item, else 「agent 未知」: identity comes only from a verified session (G2). */
+function AgentCell({ owner, t }: { readonly owner: ItemOwner | null; readonly t: OperatorTranslate }) {
+  if (owner?.state !== 'verified') return <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-subtle" data-agent="unknown"><StatusDot tone="unknown" />{t('home.agentUnknown')}</span>;
+  return <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-default" data-agent="verified"><StatusDot tone="active" /><span className="truncate">{ownerAgents(owner.tasks, t)}</span></span>;
 }
 
 function ListGroup({ id, title, count, children }: { readonly id: string; readonly title: string; readonly count?: number; readonly children: ReactNode }) {
@@ -72,8 +83,9 @@ function FoldButton({ expanded, hidden, onToggle, t }: { readonly expanded: bool
 
 const ROW = 'flex flex-col gap-2 border-b border-kumo-hairline px-5 py-3.5 last:border-b-0 rail:flex-row rail:items-center rail:gap-6';
 
-function WaitingRow({ row, snapshot, now, onOpen, t }: {
-  readonly row: DevActivityAttention; readonly snapshot: DevActivitySnapshotV2; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
+function WaitingRow({ row, snapshot, executions, now, onOpen, t }: {
+  readonly row: DevActivityAttention; readonly snapshot: DevActivitySnapshotV2; readonly executions: readonly ExecutionResult[] | null;
+  readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
 }) {
   const item = attentionItem(snapshot, row);
   return (
@@ -88,7 +100,7 @@ function WaitingRow({ row, snapshot, now, onOpen, t }: {
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 pl-5 rail:pl-0">
-        <AgentUnknown t={t} />
+        <AgentCell owner={item ? itemOwner(executions, item) : null} t={t} />
         <span className="inline-flex w-24 items-center gap-1 text-xs tabular-nums text-kumo-subtle">
           <HourglassIcon size={12} aria-hidden="true" />{ageWords(row.waiting_since, now, t)}
         </span>
@@ -98,8 +110,9 @@ function WaitingRow({ row, snapshot, now, onOpen, t }: {
   );
 }
 
-function ContinueRow({ item, snapshot, now, onOpen, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
+function ContinueRow({ item, snapshot, executions, now, onOpen, t }: {
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly executions: readonly ExecutionResult[] | null;
+  readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
 }) {
   return (
     <li className={ROW} data-continue-item={item.id}>
@@ -112,7 +125,7 @@ function ContinueRow({ item, snapshot, now, onOpen, t }: {
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 pl-5 rail:pl-0">
         <span className="w-20 text-xs text-kumo-subtle">{t(`column.${item.column}`)}</span>
-        <AgentUnknown t={t} />
+        <AgentCell owner={itemOwner(executions, item)} t={t} />
         <span className="w-24 text-xs tabular-nums text-kumo-subtle">{item.column_since ? ageWords(item.column_since, now, t) : '—'}</span>
       </div>
     </li>
@@ -264,10 +277,11 @@ function SourceBanner({ view, snapshot, now, onOpen, t }: {
     title={failures.length > 1 ? `${sentence} · ${t('home.banner.more', { count: failures.length - 1 })}` : sentence} />;
 }
 
-export function Home({ view, worktrees, readCiRepairs, generation, now, onOpen, t }: {
+export function Home({ view, worktrees, readCiRepairs, readExecution, generation, now, onOpen, t }: {
   readonly view: DevActivityView;
   readonly worktrees: WorktreesView;
   readonly readCiRepairs: CiRepairsReader;
+  readonly readExecution: ExecutionReader;
   readonly generation: number;
   readonly now: number;
   readonly onOpen: Open;
@@ -276,6 +290,8 @@ export function Home({ view, worktrees, readCiRepairs, generation, now, onOpen, 
   const snapshot = view.kind === 'ready' ? view.snapshot : null;
   const githubIds = useMemo(() => snapshot?.repositories.filter(repository => repository.github !== null).map(repository => repository.repository_id) ?? [], [snapshot]);
   const repairs = useCiRepairs(readCiRepairs, githubIds, generation, snapshot !== null);
+  const repositoryIds = useMemo(() => snapshot?.repositories.map(repository => repository.repository_id) ?? [], [snapshot]);
+  const executions = useExecutions(readExecution, repositoryIds, generation, snapshot !== null);
   const [waitingExpanded, setWaitingExpanded] = useState(false);
   const [continueExpanded, setContinueExpanded] = useState(false);
 
@@ -306,14 +322,14 @@ export function Home({ view, worktrees, readCiRepairs, generation, now, onOpen, 
       <ListGroup id="home-waiting" title={t('attention.title')} count={waiting.length}>
         {waiting.length === 0 ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('attention.empty')}</p> : (
           <ul>{(waitingExpanded ? waiting : waiting.slice(0, WAITING_PREVIEW)).map(row =>
-            <WaitingRow key={`${row.kind}:${row.subject_id}`} row={row} snapshot={ready} now={now} onOpen={onOpen} t={t} />)}</ul>
+            <WaitingRow key={`${row.kind}:${row.subject_id}`} row={row} snapshot={ready} executions={executions} now={now} onOpen={onOpen} t={t} />)}</ul>
         )}
         {waiting.length > WAITING_PREVIEW && <FoldButton expanded={waitingExpanded} hidden={waiting.length - WAITING_PREVIEW} onToggle={() => setWaitingExpanded(value => !value)} t={t} />}
       </ListGroup>
       <ListGroup id="home-continue" title={t('home.continue')} count={continuing.length}>
         {continuing.length === 0 ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('board.empty.title')}</p> : (
           <ul>{(continueExpanded ? continuing : continuing.slice(0, CONTINUE_PREVIEW)).map(item =>
-            <ContinueRow key={item.id} item={item} snapshot={ready} now={now} onOpen={onOpen} t={t} />)}</ul>
+            <ContinueRow key={item.id} item={item} snapshot={ready} executions={executions} now={now} onOpen={onOpen} t={t} />)}</ul>
         )}
         {continuing.length > CONTINUE_PREVIEW && <FoldButton expanded={continueExpanded} hidden={continuing.length - CONTINUE_PREVIEW} onToggle={() => setContinueExpanded(value => !value)} t={t} />}
       </ListGroup>

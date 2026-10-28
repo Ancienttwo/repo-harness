@@ -2,11 +2,9 @@ import { createConnection, type Socket } from 'node:net';
 import { randomUUID, createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { runtimeInteger, runtimeTime, type ProgramStatusV1 } from '../../core/operator/runtime-status';
+import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from '../../core/operator/herdr-pin';
 
-/** Schema source revision. Reported version fields do not attest this commit. */
-export const HERDR_OBSERVATION_REVISION = 'add5f99a8351e66464f9abec0920778303f0e885';
-export const HERDR_OBSERVATION_VERSION = '0.9.3';
-export const HERDR_OBSERVATION_PROTOCOL = 22;
+export { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION };
 const MAX_FRAME_BYTES = 1024 * 1024;
 export interface HerdrObservationEndpoint { socket_path: string; deadline_ms: number }
 export type HerdrJson = Record<string, unknown>;

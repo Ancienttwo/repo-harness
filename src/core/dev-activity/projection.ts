@@ -4,7 +4,8 @@
 // Every value comes from exactly one authority. A value without one is null.
 
 import { RUNTIME_STALE_AFTER_MS, type RuntimeOverlay } from '../operator/runtime-status';
-import { decodeDevActivitySnapshot, isPublicDevActivityText, publicDevActivityText } from './decode';
+import { isPublicDevActivityText, publicDevActivityText } from '../operator/public-text';
+import { decodeDevActivitySnapshot } from './decode';
 import {
   DEV_ACTIVITY_COLUMNS,
   DEV_ACTIVITY_PROJECTION,
@@ -135,6 +136,7 @@ function publicPullRequest(pr: DevActivityRawPullRequest): DevActivityPullReques
     number: pr.number, title: pr.title, url: pr.url, state: pr.state, is_draft: pr.is_draft,
     base_branch: pr.base_branch, merge_state: pr.merge_state, ci: pr.ci, review: pr.review,
     updated_at: pr.updated_at, merged_at: pr.merged_at, closed_at: pr.closed_at,
+    head_sha: pr.head_sha, changed_files: pr.changed_files,
   };
 }
 

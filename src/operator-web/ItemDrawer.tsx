@@ -7,7 +7,8 @@ import { ageWords } from './labels';
 import { repositoryLabel } from './dev-activity';
 import { DrawerFrame, useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
-import { Age, CommandLine, CopyButton, ExternalLink } from './ui';
+import { itemOwner, type ExecutionResult, type ItemOwner, type VerifiedTask } from './repository-reads';
+import { Age, CommandLine, CopyButton, ExternalLink, StatusDot } from './ui';
 
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
   return (
@@ -24,6 +25,54 @@ function Facts({ children }: { readonly children: ReactNode }) {
 
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }) {
   return <><dt className="text-kumo-subtle">{label}</dt><dd className="min-w-0 break-words text-kumo-default">{children}</dd></>;
+}
+
+/** Copyable locations and commands only: the console never writes to the session (1-TASK-N1). */
+function VerifiedSession({ task, t }: { readonly task: VerifiedTask; readonly t: OperatorTranslate }) {
+  const { herdr_pane: pane, resume, task_id } = task.follow_up;
+  return (
+    <div className="flex flex-col gap-2" data-owner="verified">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <StatusDot tone="active" />
+        <span className="font-medium text-kumo-strong">{t(`setup.host.${task.agent}`)}</span>
+        <span className="text-kumo-subtle">{t('drawer.followUp.verified')} · <code className="font-mono text-xs">{task.role}</code></span>
+        <Badge variant="secondary">{t('drawer.followUp.readOnly')}</Badge>
+      </p>
+      <Facts>
+        {pane && <Fact label={t('drawer.followUp.pane')}>
+          <span className="flex flex-wrap items-center gap-x-2">
+            <code className="break-all font-mono text-xs">{pane.pane_id}</code>
+            <span className="text-xs text-kumo-subtle">{pane.session} · {pane.workspace_id}</span>
+            <CopyButton label={t('drawer.followUp.pane')} value={pane.pane_id} t={t} />
+          </span>
+        </Fact>}
+        {resume && <Fact label={t('drawer.followUp.resume')}><CommandLine command={resume.command} t={t} /></Fact>}
+        <Fact label={t('drawer.followUp.handoff')}>
+          <span className="flex flex-wrap items-center gap-x-2">
+            <code className="break-all font-mono text-xs">{task_id}</code>
+            <CopyButton label={t('drawer.followUp.taskId')} value={task_id} t={t} />
+          </span>
+        </Fact>
+      </Facts>
+    </div>
+  );
+}
+
+/** G2 and G15: the agent and its follow-up come only from a verified session on this item's branch. */
+function FollowUp({ owner, t }: { readonly owner: ItemOwner; readonly t: OperatorTranslate }) {
+  const quiet = 'flex items-center gap-2 text-sm text-kumo-subtle';
+  return (
+    <Section id="drawer-follow-up" title={t('drawer.followUp')}>
+      {owner.state === 'verified' ? <div className="flex flex-col gap-4">{owner.tasks.map(task => <VerifiedSession key={`${task.task}:${task.role}`} task={task} t={t} />)}</div>
+        : owner.state === 'none' ? <p className={quiet} data-owner="none"><StatusDot tone="unknown" />{t('drawer.followUp.none')}</p>
+          : owner.state === 'reading' ? <p className={quiet} data-owner="reading">{t('drawer.followUp.reading')}</p>
+            // The collector has not finished its first pass: this is a wait, not a failure.
+            : owner.reason === 'execution_state_pending' ? <p className={quiet} data-owner="pending"><StatusDot tone="unknown" />{t('execution.reason.execution_state_pending')}</p>
+              : <p className="text-sm text-kumo-danger" data-owner="unavailable" data-execution-reason={owner.reason}>
+                {t('drawer.followUp.unavailable', { reason: t(`execution.reason.${owner.reason}`) })}
+              </p>}
+    </Section>
+  );
 }
 
 interface HistoryEntry { readonly at: string; readonly label: string }
@@ -45,8 +94,8 @@ function historyOf(item: DevActivityItem, t: OperatorTranslate): readonly Histor
   return entries.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
 }
 
-function ItemBody({ item, snapshot, reclaimable, now, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly reclaimable: readonly WorktreeView[]; readonly now: number; readonly t: OperatorTranslate;
+function ItemBody({ item, snapshot, reclaimable, executions, now, t }: {
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly reclaimable: readonly WorktreeView[]; readonly executions: readonly ExecutionResult[] | null; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const pr = item.pull_request;
   const attention = snapshot.attention.filter(row => row.subject_id === item.id);
@@ -60,6 +109,7 @@ function ItemBody({ item, snapshot, reclaimable, now, t }: {
           </p>
         ))}
       </Section>}
+      <FollowUp owner={itemOwner(executions, item)} t={t} />
       <Section id="drawer-delivery" title={t('drawer.delivery')}>
         <Facts>
           <Fact label={t('drawer.repository')}>{repositoryLabel(snapshot.repositories, item.repository_id)}</Fact>
@@ -120,11 +170,12 @@ function ItemBody({ item, snapshot, reclaimable, now, t }: {
 }
 
 /** Read-only detail for one board item. Esc closes; j/k move through the visible order. */
-export function ItemDrawer({ item, snapshot, reclaimable, itemId, now, onClose, t }: {
+export function ItemDrawer({ item, snapshot, reclaimable, executions, itemId, now, onClose, t }: {
   readonly item: DevActivityItem | null;
   readonly snapshot: DevActivitySnapshotV2;
   /** Green worktrees of this item's branch from the worktree collector. */
   readonly reclaimable: readonly WorktreeView[];
+  readonly executions: readonly ExecutionResult[] | null;
   readonly itemId: string;
   readonly now: number;
   readonly onClose: () => void;
@@ -150,7 +201,7 @@ export function ItemDrawer({ item, snapshot, reclaimable, itemId, now, onClose, 
   );
   return (
     <DrawerFrame dialogRef={dialogRef} labelledBy="item-drawer-title" className="item-drawer max-w-[min(560px,100vw)]" closeLabel={t('drawer.close')} onClose={onClose} header={header}>
-      {item ? <ItemBody item={item} snapshot={snapshot} reclaimable={reclaimable} now={now} t={t} /> : <p className="py-6 text-sm text-kumo-subtle">{t('drawer.missingBody')}</p>}
+      {item ? <ItemBody item={item} snapshot={snapshot} reclaimable={reclaimable} executions={executions} now={now} t={t} /> : <p className="py-6 text-sm text-kumo-subtle">{t('drawer.missingBody')}</p>}
       <p className="pb-2 text-xs text-kumo-inactive">{t('drawer.keys')}</p>
     </DrawerFrame>
   );

@@ -30,8 +30,9 @@ import {
   type DevActivityView,
 } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
-import { ageWords, runtimeStateLabel, runtimeTone } from './labels';
+import { ageWords, ownerAgents, runtimeStateLabel, runtimeTone } from './labels';
 import { ItemDrawer } from './ItemDrawer';
+import { itemOwner, useExecutions, type ExecutionReader, type ExecutionResult, type ItemOwner } from './repository-reads';
 import type { RuntimeView } from './RuntimeBadges';
 import { Age, CommandLine, ExternalLink, SectionTitle, StatusDot } from './ui';
 import { reclaimableFor } from './worktrees';
@@ -163,11 +164,13 @@ const CI_ICON: Readonly<Record<string, ReactNode>> = {
   pending: <CircleDashedIcon size={13} className="text-kumo-warning" />,
 };
 
-function ItemSignals({ item, worktrees, t }: { readonly item: DevActivityItem; readonly worktrees: WorktreesSnapshot | null; readonly t: OperatorTranslate }) {
+function ItemSignals({ item, worktrees, owner, t }: { readonly item: DevActivityItem; readonly worktrees: WorktreesSnapshot | null; readonly owner: ItemOwner; readonly t: OperatorTranslate }) {
   const pr = item.pull_request;
   const tree = item.worktrees[0] ?? null;
   const dirty = item.worktrees.some(row => row.dirty);
   const signals: ReactNode[] = [];
+  // A card names an agent only when verified; the drawer states every other case.
+  if (owner.state === 'verified') signals.push(<span key="agent" className="inline-flex items-center gap-1" data-agent="verified"><StatusDot tone="active" />{ownerAgents(owner.tasks, t)}</span>);
   if (pr) {
     signals.push(<a key="pr" href={pr.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-kumo-link hover:underline" onClick={event => event.stopPropagation()}>
       <GitPullRequestIcon size={13} aria-hidden="true" />#{pr.number}</a>);
@@ -194,8 +197,8 @@ function ColumnAge({ item, now, t }: { readonly item: DevActivityItem; readonly 
 }
 
 /** Show the title, repository, column clock and available Git/GitHub facts. */
-function ItemCard({ item, snapshot, worktrees, now, selected, onOpen, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly worktrees: WorktreesSnapshot | null; readonly now: number;
+function ItemCard({ item, snapshot, worktrees, owner, now, selected, onOpen, t }: {
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly worktrees: WorktreesSnapshot | null; readonly owner: ItemOwner; readonly now: number;
   readonly selected: boolean; readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
   return (
@@ -214,7 +217,7 @@ function ItemCard({ item, snapshot, worktrees, now, selected, onOpen, t }: {
         <ColumnAge item={item} now={now} t={t} />
         {!item.column_since && !item.pull_request?.merged_at && item.branch && item.branch !== item.title && <span className="inline-flex min-w-0 items-center gap-1"><GitBranchIcon size={11} aria-hidden="true" /><span className="truncate font-mono">{item.branch}</span></span>}
       </p>
-      <ItemSignals item={item} worktrees={worktrees} t={t} />
+      <ItemSignals item={item} worktrees={worktrees} owner={owner} t={t} />
     </article>
   );
 }
@@ -257,9 +260,9 @@ function BoardToolbar({ filters, onFilters, searchRef, t }: {
 /** Long columns fold; Shipped folds sooner because it is history, not work. */
 const COLUMN_PREVIEW: Readonly<Record<DevActivityColumn, number>> = { planned: 12, building: 12, verifying: 12, ready_to_merge: 12, shipped: 6 };
 
-function BoardColumns({ columns, snapshot, worktrees, now, selectedId, mobileColumn, onMobileColumn, onOpen, t }: {
+function BoardColumns({ columns, snapshot, worktrees, executions, now, selectedId, mobileColumn, onMobileColumn, onOpen, t }: {
   readonly columns: ReadonlyMap<DevActivityColumn, readonly DevActivityItem[]>; readonly snapshot: DevActivitySnapshotV2;
-  readonly worktrees: WorktreesSnapshot | null; readonly now: number;
+  readonly worktrees: WorktreesSnapshot | null; readonly executions: readonly ExecutionResult[] | null; readonly now: number;
   readonly selectedId: string | null; readonly mobileColumn: DevActivityColumn; readonly onMobileColumn: (column: DevActivityColumn) => void;
   readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
 }) {
@@ -298,7 +301,7 @@ function BoardColumns({ columns, snapshot, worktrees, now, selectedId, mobileCol
               </h3>
               {items.length === 0
                 ? <p className="px-1 pb-2 text-xs text-kumo-inactive">{t('column.empty')}</p>
-                : shown.map(item => <ItemCard key={item.id} item={item} snapshot={snapshot} worktrees={worktrees} now={now} selected={item.id === selectedId} onOpen={onOpen} t={t} />)}
+                : shown.map(item => <ItemCard key={item.id} item={item} snapshot={snapshot} worktrees={worktrees} owner={itemOwner(executions, item)} now={now} selected={item.id === selectedId} onOpen={onOpen} t={t} />)}
               {items.length > limit && (
                 <button type="button" className="cursor-pointer rounded-md px-1 py-1 text-left text-xs text-kumo-link hover:underline" aria-expanded={open} onClick={() => toggle(column)} data-column-fold={column}>
                   {open ? t('column.fold') : t('column.more', { count: items.length - limit })}
@@ -320,11 +323,13 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
-export function Board({ view, runtime, worktrees, filters, onFilters, itemId, onOpenItem, onCloseItem, now, t }: {
+export function Board({ view, runtime, worktrees, readExecution, generation, filters, onFilters, itemId, onOpenItem, onCloseItem, now, t }: {
   readonly view: DevActivityView;
   readonly runtime: RuntimeView;
   /** The worktree collector's cache; null until it has data. The only source of the cleanup signal. */
   readonly worktrees: WorktreesSnapshot | null;
+  readonly readExecution: ExecutionReader;
+  readonly generation: number;
   readonly filters: BoardFilters;
   readonly onFilters: (next: BoardFilters) => void;
   readonly itemId: string | null;
@@ -334,6 +339,8 @@ export function Board({ view, runtime, worktrees, filters, onFilters, itemId, on
   readonly t: OperatorTranslate;
 }) {
   const snapshot = view.kind === 'ready' ? view.snapshot : null;
+  const repositoryIds = useMemo(() => snapshot?.repositories.map(repository => repository.repository_id) ?? [], [snapshot]);
+  const executions = useExecutions(readExecution, repositoryIds, generation, snapshot !== null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [mobileColumn, setMobileColumn] = useState<DevActivityColumn>('building');
   const visible = useMemo(() => snapshot ? filterItems(snapshot, filters) : [], [snapshot, filters]);
@@ -402,11 +409,11 @@ export function Board({ view, runtime, worktrees, filters, onFilters, itemId, on
           ? <BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness adopt --help" />
           : ready.items.length === 0
             ? <BoardState title={t('board.empty.title')} description={t('board.empty.body')} command="gh pr status" />
-            : <BoardColumns columns={columns} snapshot={ready} worktrees={worktrees} now={now} selectedId={itemId} mobileColumn={mobileColumn} onMobileColumn={setMobileColumn} onOpen={onOpenItem} t={t} />}
+            : <BoardColumns columns={columns} snapshot={ready} worktrees={worktrees} executions={executions} now={now} selectedId={itemId} mobileColumn={mobileColumn} onMobileColumn={setMobileColumn} onOpen={onOpenItem} t={t} />}
       </>}
       {itemId !== null && (
         <ItemDrawer item={selected} snapshot={ready} reclaimable={selected ? reclaimableFor(worktrees, selected.repository_id, selected.branch) : []}
-          itemId={itemId} now={now} onClose={onCloseItem} t={t} />
+          executions={executions} itemId={itemId} now={now} onClose={onCloseItem} t={t} />
       )}
     </div>
   );

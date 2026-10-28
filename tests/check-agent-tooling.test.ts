@@ -1,3 +1,4 @@
+import { renderHerdrSkill } from "../src/cli/commands/herdr-skill-render.mjs";
 import { describe, expect, test } from "bun:test";
 import {
   copyFileSync,
@@ -25,7 +26,7 @@ const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
-const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n";
+const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
 
 test("strict readiness rejects a missing required Herdr skill", () => {
   const envRoot = setupFakeEnvironment("check-agent-tooling-herdr-skill");
@@ -66,6 +67,33 @@ test("strict readiness rejects a missing required Herdr skill", () => {
   } finally {
     rmSync(envRoot.root, { recursive: true, force: true });
   }
+});
+
+test("readiness rejects a stale shared Herdr skill even when both host copies are current", () => {
+  const fixture = setupFakeEnvironment("check-agent-tooling-shared-herdr");
+  try {
+    const shared = join(fixture.home, ".agents", "skills", "herdr");
+    mkdirSync(shared, { recursive: true });
+    writeFileSync(join(shared, "SKILL.md"), HERDR_SKILL);
+    const check = (host = "both", json = true) => spawnSync("bash", [SCRIPT, ...(json ? ["--json"] : []), "--strict-readiness", "--host", host], {
+      cwd: ROOT, encoding: "utf8",
+      env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    const stale = check();
+    expect(stale.status).toBe(2);
+    const report = JSON.parse(stale.stdout).tools.herdr_skill;
+    expect(report.hosts.codex.status).toBe("present");
+    expect(report.hosts.claude.status).toBe("present");
+    expect(report.hosts.shared.status).toBe("mismatch");
+    expect(report.status).toBe("mismatch");
+    const claudeOnly = JSON.parse(check("claude").stdout).tools.herdr_skill;
+    expect(claudeOnly.status).toBe("present");
+    expect(claudeOnly.hosts.shared).toBeUndefined();
+    expect(check("both", false).stdout).toContain("shared: mismatch");
+    writeFileSync(join(shared, "SKILL.md"), renderHerdrSkill(HERDR_SKILL));
+    const fixed = check();
+    expect(JSON.parse(fixed.stdout).tools.herdr_skill.status).toBe("present");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
 function sha256File(filePath: string) {
@@ -124,11 +152,11 @@ function setupFakeEnvironment(prefix: string) {
   mkdirSync(home, { recursive: true });
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.3\\n'; fi\n`);
+  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.5\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
     const skillDir = join(home, host, "skills", "herdr");
     mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), HERDR_SKILL);
+    writeFileSync(join(skillDir, "SKILL.md"), renderHerdrSkill(HERDR_SKILL));
   }
   writeOfficialCodexPluginFixture(join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6"));
   writeExecutable(
@@ -1844,7 +1872,7 @@ test.each(['present', 'missing', 'unavailable'])('herdr is a required runtime ca
     expect(report.runtime_capabilities.herdr.required).toBe(true);
     expect(report.runtime_capabilities.herdr.status).toBe(status);
     if (status === 'present') {
-      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.3');
+      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.5');
       expect(result.stderr).not.toContain('herdr runtime is');
     } else {
       expect(result.status).not.toBe(0);
@@ -1863,7 +1891,7 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
     });
     const herdr = JSON.parse(result.stdout).runtime_capabilities.herdr;
     expect(herdr.status).toBe("configuration-error");
-    expect(herdr.version).toBe("herdr 0.9.3");
+    expect(herdr.version).toBe("herdr 0.9.5");
     expect(herdr.reason).toContain("min_version");
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("repo-harness init --repo .");

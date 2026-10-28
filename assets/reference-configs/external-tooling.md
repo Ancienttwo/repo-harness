@@ -402,11 +402,20 @@ and verify `herdr --version` reports at least that pinned `min_version`.
 `check-agent-tooling.sh --strict-readiness` reads the same key and fails if herdr is
 missing, unusable, or older than the pin; `setup check` projects `runtime.herdr`. Repo-harness does not install it or edit user Herdr config.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
-`repo-harness install` and `repo-harness update` copy the release-matched
-skill text from `herdr --skill` into each selected host skill root. They refuse
-to replace a user-edited or unowned copy. Strict readiness compares each
-installed copy with `herdr --skill` and fails when a copy is absent or differs.
-The skill only controls Herdr from a real Herdr pane with `HERDR_ENV=1`.
+`repo-harness install` and `repo-harness update` combine the CLI reference from
+`herdr --skill` with the caller-context policy in
+`assets/reference-configs/herdr-skill-context.md`. The shared renderer replaces
+the binary's introductory environment gate and rejects an unknown section layout.
+Both hosts receive the same generated skill. When Codex is selected, an existing
+shared copy at `~/.agents/skills/herdr` is also updated and checked because Codex
+can discover it. Claude-only operations leave that shared copy unchanged.
+Install refuses to replace a
+user-edited or unowned copy. Strict readiness compares against the same renderer.
+Missing tool environment variables do not prove that the user is outside Herdr.
+Read-only discovery lists running sessions and panes by the task's exact path.
+Reuse a suitable task reviewer or create a new pane in the matched workspace.
+Path matching selects a location; it does not transfer another agent's task.
+Use explicit session and pane IDs for control after discovery.
 The persistent reviewer still requires POSIX process groups: use macOS/Linux or
 WSL. Native Windows review lifecycle support is not implied by Herdr support.
 Admitted task sessions start only in a Herdr pane, so they and their Task Inbox and operator diff consumers are POSIX-only; on Windows, session start fails closed with `herdr_endpoint_platform_unsupported`.

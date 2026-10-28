@@ -1,8 +1,10 @@
 // Development-only board fixtures. Loaded by `?fixture=<name>` under the Vite
 // dev server and never emitted into the production bundle.
 import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityItem, type DevActivityPullRequest, type DevActivityRepository, type DevActivitySnapshotV2, type DevActivitySourceHealth, type DevActivityWorktree } from '../../core/dev-activity/types';
+import { decodeTaskExecutionView } from '../../core/operator/execution-state';
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
+import type { ExecutionRead } from '../repository-reads';
 
 /** The repo-harness registration shares its id with the repository snapshot fixture. */
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
@@ -39,6 +41,9 @@ function pull(now: number, slug: string, number: number, title: string, override
   return {
     number, title, url: `https://github.com/${slug}/pull/${number}`, state: 'open', is_draft: false, base_branch: 'main',
     merge_state: 'BLOCKED', ci: 'pending', review: 'review_required', updated_at: at(now, 20 * MINUTE), merged_at: null, closed_at: null,
+    // Only the open query reads the head and the changed files.
+    head_sha: (overrides.state ?? 'open') === 'open' ? sha(String(number)) : null,
+    changed_files: (overrides.state ?? 'open') === 'open' ? { state: 'ok', paths: ['README.md'] } : null,
     ...overrides,
   };
 }
@@ -75,12 +80,14 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'feat/kanban-human-redesign', {
       title: 'Rebuild the operator console for humans', column: 'building', column_since: at(now, 3 * HOUR),
       worktrees: [worktree('repo-harness-wt-kanban-redesign', 'a1', { dirty: true, ahead: 3 })],
-      pull_request: pull(now, harness, 608, 'Rebuild the operator console for humans', { is_draft: true, ci: 'pending', review: 'none' }),
+      pull_request: pull(now, harness, 608, 'Rebuild the operator console for humans', { is_draft: true, ci: 'pending', review: 'none',
+        changed_files: { state: 'ok', paths: ['src/operator-web/App.tsx', 'src/operator-web/NavRail.tsx', 'src/operator-web/app.css', 'tests/operator-web/operator-ui.test.tsx'] } }),
     }),
     item(HARNESS_ID, 'feat/runtime-capture-pi', {
       title: 'Capture Pi runtime status natively', column: 'building', column_since: at(now, 9 * HOUR),
       worktrees: [worktree('repo-harness-wt-pi-capture', 'b2', { ahead: 5, behind: 2 })],
-      pull_request: pull(now, harness, 604, 'Capture Pi runtime status natively', { is_draft: true, ci: 'success', review: 'none' }),
+      pull_request: pull(now, harness, 604, 'Capture Pi runtime status natively', { is_draft: true, ci: 'success', review: 'none',
+        changed_files: { state: 'unavailable', reason: 'files_truncated' } }),
     }),
     item(SITE_ID, 'fix/csp-header', {
       title: 'fix/csp-header', column: 'building', worktrees: [worktree('operator-site-csp', 'd4', { dirty: true, ahead: null, behind: null })],
@@ -92,7 +99,8 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'feat/pipeline-observer', {
       title: 'Observe pipeline phases on the board', column: 'verifying', column_since: at(now, 20 * HOUR),
       worktrees: [worktree('repo-harness-wt-pipeline', 'e5', { ahead: 1 })],
-      pull_request: pull(now, harness, 603, 'Observe pipeline phases on the board', { ci: 'success', review: 'review_required' }),
+      pull_request: pull(now, harness, 603, 'Observe pipeline phases on the board', { ci: 'success', review: 'review_required',
+        changed_files: { state: 'ok', paths: ['src/core/dev-activity/projection.ts', 'src/effects/dev-activity/collector.ts', 'tests/core/dev-activity-projection.test.ts'] } }),
     }),
     item(SITE_ID, 'feat/billing-copy', {
       title: 'Rewrite billing copy', column: 'verifying', column_since: at(now, 2 * DAY + 3 * HOUR),
@@ -101,7 +109,8 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
     item(HARNESS_ID, 'chore/oar-0-45', {
       title: 'Upgrade OAR to 0.45.1', column: 'ready_to_merge', column_since: at(now, 50 * MINUTE),
       worktrees: [worktree('repo-harness-wt-oar', 'f6', { ahead: 2 })],
-      pull_request: pull(now, harness, 602, 'Upgrade OAR to 0.45.1', { ci: 'success', review: 'approved', merge_state: 'CLEAN' }),
+      pull_request: pull(now, harness, 602, 'Upgrade OAR to 0.45.1', { ci: 'success', review: 'approved', merge_state: 'CLEAN',
+        changed_files: { state: 'ok', paths: ['bun.lock', 'docs/reference-configs/external-tooling.md', 'package.json'] } }),
     }),
     merged(now, HARNESS_ID, harness, 607, 'feat/pi-host', 'Add native Pi host support', 3 * HOUR),
     merged(now, HARNESS_ID, harness, 606, 'feat/kanban-status', 'Observe native agent status in Kanban', 9 * HOUR, true),
@@ -117,6 +126,36 @@ export function busyDevActivity(now: number): DevActivitySnapshotV2 {
       waiting_since: at(now, 50 * MINUTE), url: `https://github.com/${harness}/pull/602`, command: null },
   ];
   return { projection_version: DEV_ACTIVITY_PROJECTION, status: 'ready', collected_at: at(now, 40_000), repositories, unreadable_registrations: 0, items, attention };
+}
+
+function executionView(repositoryId: string, now: number, tasks: readonly unknown[], unlisted: number): ExecutionRead {
+  return { state: 'ok', view: decodeTaskExecutionView({
+    protocol: 1, kind: 'operator_task_execution', repository_id: repositoryId, observed_at: at(now, 20_000), tasks, unlisted_tasks: unlisted,
+  }) };
+}
+
+/**
+ * The execution route beside the busy board. repo-harness: Codex in a Herdr
+ * pane on the console redesign, Claude Code in a terminal on the pipeline
+ * observer, a session whose provider exited, and one session left out because
+ * its branch is not public text. operator-site has no first collection yet.
+ */
+export function busyExecution(repositoryId: string, now: number): ExecutionRead {
+  if (repositoryId === SITE_ID) return { state: 'unavailable', reason: 'execution_state_pending' };
+  if (repositoryId !== HARNESS_ID) return executionView(repositoryId, now, [], 0);
+  return executionView(repositoryId, now, [
+    { state: 'verified', task: 'kanban-redesign', role: 'implementer', issue_id: '608', branch: 'feat/kanban-human-redesign', agent: 'codex', runtime: 'herdr',
+      follow_up: { task_id: 'kanban-redesign', resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
+        herdr_pane: { session: 'main', workspace_id: 'w2', pane_id: 'w2:p1', agent_name: 'implementer' } } },
+    { state: 'verified', task: 'pipeline-observer', role: 'deep-reasoner', issue_id: '603', branch: 'feat/pipeline-observer', agent: 'claude', runtime: 'terminal',
+      follow_up: { task_id: 'pipeline-observer', resume: { host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' }, herdr_pane: null } },
+    { state: 'unverified', task: 'oar-0-45', role: 'implementer', reason: 'provider_exited', follow_up: { task_id: 'oar-0-45', resume: null, herdr_pane: null } },
+  ], 1);
+}
+
+/** Repositories registered, no task session. */
+export function emptyExecution(repositoryId: string, now: number): ExecutionRead {
+  return executionView(repositoryId, now, [], 0);
 }
 
 /** Repositories registered, nothing in flight. */

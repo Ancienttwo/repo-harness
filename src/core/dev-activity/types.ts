@@ -55,7 +55,22 @@ export interface DevActivityPullRequest {
   updated_at: string;
   merged_at: string | null;
   closed_at: string | null;
+  /** Open PRs only: the head commit from gh; null when gh gave none. Null for merged and closed PRs. */
+  head_sha: string | null;
+  /** Open PRs only: every changed file, or why gh gave no complete list. Null for merged and closed PRs. */
+  changed_files: DevActivityPrFiles | null;
 }
+
+/**
+ * Why an open PR has no complete file list: gh gave no list or count
+ * (`files_missing`), fewer files than the PR changed (`files_truncated`, gh
+ * lists at most 100), or a path that is not a public repository path.
+ */
+export const DEV_ACTIVITY_PR_FILES_REASONS = ['files_missing', 'files_truncated', 'files_invalid'] as const;
+export type DevActivityPrFilesReason = typeof DEV_ACTIVITY_PR_FILES_REASONS[number];
+export type DevActivityPrFiles =
+  | { state: 'ok'; paths: string[] }
+  | { state: 'unavailable'; reason: DevActivityPrFilesReason };
 
 export interface DevActivityWorktree {
   /** Directory basename only; never an absolute path. */
