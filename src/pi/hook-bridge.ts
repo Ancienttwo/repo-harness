@@ -23,7 +23,9 @@ export function piHookEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 function parseOutput(text: string, request: PiHookRequest, status: number | null): PiHookOutput {
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try { value = JSON.parse(text); }
+  catch { throw new Error('PI_HOOK_INVALID_OUTPUT'); }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('PI_HOOK_INVALID_OUTPUT');
   const v = value as Record<string, unknown>;
   if (v.protocol !== PI_HOOK_PROTOCOL) throw new Error('PI_HOOK_PROTOCOL_MISMATCH');

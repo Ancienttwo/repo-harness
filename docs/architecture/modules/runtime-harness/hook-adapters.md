@@ -453,6 +453,44 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P2：`ROUTES` 现在有 6 条 tuple。Claude 装 5 条，Codex 装 5 条。`HOST_RENDERERS` 只有 Claude 与 Codex 两行。circuit breaker 只保留 `semantic-review` kind，`repair` 归入退役 kind。
 - P3：删除没有 host 的路径，不保留兼容层。edit-guards 改名为 Edit Guard Handlers。release-packaging 不再读 skill catalog，所以它到 skill-surface-catalog 的关系已删除。
 
+### Pi native hook host (2026-10-28, #1099)
+
+`src/pi/extension.ts` maps Pi events into the existing route runtime. It calls
+SessionStart once per session and delivers the cached context at the first
+`before_agent_start` as a hidden custom message. The same prompt event calls
+`UserPromptSubmit.inbox`; `handler-registry.ts` uses the shared notice collector
+for both Codex and Pi. Edit and write map Pi's resolved `input.path` to
+`tool_input.file_path`. Bash maps `input.command`. Direct and codemode nested
+calls use the same `tool_call` boundary. `agent_settled`, including an aborted
+run, calls Stop. Pi does not use either subagent route.
+
+`src/pi/compat.ts` owns `MIN_PI_VERSION`. The session probe checks that floor
+and loads Pi's own `resolveToCwd` from the SDK package directory. A missing
+private export or an unsupported version makes an opted-in session unavailable
+and blocks edit, write and bash with a fixed error code. A non-opt-in repository
+stays inactive. There is no local path parser or upper version bound.
+
+`src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
+The child receives stdin JSON and `HOOK_HOST=pi`, after inherited hook and
+repo-harness environment variables are removed. One protocol-1 object carries
+the decision back. The limits are 16 MiB stdin, 1 MiB stdout and 30 seconds per
+call. Child failure, invalid output, a timeout or a nonzero hook exit blocks
+the mapped tool. Cancellation stops only owned hook children and never retries
+an uncertain effect. Payload identity comes from Pi's session manager, a new
+run ID per prompt and the tool call ID. Late results cannot admit a tool in a
+replacement runtime. Existing hook telemetry records `host: "pi"`.
+
+The bridge adds one process start per mapped event. Process startup is the first
+expected throughput limit at higher call volume; telemetry supplies latency
+evidence before an in-process design is considered. The extension covers no
+PowerShell, user `!`/`!!` shell, other-extension writes or third-party MCP writes.
+Bash retains the literal-write tripwire's parsing limits. Later extensions can
+still mutate arguments. The integration is not an OS sandbox.
+`permission.updatedInput` blocks with `PI_HOST_UPDATED_INPUT_UNSUPPORTED` until
+Pi input mutation has an approved contract. The private path resolver still
+needs a public upstream export. The real-SDK tests use a scripted provider
+fixture; real-provider acceptance belongs to parent integration.
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：

@@ -2,7 +2,7 @@
 
 The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/long-run-continuation.md) for the tick and recovery protocol. The package does not ship that file, so this link points to the source repository.
 
-These requirements apply to Claude Code and Codex. The MCP write-safety section also covers Pi as an MCP client. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
+These requirements apply to Claude Code, Codex and Pi. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 
 ## Enforcement Levels
 
@@ -36,8 +36,21 @@ The grades describe repository boundaries. The delegation rows use evidence from
 |---|---|---|
 | Claude Code | Use the host's native subagent surface. The shared route registry attaches `PreToolUse` edit and subagent routes; the `Task`/`Agent` handler appends a return contract to the prompt (`src/cli/hook/route-registry.ts:76`, `src/cli/hook/route-registry.ts:84`, `src/cli/hook/return-channel.ts:36`). | **E** for installed typed-hook behavior and invoked CLI/MCP gates only. Appended instructions do not make writer ownership, fresh context, or spawn depth mechanically enforced. The Codex-only `SubagentStart.context` route does not run here. |
 | Codex | Use native `spawn_agent` with the installed role and a self-contained task packet. The registry selects the Codex-only `SubagentStart.context` route; the handler emits the child scope context (`src/cli/hook/route-registry.ts:100`, `src/cli/hook/subagent-context.ts:428`). | **E** for the installed route's handling. SubagentStart records the native role observation and refuses no spawn. Fresh-context and depth requirements remain **G**; scope text is guidance, not a filesystem lock. |
+| Pi | Load `src/pi/extension.ts` through the package's `pi.extensions` entry. Map native edit, write and bash calls, including codemode nested calls, to the typed guards. Pi has no built-in subagent route. | **E** within the extension's `tool_call` path. A failed capability probe blocks these tools in an opted-in repository. Other write paths remain outside this boundary. |
 
 Install and trust the user-level hook adapters before relying on their routes. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
+
+### Pi hook boundary
+
+`src/pi/compat.ts` owns `MIN_PI_VERSION` and the capability probe. There is no upper version bound. At `session_start`, an opted-in Git repository must pass the version check and load Pi's own `resolveToCwd` function from `getPackageDir()/dist/core/tools/path-utils.js`. The extension does not copy Pi's path grammar. A failed probe sets `unavailable` and blocks edit, write and bash with `PI_HOST_UNSUPPORTED_VERSION` or `PI_HOST_PATH_RESOLVER_UNAVAILABLE`. A repository without `.ai/harness/workflow-contract.json` stays `inactive` and calls no hooks.
+
+SessionStart runs once at `session_start`. The first `before_agent_start` delivers its context as a hidden custom message. Every `before_agent_start` also requests the inbox notice and creates a fresh run ID. `agent_settled` calls Stop with `aborted`; `agent_end` does not call Stop. Session IDs come from Pi's session manager. Tool results bind to `toolCallId`. Session replacement drops late results, and shutdown cancels only the extension's hook children.
+
+The bridge starts this package's `dist/hook-entry.js` with Bun. It removes inherited `HOOK_*` and `REPO_HARNESS_*` variables and sets `HOOK_HOST=pi`. Every route has a 30-second deadline. Input is limited to 16 MiB and stdout to 1 MiB. The bridge accepts one protocol-1 object. A block, nonzero hook exit, malformed response, timeout or child failure blocks the mapped mutation. The bridge does not retry. Hook stdout stays inside the bridge; Pi stdout receives no hook log.
+
+The extension does not cover `powershell`, `!`/`!!` user shell commands, writes from other extensions, or third-party MCP writes. Bash coverage is the existing literal-write tripwire; unparsed shell commands can bypass it. This is not an OS sandbox. Later Pi extensions can mutate tool arguments; this integration does not establish a final gate after all extensions. If a hook returns `permission.updatedInput`, the extension blocks with `PI_HOST_UPDATED_INPUT_UNSUPPORTED`. Input mutation remains an open problem.
+
+The resolver is a private SDK file. An upstream public export is still needed. When Pi exports it, replace the private import and remove that path in one change. `tests/pi-extension.test.ts` uses the real SDK, real tools and a scripted provider fixture. It proves the covered boundary without making a real-provider acceptance claim.
 
 ## MCP Write Safety
 

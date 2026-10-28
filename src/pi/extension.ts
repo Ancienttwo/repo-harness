@@ -44,6 +44,7 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
     };
     current = state;
     if (!optedIn(ctx.cwd)) return;
+    state.capability = { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' };
     const capability = await (options.probe?.() ?? probePiCapability(VERSION, getPackageDir()));
     if (!active(state, ctx)) return;
     state.capability = capability;
@@ -108,7 +109,9 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
     try { await call(state, ctx, 'Stop', 'default', { aborted: event.aborted }); }
     catch { /* Stop is advisory. Never retry an uncertain effect. */ }
   });
-  pi.on('session_shutdown', () => { current?.bridge.close(); current = undefined; });
+  pi.on('session_shutdown', (_event, ctx) => {
+    if (current && active(current, ctx)) { current.bridge.close(); current = undefined; }
+  });
 }
 
 export default function repoHarnessPi(pi: ExtensionAPI): void { registerPiHooks(pi); }

@@ -58,6 +58,9 @@ describe('hook host output fields', () => {
     expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, exitCode: 2, reason: 'blocked' }).stdout).decision).toBe('block');
     expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: { decision: 'deny', reason: 'x' } }).stdout).decision).toBe('block');
     expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: { decision: 'allow', reason: 'x' } }).stdout).decision).toBe('allow');
+    expect(JSON.parse(HOST_RENDERERS.pi({ ...edit, permission: {
+      decision: 'allow', reason: 'x', updatedInput: { file_path: 'changed.txt' },
+    } }).stdout).updated_input).toEqual({ file_path: 'changed.txt' });
   });
 });
 
