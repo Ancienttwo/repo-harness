@@ -604,6 +604,29 @@ describe('architecture map', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
+  test('a PR impact deadline leaves the other map layers intact', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      baseBeforeToday(root);
+      const source: ArchitecturePullRequestsSource = {
+        state: 'ok', observed_at: '2026-10-27T12:59:00.000Z',
+        pull_requests: Array.from({ length: 3 }, (_, index) => ({
+          number: index + 1, title: 'Read more', url: `https://github.com/acme/module/pull/${index + 1}`,
+          head_sha: 'a'.repeat(40), changed_files: { state: 'ok', paths: ['src/module/read.ts'] },
+        })),
+      };
+      const baseline = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      const bounded = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source, 1);
+      if (!baseline.ok || !bounded.ok) throw new Error('worker failed');
+      const pulls = bounded.snapshot.layers.pull_requests;
+      expect(pulls.state === 'ok' && pulls.pull_requests.map(pr => pr.impact)).toEqual(
+        source.pull_requests.map(() => ({ state: 'unavailable', reason: 'archctx_failed' })),
+      );
+      expect(decodeArchitectureMap(bounded.snapshot)).toEqual(bounded.snapshot);
+      expect({ ...bounded.snapshot, layers: { ...bounded.snapshot.layers, pull_requests: baseline.snapshot.layers.pull_requests } }).toEqual(baseline.snapshot);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('an archctx refusal of the base commit leaves today\'s changes without data and keeps archctx\'s codes; the map stays', () => {
     const root = realpathSync(moduleRepository());
     try {
