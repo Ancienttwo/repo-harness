@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpWorkspace } from '../helpers/repo-fixture';
-import { installPiPackage, piPackagePresent, piUserPackageSources } from '../../src/cli/installer/pi-package';
+import { installPiPackage, piPackagePresent, piUserPackageSources, runPi } from '../../src/cli/installer/pi-package';
 import { readInstalledProfile, recordPiInstallOwnership, type ManagedInstallSurface } from '../../src/cli/installer/install-profile';
 import { hostSkillRoot } from '../../src/effects/host-skill-roots';
 import { checkPiHost } from '../../src/cli/commands/doctor';
@@ -37,7 +37,9 @@ function createFixture(root: string) {
   write(join(env.PI_CODING_AGENT_DIR, 'auth.json'), '{"fixture":true}\n');
   write(join(host, 'pi'), `#!${process.execPath}
 import {appendFileSync,readFileSync,writeFileSync} from 'node:fs';
+import {relative,resolve} from 'node:path';
 const root=process.env.PI_FIXTURE_ROOT;
+const agentDir=process.env.PI_CODING_AGENT_DIR.replace(/^~(?=$|[\\\\/])/,process.env.HOME);
 const args=process.argv.slice(2);
 appendFileSync(root+'/argv.jsonl', JSON.stringify(args)+'\\n');
 const file=root+'/packages.json';
@@ -46,14 +48,14 @@ switch(args[0]) {
 case '--version': console.log(process.env.PI_FIXTURE_VERSION); break;
 case 'list':
   if(process.env.PI_FIXTURE_BAD_LIST==='1') { console.log('invalid'); break; }
-  if(entries.length) { console.log('User packages:'); for(const p of entries) console.log('  '+p); }
+  if(entries.length) { console.log('User packages:'); for(const p of entries) { console.log('  '+p); if(!p.startsWith('npm:')) console.log('    '+resolve(agentDir,p)); } }
   else console.log('No packages installed.');
   break;
 case 'install':
-  entries.push(args[1]); writeFileSync(file,JSON.stringify(entries));
+  entries.push(relative(agentDir,args[1])); writeFileSync(file,JSON.stringify(entries));
   if(process.env.PI_FIXTURE_FAIL_INSTALL==='1') process.exit(1);
   break;
-case 'remove': writeFileSync(file,JSON.stringify(entries.filter(p=>p!==args[1]))); break;
+case 'remove': writeFileSync(file,JSON.stringify(entries.filter(p=>p.startsWith('npm:')||resolve(agentDir,p)!==resolve(args[1])))); break;
 default: process.exit(99);
 }
 `);
@@ -71,6 +73,20 @@ default: process.exit(99);
 }
 
 describe('Pi package and skill installation', () => {
+  test('relative Pi entry shape is recorded and detected after install', () => fixture(f => {
+    expect(installPiPackage(f.source, true, f.env)).toMatchObject({ status: 'ok', created: true });
+    const source = relative(f.env.PI_CODING_AGENT_DIR, f.source);
+    expect(JSON.parse(readFileSync(join(f.root, 'packages.json'), 'utf8'))).toEqual(['npm:other-package', source]);
+    expect(runPi(['list'], f.env)).toContain(`  ${source}\n    ${f.source}`);
+    expect(piPackagePresent(f.source, f.env)).toBe(true);
+  }));
+
+  test('pre-existing relative Pi entry is present and is not installed again', () => fixture(f => {
+    f.write(join(f.root, 'packages.json'), JSON.stringify(['npm:other-package', relative(f.env.PI_CODING_AGENT_DIR, f.source)]));
+    expect(piPackagePresent(f.source, f.env)).toBe(true);
+    expect(installPiPackage(f.source, true, f.env)).toMatchObject({ status: 'ok', created: false });
+    expect(f.argv().some(args => args[0] === 'install')).toBe(false);
+  }));
   const packageSurface = (source: string): ManagedInstallSurface => ({
     path: source, components: ['host-adapters'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
     type: 'pi-package', managed_marker: 'pi-package-source', content_hash: null, symlink_target: null,
