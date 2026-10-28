@@ -26,12 +26,16 @@ import {
   type ArchitectureTestsSource,
 } from '../../core/operator/architecture-map';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS } from '../process-runner';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { executionChildEnvironment } from './execution-collector';
+import { ARCHITECTURE_MAP_PR_BUDGET_MS } from './architecture-map-worker';
 
 /** The model changes with commits; a cycle costs about 5 s of archctx and git per repository. */
 export const ARCHITECTURE_MAP_COLLECT_INTERVAL_MS = 5 * 60_000;
-export const ARCHITECTURE_MAP_WORKER_TIMEOUT_MS = 120_000;
+// Keep the other reads' 120 s allowance when the PR layer spends its full
+// budget, including the provider's process-group termination backstop.
+export const ARCHITECTURE_MAP_WORKER_TIMEOUT_MS = 120_000 + ARCHITECTURE_MAP_PR_BUDGET_MS + PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS;
 export const ARCHITECTURE_MAP_CHILD_ENTRY = fileURLToPath(new URL('./architecture-map-worker.ts', import.meta.url));
 
 export type ArchitectureMapRepositoryCache =

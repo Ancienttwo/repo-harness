@@ -59,6 +59,8 @@ const MODEL_ROOT = '.archcontext/model';
 /** `archctx resolve` echoes each node's footprint per path; this many paths stay well under its 8 MiB output cap. */
 const RESOLVE_BATCH = 2_000;
 const ARCHCTX_TIMEOUT_MS = 60_000;
+/** All PR impact reads share this budget, including runtime selection. */
+export const ARCHITECTURE_MAP_PR_BUDGET_MS = 20_000;
 const GIT_TIMEOUT_MS = 30_000;
 
 type Record_ = Record<string, unknown>;
@@ -224,9 +226,9 @@ function readSizes(root: string, commit: string, checkout: CheckoutState): Archi
 type Violation<Fields> = ({ readonly state: 'ok' } & Fields) | { readonly state: 'unavailable'; readonly reason: ArchitectureViolationReason };
 
 /** One archctx JSON command: its data, or its error envelope's codes. null: the run failed or gave no envelope. */
-function runArchctx(root: string, args: readonly string[]): { readonly ok: true; readonly data: Record_ } | { readonly ok: false; readonly error: Record_ | null } {
+function runArchctx(root: string, args: readonly string[], deadlineMs?: number): { readonly ok: true; readonly data: Record_ } | { readonly ok: false; readonly error: Record_ | null } {
   let value: unknown;
-  try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, args, {}, ARCHCTX_TIMEOUT_MS, true).value; }
+  try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, args, { deadlineMs }, ARCHCTX_TIMEOUT_MS, true).value; }
   catch { return { ok: false, error: null }; }
   if (isRecord(value) && value.ok === true && isRecord(value.data)) return { ok: true, data: value.data };
   return { ok: false, error: isRecord(value) && value.ok === false && isRecord(value.error) ? value.error : null };
@@ -264,8 +266,8 @@ const lineList = (stdout: Buffer): string[] => stdout.toString('utf8').split('\n
  * error keeps its codes; a failed run or an answer that breaks the published
  * contract is `archctx_failed`. There is no local fallback.
  */
-function readImpact(root: string, args: readonly string[], source: RefImpactSource): { readonly ok: true; readonly report: RefImpactV1 } | { readonly ok: false; readonly gap: typeof ARCHCTX_FAILED | ArchctxRefusalV1 } {
-  const read = runArchctx(root, ['impact', ...args, '--json']);
+function readImpact(root: string, args: readonly string[], source: RefImpactSource, deadlineMs?: number): { readonly ok: true; readonly report: RefImpactV1 } | { readonly ok: false; readonly gap: typeof ARCHCTX_FAILED | ArchctxRefusalV1 } {
+  const read = runArchctx(root, ['impact', ...args, '--json'], deadlineMs);
   if (!read.ok) return { ok: false, gap: (read.error && archctxRefusal(read.error.code, read.error.reasonCode)) ?? ARCHCTX_FAILED };
   const report = decoded(value => decodeRefImpact(value, source), read.data);
   return report === null ? { ok: false, gap: ARCHCTX_FAILED } : { ok: true, report };
@@ -296,25 +298,30 @@ function readChanges(root: string, commit: string, since: string): ArchitectureC
 }
 
 /** `archctx impact --paths-from` for one open PR's changed files, against the map commit's worktree model. */
-function readPullRequestImpact(root: string, commit: string, dir: string, pr: ArchitecturePullRequestSourceV1): ArchitecturePullRequestImpactV1['impact'] {
+function readPullRequestImpact(root: string, commit: string, dir: string, pr: ArchitecturePullRequestSourceV1, deadlineMs: number): ArchitecturePullRequestImpactV1['impact'] {
   if (pr.head_sha === null) return { state: 'unavailable', reason: 'head_missing' };
   if (pr.changed_files.state === 'unavailable') return pr.changed_files;
-  const file = join(dir, `pull-request-${pr.number}.txt`);
-  writeFileSync(file, pr.changed_files.paths.map(path => `${path}\n`).join(''), { mode: 0o600 });
-  const impact = readImpact(root, ['--paths-from', file], { kind: 'paths', head: commit });
-  return impact.ok ? { state: 'ok', ...architectureImpact(impact.report) } : impact.gap;
+  // A spent budget must not start another child or write another path list.
+  if (Date.now() >= deadlineMs) return ARCHCTX_FAILED;
+  try {
+    const file = join(dir, `pull-request-${pr.number}.txt`);
+    writeFileSync(file, pr.changed_files.paths.map(path => `${path}\n`).join(''), { mode: 0o600 });
+    const impact = readImpact(root, ['--paths-from', file], { kind: 'paths', head: commit }, deadlineMs);
+    return impact.ok ? { state: 'ok', ...architectureImpact(impact.report) } : impact.gap;
+  } catch { return ARCHCTX_FAILED; }
 }
 
 /** The open PRs' impact. The files come from the PR heads; owners and dependents come from the map commit's model. */
-function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource): ArchitecturePullRequestsLayerV1 {
+function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource, budgetMs: number): ArchitecturePullRequestsLayerV1 {
   if (source.state === 'unavailable') return source;
   const gate = modelGate(commit, checkout);
   if (gate !== null) return { state: 'unavailable', reason: gate };
+  const deadlineMs = Date.now() + budgetMs;
   const dir = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-map-'));
   try {
     return {
       state: 'ok', observed_at: source.observed_at,
-      pull_requests: source.pull_requests.map(pr => ({ number: pr.number, title: pr.title, url: pr.url, head_sha: pr.head_sha, impact: readPullRequestImpact(root, commit, dir, pr) })),
+      pull_requests: source.pull_requests.map(pr => ({ number: pr.number, title: pr.title, url: pr.url, head_sha: pr.head_sha, impact: readPullRequestImpact(root, commit, dir, pr, deadlineMs) })),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -461,6 +468,7 @@ export function collectArchitectureMap(
   collectedAt: string,
   since: string,
   pullRequests: ArchitecturePullRequestsSource,
+  pullRequestBudgetMs = ARCHITECTURE_MAP_PR_BUDGET_MS,
 ): ArchitectureMapWorkerResult {
   const before = readCheckoutState(path);
   let committed;
@@ -474,7 +482,7 @@ export function collectArchitectureMap(
   const read = { sizes: readSizes(path, commit, before), dependencies: deps.dependencies };
   const changes = readChanges(path, commit, since);
   const layers = {
-    pull_requests: readPullRequests(path, commit, before, pullRequests),
+    pull_requests: readPullRequests(path, commit, before, pullRequests, pullRequestBudgetMs),
     violations: {
       ...readViolations(path, commit, before, known, capabilities), dependencies: deps.undeclared,
       // archctx checks layer direction only against ordered `model.layers`; the collector does not read that check.
