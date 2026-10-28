@@ -35,33 +35,8 @@ describe('read-only worktree judgment and lifecycle', () => {
     const f = fixture();
     try {
       const module = join(import.meta.dir, '../../src/effects/git/worktree-processes.ts');
-      const script = `
-        const { worktreeProcesses } = await import(${JSON.stringify(module)});
-        const rows = worktreeProcesses(Date.now() + 5000);
-        if (process.platform === 'linux' && rows === null) {
-          const { readdirSync, statSync, readlinkSync, readFileSync } = await import('node:fs');
-          const observer_uid = process.getuid();
-          const denied = [];
-          let other_uid = 0, same_uid = 0;
-          for (const pid of readdirSync('/proc').filter(name => /^\\d+$/u.test(name))) {
-            let directory_uid;
-            try { directory_uid = statSync('/proc/' + pid).uid; }
-            catch (error) { denied.push({ pid: Number(pid), operation: 'stat', errno: error.code }); continue; }
-            const owned = directory_uid === observer_uid;
-            if (owned) same_uid++; else other_uid++;
-            try { readlinkSync('/proc/' + pid + '/cwd'); }
-            catch (error) {
-              let name = null, uids = null;
-              try { name = readFileSync('/proc/' + pid + '/comm', 'utf8').trim(); } catch {}
-              try { uids = readFileSync('/proc/' + pid + '/status', 'utf8').split('\\n').find(line => line.startsWith('Uid:'))?.trim() ?? null; } catch {}
-              denied.push({ pid: Number(pid), operation: 'readlink_cwd', errno: error.code, directory_uid, owned, name, uids });
-            }
-          }
-          console.error('[worktree-process-diagnostic] ' + JSON.stringify({ observer_uid, same_uid, other_uid, denied }));
-        }
-        console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));
-      `;
-      const output = execFileSync(process.execPath, ['-e', script], { cwd: f.tree, encoding: 'utf8', timeout: 6000, stdio: ['ignore', 'pipe', 'inherit'] });
+      const script = `const { worktreeProcesses } = await import(${JSON.stringify(module)}); const rows = worktreeProcesses(Date.now() + 5000); console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));`;
+      const output = execFileSync(process.execPath, ['-e', script], { cwd: f.tree, encoding: 'utf8', timeout: 6000 });
       expect(JSON.parse(output)).toEqual([]);
     } finally { f.cleanup(); }
   });
