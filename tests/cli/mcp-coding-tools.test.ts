@@ -2,9 +2,9 @@ import { worktreeUid } from '../../src/effects/state/worktree-trash';
 import { DEFAULT_WORKTREE_TEMPLATE, resolveWorktreeTemplate, systemWorktreeRoot, defaultWorktreeTemplate } from '../../src/core/worktree-location.mjs';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import {
@@ -642,6 +642,22 @@ describe('coding MCP workspace and file tools', () => {
   const root = temporary('mcp-shared-root-');
   expect(codingWorktreeRoot({ REPO_HARNESS_WORKTREE_ROOT: root })).toBe(require('fs').realpathSync(root));
   expect(() => codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toThrow('REPO_HARNESS_WORKTREE_ROOT');
+});
+
+test('opening a coding worktree creates a configured root that does not exist yet', async () => {
+  const state = fixture();
+  try {
+    const fresh = join(temporary('mcp-fresh-root-'), 'not-created', 'worktrees');
+    const env = { ...state.env, REPO_HARNESS_WORKTREE_ROOT: fresh };
+    const workspaceManager = new CodingWorkspaceManager(env);
+    const opened = parse(await callCodingTool({ ...state.ctx, workspaceManager }, 'open_workspace', { repo_id: state.repoId }));
+    expect(opened).toMatchObject({ mode: 'worktree', managed: true });
+    const root = workspaceManager.get(opened.workspace_id).root;
+    expect(dirname(root)).toBe(realpathSync(fresh));
+    expect(statSync(fresh).mode & 0o777).toBe(0o700);
+  } finally {
+    await state.processManager.shutdown();
+  }
 });
 
 describe('system worktree root platform policy', () => {

@@ -12,7 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from 'fs';
-import { managedWorktreeRoot } from '../../effects/git/managed-worktree';
+import { ensureManagedWorktreeRoot, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { recordWorktree } from '../../effects/git/worktree-record';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import {
@@ -116,8 +116,17 @@ export function codingWorkspaceStatePath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export function codingWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.REPO_HARNESS_MCP_WORKTREE_ROOT) throw new CodingWorkspaceError('WORKTREE_ROOT_RETIRED', 'Use REPO_HARNESS_WORKTREE_ROOT for every managed worktree.');
+  assertNoRetiredWorktreeRoot(env);
   return managedWorktreeRoot(env);
+}
+
+function ensureCodingWorktreeRoot(env: NodeJS.ProcessEnv): string {
+  assertNoRetiredWorktreeRoot(env);
+  return ensureManagedWorktreeRoot(env);
+}
+
+function assertNoRetiredWorktreeRoot(env: NodeJS.ProcessEnv): void {
+  if (env.REPO_HARNESS_MCP_WORKTREE_ROOT) throw new CodingWorkspaceError('WORKTREE_ROOT_RETIRED', 'Use REPO_HARNESS_WORKTREE_ROOT for every managed worktree.');
 }
 
 function toPosix(value: string): string {
@@ -551,9 +560,7 @@ export class CodingWorkspaceManager {
     if (mode === 'worktree') {
       const suffix = randomBytes(4).toString('hex');
       branch = `codex/mcp-${sanitizeBranchPart(basename(sourceRoot))}-${suffix}`;
-      root = join(codingWorktreeRoot(this.env), `${basename(sourceRoot)}-wt-${id}`);
-      const managedRoot = codingWorktreeRoot(this.env);
-      mkdirSync(managedRoot, { recursive: true, mode: 0o700 });
+      root = join(ensureCodingWorktreeRoot(this.env), `${basename(sourceRoot)}-wt-${id}`);
       try {
         lstatSync(root);
         throw new CodingWorkspaceError('WORKTREE_PATH_EXISTS', 'target worktree path already exists');

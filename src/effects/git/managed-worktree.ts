@@ -1,11 +1,23 @@
-import { realpathSync } from 'fs';
+import { mkdirSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, dirname } from 'path';
+import { basename, dirname, isAbsolute } from 'path';
 import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
 
 /** The directory that holds every managed task worktree. The sweep and the Bash guard share this root. */
 export function managedWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return realpathSync(env.REPO_HARNESS_WORKTREE_ROOT ?? systemWorktreeRoot(process.platform, tmpdir()));
+  return realpathSync(configuredWorktreeRoot(env));
+}
+
+/** A creator makes a fresh configured root before it canonicalizes the root. */
+export function ensureManagedWorktreeRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const root = configuredWorktreeRoot(env);
+  if (!isAbsolute(root)) throw new Error('REPO_HARNESS_WORKTREE_ROOT must be an absolute path');
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  return managedWorktreeRoot(env);
+}
+
+function configuredWorktreeRoot(env: NodeJS.ProcessEnv): string {
+  return env.REPO_HARNESS_WORKTREE_ROOT ?? systemWorktreeRoot(process.platform, tmpdir());
 }
 
 /**

@@ -14,7 +14,9 @@ export function worktreeProcesses(deadline: number): WorktreeProcess[] | null {
           if (statSync(`/proc/${pid}`).uid !== process.getuid?.()) continue;
           result.push({ pid: Number(pid), cwd: readlinkSync(`/proc/${pid}/cwd`) });
         }
-        catch (error) { if (!['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return null; }
+        // The kernel refuses the cwd of a same-UID non-dumpable process, for example systemd --user.
+        // Unprivileged lsof on macOS skips such a process too. Every other probe error is unknown.
+        catch (error) { if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) return null; }
       }
       return result;
     }
