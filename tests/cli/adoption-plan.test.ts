@@ -408,18 +408,38 @@ describe("canonical adoption plan", () => {
     }
   });
 
-  test("legacy todo archive collisions fail closed before normalization", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, "tasks", "archive"), { recursive: true });
-      writeFileSync(join(repo, "tasks", "todos.md"), "# Old Todo\n");
-      writeFileSync(join(repo, "tasks", "archive", "legacy-tasks-todo.md"), "# User archive\n");
-      expect(() => planAdoption({ repoRoot: repo, mode: "standard" })).toThrow("legacy archive collision");
-      expect(readFileSync(join(repo, "tasks", "todos.md"), "utf-8")).toBe("# Old Todo\n");
-    } finally {
-      cleanup(repo);
-    }
-  });
+  for (const mode of ["minimal", "standard", "self-host"] as const) {
+    test(`${mode} adoption keeps lessons and contracts without seeding retired task surfaces`, () => {
+      const repo = tempRepo();
+      try {
+        const plan = planAdoption({ repoRoot: repo, mode, apply: true });
+        expect(applyAdoptionPlan(plan).ok).toBe(true);
+        expect(existsSync(join(repo, "tasks", "lessons.md"))).toBe(true);
+        expect(existsSync(join(repo, "tasks", "contracts"))).toBe(true);
+        for (const path of ["todos.md", "notes", "reviews", "examples"]) {
+          expect(existsSync(join(repo, "tasks", path))).toBe(false);
+        }
+      } finally {
+        cleanup(repo);
+      }
+    });
+
+    test(`${mode} adoption leaves existing todo files and archives unchanged`, () => {
+      const repo = tempRepo();
+      try {
+        mkdirSync(join(repo, "tasks", "archive"), { recursive: true });
+        writeFileSync(join(repo, "tasks", "todos.md"), "# Old Todos\n");
+        writeFileSync(join(repo, "tasks", "todo.md"), "# Old Todo\n");
+        writeFileSync(join(repo, "tasks", "archive", "legacy-tasks-todo.md"), "# User archive\n");
+        expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode, apply: true })).ok).toBe(true);
+        expect(readFileSync(join(repo, "tasks", "todos.md"), "utf-8")).toBe("# Old Todos\n");
+        expect(readFileSync(join(repo, "tasks", "todo.md"), "utf-8")).toBe("# Old Todo\n");
+        expect(readFileSync(join(repo, "tasks", "archive", "legacy-tasks-todo.md"), "utf-8")).toBe("# User archive\n");
+      } finally {
+        cleanup(repo);
+      }
+    });
+  }
 
   test("legacy document and research archive collisions fail closed before retirement", () => {
     const documentRepo = tempRepo();

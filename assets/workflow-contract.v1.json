@@ -231,8 +231,6 @@
       "tasks",
       "tasks/archive",
       "tasks/contracts",
-      "tasks/reviews",
-      "tasks/notes",
       "tasks/workstreams",
       ".claude/templates",
       ".ai/context",
@@ -269,7 +267,6 @@
       ".claude/templates/contract.template.md",
       ".claude/templates/review.template.md",
       ".claude/templates/implementation-notes.template.md",
-      "tasks/todos.md",
       "tasks/lessons.md",
       "docs/architecture/index.md",
       ".ai/context/context-map.json",
@@ -315,8 +312,6 @@
     "spec": "docs/spec.md",
     "currentStatus": "tasks/current.md",
     "planDirectory": "plans",
-    "deferredGoalLedger": "tasks/todos.md",
-    "implementationNotesDirectory": "tasks/notes",
     "lessonsLog": "tasks/lessons.md",
     "researchReportsDirectory": "docs/researches"
   },
@@ -331,27 +326,6 @@
           "> **Status**: Draft",
           "",
           "Describe the product intent, users, workflows, acceptance scenarios, and constraints before implementation.",
-          ""
-        ]
-      },
-      "deferredGoalLedger": {
-        "document": "deferredGoalLedger",
-        "reason": "Create deferred-goal ledger when missing",
-        "lines": [
-          "# Deferred Goal Ledger",
-          "",
-          "> **Status**: Backlog",
-          "> **Updated**: (initial)",
-          "> **Scope**: Medium/long-term goals deferred from active plan execution",
-          "",
-          "Current plan tasks live in the active plan's `## Task Breakdown`.",
-          "Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.",
-          "",
-          "## Deferred Goals",
-          "",
-          "| Goal | Why Deferred | Tradeoff | Revisit Trigger |",
-          "|------|--------------|----------|-----------------|",
-          "| (none) | No deferred medium/long-term goal recorded yet. | Keep the first sprint bounded. | Add a row when a real follow-up is postponed. |",
           ""
         ]
       },
@@ -474,35 +448,6 @@
             "tasks/archive/legacy-docs-PROGRESS.md"
           ],
           "summary": "Move execution-log style progress content into research reports and archive surfaces."
-        },
-        {
-          "id": "legacy-singular-todo-file",
-          "signal": "legacy-singular-todo-file",
-          "action": "archive",
-          "risk": "low",
-          "ownership": "user_authored",
-          "paths": [
-            "tasks/todo.md"
-          ],
-          "targetPaths": [
-            "tasks/todos.md",
-            "tasks/archive/legacy-tasks-todo.md"
-          ],
-          "summary": "Archive the legacy singular todo ledger and normalize the canonical deferred-goal ledger to tasks/todos.md."
-        },
-        {
-          "id": "legacy-task-checklist-format",
-          "signal": "legacy-task-checklist-format",
-          "action": "archive",
-          "risk": "medium",
-          "ownership": "user_authored",
-          "paths": [
-            "tasks/todos.md"
-          ],
-          "targetPaths": [
-            "tasks/archive/legacy-tasks-todo.md"
-          ],
-          "summary": "Archive old task checklists before rewriting tasks/todos.md as the active execution projection."
         },
         {
           "id": "legacy-task-sprint-prds",
