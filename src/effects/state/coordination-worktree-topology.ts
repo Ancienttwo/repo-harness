@@ -4,7 +4,7 @@ import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-process
 import { readWorktreeRecord, readWorktreeRecordById, endWorktreeRecord } from '../git/worktree-record';
 import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
-import { gitExecFileSync } from '../git/runner';
+import { gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
@@ -46,12 +46,12 @@ function timeout(limits: Limits): number | undefined {
   return remaining;
 }
 function git(root: string, args: string[], limits: Limits = {}): string {
-  return gitExecFileSync(args, { cwd: root, gitBin: gitBinary(limits), encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return gitExecFileSync(args, { cwd: root, gitBin: gitBinary(limits), env: withoutRepositorySelectingGitEnv(), encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 /** Bind and destructive cleanup serialize across every worktree of this clone. */
 export function withWorktreeTopologyLock<T>(root: string, action: () => T, limits: Limits = {}): T {
-  const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits));
+  const common = resolveGitCommonDirectory(root, gitBinary(limits), timeout(limits), withoutRepositorySelectingGitEnv());
   return withExclusiveDirectoryLock(common, 'repo-harness/coordination/locks/worktree-topology.lock', () => {
     cleanIdentityTemporaryFiles(common, Date.now(), limits);
     return action();
@@ -100,7 +100,7 @@ export type LocalMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
 export function localMergeMode(root: string, head: string, target: string, limits: Limits): LocalMergeMode {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, REPO_HARNESS_GIT_BIN: gitBinary(limits) },
+    env: { ...withoutRepositorySelectingGitEnv(), REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
   if (mode === 'ancestor' || mode === 'absorbed' || mode === 'unmerged') return mode;

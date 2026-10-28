@@ -223,6 +223,33 @@ import {
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
+describe('worktree topology lock', () => {
+  test('locks the cwd repository when inherited Git variables select another repository', () => {
+    const root = createRepo();
+    const other = createRepo();
+    const lock = 'repo-harness/coordination/locks/worktree-topology.lock';
+    const ownLock = join(root, '.git', lock);
+    const otherLock = join(other, '.git', lock);
+    const previous = { GIT_DIR: process.env.GIT_DIR, GIT_COMMON_DIR: process.env.GIT_COMMON_DIR };
+    try {
+      process.env.GIT_DIR = join(other, '.git');
+      process.env.GIT_COMMON_DIR = join(other, '.git');
+      expect(withWorktreeTopologyLock(root, () => {
+        expect(existsSync(ownLock)).toBe(true);
+        expect(existsSync(otherLock)).toBe(false);
+        return 'held';
+      })).toBe('held');
+      expect(existsSync(ownLock)).toBe(false);
+      expect(existsSync(otherLock)).toBe(false);
+    } finally {
+      for (const key of ['GIT_DIR', 'GIT_COMMON_DIR'] as const) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+    }
+  });
+});
+
 describe('exact cleanup and contract-worktree start sweep', () => {
   function fixture() {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'worktree-sweep-')));

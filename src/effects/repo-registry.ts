@@ -9,7 +9,7 @@ import {
   type ExclusiveDirectoryLockHandle,
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
-import { gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from "./git/runner";
+import { gitSpawnSync, withoutRepositorySelectingGitEnv } from "./git/runner";
 import { repoHarnessHome } from "./repo-harness-home";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
@@ -138,9 +138,7 @@ type GitLines = { readonly ok: true; readonly lines: string[] } | { readonly ok:
 
 // The probe must read the checkout at repoRoot, not the repository an outer git hook selected.
 export function repoCheckoutProbeEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
-  const probe = { ...(env ?? process.env) };
-  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete probe[key];
-  return probe;
+  return withoutRepositorySelectingGitEnv(env);
 }
 
 function gitLines(repoRoot: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined): GitLines {

@@ -15,7 +15,7 @@ import {
   type ExecutionStateUnavailableReason,
   type TaskExecutionViewV1,
 } from '../../core/operator/execution-state';
-import { REPOSITORY_SELECTING_GIT_ENV } from '../git/runner';
+import { withoutRepositorySelectingGitEnv } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
@@ -33,9 +33,7 @@ export type ExecutionRepositoryCache =
 
 /** Each registered repository must resolve from its own path, whatever git variables the server has. */
 export function executionChildEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, ...READ_ONLY_GIT_ENVIRONMENT };
-  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
-  return next;
+  return withoutRepositorySelectingGitEnv({ ...env, ...READ_ONLY_GIT_ENVIRONMENT });
 }
 
 function childResults(stdout: string): ReadonlyMap<string, ExecutionStateWorkerResult> {
