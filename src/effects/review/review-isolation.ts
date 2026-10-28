@@ -82,7 +82,9 @@ export function preparePiHome(output: string, sourceHome: string, runWindowMs: n
   }
   const bytes = readAuthBytes(reuse ? destination : auth);
   try {
-    const entry = JSON.parse(bytes.toString('utf8'))[provider];
+    let entry;
+    try { entry = JSON.parse(bytes.toString('utf8'))[provider]; }
+    catch { throw new Error('review_auth_source_invalid'); }
     if (!entry) return { home, auth_copied: false, mode: '0600' };
     if (entry.type === 'oauth' && (typeof entry.expires !== 'number' || !Number.isFinite(entry.expires) || entry.expires <= Date.now() + runWindowMs)) throw new Error('review_access_expires_within_run');
     if (!reuse) writeFileSync(destination, JSON.stringify({ [provider]: entry }), { flag: 'wx', mode: 0o600 });

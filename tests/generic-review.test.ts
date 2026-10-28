@@ -432,6 +432,18 @@ test('Pi OAuth must outlive the run; selected copies use the shared cleanup stat
   expect(removeCopiedAuth(output, 'pi').status).toBe('cleanup_pending');
 });
 
+test('Pi malformed credential data fails with a fixed error instead of echoing its contents', async () => {
+  const { mkdirSync } = await import('node:fs');
+  const { preparePiHome } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-auth-invalid'); roots.push(root);
+  const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'review' }));
+  writeFileSync(join(agent, 'auth.json'), 'fixtureCredentialValueNeverLog');
+  expect(() => preparePiHome(output, source, 60000)).toThrow(/^review_auth_source_invalid$/);
+  expect(existsSync(join(output, '.pi-agent/auth.json'))).toBe(false);
+});
+
 darwinTest('Pi subprocess fixture: OAR argv and inherited Seatbelt deny source, native state, credentials and signals', async () => {
   const { mkdirSync, chmodSync } = await import('node:fs');
   const { pathToFileURL } = await import('node:url');
