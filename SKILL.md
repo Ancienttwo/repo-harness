@@ -20,7 +20,7 @@ Discover panes by task path, then use explicit targets.
 1. **setup** — bind the mode and target repo, then assign `repo-harness-setup`.
 2. **plan** — use `repo-harness-check` for scoped design or plan review.
    Use `repo-harness-product` only for requested PRD, Sprint or Goal work.
-3. **execute** — assign a [worker brief](docs/reference-configs/herdr-notify.md#worker-briefs). Load worker techniques
+3. **execute** — assign a [worker brief](assets/reference-configs/herdr-notify.md#worker-briefs). Load worker techniques
    from `repo-harness-test` or
    [`repo-harness-architecture`](assets/skill-commands/repo-harness-architecture/SKILL.md)
    only when needed.
