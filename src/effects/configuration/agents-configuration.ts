@@ -9,7 +9,7 @@ import {
   type AgentsSettingsRequestV1,
   type AgentsSettingsResultV1,
 } from '../../core/operator/agents-settings';
-import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import { syncDirectoryDurably } from '../atomic-append';
 import { globalConfigurationRevision, readGlobalConfiguration } from './global-configuration';
 
@@ -78,7 +78,7 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
       throw new AgentsConfigurationError('runtime_not_enabled', `Runtime ${change.runtime} must be enabled to have a use.`);
     }
     if (change.uses.includes('review') && !isReviewRuntimeId(change.runtime)) {
-      throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; only claude and codex can.`);
+      throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; supported review runtimes: ${REVIEW_RUNTIME_IDS.join(', ')}.`);
     }
     if (change.enabled) enabled.add(change.runtime);
     else enabled.delete(change.runtime);

@@ -7,7 +7,7 @@ import {
   type AgentRuntimesCacheV1,
   type AgentsSettingsV1,
 } from '../../core/operator/agents-settings';
-import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import {
   AgentsConfigurationError,
   applyAgentsSettings,
@@ -28,7 +28,7 @@ export const AGENTS_CONFIGURATION_FAILURES: Readonly<Record<AgentsConfigurationE
   revision_conflict: { status: 409, next_action: 'Reload the settings, then apply your change again.' },
   runtime_unknown: { status: 422, next_action: 'Choose a runtime from the runtime list.' },
   runtime_not_enabled: { status: 422, next_action: 'Enable the runtime, or remove its uses.' },
-  use_not_supported: { status: 422, next_action: 'Use claude or codex for review.' },
+  use_not_supported: { status: 422, next_action: `Use ${REVIEW_RUNTIME_IDS.join(', ')} for review.` },
   default_docs_invalid: { status: 422, next_action: 'Choose a docs runtime as the default, or clear the default.' },
 });
 
