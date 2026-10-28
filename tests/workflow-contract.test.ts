@@ -123,11 +123,22 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).toContain("tasks/current.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/current.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
-    expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/review.template.md");
+    expect(contract.artifacts.requiredFiles).not.toContain("tasks/todos.md");
+    expect(contract.artifacts.requiredFiles).toContain("tasks/lessons.md");
+    expect(contract.artifacts.requiredFiles).toContain(".claude/templates/contract.template.md");
+    expect(Object.hasOwn(contract.documents, "deferredGoalLedger")).toBe(false);
+    expect(Object.hasOwn(contract.documents, "implementationNotesDirectory")).toBe(false);
+    expect(Object.hasOwn(contract.adoptionTemplates?.files ?? {}, "deferredGoalLedger")).toBe(false);
+    expect(contract.documents.lessonsLog).toBe("tasks/lessons.md");
     expect(contract.artifacts.requiredFiles).not.toContain(".claude/settings.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
     expect(contract.artifacts.requiredDirectories).not.toContain(".codex");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/examples");
+    expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
@@ -490,7 +501,7 @@ describe("state inspection and legacy doc migration", () => {
     }
   });
 
-  test("canonical adoption transaction preserves legacy documents while normalizing workflow files", () => {
+  test("canonical adoption transaction preserves legacy documents without creating a todo ledger", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-"));
 
     try {
@@ -501,17 +512,12 @@ describe("state inspection and legacy doc migration", () => {
 
       const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(summary.ok).toBe(true);
-      expect(existsSync(join(repo, "tasks/todos.md"))).toBe(true);
+      expect(existsSync(join(repo, "tasks/todos.md"))).toBe(false);
       expect(existsSync(join(repo, "docs/researches/README.md"))).toBe(true);
       expect(existsSync(join(repo, "tasks/archive/legacy-docs-TODO.md"))).toBe(true);
       expect(existsSync(join(repo, "plans/archive/legacy-docs-plan.md"))).toBe(true);
       expect(existsSync(join(repo, "docs/TODO.md.migrated.bak"))).toBe(true);
       expect(existsSync(join(repo, "docs/plan.md.migrated.bak"))).toBe(true);
-
-      const todo = readFileSync(join(repo, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("**Status**: Backlog");
-      expect(todo).toContain("Revisit Trigger");
 
       const research = readFileSync(join(repo, "docs/researches/legacy-progress-import.md"), "utf-8");
       expect(research).toContain("Legacy Progress Import");
@@ -525,44 +531,28 @@ describe("state inspection and legacy doc migration", () => {
     }
   });
 
-  test("canonical adoption transaction normalizes pre-existing tasks/todos.md", () => {
-    const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-partial-"));
+  for (const filename of ["todos.md", "todo.md"]) {
+    test(`canonical adoption preserves pre-existing tasks/${filename}`, () => {
+      const repo = mkdtempSync(join(tmpdir(), "preserve-workflow-todo-"));
+      const content = "# Old Todo\n\n- [ ] existing task\n";
 
-    try {
-      mkdirSync(join(repo, "tasks"), { recursive: true });
-      writeFileSync(join(repo, "tasks/todos.md"), "# Old Todo\n\n- [ ] existing task\n");
+      try {
+        mkdirSync(join(repo, "tasks"), { recursive: true });
+        writeFileSync(join(repo, "tasks", filename), content);
 
-      const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
-      expect(summary.ok).toBe(true);
-      expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(true);
-
-      const todo = readFileSync(join(repo, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("No deferred medium/long-term goal recorded yet");
-      expect(todo).not.toContain("existing task");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("canonical adoption transaction migrates pre-existing singular tasks/todo.md", () => {
-    const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-singular-todo-"));
-
-    try {
-      mkdirSync(join(repo, "tasks"), { recursive: true });
-      writeFileSync(join(repo, "tasks/todo.md"), "# Old Todo\n\n- [ ] existing task\n");
-
-      const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
-      expect(summary.ok).toBe(true);
-      expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(true);
-      expect(existsSync(join(repo, "tasks/todo.md.migrated.bak"))).toBe(true);
-
-      const todo = readFileSync(join(repo, "tasks/todos.md"), "utf-8");
-      expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("No deferred medium/long-term goal recorded yet");
-      expect(todo).not.toContain("existing task");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
+        const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+        expect(summary.ok).toBe(true);
+        expect(readFileSync(join(repo, "tasks", filename), "utf-8")).toBe(content);
+        expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(false);
+        expect(existsSync(join(repo, "tasks", `${filename}.migrated.bak`))).toBe(false);
+        const result = inspectRepo(repo);
+        expect(result.drift_signals).not.toContain("legacy-singular-todo-file");
+        expect(result.drift_signals).not.toContain("legacy-task-checklist-format");
+        expect(result.upgrade_plan.map((item) => item.id)).not.toContain("legacy-singular-todo-file");
+        expect(result.upgrade_plan.map((item) => item.id)).not.toContain("legacy-task-checklist-format");
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+  }
 });
