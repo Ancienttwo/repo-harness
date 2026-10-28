@@ -1,6 +1,6 @@
 # Kanban runtime observations
 
-The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v4`. The configured service has no task identity source, so its `badges` array is empty. Its `pane_observations` array contains separate Herdr terminal reports. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
+The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v6`. The configured service has no task identity source, so its `badges` array is empty. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
 
 Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`.
 
@@ -36,7 +36,7 @@ A stop request gives the owned provider two seconds before forced termination. C
 
 The service reads capture snapshots before HTTP starts. Its owned timer refreshes the cache every 30 seconds. GET reads the cache and computes age. GET does not open capture files, write snapshots or start a child. Closing the service stops only its timer and observer. It does not stop a user daemon or a capture child.
 
-Each native source has `source_id`, `provider`, nullable `generation`, `capture_status`, nullable `heartbeat_at`, `freshness` and `observations`. Each observation has `scope`, nullable `session_id`, nullable `turn_id`, `state`, `reason`, `event_received_at` and nullable `changed_at`. Codex scope is session. Claude and Pi scope is terminal. Native mode always has empty task badges and Herdr pane reports. The root `source_epoch` and `observed_at` are projection metadata. They cannot make a source fresh.
+Each native source has `source_id`, `provider`, nullable `generation`, `capture_status`, nullable `heartbeat_at`, `freshness` and `observations`. Each observation has `scope`, nullable `session_id`, nullable `turn_id`, `state`, `reason`, `event_received_at` and nullable `changed_at`. Codex scope is session. Claude and Pi scope is terminal. Native mode always has empty task badges. The root `source_epoch` and `observed_at` are projection metadata. They cannot make a source fresh.
 
 Freshness uses each source's own heartbeat. A successful file read does not renew it. Five minutes without a capture heartbeat marks a connected source stale. Heartbeat means capture is reachable. It does not mean agent progress. Event receive time stays fixed until a new event arrives. A disconnected capture is explicit. Future timestamps cannot make a source fresh.
 
@@ -81,16 +81,6 @@ Task badge binding through a manifest is removed. The service no longer opens a 
 
 Herdr `idle`, `working`, `blocked`, `unknown` and readable `done` remain supported agent observations. Agent `done` displays “Idle · not seen”. It does not mean accepted completion. Its blocking reason is unknown.
 
-The typed root receiver must advertise `ping.result.capabilities.program_status_root_v1: true`. Missing capability means unsupported. A nonboolean capability, a capability change during observation or root data without capability fails closed. The version check still requires exactly 0.9.5 and protocol 22. The capability does not prove a binary commit or a new release.
+Herdr mode observes only `agent_status`.
 
-Upstream v0.9.5 does not advertise this capability. A server on the pinned release reports `agent_status` normally and the transport reports `program_status: "unsupported"`, which is a supported state. Only a binary that carries the proposed root receiver reports `v1`.
-
-The adapter reads `PaneInfo.program_status`. Its envelope has `source: "osc7501"`, `revision`, `source_epoch`, `updated_at_ms` and `record`. The record has state `idle`, `working`, `blocked`, `done` or `error`. Only `blocked` can have a permission, question or auth kind. Root `done` maps to `settled`. It is a report that the program stopped working. It is not task acceptance. Root `idle` does not mean cancellation. Root OSC has no aborted state. A null record means clear. Clear removes the visible report and keeps its revision fence. Reports use `pane.updated` invalidation. OSC has no heartbeat.
-
-Each public terminal report has `scope: "pane"`, `source: "osc7501"`, `pane`, nullable `binding`, `source_epoch`, `revision`, `state`, `reason`, `changed_at` and `freshness`. The pane has source host, Herdr session, terminal ID, pane ID and an agent-session digest. The digest can be null when Herdr has no session reference. The configured service supplies a null binding. The terminal report is not a task producer identity. A root report cannot prove which task, round or attempt produced it. A UI must label it “关联终端报告”. It must not put it in the task badge or use it as task evidence.
-
-The socket adapter checks the empty task binding set before and after each snapshot. Reports have a null binding and remain unclaimed. The first report can be shown as the last terminal report. No baseline or later revision is treated as task identity proof. The report's source epoch identifies the Herdr terminal process generation. The overlay's source epoch identifies the observation connection lifecycle. Lower epochs and revisions cannot restore an older report. A same-revision conflict stays hidden until a newer report. Snapshot success controls freshness. It does not change the report's progress time.
-
-The separate full-identity program-v1 contract remains available for a source that can prove that identity. Only its explicit aborted state means cancellation. Its cancellation fence survives clear for the same attempt. The root adapter never constructs this contract from a pane report. Titles, message text, paths, app names and progress values do not enter the public projection. The Herdr adapter does not parse terminal output for status. The explicit native capture path reads only documented structured frames.
-
-Backend tests cover a real Unix socket and HTTP cache path with controlled structured frames. These frames are synthetic receiver output. A separate check feeds the real Pi 1.1.0 startup report, received and serialized by the native Herdr receiver, through this decoder. That check observes idle and removes app data. It is not a full live PaneInfo socket check. These checks do not prove that an installed Herdr daemon emits the new fields. The Herdr adapter does not install a daemon, start a provider or write a binding manifest.
+Backend tests cover a real Unix socket and the HTTP cache path with controlled structured frames. The Herdr adapter does not install a daemon or start a provider.

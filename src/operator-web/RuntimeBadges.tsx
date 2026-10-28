@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { decodeRuntimeOverlay, nativeRuntimeFreshness, unavailableRuntimeOverlay, type RuntimeOverlay, type RuntimeBadge } from '../core/operator/runtime-status';
+import { decodeRuntimeOverlay, nativeRuntimeFreshness, unavailableRuntimeOverlay, type RuntimeOverlay } from '../core/operator/runtime-status';
+import type { NativeRuntimeState } from '../core/operator/runtime-capture';
 import { useObservationRefresh } from './useObservationRefresh';
 import { formatRelativeAge, type OperatorTranslate, type OperatorMessageKey } from './i18n';
 
@@ -25,9 +26,9 @@ export function useRuntimeOverlay(read: RuntimeOverlayReader, initial: RuntimeOv
   useObservationRefresh(refresh, JSON.stringify(['runtime-overlay', generation]), { enabled: active, immediate: initial === undefined || generation > 0 });
   return view;
 }
-const LABELS: Record<RuntimeBadge['state'], OperatorMessageKey> = {
+const LABELS: Record<NativeRuntimeState, OperatorMessageKey> = {
   unknown: 'runtimeObservation.state.unknown', idle: 'runtimeObservation.state.idle', working: 'runtimeObservation.state.working', blocked: 'runtimeObservation.state.blocked',
-  'done-unseen': 'runtimeObservation.state.done-unseen', settled: 'runtimeObservation.state.settled', error: 'runtimeObservation.state.error', cancelled: 'runtimeObservation.state.cancelled', clear: 'runtimeObservation.state.clear',
+  settled: 'runtimeNative.settled', error: 'runtimeObservation.state.error', cancelled: 'runtimeObservation.state.cancelled',
 };
 export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: number; t: OperatorTranslate }) {
   const { overlay, failed } = view;
@@ -60,7 +61,7 @@ function NativeRuntimeSources({ overlay, now, t }: { overlay: RuntimeOverlay; no
             {source.observations.map(observation => <li key={JSON.stringify([observation.scope, observation.session_id, observation.turn_id])}>
               <div className="runtime-run">
                 <span>{t(`runtimeNative.scope.${observation.scope}`)}{observation.session_id && <> · <span className="mono-value">{observation.session_id}</span></>}</span>
-                <span className={`operator-badge ${['blocked', 'error'].includes(observation.state) ? 'tone-danger' : observation.state === 'working' ? 'tone-agent' : 'tone-neutral'}`} data-native-state={observation.state}>{t(observation.state === 'settled' ? 'runtimeNative.settled' : LABELS[observation.state])}</span>
+                <span className={`operator-badge ${['blocked', 'error'].includes(observation.state) ? 'tone-danger' : observation.state === 'working' ? 'tone-agent' : 'tone-neutral'}`} data-native-state={observation.state}>{t(LABELS[observation.state])}</span>
                 {observation.state === 'blocked' && <span className="operator-badge tone-user">{t(`runtimeObservation.reason.${observation.reason}`)}</span>}
               </div>
               <p>{t('runtimeNative.eventReceived')}: <time dateTime={observation.event_received_at} title={observation.event_received_at}>{formatRelativeAge(observation.event_received_at, now, t)}</time></p>

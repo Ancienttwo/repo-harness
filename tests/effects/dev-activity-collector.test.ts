@@ -421,7 +421,7 @@ describe('dev activity collector bounds', () => {
       const collector = startDevActivityCollector({
         env: f.env,
         interval_ms: 20,
-        read_runtime: () => { reads++; return { projection_version: 'repo-harness.runtime-overlay.v5', status: 'unavailable', reason: null, observed_at: null, source_epoch: 0, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [], native_sources: [] }; },
+        read_runtime: () => { reads++; return { projection_version: 'repo-harness.runtime-overlay.v6', status: 'unavailable', reason: null, observed_at: null, source_epoch: 0, unclaimed: 0, badges: [], native_sources: [] }; },
         run_process: async () => { await gate; return { ok: false, code: 'failed' }; },
       });
       expect(collector.read()).toMatchObject({ status: 'unavailable', collected_at: null, items: [], repositories: [] });
