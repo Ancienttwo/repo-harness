@@ -16,10 +16,11 @@ export interface PiHookRequest {
 }
 
 export function piHookEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return {
-    ...Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('HOOK_') && !key.startsWith('REPO_HARNESS_'))),
-    HOOK_HOST: 'pi',
-  };
+  const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('HOOK_')));
+  delete childEnv.REPO_HARNESS_SOURCE_ROOT;
+  delete childEnv.REPO_HARNESS_HELPER_SOURCE_PATH;
+  delete childEnv.REPO_HARNESS_TARGET_REPO_ROOT;
+  return { ...childEnv, HOOK_HOST: 'pi' };
 }
 
 function parseOutput(text: string, request: PiHookRequest, status: number | null): PiHookOutput {

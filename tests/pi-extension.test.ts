@@ -323,10 +323,15 @@ describe('Pi hook child boundary', () => {
   const wire: PiHookOutput = { protocol: 1, event: 'PreToolUse', route_id: 'edit', exit_code: 0, reason: 'ok',
     decision: 'none', additional_context: null, system_message: null, diagnostics: '' };
 
-  test('identity environment is removed; unrelated values remain', async () => {
+  test('identity and target environment is removed; hook configuration remains', async () => {
     const env = piHookEnvironment({ PATH: '/bin', HOOK_HOST: 'codex', HOOK_REPO_ROOT: '/other', HOOK_SESSION_ID: 'stale',
-      REPO_HARNESS_RUN_ID: 'stale', REPO_HARNESS_HOME: '/other-home', HOME: '/tmp/fixture-home' });
-    expect(env).toEqual({ PATH: '/bin', HOME: '/tmp/fixture-home', HOOK_HOST: 'pi' });
+      REPO_HARNESS_SOURCE_ROOT: '/stale-source', REPO_HARNESS_HELPER_SOURCE_PATH: '/stale-helper',
+      REPO_HARNESS_TARGET_REPO_ROOT: '/stale-target', REPO_HARNESS_HOME: '/tmp/fixture-registry',
+      REPO_HARNESS_GIT_BIN: '/tmp/fixture-git', REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun',
+      REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected', HOME: '/tmp/fixture-home' });
+    expect(env).toEqual({ PATH: '/bin', HOME: '/tmp/fixture-home', HOOK_HOST: 'pi',
+      REPO_HARNESS_HOME: '/tmp/fixture-registry', REPO_HARNESS_GIT_BIN: '/tmp/fixture-git',
+      REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun', REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected' });
     const entry = childScript(`process.stdin.resume(); process.stdin.on('end', () => console.log(JSON.stringify(${JSON.stringify(wire)})));`);
     const bridge = new PiHookBridge({ entry });
     try { expect(await bridge.call(request)).toEqual(wire); } finally { bridge.close(); }

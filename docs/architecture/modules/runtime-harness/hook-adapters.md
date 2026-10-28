@@ -471,8 +471,10 @@ and blocks edit, write and bash with a fixed error code. A non-opt-in repository
 stays inactive. There is no local path parser or upper version bound.
 
 `src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
-The child receives stdin JSON and `HOOK_HOST=pi`, after inherited hook and
-repo-harness environment variables are removed. One protocol-1 object carries
+The child receives stdin JSON and `HOOK_HOST=pi`, after inherited `HOOK_*`,
+`REPO_HARNESS_SOURCE_ROOT`, `REPO_HARNESS_HELPER_SOURCE_PATH` and
+`REPO_HARNESS_TARGET_REPO_ROOT` are removed. Other hook configuration passes
+through, including `REPO_HARNESS_HOME`. One protocol-1 object carries
 the decision back. The limits are 16 MiB stdin, 1 MiB stdout and 30 seconds per
 call. Child failure, invalid output, a timeout or a nonzero hook exit blocks
 the mapped tool. Cancellation stops only owned hook children and never retries
