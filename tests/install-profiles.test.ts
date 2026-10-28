@@ -1303,6 +1303,7 @@ describe('skill projection ownership', () => {
       join(env.HOME!, '.claude/skills/repo-harness-herdr-portal'),
     ];
     for (const dest of paths) rmSync(dest, { recursive: true, force: true });
+    mkdirSync(join(env.HOME!, '.pi/agent/skills'), { recursive: true });
     expect(syncCrossReviewSkills(packageRoot, 'both', env).every(step => step.status === 'ok')).toBe(true);
     const first = applyInstallProfile('full', env).state;
     const links = paths.map(dest => ({ inode: lstatSync(dest).ino, target: readlinkSync(dest) }));
