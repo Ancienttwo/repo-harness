@@ -615,7 +615,8 @@ describe('doctor skill projection', () => {
     if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
     // The pre-row CLI line format, frozen: the rows must regenerate it byte for byte.
     const frozenLine = (projection: SkillProjection, state: string, ledgerDrift: boolean): string => {
-      const fix = `repo-harness install --profile full --target ${projection.host}`;
+      // Install has no Pi target; Pi rows repair through the all-hosts target.
+      const fix = `repo-harness install --profile full --target ${projection.host === 'pi' ? 'both' : projection.host}`;
       const shown = state === 'ok link' ? `ok link -> ${projection.source}` : state;
       const problems: string[] = [];
       if (!shown.startsWith('ok ')) {
@@ -626,7 +627,7 @@ describe('doctor skill projection', () => {
       return `${projection.destination}: ${shown}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
     };
     const crossReview = 'repo-harness-cross-review';
-    const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full');
+    const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full', f.env);
     const codexProjection = (name: string): SkillProjection => allProjections.find(p => p.host === 'codex' && p.name === name)!;
     const ledgerPath = path.join(home, '.repo-harness/install-state.json');
     const cases: { state: string; name: string; ledger?: boolean; setup: (p: SkillProjection) => void }[] = [

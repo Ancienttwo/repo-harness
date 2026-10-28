@@ -32,6 +32,7 @@ import {
   requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
+  type SkillSurfaceHost,
 } from "../../core/skill-surface/catalog";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
@@ -330,10 +331,14 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   return ["claude", "codex"];
 }
 
-function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
-  const first = hosts[0];
-  if (first !== 'codex' && first !== 'claude') throw new Error('No install host selected');
-  return hosts.length === 2 ? "both" : first;
+/** External skill installs target Claude and Codex agents; Pi reads their staging root. */
+function targetFromHostIds(hosts: readonly SkillSurfaceHost[]): InstallTargetSpec {
+  const codex = hosts.includes('codex');
+  const claude = hosts.includes('claude');
+  if (codex && claude) return "both";
+  if (codex) return "codex";
+  if (claude) return "claude";
+  throw new Error('No install host selected');
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string {
@@ -1208,9 +1213,10 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
 }
 
 /** Each selected host skill root, with the canonical path it must resolve to. */
-function stagedProjectionRoots(home: string, target: InstallTargetSpec): Array<{ path: string; expected: string }> {
+function stagedProjectionRoots(home: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv | undefined): Array<{ path: string; expected: string }> {
   const canonicalHome = realpathSync(home);
-  return hostIds(target).map((host) => ({ path: hostSkillRoot(home, host), expected: hostSkillRoot(canonicalHome, host) }));
+  const rootEnv = env ?? process.env;
+  return hostIds(target).map((host) => ({ path: hostSkillRoot(home, host, rootEnv), expected: hostSkillRoot(canonicalHome, host, rootEnv) }));
 }
 
 function preflightStagedSkillProjection(
@@ -1220,7 +1226,7 @@ function preflightStagedSkillProjection(
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target);
+  const roots = stagedProjectionRoots(home, target, env);
   for (const root of roots) {
     const invalid = invalidProjectionRoot(root.path, root.expected);
     if (invalid) return { step, status: 'failed', detail: invalid };
@@ -1244,7 +1250,7 @@ function projectStagedSkills(
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target);
+  const roots = stagedProjectionRoots(home, target, env);
   const projected: string[] = [];
   const created: string[] = [];
   const fail = (detail: string): GlobalRuntimeStep => {

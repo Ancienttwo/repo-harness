@@ -115,11 +115,13 @@ async function main(argv: readonly string[]): Promise<void> {
     const roots = syncSkillRoots(process.env, process.env.HOME ?? "");
     console.log(`codex-root\t${roots.codex}`);
     console.log(`claude-root\t${roots.claude ?? ""}`);
+    console.log(`pi-root\t${roots.pi ?? ""}`);
     console.log(`root-override\t${roots.overridden ? 1 : 0}`);
     for (const name of facadesForProfile(catalog, profileFlag)) console.log(`facade\t${name}`);
     const providers = hostSkillPlacements(catalog);
     for (const name of providers.claude) console.log(`provider\tclaude ${name}`);
     for (const name of providers.codex) console.log(`provider\tcodex ${name}`);
+    for (const name of providers.pi) console.log(`provider\tpi ${name}`);
     // Integrations have their own explicit setup command and lifecycle.
     for (const pkg of catalog.packages) if (pkg.kind === "integration") console.log(`integration\t${pkg.name}`);
     return;
@@ -153,6 +155,7 @@ async function main(argv: readonly string[]): Promise<void> {
     const placements = hostSkillPlacements(catalog, profileFlag);
     for (const name of placements.claude) console.log(`claude ${name}`);
     for (const name of placements.codex) console.log(`codex ${name}`);
+    for (const name of placements.pi) console.log(`pi ${name}`);
     return;
   }
   fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected audience-sources|facades|profile-projection|facade-sources|external-skills|host-placements|managed-tree-hash|remove-dangling-links`);

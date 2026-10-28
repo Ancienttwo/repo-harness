@@ -513,7 +513,8 @@ interface SkillProjectionJudgment {
 /** CLI text projection of one judgment. Only `ok link` names its target. */
 function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, profile: string): string {
   const { destination, source, host } = projection;
-  const fix = `repo-harness install --profile ${profile} --target ${host}`;
+  // Install has no Pi target: the all-hosts target projects the Pi skills.
+  const fix = `repo-harness install --profile ${profile} --target ${host === 'pi' ? 'both' : host}`;
   const problems: string[] = [];
   if (!row.state.startsWith('ok ')) {
     const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
@@ -553,7 +554,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
     if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
     const judgments: SkillProjectionJudgment[] = [];
-    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile)) {
+    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile, env)) {
       if (target !== 'both' && target !== projection.host) continue;
       const state = skillProjectionState(projection, contract);
       const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];

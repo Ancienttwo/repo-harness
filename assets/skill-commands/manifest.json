@@ -11,7 +11,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "minimal",
@@ -52,7 +53,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "minimal",
@@ -73,7 +75,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "full"
@@ -93,7 +96,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "full"
@@ -113,7 +117,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "full"
@@ -133,7 +138,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "full"
@@ -153,7 +159,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "minimal",
@@ -177,7 +184,8 @@
       "provider": null,
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [
         "minimal",
@@ -270,7 +278,8 @@
       "provider": "herdrdev/herdr",
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [],
       "discoverability": "external-marketplace",
@@ -408,7 +417,8 @@
       "integrity": "sha256:ac9b702f9697f0bbf5f0fdc0c6896d94efef01438a59a4b508e5d7346da050e6",
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [],
       "discoverability": "external-marketplace",
@@ -427,7 +437,8 @@
       "integrity": "sha256:58b3eaf9ccaadfcbe3b8d0eddb0d1fe872ef42c4cf289393a72d4e9a6d896f6f",
       "hosts": [
         "claude",
-        "codex"
+        "codex",
+        "pi"
       ],
       "profiles": [],
       "discoverability": "external-marketplace",
@@ -487,7 +498,8 @@
     "hostSkillPlacementsByProfile": {
       "minimal": {
         "claude": [],
-        "codex": []
+        "codex": [],
+        "pi": []
       },
       "full": {
         "claude": [
@@ -496,7 +508,8 @@
         ],
         "codex": [
           "repo-harness-cross-review"
-        ]
+        ],
+        "pi": []
       }
     }
   },

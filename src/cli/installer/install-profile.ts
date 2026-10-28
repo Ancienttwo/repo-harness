@@ -396,10 +396,10 @@ function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCata
 
 const FACADE_NAME_PREFIX = 'repo-harness-';
 
-const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude'];
+const SKILL_HOSTS: readonly SkillHost[] = ['codex', 'claude', 'pi'];
 
-function hostSkillRoots(home: string): readonly string[] {
-  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host));
+function hostSkillRoots(home: string, env: NodeJS.ProcessEnv): readonly string[] {
+  return SKILL_HOSTS.map((host) => hostSkillRoot(home, host, env));
 }
 
 /**
@@ -407,9 +407,9 @@ function hostSkillRoots(home: string): readonly string[] {
  * name that later leaves the catalog. The state reader accepts the same
  * bounded set, so a committed receipt stays readable until removal.
  */
-function isDiscoveredFacadePath(path: string, home: string): boolean {
+function isDiscoveredFacadePath(path: string, env: NodeJS.ProcessEnv): boolean {
   const name = basename(path);
-  return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(home).some((root) => join(root, name) === path);
+  return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(env.HOME ?? homedir(), env).some((root) => join(root, name) === path);
 }
 
 function discoverManagedSurfaces(
@@ -431,7 +431,7 @@ function discoverManagedSurfaces(
   // A catalog facade can lack the prefix (obsidian-memory). Its copy needs
   // the same marker-based receipt as a prefixed facade copy.
   const facadeNames = new Set(catalog.packages.filter((pkg) => pkg.kind === 'facade').map((pkg) => pkg.name));
-  for (const root of hostSkillRoots(home)) {
+  for (const root of hostSkillRoots(home, env)) {
     const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), runtimeComponents);
     if (canonical) surfaces.push(canonical);
     if (!existsSync(root)) continue;
@@ -458,7 +458,7 @@ function discoverManagedSurfaces(
   // A matching stable package or staging link is ownership proof. Never
   // acquire an arbitrary link merely because the transaction found it.
   if (sourceRoot !== null) {
-    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile)) {
+    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile, env)) {
       if (!skillLinkMatches(projection.destination, projection.source)) continue;
       const pkg = catalog.packages.find(pkg => pkg.name === projection.name);
       const components = projection.staged
@@ -668,7 +668,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     configurationReceiptPath(home),
     join(home, '.agents', '.skill-lock.json'),
   ];
-  for (const root of hostSkillRoots(home)) {
+  for (const root of hostSkillRoots(home, env)) {
     for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
   }
   for (const skill of externalSkills) {
@@ -698,7 +698,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
  */
 export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const roots = syncSkillRoots(env, env.HOME ?? homedir());
-  return roots.claude === null ? [roots.codex] : [roots.codex, roots.claude];
+  return [roots.codex, roots.claude, roots.pi].filter((root): root is string => root !== null);
 }
 
 /**
@@ -941,7 +941,7 @@ function validateManagedSurface(
     && raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir()))
+    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1111,12 +1111,12 @@ function existing(paths: readonly string[]): string[] {
   return paths.filter((path) => existsSync(path));
 }
 
-function canonicalRoots(home: string): string[] {
-  return hostSkillRoots(home).map((root) => join(root, 'repo-harness'));
+function canonicalRoots(home: string, env: NodeJS.ProcessEnv): string[] {
+  return hostSkillRoots(home, env).map((root) => join(root, 'repo-harness'));
 }
 
-function canonicalEvidence(home: string, relativePaths: readonly string[]): string[] {
-  return existing(canonicalRoots(home).flatMap((root) => relativePaths.map((relative) => join(root, relative))));
+function canonicalEvidence(home: string, env: NodeJS.ProcessEnv, relativePaths: readonly string[]): string[] {
+  return existing(canonicalRoots(home, env).flatMap((root) => relativePaths.map((relative) => join(root, relative))));
 }
 
 function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
@@ -1127,14 +1127,14 @@ function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
   return existing([...new Set(candidates)]);
 }
 
-function skillEvidence(home: string, names: readonly string[]): string[] {
-  return existing(hostSkillRoots(home).flatMap((root) => (
+function skillEvidence(home: string, env: NodeJS.ProcessEnv, names: readonly string[]): string[] {
+  return existing(hostSkillRoots(home, env).flatMap((root) => (
     names.map((name) => join(root, name, 'SKILL.md'))
   )));
 }
 
-function completeHostSkillSetEvidence(home: string, names: readonly string[]): string[] {
-  for (const root of hostSkillRoots(home)) {
+function completeHostSkillSetEvidence(home: string, env: NodeJS.ProcessEnv, names: readonly string[]): string[] {
+  for (const root of hostSkillRoots(home, env)) {
     const paths = names.map((name) => join(root, name, 'SKILL.md'));
     if (paths.every(existsSync)) return paths;
   }
@@ -1163,7 +1163,7 @@ function probeInstalledComponents(
     .filter(({ path, host }) => existsSync(path) && adapterHasRequiredProjection(path, host, state.profile))
     .map(({ path }) => path);
   const cliEvidence = executableEvidence('repo-harness', env);
-  const effectiveStateEvidence = canonicalEvidence(home, ['src/cli/commands/state.ts']);
+  const effectiveStateEvidence = canonicalEvidence(home, env, ['src/cli/commands/state.ts']);
   // HRD-03 retired assets/hooks/pre-edit-guard.sh: the `scope-worktree-check-guards`
   // capability it used to prove now lives in the in-process
   // src/cli/hook/mutation-guard.ts handler (bundled straight into the CLI
@@ -1172,34 +1172,34 @@ function probeInstalledComponents(
   // above for the same pattern). scripts/contract-worktree.sh is untouched by
   // this cutover and stays.
   const guardPaths = ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'];
-  const guardEvidence = canonicalEvidence(home, guardPaths);
+  const guardEvidence = canonicalEvidence(home, env, guardPaths);
   // SSD-06: repo-harness-handoff retired as a standalone facade. 'handoff' is
   // now fulfilled by the root router's own progressive reference
   // (references/handoff.md), bundled into the canonical repo-harness skill
   // copy itself, so its evidence is that reference file's presence there --
   // same canonicalEvidence idiom as effectiveStateEvidence/adaptiveEvidence
   // below, not a separate host-installed Skill directory.
-  const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
-  const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
+  const handoffEvidence = canonicalEvidence(home, env, ['references/handoff.md']);
+  const adaptiveEvidence = canonicalEvidence(home, env, ['src/core/workflow/profile.ts']);
   const codegraphEvidence = state.profile === 'full'
     ? executableEvidence('codegraph', env)
-    : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);
+    : canonicalEvidence(home, env, ['src/cli/tools/codegraph.ts']);
   const probeExpectations = catalogProbeExpectations(loadSkillSurfaceCatalog());
   const planningSkillNames = probeExpectations.planningSkillNames;
-  const planningSkills = completeHostSkillSetEvidence(home, planningSkillNames);
+  const planningSkills = completeHostSkillSetEvidence(home, env, planningSkillNames);
   const planningCapabilityPaths = probeExpectations.planningCapabilityPaths;
-  const planningCapabilities = canonicalEvidence(home, planningCapabilityPaths);
+  const planningCapabilities = canonicalEvidence(home, env, planningCapabilityPaths);
   const planningEvidence = planningSkills.length === planningSkillNames.length
     && planningCapabilityPaths.every((relative) => planningCapabilities.some((path) => path.endsWith(relative)))
     ? [...planningSkills, ...planningCapabilities]
     : [];
   const fleetEvidence = completeAgentFleetEvidence(home);
   const verifierEvidence = fleetEvidence.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
-    ? canonicalEvidence(home, ['src/effects/review/oar-review-host.ts'])
+    ? canonicalEvidence(home, env, ['src/effects/review/oar-review-host.ts'])
     : [];
-  const crossModelEvidence = skillEvidence(home, probeExpectations.crossModel);
+  const crossModelEvidence = skillEvidence(home, env, probeExpectations.crossModel);
   const releasePaths = ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'];
-  const releaseEvidence = canonicalEvidence(home, releasePaths);
+  const releaseEvidence = canonicalEvidence(home, env, releasePaths);
   const evidence: Record<InstallComponent, readonly string[]> = {
     'cli': cliEvidence,
     'effective-state': effectiveStateEvidence,

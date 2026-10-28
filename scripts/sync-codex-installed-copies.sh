@@ -44,6 +44,7 @@ if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" pr
 fi
 CODEX_SKILLS_ROOT=""
 CLAUDE_SKILLS_ROOT=""
+PI_SKILLS_ROOT=""
 SKILL_ROOT_OVERRIDE=""
 SELECTED_FACADES=""
 PROVIDER_PLACEMENTS=""
@@ -52,6 +53,7 @@ while IFS=$'\t' read -r projection_kind projection_value; do
   case "$projection_kind" in
     codex-root) CODEX_SKILLS_ROOT="$projection_value" ;;
     claude-root) CLAUDE_SKILLS_ROOT="$projection_value" ;;
+    pi-root) PI_SKILLS_ROOT="$projection_value" ;;
     root-override) SKILL_ROOT_OVERRIDE="$projection_value" ;;
     facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
     provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
@@ -227,27 +229,32 @@ if [[ "${1:-}" == "--stage-owned-copy" ]]; then
   exit 0
 fi
 
-sync_claude_alias_links() {
-  if [[ -z "$CLAUDE_SKILLS_ROOT" ]]; then
+# The Claude and Pi roots receive the router as an alias of the Codex copy.
+sync_alias_links() {
+  local root="$1"
+  local label="$2"
+  if [[ -z "$root" ]]; then
     return 0
   fi
 
-  mkdir -p "$CLAUDE_SKILLS_ROOT"
-  local alias_dest="$CLAUDE_SKILLS_ROOT/repo-harness"
+  mkdir -p "$root"
+  local alias_dest="$root/repo-harness"
   remove_managed_dest "$alias_dest" "$SOURCE_ROOT" canonical-skill
   create_symlink_or_explain "$SOURCE_ROOT" "$alias_dest"
-  echo "[sync-installed] Claude skill alias: $alias_dest -> $SOURCE_ROOT"
+  echo "[sync-installed] $label skill alias: $alias_dest -> $SOURCE_ROOT"
 }
 
-sync_claude_alias_copies() {
-  if [[ -z "$CLAUDE_SKILLS_ROOT" ]]; then
+sync_alias_copies() {
+  local root="$1"
+  local label="$2"
+  if [[ -z "$root" ]]; then
     return 0
   fi
 
-  mkdir -p "$CLAUDE_SKILLS_ROOT"
-  local alias_dest="$CLAUDE_SKILLS_ROOT/repo-harness"
+  mkdir -p "$root"
+  local alias_dest="$root/repo-harness"
   sync_copy "$alias_dest" "$SOURCE_ROOT" canonical-skill
-  echo "[sync-installed] Claude skill copy: $alias_dest"
+  echo "[sync-installed] $label skill copy: $alias_dest"
 }
 
 facade_source_for() {
@@ -275,6 +282,8 @@ provider_skill_for_root() {
     host="codex"
   elif [[ -n "$CLAUDE_SKILLS_ROOT" && "$root" == "$CLAUDE_SKILLS_ROOT" ]]; then
     host="claude"
+  elif [[ -n "$PI_SKILLS_ROOT" && "$root" == "$PI_SKILLS_ROOT" ]]; then
+    host="pi"
   fi
   [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$PROVIDER_PLACEMENTS"
 }
@@ -387,10 +396,11 @@ sync_command_facades() {
   echo "[sync-installed] command facades ($mode): $synced into $root"
 }
 
-bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" remove-dangling-links "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT"
+bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" remove-dangling-links "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT" "$PI_SKILLS_ROOT"
 
 preflight_skill_root "$CODEX_SKILLS_ROOT"
 preflight_skill_root "$CLAUDE_SKILLS_ROOT"
+preflight_skill_root "$PI_SKILLS_ROOT"
 
 canonical_dest="$CODEX_SKILLS_ROOT/repo-harness"
 if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
@@ -400,8 +410,10 @@ if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
   echo "[sync-installed] canonical skill link: $canonical_dest -> $SOURCE_ROOT"
 
   sync_command_facades "$CODEX_SKILLS_ROOT" link
-  sync_claude_alias_links
+  sync_alias_links "$CLAUDE_SKILLS_ROOT" Claude
   sync_command_facades "$CLAUDE_SKILLS_ROOT" link
+  sync_alias_links "$PI_SKILLS_ROOT" Pi
+  sync_command_facades "$PI_SKILLS_ROOT" link
   echo "[sync-installed] OK"
   exit 0
 fi
@@ -410,6 +422,8 @@ sync_copy "$canonical_dest"
 echo "[sync-installed] canonical skill copy: $canonical_dest"
 
 sync_command_facades "$CODEX_SKILLS_ROOT" copy
-sync_claude_alias_copies
+sync_alias_copies "$CLAUDE_SKILLS_ROOT" Claude
 sync_command_facades "$CLAUDE_SKILLS_ROOT" copy
+sync_alias_copies "$PI_SKILLS_ROOT" Pi
+sync_command_facades "$PI_SKILLS_ROOT" copy
 echo "[sync-installed] OK"

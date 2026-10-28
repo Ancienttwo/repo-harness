@@ -99,7 +99,7 @@ export function configureRequiredHerdrSkill(
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);
-    const roots = hosts.map(host => [hostSkillRoot(home, host), hostSkillRoot(canonicalHome, host)]);
+    const roots = hosts.map(host => [hostSkillRoot(home, host, env), hostSkillRoot(canonicalHome, host, env)]);
     // Codex can discover this shared copy as well as its host-specific copy.
     if (hosts.includes("codex") && pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
       roots.push([stagedSkillRoot(home), stagedSkillRoot(canonicalHome)]);

@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
-import { facadesForProfile, hostSkillPlacements, type SkillSurfaceCatalog, type SkillSurfaceProfile } from '../../core/skill-surface/catalog';
+import { facadesForProfile, hostSkillPlacements, SKILL_SURFACE_HOSTS, type SkillSurfaceCatalog, type SkillSurfaceProfile } from '../../core/skill-surface/catalog';
 import { hostSkillRoot, stagedSkillRoot, type SkillHost } from '../../effects/host-skill-roots';
 
 export function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
@@ -44,18 +44,21 @@ export interface SkillProjection {
  * The catalog owns selection. Install ownership and doctor share these paths.
  * PR-A covers Waza staging only. Mermaid retains transaction ownership and
  * stays outside this diagnostic. The Waza provider matches its runtime group.
+ * Pi has no staged entries: Pi reads the staging root itself, and a host copy
+ * would load the same skill twice.
  */
 export function expectedSkillProjections(
   catalog: SkillSurfaceCatalog,
   sourceRoot: string,
   home: string,
   profile: SkillSurfaceProfile,
+  env: Readonly<Record<string, string | undefined>>,
 ): readonly SkillProjection[] {
   const facades = new Set(facadesForProfile(catalog, profile));
   const placements = hostSkillPlacements(catalog, profile);
-  return (['claude', 'codex'] as const).flatMap(host => {
+  return SKILL_SURFACE_HOSTS.flatMap(host => {
     const names = new Set([...facades, ...placements[host]]);
-    const root = hostSkillRoot(home, host);
+    const root = hostSkillRoot(home, host, env);
     const projections: SkillProjection[] = [{ host, name: catalog.router, source: sourceRoot, staged: false,
       destination: join(root, catalog.router) }];
     for (const pkg of catalog.packages) {

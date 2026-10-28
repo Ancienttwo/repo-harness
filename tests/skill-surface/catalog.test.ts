@@ -69,7 +69,7 @@ function computeExpectedProjections(packages: unknown[]): unknown {
   const provisional = { packages: wellFormed } as unknown as SkillSurfaceCatalog;
   const facadesByProfile: Record<string, readonly string[]> = {};
   const externalSkillsByProfile: Record<string, readonly string[]> = {};
-  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[] }> = {};
+  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[]; pi: readonly string[] }> = {};
   for (const profile of SKILL_SURFACE_PROFILES) {
     facadesByProfile[profile] = facadesForProfile(provisional, profile);
     externalSkillsByProfile[profile] = externalSkillsForProfile(provisional, profile);
@@ -478,10 +478,11 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
+      pi: [],
     });
   });
 
@@ -490,6 +491,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(unconditional).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
+      pi: [],
     });
   });
 

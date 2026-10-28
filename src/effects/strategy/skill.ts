@@ -20,7 +20,7 @@ export function projectStrategySkill(opts: { action: 'install' | 'uninstall'; ta
   const home = realpathSync(opts.home ?? process.env.HOME ?? homedir());
   const hosts = (target === 'both' ? ['codex', 'claude'] : [target]) as SkillHost[];
   const projections = hosts.map(host => {
-    const root = hostSkillRoot(home, host);
+    const root = hostSkillRoot(home, host, process.env);
     const parents = [dirname(root), root];
     for (const parent of parents) if (existsSync(parent) && (!lstatSync(parent).isDirectory() || lstatSync(parent).isSymbolicLink())) throw new Error('Refusing unsafe Skill parent');
     const destination = join(root, NAME);

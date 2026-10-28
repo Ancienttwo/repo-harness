@@ -59,7 +59,7 @@ function assertOwnedProjection(destination: string, sourceReal: string): void {
 function preflight(target: ChatgptSkillTarget, home: string, source: string): Projection[] {
   const sourceReal = realpathSync(source);
   return hosts(target).map((host) => {
-    const destination = join(hostSkillRoot(home, host), CHATGPT_CANONICAL_SKILL_NAME);
+    const destination = join(hostSkillRoot(home, host, process.env), CHATGPT_CANONICAL_SKILL_NAME);
     const stat = lstatIfPresent(destination);
     if (!stat) return { host, destination, state: 'missing' };
     assertOwnedProjection(destination, sourceReal);
