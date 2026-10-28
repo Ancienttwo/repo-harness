@@ -1525,6 +1525,64 @@
           }
         },
         {
+          "id": "retired-task-artifact-surfaces",
+          "signal": "stale-task-artifact-surfaces",
+          "action": "remove",
+          "risk": "low",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            "tasks/notes/.gitkeep",
+            "tasks/reviews/.gitkeep",
+            ".claude/templates/review.template.md",
+            ".claude/templates/implementation-notes.template.md",
+            "tasks/todos.md"
+          ],
+          "fingerprints": {
+            "tasks/notes/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tasks/reviews/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ".claude/templates/review.template.md": "sha256:cfd8f4ae3b51e1a574b4a27611e68074a39ac44ee67520d4c77acce2bfe93228",
+            ".claude/templates/implementation-notes.template.md": "sha256:ec6cadb0ac391e8625fdadfb5822dd6a1182a82af52ab6789d72eac7488f42fb",
+            "tasks/todos.md": "sha256:1bd0c1bf8675c1ea311eeac5a1b83a7acfb40bf948333429b6d7be2e55f420a1"
+          },
+          "summary": "Remove projected notes/reviews scaffolds, their template copies and the unedited deferred-goal ledger; keep edited files as user content.",
+          "retiredBy": "9f64b8b6",
+          "historicalFingerprints": {
+            "tasks/notes/.gitkeep": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ],
+            "tasks/reviews/.gitkeep": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ],
+            ".claude/templates/review.template.md": [
+              "sha256:cfd8f4ae3b51e1a574b4a27611e68074a39ac44ee67520d4c77acce2bfe93228",
+              "sha256:cff0ff8f51958a2ce3027e29fda3eb0556b5b02099eb3dbdd0b038544fe32dab",
+              "sha256:1b2482c9b112ff7f0eb1261867eccdabc9c6ed96c46a7fea7356d424acd106e9",
+              "sha256:f20feafc6fd1ccdf5a44f77b28d7aa6b5bec75481877ce6f5d3a6d0bcf93aa44",
+              "sha256:829fb56b592fdebf524b9b594639ca3114914a49d5a90b0cb920fb05e35f281f",
+              "sha256:bb5b69689c2846d797b04a8c994cc73e9350f78aeb57fc90028a86e9baf3be5b",
+              "sha256:1da70f8b96c9acb76c6dc742edf83f6b47321459ea73d547c2953764a82c5cae",
+              "sha256:e0dd3da57c44c76460c114455650e705e9976e0a7083bb9e83c93b962c4bdf89",
+              "sha256:3634a26647de64cef83b608f45c5e5a00ec23af94af398c9a3e3cc68ad15ce5c",
+              "sha256:6859cc9272aa375982d3bfc56679f17261f44afa6955c58eec516266baeeea5e",
+              "sha256:6abe09958aa588ef2c4862c9bb83418fe93dddfb39da6c9cb4fac9a40d80b8cc",
+              "sha256:449c23faf606ec816214319f11e8fa37a53967098542c995b87fd10ada97b0ab",
+              "sha256:9375d673487a1962b9a9efc16759af2494a44a99a9b5e57493ad0cdc48e94843",
+              "sha256:f55b9f67507beb987e241b983d291a60b115190d57b545b0a30b266e8ecfbfda",
+              "sha256:ec771b0489a23487757d5f9231cdadbd1377c9c74be35d0db772f5789559ba32"
+            ],
+            ".claude/templates/implementation-notes.template.md": [
+              "sha256:ec6cadb0ac391e8625fdadfb5822dd6a1182a82af52ab6789d72eac7488f42fb",
+              "sha256:bd89bbed1aba20248a6a2c0128ba216cf63d985293db55f200ea67d01dd1aedc",
+              "sha256:2e3c340325ec1a8538a432868957cfb4c371a12f1910ccf5ca2ece4dabd56a85",
+              "sha256:f0f3a5b3cc8a563e3cd9ce5485986bd647dd15bf1dca947a578e247b9b1ecd80"
+            ],
+            "tasks/todos.md": [
+              "sha256:1bd0c1bf8675c1ea311eeac5a1b83a7acfb40bf948333429b6d7be2e55f420a1"
+            ]
+          }
+        },
+        {
           "id": "custom-claude-hooks-preserve",
           "signal": "custom-claude-hooks",
           "action": "preserve",

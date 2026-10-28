@@ -20,14 +20,23 @@ plan/contract archive command or migrate deleted plans into an archive tree.
 ## Downstream migration
 
 About 14 repositories adopt the workflow contract. This source change does not
-update their installed projections. Use the [operator retirement tool](downstream-task-retirement.md)
-for an explicitly selected local repository. It retires only proven projected
-task artifacts and template copies, including downstream contracts. It removes
-`deferredGoalLedger` from proven old contract projections. Unproven or modified
-files are skipped. It does not scan the fleet or access remotes. Preserve
-`lessonsLog` at `tasks/lessons.md`. Freeze an existing
-todos file with a historical banner; do not convert its checkboxes automatically.
-Record real remaining work in Issues. Preserve uncertain or user-owned files.
+update their installed projections. The operator migrates one selected local
+checkout at a time. Nothing scans the fleet in CI or touches a remote.
+
+1. `repo-harness upgrade --scope project --json` lists the #986 legacy inventory.
+   The `retired-task-artifact-surfaces` action covers `tasks/notes/.gitkeep`,
+   `tasks/reviews/.gitkeep`, `.claude/templates/{review,implementation-notes}.template.md`
+   and an unedited deferred-goal ledger at `tasks/todos.md`.
+2. `repo-harness upgrade --scope project --apply` backs up and removes only
+   files whose bytes match a shipped fingerprint. Edited or unknown files stay
+   as `report` items. `repo-harness upgrade decide --keep <path>` records a keep.
+3. `repo-harness init` refreshes `.ai/harness/workflow-contract.json`; the new
+   projection has no `deferredGoalLedger`.
+
+`tasks/contracts/` and `contract.template.md` stay until #1114. Preserve
+`lessonsLog` at `tasks/lessons.md`. Freeze an edited todos file with a historical
+banner; do not convert its checkboxes automatically. Record real remaining work
+in Issues.
 
 Verify a fresh init and an upgrade: lessons and contracts remain available;
 notes/reviews/example task layouts and todos are not generated. Run archive with

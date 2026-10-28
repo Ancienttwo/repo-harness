@@ -350,6 +350,30 @@ describe('upgrade with real release bytes', () => {
     expect(runUpgrade({ ...opts, cwd: ROOT, scope: 'project', apply: true }).items).toEqual([]);
   }));
 
+  test('retired task artifact projections are removed only when their bytes are proven', () => sandbox((opts) => {
+    // Rendered bytes of the deferredGoalLedger adoption template that init shipped before this retirement.
+    const ledger = ['# Deferred Goal Ledger', '', '> **Status**: Backlog', '> **Updated**: (initial)',
+      '> **Scope**: Medium/long-term goals deferred from active plan execution', '',
+      "Current plan tasks live in the active plan's `## Task Breakdown`.",
+      'Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.',
+      '', '## Deferred Goals', '', '| Goal | Why Deferred | Tradeoff | Revisit Trigger |', '|------|--------------|----------|-----------------|',
+      '| (none) | No deferred medium/long-term goal recorded yet. | Keep the first sprint bounded. | Add a row when a real follow-up is postponed. |', ''].join('\n');
+    const proven = ['tasks/notes/.gitkeep', 'tasks/todos.md'];
+    put(join(opts.cwd, 'tasks/notes/.gitkeep'), '');
+    put(join(opts.cwd, 'tasks/todos.md'), ledger);
+    put(join(opts.cwd, 'tasks/reviews/.gitkeep'), 'user note\n');
+    put(join(opts.cwd, '.claude/templates/review.template.md'), '# Team review\n');
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(result.exitCode).toBe(0);
+    expect([...result.removedPaths].sort()).toEqual(proven.map((path) => join(opts.cwd, path)).sort());
+    for (const path of proven) expect(existsSync(join(opts.cwd, path))).toBe(false);
+    expect(readFileSync(join(opts.cwd, 'tasks/reviews/.gitkeep'), 'utf8')).toBe('user note\n');
+    expect(readFileSync(join(opts.cwd, '.claude/templates/review.template.md'), 'utf8')).toBe('# Team review\n');
+    for (const path of ['tasks/reviews/.gitkeep', '.claude/templates/review.template.md']) {
+      expect(result.items).toContainEqual(expect.objectContaining({ path: join(opts.cwd, path), ownership: 'unowned', action: 'report' }));
+    }
+  }, false));
+
   test('old package dangling links need an exact manifest target', () => sandbox((opts) => {
     const root = join(opts.home, '.codex/skills'); mkdirSync(root, { recursive: true });
     const owned = join(root, 'old-owned'); const unowned = join(root, 'old-user');
