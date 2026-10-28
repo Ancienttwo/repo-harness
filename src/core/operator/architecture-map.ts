@@ -10,7 +10,7 @@
 // strict decoder serves the server before it sends and the browser before it
 // renders.
 
-import { DEV_ACTIVITY_PR_FILES_REASONS, type DevActivityPrFiles, type DevActivitySnapshotV2 } from '../dev-activity/types';
+import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-request-files';
 import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
@@ -55,7 +55,7 @@ export type ArchitectureTestReason = typeof ARCHITECTURE_TEST_REASONS[number];
 export const ARCHITECTURE_PR_LAYER_REASONS = [...ARCHITECTURE_MAP_SIZE_REASONS, 'dev_activity_pending', 'dev_activity_unavailable'] as const;
 export type ArchitecturePullRequestsReason = typeof ARCHITECTURE_PR_LAYER_REASONS[number];
 /** One open PR without impact: gh gave no head commit, or no complete file list. */
-export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS] as const;
+export const ARCHITECTURE_PR_REASONS = ['head_missing', ...PULL_REQUEST_FILES_REASONS] as const;
 export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[number];
 /** archctx exports the decisions with their `appliesTo` nodes; the collector does not read them yet. */
 export const ARCHITECTURE_DECISION_REASON = 'decisions_not_exported' as const;
@@ -355,7 +355,7 @@ export interface ArchitecturePullRequestSourceV1 {
   readonly title: string;
   readonly url: string;
   readonly head_sha: string | null;
-  readonly changed_files: DevActivityPrFiles;
+  readonly changed_files: PullRequestFiles;
 }
 
 /** The open PRs of one repository from the Dev Activity cache; the collector hands it to the map child. */
@@ -370,32 +370,11 @@ export type ArchitecturePullRequestsInput =
   })
   | Gap<ArchitecturePullRequestsReason>;
 
-/**
- * The open PRs of one repository as the board shows them: the user's own PRs
- * (`--author @me`), one per work branch, so a PR from the default branch or a
- * second open PR on one branch is not listed. A repository whose GitHub read is
- * not `ok` has no PR list the map can call complete.
- */
-export function architecturePullRequestsSource(snapshot: DevActivitySnapshotV2, repositoryId: string): ArchitecturePullRequestsSource {
-  if (snapshot.collected_at === null) return { state: 'unavailable', reason: 'dev_activity_pending' };
-  const github = snapshot.repositories.find(entry => entry.repository_id === repositoryId)?.sources.find(source => source.kind === 'github');
-  if (github?.status !== 'ok' || github.observed_at === null) return { state: 'unavailable', reason: 'dev_activity_unavailable' };
-  const pullRequests = snapshot.items.flatMap(item => (item.repository_id === repositoryId && item.pull_request?.state === 'open' && item.pull_request.changed_files !== null
-    ? [{ ...item.pull_request, changed_files: item.pull_request.changed_files }] : []));
-  return {
-    state: 'ok',
-    observed_at: github.observed_at,
-    pull_requests: pullRequests.sort((a, b) => a.number - b.number).map(pr => ({
-      number: pr.number, title: publicDevActivityText(pr.title), url: pr.url, head_sha: pr.head_sha, changed_files: pr.changed_files,
-    })),
-  };
-}
-
 const pullRequestsSource = section({
   observed_at: instant,
   pull_requests: list(object({
     number: positive, title: prose(nonEmpty), url: pullUrl, head_sha: nullable(commit),
-    changed_files: section({ paths: list(repoPath) }, DEV_ACTIVITY_PR_FILES_REASONS),
+    changed_files: section({ paths: list(repoPath) }, PULL_REQUEST_FILES_REASONS),
   })),
 }, ['dev_activity_pending', 'dev_activity_unavailable']);
 
