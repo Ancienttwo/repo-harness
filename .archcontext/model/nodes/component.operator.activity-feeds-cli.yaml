@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.activity-feeds-cli
+kind: component
+name: Setup and Activity Feeds (cli)
+status: active
+parent: component.operator.activity-feeds
+layer: cli
+summary: The cli-layer files of Setup and Activity Feeds. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Setup and Activity Feeds so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/setup-*.ts

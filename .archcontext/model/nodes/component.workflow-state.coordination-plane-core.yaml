@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.coordination-plane-core
+kind: component
+name: Provider Board Observations and Historical Worktree Safety (core)
+status: active
+parent: component.workflow-state.coordination-plane
+layer: core
+summary: The core-layer files of Provider Board Observations and Historical Worktree Safety. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Provider Board Observations and Historical Worktree Safety so layer direction is checked per directory.
+source:
+  include:
+    - src/core/state/coordination-identity.ts
+    - src/core/state/sprint-*.ts
+    - src/core/state/command-outcome.ts
+    - src/core/worktree-*
+    - src/core/state/provider-board.ts

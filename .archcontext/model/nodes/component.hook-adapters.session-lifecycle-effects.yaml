@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.session-lifecycle-effects
+kind: component
+name: Session Lifecycle Handlers (effects)
+status: active
+parent: component.hook-adapters.session-lifecycle
+layer: effects
+summary: The effects-layer files of Session Lifecycle Handlers. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Session Lifecycle Handlers so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/run-summary-retention.ts
+    - src/effects/hook-state-file.ts

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.capability-registry-core
+kind: component
+name: Capability Registry (core)
+status: active
+parent: component.contract-assets.capability-registry
+layer: core
+summary: The core-layer files of Capability Registry. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Capability Registry so layer direction is checked per directory.
+source:
+  include:
+    - src/core/capabilities/**

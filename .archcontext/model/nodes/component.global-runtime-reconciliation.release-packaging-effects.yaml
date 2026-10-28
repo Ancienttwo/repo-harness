@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.release-packaging-effects
+kind: component
+name: Release Packaging (effects)
+status: active
+parent: component.global-runtime-reconciliation.release-packaging
+layer: effects
+summary: The effects-layer files of Release Packaging. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Release Packaging so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/release/**

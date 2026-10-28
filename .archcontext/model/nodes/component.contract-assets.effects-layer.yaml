@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.effects-layer
+kind: component
+name: Contract Assets (effects)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: effects
+summary: The effects-layer files of Contract Assets. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Contract Assets so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/runtime/helper-runner.ts
+    - src/effects/source-projection.ts
+    - src/effects/artifact-retention.ts
+  exclude:
+    - src/effects/runtime/helper-runner.ts
+    - src/effects/source-projection.ts

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.integration-acceptance.primary-core
+kind: component
+name: Integration Acceptance Evidence Plane (core)
+status: active
+parent: component.integration-acceptance.primary
+layer: core
+summary: The core-layer files of Integration Acceptance Evidence Plane. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Integration Acceptance Evidence Plane so layer direction is checked per directory.
+source:
+  include:
+    - src/core/integration/product-acceptance.ts

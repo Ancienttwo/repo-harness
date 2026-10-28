@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.acceptance-review.primary-core
+kind: component
+name: Generic Review Round (core)
+status: active
+parent: component.acceptance-review.primary
+layer: core
+summary: The core-layer files of Generic Review Round. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Generic Review Round so layer direction is checked per directory.
+source:
+  include:
+    - src/core/review/**

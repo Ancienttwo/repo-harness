@@ -24,7 +24,3 @@ source:
     - scripts/heartbeat-triage.sh
     - scripts/check-deploy-sql-order.sh
     - scripts/factor-*.sh
-    - src/effects/runtime/helper-runner.ts
-    - src/cli/commands/run.ts
-    - src/cli/commands/brain.ts
-    - src/cli/commands/brain-root.ts

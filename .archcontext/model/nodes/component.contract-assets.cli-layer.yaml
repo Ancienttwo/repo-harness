@@ -1,0 +1,24 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.cli-layer
+kind: component
+name: Contract Assets (cli)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: cli
+summary: The cli-layer files of Contract Assets. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Contract Assets so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/init.ts
+    - src/cli/commands/capability-context.ts
+    - src/cli/commands/run.ts
+    - src/cli/commands/brain.ts
+    - src/cli/commands/brain-root.ts
+    - src/cli/commands/retention.ts
+  exclude:
+    - src/cli/commands/brain-root.ts
+    - src/cli/commands/brain.ts
+    - src/cli/commands/capability-context.ts
+    - src/cli/commands/init.ts
+    - src/cli/commands/run.ts

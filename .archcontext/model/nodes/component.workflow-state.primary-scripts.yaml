@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.primary-scripts
+kind: component
+name: Effective State Resolver (scripts)
+status: active
+parent: component.workflow-state.primary
+layer: scripts
+summary: The scripts-layer files of Effective State Resolver. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Effective State Resolver so layer direction is checked per directory.
+source:
+  include:
+    - scripts/check-state-boundaries.ts

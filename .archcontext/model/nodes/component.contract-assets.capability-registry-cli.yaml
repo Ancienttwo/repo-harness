@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.capability-registry-cli
+kind: component
+name: Capability Registry (cli)
+status: active
+parent: component.contract-assets.capability-registry
+layer: cli
+summary: The cli-layer files of Capability Registry. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Capability Registry so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/capability-context.ts

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.strategy-reflection.primary-cli
+kind: component
+name: Strategy Context Collector (cli)
+status: active
+parent: component.strategy-reflection.primary
+layer: cli
+summary: The cli-layer files of Strategy Context Collector. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Strategy Context Collector so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/strategy.ts

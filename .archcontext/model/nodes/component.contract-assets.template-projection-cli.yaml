@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.template-projection-cli
+kind: component
+name: Template Projection (cli)
+status: active
+parent: component.contract-assets.template-projection
+layer: cli
+summary: The cli-layer files of Template Projection. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Template Projection so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/init.ts

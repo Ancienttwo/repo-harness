@@ -1,0 +1,57 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.core-layer
+kind: component
+name: Operator Board (core)
+status: active
+parent: capability.runtime-harness.operator
+layer: core
+summary: The core-layer files of Operator Board. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Operator Board so layer direction is checked per directory.
+source:
+  include:
+    - src/core/tools/catalog.ts
+    - src/core/operator/**
+    - src/core/architecture/module-view.ts
+    - src/core/setup/**
+    - src/core/dev-activity/**
+  exclude:
+    - src/core/architecture/module-view.ts
+    - src/core/dev-activity/architecture.ts
+    - src/core/dev-activity/brief.ts
+    - src/core/dev-activity/decode.ts
+    - src/core/dev-activity/projection.ts
+    - src/core/dev-activity/types.ts
+    - src/core/operator/admitted-task-activity.ts
+    - src/core/operator/admitted-task-context.ts
+    - src/core/operator/agent-config.ts
+    - src/core/operator/agents-settings.ts
+    - src/core/operator/architecture-map.ts
+    - src/core/operator/architecture.ts
+    - src/core/operator/bot-access.ts
+    - src/core/operator/doc-citation.ts
+    - src/core/operator/doc-session-events.ts
+    - src/core/operator/docs.ts
+    - src/core/operator/execution-state.ts
+    - src/core/operator/fleet-snapshot.ts
+    - src/core/operator/herdr-pin.ts
+    - src/core/operator/notify-status.ts
+    - src/core/operator/observation-identity.ts
+    - src/core/operator/organization-snapshot.ts
+    - src/core/operator/planning-snapshot.ts
+    - src/core/operator/public-text.ts
+    - src/core/operator/pull-request-files.ts
+    - src/core/operator/repository-snapshot.ts
+    - src/core/operator/runtime-capture-decoders.ts
+    - src/core/operator/runtime-capture.ts
+    - src/core/operator/runtime-status.ts
+    - src/core/operator/task-activity.ts
+    - src/core/operator/task-diff.ts
+    - src/core/operator/task-history.ts
+    - src/core/operator/tests.ts
+    - src/core/setup/cli-inventory.ts
+    - src/core/setup/cli-seed.v1.json
+    - src/core/setup/decode.ts
+    - src/core/setup/hook-usage.ts
+    - src/core/setup/projection.ts
+    - src/core/setup/types.ts

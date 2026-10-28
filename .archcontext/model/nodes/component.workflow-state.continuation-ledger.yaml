@@ -16,5 +16,3 @@ source:
     - src/core/state/attempt-ledger.ts
     - src/core/state/no-progress.ts
     - src/core/state/project-continuation-envelope.ts
-    - src/effects/state/attempt-ledger-store.ts
-    - src/effects/state/resolve-continuation-envelope.ts

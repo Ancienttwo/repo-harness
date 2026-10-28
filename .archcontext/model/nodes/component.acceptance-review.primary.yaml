@@ -15,12 +15,8 @@ responsibilities:
   - "Reserve bounded pre-prompt inbox context in the owner without delivery; consume it read-only in the host, record exact input-scoped accepted OAR proof, then commit delivery in the owner. Missing or unknown acceptance stays pending; recovery repeats the ledger commit without resending the prompt."
 source:
   include:
-    - "src/core/review/**"
-    - "src/effects/review/**"
-    - "src/cli/commands/review.ts"
-    - "scripts/acceptance-receipt.ts"
-    - "scripts/change-assessment.ts"
-    - "src/effects/admission/admission-store.ts"
-    - "src/effects/admission/admission-source.ts"
-    - "src/effects/admission/issue-goal.ts"
-    - "src/effects/admission/control-admission.ts"
+    - src/effects/review/**
+    - src/effects/admission/admission-store.ts
+    - src/effects/admission/admission-source.ts
+    - src/effects/admission/issue-goal.ts
+    - src/effects/admission/control-admission.ts

@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.repo-policy-registry-effects
+kind: component
+name: Config Policy and Repository Registry (effects)
+status: active
+parent: component.mcp-sidecar.repo-policy-registry
+layer: effects
+summary: The effects-layer files of Config Policy and Repository Registry. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Config Policy and Repository Registry so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/repo-registry.ts
+    - src/effects/repo-harness-home.ts
+    - src/effects/bot-registry.ts
+    - src/effects/runtime/os-account-home.ts

@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.general-repo-access.tests-layer
+kind: component
+name: General Repository Access (tests)
+status: active
+parent: capability.runtime-mcp.general-repo-access
+layer: tests
+summary: The tests-layer files of General Repository Access. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the tests-layer source files of General Repository Access so layer direction is checked per directory.
+source:
+  include:
+    - tests/cli/mcp-reader-tools.test.ts
+    - tests/cli/mcp-codegraph-contract.test.ts
+    - tests/cli/mcp-policy.test.ts
+    - tests/cli/mcp-tools.test.ts

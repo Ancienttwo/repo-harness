@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.activity-feeds-effects
+kind: component
+name: Setup and Activity Feeds (effects)
+status: active
+parent: component.operator.activity-feeds
+layer: effects
+summary: The effects-layer files of Setup and Activity Feeds. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Setup and Activity Feeds so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/setup/**
+    - src/effects/dev-activity/**

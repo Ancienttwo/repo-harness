@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.publication.primary-cli
+kind: component
+name: PR Readiness and Integration Evidence (cli)
+status: active
+parent: component.publication.primary
+layer: cli
+summary: The cli-layer files of PR Readiness and Integration Evidence. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of PR Readiness and Integration Evidence so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/publication.ts

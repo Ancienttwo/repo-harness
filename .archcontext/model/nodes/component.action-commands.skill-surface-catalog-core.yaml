@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.action-commands.skill-surface-catalog-core
+kind: component
+name: Skill Surface Catalog (core)
+status: active
+parent: component.action-commands.skill-surface-catalog
+layer: core
+summary: The core-layer files of Skill Surface Catalog. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Skill Surface Catalog so layer direction is checked per directory.
+source:
+  include:
+    - src/core/skill-surface/**

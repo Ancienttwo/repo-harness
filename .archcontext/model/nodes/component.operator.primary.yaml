@@ -17,7 +17,6 @@ responsibilities:
 source:
   include:
     - src/effects/operator/**
-    - src/cli/commands/operator.ts
     - assets/operator/**
     - src/effects/terminal/herdr-observation.ts
   exclude:

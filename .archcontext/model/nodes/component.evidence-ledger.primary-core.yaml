@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.evidence-ledger.primary-core
+kind: component
+name: Evidence Event Store (core)
+status: active
+parent: component.evidence-ledger.primary
+layer: core
+summary: The core-layer files of Evidence Event Store. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Evidence Event Store so layer direction is checked per directory.
+source:
+  include:
+    - src/core/evidence/**

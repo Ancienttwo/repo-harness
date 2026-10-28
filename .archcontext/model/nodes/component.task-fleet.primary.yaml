@@ -11,6 +11,4 @@ responsibilities:
   - "Join explicit provider PR readiness, admitted inbox, feedback and runtime evidence with bounded concurrency, cancellation, revision comparison and per-card failure containment."
 source:
   include:
-    - "src/core/fleet/board.ts"
-    - "src/effects/fleet/board.ts"
-    - "src/cli/commands/fleet.ts"
+    - src/cli/commands/fleet.ts

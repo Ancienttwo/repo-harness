@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.planning-helpers-effects
+kind: component
+name: Planning Helpers (effects)
+status: active
+parent: component.contract-assets.planning-helpers
+layer: effects
+summary: The effects-layer files of Planning Helpers. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Planning Helpers so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/runtime/helper-runner.ts

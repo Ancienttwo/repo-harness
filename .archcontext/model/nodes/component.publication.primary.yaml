@@ -12,8 +12,6 @@ responsibilities:
   - "Provide provider merge proof to exact worktree cleanup and product integration consumers."
 source:
   include:
-    - "src/core/publication/**"
-    - "src/effects/publication/merge-readiness.ts"
-    - "src/cli/commands/publication.ts"
+    - src/core/publication/**
   exclude:
-    - "src/core/publication/feedback.ts"
+    - src/core/publication/feedback.ts

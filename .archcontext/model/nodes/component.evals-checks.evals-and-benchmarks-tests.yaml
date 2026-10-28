@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.evals-and-benchmarks-tests
+kind: component
+name: Evals And Benchmarks (tests)
+status: active
+parent: component.evals-checks.evals-and-benchmarks
+layer: tests
+summary: The tests-layer files of Evals And Benchmarks. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the tests-layer source files of Evals And Benchmarks so layer direction is checked per directory.
+source:
+  include:
+    - evals/**

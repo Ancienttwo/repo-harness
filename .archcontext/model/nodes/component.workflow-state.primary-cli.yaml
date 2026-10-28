@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.primary-cli
+kind: component
+name: Effective State Resolver (cli)
+status: active
+parent: component.workflow-state.primary
+layer: cli
+summary: The cli-layer files of Effective State Resolver. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Effective State Resolver so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/state.ts

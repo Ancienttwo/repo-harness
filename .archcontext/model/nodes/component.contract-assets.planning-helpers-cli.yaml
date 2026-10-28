@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.planning-helpers-cli
+kind: component
+name: Planning Helpers (cli)
+status: active
+parent: component.contract-assets.planning-helpers
+layer: cli
+summary: The cli-layer files of Planning Helpers. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Planning Helpers so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/run.ts
+    - src/cli/commands/brain.ts
+    - src/cli/commands/brain-root.ts

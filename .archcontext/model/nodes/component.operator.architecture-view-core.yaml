@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.architecture-view-core
+kind: component
+name: Architecture View (core)
+status: active
+parent: component.operator.architecture-view
+layer: core
+summary: The core-layer files of Architecture View. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Architecture View so layer direction is checked per directory.
+source:
+  include:
+    - src/core/architecture/module-view.ts

@@ -13,15 +13,9 @@ responsibilities:
   - Remove retired repo-harness surfaces through the upgrade command with backups.
 source:
   include:
-    - "src/cli/commands/global-runtime.ts"
-    - "src/cli/commands/candidate-reconciliation.ts"
-    - "src/cli/runtime/**"
-    - "src/effects/runtime/protected-helper-platform.ts"
-    - "src/effects/skill-tree-integrity.ts"
-    - "src/effects/host-skill-roots.ts"
-    - "src/cli/commands/upgrade.ts"
-    - "src/effects/upgrade/**"
-    - "scripts/check-managed-runtime.ts"
-    - "scripts/sync-codex-installed-copies.sh"
-    - "install.sh"
-    - "install.ps1"
+    - src/effects/runtime/protected-helper-platform.ts
+    - src/effects/skill-tree-integrity.ts
+    - src/effects/host-skill-roots.ts
+    - src/effects/upgrade/**
+    - install.sh
+    - install.ps1

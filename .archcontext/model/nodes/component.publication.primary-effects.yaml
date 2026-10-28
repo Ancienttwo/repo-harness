@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.publication.primary-effects
+kind: component
+name: PR Readiness and Integration Evidence (effects)
+status: active
+parent: component.publication.primary
+layer: effects
+summary: The effects-layer files of PR Readiness and Integration Evidence. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of PR Readiness and Integration Evidence so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/publication/merge-readiness.ts

@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.acceptance-review.primary-scripts
+kind: component
+name: Generic Review Round (scripts)
+status: active
+parent: component.acceptance-review.primary
+layer: scripts
+summary: The scripts-layer files of Generic Review Round. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Generic Review Round so layer direction is checked per directory.
+source:
+  include:
+    - scripts/acceptance-receipt.ts
+    - scripts/change-assessment.ts

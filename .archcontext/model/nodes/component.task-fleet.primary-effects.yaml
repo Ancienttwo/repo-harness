@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.task-fleet.primary-effects
+kind: component
+name: Fleet Task Observations and Board (effects)
+status: active
+parent: component.task-fleet.primary
+layer: effects
+summary: The effects-layer files of Fleet Task Observations and Board. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Fleet Task Observations and Board so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/fleet/board.ts
