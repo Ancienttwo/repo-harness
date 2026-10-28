@@ -472,6 +472,8 @@ describe('architecture map', () => {
     expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
     // Every node is in the model's one declared layer, so the canvas draws one labelled band.
     expect([...document.querySelectorAll('.architecture-map__band')].map(item => item.textContent)).toEqual(['core']);
+    // A banded map opens at a readable zoom on its top band, not fitted to the whole map.
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
     expect(document.querySelector('.architecture-map-view')?.textContent).toContain(COMMIT);
     // The base map has every source, so it states no gap. A part of the open layer that archctx
     // reports as unknown is stated inside that layer's summary, not as a base-map gap.
@@ -498,6 +500,7 @@ describe('architecture map', () => {
     await settle();
     expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')])).toEqual([['layer_order', 'model_layers_undeclared']]);
     expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).not.toContain('scale(0.85)');
     await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
     await settle();
     expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');

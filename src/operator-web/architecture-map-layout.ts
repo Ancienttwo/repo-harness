@@ -43,6 +43,8 @@ export interface MapLayoutEdge {
 export interface MapLayoutBand {
   /** null: top-level nodes that the model gives no layer. */
   readonly layer: string | null;
+  /** Left edge of the band's leftmost node. */
+  readonly x: number;
   readonly y: number;
   readonly height: number;
 }
@@ -162,7 +164,7 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   const bands = used.map(value => {
     const rows = top.filter(node => band.get(node.id) === value).map(node => placed.get(node.id)!);
     const y = Math.min(...rows.map(box => box.y));
-    return { layer: order![value] ?? null, y, height: Math.max(...rows.map(box => box.y + box.height)) - y };
+    return { layer: order![value] ?? null, x: Math.min(...rows.map(box => box.x)), y, height: Math.max(...rows.map(box => box.y + box.height)) - y };
   });
 
   const right = Math.max(0, ...nodes.map(node => node.x + node.width));

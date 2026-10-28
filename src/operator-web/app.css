@@ -210,7 +210,7 @@
   .architecture-map__group { @apply bg-kumo-recessed; }
   .architecture-map__group-title { @apply flex items-baseline justify-between gap-2 overflow-hidden px-3 pt-2; }
   .architecture-map__meta { @apply truncate text-kumo-subtle; }
-  .architecture-map__band { @apply pointer-events-none absolute left-0 top-0 flex items-end border-b border-dashed pb-1 pl-6 font-mono text-xs font-semibold uppercase tracking-wide text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-map__band { @apply pointer-events-none absolute left-0 top-0 flex items-end border-b border-dashed pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-map__lines { @apply font-mono; }
   [data-kind="external-system"].architecture-map__box { border-style: dashed; }
   .architecture-map__box[data-selected], .architecture-map__group[data-selected] { border-width: 2px; border-color: var(--rh-accent); }

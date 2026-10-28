@@ -134,6 +134,13 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
 
+/**
+ * Zoom of the first view of a banded map: a 13 px title shows at 11 px. The whole map of a
+ * real model is several canvases wide, so the first view starts at the top band's leftmost
+ * node and its label; Fit shows the whole map.
+ */
+const MAP_READABLE_ZOOM = 0.85;
+
 /** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
 const MAP_BAND_LABEL = 28;
 
@@ -141,7 +148,7 @@ const MAP_BAND_LABEL = 28;
 function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: OperatorTranslate }) {
   return <ViewportPortal>
     {layout.bands.map(band => <div key={band.layer ?? ''} className="architecture-map__band" data-band={band.layer ?? ''}
-      style={{ transform: `translate(0px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width, height: MAP_BAND_LABEL }}>
+      style={{ transform: `translate(${band.x}px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width - band.x, height: MAP_BAND_LABEL }}>
       {band.layer ?? t('architecture.map.unlayered')}
     </div>)}
   </ViewportPortal>;
@@ -292,6 +299,11 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  const firstView = useMemo(() => {
+    const top = layout.bands[0];
+    if (top === undefined) return undefined;
+    return { x: -(top.x - 24) * MAP_READABLE_ZOOM, y: -(top.y - MAP_BAND_LABEL - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+  }, [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
 
   const nodes = useMemo<MapNode[]>(() => layout.nodes.map(item => {
@@ -359,7 +371,8 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        fitView
+        fitView={firstView === undefined}
+        {...(firstView === undefined ? {} : { defaultViewport: firstView })}
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
