@@ -1,7 +1,7 @@
 import { decodeNativeRuntimeObservation, runtimeCaptureId, RUNTIME_CAPTURE_MAX_OBSERVATIONS, type NativeRuntimeObservation, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from './runtime-capture';
 
 /** An observation projection. It has no task transition authority. */
-export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v4' as const;
+export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v5' as const;
 export const RUNTIME_STALE_AFTER_MS = 300_000;
 export const RUNTIME_LIMIT = 512;
 export const NATIVE_RUNTIME_SOURCE_LIMIT = 8;
@@ -48,13 +48,18 @@ export interface RuntimePaneObservation {
   reason: BlockReason; changed_at: string | null;
 }
 export interface RuntimePaneBadge extends RuntimePaneObservation { freshness: RuntimeBadge['freshness'] }
+export interface RuntimeUnavailableReason {
+  code: 'herdr_version_mismatch';
+  expected: { version: string; protocol: number; revision: string };
+  actual: { version: string | null; protocol: number | null };
+}
 export interface RuntimeOverlay {
-  projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable';
+  projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable'; reason: RuntimeUnavailableReason | null;
   observed_at: string | null; source_epoch: number; program_status: 'unsupported' | 'v1';
   unclaimed: number; badges: RuntimeBadge[]; pane_observations: RuntimePaneBadge[]; native_sources: NativeRuntimeSourceSummary[];
 }
-export function unavailableRuntimeOverlay(epoch = 0): RuntimeOverlay {
-  return { projection_version: RUNTIME_OVERLAY_VERSION, status: 'unavailable', observed_at: null,
+export function unavailableRuntimeOverlay(epoch = 0, reason: RuntimeUnavailableReason | null = null): RuntimeOverlay {
+  return { projection_version: RUNTIME_OVERLAY_VERSION, status: 'unavailable', reason, observed_at: null,
     source_epoch: epoch, program_status: 'unsupported', unclaimed: 0, badges: [], pane_observations: [], native_sources: [] };
 }
 function record(value: unknown): Record<string, unknown> {
@@ -112,10 +117,26 @@ export function decodeRuntimePaneObservation(value: unknown): RuntimePaneObserva
   return { scope: 'pane', source: 'osc7501', pane, binding, source_epoch: runtimeInteger(v.source_epoch), revision: runtimeInteger(v.revision),
     state: v.state as RuntimePaneObservation['state'], reason: v.reason as BlockReason, changed_at: runtimeTime(v.changed_at) };
 }
+function decodeRuntimeUnavailableReason(value: unknown): RuntimeUnavailableReason | null {
+  if (value === null) return null;
+  const reason = record(value); exact(reason, ['code','expected','actual']);
+  if (reason.code !== 'herdr_version_mismatch') throw new Error('runtime_unavailable_reason_invalid');
+  const expected = record(reason.expected), actual = record(reason.actual);
+  exact(expected, ['version','protocol','revision']); exact(actual, ['version','protocol']);
+  const version = (value: unknown): string => {
+    if (typeof value !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/.test(value)) throw new Error('runtime_version_invalid');
+    return value;
+  };
+  if (typeof expected.revision !== 'string' || !/^[a-f0-9]{40}$/.test(expected.revision)) throw new Error('runtime_revision_invalid');
+  return { code: 'herdr_version_mismatch', expected: { version: version(expected.version), protocol: runtimeInteger(expected.protocol), revision: expected.revision },
+    actual: { version: actual.version === null ? null : version(actual.version), protocol: actual.protocol === null ? null : runtimeInteger(actual.protocol) } };
+}
 export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   const v = record(value);
-  exact(v, ['projection_version','status','observed_at','source_epoch','program_status','unclaimed','badges','pane_observations','native_sources']);
+  exact(v, ['projection_version','status','reason','observed_at','source_epoch','program_status','unclaimed','badges','pane_observations','native_sources']);
   if (v.projection_version !== RUNTIME_OVERLAY_VERSION || !['ready','unavailable'].includes(v.status as string) || !['unsupported','v1'].includes(v.program_status as string) || !Array.isArray(v.badges) || !Array.isArray(v.pane_observations) || v.badges.length + v.pane_observations.length > RUNTIME_LIMIT || !Array.isArray(v.native_sources) || v.native_sources.length > NATIVE_RUNTIME_SOURCE_LIMIT) throw new Error('runtime_overlay_invalid');
+  const reason = decodeRuntimeUnavailableReason(v.reason);
+  if (reason !== null && (v.status !== 'unavailable' || v.native_sources.length)) throw new Error('runtime_unavailable_reason_invalid');
   const epoch = runtimeInteger(v.source_epoch), seen = new Set<string>();
   const badges = v.badges.map(raw => {
     const b = record(raw);
@@ -152,7 +173,7 @@ export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
       freshness: s.freshness as NativeRuntimeSourceSummary['freshness'], observations };
   });
   if (native_sources.length && (badges.length || pane_observations.length || v.program_status !== 'unsupported' || v.unclaimed !== 0)) throw new Error('runtime_mode_conflict');
-  return { projection_version: RUNTIME_OVERLAY_VERSION, status: v.status as RuntimeOverlay['status'], observed_at,
+  return { projection_version: RUNTIME_OVERLAY_VERSION, status: v.status as RuntimeOverlay['status'], reason, observed_at,
     source_epoch: epoch, program_status: v.program_status as RuntimeOverlay['program_status'], unclaimed: runtimeInteger(v.unclaimed), badges, pane_observations, native_sources };
 }
 /** Only current, unique dispatch-to-pane bindings can claim an observation. */
@@ -204,6 +225,6 @@ export function projectRuntimeOverlay(bindings: readonly RuntimeIdentity[], obse
     if (paneConflicts.has(key)) { unclaimed++; continue; }
     if (observation.state !== 'clear') pane_observations.push({ ...observation, freshness });
   }
-  return decodeRuntimeOverlay({ projection_version: RUNTIME_OVERLAY_VERSION, status: connected ? 'ready' : 'unavailable', observed_at: observedAt,
+  return decodeRuntimeOverlay({ projection_version: RUNTIME_OVERLAY_VERSION, status: connected ? 'ready' : 'unavailable', reason: null, observed_at: observedAt,
     source_epoch: epoch, program_status: program, unclaimed, badges, pane_observations, native_sources: [] });
 }

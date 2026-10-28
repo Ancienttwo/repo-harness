@@ -4,7 +4,7 @@ import { runtimeId, unavailableRuntimeOverlay, NATIVE_RUNTIME_SOURCE_LIMIT, type
 import { runtimeCaptureId } from '../../core/operator/runtime-capture';
 import { createHerdrRuntimeTransport } from './herdr-runtime-transport';
 import { configureRuntimeSource } from './runtime-source';
-import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver } from './runtime-status';
+import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver, runtimeUnavailableReason } from './runtime-status';
 import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from './native-runtime-source';
 import { HERDR_OBSERVATION_REVISION, validateObservationEndpoint } from '../terminal/herdr-observation';
 
@@ -56,6 +56,7 @@ export async function startRuntimeService(path: string) {
     const timer = setInterval(() => { void observer.refresh(); }, 30_000); timer.unref();
     return { read: observer.read, refresh: observer.refresh, close: () => { clearInterval(timer); observer.stop(); } };
   }
+  let unavailable = unavailableRuntimeOverlay();
   let closed = false, pending: Promise<void> | null = null;
   let observer: ReturnType<typeof createRuntimeStatusObserver> | null = null;
   let transport: ReturnType<typeof createHerdrRuntimeTransport> | null = null;
@@ -69,14 +70,18 @@ export async function startRuntimeService(path: string) {
             bindings: async () => [] });
           if (closed) { transport.close(); return; }
           observer = createRuntimeStatusObserver(source); await observer.start();
-          if (observer.read().observed_at === null) { observer.stop(); transport.close(); observer = null; }
+          const initial = observer.read();
+          if (initial.observed_at === null) { unavailable = initial; observer.stop(); transport.close(); observer = null; }
         } else await observer.refresh();
-      } catch { transport?.close(); observer?.stop(); observer = null; }
+      } catch (error) {
+        unavailable = unavailableRuntimeOverlay(0, runtimeUnavailableReason(error));
+        transport?.close(); observer?.stop(); observer = null;
+      }
     })().finally(() => { pending = null; });
     return pending;
   };
   await refresh();
   const timer = setInterval(() => { void refresh(); }, 30_000); timer.unref();
-  return { read: (): RuntimeOverlay => observer?.read() ?? unavailableRuntimeOverlay(),
+  return { read: (): RuntimeOverlay => observer?.read() ?? structuredClone(unavailable),
     close: () => { closed = true; clearInterval(timer); observer?.stop(); transport?.close(); }, refresh };
 }

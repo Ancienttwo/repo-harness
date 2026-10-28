@@ -56,6 +56,7 @@ async function fixture() {
     setProgramCapability: (value: unknown) => { programCapability = value; },
     setVersion: (v: string, p = 22) => { version = v; protocol = p; }, setPanes: (p: unknown[]) => { panes = p; }, wrongId: () => { wrongId = true; }, globals: () => globals,
     event: (event: string) => { for (const s of subscriptions) if (!s.socket.destroyed) s.socket.write(JSON.stringify({ event, data: { private: '/private/path' } }) + '\n'); },
+    disconnect: () => { subscriptions.find(s => !s.socket.destroyed && s.types.some(t => t.type === 'pane.created'))!.socket.destroy(); },
     lose: () => { const s = subscriptions.find(s => !s.socket.destroyed && s.types.some(t => t.type === 'pane.created'))!; s.socket.write(JSON.stringify({ id: s.id, error: { code: 'events_lost', message: 'private fixture error' } }) + '\n'); },
     close: async () => { for (const socket of sockets) socket.destroy(); await new Promise<void>(resolve => server.close(() => resolve())); rmSync(root, { recursive: true, force: true }); } };
 }
@@ -81,7 +82,7 @@ describe('official Herdr socket observation', () => {
       owner = await observerFor(f); server = await startOperatorServer({ port: 0, read_runtime_status: owner.observer.read });
       const before = f.requests.length;
       const body = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
-      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
       expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toMatch(/private|title|cwd|msg|app|progress/);
       for (const kind of ['permission','question','auth'] as const) {
         envelope.revision++; f.setPanes([{ ...pane, program_status: { ...envelope, record: { state: 'blocked', kind } } }]); f.event('pane_updated');
@@ -199,6 +200,40 @@ describe('official Herdr socket observation', () => {
     } finally { owner.close(); await f.close(); }
   });
 
+  test('a reconnect version mismatch reaches the overlay and aligned recovery clears it', async () => {
+    const f = await fixture(), owner = createHerdrRuntimeTransport(f.endpoint, 'fixture', 'fixture');
+    let mismatch!: () => void, reconnected!: () => void;
+    const mismatchObserved = new Promise<void>(resolve => { mismatch = resolve; });
+    const reconnectObserved = new Promise<void>(resolve => { reconnected = resolve; });
+    const subscribe = owner.transport.subscribe;
+    owner.transport.subscribe = (events, invalidate, signal) => subscribe(events, (event, error) => {
+      invalidate(event, error);
+      if (error instanceof HerdrVersionMismatchError) mismatch();
+      if (event === 'reconnect') reconnected();
+    }, signal);
+    const source = await configureRuntimeSource({ ...f.endpoint, source_host: 'fixture', herdr_session: 'fixture', source_revision: HERDR_OBSERVATION_REVISION,
+      transport: owner.transport, bindings: async epoch => [{ ...identity, source_epoch: epoch }] });
+    const observer = createRuntimeStatusObserver(source);
+    try {
+      await observer.start();
+      const initialEpoch = observer.read().source_epoch, globals = f.globals();
+      expect(observer.read()).toMatchObject({ status: 'ready', reason: null });
+      f.setVersion('0.9.3', 23); f.disconnect();
+      await mismatchObserved;
+      expect(observer.read()).toMatchObject({ status: 'unavailable', reason: { code: 'herdr_version_mismatch',
+        expected: { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION },
+        actual: { version: '0.9.3', protocol: 23 } } });
+      expect(JSON.stringify(observer.read())).not.toMatch(/private|message|stack/);
+      expect(f.globals()).toBe(globals);
+      f.setVersion(HERDR_OBSERVATION_VERSION, HERDR_OBSERVATION_PROTOCOL);
+      await reconnectObserved; await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'ready', reason: null });
+      expect(observer.read().source_epoch).toBeGreaterThan(initialEpoch);
+      expect(observer.read().badges[0].state).toBe('working');
+      expect(f.globals()).toBeGreaterThan(globals);
+    } finally { observer.stop(); owner.close(); await f.close(); }
+  }, 10_000);
+
   test('lost events resubscribe before resnapshot and advance source epoch; reused panes stay unclaimed', async () => {
     const f = await fixture(), owner = await observerFor(f);
     try {
@@ -219,7 +254,7 @@ describe('official Herdr socket observation', () => {
     try {
       const before = f.requests.length;
       const response = await fetch(`${server.url}/api/v1/runtime/status`), body = await response.json();
-      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready', unclaimed: 1, badges: [], pane_observations: [] });
+      expect(body).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', status: 'ready', unclaimed: 1, badges: [], pane_observations: [] });
       expect(f.requests.length).toBe(before); expect(JSON.stringify(body)).not.toContain('/private/');
       expect(parseOperatorServeOptions({ runtimeStatusConfig: path }).runtime_status_config).toBe(path);
       expect(() => parseOperatorServeOptions({ runtimeStatusConfig: 'relative.json' })).toThrow();
