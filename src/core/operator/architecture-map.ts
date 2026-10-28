@@ -57,13 +57,13 @@ export type ArchitecturePullRequestsReason = typeof ARCHITECTURE_PR_LAYER_REASON
 /** One open PR without impact: gh gave no head commit, or no complete file list. */
 export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS] as const;
 export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[number];
-/** archctx 0.9.3 does not export the nodes a decision applies to (Ancienttwo/arch-context#407). */
+/** archctx exports the decisions with their `appliesTo` nodes; the collector does not read them yet. */
 export const ARCHITECTURE_DECISION_REASON = 'decisions_not_exported' as const;
-/** archctx 0.9.3 does not map a change to the flow steps it reaches (Ancienttwo/arch-context#409). */
+/** `archctx impact` reads the flow steps a change reaches; the collector does not call it yet. */
 export const ARCHITECTURE_FLOW_STEP_REASON = 'change_impact_not_exported' as const;
-/** `archctx flows check` runs `codegraph sync` on an existing index; the collector never writes the user's index. */
+/** `archctx flows check` runs `codegraph sync` unless it is given `--no-sync`; the collector runs neither. */
 export const ARCHITECTURE_FLOWS_REASON = 'flows_check_writes_index' as const;
-/** archctx 0.9.3 sorts layers by name and has no layer direction rule; arch-context#408 is not in a release yet. */
+/** archctx orders layers; the collector does not evaluate the layer direction rule yet. */
 export const ARCHITECTURE_LAYER_DIRECTION_REASON = 'layer_order_not_released' as const;
 /** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
 export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
@@ -74,7 +74,7 @@ export interface ArchitectureMapNodeV1 {
   readonly kind: string;
   readonly name: string;
   readonly status: string;
-  /** The model's layer name; archctx 0.9.3 orders layers by name only. */
+  /** The model's layer name; the map shows it as a node attribute and does not order by layer. */
   readonly layer: string | null;
   readonly parent: string | null;
   readonly summary: string;
