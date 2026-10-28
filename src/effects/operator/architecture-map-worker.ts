@@ -9,16 +9,23 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { NativeContextExportV1 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, decodeDocsAnchorsReport, decodeFlowSelectorCheck } from '../../core/architecture/projection';
+import type { NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
+import {
+  ARCHCTX_REQUIRED_VERSION,
+  decodeArchitectureDebtReport,
+  decodeDocsAnchorsReport,
+  decodeFlowSelectorCheck,
+  decodeRefImpact,
+  type RefImpactSource,
+} from '../../core/architecture/projection';
 import {
   ARCHITECTURE_DEBT_KINDS,
-  architectureModelDelta,
   archctxRefusal,
+  architectureImpact,
   decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
   type ArchctxRefusalV1,
-  type ArchitectureChangesInput,
+  type ArchitectureChangesLayerV1,
   type ArchitectureDebtItemV1,
   type ArchitectureDecisionsLayerV1,
   type ArchitectureMapDependencyInput,
@@ -29,14 +36,17 @@ import {
   type ArchitectureMapRelationV1,
   type ArchitectureMapSizeInput,
   type ArchitectureMapV1,
-  type ArchitecturePullRequestsInput,
+  type ArchitectureModelChangeV1,
+  type ArchitecturePullRequestImpactV1,
+  type ArchitecturePullRequestSourceV1,
+  type ArchitecturePullRequestsLayerV1,
   type ArchitecturePullRequestsSource,
   type ArchitectureViolationReason,
   type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
 import { isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
-import { readArchitectureNativeContext, runPackageLocalArchctxJson } from '../architecture/archctx-provider';
+import { runPackageLocalArchctxJson } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { publicValue } from './architecture';
@@ -85,10 +95,11 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
 }
 
 /**
- * What archctx reads besides the commit. `archctx resolve`, `deps`, `debt` and
- * `docs anchors` read the worktree model, and the CodeGraph
- * index covers the working tree, so their answers describe the commit only while
- * HEAD names it and the model, or the whole tree, is clean. null: git could not answer.
+ * What archctx reads besides the commit. `archctx resolve`, `impact
+ * --paths-from`, `deps`, `debt`, `docs anchors` and `flows check` read the
+ * worktree model, and the CodeGraph index covers the working tree, so their
+ * answers describe the commit only while HEAD names it and the model, or the
+ * whole tree, is clean. null: git could not answer.
  */
 export interface CheckoutState {
   readonly head: string | null;
@@ -149,19 +160,22 @@ export function recheckCheckout(
   };
 }
 
-/** The same end-of-cycle check for the layers: today's changes and PR owners read the model, each violation check the whole tree. */
+/**
+ * The same end-of-cycle check for the layers: PR impact reads the worktree
+ * model, each violation check the whole tree. Today's changes read only
+ * commits, so a checkout cannot move them.
+ */
 export function recheckLayers(
   commit: string,
   before: CheckoutState,
   after: CheckoutState,
-  read: { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations },
-): { readonly changes: ArchitectureChangesInput; readonly pull_requests: ArchitecturePullRequestsInput; readonly violations: CollectedViolations } {
+  read: { readonly pull_requests: ArchitecturePullRequestsLayerV1; readonly violations: CollectedViolations },
+): { readonly pull_requests: ArchitecturePullRequestsLayerV1; readonly violations: CollectedViolations } {
   const moved = before.head !== commit || after.head !== commit;
   const model = !moved && after.modelClean === true;
   const tree = !moved && after.treeClean === true;
   const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = read.violations;
   return {
-    changes: keepIf(read.changes, model),
     pull_requests: keepIf(read.pull_requests, model),
     violations: { debt: keepIf(debt, tree), flows: keepIf(flows, tree), anchors: keepIf(anchors, tree), dependencies: keepIf(dependencies, tree), layer_direction: layerDirection },
   };
@@ -206,59 +220,6 @@ function readSizes(root: string, commit: string, checkout: CheckoutState): Archi
   }
 }
 
-const lineList = (stdout: Buffer): string[] => stdout.toString('utf8').split('\n').filter(line => line !== '');
-
-/**
- * Commits on the first-parent chain of `commit` since `since`, the files they
- * changed with `git diff --numstat`, their owners from `archctx resolve`, and
- * the model entities that differ from the base commit's `export native`.
- */
-function readChanges(
-  root: string,
-  commit: string,
-  checkout: CheckoutState,
-  since: string,
-  head: { readonly nodes: readonly unknown[]; readonly relations: readonly unknown[] },
-): ArchitectureChangesInput {
-  const gate = modelGate(commit, checkout);
-  if (gate !== null) return { state: 'unavailable', reason: gate };
-  const today = git(root, ['rev-list', '--first-parent', `--since=${since}`, commit]);
-  if (today.status !== 0) return { state: 'unavailable', reason: 'git_read_failed' };
-  const commits = lineList(today.stdout).length;
-  // `--since` filters by committer date; the base is the next commit on the chain, so the window must be the chain's head.
-  const chain = git(root, ['rev-list', '--first-parent', `--max-count=${commits + 1}`, commit]);
-  if (chain.status !== 0 || lineList(chain.stdout).slice(0, commits).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
-  const base = lineList(chain.stdout)[commits];
-  if (base === undefined) return { state: 'unavailable', reason: 'history_starts_today' };
-  const diff = git(root, ['diff', '--numstat', '-z', '--no-renames', '--no-ext-diff', base, commit, '--']);
-  if (diff.status !== 0) return { state: 'unavailable', reason: 'git_read_failed' };
-  const files = new Map<string, { added: number; deleted: number }>();
-  for (const record of diff.stdout.toString('utf8').split('\0')) {
-    if (record === '') continue;
-    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/su.exec(record);
-    if (match === null) return { state: 'unavailable', reason: 'git_read_failed' };
-    // A binary file shows `-`: it changed, with no line count.
-    files.set(match[3]!, { added: match[1] === '-' ? 0 : Number(match[1]), deleted: match[2] === '-' ? 0 : Number(match[2]) });
-  }
-  let owners;
-  try { owners = resolveOwners(root, [...files.keys()]); }
-  catch { return { state: 'unavailable', reason: 'ownership_unavailable' }; }
-  let model: Extract<ArchitectureChangesInput, { state: 'ok' }>['model'];
-  try { model = { state: 'ok', ...architectureModelDelta(readArchitectureNativeContext(root, { kind: 'ref', commit: base }).model, head) }; }
-  catch { model = { state: 'unavailable', reason: 'model_base_unavailable' }; }
-  return { state: 'ok', since, base, commits, files, owners, model };
-}
-
-/** Owners of the open PRs' changed files. The files come from the PR heads; their owners come from the map commit's model. */
-function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource): ArchitecturePullRequestsInput {
-  if (source.state === 'unavailable') return source;
-  const gate = modelGate(commit, checkout);
-  if (gate !== null) return { state: 'unavailable', reason: gate };
-  const paths = new Set(source.pull_requests.flatMap(pr => (pr.head_sha !== null && pr.changed_files.state === 'ok' ? pr.changed_files.paths : [])));
-  try { return { ...source, owners: resolveOwners(root, [...paths].sort()) }; }
-  catch { return { state: 'unavailable', reason: 'ownership_unavailable' }; }
-}
-
 type Violation<Fields> = ({ readonly state: 'ok' } & Fields) | { readonly state: 'unavailable'; readonly reason: ArchitectureViolationReason };
 
 /** One archctx JSON command: its data, or its error envelope's codes. null: the run failed or gave no envelope. */
@@ -277,20 +238,85 @@ function archctxData(root: string, args: readonly string[]): Record_ | Architect
   return read.error?.code === 'AC_CODE_FACTS_UNAVAILABLE' ? 'code_facts_unavailable' : 'archctx_failed';
 }
 
+const ARCHCTX_FAILED = { state: 'unavailable', reason: 'archctx_failed' } as const;
+
 /**
- * A command whose refusal the map shows: missing or stale code facts keep their
- * own reason, any other error envelope keeps archctx's codes, and a failed run
- * is `archctx_failed`.
+ * A check that reads the CodeGraph index: missing or stale code facts keep
+ * their own reason, any other error envelope keeps archctx's codes, and a
+ * failed run is `archctx_failed`.
  */
-function archctxGap(error: Record_ | null): { readonly state: 'unavailable'; readonly reason: 'code_facts_unavailable' | 'archctx_failed' } | ArchctxRefusalV1 {
-  if (error === null) return { state: 'unavailable', reason: 'archctx_failed' };
+function archctxGap(error: Record_ | null): { readonly state: 'unavailable'; readonly reason: 'code_facts_unavailable' } | typeof ARCHCTX_FAILED | ArchctxRefusalV1 {
+  if (error === null) return ARCHCTX_FAILED;
   if (error.code === 'AC_CODE_FACTS_UNAVAILABLE') return { state: 'unavailable', reason: 'code_facts_unavailable' };
-  return archctxRefusal(error.code, error.reasonCode) ?? { state: 'unavailable', reason: 'archctx_failed' };
+  return archctxRefusal(error.code, error.reasonCode) ?? ARCHCTX_FAILED;
 }
 
 /** A report that its ArchContext decoder refuses is a failed run. */
 function decoded<Report>(decode: (value: unknown) => Report, value: unknown): Report | null {
   try { return decode(value); } catch { return null; }
+}
+
+const lineList = (stdout: Buffer): string[] => stdout.toString('utf8').split('\n').filter(line => line !== '');
+
+/**
+ * One `archctx impact` answer, bound to the snapshot it asked for. Any archctx
+ * error keeps its codes; a failed run or an answer that breaks the published
+ * contract is `archctx_failed`. There is no local fallback.
+ */
+function readImpact(root: string, args: readonly string[], source: RefImpactSource): { readonly ok: true; readonly report: RefImpactV1 } | { readonly ok: false; readonly gap: typeof ARCHCTX_FAILED | ArchctxRefusalV1 } {
+  const read = runArchctx(root, ['impact', ...args, '--json']);
+  if (!read.ok) return { ok: false, gap: (read.error && archctxRefusal(read.error.code, read.error.reasonCode)) ?? ARCHCTX_FAILED };
+  const report = decoded(value => decodeRefImpact(value, source), read.data);
+  return report === null ? { ok: false, gap: ARCHCTX_FAILED } : { ok: true, report };
+}
+
+/**
+ * Commits on the first-parent chain of `commit` since `since`, and `archctx
+ * impact` from the next older commit to `commit`: changed paths with their
+ * owners, dependents, flow steps and model changes. It reads only commits.
+ */
+function readChanges(root: string, commit: string, since: string): ArchitectureChangesLayerV1 {
+  const today = git(root, ['rev-list', '--first-parent', `--since=${since}`, commit]);
+  if (today.status !== 0) return { state: 'unavailable', reason: 'git_read_failed' };
+  const commits = lineList(today.stdout).length;
+  // `--since` filters by committer date; the base is the next commit on the chain, so the window must be the chain's head.
+  const chain = git(root, ['rev-list', '--first-parent', `--max-count=${commits + 1}`, commit]);
+  if (chain.status !== 0 || lineList(chain.stdout).slice(0, commits).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
+  const base = lineList(chain.stdout)[commits];
+  if (base === undefined) return { state: 'unavailable', reason: 'history_starts_today' };
+  const impact = readImpact(root, ['--base', base, '--head', commit], { kind: 'refs', base, head: commit });
+  if (!impact.ok) return impact.gap;
+  const { modelDelta } = impact.report;
+  // Two refs always give a known model delta; `unknown` belongs to a path list.
+  if (modelDelta.status !== 'known') return ARCHCTX_FAILED;
+  // The published schema limits `kind` and `change` to the map's values.
+  return { state: 'ok', since, base, commits, model: modelDelta.changes as ArchitectureModelChangeV1[], ...architectureImpact(impact.report) };
+}
+
+/** `archctx impact --paths-from` for one open PR's changed files, against the map commit's worktree model. */
+function readPullRequestImpact(root: string, commit: string, dir: string, pr: ArchitecturePullRequestSourceV1): ArchitecturePullRequestImpactV1['impact'] {
+  if (pr.head_sha === null) return { state: 'unavailable', reason: 'head_missing' };
+  if (pr.changed_files.state === 'unavailable') return pr.changed_files;
+  const file = join(dir, `pull-request-${pr.number}.txt`);
+  writeFileSync(file, pr.changed_files.paths.map(path => `${path}\n`).join(''), { mode: 0o600 });
+  const impact = readImpact(root, ['--paths-from', file], { kind: 'paths', head: commit });
+  return impact.ok ? { state: 'ok', ...architectureImpact(impact.report) } : impact.gap;
+}
+
+/** The open PRs' impact. The files come from the PR heads; owners and dependents come from the map commit's model. */
+function readPullRequests(root: string, commit: string, checkout: CheckoutState, source: ArchitecturePullRequestsSource): ArchitecturePullRequestsLayerV1 {
+  if (source.state === 'unavailable') return source;
+  const gate = modelGate(commit, checkout);
+  if (gate !== null) return { state: 'unavailable', reason: gate };
+  const dir = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-map-'));
+  try {
+    return {
+      state: 'ok', observed_at: source.observed_at,
+      pull_requests: source.pull_requests.map(pr => ({ number: pr.number, title: pr.title, url: pr.url, head_sha: pr.head_sha, impact: readPullRequestImpact(root, commit, dir, pr) })),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** `archctx debt` items. Its ownership and anchor checks must both be complete; it defers the others. */
@@ -444,8 +470,8 @@ export function collectArchitectureMap(
   const capabilities = new Set(nodes.filter(node => node.kind === 'capability').map(node => node.id));
   const deps = readDependencies(path, commit, before, capabilities);
   const read = { sizes: readSizes(path, commit, before), dependencies: deps.dependencies };
+  const changes = readChanges(path, commit, since);
   const layers = {
-    changes: readChanges(path, commit, before, since, context.model),
     pull_requests: readPullRequests(path, commit, before, pullRequests),
     violations: {
       ...readViolations(path, commit, before, known, capabilities), dependencies: deps.undeclared,
@@ -457,7 +483,7 @@ export function collectArchitectureMap(
   const snapshot = projectArchitectureMap({
     repository_id: repositoryId, commit, collected_at: collectedAt, nodes, relations,
     ...recheckCheckout(commit, before, after, read),
-    layers: { ...recheckLayers(commit, before, after, layers), tests: { state: 'unavailable', reason: 'tests_pending' }, decisions },
+    layers: { changes, ...recheckLayers(commit, before, after, layers), tests: { state: 'unavailable', reason: 'tests_pending' }, decisions },
   });
   return { id: repositoryId, ok: true, snapshot };
 }

@@ -328,10 +328,11 @@ describe('architecture map', () => {
   const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
   const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
-  const noModelDelta = { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [], relations_added: [], relations_removed: [], relations_changed: [] } as const;
+  const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
+  const noCodeFactSteps = { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null } as const;
   const undeclaredLayers = { state: 'unavailable', reason: 'model_layers_undeclared' } as const;
   const noLayers: ArchitectureMapLayersInput = {
-    changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+    changes: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' },
     pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
     violations: { debt: noCodeFacts, flows: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' },
       anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: undeclaredLayers },
@@ -339,8 +340,12 @@ describe('architecture map', () => {
     decisions: { state: 'ok', items: [] },
   };
   const mapLayers: ArchitectureMapLayersInput = {
-    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
-      files: new Map([['src/ledger.ts', { added: 5, deleted: 2 }]]), owners: new Map([['src/ledger.ts', PART]]), model: noModelDelta },
+    // archctx impact as the map carries it: it gives the dependents (one `calls` hop) and cut the path list at its limit.
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+      paths: [{ path: 'assets/ledger.png', added: null, deleted: null, owners: [PART], reason_codes: ['binary-diff'] },
+        { path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }],
+      unowned_paths: [], nodes: [{ id: PART, files: 2 }], dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }],
+      dependency_coverage: 'partial', flow_steps: noCodeFactSteps, truncated: { ...whole, paths: true } },
     pull_requests: { state: 'unavailable', reason: 'dev_activity_unavailable' },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
@@ -466,11 +471,16 @@ describe('architecture map', () => {
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
       .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:ok']);
-    expect([box(PART).getAttribute('data-tone'), box(PART).textContent]).toEqual(['change', expect.stringContaining('+5 −2')]);
-    // The change counts for the group too; nodes with nothing on the layer fade.
-    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['change', true, true]);
-    expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('1 files changed in 1 commits');
-    expect(notes()).toEqual(['flow_steps:change_impact_not_exported']);
+    // One file has no line count, so the label says the sum is partial.
+    expect([box(PART).getAttribute('data-tone'), box(PART).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '+5 −2 ?']);
+    // archctx says the group depends on the changed component; nodes with nothing on the layer fade.
+    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', true, true]);
+    expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('2 files changed in 1 commits');
+    expect([gaps(), notes()]).toEqual([['changes.flow_steps:ref-code-facts-unavailable'], ['changes.truncated:paths']]);
+    expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for paths; these counts are lower bounds.');
+    await act(async () => box(PART).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    expect(document.querySelector('[data-layer-facts="changes"]')?.textContent).toBe('2 files changed, +5 −2 lines (1 without a line count)assets/ledger.pngsrc/ledger.ts');
 
     await choose('violations');
     expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
@@ -503,10 +513,17 @@ describe('architecture map', () => {
     const map = mapFor(true, { ...mapLayers, pull_requests: {
       state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
       pull_requests: [
-        { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: head, changed_files: { state: 'ok', paths: ['README.md', 'src/ledger.ts'] } },
-        { number: 22, title: 'Big rewrite', url: 'https://github.com/acme/widgets/pull/22', head_sha: 'f'.repeat(40), changed_files: { state: 'unavailable', reason: 'files_truncated' } },
+        { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: head, impact: {
+          state: 'ok',
+          paths: [{ path: 'README.md', added: null, deleted: null, owners: [], reason_codes: ['paths-only'] },
+            { path: 'src/ledger.ts', added: null, deleted: null, owners: [PART], reason_codes: ['paths-only'] }],
+          unowned_paths: ['README.md'], nodes: [{ id: PART, files: 1 }], dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }],
+          dependency_coverage: 'complete', flow_steps: { status: 'unknown', reason_codes: ['line-impact-unavailable', 'ref-code-facts-unavailable'], items: null }, truncated: whole,
+        } },
+        { number: 22, title: 'Big rewrite', url: 'https://github.com/acme/widgets/pull/22', head_sha: 'f'.repeat(40), impact: { state: 'unavailable', reason: 'files_truncated' } },
+        { number: 23, title: 'Odd path', url: 'https://github.com/acme/widgets/pull/23', head_sha: 'a'.repeat(40),
+          impact: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-arguments-invalid' } },
       ],
-      owners: new Map<string, string | null>([['README.md', null], ['src/ledger.ts', PART]]),
     } });
     await mount(workspace({ readMap: reader({ state: 'ok', map }) }));
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
@@ -517,18 +534,18 @@ describe('architecture map', () => {
 
     expect(document.querySelector('.architecture-layers [data-layer="pull_requests"]')?.getAttribute('data-state')).toBe('ok');
     const select = document.querySelector<HTMLSelectElement>('[data-layer-summary="pull_requests"] select')!;
-    expect([select.value, [...select.options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite']]);
+    expect([select.value, [...select.options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite', '#23 Odd path']]);
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
-    expect(summary).toContain('2 files changed in 2 nodes, 1 without an owner');
-    // The changed component and its group; the caller depends on the group through a model relation.
-    expect([PART, CENTER, CALLER].map(id => [box(id).getAttribute('data-tone'), box(id).textContent?.includes(id === CALLER ? '↳' : '1')]))
-      .toEqual([['change', true], ['change', true], ['muted', true]]);
-    expect(box(EXTERNAL).hasAttribute('data-quiet')).toBe(true);
-    expect([gaps(), notes()]).toEqual([[], ['pull_requests.flow_steps:change_impact_not_exported']]);
-    await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    expect(summary).toContain('2 files changed in 1 nodes, 1 without an owner');
+    // archctx marks only the changed component and the group that calls it; the caller is two hops away.
+    const mark = (id: string) => [box(id).getAttribute('data-tone'), box(id).querySelector('.architecture-map__mark')?.textContent ?? null];
+    expect([PART, CENTER].map(mark)).toEqual([['change', '1'], ['muted', '↳']]);
+    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, true]);
+    expect([gaps(), notes()]).toEqual([['pull_request.flow_steps:line-impact-unavailable ref-code-facts-unavailable'], []]);
+    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${CENTER}`);
+    expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${PART}`);
 
     await act(async () => {
       select.value = '22';
@@ -537,12 +554,22 @@ describe('architecture map', () => {
     await settle();
     expect(gaps()).toEqual(['pull_request:files_truncated']);
     expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+
+    await act(async () => {
+      select.value = '23';
+      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
+    });
+    await settle();
+    const refused = document.querySelector('.architecture-map__gap[data-gap="pull_request"]')!;
+    expect([refused.getAttribute('data-reason'), refused.getAttribute('data-code'), refused.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-arguments-invalid',
+      'No impact for this pull request: archctx impact refused with AC_SCHEMA_INVALID native-context-arguments-invalid.']);
   });
 
   test('a layer without data is still listed and says why', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: projectArchitectureMap({ ...mapFor(), sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers }) }) }));
-    expect(document.querySelector('.architecture-map__gap[data-gap="changes"]')?.getAttribute('data-reason')).toBe('model_worktree_dirty');
+    const changes = document.querySelector('.architecture-map__gap[data-gap="changes"]')!;
+    expect([changes.getAttribute('data-reason'), changes.getAttribute('data-code')]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-model-invalid']);
     // Decisions come from the model export, so that layer always has data, even with no decision.
     expect([...document.querySelectorAll('.architecture-layers [data-state="unavailable"]')].map(item => item.getAttribute('data-layer'))).toEqual(['changes', 'violations', 'pull_requests', 'tests']);
     expect(document.querySelectorAll('[data-quiet]')).toHaveLength(0);

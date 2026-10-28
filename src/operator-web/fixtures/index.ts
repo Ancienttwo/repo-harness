@@ -83,7 +83,8 @@ export function fixtureProps(name: string): OperatorAppProps {
       dependencies: noCodeFacts,
       layers: {
         ...architectureMap.layers,
-        changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+        // archctx refuses a base commit whose model fails its own schema.
+        changes: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' },
         violations: { ...architectureMap.layers.violations, debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
         pull_requests: { state: 'unavailable', reason: 'dev_activity_unavailable' },
         tests: { state: 'unavailable', reason: 'github_unavailable' },

@@ -2,14 +2,16 @@
 // The map collector reads the committed model and its decisions with `archctx
 // export native`, the tracked text files of that commit with their line counts,
 // their owners with `archctx resolve`, and the capability import counts with
-// `archctx deps`. The layers come from the same cycle: git history since local
-// midnight, `archctx debt`, `docs anchors` and `flows check --no-sync`, the open
-// PRs' changed files from the Dev Activity cache with their owners from `archctx
-// resolve`, and the tests collector's cache. archctx owns ownership, dependency,
-// flow, decision and anchor facts; this module only sums counts along the
-// model's `parent` chain and checks the shape. The strict decoder serves the
-// server before it sends and the browser before it renders.
+// `archctx deps`. The layers come from the same cycle: `archctx impact` from the
+// last commit before local midnight to the map commit, `archctx debt`, `docs
+// anchors` and `flows check --no-sync`, `archctx impact --paths-from` for each
+// open PR's changed files from the Dev Activity cache, and the tests collector's
+// cache. archctx owns ownership, impact, dependency, flow, decision and anchor
+// facts; this module only sums line counts along the model's `parent` chain and
+// checks the shape. The strict decoder serves the server before it sends and the
+// browser before it renders.
 
+import type { RefImpactV1 } from 'archctx-contracts';
 import { DEV_ACTIVITY_PR_FILES_REASONS, type DevActivityPrFiles, type DevActivitySnapshotV2 } from '../dev-activity/types';
 import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
@@ -39,26 +41,29 @@ export type ArchitectureMapSizeReason = typeof ARCHITECTURE_MAP_SIZE_REASONS[num
 export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['model_worktree_dirty', 'checkout_changed', 'code_facts_worktree_dirty', 'code_facts_unavailable', 'code_facts_incomplete', 'code_facts_other_commit', 'dependencies_unavailable'] as const;
 export type ArchitectureMapDependencyReason = typeof ARCHITECTURE_MAP_DEPENDENCY_REASONS[number];
 
-/** Today's changes resolve owners like line counts do; a first-parent history that starts after midnight has no base commit. */
-export const ARCHITECTURE_CHANGE_REASONS = [...ARCHITECTURE_MAP_SIZE_REASONS, 'history_starts_today'] as const;
+/**
+ * Today's changes read only commits, so they need no clean checkout. A
+ * first-parent history that starts after midnight has no base commit;
+ * `archctx_failed`: archctx did not run, or its answer broke its contract or the map's grammar.
+ */
+export const ARCHITECTURE_CHANGE_REASONS = ['git_read_failed', 'history_starts_today', 'archctx_failed'] as const;
 export type ArchitectureChangeReason = typeof ARCHITECTURE_CHANGE_REASONS[number];
-/** `export native` failed at the base commit, for example before the model existed. */
-export const ARCHITECTURE_MODEL_DELTA_REASONS = ['model_base_unavailable'] as const;
-export type ArchitectureModelDeltaReason = typeof ARCHITECTURE_MODEL_DELTA_REASONS[number];
 /** Each violation check reads the worktree model and the CodeGraph index, as import counts do. */
 export const ARCHITECTURE_VIOLATION_REASONS = [...ARCHITECTURE_MAP_DEPENDENCY_REASONS, 'archctx_failed'] as const;
 export type ArchitectureViolationReason = typeof ARCHITECTURE_VIOLATION_REASONS[number];
 /** The tests collector's own reasons, a projection gap, or a projection that names a capability the map does not have. */
 export const ARCHITECTURE_TEST_REASONS = [...TESTS_UNAVAILABLE_REASONS, 'projection_missing', 'projection_invalid', 'tests_model_mismatch'] as const;
 export type ArchitectureTestReason = typeof ARCHITECTURE_TEST_REASONS[number];
-/** The Dev Activity cache has not collected yet, or has no complete GitHub read for the repository; owners resolve like line counts do. */
-export const ARCHITECTURE_PR_LAYER_REASONS = [...ARCHITECTURE_MAP_SIZE_REASONS, 'dev_activity_pending', 'dev_activity_unavailable'] as const;
+/**
+ * The Dev Activity cache has not collected yet, or has no complete GitHub read
+ * for the repository. `archctx impact --paths-from` reads the worktree model,
+ * so the model must be clean at the map commit.
+ */
+export const ARCHITECTURE_PR_LAYER_REASONS = ['model_worktree_dirty', 'checkout_changed', 'git_read_failed', 'dev_activity_pending', 'dev_activity_unavailable'] as const;
 export type ArchitecturePullRequestsReason = typeof ARCHITECTURE_PR_LAYER_REASONS[number];
-/** One open PR without impact: gh gave no head commit, or no complete file list. */
-export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS] as const;
+/** One open PR without impact: gh gave no head commit or no complete file list, or archctx failed. */
+export const ARCHITECTURE_PR_REASONS = ['head_missing', ...DEV_ACTIVITY_PR_FILES_REASONS, 'archctx_failed'] as const;
 export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[number];
-/** archctx 0.9.3 does not map a change to the flow steps it reaches (Ancienttwo/arch-context#409). */
-export const ARCHITECTURE_FLOW_STEP_REASON = 'change_impact_not_exported' as const;
 /**
  * Why imports against the layer order are not shown: the model declares no
  * ordered `model.layers`, or it does and the collector does not read the
@@ -126,31 +131,74 @@ export function archctxRefusal(code: unknown, reasonCode: unknown): ArchctxRefus
   return { state: 'unavailable', reason: 'archctx_error', code, reason_code: reasonCode ?? null };
 }
 
-/** Changed files and lines of one node, its own and its descendants'. A node with no changed file is absent. */
-export interface ArchitectureChangeV1 { readonly id: string; readonly files: number; readonly added: number; readonly deleted: number }
-/** Model entities whose committed content differs between the base and the map commit. */
-export interface ArchitectureModelDeltaV1 {
-  readonly nodes_added: readonly string[];
-  readonly nodes_removed: readonly string[];
-  readonly nodes_changed: readonly string[];
-  readonly relations_added: readonly string[];
-  readonly relations_removed: readonly string[];
-  readonly relations_changed: readonly string[];
+/** One changed path from `archctx impact`. Its reason codes say why a line count is null or an owner is contested. */
+export interface ArchitectureImpactPathV1 {
+  readonly path: string;
+  readonly added: number | null;
+  readonly deleted: number | null;
+  /** The owning nodes at the base and the head; more than one when the owner moved or is contested, none when unowned. */
+  readonly owners: readonly string[];
+  readonly reason_codes: readonly string[];
+}
+/** A flow step that the change reaches, with archctx's reason codes for it. */
+export interface ArchitectureFlowStepV1 { readonly flow: string; readonly step: string; readonly outcome: string | null; readonly reason_codes: readonly string[] }
+/** Parts of the answer that archctx cut at its own limits; a cut part is a lower bound. */
+export interface ArchitectureImpactTruncationV1 {
+  readonly paths: boolean;
+  readonly nodes: boolean;
+  readonly relations: boolean;
+  readonly flow_steps: boolean;
+  readonly dependents: boolean;
+  readonly model: boolean;
+}
+/** One `archctx impact` answer as the map carries it. */
+export interface ArchitectureImpactV1 {
+  readonly paths: readonly ArchitectureImpactPathV1[];
+  readonly unowned_paths: readonly string[];
+  /** Each owner of a changed path and its changed path count. */
+  readonly nodes: readonly { readonly id: string; readonly files: number }[];
+  /** Nodes that reach a changed node through `calls` or `depends-on` relations of the head model, with the relations of one shortest path. */
+  readonly dependents: readonly { readonly id: string; readonly touched: string; readonly relations: readonly string[] }[];
+  readonly dependency_coverage: 'complete' | 'partial';
+  /** `unknown` with archctx's reason codes when its code facts cannot tie a flow step to the change. */
+  readonly flow_steps: { readonly status: 'known' | 'unknown'; readonly reason_codes: readonly string[]; readonly items: readonly ArchitectureFlowStepV1[] | null };
+  readonly truncated: ArchitectureImpactTruncationV1;
+}
+/** One model entity whose committed record differs between the base and the map commit, with the fields that differ. */
+export interface ArchitectureModelChangeV1 {
+  readonly kind: 'nodes' | 'relations' | 'flows';
+  readonly id: string;
+  readonly change: 'added' | 'removed' | 'changed';
+  readonly fields: readonly string[];
 }
 export type ArchitectureChangesLayerV1 = Section<{
   /** Local midnight of the collector host, as an instant. */
   readonly since: string;
-  /** The newest first-parent commit before `since`; the diff runs from it to the map commit. */
+  /** The newest first-parent commit before `since`; archctx compares it with the map commit. */
   readonly base: string;
   readonly commits: number;
-  readonly files: number;
-  /** Changed files that no node owns, or that two nodes contest. */
-  readonly unowned_files: number;
-  readonly nodes: readonly ArchitectureChangeV1[];
-  readonly model: Section<ArchitectureModelDeltaV1, ArchitectureModelDeltaReason>;
-  /** Which flow steps the changes reach. */
-  readonly flow_steps: Gap<typeof ARCHITECTURE_FLOW_STEP_REASON>;
-}, ArchitectureChangeReason>;
+  readonly model: readonly ArchitectureModelChangeV1[];
+} & ArchitectureImpactV1, ArchitectureChangeReason> | ArchctxRefusalV1;
+
+/** The map's form of an `archctx impact` answer. Field names change; no value is derived. */
+export function architectureImpact(report: RefImpactV1): ArchitectureImpactV1 {
+  const { touchedFlowSteps: steps, truncated } = report;
+  return {
+    paths: report.changedPaths.map(entry => ({ path: entry.path, added: entry.added, deleted: entry.deleted, owners: entry.owners, reason_codes: entry.reasonCodes })),
+    unowned_paths: report.unownedPaths,
+    nodes: report.touchedNodes.map(entry => ({ id: entry.nodeId, files: entry.pathCount })),
+    dependents: report.dependents.map(entry => ({ id: entry.nodeId, touched: entry.touchedNodeId, relations: entry.relationIds })),
+    dependency_coverage: report.dependencyCoverage.status,
+    flow_steps: {
+      status: steps.status, reason_codes: steps.reasonCodes,
+      items: steps.items === null ? null : steps.items.map(item => ({ flow: item.flowId, step: item.stepId, outcome: item.outcomeId, reason_codes: item.reasonCodes })),
+    },
+    truncated: {
+      paths: truncated.changedPaths, nodes: truncated.touchedNodes, relations: truncated.relations,
+      flow_steps: truncated.flowSteps, dependents: truncated.dependents, model: truncated.modelDelta,
+    },
+  };
+}
 
 export interface ArchitectureDebtItemV1 { readonly kind: ArchitectureDebtKind; readonly nodes: readonly string[]; readonly paths: readonly string[] }
 /** `archctx flows check --no-sync`: selector proof counts, and the capabilities whose P2 flow proof archctx calls unprovable. */
@@ -204,26 +252,23 @@ export type ArchitectureTestsLayerV1 = Section<{
   readonly capabilities: readonly ArchitectureTestCoverageV1[];
 }, ArchitectureTestReason>;
 
-/** Changed files of one open PR at its head, rolled up like today's changes, with owners from the map commit's model. */
+/**
+ * The `archctx impact --paths-from` answer for one open PR's changed files at
+ * its head, with owners from the map commit's model. A path list has no line
+ * counts and no model change.
+ */
 export interface ArchitecturePullRequestImpactV1 {
   readonly number: number;
   readonly title: string;
   readonly url: string;
   /** The head commit gh reported; the files are the PR's diff at this head. */
   readonly head_sha: string | null;
-  readonly impact: Section<{
-    readonly files: number;
-    /** Changed files that no node owns, or that two nodes contest. */
-    readonly unowned_files: number;
-    readonly nodes: readonly { readonly id: string; readonly files: number }[];
-  }, ArchitecturePullRequestReason>;
+  readonly impact: Section<ArchitectureImpactV1, ArchitecturePullRequestReason> | ArchctxRefusalV1;
 }
 export type ArchitecturePullRequestsLayerV1 = Section<{
   /** When the Dev Activity collector read the PRs from GitHub. */
   readonly observed_at: string;
   readonly pull_requests: readonly ArchitecturePullRequestImpactV1[];
-  /** Which flow steps each PR reaches. */
-  readonly flow_steps: Gap<typeof ARCHITECTURE_FLOW_STEP_REASON>;
 }, ArchitecturePullRequestsReason>;
 
 export interface ArchitectureMapLayersV1 {
@@ -281,17 +326,34 @@ const instant = match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u);
 const ids = list(id);
 /** A repository-relative path: no root, drive or `..` segment, and nothing the private-path guard masks. */
 const repoPath: Check = value => text(value) && isPublicRepoPath(value as string);
-const changes = section({
-  since: instant, base: commit, commits: count, files: count, unowned_files: count,
-  nodes: list(object({ id, files: positive, added: count, deleted: count })),
-  model: section({ nodes_added: ids, nodes_removed: ids, nodes_changed: ids, relations_added: ids, relations_removed: ids, relations_changed: ids }, ARCHITECTURE_MODEL_DELTA_REASONS),
-  flow_steps: reason([ARCHITECTURE_FLOW_STEP_REASON]),
-}, ARCHITECTURE_CHANGE_REASONS);
+const either = (...checks: Check[]): Check => value => checks.some(check => check(value));
+// archctx reason codes are opaque kebab-case tokens; the map checks their shape, not a copy of archctx's list.
+const tokens = list(match(ARCHCTX_TOKEN));
+/** The flow schema's step and outcome id grammar. */
+const localId = match(/^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*$/u);
+const flag = one(true, false);
+const impactFields = {
+  paths: list(object({ path: repoPath, added: nullable(count), deleted: nullable(count), owners: ids, reason_codes: tokens })),
+  unowned_paths: list(repoPath),
+  nodes: list(object({ id, files: positive })),
+  dependents: list(object({ id, touched: id, relations: ids })),
+  dependency_coverage: one('complete', 'partial'),
+  flow_steps: object({
+    status: one('known', 'unknown'), reason_codes: tokens,
+    items: nullable(list(object({ flow: id, step: localId, outcome: nullable(localId), reason_codes: tokens }))),
+  }),
+  truncated: object({ paths: flag, nodes: flag, relations: flag, flow_steps: flag, dependents: flag, model: flag }),
+};
+const modelChange = object({
+  kind: one('nodes', 'relations', 'flows'), id, change: one('added', 'removed', 'changed'), fields: list(match(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/u)),
+});
+const changes = either(section({ since: instant, base: commit, commits: count, model: list(modelChange), ...impactFields }, ARCHITECTURE_CHANGE_REASONS), refusal);
+const pullRequestImpact = either(section(impactFields, ARCHITECTURE_PR_REASONS), refusal);
 const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
-  flows: value => section({
+  flows: either(section({
     selectors: count, proven: count, unproven: count, used_unproven: count, unprovable: list(object({ id, diagnostics: count })),
-  }, ARCHITECTURE_VIOLATION_REASONS)(value) || refusal(value),
+  }, ARCHITECTURE_VIOLATION_REASONS), refusal),
   anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
   layer_direction: reason(ARCHITECTURE_LAYER_DIRECTION_REASONS),
@@ -312,11 +374,7 @@ const tests = section({
 const pullUrl = match(/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/u);
 const pullRequests = section({
   observed_at: instant,
-  pull_requests: list(object({
-    number: positive, title: prose(nonEmpty), url: pullUrl, head_sha: nullable(commit),
-    impact: section({ files: count, unowned_files: count, nodes: list(object({ id, files: positive })) }, ARCHITECTURE_PR_REASONS),
-  })),
-  flow_steps: reason([ARCHITECTURE_FLOW_STEP_REASON]),
+  pull_requests: list(object({ number: positive, title: prose(nonEmpty), url: pullUrl, head_sha: nullable(commit), impact: pullRequestImpact })),
 }, ARCHITECTURE_PR_LAYER_REASONS);
 const map = object({
   schema_version: one(OPERATOR_ARCHITECTURE_MAP_SCHEMA),
@@ -344,34 +402,66 @@ function reachesRoot(id: string, nodes: ReadonlyMap<string, ArchitectureMapNodeV
   return true;
 }
 
+interface MapIndex { readonly nodes: ReadonlySet<string>; readonly relations: ReadonlySet<string> }
+
+/**
+ * archctx's own consistency, and every id it names is a node or relation of the
+ * map. `owner` also admits a node that today's changes removed: a deleted path
+ * keeps its base owner.
+ */
+function impactValid(impact: ArchitectureImpactV1, index: MapIndex, owner: (id: string) => boolean): boolean {
+  const unowned = impact.paths.filter(entry => entry.owners.length === 0).map(entry => entry.path);
+  const { flow_steps: steps } = impact;
+  return unique(impact.paths.map(entry => entry.path)) && impact.paths.every(entry => unique(entry.owners) && entry.owners.every(owner))
+    && unowned.length === impact.unowned_paths.length && unowned.every((path, position) => path === impact.unowned_paths[position])
+    && unique(impact.nodes.map(entry => entry.id)) && impact.nodes.every(entry => owner(entry.id))
+    && impact.dependents.every(entry => index.nodes.has(entry.id) && owner(entry.touched) && entry.relations.length > 0 && entry.relations.every(relation => index.relations.has(relation)))
+    && (steps.status === 'known' ? steps.reason_codes.length === 0 && steps.items !== null : steps.reason_codes.length > 0);
+}
+
+/** Today's changes: an added or changed node or relation is in the map, a removed one is not. Flows are not on the map. */
+function changesValid(value: unknown, index: MapIndex): boolean {
+  if (!changes(value)) return false;
+  const layer = value as ArchitectureChangesLayerV1;
+  if (layer.state !== 'ok') return true;
+  const removed = new Set(layer.model.filter(entry => entry.kind === 'nodes' && entry.change === 'removed').map(entry => entry.id));
+  const present = (kind: 'nodes' | 'relations', has: ReadonlySet<string>) => layer.model.filter(entry => entry.kind === kind).every(entry => (entry.change === 'removed') !== has.has(entry.id));
+  return unique(layer.model.map(entry => `${entry.kind}\0${entry.id}`)) && present('nodes', index.nodes) && present('relations', index.relations)
+    && impactValid(layer, index, nodeId => index.nodes.has(nodeId) || removed.has(nodeId));
+}
+
+/** One PR's impact names only nodes of the map commit's model. */
+function pullRequestImpactValid(value: unknown, index: MapIndex): boolean {
+  if (!pullRequestImpact(value)) return false;
+  const impact = value as ArchitecturePullRequestImpactV1['impact'];
+  return impact.state !== 'ok' || impactValid(impact, index, nodeId => index.nodes.has(nodeId));
+}
+
 /** Shape, identity and referential integrity. Every reference names a node of this map, except a removed model entity. */
 export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   if (!map(value)) throw new Error('architecture_map_invalid');
   const result = value as ArchitectureMapV1;
   const nodes = new Map(result.nodes.map(entry => [entry.id, entry]));
   const relations = new Set(result.relations.map(entry => entry.id));
+  const index: MapIndex = { nodes: new Set(nodes.keys()), relations };
   const capability = (nodeId: string) => nodes.get(nodeId)?.kind === 'capability';
   // Each list names each node once, and only nodes of this map.
   const known = (entries: readonly string[], exists: (entry: string) => boolean = entry => nodes.has(entry)) => unique(entries) && entries.every(exists);
   const importEdges = (edges: readonly ArchitectureMapImportV1[]) => unique(edges.map(entry => `${entry.source}\0${entry.target}`))
     && edges.every(entry => entry.source !== entry.target && capability(entry.source) && capability(entry.target));
-  const { changes, violations, pull_requests: pulls, tests, decisions: decided } = result.layers;
-  const delta = changes.state === 'ok' && changes.model.state === 'ok' ? changes.model : null;
+  const { violations, pull_requests: pulls, tests, decisions: decided } = result.layers;
   if (nodes.size !== result.nodes.length || relations.size !== result.relations.length
     || result.nodes.some(entry => entry.parent !== null && !nodes.has(entry.parent)) || result.nodes.some(entry => !reachesRoot(entry.id, nodes))
     || result.relations.some(entry => !nodes.has(entry.source) || !nodes.has(entry.target))
     || (result.sizes.state === 'ok' && !known(result.sizes.nodes.map(entry => entry.id)))
     || (result.dependencies.state === 'ok' && !importEdges(result.dependencies.edges))
-    || (changes.state === 'ok' && (!known(changes.nodes.map(entry => entry.id)) || changes.unowned_files > changes.files))
-    || (delta !== null && (!known([...delta.nodes_added, ...delta.nodes_changed]) || !known(delta.nodes_removed, entry => !nodes.has(entry))
-      || !known([...delta.relations_added, ...delta.relations_changed], entry => relations.has(entry)) || !known(delta.relations_removed, entry => !relations.has(entry))))
+    || !changesValid(result.layers.changes, index)
     || (violations.debt.state === 'ok' && violations.debt.items.some(item => !known(item.nodes) || !unique(item.paths)))
     || (violations.flows.state === 'ok' && !known(violations.flows.unprovable.map(entry => entry.id), capability))
     || (violations.anchors.state === 'ok' && !known(violations.anchors.nodes.map(entry => entry.id)))
     || (violations.dependencies.state === 'ok' && !importEdges(violations.dependencies.edges))
-    || (pulls.state === 'ok' && (!unique(pulls.pull_requests.map(entry => String(entry.number))) || pulls.pull_requests.some(entry => entry.impact.state === 'ok'
-      ? entry.head_sha === null || !known(entry.impact.nodes.map(item => item.id)) || entry.impact.unowned_files > entry.impact.files
-      : (entry.head_sha === null) !== (entry.impact.reason === 'head_missing'))))
+    || (pulls.state === 'ok' && (!unique(pulls.pull_requests.map(entry => String(entry.number))) || pulls.pull_requests.some(entry => !pullRequestImpactValid(entry.impact, index)
+      || (entry.impact.state === 'ok' ? entry.head_sha === null : (entry.head_sha === null) !== (entry.impact.reason === 'head_missing')))))
     || (tests.state === 'ok' && (!known(tests.capabilities.map(entry => entry.id), capability)
       || tests.capabilities.some(entry => entry.files !== entry.passed + entry.failed + entry.skipped + entry.no_result)))
     || !unique(decided.items.map(entry => entry.id)) || decided.items.some(entry => !known(entry.applies_to))) {
@@ -394,20 +484,6 @@ export type ArchitectureMapDependencyInput =
   | { readonly state: 'ok'; readonly matrix: readonly { readonly from: string; readonly to: string; readonly imports: number }[] }
   | { readonly state: 'unavailable'; readonly reason: ArchitectureMapDependencyReason };
 
-export type ArchitectureChangesInput =
-  | {
-    readonly state: 'ok';
-    readonly since: string;
-    readonly base: string;
-    readonly commits: number;
-    /** Added and deleted lines of each changed path from `git diff --numstat`; 0 for a binary file. */
-    readonly files: ReadonlyMap<string, { readonly added: number; readonly deleted: number }>;
-    /** The deepest owning node of each changed path from `archctx resolve`; null when unowned or contested. */
-    readonly owners: ReadonlyMap<string, string | null>;
-    readonly model: Section<ArchitectureModelDeltaV1, ArchitectureModelDeltaReason>;
-  }
-  | Gap<ArchitectureChangeReason>;
-
 /** One open PR as the Dev Activity cache holds it; the title is masked like model prose. */
 export interface ArchitecturePullRequestSourceV1 {
   readonly number: number;
@@ -421,13 +497,6 @@ export interface ArchitecturePullRequestSourceV1 {
 export type ArchitecturePullRequestsSource =
   | { readonly state: 'ok'; readonly observed_at: string; readonly pull_requests: readonly ArchitecturePullRequestSourceV1[] }
   | Gap<'dev_activity_pending' | 'dev_activity_unavailable'>;
-
-export type ArchitecturePullRequestsInput =
-  | (Extract<ArchitecturePullRequestsSource, { state: 'ok' }> & {
-    /** The deepest owning node of each changed path from `archctx resolve`; null when unowned or contested. */
-    readonly owners: ReadonlyMap<string, string | null>;
-  })
-  | Gap<ArchitecturePullRequestsReason>;
 
 /**
  * The open PRs of one repository as the board shows them: the user's own PRs
@@ -465,8 +534,8 @@ export function decodeArchitecturePullRequestsSource(value: unknown): Architectu
 }
 
 export interface ArchitectureMapLayersInput {
-  readonly changes: ArchitectureChangesInput;
-  readonly pull_requests: ArchitecturePullRequestsInput;
+  readonly changes: ArchitectureChangesLayerV1;
+  readonly pull_requests: ArchitecturePullRequestsLayerV1;
   readonly violations: ArchitectureViolationsLayerV1;
   readonly tests: ArchitectureTestsLayerV1;
   readonly decisions: ArchitectureDecisionsLayerV1;
@@ -502,67 +571,12 @@ function rollUp<Counts extends Record<string, number>>(
   return totals;
 }
 
-function projectChanges(parents: ReadonlyMap<string, string | null>, input: ArchitectureChangesInput): ArchitectureChangesLayerV1 {
-  if (input.state === 'unavailable') return input;
-  const owner = (path: string) => input.owners.get(path) ?? null;
-  const totals = rollUp(parents, [...input.files].map(([path, lines]) => [owner(path), { files: 1, ...lines }] as const));
-  if (totals === null) return { state: 'unavailable', reason: 'ownership_unavailable' };
-  return {
-    state: 'ok', since: input.since, base: input.base, commits: input.commits, files: input.files.size,
-    unowned_files: [...input.files.keys()].filter(path => owner(path) === null).length,
-    nodes: byId([...totals].map(([id, total]) => ({ id, ...total }))),
-    model: input.model,
-    flow_steps: { state: 'unavailable', reason: ARCHITECTURE_FLOW_STEP_REASON },
-  };
-}
+const ARCHCTX_FAILED = { state: 'unavailable', reason: 'archctx_failed' } as const;
 
-/** Each open PR's changed files per node. An owner the model does not name drops the layer to `ownership_unavailable`. */
-function projectPullRequests(parents: ReadonlyMap<string, string | null>, input: ArchitecturePullRequestsInput): ArchitecturePullRequestsLayerV1 {
-  if (input.state === 'unavailable') return input;
-  const owner = (path: string) => input.owners.get(path) ?? null;
-  const pullRequests: ArchitecturePullRequestImpactV1[] = [];
-  for (const pr of input.pull_requests) {
-    const { changed_files: files } = pr;
-    let impact: ArchitecturePullRequestImpactV1['impact'];
-    if (pr.head_sha === null) impact = { state: 'unavailable', reason: 'head_missing' };
-    else if (files.state === 'unavailable') impact = files;
-    else {
-      const totals = rollUp(parents, files.paths.map(path => [owner(path), { files: 1 }] as const));
-      if (totals === null) return { state: 'unavailable', reason: 'ownership_unavailable' };
-      impact = {
-        state: 'ok', files: files.paths.length, unowned_files: files.paths.filter(path => owner(path) === null).length,
-        nodes: byId([...totals].map(([id, total]) => ({ id, ...total }))),
-      };
-    }
-    pullRequests.push({ number: pr.number, title: pr.title, url: pr.url, head_sha: pr.head_sha, impact });
-  }
-  return { state: 'ok', observed_at: input.observed_at, pull_requests: pullRequests, flow_steps: { state: 'unavailable', reason: ARCHITECTURE_FLOW_STEP_REASON } };
-}
-
-/**
- * Model entities added, removed or changed between two committed models, by id.
- * Each entity compares as a whole, so a changed field of any kind counts.
- */
-export function architectureModelDelta(
-  base: { readonly nodes: readonly unknown[]; readonly relations: readonly unknown[] },
-  head: { readonly nodes: readonly unknown[]; readonly relations: readonly unknown[] },
-): ArchitectureModelDeltaV1 {
-  const entities = (values: readonly unknown[]) => new Map(values.map(value => {
-    const entity = value as { readonly id?: unknown } | null;
-    if (typeof entity?.id !== 'string') throw new Error('architecture_map_invalid');
-    return [entity.id, JSON.stringify(entity)] as const;
-  }));
-  const diff = (before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>) => ({
-    added: [...after.keys()].filter(key => !before.has(key)).sort(compare),
-    removed: [...before.keys()].filter(key => !after.has(key)).sort(compare),
-    changed: [...after.keys()].filter(key => before.has(key) && before.get(key) !== after.get(key)).sort(compare),
-  });
-  const nodes = diff(entities(base.nodes), entities(head.nodes));
-  const relations = diff(entities(base.relations), entities(head.relations));
-  return {
-    nodes_added: nodes.added, nodes_removed: nodes.removed, nodes_changed: nodes.changed,
-    relations_added: relations.added, relations_removed: relations.removed, relations_changed: relations.changed,
-  };
+/** Each open PR keeps its impact only when it names nodes of the map; any other impact drops that PR to `archctx_failed`. */
+function projectPullRequests(layer: ArchitecturePullRequestsLayerV1, index: MapIndex): ArchitecturePullRequestsLayerV1 {
+  if (layer.state === 'unavailable') return layer;
+  return { ...layer, pull_requests: layer.pull_requests.map(pr => (pullRequestImpactValid(pr.impact, index) ? pr : { ...pr, impact: ARCHCTX_FAILED })) };
 }
 
 /** The tests collector's cache for one repository, as `tests-collector.ts` holds it. */
@@ -607,9 +621,10 @@ export function withTestCoverage(map: ArchitectureMapV1, source: ArchitectureTes
 }
 
 /**
- * Builds the map. Line counts and today's changes sum along the `parent` chain.
- * An owner of a line count that the model does not name fails the projection;
- * the same mismatch in today's changes drops that layer to `ownership_unavailable`.
+ * Builds the map. Line counts sum along the `parent` chain; an owner of a line
+ * count that the model does not name fails the projection. An impact answer
+ * that names a node or relation the model does not have drops today's changes,
+ * or that PR's impact, to `archctx_failed`.
  */
 export function projectArchitectureMap(input: {
   readonly repository_id: string;
@@ -622,6 +637,7 @@ export function projectArchitectureMap(input: {
   readonly layers: ArchitectureMapLayersInput;
 }): ArchitectureMapV1 {
   const parents = new Map(input.nodes.map(entry => [entry.id, entry.parent]));
+  const index: MapIndex = { nodes: new Set(input.nodes.map(entry => entry.id)), relations: new Set(input.relations.map(entry => entry.id)) };
   let sizes: ArchitectureMapSizesV1 = input.sizes.state === 'ok' ? { state: 'ok', nodes: [] } : input.sizes;
   if (input.sizes.state === 'ok') {
     const { owners } = input.sizes;
@@ -647,7 +663,7 @@ export function projectArchitectureMap(input: {
     sizes,
     dependencies,
     layers: {
-      changes: projectChanges(parents, input.layers.changes),
+      changes: changesValid(input.layers.changes, index) ? input.layers.changes : ARCHCTX_FAILED,
       violations: {
         debt: violations.debt,
         flows: violations.flows.state === 'ok' ? { ...violations.flows, unprovable: byId(violations.flows.unprovable) } : violations.flows,
@@ -655,7 +671,7 @@ export function projectArchitectureMap(input: {
         dependencies: violations.dependencies.state === 'ok' ? { state: 'ok', edges: byEdge(violations.dependencies.edges) } : violations.dependencies,
         layer_direction: violations.layer_direction,
       },
-      pull_requests: projectPullRequests(parents, input.layers.pull_requests),
+      pull_requests: projectPullRequests(input.layers.pull_requests, index),
       tests: input.layers.tests,
       decisions: { state: 'ok', items: byId(decisions.items) },
     },

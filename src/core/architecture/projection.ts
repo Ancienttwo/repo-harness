@@ -17,12 +17,14 @@ import {
   type ProjectionApplyReadbackResultV1,
   type ProjectionRequestV1,
   type ProjectionResultV2,
+  type RefImpactV1,
 } from 'archctx-contracts';
 import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection-result.schema.json';
 import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projection-apply-readback.schema.json';
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import architectureDebtSchema from 'archctx-contracts/schemas/runtime/architecture-debt.schema.json';
 import flowSelectorCheckSchema from 'archctx-contracts/schemas/runtime/flow-selector-check.schema.json';
+import refImpactSchema from 'archctx-contracts/schemas/runtime/ref-impact.schema.json';
 import nativeContextExportSchema from 'archctx-contracts/schemas/runtime/native-context-export.schema.json';
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
@@ -215,6 +217,21 @@ export function decodeArchitectureDebtReport(value: unknown): ArchitectureDebtRe
 /** ArchContext owns the `flows check` report contract; this applies its published schema. */
 export function decodeFlowSelectorCheck(value: unknown): ArchitectureFlowSelectorCheckV1 {
   return decode(flowSelectorCheckSchema, value, 'flows check report') as unknown as ArchitectureFlowSelectorCheckV1;
+}
+
+/** `refs`: `archctx impact --base --head`; `paths`: `--paths-from`, which reads the worktree model at `head`. */
+export type RefImpactSource =
+  | { readonly kind: 'refs'; readonly base: string; readonly head: string }
+  | { readonly kind: 'paths'; readonly head: string };
+
+/** ArchContext owns the `impact` report contract; this applies its published schema and binds the snapshots to the request. */
+export function decodeRefImpact(value: unknown, source: RefImpactSource): RefImpactV1 {
+  const report = decode(refImpactSchema, value, 'impact report') as unknown as RefImpactV1;
+  const bound = source.kind === 'refs'
+    ? report.base?.source === 'ref' && report.base.commitSha === source.base && report.head.source === 'ref' && report.head.commitSha === source.head
+    : report.base === null && report.head.source === 'worktree' && report.head.headSha === source.head;
+  if (!bound) throw new Error('impact report snapshot mismatch');
+  return report;
 }
 
 export const ARCHITECTURE_DEBT_COMMAND = 'repo-harness architecture-debt --json';
