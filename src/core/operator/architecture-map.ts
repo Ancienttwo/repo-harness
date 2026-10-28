@@ -6,8 +6,8 @@
 // last commit before local midnight to the map commit, `archctx debt`, `docs
 // anchors` and `flows check --no-sync`, `archctx impact --paths-from` for each
 // open PR's changed files from the Dev Activity cache, and the tests collector's
-// cache. archctx owns ownership, impact, dependency, flow, decision and anchor
-// facts; this module only sums line counts along the model's `parent` chain and
+// cache. archctx owns ownership, impact, dependency, flow, decision, anchor and
+// layer-order facts; this module only sums line counts along the model's `parent` chain and
 // checks the shape. The strict decoder serves the server before it sends and the
 // browser before it renders.
 
@@ -16,7 +16,7 @@ import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-reques
 import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
-export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v3' as const;
+export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v4' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
 /** Why a repository's map cannot be served. Each maps to one HTTP status in the route. */
@@ -67,6 +67,9 @@ export type ArchitecturePullRequestsReason = typeof ARCHITECTURE_PR_LAYER_REASON
 /** One open PR without impact: gh gave no head commit or no complete file list, archctx failed, or a path in its valid answer fails the public-path guard. */
 export const ARCHITECTURE_PR_REASONS = ['head_missing', ...PULL_REQUEST_FILES_REASONS, 'archctx_failed', 'path_not_public'] as const;
 export type ArchitecturePullRequestReason = typeof ARCHITECTURE_PR_REASONS[number];
+/** Why the map has no layer order: the model declares no ordered `model.layers`. */
+export const ARCHITECTURE_LAYER_ORDER_REASONS = ['model_layers_undeclared'] as const;
+export type ArchitectureLayerOrderReason = typeof ARCHITECTURE_LAYER_ORDER_REASONS[number];
 /**
  * Why imports against the layer order are not shown: the model declares no
  * ordered `model.layers`, or it does and the collector does not read the
@@ -83,7 +86,7 @@ export interface ArchitectureMapNodeV1 {
   readonly kind: string;
   readonly name: string;
   readonly status: string;
-  /** The model's layer name; the map shows it as a node attribute and does not order by layer. */
+  /** The model's layer name. With a layer order, the map places the node in that layer's band. */
   readonly layer: string | null;
   readonly parent: string | null;
   readonly summary: string;
@@ -111,6 +114,9 @@ export type ArchitectureMapDependenciesV1 =
 
 type Gap<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 type Section<Fields, Reason extends string> = ({ readonly state: 'ok' } & Fields) | Gap<Reason>;
+
+/** The model's `model.layers` from `archctx export native`, top layer first. archctx checks that it declares every node layer. */
+export type ArchitectureLayerOrderV1 = Section<{ readonly layers: readonly string[] }, ArchitectureLayerOrderReason>;
 
 /**
  * An archctx error envelope. archctx owns its error and reason codes; the map
@@ -291,6 +297,7 @@ export interface ArchitectureMapV1 {
   readonly relations: readonly ArchitectureMapRelationV1[];
   readonly sizes: ArchitectureMapSizesV1;
   readonly dependencies: ArchitectureMapDependenciesV1;
+  readonly layer_order: ArchitectureLayerOrderV1;
   readonly layers: ArchitectureMapLayersV1;
 }
 
@@ -327,6 +334,7 @@ const refusal: Check = value => object({ state: one('unavailable'), reason: one(
 const commit = match(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u);
 const instant = match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u);
 const ids = list(id);
+const layerNames: Check = value => list(match(LAYER))(value) && (value as unknown[]).length > 0;
 /** A repository-relative path: no root, drive or `..` segment, and nothing the private-path guard masks. */
 const repoPath: Check = value => text(value) && isPublicRepoPath(value as string);
 const either = (...checks: Check[]): Check => value => checks.some(check => check(value));
@@ -391,11 +399,18 @@ const map = object({
   relations: list(relation),
   sizes: section({ nodes: list(size) }, ARCHITECTURE_MAP_SIZE_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_MAP_DEPENDENCY_REASONS),
+  layer_order: section({ layers: layerNames }, ARCHITECTURE_LAYER_ORDER_REASONS),
   layers: object({ changes, violations, pull_requests: pullRequests, tests, decisions }),
 });
 
 function unique(ids: readonly string[]): boolean {
   return new Set(ids).size === ids.length;
+}
+
+/** Every node layer is in the order. */
+function layered(nodes: readonly ArchitectureMapNodeV1[], order: readonly string[]): boolean {
+  const declared = new Set(order);
+  return nodes.every(entry => entry.layer === null || declared.has(entry.layer));
 }
 
 /** The parent chain ends at a top-level node; a cycle, a self parent included, never does. */
@@ -459,6 +474,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   if (nodes.size !== result.nodes.length || relations.size !== result.relations.length
     || result.nodes.some(entry => entry.parent !== null && !nodes.has(entry.parent)) || result.nodes.some(entry => !reachesRoot(entry.id, nodes))
     || result.relations.some(entry => !nodes.has(entry.source) || !nodes.has(entry.target))
+    || (result.layer_order.state === 'ok' && (!unique(result.layer_order.layers) || !layered(result.nodes, result.layer_order.layers)))
     || (result.sizes.state === 'ok' && !known(result.sizes.nodes.map(entry => entry.id)))
     || (result.dependencies.state === 'ok' && !importEdges(result.dependencies.edges))
     || !changesValid(result.layers.changes, index)
@@ -632,6 +648,7 @@ export function projectArchitectureMap(input: {
   readonly relations: readonly ArchitectureMapRelationV1[];
   readonly sizes: ArchitectureMapSizeInput;
   readonly dependencies: ArchitectureMapDependencyInput;
+  readonly layer_order: ArchitectureLayerOrderV1;
   readonly layers: ArchitectureMapLayersInput;
 }): ArchitectureMapV1 {
   const parents = new Map(input.nodes.map(entry => [entry.id, entry.parent]));
@@ -660,6 +677,7 @@ export function projectArchitectureMap(input: {
     relations: byId(input.relations),
     sizes,
     dependencies,
+    layer_order: input.layer_order,
     layers: {
       changes: changesValid(input.layers.changes, index) ? input.layers.changes : impactGap(path => changesValid(input.layers.changes, index, path)),
       violations: {

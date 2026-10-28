@@ -492,6 +492,7 @@ export function collectArchitectureMap(
   const after = readCheckoutState(path);
   const snapshot = projectArchitectureMap({
     repository_id: repositoryId, commit, collected_at: collectedAt, nodes, relations,
+    layer_order: context.model.layers === undefined ? { state: 'unavailable', reason: 'model_layers_undeclared' } : { state: 'ok', layers: [...context.model.layers] },
     ...recheckCheckout(commit, before, after, read),
     layers: { changes, ...recheckLayers(commit, before, after, layers), tests: { state: 'unavailable', reason: 'tests_pending' }, decisions },
   });

@@ -15,6 +15,15 @@ generated:
 model:
   layout: "split"
   root: ".archcontext/model"
+  layers:
+    - assets
+    - tests
+    - scripts
+    - web
+    - cli
+    - effects
+    - core
+    - external
 privacy:
   cloudContentUpload: "deny"
   localTunnel:

@@ -1815,6 +1815,7 @@ describe('architecture map', () => {
     repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
     nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' },
     layers: {
       changes: { state: 'unavailable', reason: 'history_starts_today' },
       pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },

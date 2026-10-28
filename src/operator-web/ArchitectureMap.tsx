@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  ViewportPortal,
   type Edge,
   type Node,
   type NodeChange,
@@ -37,7 +38,7 @@ import {
   type MapLayerView,
   type MapMark,
 } from './architecture-map-layers';
-import { layoutArchitectureMap, type MapLayoutNode } from './architecture-map-layout';
+import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -132,6 +133,26 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 });
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
+
+/**
+ * Zoom of the first view of a banded map: a 13 px title shows at 11 px. The whole map of a
+ * real model is several canvases wide, so the first view starts at the top band's leftmost
+ * node and its label; Fit shows the whole map.
+ */
+const MAP_READABLE_ZOOM = 0.85;
+
+/** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
+const MAP_BAND_LABEL = 28;
+
+/** A labelled rule above each layer's rows, in canvas coordinates. */
+function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: OperatorTranslate }) {
+  return <ViewportPortal>
+    {layout.bands.map(band => <div key={band.layer ?? ''} className="architecture-map__band" data-band={band.layer ?? ''}
+      style={{ transform: `translate(${band.x}px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width - band.x, height: MAP_BAND_LABEL }}>
+      {band.layer ?? t('architecture.map.unlayered')}
+    </div>)}
+  </ViewportPortal>;
+}
 
 function ZoomControls({ t }: { readonly t: OperatorTranslate }) {
   const flow = useReactFlow();
@@ -278,6 +299,11 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  const firstView = useMemo(() => {
+    const top = layout.bands[0];
+    if (top === undefined) return undefined;
+    return { x: -(top.x - 24) * MAP_READABLE_ZOOM, y: -(top.y - MAP_BAND_LABEL - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+  }, [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
 
   const nodes = useMemo<MapNode[]>(() => layout.nodes.map(item => {
@@ -345,10 +371,12 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        fitView
+        fitView={firstView === undefined}
+        {...(firstView === undefined ? {} : { defaultViewport: firstView })}
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
+        <LayerBands layout={layout} t={t} />
         <Panel position="bottom-left"><Legend map={map} view={view} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
@@ -543,6 +571,7 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
       </p>
       {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
       {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
+      {map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
       <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
       <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
       <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>
