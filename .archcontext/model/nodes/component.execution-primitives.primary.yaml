@@ -17,5 +17,6 @@ source:
     - src/effects/expensive-run-lock.ts
     - src/effects/readonly-observation.ts
     - src/effects/atomic-append.ts
+    - src/effects/runtime/os-account-home.ts
     - src/effects/locking/**
     - src/effects/git/**

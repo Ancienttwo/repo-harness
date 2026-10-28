@@ -13,4 +13,3 @@ source:
     - src/effects/repo-registry.ts
     - src/effects/repo-harness-home.ts
     - src/effects/bot-registry.ts
-    - src/effects/runtime/os-account-home.ts
