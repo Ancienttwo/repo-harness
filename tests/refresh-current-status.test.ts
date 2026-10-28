@@ -169,7 +169,9 @@ describe("refresh-current-status helper integration", () => {
       const sprint = run("bash", ["scripts/refresh-current-status.sh", "--write", "--reason", "path-sanitization"], cwd);
       expect(sprint.status, sprint.stderr).toBe(0);
       const sprintCurrent = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
-      expect(sprintCurrent).toContain("stale active-sprint marker -> opaque-sprint-");
+      expect(sprintCurrent).not.toContain("active-sprint");
+      expect(sprintCurrent).not.toContain("## Active Sprint");
+      expect(readFileSync(join(cwd, ".ai/harness/sprint/active-sprint"), "utf-8")).toBe(`${foreignSprint}\n`);
       expect(sprintCurrent).not.toContain(foreignSprint);
     } finally {
       if (existsSync(join(cwd, ".git")) && existsSync(linkedWorktree)) {

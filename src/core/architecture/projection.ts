@@ -1,5 +1,7 @@
 import {
   ARCHCTX_CAPABILITIES_SCHEMA_VERSION,
+  DEPENDENCY_CONSTRAINT_REASON_CODES,
+  DEPENDENCY_CONSTRAINT_STATUSES,
   NATIVE_CONTEXT_PROFILE,
   NATIVE_CONTEXT_SCHEMA_VERSION,
   nativeContextSchemaResolver,
@@ -12,6 +14,7 @@ import {
   validateJsonSchema,
   type ArchitectureDebtReportV1,
   type ArchitectureFlowSelectorCheckV1,
+  type DependencyConstraintEvaluationV1,
   type DocsAnchorsReportV1,
   type Json,
   type ProjectionApplyReadbackResultV1,
@@ -217,6 +220,35 @@ export function decodeArchitectureDebtReport(value: unknown): ArchitectureDebtRe
 /** ArchContext owns the `flows check` report contract; this applies its published schema. */
 export function decodeFlowSelectorCheck(value: unknown): ArchitectureFlowSelectorCheckV1 {
   return decode(flowSelectorCheckSchema, value, 'flows check report') as unknown as ArchitectureFlowSelectorCheckV1;
+}
+
+/**
+ * `archctx constraints check` has no published JSON schema. Validate the fields
+ * this reader consumes against the exported contract's vocabulary.
+ */
+export function decodeConstraintEvaluation(value: unknown): DependencyConstraintEvaluationV1 {
+  const report = record(value, 'archctx constraints check');
+  const strings = (entry: unknown) => Array.isArray(entry) && entry.every(item => typeof item === 'string');
+  if (report.schemaVersion !== 'archcontext.dependency-constraint-evaluation/v1') throw new Error('archctx constraints check schema mismatch');
+  if (!(DEPENDENCY_CONSTRAINT_STATUSES as readonly unknown[]).includes(report.status)) throw new Error('archctx constraints check status is invalid');
+  if (!['complete', 'partial', 'unknown'].includes(report.coverage as string)) throw new Error('archctx constraints check coverage is invalid');
+  if (!Array.isArray(report.reasonCodes) || !report.reasonCodes.every(code => (DEPENDENCY_CONSTRAINT_REASON_CODES as readonly unknown[]).includes(code))) {
+    throw new Error('archctx constraints check reason codes are invalid');
+  }
+  if (!strings(report.constraintIds)) throw new Error('archctx constraints check constraint ids are invalid');
+  if (typeof report.importEdgeCount !== 'number' || !Number.isSafeInteger(report.importEdgeCount) || report.importEdgeCount < 0) {
+    throw new Error('archctx constraints check import edge count is invalid');
+  }
+  if (!Array.isArray(report.violations)) throw new Error('archctx constraints check omitted violations');
+  for (const entry of report.violations) {
+    const violation = record(entry, 'archctx constraints check violation');
+    const optional = (field: unknown) => field === undefined || typeof field === 'string';
+    if (!['constraintId', 'fromPath', 'toPath', 'fromNode', 'toNode'].every(field => typeof violation[field] === 'string')
+      || !optional(violation.fromLayer) || !optional(violation.toLayer) || !['error', 'warning'].includes(violation.severity as string)) {
+      throw new Error('archctx constraints check violation is invalid');
+    }
+  }
+  return report as unknown as DependencyConstraintEvaluationV1;
 }
 
 /** `refs`: `archctx impact --base --head`; `paths`: `--paths-from`, which reads the worktree model at `head`. */

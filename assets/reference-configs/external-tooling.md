@@ -65,7 +65,7 @@ Exact-batch refresh resolves only those Issue endpoints and fails the whole atte
 
 Binding needs an existing admitted session for the same provider issue. Save one session `selector` object from `repo-harness state board --repository-id <id> --json` as a JSON file. Then run `repo-harness external-source bind --repo <id> --source-revision <digest> --session <file>`. The command requires a strict `read_write` registry grant. The observation's provider repository and issue must match the session admission. The command persists one immutable provenance edge with the exact observation, authorization revision, session selector and admission digest.
 
-`external-source bindings` reports source, session and authorization drift without mutating work. `external-source historical-bindings` reads retired V1 binding receipts as history only. `external-source context` is the sole provider-content renderer and wraps canonical JSON in `[ExternalSourceUntrusted]`. A binding does not create work or admission. Human acceptance stays at PR merge; only a true `installation_blocker` may pause earlier.
+`external-source bindings` reports source, session and authorization drift without mutating work. Retired V1 receipts remain stored without a runtime reader. `external-source context` is the sole provider-content renderer and wraps canonical JSON in `[ExternalSourceUntrusted]`. A binding does not create work or admission. Human acceptance stays at PR merge; only a true `installation_blocker` may pause earlier.
 
 Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.

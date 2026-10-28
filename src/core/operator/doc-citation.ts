@@ -15,13 +15,31 @@ export interface DocCitationV1 {
   readonly commit: string;
 }
 
-/** Where the cited lines are in the file the session starts from. */
+/**
+ * Where the cited lines are in the file the session starts from.
+ * `over_budget` means the check stopped before it found an answer.
+ */
 export type DocCitationCheck =
   | { readonly state: 'current' | 'relocated'; readonly start_line: number; readonly end_line: number }
-  | { readonly state: 'stale' };
+  | { readonly state: 'stale' }
+  | { readonly state: 'over_budget' };
 
 // Each relocation candidate is hashed, so the line cap bounds the work of one check.
 export const DOC_CITATION_MAX_LINES = 500;
+/**
+ * Hash work that all citation checks of one request may share. A relocation
+ * hashes one candidate range per line, so one 512 KiB file can cost about
+ * 256 MB; these caps hold the synchronous hashing of a request near 30 ms.
+ */
+export const DOC_CITATION_BUDGET_HASHES = 65_536;
+export const DOC_CITATION_BUDGET_CHARS = 16 * 1024 * 1024;
+
+/** Remaining hash work; each check takes its share from it. */
+export interface DocCitationBudget { hashes: number; chars: number }
+
+export function docCitationBudget(): DocCitationBudget {
+  return { hashes: DOC_CITATION_BUDGET_HASHES, chars: DOC_CITATION_BUDGET_CHARS };
+}
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const CITATION_KEYS = ['commit', 'end_line', 'file_sha256', 'path', 'range_sha256', 'start_line'];
@@ -52,22 +70,34 @@ export function decodeDocCitation(value: unknown): DocCitationV1 {
 /**
  * The cited lines are current when their hash matches at the cited place.
  * Otherwise they are relocated when the same lines occur at exactly one other
- * place, and stale when they occur nowhere or more than once.
+ * place, and stale when they occur nowhere or more than once. Every hash is
+ * taken from `budget` first; a check that would exceed it is `over_budget`.
  */
-export function checkDocCitation(citation: DocCitationV1, text: string): DocCitationCheck {
+export function checkDocCitation(citation: DocCitationV1, text: string, budget: DocCitationBudget): DocCitationCheck {
   // offsets[i] is where line i + 1 starts; the last entry is the end of the text.
   const offsets = [0];
   for (let index = text.indexOf('\n'); index !== -1; index = text.indexOf('\n', index + 1)) offsets.push(index + 1);
   if (offsets.at(-1) !== text.length) offsets.push(text.length);
   const lineCount = offsets.length - 1;
   const count = citation.end_line - citation.start_line + 1;
-  const at = (start: number) => sha256(text.slice(offsets[start - 1], offsets[start - 1 + count])) === citation.range_sha256;
-  if (citation.end_line <= lineCount && at(citation.start_line)) {
-    return { state: 'current', start_line: citation.start_line, end_line: citation.end_line };
+  const at = (start: number): boolean | 'over_budget' => {
+    const from = offsets[start - 1]!;
+    const to = offsets[start - 1 + count]!;
+    if (budget.hashes < 1 || budget.chars < to - from) return 'over_budget';
+    budget.hashes -= 1;
+    budget.chars -= to - from;
+    return sha256(text.slice(from, to)) === citation.range_sha256;
+  };
+  if (citation.end_line <= lineCount) {
+    const current = at(citation.start_line);
+    if (current === 'over_budget') return { state: 'over_budget' };
+    if (current) return { state: 'current', start_line: citation.start_line, end_line: citation.end_line };
   }
   let found: number | null = null;
   for (let start = 1; start + count - 1 <= lineCount; start++) {
-    if (!at(start)) continue;
+    const match = at(start);
+    if (match === 'over_budget') return { state: 'over_budget' };
+    if (!match) continue;
     if (found !== null) return { state: 'stale' };
     found = start;
   }

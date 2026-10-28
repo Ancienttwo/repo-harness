@@ -1,39 +1,12 @@
 import { buildAdmittedSourceBindingReceipt, canonicalAdmittedSourceBindingReceiptBytes, validateAdmittedSourceBindingReceipt } from '../../src/core/external-sources/admitted-binding';
 import { describe, expect, test } from 'bun:test';
 
-import {
-  buildExternalSourceBindingReceipt,
-  canonicalExternalSourceBindingReceiptBytes,
-  renderExternalSourceUntrustedContext,
-  validateExternalSourceBindingReceipt,
-} from '../../src/core/external-sources/binding';
+import { renderExternalSourceUntrustedContext } from '../../src/core/external-sources/binding';
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
 
 const DIGEST = `sha256:${'a'.repeat(64)}`;
 
-function receipt() {
-  return buildExternalSourceBindingReceipt({
-    registered_repository_id: 'repo_0123456789abcdef', authorization_revision: 7, provider: 'github',
-    provider_repository_id: '101', provider_issue_id: '202', source_revision: DIGEST, observation_sha256: `sha256:${'b'.repeat(64)}`,
-    canonical_target_ref: 'main', canonical_target_commit: 'c'.repeat(40), sprint_path: 'plans/sprints/intake.sprint.md',
-    task_id: 'd'.repeat(64), task_revision: 'e'.repeat(64), task_ref: 'implement intake',
-    plan_path: 'plans/plan-intake.md', plan_sha256: `sha256:${'f'.repeat(64)}`,
-    contract_path: 'tasks/contracts/intake.contract.md', contract_sha256: `sha256:${'1'.repeat(64)}`,
-    bound_at: '2026-09-01T00:00:00.000Z',
-  });
-}
-
-describe('ExternalSourceBindingReceiptV1', () => {
-  test('is canonical, closed, and deterministically identifies one immutable edge', () => {
-    const first = receipt();
-    const { protocol: _protocol, kind: _kind, binding_id: _bindingId, binding_sha256: _digest, ...input } = first;
-    const later = buildExternalSourceBindingReceipt({ ...input, bound_at: '2026-09-01T01:00:00.000Z' });
-    expect(first.binding_id).toBe(later.binding_id);
-    expect(first.binding_sha256).not.toBe(later.binding_sha256);
-    expect(validateExternalSourceBindingReceipt(JSON.parse(canonicalExternalSourceBindingReceiptBytes(first)))).toEqual(first);
-    expect(() => validateExternalSourceBindingReceipt({ ...first, priority: 0 })).toThrow('fields are invalid');
-  });
-
+describe('external source untrusted context', () => {
   test('renders provider bytes only inside the explicit untrusted boundary', () => {
     const observation = buildProviderIssueObservation({
       registered_repository_id: 'repo_0123456789abcdef', provider: 'github', provider_host: 'github.com', provider_repository_id: '101', provider_issue_id: '202',
@@ -59,7 +32,7 @@ function admittedInput(): Parameters<typeof buildAdmittedSourceBindingReceipt>[0
 }
 describe('ExternalSourceBindingReceiptV2 immutable correlation', () => {
   test('rejects unknown ordinary JSON fields and protocol injection', () => {
-    for (const extra of [{ protocol: 1 }, { kind: 'other' }, { extra: true }, { 'admission_sha256,authorization_revision': DIGEST }]) {
+    for (const extra of [{ protocol: 1 }, { kind: 'other' }, { extra: true }, { contract_path: 'tasks/contracts/retired.contract.md', contract_sha256: DIGEST }, { 'admission_sha256,authorization_revision': DIGEST }]) {
       const input = JSON.parse(JSON.stringify({ ...admittedInput(), ...extra }));
       expect(() => buildAdmittedSourceBindingReceipt(input)).toThrow('admitted source binding is invalid');
     }

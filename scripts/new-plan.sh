@@ -84,7 +84,6 @@ if [[ ! -f "$template_file" ]]; then
 > **Rollback Surface**:
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 
 ## Agentic Routing
 - Selected route:
@@ -94,10 +93,9 @@ if [[ ! -f "$template_file" ]]; then
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
 - Optional plan: `{{PLAN_FILE}}`
-- Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: the active approved admission and its `allowed_paths`; this plan and contract only propose scope.
+- Scope authority: the active approved admission and its `allowed_paths`; this plan only proposes scope.
 - Concurrency rule: use the current admitted task/session and immutable claim. Preserve the owning Git worktree and do not infer execution ownership from planning files.
 - Planning export: `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` prints this plan for a delegation brief or PR description; it does not activate work or create approval artifacts.
 - Execution isolation: `repo-harness run contract-worktree start --plan {{PLAN_FILE}}` can create an isolated Git worktree. Worktree creation does not replace task/session admission.
@@ -120,9 +118,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 
-## Task Contracts
-- Contract file: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Template: `.claude/templates/contract.template.md`
+## Verification
 - Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
 - Planning selection is metadata only. Do not infer active execution from an active-plan marker or the latest non-archived plan.
 
@@ -176,9 +172,6 @@ sed \
   -e "s/{{TITLE}}/${title_esc}/g" \
   -e "s/{{TIMESTAMP}}/${timestamp_esc}/g" \
   -e "s|{{PLAN_FILE}}|${plan_file}|g" \
-  "$template_file" \
-  | sed \
-    -e "s|tasks/contracts/${slug_esc}\\.contract\\.md|tasks/contracts/${artifact_stem_esc}.contract.md|g" \
-    > "$plan_file"
+  "$template_file" > "$plan_file"
 
 echo "Created plan: $plan_file"

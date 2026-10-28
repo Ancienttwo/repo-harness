@@ -85,7 +85,6 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 > **Rollback Surface**:
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 
 ## Agentic Routing
 - Selected route:
@@ -95,10 +94,9 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
 - Active plan: `{{PLAN_FILE}}`
-- Sprint contract: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
+- Scope authority: the active approved admission and its `allowed_paths`; this plan only proposes scope.
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
 
@@ -120,9 +118,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
 
-## Task Contracts
-- Contract file: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-- Template: `.claude/templates/contract.template.md`
+## Verification
 - Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. Do not infer active execution from the latest non-archived plan.
 
@@ -563,13 +559,6 @@ pi_install_templates() {
     cp "$templates_dir/plan.template.md" "$output_dir/plan.template.md"
   else
     printf '%s\n' "$PI_TEMPLATE_PLAN" > "$output_dir/plan.template.md"
-  fi
-
-  if [[ -f "$templates_dir/contract.template.md" ]]; then
-    cp "$templates_dir/contract.template.md" "$output_dir/contract.template.md"
-  else
-    echo "canonical contract template is required: $templates_dir/contract.template.md" >&2
-    return 1
   fi
 
   # Keep historical Sprint documents readable in downstream repositories.
@@ -1309,7 +1298,6 @@ pi_write_harness_policy() {
   },
   "sprints": {
     "dir": "plans/sprints",
-    "active_marker_file": ".ai/harness/sprint/active-sprint",
     "template_file": ".claude/templates/sprint.template.md",
     "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"]
   },
@@ -1410,7 +1398,7 @@ pi_write_harness_policy() {
   },
   "delegation": {
     "mode": "explicit",
-    "brief_source": "tasks/contracts/<stem>.contract.md"
+    "brief_source": "approved task/session admission"
   },
   "sidecar_research": {
     "default": true,
@@ -1830,7 +1818,7 @@ RESEARCH_README_EOF
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: bootstrap
-> **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
+> **Derived From**: active-plan, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 CURRENT_STATUS_EOF

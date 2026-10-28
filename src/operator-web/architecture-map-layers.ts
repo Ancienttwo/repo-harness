@@ -40,15 +40,16 @@ export function archctxCode(refusal: ArchctxRefusalV1): string {
   return refusal.reason_code === null ? refusal.code : `${refusal.code} ${refusal.reason_code}`;
 }
 
-/** Violations per node: debt items, unprovable flow proofs, stale doc citations, undeclared imports. */
+/** Violations per node: debt items, unprovable flow proofs, stale doc citations, undeclared imports, imports against the layer order. */
 export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
-  const { debt, flows, anchors, dependencies } = map.layers.violations;
+  const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = map.layers.violations;
   const counts = new Map<string, number>();
   const add = (id: string, count: number) => counts.set(id, (counts.get(id) ?? 0) + count);
   if (debt.state === 'ok') for (const item of debt.items) for (const id of item.nodes) add(id, 1);
   if (flows.state === 'ok') for (const entry of flows.unprovable) add(entry.id, 1);
   if (anchors.state === 'ok') for (const entry of anchors.nodes) add(entry.id, entry.findings);
   if (dependencies.state === 'ok') for (const edge of dependencies.edges) add(edge.source, 1);
+  if (layerDirection.state === 'ok') for (const edge of layerDirection.edges) add(edge.source, 1);
   return counts;
 }
 

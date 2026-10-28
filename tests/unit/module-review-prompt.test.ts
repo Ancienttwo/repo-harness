@@ -370,9 +370,9 @@ describe('issue 677 architecture readers', () => {
     const reader = new ArchitectureModelReader(root);
     expect(reader.list().modules[0].state.model_valid).toBe('valid');
     expect(reader.reviewPrompt(MODULE_ID).capability_id).toBe(MODULE_ID);
-    expect(reader.detail(MODULE_ID).linked_docs.map(doc => doc.path)).toEqual(['plans/plan-test.md', 'tasks/contracts/test.contract.md']);
+    expect(reader.detail(MODULE_ID).linked_docs.map(doc => doc.path)).toEqual(['plans/plan-test.md']);
     fixtureWrite(root, 'plans/plan-c\\d.md', `> **Capability ID**: ${MODULE_ID}\n> **Status**: Draft\n`);
-    expect(new ArchitectureModelReader(root).detail(MODULE_ID).linked_docs).toHaveLength(2);
+    expect(new ArchitectureModelReader(root).detail(MODULE_ID).linked_docs).toHaveLength(1);
     fixtureCommit(root);
     expect(() => new ArchitectureModelReader(root).detail(MODULE_ID)).toThrow('path_invalid');
   });
