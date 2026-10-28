@@ -12,7 +12,7 @@ export interface ReviewIsolationPaths {
   readonly piAgentDirectory?: string;
 }
 
-/** Owner preparation copies model configuration only. The sandbox reads source credentials through a link. */
+/** Native model configuration and credentials stay at their source; the sandbox reads them through links. */
 export function preparePiAgentDirectory(output: string, sourceHome: string): string {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
@@ -28,12 +28,9 @@ export function preparePiAgentDirectory(output: string, sourceHome: string): str
   const models = join(source, 'models.json'), destination = join(directory, 'models.json');
   if (existsSync(models)) {
     const bytes = readAuthBytes(models);
-    try {
-      if (!existsSync(destination)) writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 });
-      const copied = lstatSync(destination);
-      if (!copied.isFile() || copied.isSymbolicLink() || copied.uid !== process.getuid?.() || (copied.mode & 0o777) !== 0o600
-        || !readFileSync(destination).equals(bytes)) throw new Error('review_pi_models_changed');
-    } finally { bytes.fill(0); }
+    bytes.fill(0);
+    if (!existsSync(destination)) symlinkSync(models, destination);
+    if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
   } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
@@ -45,6 +42,26 @@ export function preparePiAgentDirectory(output: string, sourceHome: string): str
     if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
   }
   return directory;
+}
+
+/** Unlink only output-local configuration references and the empty auth placeholder. Never follow links. */
+export function removePiCredentialReferences(output: string): { status: 'removed' | 'absent' | 'cleanup_pending' } {
+  try {
+    const directory = join(ownedOutput(output), '.pi-agent');
+    let stat;
+    try { stat = lstatSync(directory); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'absent' };
+      throw error;
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(directory) !== directory) return { status: 'cleanup_pending' };
+    let removed = false, pending = false;
+    for (const name of ['models.json', 'auth.json']) {
+      try { unlinkSync(join(directory, name)); removed = true; } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') pending = true;
+      }
+    }
+    return { status: pending ? 'cleanup_pending' : removed ? 'removed' : 'absent' };
+  } catch { return { status: 'cleanup_pending' }; }
 }
 
 export function inside(path: string, directory: string): boolean {

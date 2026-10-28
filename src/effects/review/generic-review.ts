@@ -18,7 +18,7 @@ import { taskRepository } from '../git/task-repository';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory } from './review-isolation';
+import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
@@ -243,6 +243,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   const { root, primary, campaign, key, dir } = reviewLocation(options.repoRoot, options.authority);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
   let authOutput: string | undefined;
+  let piOutput: string | undefined;
   try {
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
     if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
@@ -317,7 +318,10 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       runtimeHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
-    if (session.actual_harness === 'pi') runtimeHome = preparePiAgentDirectory(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
+    if (session.actual_harness === 'pi') {
+      piOutput = outbox;
+      runtimeHome = preparePiAgentDirectory(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
+    }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: dir, journal: dir,
@@ -429,6 +433,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       projection, requested_harness: session.requested_harness, actual_harness: session.actual_harness, fallback_reason: session.fallback_reason };
   } catch (error) {
     if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+    if (piOutput && removePiCredentialReferences(piOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_pi_credential_cleanup_failed');
     throw error;
   } finally { lock.release(); }
 }
@@ -462,11 +467,16 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
   let authOutput: string | undefined;
+  let piOutput: string | undefined;
   try {
     return await locked(primary, dir, async () => {
       if (existsSync(join(dir, 'session.json'))) {
         const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-        if (owned.actual_harness === 'codex') authOutput = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+        if (owned.actual_harness === 'codex' || owned.actual_harness === 'pi') {
+          const output = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+          if (owned.actual_harness === 'codex') authOutput = output;
+          else piOutput = output;
+        }
       }
       if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
       const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
@@ -486,6 +496,9 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
       // write. A cancel that lands in that window still closes the session,
       // and the durable receipt is reported here rather than discarded.
       const accepted = cancel ? acceptedRounds(dir) : [];
+      const piCredentials = piOutput;
+      piOutput = undefined;
+      if (piCredentials && removePiCredentialReferences(piCredentials).status === 'cleanup_pending') throw new Error('cleanup_pending: review_pi_credential_cleanup_failed');
       if (cleanup.status === 'closed') writeSessionArtifact(join(dir, 'closed.json'), { cancelled: cancel, cleanup, ...(accepted.length ? { accepted_rounds: accepted } : {}) });
       return accepted.length ? { ...cleanup, accepted_rounds: accepted } : cleanup;
     }, undefined, cancel ? REVIEW_CANCEL_LOCK_WAIT_MS : 0);
@@ -496,5 +509,6 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
     throw error;
   } finally {
     if (authOutput && removeCopiedAuth(authOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_auth_copy_delete_failed');
+    if (piOutput && removePiCredentialReferences(piOutput).status === 'cleanup_pending') throw new Error('cleanup_pending: review_pi_credential_cleanup_failed');
   }
 }
