@@ -4,15 +4,18 @@ kind: capability
 name: Hook Adapters
 status: active
 layer: cli
-summary: Installs and runs typed Claude and Codex host hook routes.
+summary: Installs and runs typed Claude, Codex and Pi host hook routes.
 responsibilities:
   - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.
+  - Own the Pi event adapter, capability probe and bounded same-package Bun hook bridge.
+  - Own native Pi package registration and the profile-owned skill projections for all three hosts.
   - Own the hook event log, its size-bounded archive and the one-release run summary cleanup module.
   - Own the install, status and security commands that project and inspect the host adapters.
 source:
   include:
     - "src/cli/hook/**"
     - "src/cli/installer/**"
+    - "src/pi/**"
     - "src/effects/managed-tree.ts"
     - "src/cli/hook-entry.ts"
     - "src/effects/loop/**"
@@ -38,4 +41,5 @@ extensions:
   verification:
     - "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"
     - "bun run test:files tests/cli/route-registry.test.ts tests/stop-handler.test.ts tests/cli/install.test.ts tests/cli/status.test.ts tests/cli/security.test.ts tests/cli/hook.test.ts tests/hook-protocol.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/pi-extension.test.ts tests/pi-compat.test.ts tests/cli/pi-install.test.ts --timeout 60000 --max-concurrency 1"
     - "bash scripts/check-task-workflow.sh"

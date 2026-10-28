@@ -11,7 +11,7 @@ import {
   type SetupHost,
   type SetupHostFacts,
   type SetupSkill,
-  type SetupSnapshotV1,
+  type SetupSnapshotV2,
 } from '../core/setup/types';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
@@ -38,6 +38,7 @@ interface PageProps { readonly view: SetupView; readonly now: number; readonly t
 const HOST_ICON: Readonly<Record<SetupHost, ReactNode>> = {
   claude: <ChatCircleDotsIcon size={16} aria-hidden="true" />,
   codex: <TerminalWindowIcon size={16} aria-hidden="true" />,
+  pi: <TerminalWindowIcon size={16} aria-hidden="true" />,
 };
 
 const CHECK_TONE: Readonly<Record<SetupCheckStatus, DotTone>> = { ok: 'ok', warn: 'warn', fail: 'danger', needs_agent: 'warn', na: 'neutral' };
@@ -73,7 +74,7 @@ function stateName(state: SetupPageState): string {
 }
 
 /** The shared frame: the first read, a failure, or data with its age. */
-function SetupFrame({ page, view, now, t, children }: PageProps & { readonly page: SetupPage; readonly children: (snapshot: SetupSnapshotV1) => ReactNode }) {
+function SetupFrame({ page, view, now, t, children }: PageProps & { readonly page: SetupPage; readonly children: (snapshot: SetupSnapshotV2) => ReactNode }) {
   const state = setupPageState(view);
   const age = state.kind === 'data' && state.snapshot.collected_at ? ageWords(state.snapshot.collected_at, now, t) : null;
   return (
@@ -165,7 +166,7 @@ function CheckRow({ check, t }: { readonly check: SetupCheck; readonly t: Operat
   );
 }
 
-function AttentionSummary({ snapshot, t }: { readonly snapshot: SetupSnapshotV1; readonly t: OperatorTranslate }) {
+function AttentionSummary({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonly t: OperatorTranslate }) {
   const checks = orderChecks(snapshot.checks);
   const tone: DotTone = checks.some(check => check.status === 'fail') ? 'danger' : checks.length > 0 ? 'warn' : 'ok';
   const summary = snapshot.summary;
@@ -205,6 +206,7 @@ function mismatchText(mismatch: SetupHookMismatch, t: OperatorTranslate): string
 function sentenceText(facts: SetupHostFacts, t: OperatorTranslate): string {
   const sentence = hostSentence(facts);
   switch (sentence.kind) {
+    case 'package': return t(`setup.host.piPackage.${sentence.status}`);
     case 'not_reported': return t('setup.host.notReported', { host: hostName(facts.host, t) });
     case 'not_detected': return t('setup.host.notDetected');
     case 'not_inspected': return t('setup.host.notInspected');
@@ -219,10 +221,11 @@ function sentenceText(facts: SetupHostFacts, t: OperatorTranslate): string {
 }
 
 function hostTone(facts: SetupHostFacts): DotTone {
+  if (facts.host === 'pi') return facts.package_check === null ? 'neutral' : CHECK_TONE[facts.package_check];
   return facts.adapter_check === null ? 'neutral' : CHECK_TONE[facts.adapter_check];
 }
 
-function HostList({ snapshot, t }: { readonly snapshot: SetupSnapshotV1; readonly t: OperatorTranslate }) {
+function HostList({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonly t: OperatorTranslate }) {
   return (
     <Card labelledBy="setup-hosts-heading">
       <SectionTitle id="setup-hosts-heading">{t('setup.hosts.title')}</SectionTitle>
@@ -268,7 +271,7 @@ function fleetCell(state: SetupFleetRole['hosts'][SetupHost], t: OperatorTransla
   return <><StatusDot tone={state === 'installed' ? 'ok' : 'warn'} /><span>{t(`setup.fleet.${state}`)}</span></>;
 }
 
-function FleetTable({ snapshot, t }: { readonly snapshot: SetupSnapshotV1; readonly t: OperatorTranslate }) {
+function FleetTable({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonly t: OperatorTranslate }) {
   const unknown = t('setup.unknown');
   return (
     <Card labelledBy="setup-fleet-heading">
@@ -366,7 +369,7 @@ export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string
 
 // --- Hooks ---
 
-function ManagedEntries({ snapshot, t }: { readonly snapshot: SetupSnapshotV1; readonly t: OperatorTranslate }) {
+function ManagedEntries({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonly t: OperatorTranslate }) {
   return (
     <Card labelledBy="setup-managed-heading">
       <SectionTitle id="setup-managed-heading">{t('setup.hooks.managed')}</SectionTitle>

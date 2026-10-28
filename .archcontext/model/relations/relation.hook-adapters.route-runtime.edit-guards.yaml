@@ -3,4 +3,4 @@ id: relation.hook-adapters.route-runtime.edit-guards
 kind: calls
 source: component.hook-adapters.primary
 target: component.hook-adapters.edit-guards
-intent: "Bind the PreToolUse.edit route to the mutation guard handler"
+intent: "Bind PreToolUse.edit and the Claude or Pi PreToolUse.bash route to the typed path guards"

@@ -8,7 +8,7 @@ summary: Defines the user-facing action command skill surface, the bundled skill
 responsibilities:
   - Own action command assets and their behavior/evaluation contracts.
   - Own the bundled skill packages under assets/skills and the skill version pins.
-  - Own the pure skill-surface catalog and the profile and host projection selector that hosts and installers consume.
+  - Own the pure skill-surface catalog and the profile and host projection selector for Claude, Codex and Pi that hosts and installers consume.
 source:
   include:
     - "assets/skill-commands/**"

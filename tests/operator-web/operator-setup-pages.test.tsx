@@ -6,7 +6,7 @@ import { Window } from 'happy-dom';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../src/core/setup/cli-inventory';
 import { fetchCliInventory } from '../../src/operator-web/CliPage';
-import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { SetupSnapshotV2 } from '../../src/core/setup/types';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
@@ -39,7 +39,7 @@ const NOW = Date.now();
 const activity = decodeDevActivitySnapshot(busyDevActivity(NOW));
 const worktrees = decodeWorktrees(busyWorktrees(NOW));
 
-function props(setup: SetupSnapshotV1 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
+function props(setup: SetupSnapshotV2 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
     initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
@@ -78,7 +78,7 @@ afterEach(async () => {
 describe('setup fixtures', () => {
   test('every setup fixture passes the browser decoder and every named fixture carries one', () => {
     for (const snapshot of [readySetup(NOW), degradedSetup(NOW), loadingSetup()]) expect(() => decodeSetupSnapshot(snapshot)).not.toThrow();
-    for (const name of FIXTURE_NAMES) expect(fixtureProps(name).initialSetup?.projection_version).toBe('repo-harness.setup.v1');
+    for (const name of FIXTURE_NAMES) expect(fixtureProps(name).initialSetup?.projection_version).toBe('repo-harness.setup.v2');
     expect(fixtureProps('busy').initialSetup?.status).toBe('ready');
     expect(fixtureProps('empty').initialSetup?.reason).toBe('collection_pending');
     expect(fixtureProps('degraded').initialSetup?.status).toBe('stale');
@@ -188,7 +188,7 @@ describe('topbar freshness', () => {
   });
 
   test('stale, pending and failed setup reads say so in the line', async () => {
-    const cases: readonly [SetupSnapshotV1, string, string][] = [
+    const cases: readonly [SetupSnapshotV2, string, string][] = [
       [degradedSetup(NOW), 'stale', 'Showing setup check from 25m ago · last read failed · 5 need attention'],
       [loadingSetup(), 'pending', 'Reading configuration…'],
       [unavailableSetupSnapshot('setup_check_timeout'), 'failed', 'Setup check unavailable · setup check did not finish within 90 s'],
@@ -205,6 +205,20 @@ describe('topbar freshness', () => {
 });
 
 describe('Agents page', () => {
+  test.each([
+    ['ok', 'Detected · repo-harness package installed'],
+    ['warn', 'Detected · repo-harness package missing'],
+    ['fail', 'Detected · package check failed'],
+  ] as const)('Pi reports its package entry state (%s) and repair command', async (status, sentence) => {
+    const snapshot = readySetup(NOW);
+    snapshot.hosts[2] = { host: 'pi', reported: true, detected: true, cli_version: '1.4.0', adapter: null, adapter_check: null, package_check: status };
+    if (status !== 'ok') snapshot.checks.push({ id: 'doctor.pi-package', status, title: 'Pi package entry', detail: 'Package entry needs repair', command: 'repo-harness install --target both' });
+    await mount('#agents', props(snapshot));
+    expect(text('[data-host-row="pi"] [data-host-sentence]')).toBe(sentence);
+    if (status !== 'ok') expect(text('[data-host-row="pi"] [data-command]')).toContain('repo-harness install --target both');
+    expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
+  });
+
   test('one status line, a copyable command per item, and one row per host', async () => {
     await mount('#agents', props(readySetup(NOW)));
     expect(page().getAttribute('data-setup-state')).toBe('ready');
@@ -213,7 +227,7 @@ describe('Agents page', () => {
     const checks = all('[data-check]');
     expect(checks.map(row => row.getAttribute('data-check'))).toEqual(['doctor.security-config', 'runtime.skills_cli']);
     expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('repo-harness security scan --json');
-    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex']);
+    expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi']);
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
     expect(all('[data-fleet-role]')).toHaveLength(7);

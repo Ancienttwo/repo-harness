@@ -19,17 +19,17 @@ import {
   SETUP_SNAPSHOT_STATUSES,
   SKILL_PROJECTION_STATES,
   type SetupReason,
-  type SetupSnapshotV1,
+  type SetupSnapshotV2,
 } from './types';
 
-export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV1 {
+export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV2 {
   return {
     projection_version: SETUP_PROJECTION, status: 'unavailable', reason, collected_at: null,
     setup_status: null, summary: null, checks: [], hosts: [], skills: [], hooks: [], hook_usage: null, fleet: [],
   };
 }
 
-export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
+export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
   const fail = (what: string): never => { throw new Error(`setup projection invalid: ${what}`); };
   const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
@@ -92,7 +92,8 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
   const hosts = array(v.hosts, 'hosts');
   if (hasData ? hosts.length !== SETUP_HOSTS.length : hosts.length !== 0) fail('hosts');
   hosts.forEach((raw, index) => {
-    const h = obj(raw, ['host', 'reported', 'adapter_check', 'detected', 'adapter', 'cli_version'], 'host');
+    const keys = ['host', 'reported', 'adapter_check', 'detected', 'adapter', 'cli_version'];
+    const h = obj(raw, SETUP_HOSTS[index] === 'pi' ? [...keys, 'package_check'] : keys, 'host');
     if (h.host !== SETUP_HOSTS[index]) fail('host order');
     const reported = bool(h.reported, 'reported');
     const adapterCheck = nullable(h.adapter_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'adapter_check'));
@@ -112,10 +113,15 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
       }
       return a;
     });
-    const version = nullable(h.cli_version, x => (typeof x === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.test(x) ? x : fail('cli_version')));
+    const version = nullable(h.cli_version, x => (typeof x === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(x) ? x : fail('cli_version')));
     if (!reported && (adapterCheck !== null || detected !== null || adapter !== null || version !== null)) fail('unreported host carries facts');
-    if (reported && (adapterCheck === null || detected === null)) fail('reported host facts');
+    if (reported && (detected === null || (h.host !== 'pi' && adapterCheck === null))) fail('reported host facts');
     if (detected === false && adapter !== null) fail('undetected host adapter');
+    if (h.host === 'pi' && (adapter !== null || adapterCheck !== null)) fail('pi has no adapter file');
+    if (h.host === 'pi') {
+      const packageCheck = nullable(h.package_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'package_check'));
+      if (!reported && packageCheck !== null) fail('unreported host carries package facts');
+    }
   });
 
   const skillNames = new Set<string>();
@@ -193,11 +199,12 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV1 {
     nullable(r.model, x => packageScalar(x, 'role model'));
     nullable(r.effort, x => packageScalar(x, 'role effort'));
     perHost(r.hosts, x => nullable(x, y => oneOf(y, ['installed', 'missing'], 'role host')), 'role hosts');
+    if ((r.hosts as Record<string, unknown>).pi !== null) fail('pi has no fleet roles');
   }
 
   if (!hasData && ((v.checks as unknown[]).length || (v.skills as unknown[]).length
     || (v.hooks as unknown[]).length || hookUsage !== null || (v.fleet as unknown[]).length)) {
     fail('unavailable snapshot carries data');
   }
-  return v as unknown as SetupSnapshotV1;
+  return v as unknown as SetupSnapshotV2;
 }

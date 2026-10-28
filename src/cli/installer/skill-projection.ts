@@ -1,11 +1,12 @@
 import { existsSync, lstatSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
 import { facadesForProfile, hostSkillPlacements, type SkillSurfaceCatalog, type SkillSurfaceProfile } from '../../core/skill-surface/catalog';
-import { hostSkillRoot, stagedSkillRoot, type SkillHost } from '../../effects/host-skill-roots';
+import { hostSkillRoot, stagedSkillRoot, SKILL_HOSTS, type SkillHost } from '../../effects/host-skill-roots';
 
 export function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
-  const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL;
-  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
+  const selected = env === undefined ? process.env : env;
+  const bunInstall = selected.BUN_INSTALL;
+  const home = selected.HOME ?? selected.USERPROFILE;
   const bunRoot = bunInstall ? resolve(bunInstall) : home ? join(resolve(home), ".bun") : null;
   return bunRoot ? join(bunRoot, "install", "global", "node_modules", "repo-harness") : null;
 }
@@ -50,12 +51,13 @@ export function expectedSkillProjections(
   sourceRoot: string,
   home: string,
   profile: SkillSurfaceProfile,
+  env: NodeJS.ProcessEnv = process.env,
 ): readonly SkillProjection[] {
   const facades = new Set(facadesForProfile(catalog, profile));
   const placements = hostSkillPlacements(catalog, profile);
-  return (['claude', 'codex'] as const).flatMap(host => {
+  return SKILL_HOSTS.flatMap(host => {
     const names = new Set([...facades, ...placements[host]]);
-    const root = hostSkillRoot(home, host);
+    const root = hostSkillRoot(home, host, env);
     const projections: SkillProjection[] = [{ host, name: catalog.router, source: sourceRoot, staged: false,
       destination: join(root, catalog.router) }];
     for (const pkg of catalog.packages) {

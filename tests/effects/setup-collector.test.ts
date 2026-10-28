@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tmpWorkspace } from '../helpers/repo-fixture';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,7 +7,7 @@ import { join } from 'node:path';
 import { ROUTES } from '../../src/cli/hook/route-registry';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import { decodeSetupSnapshot } from '../../src/core/setup/decode';
-import type { SetupSnapshotV1 } from '../../src/core/setup/types';
+import type { SetupSnapshotV2 } from '../../src/core/setup/types';
 import type { AgentRuntimeProbeV1 } from '../../src/core/operator/agents-settings';
 import {
   AGENT_RUNTIME_PROBE_ARGV,
@@ -26,7 +27,7 @@ import { FAILURE_LOG_FILE } from '../../src/effects/state/resolve-effective-stat
 import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
-function snapshot(collectedAt: string): SetupSnapshotV1 {
+function snapshot(collectedAt: string): SetupSnapshotV2 {
   return projectSetupSnapshot({
     collected_at: collectedAt, setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
     checks: [{ id: 'doctor.cli-version', title: 'repo-harness CLI version', status: 'ok', detail: '0.21.1' }],
@@ -226,7 +227,7 @@ setInterval(() => {}, 1000);
       if (!outcome.ok) throw new Error(`setup child failed: ${outcome.reason}`);
       const text = JSON.stringify(outcome.snapshot);
       expect(outcome.snapshot.status).toBe('ready');
-      expect(outcome.snapshot.hosts.map(host => [host.host, host.reported])).toEqual([['claude', true], ['codex', true]]);
+      expect(outcome.snapshot.hosts.map(host => [host.host, host.reported])).toEqual([['claude', true], ['codex', true], ['pi', true]]);
       expect(outcome.snapshot.fleet).toHaveLength(7);
       expect(outcome.snapshot.hooks.flatMap(event => event.routes)).toHaveLength(ROUTES.length);
       expect(outcome.snapshot.skills.length).toBeGreaterThan(0);
@@ -238,6 +239,16 @@ setInterval(() => {}, 1000);
 });
 
 describe('setup hook usage reader', () => {
+  test('counts Pi telemetry only on routes that declare Pi', () => {
+    const root = tmpWorkspace('setup-pi-usage');
+    try {
+      const record = { protocol: HOOK_EVENT_TELEMETRY_PROTOCOL, started_at: '2026-10-10T11:00:00.000Z', host: 'pi', event: 'PreToolUse', route_id: 'edit', blocked: true };
+      appendSegmentedLog(join(root, HOOK_EVENT_TELEMETRY_PATH), `${JSON.stringify(record)}\n`, root);
+      const usage = readHookUsage(root, { path: HOOK_EVENT_TELEMETRY_PATH, protocol: HOOK_EVENT_TELEMETRY_PROTOCOL },
+        [{ event: 'PreToolUse', routeId: 'edit', hosts: ['claude', 'codex', 'pi'] }], Date.parse('2026-10-10T12:00:00.000Z'));
+      expect(usage.routes).toEqual([{ host: 'pi', event: 'PreToolUse', route_id: 'edit', calls: 1, blocked: 1, last_blocked_at: '2026-10-10T11:00:00.000Z' }]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
   test('reads the telemetry log and the failure log tail of one repository', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'setup-hook-usage-')));
     try {

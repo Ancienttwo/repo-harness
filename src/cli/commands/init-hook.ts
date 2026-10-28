@@ -378,6 +378,13 @@ function doctorChecks(
   const checks: InitHookCheck[] = [];
   for (const entry of report.checks) {
     if (target === 'claude' && entry.id === 'codex-cli-version') continue;
+    if (entry.id === 'pi-package' && entry.status === 'warn') {
+      addAction(actions, {
+        id: 'pi.package.install', status: 'needs_agent', reason: entry.detail,
+        requires_agent: true, risk: 'Registers the installed package through Pi; preserves other package entries.',
+        command: 'repo-harness install --target both', verification: verificationCommand(target, checkUpdates),
+      }, ['doctor.pi-package']);
+    }
     const source: InitHookCheckSource = entry.id === 'security-config' ? 'security' : 'doctor';
     let checkStatus: InitHookCheckStatus = entry.status;
 

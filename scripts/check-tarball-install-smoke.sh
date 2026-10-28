@@ -57,6 +57,10 @@ const pack = await Bun.file(path).json();
 const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
 const required = [
+  "src/pi/extension.ts",
+  "src/pi/hook-bridge.ts",
+  "src/pi/compat.ts",
+  "dist/hook-entry.js",
   "src/cli/hook/handler-registry.ts",
   "src/cli/hook/route-registry.ts",
   "src/cli/hook/runtime.ts",

@@ -1,0 +1,687 @@
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
+import {
+  createAgentSession, createCodemodeExtension, DefaultResourceLoader, getPackageDir,
+  ModelRuntime, SessionManager, SettingsManager, VERSION,
+  type AgentSession, type ExtensionAPI,
+} from '@earendil-works/pi-coding-agent';
+import { createAssistantMessageEventStream, type AssistantMessage, type ToolCall } from '@earendil-works/pi-ai';
+import { probePiCapability, type PiCapability } from '../src/pi/compat';
+import { registerPiHooks } from '../src/pi/extension';
+import {
+  PiHookBridge, piHookEnvironment, PI_HOOK_INPUT_BYTES, PI_HOOK_OUTPUT_BYTES, type PiHookRequest,
+} from '../src/pi/hook-bridge';
+import type { PiHookOutput } from '../src/cli/hook/hook-protocol';
+import { commitAll, initGitRepo, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
+import { writeNoticeRegistry } from './helpers/agent-notice';
+
+const buildRoot = tmpWorkspace('pi-hook-bundle');
+// test:files builds dist/hook-entry.js before this file. Exercise the same-package default.
+afterAll(() => rmSync(buildRoot, { recursive: true, force: true }));
+
+class ObservedBridge extends PiHookBridge {
+  readonly requests: PiHookRequest[] = [];
+  readonly outputs: PiHookOutput[] = [];
+  override async call(request: PiHookRequest): Promise<PiHookOutput> {
+    this.requests.push(request);
+    const output = await super.call(request);
+    this.outputs.push(output);
+    return output;
+  }
+}
+
+function assistant(content: AssistantMessage['content'] = [], stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
+  return {
+    role: 'assistant', content, api: 'openai-completions', provider: 'scripted-fixture', model: 'fixture',
+    stopReason, timestamp: Date.now(), usage: {
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  };
+}
+
+const GIT_PROBE_SCRIPTS = {
+  failure: 'process.exit(1);',
+  timeout: 'setInterval(() => {}, 1000);',
+  dubious: 'process.stderr.write("fatal: detected dubious ownership in repository\\n"); process.exit(128);',
+  other128: 'process.stderr.write("fatal: cannot read repository config\\n"); process.exit(128);',
+  wrongStatus: 'process.stderr.write("fatal: not a git repository\\n"); process.exit(1);',
+  empty: '',
+  relative: 'process.stdout.write("relative-root\\n");',
+  multiline: 'process.stdout.write("/tmp/first-root\\n/tmp/second-root\\n");',
+} as const;
+
+async function fixture(options: {
+  optIn?: boolean;
+  gitRepo?: boolean;
+  probe?: () => Promise<PiCapability>;
+  bridge?: (env: NodeJS.ProcessEnv) => ObservedBridge;
+  mode?: 'print' | 'json' | 'rpc';
+  nativeEntry?: boolean;
+  gitProbe?: 'missing' | keyof typeof GIT_PROBE_SCRIPTS;
+} = {}) {
+  const workspace = tmpWorkspace('pi-sdk-fixture');
+  const root = join(workspace, 'repo');
+  const home = join(workspace, 'home');
+  const agentDir = join(home, '.pi/agent');
+  mkdirSync(root, { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  if (options.gitRepo !== false) initGitRepo(root);
+  mkdirSync(join(root, '_ops'));
+  writeFileSync(join(root, '_ops/x'), 'protected original\n');
+  writeFileSync(join(root, 'normal.txt'), 'original\n');
+  writeFileSync(join(root, '.gitignore'), '_ops/\n.ai/harness/state/\n.ai/harness/runs/\n.ai/harness/handoff/\n');
+  if (options.optIn !== false) {
+    mkdirSync(join(root, '.ai/harness'), { recursive: true });
+    writeFileSync(join(root, '.ai/harness/workflow-contract.json'), '{}\n');
+    writeFileSync(join(root, '.ai/harness/policy.json'), '{}\n');
+  }
+  if (options.gitRepo !== false) commitAll(root, 'SDK fixture');
+  const bin = join(home, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'repo-harness-hook'), '#!/bin/sh\n: > "$HOME/decoy-ran"\nexit 99\n');
+  chmodSync(join(bin, 'repo-harness-hook'), 0o755);
+  const env = { ...process.env, HOME: home, PI_CODING_AGENT_DIR: agentDir,
+    PATH: `${bin}${delimiter}${process.env.PATH}`, HOOK_HOST: 'codex', HOOK_REPO_ROOT: '/stale-root', REPO_HARNESS_RUN_ID: 'stale-run' };
+  const bridges: ObservedBridge[] = [];
+  const script: AssistantMessage[] = [];
+  const providerContexts: unknown[] = [];
+  let waitingForAbort: (() => void) | undefined;
+  const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, refreshOnCreate: false });
+  // Scripted provider fixture. The real SDK and tools execute every requested call.
+  modelRuntime.registerProvider('scripted-fixture', {
+    api: 'openai-completions', apiKey: 'fixture-only', baseUrl: 'http://127.0.0.1:1',
+    models: [{ id: 'fixture', name: 'Scripted fixture', reasoning: false, input: ['text'],
+      contextWindow: 200_000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    streamSimple: (_model, context, streamOptions) => {
+      providerContexts.push(context);
+      const stream = createAssistantMessageEventStream();
+      if (waitingForAbort) {
+        const abort = () => stream.push({ type: 'error', reason: 'aborted', error: assistant([], 'aborted') });
+        streamOptions?.signal?.addEventListener('abort', abort, { once: true });
+        waitingForAbort();
+        if (streamOptions?.signal?.aborted) abort();
+      } else {
+        const message = script.shift() ?? assistant([{ type: 'text', text: 'fixture done' }]);
+        stream.push({ type: 'start', partial: message });
+        stream.push({ type: 'done', reason: message.stopReason as 'stop' | 'toolUse', message });
+      }
+      return stream;
+    },
+  });
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+  const loader = new DefaultResourceLoader({
+    cwd: root, agentDir, settingsManager, noExtensions: true, noSkills: true, noPromptTemplates: true,
+    noThemes: true, noContextFiles: true,
+    additionalExtensionPaths: options.nativeEntry ? [join(import.meta.dir, '../src/pi/extension.ts')] : [],
+    extensionFactories: [
+      ...(options.nativeEntry ? [] : [(pi: ExtensionAPI) => registerPiHooks(pi, {
+        probe: options.probe,
+        bridge: () => {
+          const bridge = options.bridge?.(env) ?? new ObservedBridge({ env });
+          bridges.push(bridge);
+          return bridge;
+        },
+      })]),
+      createCodemodeExtension({ models: false }),
+    ],
+  });
+  await loader.reload();
+  expect(loader.getExtensions().errors).toEqual([]);
+  const { session } = await createAgentSession({
+    cwd: root, agentDir, modelRuntime, model: modelRuntime.getModel('scripted-fixture', 'fixture'),
+    sessionManager: SessionManager.inMemory(root), settingsManager, resourceLoader: loader,
+    tools: ['edit', 'write', 'bash', 'codemode'], thinkingLevel: 'off',
+  });
+  const previousGit = process.env.REPO_HARNESS_GIT_BIN;
+  if (options.gitProbe) {
+    const probeGit = join(bin, 'probe-git');
+    if (options.gitProbe !== 'missing') {
+      writeFileSync(probeGit, `#!${process.execPath}\n${GIT_PROBE_SCRIPTS[options.gitProbe]}\n`, { mode: 0o755 });
+    }
+    process.env.REPO_HARNESS_GIT_BIN = probeGit;
+  }
+  try { await session.bindExtensions({ mode: options.mode ?? 'print' }); }
+  finally {
+    if (previousGit === undefined) delete process.env.REPO_HARNESS_GIT_BIN;
+    else process.env.REPO_HARNESS_GIT_BIN = previousGit;
+  }
+  let counter = 0;
+  return {
+    root, home, session, bridges, providerContexts,
+    async tool(name: string, args: ToolCall['arguments']) {
+      const id = `fixture-${++counter}`;
+      script.push(assistant([{ type: 'toolCall', id, name, arguments: args }], 'toolUse'));
+      await session.prompt('Run the scripted fixture tool.', { expandPromptTemplates: false });
+      const result = session.messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+      if (!result || result.role !== 'toolResult') throw new Error(`SDK tool result missing: ${id}`);
+      return result;
+    },
+    async abort() {
+      const ready = new Promise<void>(resolve => { waitingForAbort = resolve; });
+      const run = session.prompt('Wait for fixture cancellation.', { expandPromptTemplates: false });
+      await ready;
+      await session.abort();
+      await run;
+      waitingForAbort = undefined;
+    },
+    async close() {
+      await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
+      session.dispose();
+      for (const bridge of bridges) bridge.close();
+      rmSync(workspace, { recursive: true, force: true });
+    },
+  };
+}
+
+function records(root: string): Record<string, unknown>[] {
+  return readFileSync(join(root, '.ai/harness/runs/hook-events.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+}
+function customMessages(session: AgentSession) {
+  return session.messages.filter(message => message.role === 'custom' && message.customType === 'repo-harness');
+}
+
+describe('Pi real SDK with scripted provider fixture', () => {
+  test('normal tools pass; protected direct and codemode writes keep their bytes', async () => {
+    const f = await fixture();
+    try {
+      expect((await f.tool('write', { path: 'new.txt', content: 'new bytes\n' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'new.txt'), 'utf8')).toBe('new bytes\n');
+      expect((await f.tool('edit', { path: '@normal.txt', oldText: 'original', newText: 'edited' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('edited\n');
+      for (const [name, args] of [
+        ['write', { path: '_ops/x', content: 'forbidden' }],
+        ['edit', { path: '_ops/x', oldText: 'protected original', newText: 'forbidden' }],
+        ['bash', { command: 'printf forbidden > _ops/x' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/x", content: "forbidden"});' }],
+      ] as const) {
+        const result = await f.tool(name, args);
+        expect(result.isError, `${name}: ${JSON.stringify(result)}`).toBe(true);
+        expect(JSON.stringify(result)).toContain('OpsPrivateGuard');
+        expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      }
+      const requests = f.bridges.flatMap(bridge => bridge.requests);
+      const nested = requests.find(request => request.payload.parent_tool_call_id !== null && request.payload.parent_tool_call_id !== undefined);
+      expect(nested?.payload).toMatchObject({ tool_name: 'Write', tool_call_id: 'fixture-6/1', parent_tool_call_id: 'fixture-6' });
+      expect(nested?.payload.tool_input).toEqual({ file_path: join(f.root, '_ops/x') });
+      const toolRecords = records(f.root).filter(record => record.event === 'PreToolUse');
+      expect(toolRecords).toHaveLength(6);
+      expect(toolRecords.every(record => record.host === 'pi' && record.session_id === f.session.sessionManager.getSessionId())).toBe(true);
+      expect(new Set(toolRecords.map(record => record.run_id)).size).toBe(6);
+      expect(toolRecords.filter(record => record.blocked)).toHaveLength(4);
+      expect(existsSync(join(f.home, 'decoy-ran'))).toBe(false);
+    } finally { await f.close(); }
+  });
+
+  test('context is hidden and delivered once per session; inbox notices reach the model', async () => {
+    const f = await fixture();
+    try {
+      // Adopt registry context after SessionStart, so inbox owns the new status notice.
+      writeNoticeRegistry(f.root);
+      writeFileSync(join(f.root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'registry' } }));
+      await f.tool('write', { path: 'first.txt', content: 'one' });
+      await f.tool('write', { path: 'second.txt', content: 'two' });
+      const messages = customMessages(f.session);
+      expect(messages.every(message => message.role === 'custom' && message.display === false)).toBe(true);
+      expect(messages.filter(message => JSON.stringify(message).includes('[HarnessState]'))).toHaveLength(1);
+      const bridge = f.bridges[0]!;
+      expect(bridge.requests.filter(request => request.event === 'SessionStart')).toHaveLength(1);
+      expect(bridge.requests.filter(request => request.event === 'UserPromptSubmit')).toHaveLength(2);
+      const notice = bridge.outputs.find(output => output.event === 'UserPromptSubmit' && output.additional_context);
+      expect(notice?.additional_context).toContain('[Architecture]');
+      expect(JSON.stringify(f.providerContexts)).toContain(notice!.additional_context!);
+      await f.session.extensionRunner.emit({ type: 'session_shutdown', reason: 'reload' });
+      await f.session.extensionRunner.emit({ type: 'session_start', reason: 'reload' });
+      await f.tool('write', { path: 'after-reload.txt', content: 'three' });
+      expect(customMessages(f.session).filter(message => JSON.stringify(message).includes('[HarnessState]'))).toHaveLength(2);
+      expect(f.bridges).toHaveLength(2);
+    } finally { await f.close(); }
+  });
+
+  test('agent_settled passes aborted and renders the Stop recovery views', async () => {
+    const f = await fixture();
+    try {
+      await f.tool('write', { path: 'normal.txt', content: 'complete' });
+      await f.abort();
+      const stops = f.bridges.flatMap(bridge => bridge.requests).filter(request => request.event === 'Stop');
+      expect(stops.map(request => request.payload.aborted)).toEqual([false, true]);
+      expect(records(f.root).filter(record => record.event === 'Stop')).toHaveLength(2);
+      expect(existsSync(join(f.root, '.ai/harness/handoff/current.md'))).toBe(true);
+      expect(existsSync(join(f.root, '.ai/harness/handoff/resume.md'))).toBe(true);
+    } finally { await f.close(); }
+  });
+
+  test.each(['print', 'json', 'rpc'] as const)('%s mode blocks without UI or hook stdout', async (mode) => {
+    const f = await fixture({ mode });
+    const stdout: string[] = [];
+    const capture = spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => { stdout.push(String(chunk)); return true; });
+    try {
+      expect(f.session.extensionRunner.hasUI()).toBe(false);
+      expect((await f.tool('write', { path: '_ops/x', content: 'forbidden' })).isError).toBe(true);
+      expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      expect(stdout.join('')).toBe('');
+    } finally { capture.mockRestore(); await f.close(); }
+  });
+
+  test.each([
+    ['old version', () => probePiCapability('1.3.9', getPackageDir()), 'PI_HOST_UNSUPPORTED_VERSION'],
+    ['missing resolver', () => probePiCapability(VERSION, getPackageDir(), async () => ({})), 'PI_HOST_PATH_RESOLVER_UNAVAILABLE'],
+  ] as const)('%s is unavailable and blocks each mutation tool', async (_name, probe, code) => {
+    const f = await fixture({ probe });
+    try {
+      for (const [name, args] of [
+        ['write', { path: '_ops/x', content: 'forbidden' }],
+        ['edit', { path: '_ops/x', oldText: 'protected original', newText: 'forbidden' }],
+        ['bash', { command: 'printf forbidden > _ops/x' }],
+      ] as const) {
+        const result = await f.tool(name, args);
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain(code);
+      }
+      expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      expect(JSON.stringify(customMessages(f.session))).toContain(code);
+    } finally { await f.close(); }
+  });
+
+  test('a repository without the opt-in marker is inactive and calls no hooks or probe', async () => {
+    let probes = 0;
+    const f = await fixture({ optIn: false, probe: async () => { probes++; throw new Error('must not probe'); } });
+    try {
+      expect((await f.tool('write', { path: '_ops/x', content: 'inactive write' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('inactive write');
+      expect(probes).toBe(0);
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      expect(customMessages(f.session)).toHaveLength(0);
+    } finally { await f.close(); }
+  });
+
+  test.each([
+    ['a non-Git directory with real Git', { gitRepo: false, optIn: false }],
+    ['dubious ownership exit 128', { gitProbe: 'dubious' }],
+  ] as const)('%s stays inactive and allows tools', async (_name, options) => {
+    let probes = 0;
+    const f = await fixture({ ...options, probe: async () => { probes++; throw new Error('must not probe'); } });
+    try {
+      expect((await f.tool('write', { path: 'normal.txt', content: 'written\n' })).isError).toBe(false);
+      expect((await f.tool('edit', { path: 'normal.txt', oldText: 'written', newText: 'edited' })).isError).toBe(false);
+      expect((await f.tool('bash', { command: 'printf shell > normal.txt' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('shell');
+      expect(probes).toBe(0);
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      expect(customMessages(f.session)).toHaveLength(0);
+    } finally { await f.close(); }
+  });
+
+  test.each(['missing', 'failure', 'timeout', 'other128', 'wrongStatus', 'empty', 'relative', 'multiline'] as const)('repository probe %s blocks mutations and reports once', async (gitProbe) => {
+    let probes = 0;
+    const f = await fixture({ gitProbe, probe: async () => {
+      probes++;
+      return probePiCapability(VERSION, getPackageDir());
+    } });
+    try {
+      for (const [name, args] of [
+        ['write', { path: '_ops/x', content: 'forbidden' }],
+        ['edit', { path: '_ops/x', oldText: 'protected original', newText: 'forbidden' }],
+        ['bash', { command: 'printf forbidden > _ops/x' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/x", content: "forbidden"});' }],
+      ] as const) {
+        const result = await f.tool(name, args);
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain('PI_HOST_REPO_PROBE_FAILED');
+        expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      }
+      expect(probes).toBe(0);
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      const messages = customMessages(f.session);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ content: 'PI_HOST_REPO_PROBE_FAILED', display: false });
+      // A new runtime probes again and can recover after Git is available.
+      await f.session.extensionRunner.emit({ type: 'session_shutdown', reason: 'reload' });
+      await f.session.extensionRunner.emit({ type: 'session_start', reason: 'reload' });
+      expect((await f.tool('write', { path: 'normal.txt', content: 'recovered' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('recovered');
+      expect(probes).toBe(1);
+    } finally { await f.close(); }
+  });
+
+  test('the package entry loads through the real SDK extension loader', async () => {
+    const f = await fixture({ nativeEntry: true });
+    try {
+      expect(f.session.extensionRunner.getExtensionPaths()).toContain(join(import.meta.dir, '../src/pi/extension.ts'));
+      expect((await f.tool('write', { path: 'normal.txt', content: 'native entry' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('native entry');
+      expect((await f.tool('write', { path: '_ops/x', content: 'forbidden' })).isError).toBe(true);
+      expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      expect(records(f.root).some(record => record.host === 'pi' && record.blocked === true)).toBe(true);
+    } finally { await f.close(); }
+  });
+
+  test('a late tool result from the prior runtime cannot admit a write after reload', async () => {
+    let reached!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { reached = resolve; });
+    const delayed = new Promise<void>(resolve => { release = resolve; });
+    class DelayedBridge extends ObservedBridge {
+      override async call(request: PiHookRequest) {
+        const output = await super.call(request);
+        if (request.event === 'PreToolUse') { reached(); await delayed; }
+        return output;
+      }
+    }
+    const f = await fixture({ bridge: env => new DelayedBridge({ env }) });
+    try {
+      await f.session.extensionRunner.emitBeforeAgentStart({ messageType: 'user', prompt: 'old run' }, { cwd: f.root });
+      const pending = f.session.extensionRunner.emitToolCall({ type: 'tool_call', toolCallId: 'old-call',
+        toolName: 'write', input: { path: 'normal.txt', content: 'late' } });
+      await ready;
+      await f.session.extensionRunner.emit({ type: 'session_shutdown', reason: 'reload' });
+      await f.session.extensionRunner.emit({ type: 'session_start', reason: 'reload' });
+      release();
+      expect(await pending).toEqual({ block: true, reason: 'PI_HOOK_STALE_SESSION' });
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('original\n');
+      await f.tool('write', { path: 'normal.txt', content: 'new runtime' });
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('new runtime');
+    } finally { release(); await f.close(); }
+  });
+});
+
+describe('Pi extension with the real Pi CLI', () => {
+  // The CLI, tools and hook child are real; only the model is a fixture.
+  const root = join(import.meta.dir, '..');
+  const packageDir = join(root, 'node_modules/@earendil-works/pi-coding-agent');
+  const pi = join(packageDir, 'dist/bundle/cli.js');
+  const extension = join(root, 'src/pi/extension.ts');
+  const provider = join(import.meta.dir, 'fixtures/pi/scripted-provider.ts');
+  const protectedBytes = 'protected seed\n';
+  type Call = [string, Record<string, unknown>];
+
+  function fixture(optIn = true) {
+    const base = tmpWorkspace('pi-cli-host');
+    const repo = join(base, 'repo');
+    const home = join(base, 'home');
+    mkdirSync(repo);
+    mkdirSync(home);
+    initGitRepo(repo);
+    writeFileSync(join(repo, 'README.md'), 'seed\n');
+    writeFileSync(join(repo, '.gitignore'), '_ops/\n.ai/harness/runs/\n.ai/harness/state/\n.ai/harness/handoff/\n.ai/harness/journal/\n.ai/harness/checks/\n.ai/harness/failures/\n.ai/harness/events.jsonl\n');
+    if (optIn) {
+      mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai/harness/workflow-contract.json'), '{}\n');
+      writeFileSync(join(repo, '.ai/harness/policy.json'), '{}\n');
+    }
+    commitAll(repo, 'seed');
+    mkdirSync(join(repo, '_ops'));
+    writeFileSync(join(repo, '_ops/keep.txt'), protectedBytes);
+    const log = join(base, 'provider.jsonl');
+    const env = sandboxEnv({ HOME: home, BUN_INSTALL: join(home, '.bun'), REPO_HARNESS_HOME: join(home, '.repo-harness'),
+      PI_CODING_AGENT_DIR: join(home, '.pi/agent'), PI_PACKAGE_DIR: packageDir,
+      PI_FIXTURE_LOG: log, REPO_HARNESS_WORKFLOW_PROFILE: 'routine', NO_COLOR: '1', FORCE_COLOR: '0' });
+    return { root: repo, env, log, cleanup: () => rmSync(base, { recursive: true, force: true }) };
+  }
+
+  function piArgs(...extra: string[]): string[] {
+    return [pi, '--no-session', '--offline', '-ne', '-e', extension, '-e', provider,
+      '--provider', 'fixture', '--model', 'scripted', ...extra];
+  }
+
+  function print(f: ReturnType<typeof fixture>, runs: Call[][], ...extra: string[]) {
+    const result = spawnSync(process.env.REPO_HARNESS_NODE_BIN ?? 'node', piArgs(...extra, '-p', 'Run the fixture tools.'), {
+      cwd: f.root, encoding: 'utf8', env: { ...f.env, PI_FIXTURE_CALLS: JSON.stringify(runs) }, input: '', timeout: 50_000,
+    });
+    if (result.status !== 0) throw new Error(`pi failed (${result.status}):\n${result.stdout}\n${result.stderr}`);
+    return result;
+  }
+
+  function telemetry(repo: string): Array<Record<string, unknown>> {
+    const file = join(repo, '.ai/harness/runs/hook-events.jsonl');
+    return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
+  }
+  function routes(repo: string): string[] {
+    return telemetry(repo).map(record => `${record.event}.${record.route_id}${record.blocked ? ' blocked' : ''}`);
+  }
+  function transcripts(log: string): string[] {
+    return readFileSync(log, 'utf8').trim().split('\n');
+  }
+  const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+
+  test('print mode admits normal edits and blocks protected edit, write, bash and nested codemode writes', () => {
+    const f = fixture();
+    try {
+      const result = print(f, [[
+        ['write', { path: 'ok.txt', content: 'normal' }],
+        ['edit', { path: 'README.md', edits: [{ oldText: 'seed', newText: 'edited' }] }],
+        ['write', { path: '_ops/new.txt', content: 'forbidden' }],
+        ['edit', { path: '_ops/keep.txt', edits: [{ oldText: 'protected', newText: 'changed' }] }],
+        ['bash', { command: 'printf changed > _ops/keep.txt' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/nested.txt", content: "forbidden"}); return "nested";' }],
+        ['codemode', { code: 'await tools.write({path: "nested-ok.txt", content: "nested"}); return "nested";' }],
+      ]], '-e', 'builtin:codemode', '--tools', '+codemode');
+      expect(result.stdout).toBe('Done.\n');
+      expect(readFileSync(join(f.root, 'ok.txt'), 'utf8')).toBe('normal');
+      expect(readFileSync(join(f.root, 'README.md'), 'utf8')).toBe('edited\n');
+      expect(readFileSync(join(f.root, 'nested-ok.txt'), 'utf8')).toBe('nested');
+      expect(readFileSync(join(f.root, '_ops/keep.txt'), 'utf8')).toBe(protectedBytes);
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(existsSync(join(f.root, '_ops/nested.txt'))).toBe(false);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox',
+        'PreToolUse.edit', 'PreToolUse.edit', 'PreToolUse.edit blocked', 'PreToolUse.edit blocked', 'PreToolUse.bash blocked',
+        'PreToolUse.edit blocked', 'PreToolUse.edit', 'Stop.default',
+      ]);
+      expect(telemetry(f.root).every(record => record.host === 'pi')).toBe(true);
+      const runIds = new Set(telemetry(f.root).filter(record => record.event !== 'SessionStart').map(record => record.run_id));
+      expect(runIds.size).toBe(1);
+      const final = transcripts(f.log).at(-1)!;
+      expect(occurrences(final, '[EditGuardScope]')).toBe(1);
+      expect(final).toContain('Claude and Pi Bash have a literal-write tripwire only');
+      expect(final).toContain('OpsPrivateGuard');
+    } finally { f.cleanup(); }
+  });
+
+  test('JSON mode keeps stdout to Pi events and still blocks a protected write', () => {
+    const f = fixture();
+    try {
+      const result = print(f, [[['write', { path: '_ops/new.txt', content: 'forbidden' }]]], '--mode', 'json');
+      for (const line of result.stdout.trim().split('\n')) {
+        const event = JSON.parse(line);
+        expect(typeof event.type).toBe('string');
+        expect(event.protocol).toBeUndefined();
+      }
+      expect(result.stdout).not.toContain('repo-harness-hook');
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(routes(f.root)).toContain('PreToolUse.edit blocked');
+    } finally { f.cleanup(); }
+  });
+
+  test('inherited Git selectors cannot redirect the opt-in probe or hook child to another repository', () => {
+    const f = fixture();
+    const foreign = join(f.root, '..', 'foreign-repo');
+    try {
+      mkdirSync(foreign);
+      initGitRepo(foreign);
+      expect(existsSync(join(foreign, '.ai/harness/workflow-contract.json'))).toBe(false);
+      f.env.GIT_DIR = join(foreign, '.git');
+      f.env.GIT_WORK_TREE = foreign;
+      print(f, [[
+        ['write', { path: '_ops/keep.txt', content: 'forbidden' }],
+        ['edit', { path: '_ops/keep.txt', edits: [{ oldText: 'protected', newText: 'changed' }] }],
+        ['bash', { command: 'printf changed > _ops/keep.txt' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/keep.txt", content: "forbidden"});' }],
+      ]], '-e', 'builtin:codemode', '--tools', '+codemode');
+      expect(readFileSync(join(f.root, '_ops/keep.txt'), 'utf8')).toBe(protectedBytes);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox',
+        'PreToolUse.edit blocked', 'PreToolUse.edit blocked', 'PreToolUse.bash blocked', 'PreToolUse.edit blocked',
+        'Stop.default',
+      ]);
+      expect(telemetry(f.root).filter(record => record.blocked)).toHaveLength(4);
+      expect(telemetry(f.root).every(record => record.host === 'pi')).toBe(true);
+      expect(telemetry(foreign)).toEqual([]);
+    } finally { f.cleanup(); }
+  });
+
+  test('RPC mode delivers session context once over two prompts, blocks a protected write and stops after an abort', async () => {
+    const f = fixture();
+    const child = spawn(process.env.REPO_HARNESS_NODE_BIN ?? 'node', piArgs('--mode', 'rpc'), {
+      cwd: f.root, env: { ...f.env, PI_FIXTURE_CALLS: JSON.stringify([
+        [['write', { path: '_ops/new.txt', content: 'forbidden' }]],
+        [['bash', { command: 'printf started; exec sleep 60' }]],
+      ]) }, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const events: Array<Record<string, unknown>> = [];
+    const waiters: Array<() => void> = [];
+    let buffer = '';
+    let stderr = '';
+    let failure: Error | undefined;
+    const wake = () => { for (const resolve of waiters.splice(0)) resolve(); };
+    const closed = new Promise<void>(resolve => child.once('close', () => { failure ??= new Error(`Pi RPC exited before the expected event: ${stderr}`); wake(); resolve(); }));
+    child.once('error', error => { failure = error; wake(); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      let index: number;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (!line.trim()) continue;
+        try { events.push(JSON.parse(line)); }
+        catch { failure = new Error(`Pi RPC wrote invalid JSON: ${line}`); }
+        wake();
+      }
+    });
+    const deadline = setTimeout(() => { failure = new Error(`Pi RPC fixture timed out: ${stderr}`); wake(); }, 50_000);
+    const until = async (match: (event: Record<string, unknown>) => boolean, from: number) => {
+      while (!events.slice(from).some(match)) {
+        if (failure) throw failure;
+        await new Promise<void>(resolve => waiters.push(resolve));
+      }
+      return events.length;
+    };
+    const send = (command: Record<string, unknown>) => child.stdin.write(`${JSON.stringify(command)}\n`);
+    try {
+      send({ id: 'p1', type: 'prompt', message: 'Write the file.' });
+      const mark = await until(event => event.type === 'agent_settled', 0);
+      send({ id: 'p2', type: 'prompt', message: 'Run the command.' });
+      await until(event => event.type === 'tool_execution_update', mark);
+      send({ id: 'a1', type: 'abort' });
+      await until(event => event.type === 'agent_settled' && event.aborted === true, mark);
+      expect(existsSync(join(f.root, '_ops/new.txt'))).toBe(false);
+      expect(routes(f.root)).toEqual([
+        'SessionStart.default', 'UserPromptSubmit.inbox', 'PreToolUse.edit blocked', 'Stop.default',
+        'UserPromptSubmit.inbox', 'PreToolUse.bash', 'Stop.default',
+      ]);
+      expect(new Set(telemetry(f.root).filter(record => record.event === 'Stop').map(record => record.run_id)).size).toBe(2);
+      const final = transcripts(f.log).at(-1)!;
+      expect(occurrences(final, '[EditGuardScope]')).toBe(1);
+    } finally {
+      clearTimeout(deadline);
+      child.stdin.end();
+      child.kill('SIGTERM');
+      const force = setTimeout(() => child.kill('SIGKILL'), 3_000);
+      await closed;
+      clearTimeout(force);
+      f.cleanup();
+    }
+  });
+
+  test('a repository without the opt-in marker stays inactive', () => {
+    const f = fixture(false);
+    try {
+      print(f, [[['write', { path: '_ops/new.txt', content: 'outside the harness' }]]]);
+      expect(readFileSync(join(f.root, '_ops/new.txt'), 'utf8')).toBe('outside the harness');
+      expect(telemetry(f.root)).toEqual([]);
+      expect(transcripts(f.log).some(text => text.includes('[EditGuardScope]'))).toBe(false);
+    } finally { f.cleanup(); }
+  });
+});
+
+describe('Pi hook child boundary', () => {
+  function childScript(code: string): string {
+    const entry = join(buildRoot, `fixture-${crypto.randomUUID()}.js`);
+    writeFileSync(entry, code);
+    return entry;
+  }
+  const request: PiHookRequest = { event: 'PreToolUse', routeId: 'edit', cwd: buildRoot, payload: {} };
+  const wire: PiHookOutput = { protocol: 1, event: 'PreToolUse', route_id: 'edit', exit_code: 0, reason: 'ok',
+    decision: 'none', additional_context: null, system_message: null, diagnostics: '' };
+
+  test('identity and target environment is removed; hook configuration remains', async () => {
+    const env = piHookEnvironment({ PATH: '/bin', HOOK_HOST: 'codex', HOOK_REPO_ROOT: '/other', HOOK_SESSION_ID: 'stale',
+      GIT_DIR: '/foreign/.git', GIT_WORK_TREE: '/foreign', GIT_CONFIG_GLOBAL: '/tmp/fixture-gitconfig',
+      REPO_HARNESS_SOURCE_ROOT: '/stale-source', REPO_HARNESS_HELPER_SOURCE_PATH: '/stale-helper',
+      REPO_HARNESS_TARGET_REPO_ROOT: '/stale-target', REPO_HARNESS_HOME: '/tmp/fixture-registry',
+      REPO_HARNESS_GIT_BIN: '/tmp/fixture-git', REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun',
+      REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected', HOME: '/tmp/fixture-home' });
+    expect(env).toEqual({ PATH: '/bin', HOME: '/tmp/fixture-home', HOOK_HOST: 'pi', GIT_CONFIG_GLOBAL: '/tmp/fixture-gitconfig',
+      REPO_HARNESS_HOME: '/tmp/fixture-registry', REPO_HARNESS_GIT_BIN: '/tmp/fixture-git',
+      REPO_HARNESS_BUN_BIN: '/tmp/fixture-bun', REPO_HARNESS_PROTECTED_TMPDIR: '/tmp/fixture-protected' });
+    const entry = childScript(`process.stdin.resume(); process.stdin.on('end', () => console.log(JSON.stringify(${JSON.stringify(wire)})));`);
+    const bridge = new PiHookBridge({ entry });
+    try { expect(await bridge.call(request)).toEqual(wire); } finally { bridge.close(); }
+  });
+
+  test.each([
+    ['invalid JSON', 'console.log("not json")', 'PI_HOOK_INVALID_OUTPUT'],
+    ['multiple objects', 'console.log("{}\\n{}")', 'PI_HOOK_INVALID_OUTPUT'],
+    ['protocol mismatch', `console.log(${JSON.stringify(JSON.stringify({ ...wire, protocol: 2 }))})`, 'PI_HOOK_PROTOCOL_MISMATCH'],
+    ['wrong route', `console.log(${JSON.stringify(JSON.stringify({ ...wire, route_id: 'bash' }))})`, 'PI_HOOK_INVALID_OUTPUT'],
+    ['exit mismatch', `console.log(${JSON.stringify(JSON.stringify({ ...wire, exit_code: 2 }))})`, 'PI_HOOK_INVALID_OUTPUT'],
+    ['bridge crash', 'process.exit(1)', 'PI_HOOK_INVALID_OUTPUT'],
+    ['stdout limit', `process.stdout.write('x'.repeat(${PI_HOOK_OUTPUT_BYTES + 1}))`, 'PI_HOOK_OUTPUT_LIMIT'],
+  ])('%s fails closed', async (_name, code, reason) => {
+    const entry = childScript(`await Bun.stdin.text(); ${code};`);
+    const f = await fixture({ bridge: env => new ObservedBridge({ entry, env }) });
+    try {
+      const result = await f.tool('write', { path: 'normal.txt', content: 'must not write' });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain(reason);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('original\n');
+    } finally { await f.close(); }
+  });
+
+  test('a timeout kills only its child and does not retry', async () => {
+    const entry = childScript('await Bun.stdin.text(); setInterval(() => {}, 1000);');
+    const f = await fixture({ bridge: env => new ObservedBridge({ entry, env, timeoutMs: 100 }) });
+    try {
+      const result = await f.tool('bash', { command: 'printf forbidden > normal.txt' });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain('PI_HOOK_TIMEOUT');
+      expect(f.bridges.flatMap(bridge => bridge.requests).filter(item => item.event === 'PreToolUse')).toHaveLength(1);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('original\n');
+    } finally { await f.close(); }
+  });
+
+  test('input limit is checked before spawning; shutdown cancels and remains idempotent', async () => {
+    const bridge = new PiHookBridge({ bun: '/no-such-bun' });
+    await expect(bridge.call({ ...request, payload: { text: 'x'.repeat(PI_HOOK_INPUT_BYTES) } })).rejects.toThrow('PI_HOOK_INPUT_LIMIT');
+    const child = new PiHookBridge({ entry: childScript('setInterval(() => {}, 1000);') });
+    const pending = child.call(request).then(() => null, error => error as Error);
+    child.close();
+    child.close();
+    expect((await pending)?.message).toBe('PI_HOOK_CANCELLED');
+    await expect(child.call(request)).rejects.toThrow('PI_HOOK_CANCELLED');
+  });
+
+  test('a missing Bun binary blocks execution', async () => {
+    const f = await fixture({ bridge: env => new ObservedBridge({ bun: '/no-such-bun', env }) });
+    try {
+      const result = await f.tool('edit', { path: 'normal.txt', oldText: 'original', newText: 'forbidden' });
+      expect(result.isError).toBe(true);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('original\n');
+    } finally { await f.close(); }
+  });
+
+  test('an updated input blocks with the fixed unsupported code', async () => {
+    const entry = childScript(`await Bun.stdin.text(); console.log(${JSON.stringify(JSON.stringify({ ...wire, updated_input: { path: 'elsewhere' } }))});`);
+    const f = await fixture({ bridge: env => new ObservedBridge({ entry, env }) });
+    try {
+      const result = await f.tool('write', { path: 'normal.txt', content: 'must not write' });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain('PI_HOST_UPDATED_INPUT_UNSUPPORTED');
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('original\n');
+    } finally { await f.close(); }
+  });
+});

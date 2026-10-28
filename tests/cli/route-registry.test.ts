@@ -39,6 +39,13 @@ describe('typed hook route registry', () => {
       'UserPromptSubmit.inbox',
       'Stop.default',
     ]);
+    expect(routesForHost('pi').map((route) => `${route.event}.${route.routeId}`)).toEqual([
+      'SessionStart.default',
+      'PreToolUse.edit',
+      'PreToolUse.bash',
+      'UserPromptSubmit.inbox',
+      'Stop.default',
+    ]);
     expect(routeSupportsHost(getRoute('SubagentStart', 'context')!, 'codex')).toBe(true);
     expect(routeSupportsHost(getRoute('SubagentStart', 'context')!, 'claude')).toBe(false);
   });

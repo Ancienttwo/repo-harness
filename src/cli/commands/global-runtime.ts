@@ -1,5 +1,9 @@
 import type { RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
+import { installPiPackage } from '../installer/pi-package';
+import { realPathOrResolved } from '../../effects/path-identity';
+import type { SkillHost } from '../../effects/host-skill-roots';
+import type { ManagedInstallSurface } from '../installer/install-profile';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
@@ -79,9 +83,10 @@ export interface GlobalRuntimeOptions {
 }
 
 export interface GlobalRuntimeStep {
+  owned_surface?: ManagedInstallSurface;
   step: string;
   status: "ok" | "skipped" | "failed";
-  command?: string[];
+  command?: readonly string[];
   detail?: string;
   stdout?: string;
   stderr?: string;
@@ -189,14 +194,6 @@ function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: st
     ...(env ?? process.env),
     PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
   };
-}
-
-function realPathOrResolved(pathValue: string): string {
-  try {
-    return realpathSync(pathValue);
-  } catch (_error) {
-    return resolve(pathValue);
-  }
 }
 
 function pathIsWithin(candidate: string, root: string): boolean {
@@ -331,10 +328,10 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   return ["claude", "codex"];
 }
 
-function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
+function targetFromHostIds(hosts: readonly SkillHost[]): InstallTargetSpec {
   const first = hosts[0];
   if (first !== 'codex' && first !== 'claude') throw new Error('No install host selected');
-  return hosts.length === 2 ? "both" : first;
+  return hosts.includes('codex') && hosts.includes('claude') ? "both" : first;
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string {
@@ -712,7 +709,7 @@ function removeSupersededPackedTarballs(packDir: string, installed: string): voi
   }
 }
 
-function syncRuntimeSkill(sourceRoot: string, profile: InstallProfile, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function syncRuntimeSkill(sourceRoot: string, profile: InstallProfile, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, "scripts", "sync-codex-installed-copies.sh");
   if (!existsSync(script)) {
     return {
@@ -722,7 +719,7 @@ function syncRuntimeSkill(sourceRoot: string, profile: InstallProfile, env?: Nod
     };
   }
   return withStepName(
-    runProcess("bash", [script], sourceRoot, { ...env, REPO_HARNESS_INSTALL_PROFILE: profile }),
+    runProcess("bash", [script], sourceRoot, { ...env, REPO_HARNESS_INSTALL_PROFILE: profile, REPO_HARNESS_INCLUDE_PI: target === 'both' ? '1' : '0' }),
     "sync repo-harness skill runtime",
   );
 }
@@ -1209,9 +1206,10 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
 }
 
 /** Each selected host skill root, with the canonical path it must resolve to. */
-function stagedProjectionRoots(home: string, target: InstallTargetSpec): Array<{ path: string; expected: string }> {
+function stagedProjectionRoots(home: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv | undefined): Array<{ path: string; expected: string }> {
   const canonicalHome = realpathSync(home);
-  return hostIds(target).map((host) => ({ path: hostSkillRoot(home, host), expected: hostSkillRoot(canonicalHome, host) }));
+  const hosts = target === 'both' ? [...hostIds(target), 'pi' as const] : hostIds(target);
+  return hosts.map((host) => ({ path: hostSkillRoot(home, host, env), expected: hostSkillRoot(canonicalHome, host, env) }));
 }
 
 function preflightStagedSkillProjection(
@@ -1221,7 +1219,7 @@ function preflightStagedSkillProjection(
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target);
+  const roots = stagedProjectionRoots(home, target, env);
   for (const root of roots) {
     const invalid = invalidProjectionRoot(root.path, root.expected);
     if (invalid) return { step, status: 'failed', detail: invalid };
@@ -1245,7 +1243,7 @@ function projectStagedSkills(
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target);
+  const roots = stagedProjectionRoots(home, target, env);
   const projected: string[] = [];
   const created: string[] = [];
   const fail = (detail: string): GlobalRuntimeStep => {
@@ -1556,7 +1554,7 @@ export function runGlobalRuntimeSetup(
   steps.push(architectureConfiguration);
   if (architectureConfiguration.status === 'failed') return finalizeRuntimeResult(steps);
 
-  if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, env));
+  if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, target, env));
   else steps.push({ step: "sync repo-harness skill runtime", status: "skipped", detail: "disabled" });
 
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
@@ -1682,5 +1680,13 @@ export function runGlobalRuntimeSetup(
   }
 
   if (steps.every((step) => step.status !== "failed")) steps.push(configureRequiredHerdrSkill(target, env));
+  if (steps.every((step) => step.status !== 'failed')) {
+    const pi = installPiPackage(bunGlobalPackageRoot(env)!, target === 'both' && opts.hostAdapters !== false, env);
+    steps.push({ ...pi, ...(pi.created ? { owned_surface: {
+      authority: 'repo-harness-install-transaction' as const, removal: 'managed-surfaces-only' as const,
+      components: ['host-adapters'], path: pi.source, type: 'pi-package' as const,
+      managed_marker: 'pi-package-source', content_hash: null, symlink_target: null,
+    } } : {}) });
+  }
   return finalizeRuntimeResult(steps);
 }

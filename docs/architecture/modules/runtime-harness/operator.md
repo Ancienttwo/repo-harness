@@ -237,6 +237,15 @@ with an instruction to use the shared setting. Existing paths remain readable.
 - `src/cli/commands/module.ts` 归入本 capability 的置信度是 MEDIUM（归属提议 §5）。它和 architecture 路由共用 builder，但它是独立的 CLI 入口。它是否应该归入架构工具类 capability？没有记录。
 - `src/operator-web/fixture.ts` import `src/core/publication/merge-readiness.ts`。该文件的归属由 publication 范围决定。
 
+### Pi setup observations (2026-10-29, #1099)
+
+Setup and Activity Feeds owns `src/core/setup/**`, `src/effects/setup/**` and
+the setup snapshot commands. The pure projection includes Pi beside Claude
+and Codex. It projects Pi doctor facts, selected skill destinations and hook
+usage whose telemetry host is `pi`. Collectors observe these surfaces; setup
+GET routes read the snapshot and do not install packages or change host files.
+The host installer, shared skill roots and catalog retain those responsibilities.
+
 ## 4. 歷史決策記錄(append-only)
 
 ### Layer-direction check on the map (2026-10-29, issue #1118)

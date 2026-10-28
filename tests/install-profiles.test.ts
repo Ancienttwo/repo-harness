@@ -1299,9 +1299,11 @@ describe('skill projection ownership', () => {
     rmSync(canonical); symlinkSync(packageRoot, canonical);
     const paths = [
       ...['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review')),
+      join(env.HOME!, '.pi/agent/skills/repo-harness-cross-review'),
       join(env.HOME!, '.claude/skills/repo-harness-herdr-portal'),
     ];
     for (const dest of paths) rmSync(dest, { recursive: true, force: true });
+    mkdirSync(join(env.HOME!, '.pi/agent/skills'), { recursive: true });
     expect(syncCrossReviewSkills(packageRoot, 'both', env).every(step => step.status === 'ok')).toBe(true);
     const first = applyInstallProfile('full', env).state;
     const links = paths.map(dest => ({ inode: lstatSync(dest).ino, target: readlinkSync(dest) }));
@@ -1324,6 +1326,7 @@ describe('skill projection ownership', () => {
     cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(source, 'assets/skill-commands/manifest.json'));
     const links = [
       ...['.claude', '.codex'].map(host => ({ skill: 'repo-harness-cross-review', dest: join(env.HOME!, host, 'skills/repo-harness-cross-review') })),
+      { skill: 'repo-harness-cross-review', dest: join(env.HOME!, '.pi/agent/skills/repo-harness-cross-review') },
       { skill: 'repo-harness-herdr-portal', dest: join(env.HOME!, '.claude/skills/repo-harness-herdr-portal') },
     ].map(({ skill, dest }) => ({ dest, bundled: join(source, 'assets/skills', skill) }));
     for (const skill of ['repo-harness-cross-review', 'repo-harness-herdr-portal']) {

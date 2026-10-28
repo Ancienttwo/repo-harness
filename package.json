@@ -8,6 +8,15 @@
     "url": "git+https://github.com/Ancienttwo/repo-harness.git"
   },
   "type": "module",
+  "pi": {
+    "extensions": ["./src/pi/extension.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true }
+  },
   "files": [
     "agents/",
     "assets/",
@@ -48,6 +57,7 @@
     "test:full": "bash scripts/lib/ci-run-tests.sh full",
     "test:coverage": "bash -c 'source scripts/lib/ci-run-tests.sh; BUN_TEST_ISOLATE_FILES=0 run_bun_tests --coverage \"$@\"' --",
     "check:type": "node node_modules/typescript/bin/tsc --noEmit",
+    "check:pi-package": "bun scripts/check-pi-package-smoke.ts",
     "sync:helpers": "bun scripts/sync-helper-sources.ts --write",
     "check:helpers": "bun scripts/sync-helper-sources.ts --check",
     "sync:reference-configs": "bun scripts/sync-reference-configs.ts --write",

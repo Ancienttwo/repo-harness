@@ -44,6 +44,7 @@ if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" pr
 fi
 CODEX_SKILLS_ROOT=""
 CLAUDE_SKILLS_ROOT=""
+PI_SKILLS_ROOT=""
 SKILL_ROOT_OVERRIDE=""
 SELECTED_FACADES=""
 PROVIDER_PLACEMENTS=""
@@ -52,6 +53,7 @@ while IFS=$'\t' read -r projection_kind projection_value; do
   case "$projection_kind" in
     codex-root) CODEX_SKILLS_ROOT="$projection_value" ;;
     claude-root) CLAUDE_SKILLS_ROOT="$projection_value" ;;
+    pi-root) PI_SKILLS_ROOT="$projection_value" ;;
     root-override) SKILL_ROOT_OVERRIDE="$projection_value" ;;
     facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
     provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
@@ -275,6 +277,8 @@ provider_skill_for_root() {
     host="codex"
   elif [[ -n "$CLAUDE_SKILLS_ROOT" && "$root" == "$CLAUDE_SKILLS_ROOT" ]]; then
     host="claude"
+  elif [[ -n "$PI_SKILLS_ROOT" && "$root" == "$PI_SKILLS_ROOT" ]]; then
+    host="pi"
   fi
   [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$PROVIDER_PLACEMENTS"
 }
@@ -387,10 +391,11 @@ sync_command_facades() {
   echo "[sync-installed] command facades ($mode): $synced into $root"
 }
 
-bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" remove-dangling-links "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT"
+bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" remove-dangling-links "$CODEX_SKILLS_ROOT" "$CLAUDE_SKILLS_ROOT" "$PI_SKILLS_ROOT"
 
 preflight_skill_root "$CODEX_SKILLS_ROOT"
 preflight_skill_root "$CLAUDE_SKILLS_ROOT"
+preflight_skill_root "$PI_SKILLS_ROOT"
 
 canonical_dest="$CODEX_SKILLS_ROOT/repo-harness"
 if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
@@ -402,6 +407,12 @@ if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
   sync_command_facades "$CODEX_SKILLS_ROOT" link
   sync_claude_alias_links
   sync_command_facades "$CLAUDE_SKILLS_ROOT" link
+  if [[ -n "$PI_SKILLS_ROOT" ]]; then
+    mkdir -p "$PI_SKILLS_ROOT"
+    remove_managed_dest "$PI_SKILLS_ROOT/repo-harness" "$SOURCE_ROOT" canonical-skill
+    create_symlink_or_explain "$SOURCE_ROOT" "$PI_SKILLS_ROOT/repo-harness"
+    sync_command_facades "$PI_SKILLS_ROOT" link
+  fi
   echo "[sync-installed] OK"
   exit 0
 fi
@@ -412,4 +423,8 @@ echo "[sync-installed] canonical skill copy: $canonical_dest"
 sync_command_facades "$CODEX_SKILLS_ROOT" copy
 sync_claude_alias_copies
 sync_command_facades "$CLAUDE_SKILLS_ROOT" copy
+if [[ -n "$PI_SKILLS_ROOT" ]]; then
+  sync_copy "$PI_SKILLS_ROOT/repo-harness"
+  sync_command_facades "$PI_SKILLS_ROOT" copy
+fi
 echo "[sync-installed] OK"
