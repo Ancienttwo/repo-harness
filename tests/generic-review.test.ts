@@ -397,6 +397,32 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(() => preparePiAgentDirectory(otherOutput, source)).toThrow('directory_unsafe');
 });
 
+test('Pi review source fixture uses custom agent directories and rejects relative overrides', async () => {
+  const { mkdirSync, readlinkSync } = await import('node:fs');
+  const { preparePiAgentDirectory, removePiCredentialReferences } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-custom-source'); roots.push(root);
+  const home = join(root, 'home'), native = join(home, '.pi/agent'); mkdirSync(native, { recursive: true });
+  for (const name of ['models.json', 'auth.json']) writeFileSync(join(native, name), '{"fixture":"default-source"}');
+  const sources = [
+    { configured: join(root, 'custom-agent'), directory: join(root, 'custom-agent') },
+    { configured: '~/custom-agent', directory: join(home, 'custom-agent') },
+    { configured: '~', directory: home },
+  ];
+  for (const [index, source] of sources.entries()) {
+    mkdirSync(source.directory, { recursive: true });
+    writeFileSync(join(source.directory, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
+    writeFileSync(join(source.directory, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+    const output = join(root, `output-${index}`); mkdirSync(output);
+    const directory = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
+    for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
+    expectNoStoredPiProbe(output);
+    expect(removePiCredentialReferences(output).status).toBe('removed');
+    expect(readdirSync(directory)).toEqual([]);
+  }
+  const output = join(root, 'relative-output'); mkdirSync(output);
+  expect(() => preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: 'relative-agent' })).toThrow('PI_CODING_AGENT_DIR must be an absolute path or use ~/');
+});
+
 test('Pi credential cleanup fixture removes links and empty auth without following directory links', async () => {
   const { mkdirSync, symlinkSync, unlinkSync } = await import('node:fs');
   const { preparePiAgentDirectory, removePiCredentialReferences } = await import('../src/effects/review/review-isolation');

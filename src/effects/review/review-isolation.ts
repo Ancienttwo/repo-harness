@@ -1,6 +1,7 @@
 import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync, symlinkSync, readlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
+import { piAgentDir } from '../pi-agent-dir';
 
 export interface ReviewIsolationPaths {
   readonly subject: string;
@@ -13,7 +14,7 @@ export interface ReviewIsolationPaths {
 }
 
 /** Native model configuration and credentials stay at their source; the sandbox reads them through links. */
-export function preparePiAgentDirectory(output: string, sourceHome: string): string {
+export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -21,7 +22,7 @@ export function preparePiAgentDirectory(output: string, sourceHome: string): str
   const stat = lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.()
     || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
-  const source = join(realpathSync(sourceHome), '.pi', 'agent');
+  const source = piAgentDir(realpathSync(sourceHome), env);
   for (const path of [dirname(source), source]) {
     if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('review_pi_source_unsafe');
   }
