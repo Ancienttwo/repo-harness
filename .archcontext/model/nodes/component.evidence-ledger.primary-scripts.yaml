@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.evidence-ledger.primary-scripts
+kind: component
+name: Evidence Event Store (scripts)
+status: active
+parent: capability.runtime-harness.evidence-ledger
+layer: scripts
+summary: The scripts-layer files of Evidence Event Store. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Evidence Event Store so layer direction is checked per directory.
+source:
+  include:
+    - scripts/evidence-gc.ts
+    - scripts/recovery-view-cli.ts
+    - scripts/prepare-*.sh
+    - scripts/codex-handoff-resume.sh

@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.core-layer
+kind: component
+name: Task Agent Host (core)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: core
+summary: The core-layer files of Task Agent Host. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Task Agent Host so layer direction is checked per directory.
+source:
+  include:
+    - src/core/decision/**
+    - src/core/sessions/session-selector.ts
+    - src/core/sessions/task-sessions.ts
+  exclude:
+    - src/core/decision/pane-status.d.mts
+    - src/core/decision/pane-status.mjs

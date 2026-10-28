@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
-import { REPOSITORY_SELECTING_GIT_ENV, spawnGit } from '../git/runner';
+import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
 import { docsLines, type DocsLine } from '../../core/operator/docs';
 
 /**
@@ -167,8 +167,7 @@ class CatFileWorker {
   }
 
   private start(): ChildProcess {
-    const env: NodeJS.ProcessEnv = { ...this.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0' };
-    for (const key of REPOSITORY_SELECTING_GIT_ENV) delete env[key];
+    const env = withoutRepositorySelectingGitEnv({ ...this.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0' });
     // stderr is discarded: it can hold absolute paths (PRD N4).
     const child = spawnGit(['--no-optional-locks', 'cat-file', '--batch-command'], {
       cwd: this.root, env, gitBin: this.gitBin, stdio: ['pipe', 'pipe', 'ignore'],

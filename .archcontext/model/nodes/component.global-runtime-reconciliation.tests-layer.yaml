@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.tests-layer
+kind: component
+name: Global Runtime Reconciliation (tests)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: tests
+summary: The tests-layer files of Global Runtime Reconciliation. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the tests-layer source files of Global Runtime Reconciliation so layer direction is checked per directory.
+source:
+  include:
+    - tests/cli/global-runtime-init.test.ts
+    - tests/cli/global-runtime.test.ts
+    - tests/architecture-projection-provider.test.ts

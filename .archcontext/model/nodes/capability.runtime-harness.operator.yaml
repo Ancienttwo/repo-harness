@@ -15,25 +15,13 @@ responsibilities:
   - "Project provider planning and fleet cards without inferring engineer identity from actor identity; retain explicit historical routes without current-to-history fallback."
 source:
   include:
-    - "assets/tool-catalog.v1.json"
-    - "docs/kanban-runtime-status.md"
-    - "src/core/tools/catalog.ts"
-    - "src/core/operator/**"
-    - "src/effects/operator/**"
-    - "src/operator-web/**"
-    - "src/cli/commands/operator.ts"
-    - "src/cli/commands/catch-up.ts"
-    - "src/cli/commands/module.ts"
-    - "src/core/architecture/module-view.ts"
-    - "src/core/setup/**"
-    - "src/effects/setup/**"
-    - "src/cli/commands/setup-snapshot.ts"
-    - "src/cli/commands/setup-check-child.ts"
-    - "src/core/dev-activity/**"
-    - "src/effects/dev-activity/**"
-    - "src/effects/terminal/herdr-observation.ts"
-    - "assets/operator/**"
-    - "vite.operator.config.ts"
+    - docs/kanban-runtime-status.md
+    - src/effects/operator/**
+    - src/operator-web/**
+    - src/effects/setup/**
+    - src/effects/dev-activity/**
+    - src/effects/terminal/herdr-observation.ts
+    - vite.operator.config.ts
   entrypoints:
     - id: "entrypoint.operator.primary"
       path: "src/effects/operator/architecture.ts"

@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.primary-cli
+kind: component
+name: Global Runtime Reconciler (cli)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: cli
+summary: The cli-layer files of Global Runtime Reconciler. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Global Runtime Reconciler so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/global-runtime.ts
+    - src/cli/commands/candidate-reconciliation.ts
+    - src/cli/runtime/**
+    - src/cli/commands/upgrade.ts

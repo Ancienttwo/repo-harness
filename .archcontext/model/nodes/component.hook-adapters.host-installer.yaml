@@ -15,12 +15,11 @@ responsibilities:
   - Report host install status and scan local hook and task configurations for injection surfaces without mutation.
 source:
   include:
-    - "src/cli/installer/**"
-    - "src/pi/**"
-    - "src/effects/managed-tree.ts"
-    - "src/cli/commands/install.ts"
-    - "src/cli/commands/status.ts"
-    - "src/cli/commands/security.ts"
+    - src/cli/installer/**
+    - src/pi/**
+    - src/cli/commands/install.ts
+    - src/cli/commands/status.ts
+    - src/cli/commands/security.ts
   entrypoints:
     - id: entrypoint.hook-adapters.managed-entries
       path: "src/cli/installer/managed-entries.ts"

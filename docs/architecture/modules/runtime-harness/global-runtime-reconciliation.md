@@ -178,7 +178,7 @@ sequenceDiagram
 | 回读失败时不自动重装 | 不会因为重装失败而失去 CLI。代价是用户要按提示手动执行 `bun remove -g` 和 `bun add -g`（`global-runtime.ts:524`）。 |
 | 候选包接管 update 后半段 | 新目录格式和新 schema 由新代码解析，避免旧模块误读（PR #628 的事故）。代价是多一个进程和一次 token 交接。 |
 | daemon 失败降级为 `skipped` | 包升级不会因为共享 daemon 的维护问题回退，避免 hoisted 依赖停在新版本而 CLI 回到旧版本。代价是 update 成功时 daemon 可能还没就绪，要等下一次严格检查发现。 |
-| CLI 根集中在 `index.ts` | 所有命令在一个 commander 程序里注册（`buildProgram`，`index.ts:500`），帮助和选项校验一致。代价是 `index.ts` 引用约 26 个 capability 的命令模块，成为单一 SCC 的原因之一（见 §3.3 和 Backlog）。 |
+| CLI 根集中在 `index.ts` | 所有命令在一个 commander 程序里注册（`buildProgram`，`src/cli/index.ts:500`），帮助和选项校验一致。代价是 `index.ts` 引用约 26 个 capability 的命令模块，成为单一 SCC 的原因之一（见 §3.3 和 Backlog）。 |
 | update 事务放在 CLI 根 | `runTransactionalProfileProjection` 和 `runTransactionalRuntimeRefresh` 在 `index.ts` 里开启 host 事务并捕获配置还原点。代价是 CLI 根同时承担路由和事务，文件有 911 行。 |
 | 发布门禁用 shell 脚本 | 门禁逻辑一个脚本两种模式（`--prepublish` 与完整模式），不分叉。代价是 CodeGraph 看不到 shell 调用，`release-packaging → cli-root` 关系只能凭文本证据声明（`check-tarball-install-smoke.sh:131-132`）。 |
 
@@ -202,8 +202,8 @@ sequenceDiagram
 
 | 关系 | 证据 |
 | --- | --- |
-| cli-root → primary | `runCandidateRuntimeReconciliation` 调用 `runGlobalRuntimeSetup`（`index.ts:308`）；注册 update 与 upgrade |
-| cli-root → archctx-closure | `buildProgram` 调用 `buildArchitectureProjectionCommand`（`index.ts:862`） |
+| cli-root → primary | `runCandidateRuntimeReconciliation` 调用 `runGlobalRuntimeSetup`（`src/cli/index.ts:308`）；注册 update 与 upgrade |
+| cli-root → archctx-closure | `buildProgram` 调用 `buildArchitectureProjectionCommand`（`src/cli/index.ts:862`） |
 | primary → archctx-closure | `runGlobalRuntimeSetup` 调用 `ensureGlobalArchitectureProjection`（`global-runtime.ts:1502`）；`inspectManagedDaemonRuntime` 调用 `verifyArchctxDaemonRuntime`（`:534`） |
 | release-packaging → cli-root | tarball 冒烟安装后运行 `repo-harness` 和 `repo-harness-hook`（`check-tarball-install-smoke.sh:123-124`；shell，无 CodeGraph 边） |
 
@@ -217,7 +217,7 @@ sequenceDiagram
 | primary | `verification.codegraph-readiness` | `configureCodegraph`（`global-runtime.ts:1432`） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
 | archctx-closure | `mcp-sidecar` | `model-reader.ts` 引用 `effects/repo-registry.ts` |
-| cli-root | 已有 capability | `buildProgram` 注册各命令（`index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、engineer-bindings、delegated-runs、external-source-intake |
+| cli-root | 已有 capability | `buildProgram` 注册各命令（`src/cli/index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、engineer-bindings、delegated-runs、external-source-intake |
 
 CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 14 个命令文件（state、sprint、fleet、publication、task-agent、herdr、review、chatgpt、strategy、integration、docs、brain、run、migrate、tools）。集成步骤补上了这些命令的关系：workflow-state（state、sprint）、task-fleet、publication、task-agent-host（task-agent、herdr）、acceptance-review（review）、chatgpt-browser、strategy-reflection、integration-acceptance 与 root-router（docs）。brain 与 run 归 contract-assets，migrate 归 adoption，tools 归 codegraph-readiness。
 

@@ -13,13 +13,10 @@ responsibilities:
   - Verify the Pi extension declaration, optional SDK peer and same-package hook bundle in the packed tarball.
 source:
   include:
-    - "package.json"
-    - "bun.lock"
-    - "tsconfig.json"
-    - "src/core/release/**"
-    - "src/effects/release/**"
-    - "scripts/check-npm-release.sh"
-    - "scripts/check-release-published.sh"
-    - "scripts/check-tarball-install-smoke.sh"
-    - "scripts/check-pi-package-smoke.ts"
-    - "scripts/runtime-evidence-receipt.ts"
+    - bun.lock
+    - tsconfig.json
+    - scripts/check-npm-release.sh
+    - scripts/check-release-published.sh
+    - scripts/check-tarball-install-smoke.sh
+    - scripts/check-pi-package-smoke.ts
+    - scripts/runtime-evidence-receipt.ts

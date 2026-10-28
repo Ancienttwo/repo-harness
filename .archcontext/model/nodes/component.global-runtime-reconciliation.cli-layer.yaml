@@ -1,0 +1,36 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.cli-layer
+kind: component
+name: Global Runtime Reconciliation (cli)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: cli
+summary: The cli-layer files of Global Runtime Reconciliation. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Global Runtime Reconciliation so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/index.ts
+    - src/cli/commands/global-runtime.ts
+    - src/cli/commands/candidate-reconciliation.ts
+    - src/cli/runtime/**
+    - src/cli/tty-prompt.ts
+    - src/cli/commands/validators.ts
+    - src/cli/commands/doctor.ts
+    - src/cli/commands/init-hook.ts
+    - src/cli/commands/upgrade.ts
+    - src/cli/commands/architecture-projection.ts
+    - src/cli/commands/architecture-configuration.ts
+    - src/cli/commands/upgrade-registered.ts
+  exclude:
+    - src/cli/commands/architecture-configuration.ts
+    - src/cli/commands/architecture-projection.ts
+    - src/cli/commands/candidate-reconciliation.ts
+    - src/cli/commands/doctor.ts
+    - src/cli/commands/global-runtime.ts
+    - src/cli/commands/init-hook.ts
+    - src/cli/commands/upgrade.ts
+    - src/cli/commands/validators.ts
+    - src/cli/index.ts
+    - src/cli/runtime/write-all-sync.ts
+    - src/cli/tty-prompt.ts

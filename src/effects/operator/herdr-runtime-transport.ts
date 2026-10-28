@@ -1,4 +1,4 @@
-import { HERDR_OBSERVATION_REVISION, herdrAgentSessionKey, herdrObject, herdrProgramStatus, requestHerdrObservation, subscribeHerdrObservation, verifyHerdrVersion,
+import { HERDR_OBSERVATION_REVISION, herdrAgentSessionKey, herdrObject, requestHerdrObservation, subscribeHerdrObservation, verifyHerdrVersion,
   type HerdrObservationEndpoint } from '../terminal/herdr-observation';
 import type { StructuredRuntimeTransport } from './runtime-source';
 import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';
@@ -7,7 +7,6 @@ import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';
 export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, source_host: string, herdr_session: string) {
   let connections = new AbortController();
   let active = false, ready = false, generation = 0;
-  let programStatus: boolean | undefined;
   let globalClose: (() => void) | null = null, statusClose: (() => void) | null = null;
   let statusKey = '', retry: ReturnType<typeof setTimeout> | null = null;
   let invalidate: (event: string, error?: unknown) => void = () => {};
@@ -26,11 +25,6 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
     const result = await requestHerdrObservation(endpoint, 'ping', signal ? AbortSignal.any([signal, connections.signal]) : connections.signal);
     if (result.type !== 'pong') throw new Error('herdr_runtime_ping');
     verifyHerdrVersion(result);
-    const capability = herdrObject(result.capabilities).program_status_root_v1;
-    if (capability !== undefined && typeof capability !== 'boolean') throw new Error('herdr_runtime_program_capability');
-    const enabled = capability === true;
-    if (programStatus !== undefined && programStatus !== enabled) throw new Error('herdr_runtime_program_capability_changed');
-    programStatus = enabled;
   }
   function lost(code: string, connectionGeneration: number) {
     if (!active || connectionGeneration !== generation) return;
@@ -72,7 +66,7 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
   const transport: StructuredRuntimeTransport = {
     async capabilities(signal) {
       await ping(signal);
-      return { protocol: RUNTIME_SOURCE_PROTOCOL, ...metadata, agent_status: true, program_status: programStatus ? 'v1' : 'unsupported' };
+      return { protocol: RUNTIME_SOURCE_PROTOCOL, ...metadata, agent_status: true };
     },
     async subscribe(_events, callback, signal) {
       if (active) throw new Error('herdr_runtime_subscribed');
@@ -93,15 +87,13 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
       const panes = snapshot.panes.map(raw => {
         const p = herdrObject(raw);
         if (typeof p.pane_id !== 'string' || typeof p.terminal_id !== 'string' || !Number.isSafeInteger(p.revision) || (p.revision as number) < 0 || !['idle','working','blocked','done','unknown'].includes(p.agent_status as string)) throw new Error('herdr_runtime_pane');
-        if (!programStatus && p.program_status != null) throw new Error('herdr_runtime_program_capability');
-        return { pane_id: p.pane_id, terminal_id: p.terminal_id, agent_status: p.agent_status, revision: p.revision, agent_session: herdrAgentSessionKey(p.agent_session),
-          ...(programStatus && p.program_status != null ? { program_status: herdrProgramStatus(p.program_status) } : {}) };
+        return { pane_id: p.pane_id, terminal_id: p.terminal_id, agent_status: p.agent_status, revision: p.revision, agent_session: herdrAgentSessionKey(p.agent_session) };
       });
       if (new Set(panes.map(p => p.pane_id)).size !== panes.length) throw new Error('herdr_runtime_duplicate_pane');
       if (current !== generation || !active || signal.aborted) throw new Error('herdr_runtime_disconnected');
       await subscribeStatuses(panes.map(p => p.pane_id), signal);
       if (current !== generation || !ready || signal.aborted) throw new Error('herdr_runtime_disconnected');
-      return { protocol: 'repo-harness.runtime-source.snapshot.v1', ...metadata, panes, program_status: [] };
+      return { protocol: 'repo-harness.runtime-source.snapshot.v1', ...metadata, panes };
     },
   };
   return { transport, close };

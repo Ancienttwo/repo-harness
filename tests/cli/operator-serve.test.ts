@@ -1785,8 +1785,8 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     const filesBeforeGet = readdirSync(root).sort();
     const url = stdout.trim();
     const response = await fetch(`${url}/api/v1/runtime/status`); expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', status: 'ready',
-      badges: [], pane_observations: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
+    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v6', status: 'ready',
+      badges: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
         observations: [{ scope: 'terminal', state: 'idle', event_received_at: heartbeat }] }] });
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
@@ -1815,6 +1815,7 @@ describe('architecture map', () => {
     repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
     nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' },
     layers: {
       changes: { state: 'unavailable', reason: 'history_starts_today' },
       pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },

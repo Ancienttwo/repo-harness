@@ -12,7 +12,6 @@ responsibilities:
   - Check the skill version pins.
 source:
   include:
-    - src/core/skill-surface/**
     - scripts/skill-surface-select.ts
     - scripts/run-skill-routing-eval.ts
     - scripts/check-skill-version.ts

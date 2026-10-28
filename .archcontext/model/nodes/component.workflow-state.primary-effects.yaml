@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.primary-effects
+kind: component
+name: Effective State Resolver (effects)
+status: active
+parent: capability.workflow-engine.workflow-state
+layer: effects
+summary: The effects-layer files of Effective State Resolver. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Effective State Resolver so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/state/resolve-effective-state.ts
+    - src/effects/state/collect-state-inputs.ts
+    - src/effects/state/state-*.ts
+    - src/effects/state/git-state-version-store.ts

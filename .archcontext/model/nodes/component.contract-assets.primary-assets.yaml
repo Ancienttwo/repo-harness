@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.primary-assets
+kind: component
+name: Workflow Contract And Policy (assets)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: assets
+summary: The assets-layer files of Workflow Contract And Policy. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the assets-layer source files of Workflow Contract And Policy so layer direction is checked per directory.
+source:
+  include:
+    - assets/workflow-contract.v1.json
+    - assets/AGENTS.md
+    - assets/CLAUDE.md
