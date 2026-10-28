@@ -3,7 +3,7 @@ id: component.evals-checks.evals-and-benchmarks-tests
 kind: component
 name: Evals And Benchmarks (tests)
 status: active
-parent: component.evals-checks.evals-and-benchmarks
+parent: capability.verification.evals-checks
 layer: tests
 summary: The tests-layer files of Evals And Benchmarks. Responsibilities stay with the parent node.
 responsibilities:

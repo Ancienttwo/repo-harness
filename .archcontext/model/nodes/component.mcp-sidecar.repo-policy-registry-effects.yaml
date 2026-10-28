@@ -3,7 +3,7 @@ id: component.mcp-sidecar.repo-policy-registry-effects
 kind: component
 name: Config Policy and Repository Registry (effects)
 status: active
-parent: component.mcp-sidecar.repo-policy-registry
+parent: capability.runtime-harness.mcp-sidecar
 layer: effects
 summary: The effects-layer files of Config Policy and Repository Registry. Responsibilities stay with the parent node.
 responsibilities:

@@ -3,7 +3,7 @@ id: component.publication.primary-effects
 kind: component
 name: PR Readiness and Integration Evidence (effects)
 status: active
-parent: component.publication.primary
+parent: capability.organization.publication
 layer: effects
 summary: The effects-layer files of PR Readiness and Integration Evidence. Responsibilities stay with the parent node.
 responsibilities:

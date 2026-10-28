@@ -3,7 +3,7 @@ id: component.evidence-ledger.primary-scripts
 kind: component
 name: Evidence Event Store (scripts)
 status: active
-parent: component.evidence-ledger.primary
+parent: capability.runtime-harness.evidence-ledger
 layer: scripts
 summary: The scripts-layer files of Evidence Event Store. Responsibilities stay with the parent node.
 responsibilities:

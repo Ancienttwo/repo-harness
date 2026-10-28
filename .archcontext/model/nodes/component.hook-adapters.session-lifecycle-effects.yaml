@@ -3,7 +3,7 @@ id: component.hook-adapters.session-lifecycle-effects
 kind: component
 name: Session Lifecycle Handlers (effects)
 status: active
-parent: component.hook-adapters.session-lifecycle
+parent: capability.runtime-harness.hook-adapters
 layer: effects
 summary: The effects-layer files of Session Lifecycle Handlers. Responsibilities stay with the parent node.
 responsibilities:

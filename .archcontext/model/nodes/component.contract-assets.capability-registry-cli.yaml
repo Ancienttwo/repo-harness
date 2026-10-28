@@ -3,7 +3,7 @@ id: component.contract-assets.capability-registry-cli
 kind: component
 name: Capability Registry (cli)
 status: active
-parent: component.contract-assets.capability-registry
+parent: capability.workflow-engine.contract-assets
 layer: cli
 summary: The cli-layer files of Capability Registry. Responsibilities stay with the parent node.
 responsibilities:

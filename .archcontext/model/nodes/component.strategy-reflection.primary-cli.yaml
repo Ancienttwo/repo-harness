@@ -3,7 +3,7 @@ id: component.strategy-reflection.primary-cli
 kind: component
 name: Strategy Context Collector (cli)
 status: active
-parent: component.strategy-reflection.primary
+parent: capability.public-surface.strategy-reflection
 layer: cli
 summary: The cli-layer files of Strategy Context Collector. Responsibilities stay with the parent node.
 responsibilities:

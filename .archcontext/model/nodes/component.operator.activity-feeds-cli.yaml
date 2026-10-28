@@ -3,7 +3,7 @@ id: component.operator.activity-feeds-cli
 kind: component
 name: Setup and Activity Feeds (cli)
 status: active
-parent: component.operator.activity-feeds
+parent: capability.runtime-harness.operator
 layer: cli
 summary: The cli-layer files of Setup and Activity Feeds. Responsibilities stay with the parent node.
 responsibilities:

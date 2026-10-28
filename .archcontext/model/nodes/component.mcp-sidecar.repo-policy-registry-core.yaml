@@ -3,7 +3,7 @@ id: component.mcp-sidecar.repo-policy-registry-core
 kind: component
 name: Config Policy and Repository Registry (core)
 status: active
-parent: component.mcp-sidecar.repo-policy-registry
+parent: capability.runtime-harness.mcp-sidecar
 layer: core
 summary: The core-layer files of Config Policy and Repository Registry. Responsibilities stay with the parent node.
 responsibilities:

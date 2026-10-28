@@ -3,7 +3,7 @@ id: component.task-fleet.primary-effects
 kind: component
 name: Fleet Task Observations and Board (effects)
 status: active
-parent: component.task-fleet.primary
+parent: capability.organization.task-fleet
 layer: effects
 summary: The effects-layer files of Fleet Task Observations and Board. Responsibilities stay with the parent node.
 responsibilities:

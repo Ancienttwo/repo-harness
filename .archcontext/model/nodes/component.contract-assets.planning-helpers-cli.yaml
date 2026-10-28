@@ -3,7 +3,7 @@ id: component.contract-assets.planning-helpers-cli
 kind: component
 name: Planning Helpers (cli)
 status: active
-parent: component.contract-assets.planning-helpers
+parent: capability.workflow-engine.contract-assets
 layer: cli
 summary: The cli-layer files of Planning Helpers. Responsibilities stay with the parent node.
 responsibilities:

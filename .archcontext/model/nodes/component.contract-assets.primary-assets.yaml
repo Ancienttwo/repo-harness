@@ -3,7 +3,7 @@ id: component.contract-assets.primary-assets
 kind: component
 name: Workflow Contract And Policy (assets)
 status: active
-parent: component.contract-assets.primary
+parent: capability.workflow-engine.contract-assets
 layer: assets
 summary: The assets-layer files of Workflow Contract And Policy. Responsibilities stay with the parent node.
 responsibilities:

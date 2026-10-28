@@ -3,7 +3,7 @@ id: component.engineer-scheduling.primary-core
 kind: component
 name: Provider Work Graph Reader (core)
 status: active
-parent: component.engineer-scheduling.primary
+parent: capability.runtime-harness.engineer-scheduling
 layer: core
 summary: The core-layer files of Provider Work Graph Reader. Responsibilities stay with the parent node.
 responsibilities:

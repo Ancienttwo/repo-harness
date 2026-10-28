@@ -3,7 +3,7 @@ id: component.action-commands.skill-surface-catalog-core
 kind: component
 name: Skill Surface Catalog (core)
 status: active
-parent: component.action-commands.skill-surface-catalog
+parent: capability.public-surface.action-commands
 layer: core
 summary: The core-layer files of Skill Surface Catalog. Responsibilities stay with the parent node.
 responsibilities:

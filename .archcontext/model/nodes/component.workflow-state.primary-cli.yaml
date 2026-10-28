@@ -3,7 +3,7 @@ id: component.workflow-state.primary-cli
 kind: component
 name: Effective State Resolver (cli)
 status: active
-parent: component.workflow-state.primary
+parent: capability.workflow-engine.workflow-state
 layer: cli
 summary: The cli-layer files of Effective State Resolver. Responsibilities stay with the parent node.
 responsibilities:

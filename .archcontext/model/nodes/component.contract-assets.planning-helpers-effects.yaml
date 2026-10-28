@@ -3,7 +3,7 @@ id: component.contract-assets.planning-helpers-effects
 kind: component
 name: Planning Helpers (effects)
 status: active
-parent: component.contract-assets.planning-helpers
+parent: capability.workflow-engine.contract-assets
 layer: effects
 summary: The effects-layer files of Planning Helpers. Responsibilities stay with the parent node.
 responsibilities:

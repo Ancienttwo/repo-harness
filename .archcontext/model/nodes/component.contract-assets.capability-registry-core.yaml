@@ -3,7 +3,7 @@ id: component.contract-assets.capability-registry-core
 kind: component
 name: Capability Registry (core)
 status: active
-parent: component.contract-assets.capability-registry
+parent: capability.workflow-engine.contract-assets
 layer: core
 summary: The core-layer files of Capability Registry. Responsibilities stay with the parent node.
 responsibilities:

@@ -3,7 +3,7 @@ id: component.publication.pstack-watch-pr-experiment
 kind: component
 name: Private pstack watcher experiment
 status: active
-parent: component.publication.primary
+parent: capability.organization.publication
 layer: tests
 summary: Offline test harness that compares a pinned upstream PR watcher with the merge-readiness projection. It is outside package output and has no runtime entry.
 responsibilities:

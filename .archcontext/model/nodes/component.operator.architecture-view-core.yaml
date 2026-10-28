@@ -3,7 +3,7 @@ id: component.operator.architecture-view-core
 kind: component
 name: Architecture View (core)
 status: active
-parent: component.operator.architecture-view
+parent: capability.runtime-harness.operator
 layer: core
 summary: The core-layer files of Architecture View. Responsibilities stay with the parent node.
 responsibilities:

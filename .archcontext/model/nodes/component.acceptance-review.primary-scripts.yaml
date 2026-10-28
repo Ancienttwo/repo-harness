@@ -3,7 +3,7 @@ id: component.acceptance-review.primary-scripts
 kind: component
 name: Generic Review Round (scripts)
 status: active
-parent: component.acceptance-review.primary
+parent: capability.verification.acceptance-review
 layer: scripts
 summary: The scripts-layer files of Generic Review Round. Responsibilities stay with the parent node.
 responsibilities:

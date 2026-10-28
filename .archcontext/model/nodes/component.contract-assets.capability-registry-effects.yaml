@@ -3,7 +3,7 @@ id: component.contract-assets.capability-registry-effects
 kind: component
 name: Capability Registry (effects)
 status: active
-parent: component.contract-assets.capability-registry
+parent: capability.workflow-engine.contract-assets
 layer: effects
 summary: The effects-layer files of Capability Registry. Responsibilities stay with the parent node.
 responsibilities:

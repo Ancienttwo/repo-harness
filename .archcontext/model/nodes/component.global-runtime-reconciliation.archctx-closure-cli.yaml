@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.archctx-closure-cli
 kind: component
 name: ArchContext Closure (cli)
 status: active
-parent: component.global-runtime-reconciliation.archctx-closure
+parent: capability.runtime-harness.global-runtime-reconciliation
 layer: cli
 summary: The cli-layer files of ArchContext Closure. Responsibilities stay with the parent node.
 responsibilities:

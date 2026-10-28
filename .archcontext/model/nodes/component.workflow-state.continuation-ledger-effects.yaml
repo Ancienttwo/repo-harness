@@ -3,7 +3,7 @@ id: component.workflow-state.continuation-ledger-effects
 kind: component
 name: Continuation Ledger (effects)
 status: active
-parent: component.workflow-state.continuation-ledger
+parent: capability.workflow-engine.workflow-state
 layer: effects
 summary: The effects-layer files of Continuation Ledger. Responsibilities stay with the parent node.
 responsibilities:

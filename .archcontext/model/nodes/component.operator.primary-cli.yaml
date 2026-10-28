@@ -3,7 +3,7 @@ id: component.operator.primary-cli
 kind: component
 name: Operator HTTP Reader (cli)
 status: active
-parent: component.operator.primary
+parent: capability.runtime-harness.operator
 layer: cli
 summary: The cli-layer files of Operator HTTP Reader. Responsibilities stay with the parent node.
 responsibilities:

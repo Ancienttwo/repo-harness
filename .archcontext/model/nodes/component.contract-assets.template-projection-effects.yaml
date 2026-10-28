@@ -3,7 +3,7 @@ id: component.contract-assets.template-projection-effects
 kind: component
 name: Template Projection (effects)
 status: active
-parent: component.contract-assets.template-projection
+parent: capability.workflow-engine.contract-assets
 layer: effects
 summary: The effects-layer files of Template Projection. Responsibilities stay with the parent node.
 responsibilities:

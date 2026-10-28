@@ -3,7 +3,7 @@ id: component.hook-adapters.host-installer-effects
 kind: component
 name: Host Adapter Installer (effects)
 status: active
-parent: component.hook-adapters.host-installer
+parent: capability.runtime-harness.hook-adapters
 layer: effects
 summary: The effects-layer files of Host Adapter Installer. Responsibilities stay with the parent node.
 responsibilities:

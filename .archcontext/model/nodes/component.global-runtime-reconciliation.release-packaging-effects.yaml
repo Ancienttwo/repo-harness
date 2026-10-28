@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.release-packaging-effects
 kind: component
 name: Release Packaging (effects)
 status: active
-parent: component.global-runtime-reconciliation.release-packaging
+parent: capability.runtime-harness.global-runtime-reconciliation
 layer: effects
 summary: The effects-layer files of Release Packaging. Responsibilities stay with the parent node.
 responsibilities:

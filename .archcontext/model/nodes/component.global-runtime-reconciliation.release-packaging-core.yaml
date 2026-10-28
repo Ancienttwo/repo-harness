@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.release-packaging-core
 kind: component
 name: Release Packaging (core)
 status: active
-parent: component.global-runtime-reconciliation.release-packaging
+parent: capability.runtime-harness.global-runtime-reconciliation
 layer: core
 summary: The core-layer files of Release Packaging. Responsibilities stay with the parent node.
 responsibilities:

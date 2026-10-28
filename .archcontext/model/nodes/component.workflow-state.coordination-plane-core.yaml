@@ -3,7 +3,7 @@ id: component.workflow-state.coordination-plane-core
 kind: component
 name: Provider Board Observations and Historical Worktree Safety (core)
 status: active
-parent: component.workflow-state.coordination-plane
+parent: capability.workflow-engine.workflow-state
 layer: core
 summary: The core-layer files of Provider Board Observations and Historical Worktree Safety. Responsibilities stay with the parent node.
 responsibilities:

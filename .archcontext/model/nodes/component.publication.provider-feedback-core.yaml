@@ -3,7 +3,7 @@ id: component.publication.provider-feedback-core
 kind: component
 name: Provider Feedback (core)
 status: active
-parent: component.publication.provider-feedback
+parent: capability.organization.publication
 layer: core
 summary: The core-layer files of Provider Feedback. Responsibilities stay with the parent node.
 responsibilities:

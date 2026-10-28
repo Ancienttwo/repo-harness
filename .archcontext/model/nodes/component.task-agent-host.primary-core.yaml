@@ -3,7 +3,7 @@ id: component.task-agent-host.primary-core
 kind: component
 name: Herdr Task Session Host (core)
 status: active
-parent: component.task-agent-host.primary
+parent: capability.runtime-harness.task-agent-host
 layer: core
 summary: The core-layer files of Herdr Task Session Host. Responsibilities stay with the parent node.
 responsibilities:

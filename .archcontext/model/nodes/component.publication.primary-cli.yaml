@@ -3,7 +3,7 @@ id: component.publication.primary-cli
 kind: component
 name: PR Readiness and Integration Evidence (cli)
 status: active
-parent: component.publication.primary
+parent: capability.organization.publication
 layer: cli
 summary: The cli-layer files of PR Readiness and Integration Evidence. Responsibilities stay with the parent node.
 responsibilities:

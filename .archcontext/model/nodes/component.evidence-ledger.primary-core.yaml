@@ -3,7 +3,7 @@ id: component.evidence-ledger.primary-core
 kind: component
 name: Evidence Event Store (core)
 status: active
-parent: component.evidence-ledger.primary
+parent: capability.runtime-harness.evidence-ledger
 layer: core
 summary: The core-layer files of Evidence Event Store. Responsibilities stay with the parent node.
 responsibilities:

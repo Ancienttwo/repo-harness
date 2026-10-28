@@ -3,7 +3,7 @@ id: component.contract-assets.template-projection-cli
 kind: component
 name: Template Projection (cli)
 status: active
-parent: component.contract-assets.template-projection
+parent: capability.workflow-engine.contract-assets
 layer: cli
 summary: The cli-layer files of Template Projection. Responsibilities stay with the parent node.
 responsibilities:

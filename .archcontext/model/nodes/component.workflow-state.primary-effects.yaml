@@ -3,7 +3,7 @@ id: component.workflow-state.primary-effects
 kind: component
 name: Effective State Resolver (effects)
 status: active
-parent: component.workflow-state.primary
+parent: capability.workflow-engine.workflow-state
 layer: effects
 summary: The effects-layer files of Effective State Resolver. Responsibilities stay with the parent node.
 responsibilities:

@@ -3,7 +3,7 @@ id: component.task-fleet.task-inbox-effects
 kind: component
 name: Task Inbox (effects)
 status: active
-parent: component.task-fleet.task-inbox
+parent: capability.organization.task-fleet
 layer: effects
 summary: The effects-layer files of Task Inbox. Responsibilities stay with the parent node.
 responsibilities:

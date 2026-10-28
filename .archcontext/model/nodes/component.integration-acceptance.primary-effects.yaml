@@ -3,7 +3,7 @@ id: component.integration-acceptance.primary-effects
 kind: component
 name: Integration Acceptance Evidence Plane (effects)
 status: active
-parent: component.integration-acceptance.primary
+parent: capability.runtime-harness.integration-acceptance
 layer: effects
 summary: The effects-layer files of Integration Acceptance Evidence Plane. Responsibilities stay with the parent node.
 responsibilities:

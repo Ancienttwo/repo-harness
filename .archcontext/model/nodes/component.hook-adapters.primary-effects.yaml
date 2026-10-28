@@ -3,7 +3,7 @@ id: component.hook-adapters.primary-effects
 kind: component
 name: Hook Route Runtime (effects)
 status: active
-parent: component.hook-adapters.primary
+parent: capability.runtime-harness.hook-adapters
 layer: effects
 summary: The effects-layer files of Hook Route Runtime. Responsibilities stay with the parent node.
 responsibilities:

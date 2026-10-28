@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.primary-cli
 kind: component
 name: Global Runtime Reconciler (cli)
 status: active
-parent: component.global-runtime-reconciliation.primary
+parent: capability.runtime-harness.global-runtime-reconciliation
 layer: cli
 summary: The cli-layer files of Global Runtime Reconciler. Responsibilities stay with the parent node.
 responsibilities:
