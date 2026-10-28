@@ -476,7 +476,11 @@ private export or an unsupported version makes an opted-in session unavailable
 and blocks edit, write and bash with a fixed error code. A non-opt-in repository
 stays inactive. There is no local path parser or upper version bound.
 The opt-in probe uses `gitExecFileSync` from the shared Git runner with a
-three-second timeout. A failed repository probe leaves the session inactive.
+three-second timeout. Only a successful repository probe without the marker
+leaves the session inactive. A failed or timed-out repository probe makes the
+session unknown and blocks edit, write and bash with `PI_HOST_REPO_PROBE_FAILED`.
+The first prompt reports that code as a hidden message; later prompts do not
+repeat it. A new session or reload probes again.
 
 `src/pi/hook-bridge.ts` starts this package's `dist/hook-entry.js` with Bun.
 The child receives stdin JSON and `HOOK_HOST=pi`, after inherited `HOOK_*`,
@@ -493,7 +497,7 @@ replacement runtime. Existing hook telemetry records `host: "pi"`.
 The bridge adds one process start per mapped event. Process startup is the first
 expected throughput limit at higher call volume; telemetry supplies latency
 evidence before an in-process design is considered. The extension covers no
-PowerShell, user `!`/`!!` shell, other-extension writes or third-party MCP writes.
+Pi `powershell` on Windows, user `!`/`!!` shell, other-extension writes or third-party MCP writes.
 Bash retains the literal-write tripwire's parsing limits. Later extensions can
 still mutate arguments. The integration is not an OS sandbox.
 `permission.updatedInput` blocks with `PI_HOST_UPDATED_INPUT_UNSUPPORTED` until

@@ -47,6 +47,7 @@ async function fixture(options: {
   bridge?: (env: NodeJS.ProcessEnv) => ObservedBridge;
   mode?: 'print' | 'json' | 'rpc';
   nativeEntry?: boolean;
+  gitProbe?: 'missing' | 'failure' | 'timeout';
 } = {}) {
   const workspace = tmpWorkspace('pi-sdk-fixture');
   const root = join(workspace, 'repo');
@@ -121,7 +122,19 @@ async function fixture(options: {
     sessionManager: SessionManager.inMemory(root), settingsManager, resourceLoader: loader,
     tools: ['edit', 'write', 'bash', 'codemode'], thinkingLevel: 'off',
   });
-  await session.bindExtensions({ mode: options.mode ?? 'print' });
+  const previousGit = process.env.REPO_HARNESS_GIT_BIN;
+  if (options.gitProbe) {
+    const probeGit = join(bin, 'probe-git');
+    if (options.gitProbe !== 'missing') {
+      writeFileSync(probeGit, `#!${process.execPath}\n${options.gitProbe === 'timeout' ? 'setInterval(() => {}, 1000);' : 'process.exit(1);'}\n`, { mode: 0o755 });
+    }
+    process.env.REPO_HARNESS_GIT_BIN = probeGit;
+  }
+  try { await session.bindExtensions({ mode: options.mode ?? 'print' }); }
+  finally {
+    if (previousGit === undefined) delete process.env.REPO_HARNESS_GIT_BIN;
+    else process.env.REPO_HARNESS_GIT_BIN = previousGit;
+  }
   let counter = 0;
   return {
     root, home, session, bridges, providerContexts,
@@ -269,6 +282,38 @@ describe('Pi real SDK with scripted provider fixture', () => {
       expect(probes).toBe(0);
       expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
       expect(customMessages(f.session)).toHaveLength(0);
+    } finally { await f.close(); }
+  });
+
+  test.each(['missing', 'failure', 'timeout'] as const)('repository probe %s blocks mutations and reports once', async (gitProbe) => {
+    let probes = 0;
+    const f = await fixture({ gitProbe, probe: async () => {
+      probes++;
+      return probePiCapability(VERSION, getPackageDir());
+    } });
+    try {
+      for (const [name, args] of [
+        ['write', { path: '_ops/x', content: 'forbidden' }],
+        ['edit', { path: '_ops/x', oldText: 'protected original', newText: 'forbidden' }],
+        ['bash', { command: 'printf forbidden > _ops/x' }],
+        ['codemode', { code: 'await tools.write({path: "_ops/x", content: "forbidden"});' }],
+      ] as const) {
+        const result = await f.tool(name, args);
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain('PI_HOST_REPO_PROBE_FAILED');
+        expect(readFileSync(join(f.root, '_ops/x'), 'utf8')).toBe('protected original\n');
+      }
+      expect(probes).toBe(0);
+      expect(f.bridges.flatMap(bridge => bridge.requests)).toHaveLength(0);
+      const messages = customMessages(f.session);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ content: 'PI_HOST_REPO_PROBE_FAILED', display: false });
+      // A new runtime probes again and can recover after Git is available.
+      await f.session.extensionRunner.emit({ type: 'session_shutdown', reason: 'reload' });
+      await f.session.extensionRunner.emit({ type: 'session_start', reason: 'reload' });
+      expect((await f.tool('write', { path: 'normal.txt', content: 'recovered' })).isError).toBe(false);
+      expect(readFileSync(join(f.root, 'normal.txt'), 'utf8')).toBe('recovered');
+      expect(probes).toBe(1);
     } finally { await f.close(); }
   });
 

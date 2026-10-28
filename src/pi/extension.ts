@@ -7,23 +7,25 @@ import { PiHookBridge, type PiHookRequest } from './hook-bridge';
 import type { PiHookOutput } from '../cli/hook/hook-protocol';
 import { gitExecFileSync } from '../effects/git/runner';
 
+const REPO_PROBE_FAILED = 'PI_HOST_REPO_PROBE_FAILED' as const;
+
 type Session = {
   readonly id: string;
   readonly bridge: PiHookBridge;
-  capability: PiCapability | { readonly state: 'inactive' };
+  capability: PiCapability | { readonly state: 'inactive' } | { readonly state: 'unknown'; readonly code: typeof REPO_PROBE_FAILED };
   start: Promise<PiHookOutput | null>;
   contextDelivered: boolean;
   runId: string | null;
   readonly calls: Map<string, string>;
 };
 
-function optedIn(cwd: string): boolean {
+function probeRepoOptIn(cwd: string): 'opted-in' | 'inactive' | 'unknown' {
   try {
     const root = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3_000,
     }).trim();
-    return existsSync(join(root, '.ai/harness/workflow-contract.json'));
-  } catch { return false; }
+    return existsSync(join(root, '.ai/harness/workflow-contract.json')) ? 'opted-in' : 'inactive';
+  } catch { return 'unknown'; }
 }
 
 /** Options supply deterministic capability and transport seams for SDK fixtures. */
@@ -45,7 +47,11 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
       capability: { state: 'inactive' }, start: Promise.resolve(null), contextDelivered: false, runId: null, calls: new Map(),
     };
     current = state;
-    if (!optedIn(ctx.cwd)) return;
+    const repoProbe = probeRepoOptIn(ctx.cwd);
+    if (repoProbe !== 'opted-in') {
+      state.capability = repoProbe === 'unknown' ? { state: 'unknown', code: REPO_PROBE_FAILED } : { state: 'inactive' };
+      return;
+    }
     state.capability = { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' };
     const capability = await (options.probe?.() ?? probePiCapability(VERSION, getPackageDir()));
     if (!active(state, ctx)) return;
@@ -61,7 +67,11 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
     if (!state || !active(state, ctx) || state.capability.state === 'inactive') return;
     state.runId = randomUUID();
     const runId = state.runId;
-    if (state.capability.state === 'unavailable') {
+    if (state.capability.state === 'unavailable' || state.capability.state === 'unknown') {
+      if (state.capability.state === 'unknown') {
+        if (state.contextDelivered) return;
+        state.contextDelivered = true;
+      }
       return { message: { customType: 'repo-harness', content: state.capability.code, display: false } };
     }
     const texts: string[] = [];
@@ -84,7 +94,7 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
     const state = current;
     if (!state || !active(state, ctx)) return { block: true, reason: 'PI_HOOK_STALE_SESSION' };
     if (state.capability.state === 'inactive') return;
-    if (state.capability.state === 'unavailable') return { block: true, reason: state.capability.code };
+    if (state.capability.state === 'unavailable' || state.capability.state === 'unknown') return { block: true, reason: state.capability.code };
     const runId = state.runId;
     if (!runId) return { block: true, reason: 'PI_HOOK_MISSING_RUN' };
     state.calls.set(event.toolCallId, runId);
@@ -98,6 +108,7 @@ export function registerPiHooks(pi: ExtensionAPI, options: {
         tool_input: bash ? { command: input.command } : { file_path: state.capability.resolveToCwd(input.path as string, ctx.cwd) },
       });
       if (!active(state, ctx) || state.runId !== runId || state.calls.get(event.toolCallId) !== runId) throw new Error('PI_HOOK_STALE_SESSION');
+      // A block is the only allowed outcome until Pi can apply the requested input change.
       if (output.updated_input) throw new Error('PI_HOST_UPDATED_INPUT_UNSUPPORTED');
       if (output.decision === 'block' || output.exit_code !== 0) return { block: true, reason: output.diagnostics || output.reason };
     } catch (error) {

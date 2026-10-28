@@ -88,6 +88,7 @@ function renderPiOutput(outcome: HookOutcome): HostOutput {
     additional_context: outcome.exitCode === 0 ? outcome.additionalContext : null,
     system_message: outcome.exitCode === 0 ? outcome.systemMessage ?? null : null,
     diagnostics: boundedHookDiagnostic(outcome.diagnostics),
+    // Preserve requested changes on the wire. A block is the only allowed outcome until Pi can apply them.
     ...(outcome.permission?.updatedInput ? { updated_input: outcome.permission.updatedInput } : {}),
   };
   return { stdout: `${JSON.stringify(output)}\n`, stderr: outcome.diagnostics };
