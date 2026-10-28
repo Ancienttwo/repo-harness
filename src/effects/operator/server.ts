@@ -3,6 +3,7 @@ import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSes
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
+import { OPERATOR_WORKTREES_CLEANUP_ROUTE, worktreeCleanupWriteRoute } from './worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
@@ -150,6 +151,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'dev_activity', method: 'GET', pattern: OPERATOR_DEV_ACTIVITY_PATH, write: false }),
   Object.freeze({ id: 'worktrees', method: 'GET', pattern: OPERATOR_WORKTREES_PATH, write: false }),
+  // Removes only green worktrees; the effect runs in a supervised child process.
+  Object.freeze({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
@@ -1609,7 +1612,7 @@ export async function startOperatorServer(
   const writeToken = createOperatorWriteToken();
   const readAgentRuntimes = (): AgentRuntimesCacheV1 =>
     (options.read_agent_runtimes ?? setup?.read_agent_runtimes ?? (() => ({ status: 'unavailable', reason: 'collection_pending' } as const)))();
-  const writeRoutes = [agentsSettingsWriteRoute(readAgentRuntimes, options.env), ...(options.write_routes ?? [])];
+  const writeRoutes = [agentsSettingsWriteRoute(readAgentRuntimes, options.env), worktreeCleanupWriteRoute(options.env), ...(options.write_routes ?? [])];
   // The inventory is the one write authority: a handler it does not declare
   // as a POST write route is a second authority, and a declared write route
   // without a handler is a broken contract, so the server refuses to start.

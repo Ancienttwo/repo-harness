@@ -408,10 +408,16 @@ these pages: the development board with its task drawer, repositories, Agents,
 Skills, Hooks, tools, architecture and system status. The theme follows the
 system until you pick one. The language follows your saved choice, then the browser language.
 
-The console is read-only today. The approved design allows three bounded writes
-and nothing else. They open in this order: local agent config in
-`~/.repo-harness/config.json`, docs sessions that return changes as a Draft PR,
-and worktree cleanup. Each write passes an origin check, a write token and a
+The approved design allows three bounded writes and nothing else. They open in
+this order: local agent config in `~/.repo-harness/config.json`, docs sessions
+that return changes as a Draft PR, and worktree cleanup. Green worktree cleanup
+also has a terminal form:
+
+```bash
+repo-harness worktrees list            # add --json for ids and selection digests
+repo-harness worktrees clean --ids <id,...> --expected-digest <digest>
+```
+ Each write passes an origin check, a write token and a
 precondition check, and is audited before it runs. Host projection (install,
 update, profile switch), registry cleanup and CLI uninstall stay commands that
 you run in a terminal. The console does not send messages to coding sessions,

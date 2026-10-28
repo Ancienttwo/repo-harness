@@ -320,6 +320,7 @@ export function removeExactWorktree(root: string, expected: ExactWorktreeCleanup
 interface SweepContext {
   readonly main: string;
   readonly cwd: string;
+  readonly env: NodeJS.ProcessEnv;
   readonly common: string;
   readonly managedRoot: string;
   readonly managed: (path: string) => boolean;
@@ -438,14 +439,18 @@ export function assertNoSubmodules(context: { readonly main: string; readonly li
   if (pathExists(join(path, '.gitmodules')) || pathExists(join(directory, 'modules'))) throw new Error('submodules present');
 }
 
-/** Both the first attempt and recovery execute through the exact cleanup barrier. */
-function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanup, pending?: WorktreeTrashReceipt): WorktreeTrashReceipt {
+/**
+ * Both the first attempt and recovery execute through the exact cleanup barrier.
+ * `verify` runs first inside the barrier, before any trash receipt exists; a throw keeps everything.
+ */
+function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanup, pending?: WorktreeTrashReceipt, verify?: () => void): WorktreeTrashReceipt {
   let receipt = pending;
   const payloadExists = receipt && existsSync(trashPayload(receipt));
   const binding = entries(context.main, context.limits).find(entry => entry.branch === `refs/heads/${expected.branch}`);
   const snapshot = pending ? { ...expected, target_oid: git(context.main, ['rev-parse', `${expected.target_ref}^{commit}`], context.limits) } : expected;
   const identity = payloadExists && !binding ? { ...snapshot, worktree: '' } : snapshot;
   cleanupExactWorktree(context.main, identity, () => {
+    verify?.();
     if (receipt) assertTrashIsUnregistered(context, receipt.directory);
     // Refuse a whole-prune conflict before renaming any visible checkout.
     assertPruneScope(context, receipt);
@@ -593,6 +598,96 @@ export function inspectWorktree(root: string, path: string, callerCwd: string | 
   return result;
 }
 
+function createSweepContext(root: string, callerCwd: string, env: NodeJS.ProcessEnv, limits: SweepContext['limits'], trashDeadline: number, options: WorktreeRemovalOptions): SweepContext | null {
+  const primary = entries(root, limits)[0];
+  if (!primary) return null;
+  const main = checkoutPath(primary.path);
+  const cwd = realpathSync(callerCwd);
+  const managedRoot = managedWorktreeRoot(env);
+  const managed = (path: string) => isManagedWorktreePath(path, managedRoot, basename(main));
+  const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
+  return { main, cwd, env, common, managedRoot, managed, limits, trashDeadline, options };
+}
+
+/** Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss. */
+function recoverSweepTrash(context: SweepContext, notes: string[]): { readonly resumed: number; readonly blocked: boolean; readonly ignored: boolean; readonly deferred: number } {
+  const trash = worktreeTrashNames(context.common, context.managedRoot);
+  let blocked = false, ignored = false, resumed = 0;
+  for (const directory of trash.slice(0, 8)) {
+    try { assertOwnedTrashDirectory(directory); }
+    catch (error) { ignored = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
+    try { timeout(context.limits); const outcome = resumeSweepTrash(context, directory); if (outcome === 'resumed') resumed++; notes.push(`${directory}: ${outcome}`); }
+    catch (error) {
+      if (error instanceof WorktreeTrashBudgetReached) notes.push(`${directory}: pending; ${error.message}`);
+      else { blocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
+    }
+  }
+  return { resumed, blocked: blocked || trash.length > 8, ignored, deferred: Math.max(0, trash.length - 8) };
+}
+
+/** The shared green predicate refused a removal. The message keeps the sweep's report wording. */
+export class WorktreeNotGreenError extends Error {
+  constructor(readonly reasons: readonly WorktreeReason[]) {
+    const messages: Partial<Record<WorktreeReason, string>> = { dirty: 'cleanup_blocked_dirty_worktree', merge_unproven: 'cleanup merge is unproven', submodules: 'submodules present' };
+    super(reasons.map(reason => messages[reason] ?? reason).join(', '));
+    this.name = 'WorktreeNotGreenError';
+  }
+}
+
+/** The one green removal path: the shared predicate, the merge proof, then the exact barrier. */
+function removeGreenWorktree(context: SweepContext, input: {
+  readonly path: string; readonly branch: string; readonly head: string; readonly targetRef: string; readonly target: string;
+  readonly processes: WorktreeProcess[] | null; readonly verify?: () => void;
+}): WorktreeTrashReceipt {
+  const { main, limits } = context;
+  const inspection = inspectWorktree(main, input.path, context.cwd, { env: context.env, deadline: limits.deadline, processes: input.processes, ghBin: limits.ghBin });
+  if (inspection.judgment !== 'green') throw new WorktreeNotGreenError(inspection.reasons);
+  const merge = mergeProof(main, input.branch, input.head, input.targetRef, input.target, limits).merge_commit_sha;
+  return commitSweepRemoval(context, { worktree: input.path, branch: input.branch, head_sha: input.head, target_ref: input.targetRef, target_oid: input.target, merge_commit_sha: merge }, undefined, input.verify);
+}
+
+export interface GreenWorktreeRemoval {
+  /** Canonical checkout path of a registered linked worktree of this clone. */
+  readonly path: string;
+  /** Runs inside the topology barrier before the trash receipt. A throw keeps the worktree. */
+  readonly verify: () => void;
+}
+export type GreenWorktreeRemovalResult =
+  | { readonly removed: true }
+  /** `started` is true when a removal step ran, so the trash receipt, not this call, finishes it. */
+  | { readonly removed: false; readonly started: boolean; readonly error: unknown };
+
+/**
+ * Remove selected green worktrees of one clone through the sweep's recovery,
+ * predicate and barrier. Recovery that the sweep would stop on stops this too.
+ * Remote branches are never touched.
+ */
+export function removeGreenWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv, targets: readonly GreenWorktreeRemoval[],
+  options: { readonly deadline: number; readonly ghBin?: string; readonly processes: (deadline: number) => WorktreeProcess[] | null }): { readonly recovery_blocked: boolean; readonly results: readonly GreenWorktreeRemovalResult[] } {
+  const limits = { deadline: options.deadline, gitBin: configuredGitBinary(env), ghBin: options.ghBin };
+  let started = false;
+  const context = createSweepContext(root, callerCwd, env, limits, Date.now() + Math.floor(Math.max(0, options.deadline - Date.now()) / 2),
+    { afterRemovalStep: () => { started = true; } });
+  if (!context) throw new Error('worktree topology is empty');
+  if (recoverSweepTrash(context, []).blocked) return { recovery_blocked: true, results: [] };
+  const { targetRef, target } = mergeBackTarget(context.main, limits);
+  const results: GreenWorktreeRemovalResult[] = [];
+  for (const item of targets) {
+    started = false;
+    try {
+      timeout(limits);
+      const entry = entries(context.main, limits).find(row => checkoutPath(row.path) === item.path);
+      if (!entry?.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('worktree registration changed');
+      const receipt = removeGreenWorktree(context, { path: item.path, branch: entry.branch.slice('refs/heads/'.length), head: entry.head, targetRef, target,
+        processes: options.processes(Math.min(options.deadline, Date.now() + 5_000)), verify: item.verify });
+      results.push({ removed: true });
+      // A payload left after the half budget is resumed by the next sweep.
+      try { resumeSweepTrash(context, receipt.directory); } catch { /* pending trash is not an item failure */ }
+    } catch (error) { results.push({ removed: false, started, error }); }
+  }
+  return { recovery_blocked: false, results };
+}
+
 /**
  * Local refs and this clone's Git inventory are the only live worktree inputs.
  * `contract-worktree start` runs this before it creates a checkout. Every
@@ -608,30 +703,14 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
   try {
-    const topology = entries(root, limits);
-    const primary = topology[0];
-    if (!primary) return null;
-    const main = checkoutPath(primary.path);
-    const cwd = realpathSync(callerCwd);
-    const managedRoot = managedWorktreeRoot(env);
-    const managed = (path: string) => isManagedWorktreePath(path, managedRoot, basename(main));
-    const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
-    const context: SweepContext = { main, cwd, common, managedRoot, managed, limits, trashDeadline, options };
-    // Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss.
-    const trash = worktreeTrashNames(common, managedRoot);
-    let trashBlocked = false;
-    let ignoredTrash = false;
-    for (const directory of trash.slice(0, 8)) {
-      try { assertOwnedTrashDirectory(directory); }
-      catch (error) { ignoredTrash = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
-      try { timeout(limits); const outcome = resumeSweepTrash(context, directory); if (outcome === 'resumed') resumed++; notes.push(`${directory}: ${outcome}`); }
-      catch (error) {
-        if (error instanceof WorktreeTrashBudgetReached) notes.push(`${directory}: pending; ${error.message}`);
-        else { trashBlocked = true; notes.push(`${directory}: kept; ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`); }
-      }
-    }
-    deferred += Math.max(0, trash.length - 8);
-    if (trashBlocked || trash.length > 8) return `[WorktreeSweep] removed=0 pruned=0 resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
+    const context = createSweepContext(root, callerCwd, env, limits, trashDeadline, options);
+    if (!context) return null;
+    const { main, cwd, common, managed } = context;
+    const recovery = recoverSweepTrash(context, notes);
+    resumed += recovery.resumed;
+    const ignoredTrash = recovery.ignored;
+    deferred += recovery.deferred;
+    if (recovery.blocked) return `[WorktreeSweep] removed=0 pruned=0 resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}`;
     const candidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
     if (!candidates.length && !readPrunedWorktreeIntents(common).length) return notes.length ? `[WorktreeSweep] removed=${removed} pruned=${pruned} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}` : null;
     const { targetRef, target } = mergeBackTarget(main, limits);
@@ -703,11 +782,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
           notes.push(`${path}: pruned; branch cleanup deferred (${branch})`);
           continue;
         }
-        const inspection = inspectWorktree(main, path, cwd, { env, deadline: limits.deadline, processes, ghBin: options.ghBin });
-        const messages: Partial<Record<WorktreeReason, string>> = { dirty: 'cleanup_blocked_dirty_worktree', merge_unproven: 'cleanup merge is unproven', submodules: 'submodules present' };
-        if (inspection.judgment !== 'green') throw new Error(inspection.reasons.map(reason => messages[reason] ?? reason).join(', '));
-        const merge = mergeProof(main, branch, entry.head, targetRef, target, limits).merge_commit_sha;
-        const receipt = commitSweepRemoval(context, { worktree: path, branch, head_sha: entry.head, target_ref: targetRef, target_oid: target, merge_commit_sha: merge });
+        const receipt = removeGreenWorktree(context, { path, branch, head: entry.head, targetRef, target, processes });
         removed++;
         notes.push(`${path}: removed`);
         // No detached child: each unlink checks the shared trash deadline.

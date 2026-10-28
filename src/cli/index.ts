@@ -41,6 +41,7 @@ import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
+import { buildWorktreesCommand } from './commands/worktrees';
 import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -844,6 +845,7 @@ export function buildProgram(): Command {
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
   program.addCommand(buildOperatorCommand());
+  program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildArchitectureProjectionCommand());

@@ -39,6 +39,11 @@ export interface WorktreesSnapshot {
 }
 export const unavailableWorktrees = (): WorktreesSnapshot => ({ version: 1, status: 'unavailable', collected_at: null, repositories: [], unassigned: [] });
 
+/** Bounded public text: no control character, backslash or absolute path. */
+export const isPublicWorktreeText = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 1024 && !/[\x00-\x1f\x7f]/u.test(v) && isPublicDevActivityText(v) && !v.includes('\\');
+/** A worktree directory basename that passed `isPublicWorktreeText`. */
+export const isPublicWorktreeDirectory = (v: unknown): v is string => isPublicWorktreeText(v) && !v.includes('/') && !['.', '..'].includes(v);
+
 /** Exact public shape. No subprocess errors or private record paths cross this boundary. */
 export function decodeWorktrees(value: unknown): WorktreesSnapshot {
   const fail = (): never => { throw new Error('worktrees_invalid'); };
@@ -46,7 +51,7 @@ export function decodeWorktrees(value: unknown): WorktreesSnapshot {
     if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).sort().join() !== keys.sort().join()) return fail();
     return v as Record<string, unknown>;
   };
-  const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 1024 && !/[\x00-\x1f\x7f]/u.test(v) && isPublicDevActivityText(v) && !v.includes('\\');
+  const text = isPublicWorktreeText;
   const time = (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT[\d:.]+Z$/u.test(v) && Number.isFinite(Date.parse(v));
   const count = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
   const repoId = (v: unknown) => typeof v === 'string' && /^repo_[a-f0-9]{16}$/u.test(v);
@@ -62,7 +67,7 @@ export function decodeWorktrees(value: unknown): WorktreesSnapshot {
     for (const rawTree of r.worktrees as unknown[]) {
       const w = obj(rawTree, ['id', 'repository_id', 'directory', 'branch', 'source', 'judgment', 'reasons', 'size_bytes', 'size_observed_at', 'process_count', 'dirty_files', 'ignored_entries', 'unpushed_commits', 'merge', 'record']);
       if (typeof w.id !== 'string' || !/^wt_[a-f0-9]{64}$/u.test(w.id) || ids.has(w.id) || w.repository_id !== r.repository_id
-        || !text(w.directory) || (w.directory as string).includes('/') || ['.', '..'].includes(w.directory as string)
+        || !isPublicWorktreeDirectory(w.directory)
         || !(w.branch === null || text(w.branch)) || !one(w.source, WORKTREE_SOURCES) || !one(w.judgment, ['green', 'yellow', 'red'])
         || !Array.isArray(w.reasons) || !w.reasons.every(reason => one(reason, WORKTREE_REASONS))
         || !['size_bytes', 'process_count', 'dirty_files', 'ignored_entries', 'unpushed_commits'].every(key => w[key] === null || count(w[key]))

@@ -1928,3 +1928,92 @@ describe('architecture map', () => {
     }
   });
 });
+
+describe('worktree cleanup write route', () => {
+  /** A registered repository with a green `repo-wt-feature` and a server whose page hands out the write token. */
+  async function cleanupServer(extraEnv: NodeJS.ProcessEnv = {}) {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-cleanup-')));
+    const main = join(parent, 'repo'), root = join(parent, 'managed'), home = join(parent, 'home'), ui = join(parent, 'ui');
+    for (const directory of [main, root, home, ui]) mkdirSync(directory);
+    writeFileSync(join(ui, 'index.html'), '<!doctype html><main>operator</main>');
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' });
+      if (result.status) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    git(main, 'init', '--quiet', '-b', 'main');
+    writeFileSync(join(main, '.gitignore'), '.env\n'); git(main, 'add', '-A'); git(main, 'commit', '--quiet', '-m', 'base');
+    const tree = join(root, 'repo-wt-feature');
+    git(main, 'worktree', 'add', '--quiet', '-b', 'feature', tree);
+    writeFileSync(join(tree, 'feature.txt'), 'feature'); git(tree, 'add', '-A'); git(tree, 'commit', '--quiet', '-m', 'feature');
+    git(main, 'update-ref', 'refs/remotes/origin/main', git(tree, 'rev-parse', 'HEAD'));
+    const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only' as const, source: 'adopt' as const, registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
+    writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [repo] }));
+    const env = { REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: root, ...extraEnv };
+    const server = await startOperatorServer({ port: 0, static_root: ui, env, collect_fleet_board: async () => snapshot() });
+    const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
+    const post = (body: unknown) => fetch(`${server.url}/api/v1/worktrees/cleanup`, { method: 'POST', body: JSON.stringify(body),
+      headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });
+    const audit = () => readFileSync(join(home, 'operator/audit.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    return { parent, main, root, tree, repo, env, server, post, audit, close: async () => { await server.close(); rmSync(parent, { recursive: true, force: true }); } };
+  }
+
+  // POSIX only: trash ownership needs a uid, and the hold uses a shell script as Git.
+  test.skipIf(process.platform === 'win32')('removes a green worktree through the child effect, refuses a yellow one, and audits both', async () => {
+    const { collectRepositoryWorktrees } = await import('../../src/effects/operator/worktree-collector-worker');
+    const { selectionDigest } = await import('../../src/effects/operator/worktree-cleanup');
+    const { worktreeDigestRow } = await import('../../src/core/operator/worktree-cleanup');
+    const f = await cleanupServer();
+    try {
+      const rows = () => collectRepositoryWorktrees(f.repo, {}, { ...process.env, ...f.env }).snapshot.repositories[0]!.worktrees;
+      const other = join(f.root, 'repo-wt-other');
+      spawnSync('git', ['worktree', 'add', '--quiet', '-b', 'other', other, 'feature'], { cwd: f.main });
+      writeFileSync(join(other, '.env'), 'private');
+      const green = rows().find(row => row.directory === 'repo-wt-feature')!, yellow = rows().find(row => row.directory === 'repo-wt-other')!;
+      expect([green.judgment, yellow.judgment]).toEqual(['green', 'yellow']);
+      const refused = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174101', ids: [yellow.id], expected_digest: selectionDigest([worktreeDigestRow(yellow)]) });
+      expect(refused.status).toBe(422);
+      expect((await refused.json()).error.code).toBe('not_approved');
+      expect(existsSync(other)).toBe(true);
+      const removed = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174102', ids: [green.id], expected_digest: selectionDigest([worktreeDigestRow(green)]) });
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toEqual({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
+        { id: green.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'removed', reason: null },
+      ] });
+      expect(existsSync(f.tree)).toBe(false);
+      expect(f.audit().map(record => [record.phase, record.status ?? record.operation])).toEqual([
+        ['intent', 'worktrees_cleanup'], ['result', 422], ['intent', 'worktrees_cleanup'], ['result', 200],
+      ]);
+      expect(readFileSync(join(f.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl'), 'utf8')).not.toContain(f.parent);
+      expect((await fetch(`${f.server.url}/api/v1/worktrees/cleanup`)).status).toBe(405);
+    } finally { await f.close(); }
+  });
+
+  test.skipIf(process.platform === 'win32')('a GET completes while a cleanup child is held in Git', async () => {
+    const hold = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-cleanup-hold-')));
+    const marker = join(hold, 'entered'), release = join(hold, 'release'), fakeGit = join(hold, 'git');
+    const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    writeFileSync(fakeGit, `#!/bin/sh\n: > '${marker}'\nwhile [ ! -e '${release}' ]; do sleep 0.05; done\nexec '${realGit}' "$@"\n`);
+    chmodSync(fakeGit, 0o755);
+    const f = await cleanupServer({ REPO_HARNESS_GIT_BIN: fakeGit });
+    try {
+      let settled = false;
+      const pending = f.post({ request_id: '123e4567-e89b-42d3-a456-426614174103', ids: [`wt_${'0'.repeat(64)}`], expected_digest: '0'.repeat(64) })
+        .then(response => { settled = true; return response; });
+      await waitFor(() => existsSync(marker), 'the cleanup child did not reach Git', 1_500);
+      const started = Date.now();
+      expect((await fetch(`${f.server.url}/healthz`)).status).toBe(200);
+      expect((await fetch(`${f.server.url}/api/v1/worktrees`)).status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(settled).toBe(false);
+      writeFileSync(release, '');
+      const response = await pending;
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe('digest_changed');
+    } finally {
+      writeFileSync(release, '');
+      await f.close();
+      rmSync(hold, { recursive: true, force: true });
+    }
+  });
+});

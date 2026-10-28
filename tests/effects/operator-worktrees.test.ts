@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import * as childProcess from 'node:child_process';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
@@ -13,6 +13,9 @@ import { startWorktreeCollector } from '../../src/effects/operator/worktree-coll
 import { collectOrphanWorktrees } from '../../src/effects/operator/worktree-orphans-worker';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
 import { worktreeProcesses, type LinuxWorktreeProcessProbe } from '../../src/effects/git/worktree-processes';
+import { decodeWorktreeCleanupRequest, decodeWorktreeCleanupResult, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import { decodeWorktreeCleanupChildOutput, runWorktreeCleanup, selectionDigest, type WorktreeProcessProbe } from '../../src/effects/operator/worktree-cleanup';
+import { OperatorWriteRefusal } from '../../src/effects/operator/write-run';
 
 function fixture() {
   const parent = tmpWorkspace('operator-worktrees');
@@ -181,5 +184,102 @@ describe('read-only worktree judgment and lifecycle', () => {
         expect(calls).toBe(2);
       } finally { await collector.close(); }
     } finally { f.cleanup(); }
+  });
+});
+
+/** A registered fixture whose `repo-wt-feature` row is green, with the effect bound to it. */
+function cleanupFixture() {
+  const f = fixture();
+  writeFileSync(join(f.home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [f.repo] }));
+  const rows = () => collectRepositoryWorktrees(f.repo, {}, f.env).snapshot.repositories[0]!.worktrees;
+  const row = (directory: string) => rows().find(item => item.directory === directory)!;
+  const digest = (...directories: string[]) => selectionDigest(directories.map(directory => worktreeDigestRow(row(directory))));
+  const clean = (ids: string[], expected: string, processes?: WorktreeProcessProbe) =>
+    runWorktreeCleanup(decodeWorktreeCleanupRequest({ ids, expected_digest: expected }), { env: f.env, caller_cwd: f.main, deadline_ms: 30_000, processes });
+  const refusal = (action: () => unknown): string => {
+    try { action(); } catch (error) { if (error instanceof OperatorWriteRefusal) return `${error.status} ${error.code}`; throw error; }
+    return 'none';
+  };
+  const branchExists = (branch: string) => f.git(f.main, 'for-each-ref', '--format=%(refname)', `refs/heads/${branch}`) !== '';
+  return { ...f, row, digest, clean, refusal, branchExists };
+}
+
+describe('green worktree cleanup effect', () => {
+  test('removes the selected green worktree and its local branch, and keeps the remote refs', () => {
+    const f = cleanupFixture();
+    try {
+      f.git(f.main, 'update-ref', 'refs/remotes/origin/feature', f.git(f.tree, 'rev-parse', 'HEAD'));
+      const row = f.row('repo-wt-feature');
+      expect(row.judgment).toBe('green');
+      const result = f.clean([row.id], f.digest('repo-wt-feature'));
+      expect(result).toEqual({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
+        { id: row.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'removed', reason: null },
+      ] });
+      expect(existsSync(f.tree)).toBe(false);
+      expect(f.branchExists('feature')).toBe(false);
+      expect(f.git(f.main, 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin')).toContain('refs/remotes/origin/feature');
+      expect(f.git(f.main, 'worktree', 'list', '--porcelain')).not.toContain(f.tree);
+      expect(JSON.stringify(result)).not.toContain(f.parent);
+    } finally { f.cleanup(); }
+  });
+
+  test('a non-green, in-use, unknown or changed selection removes nothing', () => {
+    const f = cleanupFixture();
+    try {
+      const other = join(f.root, 'repo-wt-other');
+      f.git(f.main, 'worktree', 'add', '-b', 'other', other, 'feature');
+      writeFileSync(join(other, 'other.txt'), 'other'); commitAll(other, 'other');
+      f.git(f.main, 'update-ref', 'refs/remotes/origin/main', f.git(other, 'rev-parse', 'HEAD'));
+      writeFileSync(join(other, '.env'), 'private');
+      const green = f.row('repo-wt-feature'), yellow = f.row('repo-wt-other');
+      expect([green.judgment, yellow.judgment, yellow.reasons]).toEqual(['green', 'yellow', ['ignored_data']]);
+      const both = f.digest('repo-wt-feature', 'repo-wt-other');
+      expect(f.refusal(() => f.clean([green.id, yellow.id], both))).toBe('422 not_approved');
+      expect(f.refusal(() => f.clean([yellow.id], f.digest('repo-wt-other')))).toBe('422 not_approved');
+      expect(f.refusal(() => f.clean([green.id], f.digest('repo-wt-feature'), () => [{ pid: 99, cwd: join(f.tree, 'src') }]))).toBe('422 in_use');
+      // An unknown occupancy inventory is never green (#1128).
+      expect(f.refusal(() => f.clean([green.id], f.digest('repo-wt-feature'), () => null))).toBe('422 not_approved');
+      expect(f.refusal(() => f.clean([green.id], 'f'.repeat(64)))).toBe('409 digest_changed');
+      expect(f.refusal(() => f.clean([`wt_${'0'.repeat(64)}`], f.digest('repo-wt-feature')))).toBe('409 digest_changed');
+      expect(existsSync(f.tree) && existsSync(other) && f.branchExists('feature') && f.branchExists('other')).toBe(true);
+      writeFileSync(join(f.home, 'registered-repos.json'), '{');
+      expect(f.refusal(() => f.clean([green.id], f.digest('repo-wt-feature')))).toBe('503 inventory_unavailable');
+      expect(existsSync(f.tree)).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  test('a row that becomes in use inside the topology barrier is skipped and kept', () => {
+    const f = cleanupFixture();
+    try {
+      const row = f.row('repo-wt-feature');
+      const lock = join(resolveGitCommonDirectory(f.main), 'repo-harness/coordination/locks/worktree-topology.lock');
+      // The occupant appears only while the barrier holds the topology lock.
+      const result = f.clean([row.id], f.digest('repo-wt-feature'), () => existsSync(lock) ? [{ pid: 99, cwd: f.tree }] : []);
+      expect(result.items).toEqual([{ id: row.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'skipped', reason: 'process_in_use' }]);
+      expect(existsSync(join(f.tree, 'feature.txt')) && f.branchExists('feature')).toBe(true);
+      expect(readdirSync(f.root)).toEqual(['repo-wt-feature']);
+    } finally { f.cleanup(); }
+  });
+
+  test('the request and child output decoders are closed', () => {
+    const id = `wt_${'a'.repeat(64)}`, other = `wt_${'b'.repeat(64)}`, digest = 'c'.repeat(64);
+    expect(decodeWorktreeCleanupRequest({ ids: [other, id], expected_digest: digest })).toEqual({ ids: [id, other], expected_digest: digest });
+    for (const fields of [
+      { ids: [id], expected_digest: digest, session_id: 'session' },
+      { ids: [id], expected_digest: digest, approvals: [] },
+      { ids: [], expected_digest: digest },
+      { ids: [id, id], expected_digest: digest },
+      { ids: Array.from({ length: 17 }, (_, index) => `wt_${index.toString(16).padStart(64, '0')}`), expected_digest: digest },
+      { ids: ['/tmp/repo-wt-feature'], expected_digest: digest },
+      { ids: [id], expected_digest: digest.toUpperCase() },
+    ]) expect(() => decodeWorktreeCleanupRequest(fields)).toThrow('worktree_cleanup_request_invalid');
+    const item = { id, repository_id: 'repo_0123456789abcdef', directory: 'repo-wt-feature', outcome: 'removed', reason: null };
+    expect(decodeWorktreeCleanupChildOutput(JSON.stringify({ ok: true, result: { protocol: 1, kind: 'operator_worktree_cleanup', items: [item] } })).items).toEqual([item as never]);
+    expect(() => decodeWorktreeCleanupChildOutput(JSON.stringify({ ok: false, refusal: 'in_use' }))).toThrow(OperatorWriteRefusal);
+    for (const output of [{ ok: false, refusal: 'reconcile_required' }, { ok: true, result: { protocol: 1, kind: 'operator_worktree_cleanup', items: [{ ...item, directory: '/tmp/private' }] } }, { ok: true }]) {
+      expect(() => decodeWorktreeCleanupChildOutput(JSON.stringify(output))).toThrow(Error);
+      try { decodeWorktreeCleanupChildOutput(JSON.stringify(output)); } catch (error) { expect(error).not.toBeInstanceOf(OperatorWriteRefusal); }
+    }
+    expect(() => decodeWorktreeCleanupResult({ protocol: 1, kind: 'operator_worktree_cleanup', items: [{ ...item, outcome: 'skipped', reason: 'stale' }] })).toThrow('worktree_cleanup_result_invalid');
   });
 });
