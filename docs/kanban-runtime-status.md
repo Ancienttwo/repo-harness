@@ -71,7 +71,7 @@ Herdr mode starts owned Unix socket observations before HTTP serving. GET only r
 
 The base socket codec follows [immutable Herdr source](https://github.com/herdrdev/herdr/tree/4dc23bb15d4a2fd2c093abfb509f903c3015bf56). The schema revision is [upstream v0.9.5 `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`](https://github.com/herdrdev/herdr/commit/2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01). The pin lives in `src/core/operator/herdr-pin.ts` so browser bundles and the Node transport read one value.
 
-The codec requires reported version 0.9.5 and protocol 22. These fields do not attest the remote binary commit. Only `ping`, `session.snapshot` and `events.subscribe` are sent. Global lifecycle subscriptions precede exact pane status subscriptions and a second snapshot. Titles, cwd, terminal text, arbitrary event payloads and raw agent session paths are excluded from the public projection. The agent-session object is represented by a digest.
+The codec requires reported version 0.9.5 and protocol 22. These fields do not attest the remote binary commit. Only `ping`, `session.snapshot` and `events.subscribe` are sent. Each connection's version check requires exactly 0.9.5 and protocol 22. Global lifecycle subscriptions precede exact pane status subscriptions and a second snapshot. Titles, cwd, terminal text, arbitrary event payloads and raw agent session paths are excluded from the public projection. The agent-session object is represented by a digest.
 
 ### Breaking change: remove retired binding keys
 
