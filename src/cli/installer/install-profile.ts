@@ -41,7 +41,8 @@ import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surf
 import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
-import { piExecutable, piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
+import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
+import { piExecutable } from '../../effects/pi-executable';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),

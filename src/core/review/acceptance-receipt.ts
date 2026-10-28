@@ -68,7 +68,7 @@ export interface AcceptanceReviewResult {
   subject_sha256: string;
   actual_harness: ReviewRuntimeId;
   actual_role: string;
-  actual_model: string | null;
+  actual_model: string;
   verdict: 'PASS' | 'FAIL';
   summary: string;
   findings: AcceptanceFinding[];
@@ -83,7 +83,7 @@ export function validateDomainReview(value: unknown): AcceptanceReviewResult {
   if (typeof value.request_id !== 'string' || !value.request_id.trim()
     || !/^sha256:[0-9a-f]{64}$/.test(String(value.context_sha256)) || !/^sha256:[0-9a-f]{64}$/.test(String(value.subject_sha256))
     || typeof value.actual_harness !== 'string' || !isReviewRuntimeId(value.actual_harness) || value.actual_role !== GENERIC_REVIEW_ROLE
-    || !(value.actual_harness === 'pi' && value.actual_model === null) && (typeof value.actual_model !== 'string' || !value.actual_model.trim())
+    || typeof value.actual_model !== 'string' || !value.actual_model.trim()
     || !['PASS','FAIL'].includes(String(value.verdict)) || typeof value.summary !== 'string' || !value.summary.trim()) fail('generic-review result identity/verdict is invalid');
   return { ...value, findings: validateFindings(value.findings) } as unknown as AcceptanceReviewResult;
 }
@@ -99,8 +99,7 @@ export function assertReviewFields(receipt: AcceptanceReceipt): void {
   if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.result_sha256))) fail('AcceptanceReceipt generic-review result_sha256 is invalid');
   if (receipt.actual_harness !== receipt.reviewer.toLowerCase()) fail('AcceptanceReceipt generic-review actual_harness mismatch');
   if (receipt.actual_role !== GENERIC_REVIEW_ROLE) fail('AcceptanceReceipt generic-review actual_role mismatch');
-  if (!(receipt.actual_harness === 'pi' && receipt.actual_model === null)
-    && (typeof receipt.actual_model !== 'string' || !receipt.actual_model.trim())) fail('AcceptanceReceipt generic-review actual_model is invalid');
+  if (typeof receipt.actual_model !== 'string' || !receipt.actual_model.trim()) fail('AcceptanceReceipt generic-review actual_model is invalid');
 }
 
 /** Already-authorized upstream waiver action. References and actor strings are

@@ -25,6 +25,7 @@ import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint,
   projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from './acceptance-receipt';
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
+import { piExecutable } from '../pi-executable';
 
 type Harness = ReviewRuntimeId;
 interface ReviewSession {
@@ -91,11 +92,10 @@ async function waitHostFile(path: string, timeout = 60_000): Promise<void> {
     await Bun.sleep(25);
   }
 }
-function completedModel(session: ReviewSession, request: TaskRequest): string | null {
+function completedModel(session: ReviewSession, request: TaskRequest): string {
   const observation = readSessionArtifact<HostRoundObservation>(join(session.control_directory, `observed-${request.round}.json`));
   if (observation.request_id !== request.request_id || observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('review_host_turn_unverified');
   // Init-only Claude projection cannot certify the actual gateway backend.
-  if (session.actual_harness === 'pi' && observation.actual_model === null) return null;
   if (session.actual_harness === 'claude' || !observation.actual_model) throw new Error('review_actual_model_unverified');
   return observation.actual_model;
 }
@@ -126,10 +126,6 @@ async function terminalHostLaunched(dir: string, timeout = 60_000): Promise<Proc
 function hostExecutable(): { node: string; entry: string } {
   return { node: realpathSync(process.env.REPO_HARNESS_NODE_BIN ?? Bun.which('node') ?? ''),
     entry: realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url))) };
-}
-function piExecutable(): string | null {
-  const command = Bun.which('pi');
-  return command ? realpathSync(command) : null;
 }
 /** Only the fixed Node>=24 host executes the OAR installation API. */
 export async function probeReviewInstallation(kind: Harness, executable?: string): Promise<InstallationSnapshot> {
@@ -273,7 +269,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       let actual = requested; let reason: string | null = null;
       const installed = await client.installation(actual);
       if (installed.kind !== 'available') {
-        if (installed.kind !== 'not_found' || options.harness || !owner
+        if (installed.kind !== 'not_found' || options.harness || !owner || owner === 'pi'
           || (await client.installation(owner)).kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
         actual = owner; reason = `${requested} executable missing before start`;
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);

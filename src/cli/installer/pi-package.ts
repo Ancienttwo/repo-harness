@@ -1,25 +1,11 @@
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { stripVTControlCharacters } from 'node:util';
 import { homedir } from 'node:os';
 import { piAgentDir } from '../../effects/pi-agent-dir';
 import { realPathOrResolved } from '../../effects/path-identity';
-
-export function piExecutable(env: NodeJS.ProcessEnv = process.env): string | null {
-  const extensions = process.platform === 'win32' ? (env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';') : [''];
-  for (const directory of (env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    for (const extension of extensions) {
-      const candidate = join(directory, `pi${extension}`);
-      try {
-        if (!statSync(candidate).isFile()) continue;
-        accessSync(candidate, constants.X_OK);
-        return candidate;
-      } catch { /* Continue through PATH. */ }
-    }
-  }
-  return null;
-}
+import { piExecutable } from '../../effects/pi-executable';
 
 /** Package commands run at HOME so project settings cannot supply ownership. */
 export function runPi(args: readonly string[], env: NodeJS.ProcessEnv = process.env): string {

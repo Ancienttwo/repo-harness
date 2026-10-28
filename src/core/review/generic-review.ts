@@ -22,7 +22,7 @@ export interface ReviewOutput {
   subject_sha256: string;
   actual_harness: ReviewRuntimeId;
   actual_role: string;
-  actual_model: string | null;
+  actual_model: string;
   verdict: 'PASS' | 'FAIL';
   summary: string;
   findings: ReviewFinding[];
@@ -38,8 +38,7 @@ export function validateReviewOutput(value: unknown, expected: Omit<ReviewOutput
     if (output[field as keyof ReviewOutput] !== wanted) throw new Error(`review_${field}_mismatch`);
   }
   if (!isReviewRuntimeId(output.actual_harness)
-    || !(output.actual_harness === 'pi' && output.actual_model === null)
-      && (typeof output.actual_model !== 'string' || !output.actual_model.trim())) throw new Error('review_actual_model_unverified');
+    || typeof output.actual_model !== 'string' || !output.actual_model.trim()) throw new Error('review_actual_model_unverified');
   if (!['PASS', 'FAIL'].includes(output.verdict) || typeof output.summary !== 'string' || !output.summary.trim()
     || !Array.isArray(output.findings)) throw new Error('review_malformed_result');
   const ids = new Set<string>();

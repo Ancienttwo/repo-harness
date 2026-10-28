@@ -26,13 +26,14 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
   for (const path of [dirname(source), source]) {
     if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('review_pi_source_unsafe');
   }
-  const models = join(source, 'models.json'), destination = join(directory, 'models.json');
-  if (existsSync(models)) {
-    const bytes = readAuthBytes(models);
-    bytes.fill(0);
-    if (!existsSync(destination)) symlinkSync(models, destination);
-    if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
-  } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
+  for (const name of ['models', 'settings']) {
+    const native = join(source, `${name}.json`), destination = join(directory, `${name}.json`);
+    if (existsSync(native)) {
+      const bytes = readAuthBytes(native); bytes.fill(0);
+      if (!existsSync(destination)) symlinkSync(native, destination);
+      if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== native) throw new Error(`review_pi_${name}_changed`);
+    } else if (existsSync(destination)) throw new Error(`review_pi_${name}_changed`);
+  }
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
     const bytes = readAuthBytes(auth); bytes.fill(0);
@@ -56,7 +57,7 @@ export function removePiCredentialReferences(output: string): { status: 'removed
     }
     if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(directory) !== directory) return { status: 'cleanup_pending' };
     let removed = false, pending = false;
-    for (const name of ['models.json', 'auth.json']) {
+    for (const name of ['models.json', 'settings.json', 'auth.json']) {
       try { unlinkSync(join(directory, name)); removed = true; } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') pending = true;
       }

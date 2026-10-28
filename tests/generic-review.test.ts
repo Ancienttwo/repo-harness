@@ -382,10 +382,11 @@ test('Pi isolation fixture links native configuration without storing credential
   writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
   const directory = preparePiAgentDirectory(output, source);
   expect(lstatSync(directory).mode & 0o777).toBe(0o700);
-  expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json']);
+  expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   expect(readlinkSync(join(directory, 'models.json'))).toBe(join(agent, 'models.json'));
   expect(readlinkSync(join(directory, 'auth.json'))).toBe(join(agent, 'auth.json'));
+  expect(readlinkSync(join(directory, 'settings.json'))).toBe(join(agent, 'settings.json'));
   expectNoStoredPiProbe(output);
   expect(preparePiAgentDirectory(output, source)).toBe(directory);
   unlinkSync(join(directory, 'models.json'));
@@ -430,7 +431,7 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   const home = join(root, 'home'), source = join(home, '.pi/agent'); mkdirSync(source, { recursive: true });
   for (const hasCredentials of [false, true]) {
     const output = join(root, hasCredentials ? 'linked' : 'empty'); mkdirSync(output);
-    if (hasCredentials) for (const name of ['models.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":"sk-PROBE-LITERAL"}');
+    if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":"sk-PROBE-LITERAL"}');
     const directory = preparePiAgentDirectory(output, home);
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
@@ -444,7 +445,7 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   expect(readdirSync(directory)).toEqual(['models.json']);
   const escape = join(root, 'escape'); mkdirSync(escape); symlinkSync(source, join(escape, '.pi-agent'));
   expect(removePiCredentialReferences(escape).status).toBe('cleanup_pending');
-  for (const name of ['models.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":"sk-PROBE-LITERAL"}');
+  for (const name of ['models.json', 'settings.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":"sk-PROBE-LITERAL"}');
 });
 
 darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and paired denials', async () => {
@@ -458,10 +459,11 @@ darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and 
   const credential = join(agent, 'auth.json');
   writeFileSync(credential, JSON.stringify({ openai: { type: 'api_key', key: 'fixture-key-no-provider-call' } }));
   writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
+  writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
   mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
   const directory = preparePiAgentDirectory(output, home);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
-  const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json')];
+  const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json'), join(directory, 'settings.json'), join(agent, 'settings.json')];
   for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
   const initial = targets.map(path => readFileSync(path, 'utf8'));
   const paths = { subject: source, primary: source, ownerRecord: owner, journal: owner, gitCommonDir: source, output, piAgentDirectory: directory };
@@ -483,14 +485,14 @@ const child=cp.spawn(process.execPath,[${JSON.stringify(piCli)},...argv],{stdio:
 import {reviewRuntime,OarReviewHost,openReviewHost} from ${JSON.stringify(entry)};
 import {SessionManager} from ${JSON.stringify(import.meta.resolve('@earendil-works/pi-coding-agent'))};
 const runtime=reviewRuntime('pi',${JSON.stringify(launcher)});
-const session=await runtime.session({kind:'available',via:'bundled'},{cwd:${JSON.stringify(output)},model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:${JSON.stringify(directory)},OAR_PI_AGENT_DIR:${JSON.stringify(directory)}}});
+const session=await runtime.session({kind:'available',via:'bundled'},{cwd:${JSON.stringify(output)},env:{PI_CODING_AGENT_DIR:${JSON.stringify(directory)},OAR_PI_AGENT_DIR:${JSON.stringify(directory)}}});
 const host=new OarReviewHost(session,()=>{});const id=host.sessionId;
 try{assert.ok(id);assert.equal(host.model('pi'),'openai/gpt-4o');const records=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse);const run=records.find(r=>r.argv.includes('--mode'));assert.ok(existsSync(run.env.OAR_PI_RPC_DIRECTORY+'/ready'));}finally{await host.dispose();}
 const output=${JSON.stringify(output)},agentDir=${JSON.stringify(directory)};
 const captured=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse).find(r=>r.argv.includes('--session-dir'));
 const native=SessionManager.create(output,captured.argv[captured.argv.indexOf('--session-dir')+1]);
 native.appendMessage({role:'user',content:'[fixture transcript; no provider run]',timestamp:Date.now()});
-const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,resume:native.getSessionId(),model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agentDir,OAR_PI_AGENT_DIR:agentDir}},requestDirectory:${JSON.stringify(owner)},output,controlDirectory:${JSON.stringify(owner)},timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile: profile })}};
+const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,resume:native.getSessionId(),env:{PI_CODING_AGENT_DIR:agentDir,OAR_PI_AGENT_DIR:agentDir}},requestDirectory:${JSON.stringify(owner)},output,controlDirectory:${JSON.stringify(owner)},timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile: profile })}};
 for(let i=0;i<2;i++){const resumed=i===0?await openReviewHost(spec,()=>{}):new OarReviewHost(await runtime.session(spec.installation,spec.options),()=>{});try{assert.equal(resumed.sessionId,native.getSessionId());assert.equal(resumed.model('pi'),'openai/gpt-4o');}finally{await resumed.dispose();}}
 console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:true,resumed:true}));
 `);
@@ -508,7 +510,7 @@ console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:
   expect(targets.map(path => readFileSync(path, 'utf8'))).toEqual(initial);
 }, 60000);
 
-test('Pi review options use the isolated provider configuration and preserve unknown actual model', async () => {
+test('Pi review options use native configuration and require an actual model', async () => {
   const { isReviewRuntimeId } = await import('../src/core/review/review-runtimes');
   const { validateDomainReview } = await import('../src/core/review/acceptance-receipt');
   const { decodeAgentsConfig } = await import('../src/core/operator/agents-settings');
@@ -518,16 +520,14 @@ test('Pi review options use the isolated provider configuration and preserve unk
   const options = reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent');
   expect(options.env).toEqual({ PI_CODING_AGENT_DIR: '/fixture/.pi-agent', OAR_PI_AGENT_DIR: '/fixture/.pi-agent' });
   expect(options.model).toBeUndefined(); expect(options.effort).toBeUndefined();
-  for (const actual_model of [null, 'fixture-provider/fixture-actual']) {
-    const identity = { request_id: 'fixture', context_sha256: 'sha256:' + 'a'.repeat(64), subject_sha256: 'sha256:' + 'b'.repeat(64),
-      actual_harness: 'pi' as const, actual_role: 'deep-reasoner', actual_model };
-    const result = { ...identity, verdict: 'PASS' as const, summary: '[fixture opinion]', findings: [] };
-    expect(validateReviewOutput(result, identity).actual_model).toBe(actual_model);
-    expect(validateDomainReview(result).actual_model).toBe(actual_model);
-    if (actual_model === null) for (const actual_harness of ['claude', 'codex'] as const) {
-      expect(() => validateDomainReview({ ...result, actual_harness })).toThrow();
-      expect(() => validateReviewOutput({ ...result, actual_harness }, { ...identity, actual_harness })).toThrow('actual_model_unverified');
-    }
+  const identity = { request_id: 'fixture', context_sha256: 'sha256:' + 'a'.repeat(64), subject_sha256: 'sha256:' + 'b'.repeat(64),
+    actual_harness: 'pi' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-provider/fixture-actual' };
+  const result = { ...identity, verdict: 'PASS' as const, summary: '[fixture opinion]', findings: [] };
+  expect(validateReviewOutput(result, identity).actual_model).toBe(identity.actual_model);
+  expect(validateDomainReview(result).actual_model).toBe(identity.actual_model);
+  for (const actual_harness of ['claude', 'codex', 'pi'] as const) {
+    expect(() => validateDomainReview({ ...result, actual_harness, actual_model: null })).toThrow();
+    expect(() => validateReviewOutput({ ...result, actual_harness, actual_model: null }, { ...identity, actual_harness })).toThrow('actual_model_mismatch');
   }
 });
 
@@ -537,68 +537,79 @@ test('Pi execution fixture projects and validates its native resume identity', a
     executions: [{ state: 'verified', task: 'fixture-pi', role: 'deep-reasoner', issue_id: '1100', branch: 'fixture-pi',
       agent: 'pi', runtime: 'terminal', native_session_id: 'fixture-native-id', herdr_pane: null }] }, 'fixture-repo', null);
   expect(decodeTaskExecutionView(view)).toEqual(view);
-  expect(view.tasks[0]!.follow_up.resume).toEqual({ host: 'pi', command: 'pi --resume fixture-native-id' });
+  expect(view.tasks[0]!.follow_up.resume).toEqual({ host: 'pi', command: 'pi --session fixture-native-id' });
   const first = view.tasks[0]!;
   const invalid = { ...view, tasks: [{ ...first, follow_up: { ...first.follow_up,
-    resume: { host: 'pi', command: 'pi --resume fixture-native-id; touch forbidden' } } }] };
+    resume: { host: 'pi', command: 'pi --session fixture-native-id; touch forbidden' } } }] };
   expect(() => decodeTaskExecutionView(invalid)).toThrow('resume command');
 });
 
 for (const example of [
-  { model: 'fixture-provider/fixture-actual', verdict: 'PASS' as const, cleanupFailure: false },
-  { model: null, verdict: 'PASS' as const, cleanupFailure: false },
-  { model: 'fixture-provider/fixture-actual', verdict: 'FAIL' as const, cleanupFailure: false },
-  { model: 'fixture-provider/fixture-actual', verdict: 'PASS' as const, cleanupFailure: true },
-]) darwinTest(`Pi review fixture records ${example.verdict} with actual model ${example.model ?? 'unknown'}${example.cleanupFailure ? ' and keeps failed cleanup pending' : ''}`, async () => {
-  const { mkdirSync, unlinkSync, rmdirSync } = await import('node:fs');
+  { verdict: 'PASS' as const },
+  { verdict: 'FAIL' as const },
+]) darwinTest(`Pi review fixture records ${example.verdict} with native model identity`, async () => {
+  const { mkdirSync, rmdirSync } = await import('node:fs');
   const { bindNativeTaskSession } = await import('../src/effects/terminal/native-task-session');
   const { verifyAcceptance } = await import('../src/effects/review/acceptance-receipt');
   const f = packetRoundFixture();
   const source = join(f.options.endpoint.home, '.pi/agent'); mkdirSync(source, { recursive: true });
   const models = '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}';
   const auth = '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}';
+  const settings = '{"defaultProvider":"fixture-provider","defaultModel":"fixture-actual"}';
   writeFileSync(join(source, 'models.json'), models); writeFileSync(join(source, 'auth.json'), auth);
-  let binding: TaskPaneBinding, request: TaskRequest;
+  writeFileSync(join(source, 'settings.json'), settings);
+  let binding: Awaited<ReturnType<typeof startOfflineTaskAgent>>, request: TaskRequest;
+  let actualModel: string | null = 'fixture-provider/fixture-actual', verdict = example.verdict, sent = 0;
   const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
     dispose: async () => {}, close: async () => ({ status: 'closed', pids: [] }), cancel: async () => ({ status: 'closed', pids: [] }),
     installation: async () => ({ kind: 'available', via: 'bundled' }),
     start: async (repo, spec, _command, _ready, _guard, authority) => {
       if (!authority) throw new Error('fixture_task_authority_missing');
-      binding = await startOfflineTaskAgent(repo, spec, authority);
-      writeSessionArtifact(join(f.dir, 'ready.json'), { pid: binding.provider.pid, session_id: 'fixture-pi-native-id', fixture: false });
+      if (!binding) {
+        binding = await startOfflineTaskAgent(repo, spec, authority);
+        writeSessionArtifact(join(f.dir, 'ready.json'), { pid: binding.provider.pid, session_id: 'fixture-pi-native-id', fixture: false });
+      }
       return binding;
     },
     send: async (repo, task, role, ref) => {
-      request = { protocol: 2, task, role, round: 1, request_id: 'fixture-pi-request', context_sha256: 'sha256:' + 'a'.repeat(64),
+      const round = ++sent;
+      request = { protocol: 2, task, role, round, request_id: `fixture-pi-request-${round}`, context_sha256: 'sha256:' + 'a'.repeat(64),
         context_ref: ref, source_ref: ref, result_ref: join(repo, 'fixture-result.json'),
         result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
-      writeSessionArtifact(join(f.dir, 'observed-1.json'), { request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: example.model });
+      writeSessionArtifact(join(f.dir, `observed-${round}.json`), { request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: actualModel });
       return request;
     },
     collect: async () => {
-      const domain = JSON.parse(readFileSync(f.packetPath(), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      const domain = JSON.parse(readFileSync(f.packetPath(request.round), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
       return { request_id: request.request_id, context_sha256: request.context_sha256,
         value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
-          verdict: example.verdict, summary: '[fixture opinion; no provider call]', findings: example.verdict === 'PASS' ? [] : [finding] } };
+          verdict, summary: '[fixture opinion; no provider call]', findings: verdict === 'PASS' ? [] : [finding] } };
     } };
   const result = await runReviewRound({ ...f.options, harness: 'pi' }, effects);
   expect(result.status).toBe(example.verdict === 'PASS' ? 'accepted' : 'rejected');
   expect(result.receipt.reviewer).toBe('Pi'); expect(result.receipt.actual_harness).toBe('pi');
-  expect(result.receipt.actual_model).toBe(example.model); expect(result.output.actual_model).toBe(example.model);
+  expect(result.receipt.actual_model).toBe(actualModel); expect(result.output.actual_model).toBe(actualModel);
   expect(Object.hasOwn(result.receipt, 'cross_model')).toBe(false);
   const input = { repo_root: f.options.reviewerRepo, binding: binding!, ready_path: join(f.dir, 'ready.json') };
   const native = bindNativeTaskSession(input);
   expect(native.host).toBe('pi'); expect(native.native_session_id).toBe('fixture-pi-native-id');
   expect(bindNativeTaskSession(input)).toEqual(native);
   expect(() => bindNativeTaskSession({ ...input, binding: { ...binding!, max_requests: 2 } })).toThrow('binding_changed');
-  if (example.verdict === 'PASS') expect((await verifyAcceptance({ root: f.root, authority: f.authority, authorityHome: f.home })).actual_model).toBe(example.model);
+  if (example.verdict === 'PASS') expect((await verifyAcceptance({ root: f.root, authority: f.authority, authorityHome: f.home })).actual_model).toBe(actualModel);
   const host = readSessionArtifact<{ output: string }>(join(f.dir, 'host.json'));
   const directory = join(host.output, '.pi-agent');
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   expectNoStoredPiProbe(host.output);
-  const cancel = example.verdict === 'FAIL' || example.model === null || example.cleanupFailure;
-  if (example.cleanupFailure) {
-    unlinkSync(join(directory, 'models.json')); mkdirSync(join(directory, 'models.json'));
+  const cancel = example.verdict === 'FAIL';
+  if (cancel) {
+    const priorReceipt = readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8');
+    writeFileSync(join(f.root, 'feature.txt'), 'candidate\n\n'); f.refresh();
+    actualModel = null; verdict = 'PASS';
+    await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
+    expect(readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8')).toBe(priorReceipt);
+    expect(existsSync(join(f.dir, 'accepted-2.json'))).toBe(false);
+    expect(readdirSync(directory)).toEqual([]);
+    mkdirSync(join(directory, 'models.json'));
     await expect(closeReview(f.root, f.authority, cancel, f.home, effects)).rejects.toThrow('cleanup_pending: review_pi_credential_cleanup_failed');
     expect(existsSync(join(f.dir, 'closed.json'))).toBe(false);
     expect(readdirSync(directory)).toEqual(['models.json']);
@@ -609,7 +620,19 @@ for (const example of [
   expectNoStoredPiProbe(host.output);
   expect(readFileSync(join(source, 'models.json'), 'utf8')).toBe(models);
   expect(readFileSync(join(source, 'auth.json'), 'utf8')).toBe(auth);
+  expect(readFileSync(join(source, 'settings.json'), 'utf8')).toBe(settings);
 }, 60000);
+
+test('Pi review requires explicit selection and cannot be a missing-provider fallback', async () => {
+  const f = packetRoundFixture();
+  const { harness: _harness, ...options } = f.options;
+  const calls: string[] = [];
+  await expect(runReviewRound(options, { ...f.effects, owner: () => 'pi',
+    installation: async kind => { calls.push(kind); return kind === 'claude' ? { kind: 'not_found' } : { kind: 'available', via: 'bundled' }; },
+  })).rejects.toThrow('review_provider_executable_missing_or_unsupported');
+  expect(calls).toEqual(['claude']);
+  expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
+});
 
 darwinTest('Pi credential cleanup fixture removes partial references after a failed start', async () => {
   const f = packetRoundFixture();
@@ -821,7 +844,7 @@ writeFileSync(join(output,'serving'),'1');
 let partialChecks=0;
 for(const end=Date.now()+8000;!existsSync(observed)&&thrown===undefined&&Date.now()<end;await sleep(10)){
   const acked=existsSync(ack);
-  if(!existsSync(started)){assert.equal(acked,false);if(existsSync(join(output,'request-1.json')))partialChecks++}
+  if(!existsSync(started)){assert.equal(acked,false);if(existsSync(join(output,'request-1.json'))){partialChecks++;if(!existsSync(join(output,'partial-observed')))writeFileSync(join(output,'partial-observed'),'1')}}
 }
 assert.equal(thrown,undefined);assert.ok(partialChecks>0);assert.equal(JSON.parse(readFileSync(observed,'utf8')).outcome,'completed');
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));await served;assert.equal(thrown,undefined);
@@ -837,7 +860,10 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
     // Same order as sendTaskRequest: request first, then context and started.
     writeSessionArtifact(join(output, 'request-1.json'), request);
-    await new Promise(resolve => setTimeout(resolve, 200));
+    for (let waited = 0; !existsSync(join(output, 'partial-observed')); waited += 10) {
+      if (waited > 10000) throw new Error('host fixture never observed the partial request');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
     writeFileSync(request.context_ref, content);
     writeSessionArtifact(join(output, 'started-1.json'), { request_id: requestId, provider: { pid, identity: 'fixture-host' } });
   });

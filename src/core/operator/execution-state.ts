@@ -33,7 +33,7 @@ export interface TaskFollowUp {
 // A pasted command must stay one argv word, whatever the host wrote as its session id.
 const SHELL_WORD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const RESUME = { claude: (id: string) => `claude --resume ${id}`, codex: (id: string) => `codex resume ${id}`,
-  pi: (id: string) => `pi --resume ${id}` } as const;
+  pi: (id: string) => `pi --session ${id}` } as const;
 
 export function buildTaskFollowUp(execution: TaskExecution): TaskFollowUp {
   if (execution.state !== 'verified') return { task_id: execution.task, resume: null, herdr_pane: null };
