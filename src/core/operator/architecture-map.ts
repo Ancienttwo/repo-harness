@@ -13,7 +13,7 @@
 
 import type { RefImpactV1 } from 'archctx-contracts';
 import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-request-files';
-import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from './public-text';
+import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v3' as const;
@@ -42,8 +42,10 @@ export const ARCHITECTURE_MAP_DEPENDENCY_REASONS = ['model_worktree_dirty', 'che
 export type ArchitectureMapDependencyReason = typeof ARCHITECTURE_MAP_DEPENDENCY_REASONS[number];
 
 /**
- * Today's changes read only commits, so they need no clean checkout. A
- * first-parent history that starts after midnight has no base commit;
+ * Changed paths, owners, dependents and the model delta read only commits and
+ * need no clean checkout. `flow_steps` uses the worktree CodeGraph index;
+ * archctx reports unknown when its facts are missing or do not match the commit.
+ * A first-parent history that starts after midnight has no base commit;
  * `archctx_failed`: archctx did not run, or its answer broke its contract or the map's grammar;
  * `path_not_public`: archctx's answer is valid, but a path in it fails the public-path guard.
  */

@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.archctx
 kind: reads
 source: component.operator.console-collectors
 target: external.archctx
-intent: "Read the committed model, the owner of each file, the capability import counts, the model at a base commit, architecture debt and doc anchors for the architecture map and its layers."
+intent: "Read the committed model and decisions with archctx export native, file ownership with archctx resolve, capability import counts with archctx deps, ref impact with archctx impact --base/--head, PR path impact with archctx impact --paths-from, architecture debt, doc anchors and flow proofs with flows check --no-sync. Flow-step facts use the existing worktree CodeGraph index and must match the requested commit."

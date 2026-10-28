@@ -162,8 +162,9 @@ export function recheckCheckout(
 
 /**
  * The same end-of-cycle check for the layers: PR impact reads the worktree
- * model, each violation check the whole tree. Today's changes read only
- * commits, so a checkout cannot move them.
+ * model, each violation check the whole tree. Today's changed paths, owners,
+ * dependents and model delta read only commits. Its flow steps use the worktree
+ * CodeGraph index; archctx binds those facts to the commit or reports unknown.
  */
 export function recheckLayers(
   commit: string,
@@ -273,7 +274,8 @@ function readImpact(root: string, args: readonly string[], source: RefImpactSour
 /**
  * Commits on the first-parent chain of `commit` since `since`, and `archctx
  * impact` from the next older commit to `commit`: changed paths with their
- * owners, dependents, flow steps and model changes. It reads only commits.
+ * owners, dependents and model changes from commits. Flow steps use the worktree
+ * CodeGraph index; archctx binds those facts to the commit or reports unknown.
  */
 function readChanges(root: string, commit: string, since: string): ArchitectureChangesLayerV1 {
   const today = git(root, ['rev-list', '--first-parent', `--since=${since}`, commit]);
