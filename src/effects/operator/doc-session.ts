@@ -16,7 +16,7 @@ import { checkDocCitation, decodeDocCitation, type DocCitationV1 } from '../../c
 import type { JsonValue } from '../../core/evidence/types';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
-import { configuredGitBinary, gitExecFileSync, gitSpawnSync, REPOSITORY_SELECTING_GIT_ENV } from '../git/runner';
+import { configuredGitBinary, gitExecFileSync, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { assertDocsHostPlatform, DOCS_HOST_MODEL_API } from '../review/docs-host-isolation';
@@ -78,9 +78,7 @@ const refuse = (status: number, code: string, message: string, nextAction: strin
 const docsUnavailable = () => refuse(503, 'docs_unavailable', 'The docs view of this repository is not ready.', 'Wait for the docs view to load, then retry with a new request_id.');
 
 function gitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, GIT_TERMINAL_PROMPT: '0' };
-  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
-  return next;
+  return withoutRepositorySelectingGitEnv({ ...env, GIT_TERMINAL_PROMPT: '0' });
 }
 
 interface VerifiedCitation { readonly citation: DocCitationV1; readonly resolved: DocCitationV1; readonly relocated: boolean }

@@ -35,6 +35,7 @@ _ref/
 !.archcontext/model/nodes/
 !.archcontext/model/relations/
 !.archcontext/model/flows/
+!.archcontext/model/constraints/
 !.archcontext/decisions/
 !.archcontext/policies/
 !.archcontext/practices/

@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import * as childProcess from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
@@ -11,6 +12,7 @@ import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-
 import { startWorktreeCollector } from '../../src/effects/operator/worktree-collector';
 import { collectOrphanWorktrees } from '../../src/effects/operator/worktree-orphans-worker';
 import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
+import { worktreeProcesses, type LinuxWorktreeProcessProbe } from '../../src/effects/git/worktree-processes';
 
 function fixture() {
   const parent = tmpWorkspace('operator-worktrees');
@@ -35,10 +37,41 @@ describe('read-only worktree judgment and lifecycle', () => {
     const f = fixture();
     try {
       const module = join(import.meta.dir, '../../src/effects/git/worktree-processes.ts');
-      const script = `const { worktreeProcesses } = await import(${JSON.stringify(module)}); const rows = worktreeProcesses(Date.now() + 5000); console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));`;
+      const script = `const { worktreeProcesses } = await import(${JSON.stringify(module)}); const rows = worktreeProcesses(Date.now() + 5000, { uid: 1001, entries: () => [String(process.pid), '42'], owner: () => 1001, cwd: pid => pid === String(process.pid) ? process.cwd() : '/' }); console.log(JSON.stringify(rows?.filter(row => row.pid !== process.pid && row.cwd === process.cwd())));`;
       const output = execFileSync(process.execPath, ['-e', script], { cwd: f.tree, encoding: 'utf8', timeout: 6000 });
       expect(JSON.parse(output)).toEqual([]);
     } finally { f.cleanup(); }
+  });
+
+  test.each(['EACCES', 'EPERM'])('a same-UID cwd read denied with %s makes the inventory unknown', code => {
+    const probe: LinuxWorktreeProcessProbe = {
+      uid: 1001, entries: () => ['41', '42'], owner: () => 1001,
+      cwd: pid => { if (pid === '42') throw Object.assign(new Error('denied cwd'), { code }); return '/checkout'; },
+    };
+    expect(worktreeProcesses(Date.now() + 5000, probe)).toBeNull();
+  });
+
+  test.skipIf(process.platform !== 'darwin')('the macOS process observer launches lsof outside the checkout', () => {
+    const output = `p${process.pid}\0n/checkout\0\np42\0n/\0`;
+    const command = spyOn(childProcess, 'execFileSync').mockReturnValue(output);
+    try {
+      expect(worktreeProcesses(Date.now() + 5000)).toEqual([{ pid: process.pid, cwd: '/checkout' }, { pid: 42, cwd: '/' }]);
+      expect(command).toHaveBeenCalledWith('/usr/sbin/lsof', ['-a', '-d', 'cwd', '-Fpn0'], expect.objectContaining({ cwd: '/' }));
+    } finally { command.mockRestore(); }
+  });
+
+  test('the controlled Linux inventory keeps readable occupants and ignores vanished or other-UID processes', () => {
+    const read: string[] = [];
+    const probe: LinuxWorktreeProcessProbe = {
+      uid: 1001, entries: () => ['41', '42', '43', '44', 'not-a-pid'], owner: pid => pid === '42' ? 1002 : 1001,
+      cwd: pid => {
+        read.push(pid);
+        if (pid === '43' || pid === '44') throw Object.assign(new Error('vanished'), { code: pid === '43' ? 'ENOENT' : 'ESRCH' });
+        return '/checkout';
+      },
+    };
+    expect(worktreeProcesses(Date.now() + 5000, probe)).toEqual([{ pid: 41, cwd: '/checkout' }]);
+    expect(read).toEqual(['41', '43', '44']);
   });
 
   test('uses merge, ownership, loss and occupancy predicates without removing anything', () => {

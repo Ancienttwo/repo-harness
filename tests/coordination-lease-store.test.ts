@@ -5,6 +5,7 @@
  * worktree. Every hazard here is a filesystem-ordering hazard, so a mocked fs
  * would prove nothing about `mkdir` atomicity or the crash windows.
  */
+import { controlledWorktreeProcessPreload, setControlledWorktreeProcesses } from './helpers/controlled-worktree-processes';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { recordWorktree, readWorktreeRecordById } from '../src/effects/git/worktree-record';
 import * as fs from 'fs';
@@ -223,6 +224,33 @@ import {
 
 const sweepManagedWorktrees: typeof productionSweep = (root, cwd, env, options) => productionSweep(root, cwd, env, { deadlineMs: 60_000, ...options });
 
+describe('worktree topology lock', () => {
+  test('locks the cwd repository when inherited Git variables select another repository', () => {
+    const root = createRepo();
+    const other = createRepo();
+    const lock = 'repo-harness/coordination/locks/worktree-topology.lock';
+    const ownLock = join(root, '.git', lock);
+    const otherLock = join(other, '.git', lock);
+    const previous = { GIT_DIR: process.env.GIT_DIR, GIT_COMMON_DIR: process.env.GIT_COMMON_DIR };
+    try {
+      process.env.GIT_DIR = join(other, '.git');
+      process.env.GIT_COMMON_DIR = join(other, '.git');
+      expect(withWorktreeTopologyLock(root, () => {
+        expect(existsSync(ownLock)).toBe(true);
+        expect(existsSync(otherLock)).toBe(false);
+        return 'held';
+      })).toBe('held');
+      expect(existsSync(ownLock)).toBe(false);
+      expect(existsSync(otherLock)).toBe(false);
+    } finally {
+      for (const key of ['GIT_DIR', 'GIT_COMMON_DIR'] as const) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+    }
+  });
+});
+
 describe('exact cleanup and contract-worktree start sweep', () => {
   function fixture() {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'worktree-sweep-')));
@@ -252,7 +280,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
 
   /** `contract-worktree start` reads the topology through this runtime action. */
   function startCheck(f: ReturnType<typeof fixture>) {
-    return spawnSync(process.execPath, [join(import.meta.dir, '../scripts/contract-worktree-runtime.ts'), 'check-start-path',
+    return spawnSync(process.execPath, ['--preload', controlledWorktreeProcessPreload, join(import.meta.dir, '../scripts/contract-worktree-runtime.ts'), 'check-start-path',
       '--repo', f.root, '--worktree', join(f.managed, 'repo-wt-next'), '--branch', 'codex/next'], { cwd: f.root, encoding: 'utf8', env: f.env });
   }
 
@@ -261,6 +289,21 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('removed=1');
       expect(existsSync(f.path)).toBe(false); expect(f.git('branch', '--list', 'codex/demo')).toBe('');
     } finally { f.cleanup(); }
+  });
+
+  test('sweep retains a checkout with unknown or occupied process observations', () => {
+    const f = fixture();
+    try {
+      for (const [processes, reason] of [[null, 'process_unknown'], [[{ pid: 12345, cwd: f.path }], 'process_in_use']] as const) {
+        setControlledWorktreeProcesses(processes === null ? null : [...processes]);
+        expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain(reason);
+        expect(existsSync(f.path)).toBe(true);
+        expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      }
+      setControlledWorktreeProcesses([]);
+      expect(sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh })).toContain('removed=1');
+      expect(existsSync(f.path)).toBe(false);
+    } finally { setControlledWorktreeProcesses([]); f.cleanup(); }
   });
 
   test('sweep retains a merged clean checkout that holds a non-rebuildable evidence log', () => {
@@ -585,7 +628,7 @@ describe('exact cleanup and contract-worktree start sweep', () => {
       `if (!stopped && step === ${JSON.stringify(step)}) { stopped = true; writeFileSync(${JSON.stringify(signal)} + ".tmp", JSON.stringify({ step, path })); renameSync(${JSON.stringify(signal)} + ".tmp", ${JSON.stringify(signal)}); process.kill(process.pid, 'SIGSTOP'); }`,
       `} }); console.log(result);`,
     ].join('\n'));
-    const child = spawn(process.execPath, [worker], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['--preload', controlledWorktreeProcessPreload, worker], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
     const ended = new Promise<void>(resolve => { child.once('exit', () => resolve()); });
     try {
