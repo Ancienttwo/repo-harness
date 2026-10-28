@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.primary-assets
+kind: component
+name: Herdr Task Session Host (assets)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: assets
+summary: The assets-layer files of Herdr Task Session Host. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the assets-layer source files of Herdr Task Session Host so layer direction is checked per directory.
+source:
+  include:
+    - assets/herdr/**
+    - agents/fleet/**

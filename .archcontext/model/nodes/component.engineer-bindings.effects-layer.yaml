@@ -1,0 +1,21 @@
+schemaVersion: archcontext.node/v2
+id: component.engineer-bindings.effects-layer
+kind: component
+name: Engineer Bindings (effects)
+status: active
+parent: capability.runtime-harness.engineer-bindings
+layer: effects
+summary: The effects-layer files of Engineer Bindings. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Engineer Bindings so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/engineers/**
+    - src/effects/profiles/profile-store.ts
+  exclude:
+    - src/effects/engineers/agent-runtime-adapters/**
+    - src/effects/engineers/agent-runtime-effect-store.ts
+    - src/effects/engineers/agent-runtime-feature.ts
+    - src/effects/engineers/dependency-authority.ts
+    - src/effects/engineers/engineering-overlay.ts
+    - src/effects/engineers/scheduling.ts

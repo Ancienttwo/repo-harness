@@ -1,0 +1,19 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.cli-layer
+kind: component
+name: Task Agent Host (cli)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: cli
+summary: The cli-layer files of Task Agent Host. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Task Agent Host so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/herdr.ts
+    - src/cli/commands/herdr-skill.ts
+    - src/cli/commands/herdr-skill-render.mjs
+    - src/cli/commands/herdr-skill-render.d.mts
+  exclude:
+    - src/cli/commands/herdr-skill.ts
+    - src/cli/commands/herdr.ts

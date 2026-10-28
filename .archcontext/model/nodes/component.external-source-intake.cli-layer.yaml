@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.external-source-intake.cli-layer
+kind: component
+name: External Source Intake (cli)
+status: active
+parent: capability.runtime-harness.external-source-intake
+layer: cli
+summary: The cli-layer files of External Source Intake. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of External Source Intake so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/external-source.ts

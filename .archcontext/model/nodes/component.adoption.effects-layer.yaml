@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.adoption.effects-layer
+kind: component
+name: Adoption (effects)
+status: active
+parent: capability.public-surface.adoption
+layer: effects
+summary: The effects-layer files of Adoption. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Adoption so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/adoption/**
+    - src/effects/source-checkout.ts
+    - src/effects/fs-transaction.ts
+    - src/effects/path-safety.ts

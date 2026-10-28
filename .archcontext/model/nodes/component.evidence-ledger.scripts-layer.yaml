@@ -1,0 +1,24 @@
+schemaVersion: archcontext.node/v2
+id: component.evidence-ledger.scripts-layer
+kind: component
+name: Evidence Ledger (scripts)
+status: active
+parent: capability.runtime-harness.evidence-ledger
+layer: scripts
+summary: The scripts-layer files of Evidence Ledger. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Evidence Ledger so layer direction is checked per directory.
+source:
+  include:
+    - scripts/evidence-gc.ts
+    - scripts/recovery-view-cli.ts
+    - scripts/decision-trail.ts
+    - scripts/prepare-handoff.sh
+    - scripts/prepare-codex-handoff.sh
+    - scripts/codex-handoff-resume.sh
+  exclude:
+    - scripts/codex-handoff-resume.sh
+    - scripts/evidence-gc.ts
+    - scripts/prepare-codex-handoff.sh
+    - scripts/prepare-handoff.sh
+    - scripts/recovery-view-cli.ts

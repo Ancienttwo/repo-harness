@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.primary-effects
+kind: component
+name: Hook Route Runtime (effects)
+status: active
+parent: capability.runtime-harness.hook-adapters
+layer: effects
+summary: The effects-layer files of Hook Route Runtime. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Hook Route Runtime so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/loop/**
+    - src/effects/segmented-log.ts

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.agent-runtime-effects.core-layer
+kind: component
+name: Agent Runtime Effects (core)
+status: active
+parent: capability.runtime-harness.agent-runtime-effects
+layer: core
+summary: The core-layer files of Agent Runtime Effects. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Agent Runtime Effects so layer direction is checked per directory.
+source:
+  include:
+    - src/core/engineers/agent-runtime-effect.ts

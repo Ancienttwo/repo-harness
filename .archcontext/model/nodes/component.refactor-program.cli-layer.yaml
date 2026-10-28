@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.refactor-program.cli-layer
+kind: component
+name: Refactor Recommendations (cli)
+status: active
+parent: capability.runtime-harness.refactor-program
+layer: cli
+summary: The cli-layer files of Refactor Recommendations. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Refactor Recommendations so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/refactor.ts

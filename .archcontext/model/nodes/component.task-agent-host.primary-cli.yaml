@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.primary-cli
+kind: component
+name: Herdr Task Session Host (cli)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: cli
+summary: The cli-layer files of Herdr Task Session Host. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Herdr Task Session Host so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/herdr.ts
+    - src/cli/commands/herdr-skill.ts

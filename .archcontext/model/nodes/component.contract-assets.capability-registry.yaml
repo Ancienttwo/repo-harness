@@ -14,10 +14,5 @@ responsibilities:
 source:
   include:
     - .archcontext/**
-    - src/core/capabilities/**
-    - src/effects/architecture/archcontext-owners.ts
-    - src/effects/architecture/archcontext-resolve-cache.ts
-    - src/effects/architecture/capability-resolver.ts
     - scripts/capability-*.ts
-    - src/cli/commands/capability-context.ts
     - scripts/workstream-sync.sh

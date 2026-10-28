@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.codegraph-readiness.scripts-layer
+kind: component
+name: CodeGraph Readiness (scripts)
+status: active
+parent: capability.verification.codegraph-readiness
+layer: scripts
+summary: The scripts-layer files of CodeGraph Readiness. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of CodeGraph Readiness so layer direction is checked per directory.
+source:
+  include:
+    - scripts/ensure-codegraph.sh

@@ -16,11 +16,9 @@ responsibilities:
   - "Share the canonical GitHub issue adapter and manual-source policy reader through neutral GitHub effects; admission and intake reuse the same provider identity and policy implementation."
 source:
   include:
-    - "src/core/external-sources/**"
-    - "src/effects/external-sources/**"
-    - "src/cli/commands/external-source.ts"
-    - "src/effects/github/issues.ts"
-    - "src/effects/github/policy.ts"
+    - src/effects/external-sources/**
+    - src/effects/github/issues.ts
+    - src/effects/github/policy.ts
   entrypoints:
     - id: "entrypoint.external-source-intake.refresh"
       path: "src/effects/external-sources/refresh.ts"

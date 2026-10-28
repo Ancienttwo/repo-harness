@@ -13,14 +13,9 @@ responsibilities:
   - "Retain historical canonical task parsing, worktree topology, sweep and exact deletion guards. Historical leases and claim tokens are not current authority."
 source:
   include:
-    - "src/core/state/coordination-identity.ts"
-    - "src/core/state/sprint-*.ts"
-    - "src/core/state/command-outcome.ts"
-    - "src/effects/state/coordination-*.ts"
-    - "src/effects/state/collect-slice-inputs.ts"
-    - "src/effects/state/pruned-worktree-intents.ts"
-    - "src/effects/state/worktree-trash.ts"
-    - "src/core/worktree-*"
-    - "src/core/state/provider-board.ts"
-    - "src/effects/state/collect-provider-board-inputs.ts"
-    - "src/effects/state/canonical-target.ts"
+    - src/effects/state/coordination-*.ts
+    - src/effects/state/collect-slice-inputs.ts
+    - src/effects/state/pruned-worktree-intents.ts
+    - src/effects/state/worktree-trash.ts
+    - src/effects/state/collect-provider-board-inputs.ts
+    - src/effects/state/canonical-target.ts

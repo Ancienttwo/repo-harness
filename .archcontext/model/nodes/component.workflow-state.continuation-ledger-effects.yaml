@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.workflow-state.continuation-ledger-effects
+kind: component
+name: Continuation Ledger (effects)
+status: active
+parent: capability.workflow-engine.workflow-state
+layer: effects
+summary: The effects-layer files of Continuation Ledger. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Continuation Ledger so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/state/attempt-ledger-store.ts
+    - src/effects/state/resolve-continuation-envelope.ts

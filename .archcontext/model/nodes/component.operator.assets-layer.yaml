@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.assets-layer
+kind: component
+name: Operator Board (assets)
+status: active
+parent: capability.runtime-harness.operator
+layer: assets
+summary: The assets-layer files of Operator Board. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the assets-layer source files of Operator Board so layer direction is checked per directory.
+source:
+  include:
+    - assets/tool-catalog.v1.json
+    - assets/operator/**
+  exclude:
+    - assets/operator/fleet-windows-job-controller.ps1

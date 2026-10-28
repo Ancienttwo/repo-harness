@@ -12,8 +12,7 @@ responsibilities:
   - Grade harness traces.
 source:
   include:
-    - "evals/**"
-    - "scripts/run-skill-evals.ts"
-    - "scripts/run-harness-profile-benchmark.ts"
-    - "scripts/validate-harness-profile-benchmark.ts"
-    - "scripts/harness-trace-grade.sh"
+    - scripts/run-skill-evals.ts
+    - scripts/run-harness-profile-benchmark.ts
+    - scripts/validate-harness-profile-benchmark.ts
+    - scripts/harness-trace-grade.sh

@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.capability-registry-effects
+kind: component
+name: Capability Registry (effects)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: effects
+summary: The effects-layer files of Capability Registry. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the effects-layer source files of Capability Registry so layer direction is checked per directory.
+source:
+  include:
+    - src/effects/architecture/archcontext-owners.ts
+    - src/effects/architecture/archcontext-resolve-cache.ts
+    - src/effects/architecture/capability-resolver.ts

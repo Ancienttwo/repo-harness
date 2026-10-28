@@ -19,10 +19,9 @@ responsibilities:
   - "Exclude automatic endpoint creation, Agent process ownership, transcript semantics, provider/model routing and implicit or remote terminal routing."
 source:
   include:
-    - "src/core/engineers/agent-runtime-effect.ts"
-    - "src/effects/engineers/agent-runtime-effect-store.ts"
-    - "src/effects/engineers/agent-runtime-feature.ts"
-    - "src/effects/engineers/agent-runtime-adapters/**"
+    - src/effects/engineers/agent-runtime-effect-store.ts
+    - src/effects/engineers/agent-runtime-feature.ts
+    - src/effects/engineers/agent-runtime-adapters/**
   entrypoints:
     - id: "entrypoint.agent-runtime-effects.prepare"
       path: "src/effects/engineers/agent-runtime-effect-store.ts"
