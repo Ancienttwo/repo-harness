@@ -85,6 +85,17 @@ async function settings(harness: Harness): Promise<ReturnType<typeof decodeAgent
 const sha256 = (path: string) => `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 
 describe('agent settings routes', () => {
+  test('Pi can be selected for review through the shared review runtime admission list', async () => {
+    const harness = await startHarness();
+    harness.cache = { status: 'ready', probe: { ...PROBE, entries: [...PROBE.entries,
+      { id: 'pi', group: 'default', installation: { kind: 'available', via: 'bundled', version: null } }] } };
+    const response = await post(harness, { expected_revision: 'absent', changes: [{ runtime: 'pi', enabled: true, uses: ['review'] }] });
+    expect(response.status).toBe(200);
+    const value = await settings(harness);
+    expect(value.config.uses.review).toEqual(['pi']);
+    expect(value.runtimes.entries.find(entry => entry.id === 'pi')?.review_supported).toBe(true);
+  });
+
   test('GET reads the absent section and the probe cache without command paths', async () => {
     const harness = await startHarness();
     const value = await settings(harness);

@@ -1,6 +1,7 @@
 import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
-import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { claudeRuntime, codexRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
+import { createPiRuntime } from '@botiverse/oar/runtimes/pi';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -17,9 +18,10 @@ import { promptWithOarObservation, oarObservationFile, type OarObservationSink }
 export function assertOarHostNode(version = process.versions.node): void {
   if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
 }
-export function reviewRuntime(kind: string) {
+export function reviewRuntime(kind: string, command?: string) {
   if (!isReviewRuntimeId(kind)) throw new Error('OAR_REVIEW_RUNTIME_UNSUPPORTED');
-  return createRuntimeRegistry([codexRuntime, claudeRuntime]).require(kind);
+  return createRuntimeRegistry([codexRuntime, claudeRuntime, createPiRuntime({ execution: 'subprocess', command,
+    ...(command ? { args: ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates'] } : {}), projectTrusted: false })]).require(kind);
 }
 
 /** Domain lifecycle over OAR's public API; no vendor argv or native-output parser. */
@@ -67,7 +69,7 @@ interface FixtureSpec { mode: 'scripted'; cwd: string; inputs: string[]; closeRe
 export interface ReviewHostSpec {
   mode: 'review';
   isolation: ReviewIsolationAdmission;
-  kind: 'codex' | 'claude';
+  kind: ReviewRuntimeId;
   installation: AvailableInstallation;
   launcher: string;
   vendorExecutable: string;
@@ -137,7 +139,7 @@ export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknow
   assertOarHostNode();
   if (spec.controlDirectory !== spec.isolation.paths.journal || spec.output !== spec.isolation.paths.output
     || readFileSync(spec.isolation.policyFile, 'utf8') !== reviewIsolationPolicy(spec.isolation.paths)
-    || spec.installation.via !== 'executable' || spec.installation.command !== spec.launcher
+    || (spec.kind === 'pi' ? spec.installation.via !== 'bundled' : spec.installation.via !== 'executable' || spec.installation.command !== spec.launcher)
     || prepareReviewLauncher(spec.controlDirectory, spec.isolation.policyFile, spec.vendorExecutable) !== spec.launcher) {
     throw new Error('OAR_REVIEW_PROFILE_NOT_ADMITTED');
   }
@@ -153,7 +155,7 @@ export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknow
   // From here a native reviewer child can exist until disposal. Cleanup of an
   // unbound host that exits without disposed.json must stay pending.
   writeSessionArtifact(join(spec.controlDirectory, 'session-opening.json'), { pid: process.pid });
-  return new OarReviewHost(await reviewRuntime(spec.kind).session(spec.installation, spec.options), print);
+  return new OarReviewHost(await reviewRuntime(spec.kind, spec.launcher).session(spec.installation, spec.options), print);
 }
 
 async function main(): Promise<void> {

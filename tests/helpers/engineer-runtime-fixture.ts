@@ -71,11 +71,12 @@ export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, t
 export interface EngineerRuntimeFixtureOptions {
   authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
   repositoryId?: string; issueId?: string;
+  harnessKind?: 'claude' | 'codex' | 'pi';
 }
 /** Public binding lifecycle with injected offline transport; no live service is claimed. */
 export async function bindTaskRuntimeFixture(root: string, options: EngineerRuntimeFixtureOptions, engineerId?: string) {
   const task = options.task ?? '1'.repeat(64), role = options.role ?? 'deep-reasoner';
-  const spec = { task, role, harness_kind: 'codex' };
+  const spec = { task, role, harness_kind: options.harnessKind ?? 'codex' };
   const approved = seedReviewAdmissionFixture(root, options.authorityHome, { repositoryId: options.repositoryId, issueId: options.issueId });
   const selected = engineerId === undefined ? undefined : loadEngineerProfile(root, engineerId);
   const profile = selected === undefined ? undefined : { engineer_id: selected.profile.engineer_id, engineer_contract_revision: selected.engineer_contract_revision };

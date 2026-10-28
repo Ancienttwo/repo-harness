@@ -361,6 +361,93 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
     expect(Object.keys(options).sort()).toEqual(['appendSystemPrompt','cwd','effort','model']);
   }
 });
+
+test('Pi review home copies models only and references credentials without copying them', async () => {
+  const { mkdirSync, symlinkSync, readdirSync, readlinkSync } = await import('node:fs');
+  const { preparePiHome } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-review-home'); roots.push(root);
+  const source = join(root, 'home'), agent = join(source, '.pi/agent'), output = join(root, 'output');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  for (const name of ['models.json', 'auth.json', 'settings.json']) writeFileSync(join(agent, name), '{}');
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model',
+    defaultThinkingLevel: 'high', packages: ['unsafe-package'], extensions: ['unsafe-extension'], skills: ['unsafe-skill'] }));
+  for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
+  const home = preparePiHome(output, source);
+  expect(lstatSync(home).mode & 0o777).toBe(0o700);
+  expect(readdirSync(home).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
+  expect(JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
+  expect(lstatSync(join(home, 'auth.json')).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(join(home, 'auth.json'))).toBe(join(agent, 'auth.json'));
+  expect(readFileSync(join(home, 'models.json'), 'utf8')).toBe('{}');
+  expect(preparePiHome(output, source)).toBe(home);
+  const unsafe = join(root, 'unsafe'); mkdirSync(unsafe); symlinkSync(home, join(unsafe, '.pi-agent'));
+  expect(() => preparePiHome(unsafe, source)).toThrow('review_pi_home_unsafe');
+});
+
+darwinTest('Pi subprocess fixture: OAR argv and inherited Seatbelt deny source, native state, credentials and signals', async () => {
+  const { mkdirSync, chmodSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const { reviewIsolationPolicy, prepareReviewLauncher, preparePiHome, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-oar-isolation'); roots.push(root);
+  const owner = join(root, 'owner'), output = join(root, 'output'), sourceHome = join(root, 'home');
+  mkdirSync(owner); mkdirSync(output); mkdirSync(join(sourceHome, '.pi/agent'), { recursive: true });
+  const source = join(owner, 'source.txt'), native = join(sourceHome, '.pi/agent/state.json'), auth = join(sourceHome, '.pi/agent/auth.json');
+  for (const path of [source, native, auth]) writeFileSync(path, 'KEEP');
+  const agent = preparePiHome(output, sourceHome);
+  const paths = { subject: owner, primary: owner, ownerRecord: owner, journal: owner, gitCommonDir: owner, output };
+  const policyFile = join(owner, 'profile.sb'); writeFileSync(policyFile, reviewIsolationPolicy(paths), { mode: 0o600 });
+  const node = resolveNode24(), vendor = join(root, 'fixture-pi.cjs');
+  writeFileSync(vendor, `#!${node}\n` + String.raw`
+const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+if(process.argv.includes('--version')){console.log('1.4.0');process.exit(0)}
+const targets=JSON.parse(process.env.FIXTURE_TARGETS);
+const denied=()=>targets.map(file=>{try{fs.writeFileSync(file,'CHANGED');return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}});
+const child=cp.spawnSync(process.execPath,['-e',"const fs=require('node:fs');console.log(JSON.stringify(JSON.parse(process.env.FIXTURE_TARGETS).map(file=>{try{fs.writeFileSync(file,'CHANGED');return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}})))"],{encoding:'utf8'});
+let signalDenied=false;try{process.kill(Number(process.env.FIXTURE_HOST_PID),'SIGUSR1')}catch(e){signalDenied=e.code==='EPERM'}
+fs.writeFileSync(path.join(process.cwd(),'fixture-evidence.json'),JSON.stringify({fixture:true,argv:process.argv.slice(2),denied:denied(),child:JSON.parse(child.stdout),signalDenied}));
+fs.writeFileSync(path.join(process.env.OAR_PI_RPC_DIRECTORY,'ready'),JSON.stringify({version:'1.4.0',modelRegistered:true}));
+require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);process.stdout.write(JSON.stringify({type:'response',id:m.id,command:m.type,success:true,data:{sessionId:'fixture-pi',thinkingLevel:'off',model:{provider:'fixture',id:'review'}}})+'\n')});
+`);
+  chmodSync(vendor, 0o700);
+  const launcher = prepareReviewLauncher(owner, policyFile, vendor);
+  const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
+  const driver = join(root, 'driver.mjs');
+  writeFileSync(driver, `import assert from 'node:assert/strict';import {openReviewHost} from ${JSON.stringify(entry)};
+const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(vendor)},
+isolation:${JSON.stringify({ paths, policyFile })},requestDirectory:${JSON.stringify(owner)},controlDirectory:${JSON.stringify(owner)},output:${JSON.stringify(output)},timeoutMs:5000,
+options:{cwd:${JSON.stringify(output)},env:{PI_CODING_AGENT_DIR:${JSON.stringify(agent)},OAR_PI_AGENT_DIR:null,FIXTURE_TARGETS:${JSON.stringify(JSON.stringify([source, native, auth, join(agent, 'auth.json')]))},FIXTURE_HOST_PID:String(process.pid)}}};
+await assert.rejects(openReviewHost({...spec,launcher:${JSON.stringify(vendor)}},()=>{}),/OAR_REVIEW_PROFILE_NOT_ADMITTED/);
+const host=await openReviewHost(spec,()=>{});
+try{console.log(JSON.stringify({fixture:true,model:host.model('pi')}))}finally{await host.dispose()}`);
+  const result = spawnSync(node, ['--disable-sigusr1', driver], { encoding: 'utf8', timeout: 20000,
+    env: { ...process.env, TMPDIR: reviewHostTemporaryDirectory(output) } });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ fixture: true, model: 'fixture/review' });
+  const observed = JSON.parse(readFileSync(join(output, 'fixture-evidence.json'), 'utf8'));
+  for (const flag of ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-mcp', '--no-approve']) expect(observed.argv).toContain(flag);
+  expect(observed.argv).toContain('--offline'); expect(observed.argv).toContain('-e');
+  expect(observed.denied).toEqual([true, true, true, true]);
+  expect(observed.child).toEqual([true, true, true, true]);
+  expect(observed.signalDenied).toBe(true);
+  for (const path of [source, native, auth]) expect(readFileSync(path, 'utf8')).toBe('KEEP');
+});
+
+test('default reviewer selection never selects Pi, including when the preferred executable is missing', async () => {
+  for (const owner of ['claude', 'codex', 'pi'] as const) {
+    const f = packetRoundFixture(), selected: string[] = [];
+    await expect(runReviewRound({ ...f.options, harness: undefined }, { ...f.effects, owner: () => owner,
+      installation: async kind => { selected.push(kind); return { kind: 'not_found' }; } })).rejects.toThrow('review_provider_executable_missing_or_unsupported');
+    expect(selected[0]).toBe(owner === 'claude' ? 'codex' : 'claude');
+    expect(selected).not.toContain('pi');
+    expect(f.calls).not.toContain('admit');
+  }
+});
+
+test('review runtime admits Pi and keeps unknown runtimes rejected', async () => {
+  const { reviewRuntime } = await import('../src/effects/review/oar-review-host');
+  expect(reviewRuntime('pi').id).toBe('pi');
+  expect(() => reviewRuntime('gemini')).toThrow('OAR_REVIEW_RUNTIME_UNSUPPORTED');
+});
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');

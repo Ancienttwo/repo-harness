@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync } from 'node:fs';
+import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync, closeSync, constants, fstatSync, writeFileSync, fsyncSync, unlinkSync, symlinkSync, readlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname, resolve } from 'node:path';
 
@@ -40,6 +40,38 @@ function readAuthBytes(path: string): Buffer {
     if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('review_auth_source_unsafe');
     return readFileSync(fd);
   } finally { closeSync(fd); }
+}
+
+/** Pi reads its existing login through a read-only reference. Native history,
+ * settings packages and user extensions never enter the review agent directory. */
+export function preparePiHome(output: string, sourceHome: string): string {
+  const home = join(ownedOutput(output), '.pi-agent');
+  try { mkdirSync(home, { mode: 0o700 }); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const stat = lstatSync(home);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_home_unsafe');
+  const source = join(realpathSync(sourceHome), '.pi', 'agent');
+  const models = join(source, 'models.json'), destination = join(home, 'models.json');
+  if (existsSync(models) && !existsSync(destination)) {
+    const bytes = readAuthBytes(models);
+    try { writeFileSync(destination, bytes, { flag: 'wx', mode: 0o600 }); } finally { bytes.fill(0); }
+  }
+  const settings = join(source, 'settings.json'), selectedSettings = join(home, 'settings.json');
+  if (existsSync(settings) && !existsSync(selectedSettings)) {
+    const bytes = readAuthBytes(settings);
+    try {
+      const { defaultProvider, defaultModel, defaultThinkingLevel } = JSON.parse(bytes.toString('utf8'));
+      writeFileSync(selectedSettings, JSON.stringify({ defaultProvider, defaultModel, defaultThinkingLevel }), { flag: 'wx', mode: 0o600 });
+    } finally { bytes.fill(0); }
+  }
+  const auth = join(source, 'auth.json'), reference = join(home, 'auth.json');
+  if (existsSync(auth)) {
+    const target = realpathSync(auth);
+    if (!existsSync(reference)) symlinkSync(target, reference);
+    if (!lstatSync(reference).isSymbolicLink() || readlinkSync(reference) !== target) throw new Error('review_pi_auth_reference_changed');
+  }
+  return home;
 }
 
 /** Owner-only credential preparation. Never called by the sandboxed host. */

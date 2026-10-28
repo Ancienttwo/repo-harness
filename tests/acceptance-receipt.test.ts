@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync,
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
@@ -662,6 +662,58 @@ darwinTest('generic orchestration collects domain Results, keeps one reviewer fo
   writeFileSync(join(f.root, 'feature.txt'), 'candidate repair 3\n'); writePassingChecks(f.root);
   expect((await closeReview(f.root, f.options.authority, false, f.home, f.effects)).status).toBe('closed');
   expect(f.calls).toContain('close');
+});
+
+darwinTest('explicit Pi review: scripted OAR fixture records its reported model in Result and Receipt', async () => {
+  const { scriptedRuntime } = await import('@botiverse/oar/testing');
+  const { OarReviewHost } = await import('../src/effects/review/oar-review-host');
+  const { bindNativeTaskSession } = await import('../src/effects/terminal/native-task-session');
+  const f = reviewFixture(); f.verdict('PASS');
+  let turns = 0;
+  const session = await scriptedRuntime({ id: 'fixture-pi', model: 'fixture-provider/reviewer',
+    turn: async ({ say }) => { turns++; say('[scripted OAR fixture opinion]'); } }).session({ kind: 'available', via: 'bundled' }, { cwd: f.reviewerRepo });
+  const host = new OarReviewHost(session, () => {});
+  try {
+    const { model: _fixtureModel, ...baseEffects } = f.effects;
+    const effects: ReviewEffects = { ...baseEffects,
+      installation: async () => ({ kind: 'available', via: 'bundled' }),
+      bindNative: input => {
+        writeFileSync(input.ready_path, JSON.stringify({ pid: input.binding.provider.pid, session_id: host.sessionId, fixture: false }));
+        return bindNativeTaskSession(input);
+      },
+      send: async (...args) => {
+        const request = await f.effects.send!(...args);
+        request.request_id = randomUUID();
+        await host.prompt('[scripted OAR fixture] Review the request', { ...request, host: { pid: process.pid, identity: 'fixture-provider' } }, () => {});
+        writeFileSync(join(reviewLocation(f.root, f.options.authority).dir, `observed-${request.round}.json`),
+          JSON.stringify({ request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: host.model('pi') }));
+        return request;
+      } };
+    const result = await runReviewRound({ ...f.options, harness: 'pi' }, effects);
+    expect(turns).toBe(1);
+    expect(result.output.actual_harness).toBe('pi');
+    expect(result.output.actual_model).toBe('fixture-provider/reviewer');
+    expect(result.receipt.reviewer).toBe('Pi');
+    expect(result.receipt.actual_harness).toBe('pi');
+    expect(result.receipt.actual_model).toBe('fixture-provider/reviewer');
+    expect((await verifyAcceptance({ root: f.root, authority: f.options.authority, authorityHome: f.home })).actual_harness).toBe('pi');
+  } finally { await host.dispose(); }
+});
+
+darwinTest('Pi review rejects an unknown actual model with the existing error', async () => {
+  const f = reviewFixture();
+  const { model: _fixtureModel, ...baseEffects } = f.effects;
+  const effects: ReviewEffects = { ...baseEffects, installation: async () => ({ kind: 'available', via: 'bundled' }),
+    bindNative: input => ({ protocol: 1, kind: 'repo-harness-native-task-session', host: 'pi', native_session_id: 'fixture-native',
+      task: input.binding.task, role: input.binding.role, session_binding_sha256: 'sha256:' + '1'.repeat(64), provider: input.binding.provider }),
+    send: async (...args) => {
+      const request = await f.effects.send!(...args);
+      writeFileSync(join(reviewLocation(f.root, f.options.authority).dir, `observed-${request.round}.json`),
+        JSON.stringify({ request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: null }));
+      return request;
+    } };
+  await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 });
 
 darwinTest('generic review allows explicit same-harness and only preflight-missing fallback; pending launch never replays', async () => {

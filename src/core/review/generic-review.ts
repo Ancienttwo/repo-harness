@@ -1,3 +1,5 @@
+import type { ReviewRuntimeId } from './review-runtimes';
+
 export const REVIEW_FINDING_RULES = {
   prompt_version: '1',
   text: 'PASS requires no unresolved P0/P1. FAIL requires at least one unresolved finding. Each finding has EXACTLY id, severity:P0|P1|P2|P3, status:new|open|resolved, message. Keep stable IDs: every prior finding must remain resolved/open with current evidence. A previous verdict is not evidence for current code.',
@@ -18,7 +20,7 @@ export interface ReviewOutput {
   request_id: string;
   context_sha256: string;
   subject_sha256: string;
-  actual_harness: 'claude' | 'codex';
+  actual_harness: ReviewRuntimeId;
   actual_role: string;
   actual_model: string;
   verdict: 'PASS' | 'FAIL';

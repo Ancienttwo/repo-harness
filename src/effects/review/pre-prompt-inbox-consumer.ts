@@ -44,7 +44,7 @@ export function assertCurrent(value: Companion, request: TaskRequest, now: numbe
     || canonical(readSessionArtifact(join(dir, 'native-session.json'))) !== canonical(value.native)) throw new Error('pre_prompt_inbox_session_changed');
 }
 /** Read-only host consumption: exact request/native identity, expiry, and current local protected grant. */
-export function consumePrePromptInbox(input: { request: TaskRequest; requestDirectory: string; native_session_id: string; host: 'claude' | 'codex'; now?: number }): string {
+export function consumePrePromptInbox(input: { request: TaskRequest; requestDirectory: string; native_session_id: string; host: 'claude' | 'codex' | 'pi'; now?: number }): string {
   const ref = input.request.pre_prompt_inbox;
   if (!ref) return '';
   if (ref.status === 'unsupported') return '[Task inbox unavailable: this historical session uses a legacy task label; create a new admitted session for automatic delivery.]';
@@ -60,7 +60,7 @@ export interface PrePromptInboxAccepted {
   kind: 'repo-harness-pre-prompt-accepted';
   request_id: string;
   companion_sha256: string;
-  host: 'claude' | 'codex';
+  host: 'claude' | 'codex' | 'pi';
   native_session_id: string;
   provider: {pid: number; identity: string};
   consumed_at: number;
@@ -70,7 +70,7 @@ export interface PrePromptInboxAccepted {
 /** Called only by the owned host's OAR input-scoped accepted-control observer.
  * The native reviewer cannot write this protected journal. An earlier ACK is not proof. */
 export function recordPrePromptInboxAccepted(input: {
-  request: TaskRequest; requestDirectory: string; native_session_id: string; host: 'claude' | 'codex';
+  request: TaskRequest; requestDirectory: string; native_session_id: string; host: 'claude' | 'codex' | 'pi';
   consumed_at: number; observation: OarObservationSnapshot;
 }): void {
   const ref = input.request.pre_prompt_inbox, observation = input.observation;

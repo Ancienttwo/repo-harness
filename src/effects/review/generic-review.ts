@@ -18,14 +18,15 @@ import { taskRepository } from '../git/task-repository';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
   readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth } from './review-isolation';
+import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, preparePiHome, removeCopiedAuth } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
-import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
+import type { SessionOptions, InstallationSnapshot, AvailableInstallation } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
   projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from './acceptance-receipt';
 import { gitExecFileSync } from '../git/runner';
+import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 
-type Harness = 'claude' | 'codex';
+type Harness = ReviewRuntimeId;
 interface ReviewSession {
   protocol: 1;
   owner_root: string;
@@ -77,7 +78,7 @@ function boundOwner(repo: string, endpoint: HerdrEndpoint, pane: string): Harnes
     if (!entry.isDirectory() || !existsSync(join(base, entry.name, 'binding.json'))) continue;
     const saved = readSessionArtifact<import('../terminal/task-session').TaskPaneBinding>(join(base, entry.name, 'binding.json'));
     if (saved.runtime !== 'herdr' || saved.pane_id !== pane || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
-      || !['claude', 'codex'].includes(saved.harness_kind)) continue;
+      || !isReviewRuntimeId(saved.harness_kind)) continue;
     const { binding } = readTaskAgent(repo, saved.task, saved.role);
     assertTaskBinding(binding); kinds.add(binding.harness_kind as Harness);
   }
@@ -127,9 +128,10 @@ function hostExecutable(): { node: string; entry: string } {
 }
 /** Only the fixed Node>=24 host executes the OAR installation API. */
 export async function probeReviewInstallation(kind: Harness, executable?: string): Promise<InstallationSnapshot> {
+  if (kind === 'pi' && !Bun.which('pi')) return { kind: 'not_found' };
   const { node, entry } = hostExecutable();
   return JSON.parse(execFileSync(node, [entry, '--installation', kind], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
-    env: executable ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
+    env: executable && kind !== 'pi' ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
 }
 const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApplicationHost, launched: terminalHostLaunched, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
   cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
@@ -199,12 +201,13 @@ function sourcePacket(root: string, paths: readonly string[], target: string): s
 }
 
 /** Model/effort come from the existing fleet; vendor argv belongs to OAR. */
-export function reviewSessionOptions(kind: Harness, output: string, codexHome?: string): SessionOptions {
+export function reviewSessionOptions(kind: Harness, output: string, isolatedHome?: string): SessionOptions {
   const fleet = parseFrontmatter(readFileSync(fileURLToPath(new URL('../../../agents/fleet/deep-reasoner.md', import.meta.url)), 'utf8'));
   if (!fleet || !validateFrontmatter(fleet, GENERIC_REVIEW_ROLE).ok) throw new Error('review_fleet_invalid');
   const target = AGENT_TARGET_OVERRIDES[GENERIC_REVIEW_ROLE]!;
-  return { cwd: output, model: kind === 'codex' ? target.model : fleet.model!, effort: kind === 'codex' ? target.effort : fleet.effort!,
-    ...(kind === 'codex' && codexHome ? { env: { CODEX_HOME: codexHome } } : {}),
+  return { cwd: output, ...(kind === 'pi' ? { env: { PI_CODING_AGENT_DIR: isolatedHome!, OAR_PI_AGENT_DIR: null } }
+      : { model: kind === 'codex' ? target.model : fleet.model!, effort: kind === 'codex' ? target.effort : fleet.effort! }),
+    ...(kind === 'codex' && isolatedHome ? { env: { CODEX_HOME: isolatedHome } } : {}),
     appendSystemPrompt: `${fleet.body}\nReview communication exception: writing the final JSON once to this request's exact result_ref is the only authorized mutation. No temporary file, rename, other edits or permission workarounds. This is communication, not production editing.` };
 }
 
@@ -256,11 +259,11 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       const owner = options.harness ? null : terminal ? 'claude' : client.owner(root, endpoint!, parentPane!);
       if (!options.harness && !owner) throw new Error('review_owner_unknown; specify --harness');
       const requested = options.harness ?? (owner === 'claude' ? 'codex' : 'claude');
-      if (!['claude', 'codex'].includes(requested)) throw new Error('review_harness_unsupported');
+      if (!isReviewRuntimeId(requested)) throw new Error('review_harness_unsupported');
       let actual = requested; let reason: string | null = null;
       const installed = await client.installation(actual);
       if (installed.kind !== 'available') {
-        if (installed.kind !== 'not_found' || options.harness || !owner
+        if (installed.kind !== 'not_found' || options.harness || !owner || owner === 'pi'
           || (await client.installation(owner)).kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
         actual = owner; reason = `${requested} executable missing before start`;
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
@@ -297,14 +300,15 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
     const outbox = join(reviewerRepo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
     ensureSessionDirectory(reviewerRepo, outbox);
-    let codexHome: string | undefined;
+    let isolatedHome: string | undefined;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
       const prepared = prepareCodexHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
-      codexHome = prepared.home;
+      isolatedHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
+    if (session.actual_harness === 'pi') isolatedHome = preparePiHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: dir, journal: dir,
@@ -317,15 +321,22 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (!existsSync(specPath)) {
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
-      if (installation.via !== 'executable') throw new Error('review_provider_executable_required');
-      const launcher = prepareReviewLauncher(dir, profilePath, installation.command);
-      const isolatedInstallation = await client.installation(session.actual_harness, launcher);
-      if (isolatedInstallation.kind !== 'available' || isolatedInstallation.via !== 'executable' || isolatedInstallation.command !== launcher) {
-        throw new Error('review_isolated_installation_unverified');
+      let vendorExecutable: string;
+      if (session.actual_harness === 'pi') vendorExecutable = realpathSync(Bun.which('pi') ?? '');
+      else {
+        if (installation.via !== 'executable') throw new Error('review_provider_executable_required');
+        vendorExecutable = installation.command;
+      }
+      const launcher = prepareReviewLauncher(dir, profilePath, vendorExecutable);
+      let isolatedInstallation: AvailableInstallation = installation;
+      if (session.actual_harness !== 'pi') {
+        const probed = await client.installation(session.actual_harness, launcher);
+        if (probed.kind !== 'available' || probed.via !== 'executable' || probed.command !== launcher) throw new Error('review_isolated_installation_unverified');
+        isolatedInstallation = probed;
       }
       const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness,
-        installation: isolatedInstallation, launcher, vendorExecutable: installation.command,
-        options: reviewSessionOptions(session.actual_harness, outbox, codexHome), requestDirectory: taskDir, output: outbox, controlDirectory: dir, timeoutMs: timeout };
+        installation: isolatedInstallation, launcher, vendorExecutable,
+        options: reviewSessionOptions(session.actual_harness, outbox, isolatedHome), requestDirectory: taskDir, output: outbox, controlDirectory: dir, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
     const { node, entry: hostEntry } = hostExecutable();
@@ -399,7 +410,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       subject_sha256: identity.subject_sha256, actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE, actual_model: model }, previous);
     const findings = output.findings.filter(finding => finding.status !== 'resolved').map(({ severity, message }) => ({ severity, message }));
     const reviewResult = { ...output, findings };
-    const reviewer = session.actual_harness === 'codex' ? 'Codex' : 'Claude';
+    const reviewer = session.actual_harness === 'pi' ? 'Pi' : session.actual_harness === 'codex' ? 'Codex' : 'Claude';
     const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? osAccountHome(), authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,

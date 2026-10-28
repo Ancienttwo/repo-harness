@@ -20,12 +20,12 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
 
-async function fixture(options: { native?: boolean } = {}) {
+async function fixture(options: { native?: boolean; host?: 'claude' | 'codex' | 'pi' } = {}) {
   const root = tmpWorkspace('operator-execution-state'); roots.push(root); initGitRepo(root);
   run('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
   const home = tmpWorkspace('operator-execution-state-authority'); roots.push(home);
-  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654' });
+  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654', harnessKind: options.host });
   if (options.native !== false) {
     const ready = join(root, 'controlled-ready.json');
     writeFileSync(ready, JSON.stringify({ pid: bound.binding.provider.pid, session_id: '0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', fixture: false }));
@@ -75,6 +75,13 @@ test('a fully consistent live session gives the agent, its pane and the follow-u
     resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
     herdr_pane: snapshot.executions[0]!.state === 'verified' ? snapshot.executions[0]!.herdr_pane : null,
   });
+});
+
+test('a Pi reviewer native session remains unverified until the execution host contract admits Pi', async () => {
+  const f = await fixture({ host: 'pi' });
+  expect(collectTaskExecutionStates(f.root).executions).toEqual([
+    { state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason: 'native_session_mismatch' },
+  ]);
 });
 
 test('a forged binding has no verified session', async () => {

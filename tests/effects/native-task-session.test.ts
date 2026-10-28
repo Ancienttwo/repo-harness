@@ -6,12 +6,12 @@ import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-async function fixture() {
+async function fixture(host: 'claude' | 'codex' | 'pi' = 'codex') {
   const root = tmpWorkspace('native-task-session'); roots.push(root); initGitRepo(root);
   run('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
   const home = tmpWorkspace('native-task-session-authority'); roots.push(home);
-  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654' });
+  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654', harnessKind: host });
   const ready = join(root, 'controlled-ready.json');
   const publish = (session_id: string, pid = bound.binding.provider.pid, fixture = false) => writeFileSync(ready, JSON.stringify({ pid, session_id, fixture }));
   publish('native-provider-thread');
@@ -43,6 +43,16 @@ test('foreign process, scripted identity, changed binding and closed session can
   expect(() => bindNativeTaskSession(f.input)).toThrow();
 });
 
+test('Pi reviewer native attribution keeps the exact controlled OAR session identity', async () => {
+  const f = await fixture('pi');
+  const record = bindNativeTaskSession(f.input);
+  expect(record.host).toBe('pi');
+  expect(record.native_session_id).toBe('native-provider-thread');
+  expect(bindNativeTaskSession(f.input)).toEqual(record);
+  f.publish('another-pi-session');
+  expect(() => bindNativeTaskSession(f.input)).toThrow('native_task_session_identity_changed');
+});
+
 import { randomUUID } from 'node:crypto';
 import { preparePrePromptInbox, commitPrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
 import { consumePrePromptInbox, recordPrePromptInboxAccepted } from '../../src/effects/review/pre-prompt-inbox-consumer';
@@ -56,8 +66,8 @@ function requestFor(f: Awaited<ReturnType<typeof fixture>>, bindingDigest: strin
     context_ref: join(f.root, 'context-1.txt'), source_ref: join(f.root, 'source.txt'), context_sha256: `sha256:${'a'.repeat(64)}`,
     result_ref: join(f.root, 'result-1.json'), result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename' } };
 }
-async function inboxFixture() {
-  const f = await fixture(), native = bindNativeTaskSession(f.input);
+async function inboxFixture(host: 'claude' | 'codex' | 'pi' = 'codex') {
+  const f = await fixture(host), native = bindNativeTaskSession(f.input);
   const event = buildTaskMessageEvent({ message_id: randomUUID(), task_id: f.bound.binding.task,
     task_identity: { repository_id: f.bound.admission.identity.repository_id, issue_id: f.bound.admission.identity.issue_id, campaign_id: f.bound.admission.identity.campaign_id },
     admission_sha256: f.bound.admission.approval.admission_sha256, scope: 'claim', target_claim: f.bound.source.authority.claim,
@@ -66,6 +76,15 @@ async function inboxFixture() {
   sendTaskMessage({ repo_root: f.root, source: f.bound.source, event });
   return { ...f, native, event, request: requestFor(f, native.session_binding_sha256) };
 }
+
+test('Pi reviewer consumes only the inbox bound to its native session', async () => {
+  const f = await inboxFixture('pi');
+  f.request.pre_prompt_inbox = preparePrePromptInbox({ source: f.bound.source, request: f.request });
+  const consume = { request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'pi' as const };
+  expect(consumePrePromptInbox(consume)).toContain(f.event.body);
+  expect(() => consumePrePromptInbox({ ...consume, host: 'codex' })).toThrow('pre_prompt_inbox_native_mismatch');
+  expect(() => consumePrePromptInbox({ ...consume, native_session_id: 'other-session' })).toThrow('pre_prompt_inbox_native_mismatch');
+});
 test('reservation and unknown send stay pending; exact accepted host proof commits once without replay', async () => {
   const f = await inboxFixture();
   const receiptInput = { repo_root: f.root, execution_worktree: f.bound.binding.execution_root, source: f.bound.source, task_id: f.request.task,

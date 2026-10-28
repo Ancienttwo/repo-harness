@@ -40,6 +40,7 @@ function verify(primaryRoot: string, dir: string, task: string, role: string): T
   if (native.protocol !== 1 || native.kind !== 'repo-harness-native-task-session' || native.host !== binding.harness_kind
     || native.task !== task || native.role !== role || typeof native.native_session_id !== 'string'
     || native.provider?.pid !== binding.provider.pid || native.provider?.identity !== binding.provider.identity) return refuse('native_session_mismatch');
+  if (native.host !== 'claude' && native.host !== 'codex') return refuse('native_session_mismatch');
   // The task-session proof compares PID, process group and start time. A reused PID throws.
   try { if (!processProofAlive(binding.provider)) return refuse('provider_exited'); } catch { return refuse('provider_identity_lost'); }
   // The session can close or rebind during the process check.
