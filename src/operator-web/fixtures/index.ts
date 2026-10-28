@@ -20,9 +20,11 @@ import { decodeSetupSnapshot } from '../../core/setup/decode';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
 import type { BotAccessRead } from '../bots';
 import { busyBotAccess, degradedBotAccess } from './bots';
-import type { CiRepairsRead, ExecutionRead } from '../repository-reads';
+import { decodeTestsSnapshot } from '../../core/operator/tests';
+import type { CiRepairsRead, ExecutionRead, TestsRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
+import { readyRepairIssue, readyTests } from './tests';
 import { agentsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
@@ -70,7 +72,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   // busy: one open CI repair issue in repo-harness and no daily run elsewhere; degraded: the daily run uploaded nothing.
   const repairs = (repositoryId: string): CiRepairsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'artifacts_missing' }
     : repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'no_daily_run' }
-      : { state: 'ok', issues: fixture === 'busy' ? [{ number: 1101, title: '[CI repair] daily full run failed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1101' }] : [] };
+      : { state: 'ok', issues: fixture === 'busy' ? [readyRepairIssue] : [] };
   // degraded: the task session records could not be read.
   const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
     : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
@@ -94,6 +96,10 @@ export function fixtureProps(name: string): OperatorAppProps {
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
   const agentsSettings = agentsSettingsStore(now, fixture);
+  // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
+  const tests = (repositoryId: string): TestsRead => fixture === 'busy'
+    ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
+    : { state: 'unavailable', reason: fixture === 'empty' ? 'tests_pending' : 'artifacts_missing' };
   return {
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
@@ -117,5 +123,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     readBotAccess: () => Promise.resolve(botAccess),
     readAgentsSettings: agentsSettings.read,
     writeAgentsSettings: agentsSettings.write,
+    readTests: repositoryId => Promise.resolve(tests(repositoryId)),
   };
 }
