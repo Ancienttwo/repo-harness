@@ -5,12 +5,13 @@ import { parseArchitectureRequest } from '../../src/core/operator/architecture';
 import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
-  architectureModelDelta,
+  archctxRefusal,
   decodeArchitectureMap,
   decodeArchitecturePullRequestsSource,
   projectArchitectureMap,
   projectTestCoverage,
   withTestCoverage,
+  type ArchitectureImpactV1,
   type ArchitectureMapLayersInput,
   type ArchitectureMapNodeV1,
   type ArchitecturePullRequestsSource,
@@ -159,30 +160,72 @@ describe('architecture map', () => {
   const CAP = 'capability.pipeline.ledger';
   const PART = 'component.pipeline.store';
   const OTHER = 'capability.review.gate';
+  const GONE = 'component.pipeline.gone';
   const mapNode = (nodeId: string, kind: string, parent: string | null = null): ArchitectureMapNodeV1 =>
     ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary` });
+  const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
+  // Map-layer values in the shape `architectureImpact` gives them; the worker tests below read real archctx answers.
+  const todayImpact: ArchitectureImpactV1 = {
+    paths: [
+      { path: 'README.md', added: 2, deleted: 2, owners: [], reason_codes: [] },
+      { path: 'assets/logo.png', added: null, deleted: null, owners: [PART], reason_codes: ['binary-diff'] },
+      // A deleted path keeps the owner it had at the base, here a node the change removed.
+      { path: 'src/gone.ts', added: 0, deleted: 4, owners: [GONE], reason_codes: [] },
+      { path: 'src/ledger.ts', added: 1, deleted: 0, owners: [CAP], reason_codes: [] },
+      { path: 'src/store.ts', added: 3, deleted: 1, owners: [PART], reason_codes: [] },
+    ],
+    unowned_paths: ['README.md'],
+    nodes: [{ id: CAP, files: 1 }, { id: GONE, files: 1 }, { id: PART, files: 2 }],
+    dependents: [{ id: CAP, touched: PART, relations: ['relation.a'] }],
+    dependency_coverage: 'complete',
+    flow_steps: { status: 'known', reason_codes: [], items: [{ flow: 'flow.pipeline.ledger', step: 'store', outcome: null, reason_codes: ['head-lines-changed'] }] },
+    truncated: whole,
+  };
+  const prImpact: ArchitectureImpactV1 = {
+    paths: [
+      { path: 'README.md', added: null, deleted: null, owners: [], reason_codes: ['paths-only'] },
+      { path: 'src/store.ts', added: null, deleted: null, owners: [PART], reason_codes: ['paths-only'] },
+    ],
+    unowned_paths: ['README.md'],
+    nodes: [{ id: PART, files: 1 }],
+    dependents: [{ id: CAP, touched: PART, relations: ['relation.a'] }],
+    dependency_coverage: 'complete',
+    flow_steps: { status: 'unknown', reason_codes: ['line-impact-unavailable', 'ref-code-facts-unavailable'], items: null },
+    truncated: whole,
+  };
   const layers: ArchitectureMapLayersInput = {
     changes: {
       state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2,
-      files: new Map([['src/store.ts', { added: 3, deleted: 1 }], ['src/ledger.ts', { added: 1, deleted: 0 }], ['README.md', { added: 2, deleted: 2 }]]),
-      owners: new Map<string, string | null>([['src/store.ts', PART], ['src/ledger.ts', CAP], ['README.md', null]]),
-      model: { state: 'ok', nodes_added: [PART], nodes_removed: ['component.pipeline.gone'], nodes_changed: [], relations_added: ['relation.a'], relations_removed: [], relations_changed: [] },
+      model: [
+        { kind: 'flows', id: 'flow.pipeline.ledger', change: 'changed', fields: ['steps'] },
+        { kind: 'nodes', id: GONE, change: 'removed', fields: ['id', 'kind', 'name'] },
+        { kind: 'nodes', id: PART, change: 'added', fields: ['id', 'kind', 'name'] },
+        { kind: 'relations', id: 'relation.a', change: 'added', fields: ['id', 'source', 'target'] },
+      ],
+      ...todayImpact,
     },
     pull_requests: {
       state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
       pull_requests: [
-        { number: 7, title: 'Store rows', url: 'https://github.com/acme/widgets/pull/7', head_sha: 'e'.repeat(40), changed_files: { state: 'ok', paths: ['README.md', 'src/store.ts'] } },
-        { number: 8, title: 'Big change', url: 'https://github.com/acme/widgets/pull/8', head_sha: 'f'.repeat(40), changed_files: { state: 'unavailable', reason: 'files_truncated' } },
-        { number: 9, title: 'No head', url: 'https://github.com/acme/widgets/pull/9', head_sha: null, changed_files: { state: 'ok', paths: ['src/ledger.ts'] } },
+        { number: 7, title: 'Store rows', url: 'https://github.com/acme/widgets/pull/7', head_sha: 'e'.repeat(40), impact: { state: 'ok', ...prImpact } },
+        { number: 8, title: 'Big change', url: 'https://github.com/acme/widgets/pull/8', head_sha: 'f'.repeat(40), impact: { state: 'unavailable', reason: 'files_truncated' } },
+        { number: 9, title: 'No head', url: 'https://github.com/acme/widgets/pull/9', head_sha: null, impact: { state: 'unavailable', reason: 'head_missing' } },
+        { number: 10, title: 'Odd path', url: 'https://github.com/acme/widgets/pull/10', head_sha: 'a'.repeat(40),
+          impact: { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-arguments-invalid' } },
       ],
-      owners: new Map<string, string | null>([['README.md', null], ['src/store.ts', PART]]),
     },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
+      flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
+      layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' },
     },
     tests: { state: 'unavailable', reason: 'tests_pending' },
+    decisions: { state: 'ok', items: [
+      { id: 'ADR-0002-gate', title: 'Gate reviews', status: null, decided_at: null, applies_to: [OTHER], supersedes: ['ADR-0001-ledger'], path: 'docs/adr/ADR-0002-gate.md' },
+      { id: 'ADR-0001-ledger', title: 'Keep one ledger', status: 'accepted', decided_at: '2026-10-01', applies_to: [CAP, PART], supersedes: [], path: 'docs/adr/ADR-0001-ledger.md' },
+    ] },
   };
   const input = {
     repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z', layers,
@@ -272,9 +315,11 @@ describe('architecture map', () => {
     expect(recheckCheckout(commit, clean, { ...clean, head: 'd'.repeat(40) }, dirty)).toEqual(dirty);
   });
 
-  test('the worker maps a committed model with git line counts, and imports fail closed without a CodeGraph index', () => {
+  test('the worker maps a committed model with git line counts and its decisions, and imports fail closed without a CodeGraph index', () => {
     const root = realpathSync(moduleRepository());
     try {
+      fixtureWrite(root, 'docs/adr/ADR-0001-committed-reads.md', `---\nschemaVersion: archcontext.adr/v1\ntitle: Read committed modules\nstatus: accepted\nappliesTo:\n  - ${MODULE_ID}\n---\n\n# ADR-0001\n`);
+      fixtureCommit(root);
       const commit = fixtureGit(root, ['rev-parse', 'HEAD']).trim();
       expect(readCommitLineCounts(root, commit)?.get('src/module/read.ts')).toBe(1);
       const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
@@ -285,14 +330,25 @@ describe('architecture map', () => {
       expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
       expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: MODULE_ID, files: 2, lines: 2 }] });
       expect(map.dependencies.state).toBe('unavailable');
+      // The decisions come from the same `export native` as the model; the fixture declares no ordered layers.
+      expect(map.layers.decisions).toEqual({ state: 'ok', items: [{ id: 'ADR-0001-committed-reads', title: 'Read committed modules', status: 'accepted', decided_at: null,
+        applies_to: [MODULE_ID], supersedes: [], path: 'docs/adr/ADR-0001-committed-reads.md' }] });
+      expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
       expect(JSON.stringify(map)).not.toContain(root);
+      // Today's changes need a base before today and one commit inside the window.
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => {
+        fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n');
+        fixtureCommit(root);
+      });
       // `archctx resolve` reads the worktree model, so an edited model hides the line counts.
       fixtureWrite(root, '.archcontext/model/nodes/component.module.extra.yaml', fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.extra', kind: 'component', name: 'Extra', status: 'active', summary: 'Extra.', parent: MODULE_ID }));
       const dirty = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       expect(dirty.ok && [dirty.snapshot.sizes, dirty.snapshot.dependencies]).toEqual([
         { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
-      expect(dirty.ok && [dirty.snapshot.layers.changes, dirty.snapshot.layers.violations.debt]).toEqual([
-        { state: 'unavailable', reason: 'model_worktree_dirty' }, { state: 'unavailable', reason: 'model_worktree_dirty' }]);
+      // Today's changes read only commits, so the edited model does not withhold them.
+      expect(dirty.ok && [dirty.snapshot.layers.changes.state, dirty.snapshot.layers.violations.debt]).toEqual([
+        'ok', { state: 'unavailable', reason: 'model_worktree_dirty' }]);
       // A PR source passes through with its own reason; the PR owners would read the edited model, so a ready source is withheld.
       expect(dirty.ok && dirty.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'dev_activity_pending' });
       const dirtyPrs = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z',
@@ -301,33 +357,52 @@ describe('architecture map', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('today\'s changes sum along the parent chain, the model delta compares entities by id, and an unknown owner drops only that layer', () => {
+  test('today\'s changes carry archctx\'s impact as given, and an answer that names a node the map lacks drops only that layer', () => {
     const map = projected();
-    expect(map.layers.changes).toEqual({
-      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2, files: 3, unowned_files: 1,
-      nodes: [{ id: CAP, files: 2, added: 4, deleted: 1 }, { id: PART, files: 1, added: 3, deleted: 1 }],
-      model: (layers.changes as Extract<ArchitectureMapLayersInput['changes'], { state: 'ok' }>).model,
-      flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
-    });
-    // Parts with no read-only source in archctx 0.9.3 or on main carry a fixed reason.
-    expect([map.layers.decisions, map.layers.violations.flows, map.layers.violations.layer_direction]).toEqual([
-      { state: 'unavailable', reason: 'decisions_not_exported' },
-      { state: 'unavailable', reason: 'flows_check_writes_index' }, { state: 'unavailable', reason: 'layer_order_not_released' }]);
+    // No local roll-up, owner choice or model diff: the layer is archctx's answer.
+    expect(map.layers.changes).toEqual(layers.changes);
+    // Decisions and flow proofs pass through sorted by id; layer direction keeps the collector's reason.
+    expect(map.layers.decisions.items.map(item => item.id)).toEqual(['ADR-0001-ledger', 'ADR-0002-gate']);
+    expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 2 }, { id: OTHER, diagnostics: 1 }] });
+    expect(map.layers.violations.layer_direction).toEqual({ state: 'unavailable', reason: 'model_layers_undeclared' });
     // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
     const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
       layers: { ...layers, violations: { ...layers.violations, debt: { state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] } } } });
     expect(anchorOnly.layers.violations.debt).toEqual({ state: 'ok', items: [{ kind: 'stale-anchor', nodes: [PART], paths: [] }] });
-    expect(architectureModelDelta(
-      { nodes: [{ id: 'a', summary: 'one' }, { id: 'b' }], relations: [{ id: 'r', intent: 'x' }] },
-      { nodes: [{ id: 'a', summary: 'two' }, { id: 'c' }], relations: [{ id: 'r', intent: 'x' }] },
-    )).toEqual({ nodes_added: ['c'], nodes_removed: ['b'], nodes_changed: ['a'], relations_added: [], relations_removed: [], relations_changed: [] });
     const changes = layers.changes.state === 'ok' ? layers.changes : null;
-    const unknown = projectArchitectureMap({
+    const withChanges = (value: ArchitectureMapLayersInput['changes']) => projectArchitectureMap({
       ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
-      layers: { ...layers, changes: { ...changes!, owners: new Map([['src/store.ts', 'capability.gone.node']]) } },
+      layers: { ...layers, changes: value },
     });
-    expect(unknown.layers.changes).toEqual({ state: 'unavailable', reason: 'ownership_unavailable' });
+    const failed = { state: 'unavailable', reason: 'archctx_failed' } as const;
+    // A removed node owns a path only while the model change says the change removed it.
+    expect(withChanges({ ...changes!, model: changes!.model.filter(entry => entry.id !== GONE) }).layers.changes).toEqual(failed);
+    expect(withChanges({ ...changes!, dependents: [{ id: OTHER, touched: CAP, relations: ['relation.gone'] }] }).layers.changes).toEqual(failed);
+    const unknown = withChanges({ ...changes!, paths: changes!.paths.map(entry => (entry.path === 'src/store.ts' ? { ...entry, owners: ['capability.gone.node'] } : entry)) });
+    expect(unknown.layers.changes).toEqual(failed);
     expect(unknown.layers.violations.debt.state).toBe('ok');
+    // A valid answer with a path that the public-path guard refuses keeps its own reason, not archctx's.
+    for (const path of ['app/(marketing)/page.tsx', 'app/[slug]/page.tsx']) {
+      const notPublic = withChanges({ ...changes!, paths: [...changes!.paths, { path, added: 1, deleted: 0, owners: [], reason_codes: [] }], unowned_paths: [...changes!.unowned_paths, path] });
+      expect(notPublic.layers.changes).toEqual({ state: 'unavailable', reason: 'path_not_public' });
+      expect(notPublic.layers.violations.debt.state).toBe('ok');
+    }
+    // A path the guard refuses next to a broken owner is still a broken answer.
+    expect(withChanges({ ...changes!, paths: [...changes!.paths, { path: 'app/[slug]/page.tsx', added: 1, deleted: 0, owners: ['capability.gone.node'], reason_codes: [] }] }).layers.changes).toEqual(failed);
+    // archctx's own refusal passes through with its codes.
+    const refused = withChanges({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' });
+    expect(decodeArchitectureMap(JSON.parse(JSON.stringify(refused))).layers.changes)
+      .toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' });
+  });
+
+  test('an archctx refusal keeps archctx\'s codes as opaque tokens of the archctx shape', () => {
+    const refusal = archctxRefusal('AC_SCHEMA_INVALID', 'native-document-marker-invalid');
+    expect(refusal).toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' });
+    expect(archctxRefusal('AC_PRECONDITION_FAILED', undefined)).toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_PRECONDITION_FAILED', reason_code: null });
+    for (const [code, reasonCode] of [['schema invalid', null], [7, null], ['AC_SCHEMA_INVALID', 'Bad Reason'], ['AC_SCHEMA_INVALID', 3]] as const) expect(archctxRefusal(code, reasonCode)).toBeNull();
+    const map = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, violations: { ...layers.violations, flows: refusal! } } });
+    expect(decodeArchitectureMap(JSON.parse(JSON.stringify(map))).layers.violations.flows).toEqual(refusal!);
   });
 
   test('test coverage counts each projected file once per capability by its daily result', () => {
@@ -357,22 +432,22 @@ describe('architecture map', () => {
     expect(withTestCoverage(projected(), { state: 'ready', snapshot }).layers.tests.state).toBe('ok');
   });
 
-  test('PR impact rolls each open PR\'s files up the parent chain at its head; a PR with no head or no complete list keeps its reason', () => {
-    expect(projected().layers.pull_requests).toEqual({
-      state: 'ok', observed_at: '2026-10-27T08:59:00.000Z',
-      pull_requests: [
-        { number: 7, title: 'Store rows', url: 'https://github.com/acme/widgets/pull/7', head_sha: 'e'.repeat(40),
-          impact: { state: 'ok', files: 2, unowned_files: 1, nodes: [{ id: CAP, files: 1 }, { id: PART, files: 1 }] } },
-        { number: 8, title: 'Big change', url: 'https://github.com/acme/widgets/pull/8', head_sha: 'f'.repeat(40), impact: { state: 'unavailable', reason: 'files_truncated' } },
-        { number: 9, title: 'No head', url: 'https://github.com/acme/widgets/pull/9', head_sha: null, impact: { state: 'unavailable', reason: 'head_missing' } },
-      ],
-      flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
-    });
+  test('PR impact carries archctx\'s answer for each open PR; a PR with no head, no complete list or an archctx refusal keeps its reason', () => {
+    expect(projected().layers.pull_requests).toEqual(layers.pull_requests);
     const prs = layers.pull_requests.state === 'ok' ? layers.pull_requests : null;
+    // A PR answer that names a node the map lacks drops only that PR to `archctx_failed`.
     const unknown = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
-      layers: { ...layers, pull_requests: { ...prs!, owners: new Map([['src/store.ts', 'capability.gone.node']]) } } });
-    expect(unknown.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'ownership_unavailable' });
+      layers: { ...layers, pull_requests: { ...prs!, pull_requests: prs!.pull_requests.map(pr => (pr.number === 7 ? { ...pr, impact: { state: 'ok', ...prImpact, nodes: [{ id: 'capability.gone.node', files: 1 }] } } : pr)) } } });
+    expect(unknown.layers.pull_requests.state === 'ok' && unknown.layers.pull_requests.pull_requests.map(pr => [pr.number, pr.impact.state === 'unavailable' ? pr.impact.reason : 'ok']))
+      .toEqual([[7, 'archctx_failed'], [8, 'files_truncated'], [9, 'head_missing'], [10, 'archctx_error']]);
     expect(unknown.layers.changes.state).toBe('ok');
+    // A valid PR answer with a path that the public-path guard refuses keeps its own reason.
+    const notPublic = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, pull_requests: { ...prs!, pull_requests: prs!.pull_requests.map(pr => (pr.number === 7
+        ? { ...pr, impact: { state: 'ok', ...prImpact, paths: [...prImpact.paths, { path: 'app/(marketing)/page.tsx', added: null, deleted: null, owners: [], reason_codes: [] }], unowned_paths: [...prImpact.unowned_paths, 'app/(marketing)/page.tsx'] } }
+        : pr)) } } });
+    expect(notPublic.layers.pull_requests.state === 'ok' && notPublic.layers.pull_requests.pull_requests.map(pr => [pr.number, pr.impact.state === 'unavailable' ? pr.impact.reason : 'ok']))
+      .toEqual([[7, 'path_not_public'], [8, 'files_truncated'], [9, 'head_missing'], [10, 'archctx_error']]);
   });
 
   test('the PR source takes only open PRs of a repository whose GitHub read is ok, and masks private paths in titles', () => {
@@ -419,13 +494,22 @@ describe('architecture map', () => {
     };
     refused(copy => { copy.layers.extra = { state: 'unavailable', reason: 'tests_pending' }; });
     refused(copy => { copy.layers.changes.nodes[0].id = 'capability.gone.node'; });
-    refused(copy => { copy.layers.changes.unowned_files = 4; });
-    refused(copy => { copy.layers.changes.model.nodes_removed = [CAP]; });
-    refused(copy => { copy.layers.changes.model.relations_added = ['relation.gone']; });
+    refused(copy => { copy.layers.changes.unowned_paths = []; });
+    refused(copy => { copy.layers.changes.model[2].change = 'removed'; });
+    refused(copy => { copy.layers.changes.model[3].id = 'relation.gone'; });
+    refused(copy => { copy.layers.changes.model[0].kind = 'decisions'; });
+    refused(copy => { copy.layers.changes.paths[0].path = '/Users/someone/repo/README.md'; });
+    refused(copy => { copy.layers.changes.paths[1].reason_codes = ['Binary Diff']; });
+    refused(copy => { copy.layers.changes.flow_steps.reason_codes = ['impact-truncated']; });
+    refused(copy => { copy.layers.changes.dependents[0].relations = []; });
+    refused(copy => { delete copy.layers.changes.truncated.paths; });
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['/Users/someone/repo/src/orphan.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].paths = ['src/../../outside.ts']; });
     refused(copy => { copy.layers.violations.debt.items[0].kind = 'undeclared-dependency'; });
-    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
+    refused(copy => { copy.layers.violations.flows.unprovable[0].id = PART; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'archctx_error', code: 'schema invalid', reason_code: null }; });
+    refused(copy => { copy.layers.violations.flows = { state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'Not_Kebab' }; });
+    refused(copy => { copy.layers.violations.layer_direction = { state: 'unavailable', reason: 'layer_order_not_released' }; });
     refused(copy => { copy.layers.violations.debt.items[1].nodes = [CAP, CAP]; });
     refused(copy => { delete copy.layers.violations.layer_direction; });
     refused(copy => { delete copy.layers.changes.flow_steps; });
@@ -438,37 +522,50 @@ describe('architecture map', () => {
     refused(copy => { copy.layers.pull_requests.pull_requests[0].head_sha = null; });
     refused(copy => { copy.layers.pull_requests.pull_requests[1].head_sha = null; });
     refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.nodes[0].id = 'capability.gone.node'; });
-    refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.unowned_files = 3; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.unowned_paths = ['src/store.ts']; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[0].impact.dependents[0].touched = 'capability.gone.node'; });
+    refused(copy => { copy.layers.pull_requests.pull_requests[3].impact.code = 'not a code'; });
     refused(copy => { copy.layers.pull_requests.pull_requests[0].title = 'Fix /Users/someone/secret'; });
     refused(copy => { copy.layers.pull_requests.pull_requests[0].url = 'https://example.invalid/pull/7'; });
-    refused(copy => { delete copy.layers.pull_requests.flow_steps; });
+    refused(copy => { copy.layers.pull_requests.flow_steps = { state: 'unavailable', reason: 'change_impact_not_exported' }; });
     refused(copy => { copy.layers.decisions = { state: 'unavailable', reason: 'code_facts_unavailable' }; });
-    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v1'; });
+    refused(copy => { copy.layers.decisions.items[0].applies_to = ['capability.gone.node']; });
+    refused(copy => { copy.layers.decisions.items[1].id = copy.layers.decisions.items[0].id; });
+    refused(copy => { copy.layers.decisions.items[0].title = 'Read /Users/someone/secret'; });
+    refused(copy => { copy.layers.decisions.items[0].path = '/Users/someone/repo/docs/adr/ADR-0001-ledger.md'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v2'; });
   });
 
-  test('a checkout or edit during a cycle drops today\'s changes when the model moved and each violation check when the tree moved', () => {
+  test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
     const commit = 'c'.repeat(40);
     const clean = { head: commit, modelClean: true, treeClean: true };
-    const read = { changes: layers.changes, pull_requests: layers.pull_requests, violations: layers.violations };
+    // Today's changes read only commits, so the recheck does not take them.
+    const read = { pull_requests: layers.pull_requests, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
-    const allChanged = { debt: changed, anchors: changed, dependencies: changed };
+    // Flow proofs read the CodeGraph index like the other checks; the layer-direction gap is fixed per model.
+    const allChanged = { debt: changed, flows: changed, anchors: changed, dependencies: changed, layer_direction: layers.violations.layer_direction };
     expect(recheckLayers(commit, clean, clean, read)).toEqual(read);
-    expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ changes: changed, pull_requests: changed, violations: allChanged });
-    expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ changes: read.changes, pull_requests: read.pull_requests, violations: allChanged });
-    expect(recheckLayers(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ changes: changed, pull_requests: changed, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, head: 'd'.repeat(40) }, read)).toEqual({ pull_requests: changed, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, treeClean: false }, read)).toEqual({ pull_requests: read.pull_requests, violations: allChanged });
+    expect(recheckLayers(commit, clean, { ...clean, modelClean: false, treeClean: false }, read)).toEqual({ pull_requests: changed, violations: allChanged });
     expect(localMidnight(new Date(2026, 9, 27, 18, 30))).toBe(new Date(2026, 9, 27).toISOString());
   });
 
-  test('the worker reads today\'s first-parent changes with their owners and the model delta against the base commit', () => {
+  const dated = (date: string, step: () => void) => {
+    process.env.GIT_AUTHOR_DATE = date;
+    process.env.GIT_COMMITTER_DATE = date;
+    try { step(); } finally { delete process.env.GIT_AUTHOR_DATE; delete process.env.GIT_COMMITTER_DATE; }
+  };
+  /** Moves the fixture's only commit before today's window, so it is the base of today's changes. */
+  const baseBeforeToday = (root: string) => {
+    dated('2026-10-20T00:00:00Z', () => fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--amend', '--no-edit', '--quiet']));
+    return fixtureGit(root, ['rev-parse', 'HEAD']);
+  };
+
+  test('the worker reads today\'s first-parent changes and each open PR\'s impact from archctx impact', () => {
     const root = realpathSync(moduleRepository());
-    const dated = (date: string, step: () => void) => {
-      process.env.GIT_AUTHOR_DATE = date;
-      process.env.GIT_COMMITTER_DATE = date;
-      try { step(); } finally { delete process.env.GIT_AUTHOR_DATE; delete process.env.GIT_COMMITTER_DATE; }
-    };
     try {
-      dated('2026-10-20T00:00:00Z', () => fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--amend', '--no-edit', '--quiet']));
-      const base = fixtureGit(root, ['rev-parse', 'HEAD']);
+      const base = baseBeforeToday(root);
       dated('2026-10-27T12:00:00Z', () => {
         fixtureWrite(root, MODULE_NODE, readFileSync(join(root, MODULE_NODE), 'utf8').replace('Read a committed module.', 'Read a module.'));
         fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
@@ -479,22 +576,82 @@ describe('architecture map', () => {
         { number: 5, title: 'Read more', url: 'https://github.com/acme/module/pull/5', head_sha: head, changed_files: { state: 'ok', paths: ['docs/notes.md', 'src/module/read.ts'] } }] };
       const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source);
       if (!result.ok) throw new Error('worker failed');
+      // `--paths-from` has no line counts; the owners come from the map commit's model.
       expect(result.snapshot.layers.pull_requests).toEqual({ state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
-        { number: 5, title: 'Read more', url: 'https://github.com/acme/module/pull/5', head_sha: head, impact: { state: 'ok', files: 2, unowned_files: 1, nodes: [{ id: MODULE_ID, files: 1 }] } }],
-        flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' } });
+        { number: 5, title: 'Read more', url: 'https://github.com/acme/module/pull/5', head_sha: head, impact: {
+          state: 'ok',
+          paths: [{ path: 'docs/notes.md', added: null, deleted: null, owners: [], reason_codes: ['paths-only'] },
+            { path: 'src/module/read.ts', added: null, deleted: null, owners: [MODULE_ID], reason_codes: ['paths-only'] }],
+          unowned_paths: ['docs/notes.md'], nodes: [{ id: MODULE_ID, files: 1 }], dependents: [], dependency_coverage: 'complete',
+          flow_steps: { status: 'unknown', reason_codes: ['line-impact-unavailable', 'ref-code-facts-unavailable'], items: null }, truncated: whole,
+        } }] });
+      // The model file is not in any node's footprint; the fixture has no CodeGraph index, so flow steps stay unknown.
       expect(result.snapshot.layers.changes).toEqual({
-        state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1, files: 2, unowned_files: 1,
-        nodes: [{ id: MODULE_ID, files: 1, added: 2, deleted: 1 }],
-        model: { state: 'ok', nodes_added: [], nodes_removed: [], nodes_changed: [MODULE_ID], relations_added: [], relations_removed: [], relations_changed: [] },
-        flow_steps: { state: 'unavailable', reason: 'change_impact_not_exported' },
+        state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1,
+        model: [{ kind: 'nodes', id: MODULE_ID, change: 'changed', fields: ['summary'] }],
+        paths: [{ path: MODULE_NODE, added: 1, deleted: 1, owners: [], reason_codes: [] },
+          { path: 'src/module/read.ts', added: 2, deleted: 1, owners: [MODULE_ID], reason_codes: [] }],
+        unowned_paths: [MODULE_NODE], nodes: [{ id: MODULE_ID, files: 1 }], dependents: [], dependency_coverage: 'complete',
+        flow_steps: { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null }, truncated: whole,
       });
       // The fixture has no CodeGraph index: each check that reads it says so; nothing is filled in, and no check syncs an index.
       expect(result.snapshot.layers.violations.anchors).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
-      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'flows_check_writes_index' });
+      expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       // A window that holds the whole history has no base commit.
       const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z', pending);
       expect(all.ok && all.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'history_starts_today' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('an archctx refusal of the base commit leaves today\'s changes without data and keeps archctx\'s codes; the map stays', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      // The base commit holds a node that fails the model schema; today's commit removes it.
+      const broken = '.archcontext/model/nodes/component.module.broken.yaml';
+      fixtureWrite(root, broken, fixtureYaml({ schemaVersion: 'archcontext.node/v2', id: 'component.module.broken' }));
+      fixtureGit(root, ['add', '.']);
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => { rmSync(join(root, broken)); fixtureCommit(root); });
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' });
+      expect(result.snapshot.sizes.state).toBe('ok');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('archctx impact stops at 1000 changed paths and the map says which parts it cut', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => {
+        for (let index = 0; index < 1001; index++) fixtureWrite(root, `src/module/generated/file-${String(index).padStart(4, '0')}.ts`, `export const value = ${index};\n`);
+        fixtureCommit(root);
+      });
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      if (!result.ok || result.snapshot.layers.changes.state !== 'ok') throw new Error('worker failed');
+      const { changes } = result.snapshot.layers;
+      expect([changes.paths.length, changes.paths.at(-1)?.path, changes.nodes]).toEqual([1000, 'src/module/generated/file-0999.ts', [{ id: MODULE_ID, files: 1000 }]]);
+      expect([changes.truncated, changes.dependency_coverage, changes.flow_steps.reason_codes]).toEqual([
+        { paths: true, nodes: false, relations: false, flow_steps: false, dependents: false, model: false }, 'partial', ['impact-truncated', 'ref-code-facts-unavailable']]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a committed path that the public-path guard refuses leaves the layer or the PR with its own reason, not archctx\'s', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      baseBeforeToday(root);
+      dated('2026-10-27T12:00:00Z', () => {
+        fixtureWrite(root, 'app/(group)/page.tsx', 'export default function Page() { return null; }\n');
+        fixtureCommit(root);
+      });
+      const source: ArchitecturePullRequestsSource = { state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
+        { number: 6, title: 'Group page', url: 'https://github.com/acme/module/pull/6', head_sha: 'b'.repeat(40), changed_files: { state: 'ok', paths: ['app/(group)/page.tsx'] } }] };
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', source);
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'path_not_public' });
+      const pulls = result.snapshot.layers.pull_requests;
+      expect(pulls.state === 'ok' && pulls.pull_requests.map(pr => pr.impact)).toEqual([{ state: 'unavailable', reason: 'path_not_public' }]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

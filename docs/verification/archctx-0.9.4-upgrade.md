@@ -67,7 +67,7 @@ and did not operate the global runtime.
 - `bun run check:type`: exit 0.
 - `bun run test:files tests/architecture-projection-provider.test.ts tests/architecture-projection-e2e.test.ts tests/architecture-debt.test.ts tests/refactor-archctx-provider.test.ts --timeout 60000 --max-concurrency 1`: 87 pass, 1 fail before the receipt update, and 88 pass after it. The single failure was the packed-integration test at line 1524, which reads the committed receipt and expected 0.9.3; the regenerated receipt fixed it. The test assertion was not changed.
 
-## Consumer text corrected with the bump
+## Consumer text corrected with the bump (PR #1096)
 
 Four map layers and reasons still asserted that the pinned archctx cannot
 produce the fact. 0.9.4 does produce it, so the text now names the missing
@@ -82,7 +82,7 @@ Reason codes, map schema and layer states are unchanged, so the operator UI
 tests keep their assertions. Only comments, English and Chinese copy, and the
 architecture module prose changed.
 
-## Limits
+## Pin-bump limits (PR #1096)
 
 The change selects the full affected lane (`package.json` and `bun.lock` are
 global inputs), so the PR runs that lane rather than a narrow slice. No full
@@ -90,3 +90,21 @@ suite, release, deployment or main publication was run here. The 0.9.4
 features for decisions, impact, layer order and `--no-sync` flow proofs are
 reported by the package but not yet consumed; that is follow-up work, not part
 of this pin bump.
+
+## Architecture map integration (PR #1097)
+
+PR #1097 builds on the dependency pair from PR #1096. Its package.json and
+bun.lock match main after integration. The package evidence and checks above
+belong to the pin bump.
+
+- Today's changes and PR impact use `archctx impact`. The map no longer derives
+  owners, dependents or model changes locally.
+- Decisions use the native export. Flow proofs use `flows check --no-sync`.
+- Ordered layers remain unavailable because this model declares no `model.layers`.
+- The architecture worker records `ledger receipt --journal-id` after apply.
+  The check reference compares the receipt paths and `bodyHash` values with
+  changed model files.
+
+The one-shot 0.9.3 coverage policy (`ARCHCTX_093_DIFF`, `isArchctx093Upgrade`
+and `archctxConsumerPaths`) is removed. Dependency changes still select full
+coverage. PR #1097 records its final integration checks in the PR description.
