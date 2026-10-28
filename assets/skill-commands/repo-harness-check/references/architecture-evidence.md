@@ -38,6 +38,13 @@ Read the cheap signal first:
    or `module review-prompt` with `--projection-check <file>`. Then
    `generated_summary` is `fresh` or `stale`. Without the file it is `unknown`.
    The file must come from a check at the current HEAD.
+3. ChangeSet receipt. When the diff changes files under `.archcontext/model/`,
+   read the `archctx ledger receipt` JSON in the PR body. Compare each receipt
+   `bodyHash` and file path with the changed model files at HEAD. A `bodyHash` is
+   not a Git blob id or a SHA-256 of the file bytes. A deletion has
+   `bodyHash: missing`. Every changed model path must have a receipt record.
+   The receipt is unsigned (`approvalAuthenticity: unverified`); it shows
+   recorded content, not human approval.
 
 Human-written sections have a citation signal. Run
 `repo-harness architecture-projection anchors --json`. The command is read-only

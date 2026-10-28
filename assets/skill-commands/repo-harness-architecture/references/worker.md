@@ -55,6 +55,9 @@ of the rolling PR accepts the proven major changes in it.
   moved. Fix the citations in your scope. Report the others.
 - Flow selectors: `"$NODE" "$ARCHCTX" flows check --json`. It checks the flow
   selectors in seconds. Use its reported proof failures to repair the model in scope. It needs CodeGraph code facts.
+  Add `--no-sync` to check against an existing index through a private snapshot.
+  It does not modify the index. It fails closed with `AC_CODE_FACTS_UNAVAILABLE`
+  when the index is missing, stale or partial.
 
 ## Coverage and Agent-owned registration
 
@@ -82,14 +85,14 @@ write nodes.
    model through one ChangeSet as described in "Model ChangeSets". Do not edit
    model YAML by hand when a ChangeSet route exists.
 5. Run `"$NODE" "$ARCHCTX" validate --format json` and
-   `"$NODE" "$ARCHCTX" flows check --json`. Verify source matching with
+   `"$NODE" "$ARCHCTX" flows check --no-sync --json`. Verify source matching with
    capability-resolver. Commit the model and human prose. After merge, an
    operator runs `repo-harness architecture-projection publish once` or a
    supervised `follow`, as "Rolling writer" describes, to publish the generated
    module documents. Missing docs for an unchanged node need writer repair, not
    a duplicate node.
 
-## Model ChangeSets (archctx 0.9.1)
+## Model ChangeSets
 
 - `plan` creates, updates and deletes entities. The operations are `create_entity`,
   `update_entity_fields` and `delete_entity`. A body is the complete new YAML
@@ -106,6 +109,12 @@ write nodes.
   `"$NODE" "$ARCHCTX" apply --id <same-id> --approved --expected-worktree-digest <draft.base.worktreeDigest>`.
   A draft lives in daemon memory. Plan again after a daemon restart or any worktree
   change. `--approved` records the authorized Agent decision; it does not grant extra scope.
+- After `apply` returns a `journalId`, run
+  `"$NODE" "$ARCHCTX" ledger receipt --journal-id <id> --json` and record the
+  receipt in the PR body. The receipt lists the base and result model digests and
+  each file path, operation and `bodyHash`. It is unsigned: its
+  `approvalAuthenticity` is `unverified`. It exists only on the machine that
+  applied the ChangeSet. Export one receipt for each apply.
 - A component footprint is `source.include` on the `component.*` node, with an
   optional `source.exclude`. ArchContext validation owns the include and exclude
   shapes. repo-harness resolves path ownership only through
