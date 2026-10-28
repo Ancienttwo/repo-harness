@@ -8,6 +8,13 @@
 - Send the root tests-and-implementation review to the other model through Herdr when it is available. Otherwise, run that read-only review in a separate same-model pane.
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
 
+### Worker Briefs
+
+- Define the boundary by responsibility, not by a file list. Inside the boundary, the worker edits every file the change needs: callers, types, tests and docs.
+- List only the paths that another worker owns. Name the stop conditions: a path another worker owns, a public contract or wire format outside the brief, deletion of user data, credentials or permissions, release. The worker makes every other decision and records it in the final report.
+- Default to a clean refactor: change all callers, delete the old path and update the tests in the same change. Do not add compatibility shims, fallbacks, aliases, or validation for states the code cannot reach. Keep compatibility only where the brief names it, for example persisted user data, a published protocol or installed adapters.
+- Give the decision, not a menu. State each value precisely (exact names, limits, the variables to remove), so the worker does not choose the most defensive reading. Codex in particular adds guards and couplings when the brief is vague.
+
 ### Test and Review Rules
 
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.

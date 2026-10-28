@@ -4,12 +4,14 @@ import * as fsPromises from 'node:fs/promises';
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, symlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer, type Socket } from 'node:net';
 import { decodeRuntimeOverlay, projectRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation, type RuntimePaneObservation } from '../../src/core/operator/runtime-status';
 import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver, observeHerdrPane, observeProgramStatus, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
 import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, type HerdrRuntimeConfig } from '../../src/effects/operator/runtime-service';
 import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from '../../src/effects/operator/native-runtime-source';
 import { RUNTIME_CAPTURE_MAX_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
+import { HerdrVersionMismatchError, herdrVersionCheck } from '../../src/effects/terminal/herdr-observation';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
 const at = '2026-10-08T00:00:00.000Z';
@@ -27,7 +29,30 @@ const snapshot = (o = observation()): RuntimeSnapshot => ({ bindings: [o.identit
 const project = (observations: RuntimeObservation[], bindings: RuntimeIdentity[] = [identity]) => projectRuntimeOverlay(bindings, observations, at, 0, 'v1', Date.parse(at));
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 
+const versionCheck = () => herdrVersionCheck({ version: '999.0.0', protocol: 999 });
+const versionReason = () => {
+  const { expected, actual } = versionCheck();
+  return { code: 'herdr_version_mismatch' as const, expected, actual };
+};
+
 describe('structured runtime overlay', () => {
+  test('requires the v5 reason field and accepts only bounded unavailable version facts', () => {
+    const reason = versionReason(), overlay = unavailableRuntimeOverlay(0, reason);
+    expect(decodeRuntimeOverlay(overlay)).toEqual(overlay);
+    expect(decodeRuntimeOverlay({ ...overlay, reason: { ...reason, actual: { version: null, protocol: null } } }).reason?.actual).toEqual({ version: null, protocol: null });
+    const { reason: omitted, ...missing } = overlay;
+    expect(omitted).toEqual(reason);
+    for (const invalid of [
+      missing,
+      { ...overlay, projection_version: 'repo-harness.runtime-overlay.v4' },
+      { ...overlay, status: 'ready', observed_at: at },
+      { ...overlay, reason: { ...reason, message: '/private/secret' } },
+      { ...overlay, reason: { ...reason, actual: { ...reason.actual, version: '/private/secret' } } },
+      { ...overlay, reason: { ...reason, actual: { ...reason.actual, protocol: -1 } } },
+      { ...overlay, reason: { ...reason, expected: { ...reason.expected, revision: '/private/secret' } } },
+    ]) expect(() => decodeRuntimeOverlay(invalid)).toThrow();
+    expect(project([observation()]).reason).toBeNull();
+  });
   test('Herdr maps only documented structured states and strips raw fields', () => {
     for (const [input, state] of [['idle','idle'],['working','working'],['blocked','blocked'],['done','done-unseen'],['unknown','unknown'],['aborted','unknown']] as const) {
       const result = observeHerdrPane({ ...pane, agent_status: input, title: 'private-secret', cwd: '/private/path', text: 'auth-secret' }, identity)!;
@@ -70,7 +95,7 @@ describe('structured runtime overlay', () => {
 
   test('pane scope is separate from task identity and rejects forged bindings and cancellation', () => {
     const overlay = projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [paneReport()]);
-    expect(overlay).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
+    expect(overlay).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', badges: [], pane_observations: [{ scope: 'pane', source: 'osc7501', state: 'working', binding: identity }] });
     for (const change of [{ scope: 'task' }, { state: 'cancelled' }, { source: 'program-v1' }, { msg: 'private' }, { binding: { ...identity, pane_id: 'wrong' } }]) {
       expect(() => projectRuntimeOverlay([identity], [], at, 0, 'v1', Date.parse(at), true, 0, [{ ...paneReport(), ...change } as RuntimePaneObservation])).toThrow();
     }
@@ -104,6 +129,44 @@ describe('structured runtime overlay', () => {
 });
 
 describe('snapshot lifecycle', () => {
+  test('preserves startup and snapshot version failures, clears generic failures and recovers', async () => {
+    let failure: Error | null = new HerdrVersionMismatchError(versionCheck());
+    const observer = createRuntimeStatusObserver({ program_status: 'unsupported', async subscribe() {
+      if (failure) throw failure;
+      return () => {};
+    }, async snapshot(epoch) {
+      if (failure) throw failure;
+      return snapshot(observation({ identity: { ...identity, source_epoch: epoch } }));
+    } }, () => Date.parse(at));
+    try {
+      await observer.start();
+      expect(observer.read()).toEqual(unavailableRuntimeOverlay(0, versionReason()));
+      failure = null; await observer.start();
+      expect(observer.read()).toMatchObject({ status: 'ready', reason: null });
+      failure = new HerdrVersionMismatchError(versionCheck()); await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'unavailable', reason: versionReason() });
+      const returned = observer.read();
+      returned.reason!.actual.version = 'caller-mutated';
+      expect(observer.read().reason).toEqual(versionReason());
+      failure = new Error('/private/secret version mismatch'); await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'unavailable', reason: null });
+      expect(JSON.stringify(observer.read())).not.toContain('/private/secret');
+      failure = null; await observer.refresh();
+      expect(observer.read()).toMatchObject({ status: 'ready', reason: null });
+    } finally { observer.stop(); }
+  });
+
+  test('preserves a version failure before the first snapshot and clears it on disconnect', async () => {
+    const observer = createRuntimeStatusObserver({ program_status: 'unsupported', async subscribe() { return () => {}; }, async snapshot() {
+      throw new HerdrVersionMismatchError(versionCheck());
+    } });
+    try {
+      await observer.start();
+      expect(observer.read()).toEqual(unavailableRuntimeOverlay(0, versionReason()));
+      observer.invalidate('disconnected');
+      expect(observer.read()).toEqual(unavailableRuntimeOverlay());
+    } finally { observer.stop(); }
+  });
   test('pane observations keep epoch/revision fences and snapshot freshness independent of progress', async () => {
     let clock = Date.parse(at), current = [paneReport()], bindings = [identity], fail = false;
     const observer = createRuntimeStatusObserver({ program_status: 'v1', async subscribe() { return () => {}; }, async snapshot() {
@@ -283,7 +346,8 @@ describe('snapshot lifecycle', () => {
     second.resolve(() => { secondCloses++; }); await newStart; const current = observer.read();
     expect(current.source_epoch).toBe(1); expect(current.badges[0].state).toBe('working'); expect(snapshots).toBe(1);
     first.resolve(() => { firstCloses++; }); await oldStart;
-    callbacks[0]('events_lost'); callbacks[0]('disconnected'); await Promise.resolve();
+    callbacks[0]('events_lost'); callbacks[0]('disconnected');
+    callbacks[0]({ type: 'failure', error: new HerdrVersionMismatchError(versionCheck()) }); await Promise.resolve();
     expect(observer.read()).toEqual(current); expect(firstCloses).toBe(1); expect(secondCloses).toBe(0); expect(snapshots).toBe(1);
     callbacks[1]('updated'); await observer.refresh(); expect(snapshots).toBe(2);
     observer.stop(); expect(secondCloses).toBe(1);
@@ -308,6 +372,35 @@ describe('snapshot lifecycle', () => {
     slow = true; const refresh = observer.refresh(); observer.stop(); response.resolve(snapshot()); await refresh;
     expect(observer.read().status).toBe('unavailable'); expect(observer.read().badges[0].freshness).toBe('disconnected');
   });
+});
+
+test.skipIf(!['darwin','linux'].includes(process.platform))('runtime service retains a rejected Herdr ping reason without probing on reads', async () => {
+  const root = mkdtempSync('/tmp/rh-runtime-reason-'), socketPath = join(root, 'herdr.sock'), configPath = join(root, 'runtime.json');
+  const sockets = new Set<Socket>();
+  let requests = 0, service: Awaited<ReturnType<typeof startRuntimeService>> | null = null;
+  const server = createServer(socket => {
+    sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
+    let input = '';
+    socket.on('data', chunk => {
+      input += chunk.toString(); const end = input.indexOf('\n'); if (end < 0) return;
+      const request = JSON.parse(input.slice(0, end)); input = input.slice(end + 1); requests++;
+      socket.end(JSON.stringify({ id: request.id, result: { type: 'pong', version: '999.0.0', protocol: 999, capabilities: {} } }) + '\n');
+    });
+  });
+  try {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
+    writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'fixture', herdr_session: 'fixture', socket_path: socketPath, deadline_ms: 1000 }));
+    service = await startRuntimeService(configPath);
+    expect(service.read()).toEqual(unavailableRuntimeOverlay(0, versionReason()));
+    const result = service.read(); result.reason!.expected.version = 'caller-mutated';
+    expect(service.read().reason).toEqual(versionReason()); expect(requests).toBe(1);
+    await service.refresh();
+    expect(service.read()).toEqual(unavailableRuntimeOverlay(0, versionReason())); expect(requests).toBe(2);
+  } finally {
+    service?.close(); for (const socket of sockets) socket.destroy();
+    if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('GET and HEAD use only the injected cache; no subprocess or canonical state mutation', async () => {
@@ -614,7 +707,7 @@ describe('native runtime observation cache', () => {
       writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [config] }));
       server = await startOperatorServer({ port: 0, runtime_status_config: configPath });
       const first = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
-      expect(first).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready', badges: [], pane_observations: [], native_sources: [{ source_id: config.source_id, freshness: 'fresh', observations: [{ state: 'working', event_received_at: at }] }] });
+      expect(first).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v5', status: 'ready', badges: [], pane_observations: [], native_sources: [{ source_id: config.source_id, freshness: 'fresh', observations: [{ state: 'working', event_received_at: at }] }] });
       rmSync(config.snapshot_path);
       const before = readdirSync(root).map(name => [name, readFileSync(join(root, name), 'utf8')]);
       const open = spyOn(fsPromises, 'open'), lstat = spyOn(fsPromises, 'lstat'); spies.push(open, lstat);

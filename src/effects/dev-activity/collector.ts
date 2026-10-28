@@ -14,7 +14,8 @@ import { basename, isAbsolute, sep } from 'node:path';
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
-import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivityPrFiles, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
+import type { PullRequestFiles } from '../../core/operator/pull-request-files';
 import { isPublicRepoPath } from '../../core/operator/public-text';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
@@ -260,7 +261,7 @@ export function parseGhRepoView(stdout: string): { github: string; default_branc
  * `changedFiles` is truncated, never complete. A bad file field marks only this
  * PR, so the board keeps the rest of the query.
  */
-function changedFilesOf(pr: Record<string, unknown>): DevActivityPrFiles {
+function changedFilesOf(pr: Record<string, unknown>): PullRequestFiles {
   if (!Array.isArray(pr.files) || !Number.isSafeInteger(pr.changedFiles)) return { state: 'unavailable', reason: 'files_missing' };
   const paths = pr.files.map(file => (file !== null && typeof file === 'object' && typeof (file as Record<string, unknown>).path === 'string' ? (file as Record<string, string>).path : null));
   if (paths.some(path => path === null || !isPublicRepoPath(path)) || new Set(paths).size !== paths.length || paths.length > (pr.changedFiles as number)) {

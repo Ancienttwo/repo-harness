@@ -97,6 +97,13 @@ try {
   } else if (action === 'register') {
     const input = readSessionArtifact<{ endpoint: HerdrEndpoint; parent_pane: string }>(value('--endpoint'));
     console.log(JSON.stringify(await registerTaskWorktree(value('--worktree'), input.endpoint, input.parent_pane)));
+  } else if (action === 'notify-merged') {
+    const { notifyTaskWorktreeMerged } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
+    const result = await notifyTaskWorktreeMerged(value('--repo'), value('--owner'), {
+      pr: Number(value('--pr')), merge_sha: value('--merge'), worktree: value('--worktree'), branch: value('--branch'),
+    });
+    console.log(JSON.stringify(result));
+    if (result.status === 'retained') process.exitCode = 1;
   } else if (action === 'cleanup') {
     const result = await cleanupTaskWorktree(value('--repo'), value('--worktree'), args.includes('--dry-run'));
     console.log(JSON.stringify(result));

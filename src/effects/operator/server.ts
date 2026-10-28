@@ -3,6 +3,7 @@ import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSes
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
+import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { startSetupCollector } from '../setup/collector';
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
@@ -15,7 +16,7 @@ import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
 import { startTestsCollector, type TestsRepositoryCache } from './tests-collector';
 import { startExecutionCollector, type ExecutionRepositoryCache } from './execution-collector';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from './architecture-map-collector';
-import { architecturePullRequestsSource, decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
+import { decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
 import { decodeTaskExecutionView, type ExecutionStateUnavailableReason } from '../../core/operator/execution-state';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
