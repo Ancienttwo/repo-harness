@@ -660,6 +660,32 @@ export function recordPiInstallOwnership(surfaces: readonly ManagedInstallSurfac
   writeState({ ...current, ownership_manifest: [...ownership.values()] }, env);
 }
 
+/** Preserve only the external resources that rollback could not remove. */
+export function recordUnresolvedPiOwnership(
+  profile: InstallProfile,
+  surfaces: readonly ManagedInstallSurface[],
+  env: NodeJS.ProcessEnv,
+  transactionId: string,
+): void {
+  if (surfaces.length === 0) return;
+  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi rollback ownership');
+  const path = installProfileStatePath(env);
+  let current: InstalledProfileState | LegacyInstalledProfileState | null = null;
+  if (existsSync(path)) {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    current = isRecord(raw) && raw.protocol === 1 ? readLegacyInstalledProfileForMigration(env) : readInstalledProfile(env);
+  }
+  // Components record the selected profile. Presence probes still report the
+  // missing filesystem surfaces of an incomplete, rolled-back installation.
+  const state = current ?? {
+    protocol: 2 as const, profile, components: PROFILE_COMPONENTS[profile],
+    transaction_id: transactionId, applied_at: new Date().toISOString(), ownership_manifest: [], previous: null,
+  };
+  const pending = new Map(surfaces.map(surface => [surface.path, surface]));
+  const retained = state.ownership_manifest.filter(surface => surface.type !== 'pi-package' || !pending.has(surface.path));
+  writeState({ ...state, ownership_manifest: [...retained, ...pending.values()] }, env);
+}
+
 /** Candidate processes publish ownership into the same ledger as the parent. */
 export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
@@ -829,11 +855,19 @@ function lstatExists(path: string): boolean {
 
 export function rollbackInstallHostTransaction(
   transaction: InstallHostTransaction,
-  options: { readonly retainBackup?: boolean; readonly runtimeLock?: RuntimeTransactionContext } = {},
+  options: { readonly retainBackup?: boolean; readonly runtimeLock?: RuntimeTransactionContext;
+    readonly unresolvedPi?: { readonly profile: InstallProfile; readonly surfaces: readonly ManagedInstallSurface[]; readonly env: NodeJS.ProcessEnv } } = {},
 ): void {
   assertTransactionLock(transaction, options.runtimeLock);
   try {
     const failures: string[] = [];
+    const unresolved = options.unresolvedPi;
+    if (unresolved?.surfaces.length) {
+      try {
+        writeFileSync(join(transaction.backup_root, 'pi-ownership.json'), JSON.stringify({ protocol: 1,
+          transaction_id: basename(transaction.backup_root), profile: unresolved.profile, ownership_manifest: unresolved.surfaces }), { mode: 0o600 });
+      } catch (error) { failures.push(`Pi recovery record: ${String((error as Error).message ?? error)}`); }
+    }
     for (const snapshot of [...transaction.snapshots].reverse()) {
       try {
         if (isGlobalConfigurationSnapshot(snapshot.path)) {
@@ -855,6 +889,10 @@ export function rollbackInstallHostTransaction(
       } catch (error) {
         failures.push(`${snapshot.path}: ${String((error as Error).message ?? error)}`);
       }
+    }
+    if (unresolved?.surfaces.length) {
+      try { recordUnresolvedPiOwnership(unresolved.profile, unresolved.surfaces, unresolved.env, basename(transaction.backup_root)); }
+      catch (error) { failures.push(`Pi ownership could not be restored to the ledger; recovery transaction ${transaction.backup_root}: ${String((error as Error).message ?? error)}`); }
     }
     if (failures.length === 0 && options.retainBackup !== true) {
       rmSync(transaction.backup_root, { recursive: true, force: true });
@@ -1373,7 +1411,7 @@ export function planInstallProfile(
   };
 }
 
-function writeState(state: InstalledProfileState, env: NodeJS.ProcessEnv): void {
+function writeState(state: InstalledProfileState | LegacyInstalledProfileState, env: NodeJS.ProcessEnv): void {
   const target = installProfileStatePath(env);
   mkdirSync(dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;

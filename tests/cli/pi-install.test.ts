@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { copyPackageRuntimeFixture, tmpWorkspace } from '../helpers/repo-fixture';
 import { installPiPackage, piPackagePresent, piUserPackageSources, runPi } from '../../src/cli/installer/pi-package';
-import { readInstalledProfile, recordPiInstallOwnership, type ManagedInstallSurface } from '../../src/cli/installer/install-profile';
+import { installedProfileStatus, readInstalledProfile, recordPiInstallOwnership, type ManagedInstallSurface } from '../../src/cli/installer/install-profile';
 import { hostSkillRoot } from '../../src/effects/host-skill-roots';
 import { checkPiHost } from '../../src/cli/commands/doctor';
 import { dependencies } from '../../package.json';
@@ -66,6 +66,7 @@ case 'install':
   if(process.env.PI_FIXTURE_FAIL_INSTALL==='1') process.exit(1);
   break;
 case 'remove':
+  if(process.env.PI_FIXTURE_FAIL_REMOVE==='1') { console.error('PI_FIXTURE_REMOVE_FAILED'); process.exit(1); }
   if(process.env.PI_FIXTURE_KEEP_ENTRY==='1') break;
   writeFileSync(file,JSON.stringify(entries.filter(p=>p.startsWith('npm:')||resolve(agentDir,p)!==resolve(args[1])))); break;
 default: process.exit(99);
@@ -161,6 +162,116 @@ describe('Pi package and skill installation', () => {
     path: source, components: ['host-adapters'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
     type: 'pi-package', managed_marker: 'pi-package-source', content_hash: null, symlink_target: null,
   });
+
+  test('failed Pi compensation restores host snapshots and retains ownership for retry', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    const codex = join(f.home, '.codex/hooks.json');
+    const claude = join(f.home, '.claude/settings.json');
+    const skill = join(f.home, '.codex/skills/repo-harness-check/SKILL.md');
+    const originalCodex = '{"theme":"original codex"}\n';
+    const originalClaude = '{"theme":"original claude"}\n';
+    const originalPackage = readFileSync(join(f.source, 'package.json'), 'utf8');
+    f.write(codex, originalCodex);
+    f.write(claude, originalClaude);
+    f.write(skill, '# original skill\n');
+    const env = { ...f.env, PI_FIXTURE_FAIL_REMOVE: '1' };
+    let failure: unknown;
+    try {
+      runTransactionalRuntimeRefresh({ env }, () => {
+        expect(installPiPackage(f.source, true, env).created).toBe(true);
+        recordPiInstallOwnership([packageSurface(f.source)], env);
+        f.write(codex, '{"theme":"failed update"}\n');
+        f.write(claude, '{"theme":"failed update"}\n');
+        f.write(skill, '# failed update\n');
+        f.write(join(f.source, 'package.json'), '{"name":"repo-harness","version":"failed-update"}');
+        return { exitCode: 1, steps: [], lines: ['candidate reconciliation failed'], stdout: '', stderr: 'candidate reconciliation failed' };
+      });
+    } catch (error) { failure = error; }
+    expect(readFileSync(codex, 'utf8')).toBe(originalCodex);
+    expect(readFileSync(claude, 'utf8')).toBe(originalClaude);
+    expect(readFileSync(skill, 'utf8')).toBe('# original skill\n');
+    expect(readFileSync(join(f.source, 'package.json'), 'utf8')).toBe(originalPackage);
+    expect(readInstalledProfile(f.env)?.ownership_manifest).toContainEqual(packageSurface(f.source));
+    expect((failure as Error).message).toContain('candidate reconciliation failed');
+    expect((failure as Error).message).toContain('PI_FIXTURE_REMOVE_FAILED');
+    expect(runUserUninstall({ target: 'both', env: f.env }).exitCode).toBe(0);
+    expect(piPackagePresent(f.source, f.env)).toBe(false);
+    expect(JSON.parse(readFileSync(join(f.root, 'packages.json'), 'utf8'))).toEqual(['npm:other-package']);
+  }));
+
+  test('commit failure retains only unresolved Pi ownership after a fresh runtime rollback', () => fixture(f => {
+    const claude = join(f.home, '.claude/settings.json');
+    f.write(claude, '{"theme":"original"}\n');
+    const env = { ...f.env, PI_FIXTURE_FAIL_REMOVE: '1' };
+    let failure: unknown;
+    try {
+      runTransactionalRuntimeRefresh({ env, profile: 'minimal' }, () => {
+        expect(installPiPackage(f.source, true, env).created).toBe(true);
+        f.write(claude, '{"theme":"failed commit"}\n');
+        return { exitCode: 0, steps: [{ step: 'install Pi package', status: 'ok', owned_surface: packageSurface(f.source) }], lines: [], stdout: '', stderr: '' };
+      });
+    } catch (error) { failure = error; }
+    expect(readFileSync(claude, 'utf8')).toBe('{"theme":"original"}\n');
+    const retained = readInstalledProfile(f.env)!;
+    expect(retained.ownership_manifest).toEqual([packageSurface(f.source)]);
+    expect(installedProfileStatus(retained, f.env).drift.status).toBe('drift');
+    expect((failure as Error).message).toContain('Pi package ownership requires an installed profile');
+    expect((failure as Error).message).toContain('PI_FIXTURE_REMOVE_FAILED');
+    expect(runUserUninstall({ target: 'both', env: f.env }).exitCode).toBe(0);
+    expect(readInstalledProfile(f.env)).toBeNull();
+  }));
+
+  test('profile install rollback restores snapshots when Pi removal fails', () => fixture(f => {
+    const claude = join(f.home, '.claude/settings.json');
+    const codex = join(f.home, '.codex/hooks.json');
+    f.write(claude, '{"theme":"original claude"}\n');
+    f.write(codex, '{"theme":"original codex"}\n');
+    rmSync(join(f.home, '.bun/bin/repo-harness'));
+    const isolatedPath = f.env.PATH.split(delimiter).filter(directory => !existsSync(join(directory, 'repo-harness'))).join(delimiter);
+    const result = spawnSync(process.execPath, [CLI, 'install', '--profile', 'minimal', '--no-cli', '--no-external-skills', '--no-codegraph', '--json'],
+      { cwd: f.root, env: { ...f.env, PATH: isolatedPath, PI_FIXTURE_FAIL_REMOVE: '1' }, encoding: 'utf8', timeout: 60_000 });
+    expect(result.status).toBe(1);
+    expect(result.stderr + result.stdout).toContain('install profile projection is incomplete');
+    expect(result.stderr + result.stdout).toContain('PI_FIXTURE_REMOVE_FAILED');
+    expect(readFileSync(claude, 'utf8')).toBe('{"theme":"original claude"}\n');
+    expect(readFileSync(codex, 'utf8')).toBe('{"theme":"original codex"}\n');
+    expect(readInstalledProfile(f.env)?.ownership_manifest).toEqual([packageSurface(f.source)]);
+    expect(runUserUninstall({ target: 'both', env: f.env }).exitCode).toBe(0);
+    expect(piPackagePresent(f.source, f.env)).toBe(false);
+  }));
+
+  test('filesystem rollback errors are reported with the Pi and reconciliation errors', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    const codex = join(f.home, '.codex/hooks.json');
+    const claude = join(f.home, '.claude/settings.json');
+    const originalCodex = '{"theme":"missing snapshot fixture"}\n';
+    f.write(codex, originalCodex);
+    f.write(claude, '{"theme":"original claude"}\n');
+    const env = { ...f.env, PI_FIXTURE_FAIL_REMOVE: '1' };
+    let backupRoot = '';
+    let failure: unknown;
+    try {
+      runTransactionalRuntimeRefresh({ env }, ({ candidateHandoff }) => {
+        backupRoot = candidateHandoff!.transactionBackupRoot;
+        expect(installPiPackage(f.source, true, env).created).toBe(true);
+        recordPiInstallOwnership([packageSurface(f.source)], env);
+        const backup = readdirSync(backupRoot).map(name => join(backupRoot, name))
+          .find(path => statSync(path).isFile() && readFileSync(path, 'utf8') === originalCodex)!;
+        expect(backup).toBeDefined();
+        rmSync(backup);
+        f.write(codex, '{"theme":"failed update"}\n');
+        f.write(claude, '{"theme":"failed update"}\n');
+        return { exitCode: 1, steps: [], lines: ['candidate reconciliation failed'], stdout: '', stderr: 'candidate reconciliation failed' };
+      });
+    } catch (error) { failure = error; }
+    expect(readFileSync(claude, 'utf8')).toBe('{"theme":"original claude"}\n');
+    expect((failure as Error).message).toContain('candidate reconciliation failed');
+    expect((failure as Error).message).toContain('PI_FIXTURE_REMOVE_FAILED');
+    expect((failure as Error).message).toContain('install transaction compensation failed');
+    expect((failure as Error).message).toContain(codex);
+    expect(readInstalledProfile(f.env)?.ownership_manifest).toContainEqual(packageSurface(f.source));
+    expect(JSON.parse(readFileSync(join(backupRoot, 'pi-ownership.json'), 'utf8')).ownership_manifest).toEqual([packageSurface(f.source)]);
+  }));
 
   test('removes a stale relative entry when its package directory is missing', () => fixture(f => {
     recordInstallOwnership([], f.env);
