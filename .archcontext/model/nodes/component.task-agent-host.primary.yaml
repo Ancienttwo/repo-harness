@@ -6,7 +6,7 @@
   "status": "active",
   "parent": "capability.runtime-harness.task-agent-host",
   "layer": "effects",
-  "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands, the installed persona and plugin assets, and the Herdr notify install record that names the notify session. Owns the pure pane-status contract, its plugin projection, and local blind-label I/O.",
+  "summary": "Owns the Herdr transport, task sessions, task worktrees, role profiles, the Herdr commands, the installed persona and plugin assets, and the Herdr notify install record that names the notify session. Owns the pure pane-status contract, its plugin projection, and local blind-label I/O. Sends post-merge closeout notices to dispatch-attributed owner panes through existing workspace bindings without granting Git deletion authority.",
   "source": {
     "include": [
       "src/effects/terminal/herdr.ts",
