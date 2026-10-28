@@ -12,6 +12,7 @@ import {
 } from '../../src/core/operator/agents-settings';
 import { probeAgentRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
+import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 
 const PROBE: AgentRuntimeProbeV1 = {
@@ -127,6 +128,22 @@ describe('agent settings routes', () => {
 
     const same = await post(harness, { expected_revision: result.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: ['docs', 'review'] }] });
     expect(await same.json()).toEqual({ config_revision: result.config_revision, changed_keys: [] });
+  });
+
+  test('an active installer transaction returns 503 busy without changing settings', async () => {
+    const harness = await startHarness({ security: { mode: 'strict' } });
+    const before = await settings(harness);
+    const original = readFileSync(harness.configPath, 'utf8');
+    const lock = acquireRuntimeTransactionLock(globalRuntimeScope({ HOME: harness.home }));
+    try {
+      const response = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }] });
+      expect([response.status, (await response.json()).error.code]).toEqual([503, 'busy']);
+      expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+      lock.assertOwned();
+    } finally { lock.release(); }
+    const retry = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }] });
+    expect(retry.status).toBe(200);
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8'))).toMatchObject({ security: { mode: 'strict' }, agents: { enabled: ['codex'] } });
   });
 
   test('a stale revision gets 409 revision_conflict and leaves the file unchanged', async () => {

@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { globalConfigurationPath, mutateGlobalConfiguration } from "../../effects/configuration/global-configuration";
+import type { RuntimeTransactionContext } from "../../effects/locking/runtime-transaction-lock";
 
 export type BrainLocationKind = "icloud" | "google-drive" | "documents" | "custom";
 
@@ -32,7 +34,7 @@ export function expandHomePath(value: string, env?: NodeJS.ProcessEnv): string {
 }
 
 export function repoHarnessConfigPath(env?: NodeJS.ProcessEnv): string {
-  return path.join(homeDir(env), ".repo-harness", "config.json");
+  return globalConfigurationPath(env);
 }
 
 function readUserConfig(env?: NodeJS.ProcessEnv): RepoHarnessUserConfig {
@@ -45,14 +47,13 @@ function readUserConfig(env?: NodeJS.ProcessEnv): RepoHarnessUserConfig {
   }
 }
 
-export function configureBrainRoot(root: string, env?: NodeJS.ProcessEnv): { path: string; root: string } {
-  const configPath = repoHarnessConfigPath(env);
+export function configureBrainRoot(root: string, env: NodeJS.ProcessEnv = process.env, runtimeLock?: RuntimeTransactionContext): { path: string; root: string } {
   const resolved = path.resolve(expandHomePath(root, env));
-  const current = readUserConfig(env);
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.mkdirSync(resolved, { recursive: true });
-  fs.writeFileSync(configPath, `${JSON.stringify({ ...current, brainRoot: resolved }, null, 2)}\n`);
-  return { path: configPath, root: resolved };
+  const result = mutateGlobalConfiguration(env, (current) => {
+    fs.mkdirSync(resolved, { recursive: true });
+    return { config: { ...current, brainRoot: resolved }, value: resolved };
+  }, { runtimeLock });
+  return { path: result.path, root: result.value };
 }
 
 function googleDriveRoot(home: string): string | null {

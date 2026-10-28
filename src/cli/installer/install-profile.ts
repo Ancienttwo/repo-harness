@@ -1,8 +1,9 @@
+import { globalConfigurationPath, mutateGlobalConfiguration, restoreGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
-import { globalRuntimeScope, runtimeTransactionRoot } from './runtime-host-lock';
+import { acquireRuntimeTransactionLock, assertRuntimeTransactionContext, globalRuntimeScope, runtimeTransactionRoot, type RuntimeTransactionContext, type RuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
 import { createHash, randomUUID } from 'crypto';
 import {
   cpSync,
@@ -721,29 +722,61 @@ export function installProfileTransactionPaths(env: NodeJS.ProcessEnv = process.
   return [...new Set(paths)];
 }
 
+const transactionLocks = new WeakMap<InstallHostTransaction, { context: RuntimeTransactionContext; owned: RuntimeTransactionLock | undefined }>();
+
 export function beginInstallHostTransaction(
   paths: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
-  options: { readonly retainBackup?: boolean } = {},
+  options: { readonly retainBackup?: boolean; readonly runtimeLock?: RuntimeTransactionContext } = {},
 ): InstallHostTransaction {
-  const transactionRoot = runtimeTransactionRoot(globalRuntimeScope(env));
-  mkdirSync(transactionRoot, { recursive: true });
-  const backupRoot = mkdtempSync(join(transactionRoot, 'install-'));
+  const scope = globalRuntimeScope(env);
+  const containsConfig = paths.includes(globalConfigurationPath(env)) || paths.includes(join(scope.root, '.repo-harness', 'config.json'));
+  let owned: RuntimeTransactionLock | undefined;
+  const context = containsConfig ? options.runtimeLock ?? (owned = acquireRuntimeTransactionLock(scope)) : options.runtimeLock;
   try {
-    const snapshots = [...new Set(paths)].map((path, index): HostSurfaceSnapshot => {
-      if (!existsSync(path) && !lstatExists(path)) return { path, existed: false, backup_path: null };
-      const backupPath = join(backupRoot, String(index));
-      cpSync(path, backupPath, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true });
-      return { path, existed: true, backup_path: backupPath };
-    });
-    const transaction: InstallHostTransaction = { protocol: 1, backup_root: backupRoot, snapshots };
-    if (options.retainBackup === true) {
-      writeFileSync(join(backupRoot, 'manifest.json'), `${JSON.stringify(transaction, null, 2)}\n`, { mode: 0o600 });
+    if (context) assertRuntimeTransactionContext(context, scope);
+    if (containsConfig) mutateGlobalConfiguration(env, () => ({ value: undefined }), { runtimeLock: context });
+    const transactionRoot = runtimeTransactionRoot(scope);
+    mkdirSync(transactionRoot, { recursive: true });
+    const backupRoot = mkdtempSync(join(transactionRoot, 'install-'));
+    try {
+      const snapshots = [...new Set(paths)].map((path, index): HostSurfaceSnapshot => {
+        if (!existsSync(path) && !lstatExists(path)) return { path, existed: false, backup_path: null };
+        const backupPath = join(backupRoot, String(index));
+        cpSync(path, backupPath, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true });
+        return { path, existed: true, backup_path: backupPath };
+      });
+      const transaction: InstallHostTransaction = { protocol: 1, backup_root: backupRoot, snapshots };
+      if (context) transactionLocks.set(transaction, { context, owned });
+      if (options.retainBackup === true) {
+        writeFileSync(join(backupRoot, 'manifest.json'), `${JSON.stringify(transaction, null, 2)}\n`, { mode: 0o600 });
+      }
+      return transaction;
+    } catch (error) {
+      rmSync(backupRoot, { recursive: true, force: true });
+      throw error;
     }
-    return transaction;
   } catch (error) {
-    rmSync(backupRoot, { recursive: true, force: true });
+    owned?.release();
     throw error;
+  }
+}
+
+function isGlobalConfigurationSnapshot(path: string): boolean {
+  return path.replaceAll('\\', '/').endsWith('/.repo-harness/config.json');
+}
+
+function assertTransactionLock(transaction: InstallHostTransaction, context?: RuntimeTransactionContext): void {
+  const held = transactionLocks.get(transaction)?.context ?? context;
+  if (held) {
+    assertRuntimeTransactionContext(held, held.scope);
+    for (const snapshot of transaction.snapshots) {
+      if (isGlobalConfigurationSnapshot(snapshot.path)) assertRuntimeTransactionContext(held, process.platform === 'win32' ? globalRuntimeScope() : { kind: 'global', root: dirname(dirname(snapshot.path)) });
+    }
+    return;
+  }
+  if (transaction.snapshots.some(snapshot => isGlobalConfigurationSnapshot(snapshot.path))) {
+    throw new Error('configuration rollback requires its original runtime transaction context');
   }
 }
 
@@ -758,33 +791,48 @@ function lstatExists(path: string): boolean {
 
 export function rollbackInstallHostTransaction(
   transaction: InstallHostTransaction,
-  options: { readonly retainBackup?: boolean } = {},
+  options: { readonly retainBackup?: boolean; readonly runtimeLock?: RuntimeTransactionContext } = {},
 ): void {
-  const failures: string[] = [];
-  for (const snapshot of [...transaction.snapshots].reverse()) {
-    try {
-      rmSync(snapshot.path, { recursive: true, force: true });
-      if (snapshot.existed && snapshot.backup_path !== null) {
-        mkdirSync(dirname(snapshot.path), { recursive: true });
-        cpSync(snapshot.backup_path, snapshot.path, {
-          recursive: true,
-          force: false,
-          errorOnExist: true,
-          verbatimSymlinks: true,
-        });
+  assertTransactionLock(transaction, options.runtimeLock);
+  try {
+    const failures: string[] = [];
+    for (const snapshot of [...transaction.snapshots].reverse()) {
+      try {
+        if (isGlobalConfigurationSnapshot(snapshot.path)) {
+          const context = transactionLocks.get(transaction)?.context ?? options.runtimeLock;
+          if (!context) throw new Error('configuration rollback lost its runtime transaction context');
+          restoreGlobalConfiguration(snapshot.path, snapshot.existed && snapshot.backup_path !== null ? readFileSync(snapshot.backup_path) : null, context);
+          continue;
+        }
+        rmSync(snapshot.path, { recursive: true, force: true });
+        if (snapshot.existed && snapshot.backup_path !== null) {
+          mkdirSync(dirname(snapshot.path), { recursive: true });
+          cpSync(snapshot.backup_path, snapshot.path, {
+            recursive: true,
+            force: false,
+            errorOnExist: true,
+            verbatimSymlinks: true,
+          });
+        }
+      } catch (error) {
+        failures.push(`${snapshot.path}: ${String((error as Error).message ?? error)}`);
       }
-    } catch (error) {
-      failures.push(`${snapshot.path}: ${String((error as Error).message ?? error)}`);
     }
+    if (failures.length === 0 && options.retainBackup !== true) {
+      rmSync(transaction.backup_root, { recursive: true, force: true });
+    }
+    if (failures.length > 0) throw new Error(`install transaction compensation failed:\n${failures.join('\n')}`);
+  } finally {
+    transactionLocks.get(transaction)?.owned?.release();
+    transactionLocks.delete(transaction);
   }
-  if (failures.length === 0 && options.retainBackup !== true) {
-    rmSync(transaction.backup_root, { recursive: true, force: true });
-  }
-  if (failures.length > 0) throw new Error(`install transaction compensation failed:\n${failures.join('\n')}`);
 }
 
 export function commitInstallHostTransaction(transaction: InstallHostTransaction): void {
+  assertTransactionLock(transaction);
   rmSync(transaction.backup_root, { recursive: true, force: true });
+  transactionLocks.get(transaction)?.owned?.release();
+  transactionLocks.delete(transaction);
 }
 
 /** Lazy (never evaluated at module load) so importing this module has no filesystem side effect. */

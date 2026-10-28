@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { buildStrategyCommand } from './commands/strategy';
 import { buildModuleCommand } from './commands/module';
-import { globalRuntimeScope, withRuntimeTransactionLock } from './installer/runtime-host-lock';
+import { globalRuntimeScope, parentRuntimeTransactionContext, withRuntimeTransactionLock } from '../effects/locking/runtime-transaction-lock';
 import { captureConfigurationRestores, hostConfigurationRoot } from './installer/configuration-ownership';
 /**
  * repo-harness CLI entry.
@@ -221,13 +221,13 @@ function runTransactionalProfileProjection(
   },
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
-  return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), () => {
-    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
+  return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let migrationSource: LegacyInstalledProfileState | null;
     let result: GlobalRuntimeResult;
     try {
       migrationSource = prepareProjection();
-      result = runGlobalRuntimeSetup(options);
+      result = runGlobalRuntimeSetup({ ...options, runtimeLock: lock });
     } catch (error) {
       rollbackInstallHostTransaction(transaction);
       throw error;
@@ -286,7 +286,8 @@ export function runCandidateRuntimeReconciliation(
   ) {
     throw new Error('candidate reconciliation requires an explicit parent transaction capability');
   }
-  consumeCandidateReconciliationCapability(request, globalRuntimeScope(env));
+  const capability = consumeCandidateReconciliationCapability(request, globalRuntimeScope(env));
+  const runtimeLock = parentRuntimeTransactionContext(globalRuntimeScope(env), { pid: capability.parent_pid, lockPath: capability.lock_path, ownerToken: capability.lock_owner_token });
   const sourceRoot = candidateSourceRoot();
   const candidate = candidatePackageIdentity(sourceRoot);
   if (
@@ -298,6 +299,7 @@ export function runCandidateRuntimeReconciliation(
   }
 
   const runtime = runGlobalRuntimeSetup({
+    runtimeLock,
     sourceRoot,
     cwd: request.cwd,
     env,
@@ -390,10 +392,10 @@ export function runTransactionalRuntimeRefresh(
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
-    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let result: GlobalRuntimeResult;
     try {
-      result = setup({ ...options, candidateHandoff: candidateHandoffContext(transaction, lock) });
+      result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
     } catch (error) {
       rollbackInstallHostTransaction(transaction);
       throw error;
@@ -771,9 +773,7 @@ export function buildProgram(): Command {
       const target = assertTarget(rawOpts.target, 'uninstall');
       const location = assertLocation(rawOpts.location, 'uninstall');
       const uninstallAdapters = () => runUninstall({ target, location, dryRun: rawOpts.dryRun, recoverInterrupted: rawOpts.recoverInterrupted });
-      const result = !rawOpts.dryRun
-        ? withRuntimeTransactionLock(globalRuntimeScope(process.env), uninstallAdapters)
-        : uninstallAdapters();
+      const result = uninstallAdapters();
       if (rawOpts.json) console.log(JSON.stringify(result, null, 2));
       else for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);
