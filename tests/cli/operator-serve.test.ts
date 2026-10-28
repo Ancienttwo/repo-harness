@@ -42,8 +42,15 @@ import {
 import { projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
-import { worktreeProcesses } from '../../src/effects/git/worktree-processes';
-import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
+import { worktreeId } from '../../src/effects/git/worktree-record';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { registeredWorktreePaths, repositoryWorktreeRow } from '../../src/effects/operator/worktree-collector-worker';
+import { entries as worktreeEntries } from '../../src/effects/state/coordination-worktree-topology';
+import { decodeWorktreeCleanupRequest } from '../../src/core/operator/worktree-cleanup';
+import { OPERATOR_WORKTREES_CLEANUP_ROUTE, runWorktreeCleanupChild, selectionDigest, worktreeCleanupOperation } from '../../src/effects/operator/worktree-cleanup';
+import { runSetupProcess } from '../../src/effects/setup/collector';
+import type { OperatorWriteRoute } from '../../src/effects/operator/write-channel';
+import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
 
 function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
@@ -1935,7 +1942,7 @@ describe('architecture map', () => {
 
 describe('worktree cleanup write route', () => {
   /** A registered repository with a green `repo-wt-feature` and a server whose page hands out the write token. */
-  async function cleanupServer(extraEnv: NodeJS.ProcessEnv = {}) {
+  async function cleanupServer(extraEnv: NodeJS.ProcessEnv = {}, writeRoutes: (env: NodeJS.ProcessEnv) => readonly OperatorWriteRoute[] = () => []) {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-cleanup-')));
     const main = join(parent, 'repo'), root = join(parent, 'managed'), home = join(parent, 'home'), ui = join(parent, 'ui');
     for (const directory of [main, root, home, ui]) mkdirSync(directory);
@@ -1954,7 +1961,7 @@ describe('worktree cleanup write route', () => {
     const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only' as const, source: 'adopt' as const, registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
     writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [repo] }));
     const env = { REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: root, ...extraEnv };
-    const server = await startOperatorServer({ port: 0, static_root: ui, env, collect_fleet_board: async () => snapshot() });
+    const server = await startOperatorServer({ port: 0, static_root: ui, env, collect_fleet_board: async () => snapshot(), write_routes: writeRoutes(env) });
     const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
     const post = (body: unknown) => fetch(`${server.url}/api/v1/worktrees/cleanup`, { method: 'POST', body: JSON.stringify(body),
       headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });
@@ -1967,8 +1974,21 @@ describe('worktree cleanup write route', () => {
     const row = (directory: string) => rows.find(item => item.directory === directory)!;
     return { row, digest: (directory: string) => selectionDigest([worktreeDigestRow(row(directory))]) };
   }
-  // The child uses the real process inventory. Where it is unknown (null), no row is green, so the removal path needs a host that can prove occupancy.
-  const occupancyKnown = worktreeProcesses(Date.now() + 5_000) !== null;
+  /**
+   * The production decoder, operation and child entry, with the controlled
+   * process inventory (#1128) preloaded into the real supervised child. The
+   * server replaces the production binding with the same id (tests only).
+   */
+  const controlledCleanupRoute = (env: NodeJS.ProcessEnv): OperatorWriteRoute => ({
+    id: 'worktrees_cleanup',
+    path: OPERATOR_WORKTREES_CLEANUP_ROUTE,
+    decode(fields) {
+      const request = decodeWorktreeCleanupRequest(fields);
+      return worktreeCleanupOperation(request, () => runWorktreeCleanupChild(request, {
+        env, run_process: (argv, options) => runSetupProcess(['--preload', controlledWorktreeProcessPreload, ...argv], options),
+      }));
+    },
+  });
 
   // POSIX only: trash ownership needs a uid, and the hold uses a shell script as Git.
   test.skipIf(process.platform === 'win32')('refuses a yellow worktree through the child effect, audits it, and answers GET with 405', async () => {
@@ -1989,13 +2009,16 @@ describe('worktree cleanup write route', () => {
     } finally { await f.close(); }
   });
 
-  test.skipIf(process.platform === 'win32' || !occupancyKnown)('removes a green worktree through the child effect and audits it', async () => {
-    const f = await cleanupServer();
+  test.skipIf(process.platform === 'win32')('removes a green worktree through the child effect and audits it', async () => {
+    const f = await cleanupServer({}, env => [controlledCleanupRoute(env)]);
     try {
-      const { row, digest } = cleanupRows(f);
-      const green = row('repo-wt-feature');
+      // The row the page shows, built with the same empty inventory as the child.
+      const common = resolveGitCommonDirectory(f.main);
+      const found = registeredWorktreePaths(worktreeEntries(f.main)).find(item => item.path === realpathSync(f.tree))!;
+      const green = repositoryWorktreeRow({ repo: f.repo, common, managed_root: realpathSync(f.root), id: worktreeId(common, found.path), path: found.path, entry: found.entry,
+        size_bytes: null, size_observed_at: null, caller_cwd: null, env: { ...process.env, ...f.env }, deadline: Date.now() + 10_000, processes: [] });
       expect(green.judgment).toBe('green');
-      const removed = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174102', ids: [green.id], expected_digest: digest('repo-wt-feature') });
+      const removed = await f.post({ request_id: '123e4567-e89b-42d3-a456-426614174102', ids: [green.id], expected_digest: selectionDigest([worktreeDigestRow(green)]) });
       expect(removed.status).toBe(200);
       expect(await removed.json()).toEqual({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
         { id: green.id, repository_id: f.repo.id, directory: 'repo-wt-feature', outcome: 'removed', reason: null },

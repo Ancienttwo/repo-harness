@@ -1,10 +1,16 @@
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join, resolve } from 'node:path';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { worktreeProcesses } from '../../src/effects/git/worktree-processes';
+import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
+import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { worktreeId } from '../../src/effects/git/worktree-record';
+import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
+import { registeredWorktreePaths, repositoryWorktreeRow } from '../../src/effects/operator/worktree-collector-worker';
+import { entries } from '../../src/effects/state/coordination-worktree-topology';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -26,15 +32,22 @@ function fixture() {
   writeFileSync(join(yellow, 'other.txt'), 'other'); commitAll(yellow, 'other');
   git(main, 'update-ref', 'refs/remotes/origin/main', git(yellow, 'rev-parse', 'HEAD'));
   writeFileSync(join(yellow, '.env'), 'private');
-  const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only', source: 'adopt', registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
+  const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only' as const, source: 'adopt' as const, registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [repo] }));
   const env = { ...process.env, HOME: parent, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: root };
-  const cli = (...args: string[]) => spawnSync(process.execPath, [resolve(import.meta.dir, '../../src/cli/index.ts'), 'worktrees', ...args], { cwd: main, env, encoding: 'utf8', timeout: 90_000 });
-  return { parent, main, home, green, yellow, git, cli };
+  const entry = resolve(import.meta.dir, '../../src/cli/index.ts');
+  const cli = (...args: string[]) => spawnSync(process.execPath, [entry, 'worktrees', ...args], { cwd: main, env, encoding: 'utf8', timeout: 90_000 });
+  // The real process inventory is a separate input. The controlled preload (#1128) gives the CLI an empty, known inventory.
+  const controlledCli = (...args: string[]) => spawnSync(process.execPath, ['--preload', controlledWorktreeProcessPreload, entry, 'worktrees', ...args], { cwd: main, env, encoding: 'utf8', timeout: 90_000 });
+  // The row that `list` builds, with the same empty inventory.
+  const controlledRow = (directory: string) => {
+    const common = resolveGitCommonDirectory(main);
+    const found = registeredWorktreePaths(entries(main)).find(item => basename(item.path) === directory)!;
+    return repositoryWorktreeRow({ repo, common, managed_root: realpathSync(root), id: worktreeId(common, found.path), path: found.path, entry: found.entry,
+      size_bytes: null, size_observed_at: null, caller_cwd: null, env, deadline: Date.now() + 10_000, processes: [] });
+  };
+  return { parent, main, home, green, yellow, git, cli, controlledCli, controlledRow };
 }
-
-// The CLI uses the real process inventory. Where it is unknown (null), no row is green, so the removal path needs a host that can prove occupancy.
-const occupancyKnown = worktreeProcesses(Date.now() + 5_000) !== null;
 
 function listed(f: ReturnType<typeof fixture>) {
   const list = f.cli('list', '--json');
@@ -66,14 +79,14 @@ test('list --json gives a digest per row, and clean refuses a yellow row or bad 
   expect(audit.split('\n').filter(Boolean).map(line => JSON.parse(line).phase)).toEqual(['intent', 'result']);
 });
 
-test.skipIf(!occupancyKnown)('clean removes exactly the listed green selection, replays a reused request id and refuses a changed one', () => {
+test('clean removes exactly the green selection, replays a reused request id and refuses a changed one', () => {
   const f = fixture();
-  const { output, row } = listed(f);
-  const green = row('repo-wt-feature');
-  expect(output.green.ids).toEqual([green.id]);
-  expect(f.cli('clean', '--ids', green.id, '--expected-digest', 'f'.repeat(64)).status).toBe(2);
+  const green = f.controlledRow('repo-wt-feature');
+  expect(green.judgment).toBe('green');
+  const digest = selectionDigest([worktreeDigestRow(green)]);
+  expect(f.controlledCli('clean', '--ids', green.id, '--expected-digest', 'f'.repeat(64)).status).toBe(2);
   const requestId = '123e4567-e89b-42d3-a456-426614174201';
-  const clean = f.cli('clean', '--ids', output.green.ids.join(','), '--expected-digest', output.green.digest, '--request-id', requestId, '--json');
+  const clean = f.controlledCli('clean', '--ids', green.id, '--expected-digest', digest, '--request-id', requestId, '--json');
   expect(clean.status).toBe(0);
   const result = JSON.parse(clean.stdout);
   expect(result).toEqual({ request_id: requestId, protocol: 1, kind: 'operator_worktree_cleanup', items: [
@@ -83,9 +96,9 @@ test.skipIf(!occupancyKnown)('clean removes exactly the listed green selection, 
   expect(existsSync(f.yellow)).toBe(true);
   expect(f.git(f.main, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature')).toBe('');
   // The same request_id replays the audited result; a new one sees that the row is gone.
-  const replay = f.cli('clean', '--ids', green.id, '--expected-digest', output.green.digest, '--request-id', requestId, '--json');
+  const replay = f.controlledCli('clean', '--ids', green.id, '--expected-digest', digest, '--request-id', requestId, '--json');
   expect([replay.status, JSON.parse(replay.stdout).items]).toEqual([0, result.items]);
-  const again = f.cli('clean', '--ids', green.id, '--expected-digest', output.green.digest, '--json');
+  const again = f.controlledCli('clean', '--ids', green.id, '--expected-digest', digest, '--json');
   expect(again.status).toBe(2);
   expect(JSON.parse(again.stderr)).toMatchObject({ status: 409, error: { code: 'digest_changed' } });
   const audit = readFileSync(join(f.home, 'operator/audit.jsonl'), 'utf8');
