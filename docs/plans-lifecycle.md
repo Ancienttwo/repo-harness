@@ -34,8 +34,10 @@ checkout at a time. Nothing scans the fleet in CI or touches a remote.
 3. `repo-harness init` refreshes `.ai/harness/workflow-contract.json`; the new
    projection has no `deferredGoalLedger`.
 
-Init does not create `tasks/contracts/` or install `contract.template.md`. Existing
-files remain untouched. Preserve `lessonsLog` at `tasks/lessons.md`.
+Init does not create `tasks/contracts/` or install `contract.template.md`.
+Init leaves existing contract files and templates untouched. An explicit upgrade
+can refresh a template whose bytes match a shipped fingerprint. It backs up the
+prior bytes. Preserve `lessonsLog` at `tasks/lessons.md`.
 Freeze an edited todos file with a historical
 banner; do not convert its checkboxes automatically. Record real remaining work
 in Issues.
