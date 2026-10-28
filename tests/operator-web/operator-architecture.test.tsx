@@ -438,7 +438,10 @@ describe('architecture map', () => {
     expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort()).toEqual([CALLER, CENTER, PART, EXTERNAL].sort());
     expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
     expect(document.querySelector('.architecture-map-view')?.textContent).toContain(COMMIT);
-    expect(document.querySelectorAll('.architecture-map__gap')).toHaveLength(0);
+    // The base map has every source, so it states no gap. A part of the open layer that archctx
+    // reports as unknown is stated inside that layer's summary, not as a base-map gap.
+    expect(document.querySelectorAll('.architecture-map-view > .architecture-map__gap')).toHaveLength(0);
+    expect(document.querySelector('[data-layer-summary="changes"] .architecture-map__gap')?.getAttribute('data-reason')).toBe('ref-code-facts-unavailable');
 
     await act(async () => document.querySelector(`.react-flow__node[data-id="${CALLER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
@@ -452,7 +455,8 @@ describe('architecture map', () => {
 
   test('a missing line or import source is stated with its reason, and a failed read shows its code', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor(false) }) }));
-    expect([...document.querySelectorAll('.architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
+    // Only the base-map gaps; the open layer's own flow-step gap stays in its summary.
+    expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
     await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
     await settle();

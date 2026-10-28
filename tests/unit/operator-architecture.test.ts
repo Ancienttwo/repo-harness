@@ -368,7 +368,7 @@ describe('architecture map', () => {
       ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
       layers: { ...layers, changes: value },
     });
-    const failed = { state: 'unavailable', reason: 'archctx_failed' };
+    const failed = { state: 'unavailable', reason: 'archctx_failed' } as const;
     // A removed node owns a path only while the model change says the change removed it.
     expect(withChanges({ ...changes!, model: changes!.model.filter(entry => entry.id !== GONE) }).layers.changes).toEqual(failed);
     expect(withChanges({ ...changes!, dependents: [{ id: OTHER, touched: CAP, relations: ['relation.gone'] }] }).layers.changes).toEqual(failed);
