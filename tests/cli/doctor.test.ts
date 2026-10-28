@@ -793,6 +793,28 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8')).toBe('private instructions\n');
   }));
 
+  test('Pi rows cover the package-sourced skills in the Pi agent root and no staged skills', () => withTempHome(home => {
+    const f = seed(home);
+    const piAgentDir = path.join(home, 'pi-agent');
+    const env = { ...f.env, PI_CODING_AGENT_DIR: piAgentDir };
+    const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
+      { declared: true, profileComponents: PROFILE_COMPONENTS });
+    if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
+    const all = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full', env);
+    const pi = all.filter(projection => projection.host === 'pi');
+    const codexPackageSkills = all.filter(projection => projection.host === 'codex' && !projection.staged)
+      .map(projection => projection.name).filter(name => name !== 'repo-harness-cross-review');
+    expect(pi.map(projection => projection.name)).toEqual(codexPackageSkills);
+    expect(pi.every(projection => !projection.staged && path.dirname(projection.destination) === path.join(piAgentDir, 'skills'))).toBe(true);
+
+    const result = checkSkillProjection('both', env);
+    const piRows = result.skills!.filter(row => row.host === 'pi');
+    expect(piRows.map(row => row.name)).toEqual(pi.map(projection => projection.name));
+    expect(result.detail).toContain(`${path.join(piAgentDir, 'skills/repo-harness-check')}: missing; expected ${path.join(packageRoot, 'assets/skill-commands/repo-harness-check')}; run: repo-harness install --profile full --target both`);
+    expect(checkSkillProjection('codex', env).skills!.some(row => row.host === 'pi')).toBe(false);
+  }));
+
   test('runDoctor includes the check and filters projection hosts by target', () => withTempHome(home => {
     seed(home);
     withEnv({ BUN_INSTALL: path.join(home, '.bun') }, () => {

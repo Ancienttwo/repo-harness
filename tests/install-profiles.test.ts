@@ -733,6 +733,17 @@ describe('install profiles', () => {
     expect(syncedSkillRoots(sync.stdout)).toEqual([codexRoot, claudeRoot]);
     expect(effectiveSkillRoots(custom)).toEqual([codexRoot, claudeRoot]);
 
+    // Pi's own agent directory setting selects the Pi root; an empty value counts as unset.
+    const piAgentDir = join(env.HOME!, 'custom', 'pi-agent');
+    const withPi = { ...custom, PI_CODING_AGENT_DIR: piAgentDir };
+    const piSync = runSkillSync(withPi, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    expect(piSync.status, piSync.stderr).toBe(0);
+    expect(syncedSkillRoots(piSync.stdout)).toEqual([codexRoot, claudeRoot, join(piAgentDir, 'skills')]);
+    expect(effectiveSkillRoots(withPi)).toEqual([codexRoot, claudeRoot, join(piAgentDir, 'skills')]);
+    const { CODEX_SKILLS_ROOT: _codexRoot, CLAUDE_SKILLS_ROOT: _claudeRoot, ...defaults } = env;
+    expect(effectiveSkillRoots({ ...defaults, PI_CODING_AGENT_DIR: '' })).toEqual(
+      ['.codex', '.claude', '.pi/agent'].map((root) => join(env.HOME!, root, 'skills')));
+
     const { HOME: _home, CODEX_SKILLS_ROOT: _codex, ...homeless } = env;
     const rejected = runSkillSync(homeless, { AGENTIC_DEV_SOURCE_ROOT: source, REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
     expect(rejected.status).not.toBe(0);

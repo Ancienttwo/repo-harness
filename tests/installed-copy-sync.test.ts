@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -243,6 +243,55 @@ describe("Codex installed copy sync", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  for (const link of [true, false]) {
+    test(`projects the router alias and selected facades into the Pi agent root (${link ? "link" : "copy"} mode)`, () => {
+      const tmp = mkdtempSync(join(tmpdir(), "repo-harness-installed-pi-"));
+      const source = join(tmp, "source");
+      const home = join(tmp, "home");
+      const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
+      const piSkills = join(tmp, "pi-agent", "skills");
+      const facade = join(source, "assets", "skill-commands", "repo-harness-check");
+      try {
+        seedSkillSurfaceRuntime(source);
+        mkdirSync(facade, { recursive: true });
+        mkdirSync(home);
+        writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+        writeFileSync(join(facade, "SKILL.md"), "---\nname: repo-harness-check\n---\n");
+        const run = (extra: Record<string, string>) => spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+          cwd: ROOT, encoding: "utf-8",
+          env: { ...process.env, HOME: home, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: link ? "1" : "0",
+            REPO_HARNESS_INSTALL_PROFILE: "minimal", CODEX_SKILLS_ROOT: roots[0]!, CLAUDE_SKILLS_ROOT: roots[1]!, ...extra },
+        });
+
+        // An explicit CODEX_SKILLS_ROOT without PI_CODING_AGENT_DIR leaves every Pi root alone.
+        const withoutPi = run({});
+        expect(withoutPi.status, withoutPi.stderr).toBe(0);
+        expect(existsSync(join(home, ".pi"))).toBe(false);
+        expect(existsSync(piSkills)).toBe(false);
+
+        const result = run({ PI_CODING_AGENT_DIR: dirname(piSkills) });
+        expect(result.status, result.stderr).toBe(0);
+        expect(readdirSync(piSkills).sort()).toEqual(["repo-harness", "repo-harness-check"]);
+        if (link) {
+          expect(readlinkSync(join(piSkills, "repo-harness"))).toBe(source);
+          expect(readlinkSync(join(piSkills, "repo-harness-check"))).toBe(facade);
+          expect(result.stdout).toContain(`[sync-installed] Pi skill alias: ${join(piSkills, "repo-harness")} -> ${source}`);
+          expect(result.stdout).toContain(`[sync-installed] command facades (link): 1 into ${piSkills}`);
+        } else {
+          expect(lstatSync(join(piSkills, "repo-harness")).isDirectory()).toBe(true);
+          expect(readFileSync(join(piSkills, "repo-harness-check", "SKILL.md"), "utf-8")).toBe("---\nname: repo-harness-check\n---\n");
+          expect(JSON.parse(readFileSync(join(piSkills, "repo-harness-check", ".repo-harness-owner.json"), "utf-8")).surface).toBe("command-facade");
+          expect(result.stdout).toContain(`[sync-installed] Pi skill copy: ${join(piSkills, "repo-harness")}`);
+          expect(result.stdout).toContain(`[sync-installed] command facades (copy): 1 into ${piSkills}`);
+        }
+        // The Claude and Codex projection is the same as without Pi.
+        for (const root of roots) expect(readdirSync(root).sort()).toEqual(["repo-harness", "repo-harness-check"]);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }, 60_000);
+  }
 
   test("full sync leaves separately managed provider skills untouched", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-provider-skill-${Date.now()}`);

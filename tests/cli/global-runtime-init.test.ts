@@ -3082,3 +3082,77 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'custom' as 'en' }))).toThrow('invalid shape');
   });
 });
+
+describe('Pi package step', () => {
+  function withPiRuntime(run: (fixture: {
+    home: string;
+    packageRoot: string;
+    log: string;
+    setup: (options: { target?: 'codex' | 'claude' | 'both'; hostAdapters?: boolean; pi?: boolean; exit?: number }) => ReturnType<typeof runGlobalRuntimeSetup>;
+  }) => void): void {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-pi-package-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const log = join(tmp, 'pi.log');
+    // The installed package root is the Pi package source.
+    const packageRoot = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    try {
+      for (const directory of [repo, fakeBin, packageRoot]) mkdirSync(directory, { recursive: true });
+      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0' }));
+      run({
+        home, packageRoot, log,
+        setup: ({ target = 'both', hostAdapters = true, pi = true, exit = 0 }) => {
+          rmSync(join(fakeBin, 'pi'), { force: true });
+          if (pi) {
+            writeExecutable(join(fakeBin, 'pi'), [
+              '#!/bin/bash',
+              `printf '%s\\n' "$*" >> "${log}"`,
+              `if [[ "\${1:-}" == "install" ]]; then echo "Installed \${2:-}"; exit ${exit}; fi`,
+              'exit 97',
+              '',
+            ].join('\n'));
+          }
+          return runGlobalRuntimeSetup({
+            cwd: repo, target, profile: 'minimal',
+            installCli: false, syncSkill: false, hostAdapters, externalSkills: false, codegraph: false,
+            env: {
+              ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+              // No real pi: only the fake bin and the Bun directory are on PATH.
+              PATH: [fakeBin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+            },
+          });
+        },
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  const piStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) => result.steps.find((step) => step.step === 'install Pi package');
+
+  test('the all-hosts target runs pi install for the installed package root after the host adapters', () => withPiRuntime(({ packageRoot, log, setup }) => {
+    const result = setup({});
+    const steps = result.steps.map((step) => step.step);
+    expect(steps.indexOf('install Pi package')).toBe(steps.indexOf('install host adapters') + 1);
+    expect(piStep(result)).toMatchObject({ status: 'ok', detail: `pi package source=${packageRoot}` });
+    expect(readFileSync(log, 'utf-8')).toBe(`install ${packageRoot}\n`);
+    expect(readFileSync(log, 'utf-8')).not.toContain('--approve');
+  }), 60_000);
+
+  test('a failed pi install fails the run and reports the Pi output', () => withPiRuntime(({ packageRoot, setup }) => {
+    const result = setup({ exit: 3 });
+    expect(result.exitCode).toBe(1);
+    expect(piStep(result)).toMatchObject({ status: 'failed' });
+    expect(piStep(result)?.detail).toContain(`pi install failed for ${packageRoot}`);
+  }), 60_000);
+
+  test('a single-host target, disabled host adapters or a missing pi skip the step without running pi', () => withPiRuntime(({ log, setup }) => {
+    expect(piStep(setup({ target: 'codex' }))).toEqual({
+      step: 'install Pi package', status: 'skipped', detail: 'target codex excludes Pi; Pi follows --target both',
+    });
+    expect(piStep(setup({ hostAdapters: false }))).toEqual({ step: 'install Pi package', status: 'skipped', detail: 'disabled' });
+    expect(piStep(setup({ pi: false }))).toEqual({ step: 'install Pi package', status: 'skipped', detail: 'pi not found on PATH' });
+    expect(existsSync(log)).toBe(false);
+  }), 120_000);
+});

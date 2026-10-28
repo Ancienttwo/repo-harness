@@ -13,8 +13,12 @@ import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Command } from 'commander';
-import { runDoctor, type CheckStatus, type DoctorReport, type DoctorTarget } from './doctor';
+import { runDoctor, skillProjectionSourceRoot, type CheckStatus, type DoctorReport, type DoctorTarget } from './doctor';
+import { inspectPiHost, PI_CODING_AGENT_PACKAGE, type PiHostReport } from '../installer/pi-package';
+import { MIN_PI_VERSION } from '../../pi/compat';
+import { compareVersions } from '../../core/release/compare-versions';
 import {
+  expectedManagedProfile,
   formatManagedHookProjectionMismatch,
   runStatus,
   type StatusReport,
@@ -42,6 +46,7 @@ export type InitHookCheckSource =
   | 'security'
   | 'tooling'
   | 'global-rules'
+  | 'pi'
   | 'legacy';
 
 export interface InitHookCheck {
@@ -118,6 +123,7 @@ export interface InitHookOptions {
   statusReport?: StatusReport;
   doctorReport?: DoctorReport;
   toolingReport?: ToolingReport;
+  piHostReport?: PiHostReport;
 }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -765,6 +771,75 @@ function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean
   return checks;
 }
 
+/**
+ * Pi is an optional host of the all-hosts target. A machine without Pi gets
+ * `na` rows, so Pi never blocks setup. The skill row reads the doctor
+ * judgments of the Pi skill root.
+ */
+function piChecks(
+  report: PiHostReport,
+  doctor: DoctorReport,
+  status: StatusReport,
+  target: InitHookTarget,
+  checkUpdates: boolean,
+  actions: ActionLedger,
+): InitHookCheck[] {
+  const check = (name: string, title: string, checkStatus: InitHookCheckStatus, detail: string): InitHookCheck => (
+    { id: `pi.${name}`, title, status: checkStatus, source: 'pi', detail }
+  );
+  const checks: InitHookCheck[] = [];
+  if (report.status === 'absent') {
+    const detail = 'pi not found on PATH';
+    checks.push(
+      check('cli', 'Pi CLI on PATH', 'na', detail),
+      check('version', `Pi version >= ${MIN_PI_VERSION}`, 'na', detail),
+      check('capability', 'Pi host capability probe', 'na', detail),
+      check('package', 'repo-harness Pi package entry', 'na', detail),
+    );
+  } else {
+    checks.push(check('cli', 'Pi CLI on PATH', 'ok', `pi=${report.pi}`));
+    const order = report.version === null ? null : compareVersions(report.version, MIN_PI_VERSION);
+    checks.push(check('version', `Pi version >= ${MIN_PI_VERSION}`,
+      order !== null && order >= 0 ? 'ok' : 'warn',
+      report.version === null
+        ? 'pi --version returned no version'
+        : `Pi ${report.version}; repo-harness requires Pi >= ${MIN_PI_VERSION}`));
+    checks.push(check('capability', 'Pi host capability probe',
+      report.probe?.ok === true ? 'ok' : 'warn',
+      report.probe === null
+        ? report.packageDir === null
+          ? `cannot find the ${PI_CODING_AGENT_PACKAGE} package above ${report.pi}`
+          : 'not probed: the Pi version is unknown'
+        : report.probe.ok ? `resolveToCwd loads from ${report.packageDir}` : report.probe.message));
+    if (!report.packages.ok) {
+      checks.push(check('package', 'repo-harness Pi package entry', 'warn', `pi list failed: ${report.packages.error}`));
+    } else if (report.packages.paths.includes(report.source)) {
+      checks.push(check('package', 'repo-harness Pi package entry', 'ok', `${report.source} is in pi list`));
+    } else {
+      checks.push(check('package', 'repo-harness Pi package entry', 'needs_agent', `${report.source} is not in pi list`));
+      addAction(actions, {
+        id: 'pi.package.install',
+        status: 'needs_agent',
+        reason: 'The repo-harness Pi package is not in pi list.',
+        requires_agent: true,
+        risk: 'Runs pi install for the installed repo-harness package. Pi writes its own settings; other Pi packages stay unchanged.',
+        command: `repo-harness install --profile ${expectedManagedProfile(status.installedProfile)} --target both`,
+        verification: verificationCommand(target, checkUpdates),
+      }, ['pi.package']);
+    }
+  }
+  const rows = doctor.checks.find((entry) => entry.id === 'skill-projection')?.skills?.filter((row) => row.host === 'pi') ?? [];
+  const broken = rows.filter((row) => !row.ok);
+  checks.push(check('skills', 'Pi skill projection',
+    rows.length === 0 ? 'na' : broken.length === 0 ? 'ok' : 'warn',
+    rows.length === 0
+      ? 'the skill projection check reported no Pi rows'
+      : broken.length === 0
+        ? `${rows.length} Pi skills match their source`
+        : `${broken.map((row) => `${row.name}: ${row.state}`).join('; ')}; see doctor.skill-projection`));
+  return checks;
+}
+
 function summarize(checks: InitHookCheck[]): InitHookReport['summary'] {
   const summary = { ok: 0, warn: 0, fail: 0, na: 0, needs_agent: 0 };
   for (const check of checks) summary[check.status] += 1;
@@ -811,6 +886,11 @@ export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
     ...toolingChecks(toolingProbe.report, target, checkUpdates, actions, toolingProbe.error),
     ...legacyChecks(cwd, target, checkUpdates, actions),
   ];
+  if (target === 'both') {
+    const env = opts.env ?? process.env;
+    const piReport = opts.piHostReport ?? inspectPiHost(skillProjectionSourceRoot(env), env);
+    checks.push(...piChecks(piReport, doctorReport, statusReport, target, checkUpdates, actions));
+  }
 
   // Same planner as `upgrade`: items a current operator keep decision covers are not leftovers.
   let decisions: UpgradeDecision[] = [];

@@ -130,3 +130,49 @@ test('historical receipt cannot delete a user same-value setting after no-op rei
  const result=runUserUninstall({target:'codex',env});
  expect(readFileSync(path,'utf8')).toContain('true');expect(result.status).toBe('partial');
 }));
+
+// A fake pi keeps its package list in a state file, like Pi's own settings.
+function fakePi(home: string, packages: string[], listExit = 0) {
+ const bin=join(home,'bin');const log=join(home,'pi.log');const state=join(home,'pi-packages');
+ mkdirSync(bin,{recursive:true});writeFileSync(state,packages.map(p=>`${p}\n`).join(''));
+ writeFileSync(join(bin,'pi'),['#!/bin/bash',`printf '%s\\n' "$*" >> "${log}"`,'case "${1:-}" in',
+  `list) if [[ ${listExit} -ne 0 ]]; then echo "list broke" >&2; exit ${listExit}; fi; if [[ ! -s "${state}" ]]; then echo "No packages installed."; exit 0; fi; echo "User packages:"; while IFS= read -r p; do echo "  ../$(basename "$p")"; echo "    $p"; done < "${state}" ;;`,
+  `remove) grep -vxF "$2" "${state}" > "${state}.next"; mv "${state}.next" "${state}"; echo "Removed $2" ;;`,
+  '*) exit 97 ;;','esac',''].join('\n'),{mode:0o755});
+ const packageRoot=join(home,'.bun/install/global/node_modules/repo-harness');
+ put(home,'.bun/install/global/node_modules/repo-harness/package.json','{"name":"repo-harness"}');
+ return {packageRoot,log,state,env:{...process.env,HOME:home,BUN_INSTALL:join(home,'.bun'),PATH:`${bin}:/usr/bin:/bin`}};
+}
+test('uninstall removes only the repo-harness Pi package entry and previews it in dry-run',()=>fixture((home)=>{
+ const other=join(home,'other-pi-package');
+ const pi=fakePi(home,[other,join(home,'.bun/install/global/node_modules/repo-harness')]);
+ const preview=runUserUninstall({target:'both',dryRun:true,env:pi.env});
+ expect(preview.items).toContainEqual({path:pi.packageRoot,action:'remove',reason:'repo-harness Pi package entry (pi remove)'});
+ expect(readFileSync(pi.log,'utf8')).toBe('list\n');
+ const result=runUserUninstall({target:'both',env:pi.env});expect(result.status,result.lines.join('\n')).toBe('complete');
+ expect(readFileSync(pi.log,'utf8')).toBe(`list\nlist\nremove ${pi.packageRoot}\n`);
+ expect(readFileSync(pi.state,'utf8')).toBe(`${other}\n`);
+ expect(readFileSync(pi.log,'utf8')).not.toContain('--approve');
+ // Idempotent: an absent entry runs no pi remove.
+ expect(runUserUninstall({target:'both',env:pi.env}).status).toBe('complete');
+ expect(readFileSync(pi.log,'utf8')).toBe(`list\nlist\nremove ${pi.packageRoot}\nlist\n`);
+}));
+test('single-host uninstall leaves the Pi package entry and the Pi skill root alone',()=>fixture((home)=>{
+ const pi=fakePi(home,[join(home,'.bun/install/global/node_modules/repo-harness')]);
+ put(home,'source/SKILL.md','keep');mkdirSync(join(home,'.pi/agent/skills'),{recursive:true});
+ const path=join(home,'.pi/agent/skills/repo-harness-check');symlinkSync(join(home,'source'),path);
+ profile(home,[{...ownedFile(path,''),type:'symlink',content_hash:null,managed_marker:null,symlink_target:join(home,'source')}]);
+ expect(runUserUninstall({target:'codex',env:pi.env}).status).toBe('complete');
+ expect(existsSync(pi.log)).toBe(false);expect(existsSync(path)).toBe(true);
+ expect(runUserUninstall({target:'both',env:pi.env}).status).toBe('complete');
+ expect(existsSync(path)).toBe(false);expect(readFileSync(join(home,'source/SKILL.md'),'utf8')).toBe('keep');
+ expect(readFileSync(pi.state,'utf8')).toBe('');
+}));
+test('a failed pi list preserves the Pi entry and reports a partial uninstall',()=>fixture((home)=>{
+ const pi=fakePi(home,[join(home,'.bun/install/global/node_modules/repo-harness')],2);
+ const result=runUserUninstall({target:'both',env:pi.env});
+ expect(result.status).toBe('partial');
+ expect(result.items).toContainEqual({path:pi.packageRoot,action:'unresolved',reason:'pi list failed: list broke; Pi package entry preserved'});
+ expect(readFileSync(pi.log,'utf8')).toBe('list\n');
+}));
+

@@ -258,6 +258,38 @@ describe('install command (Phase 1B)', () => {
     });
   }, 30_000);
 
+  test('dry-run lists the Pi package step without running pi', () => {
+    withTempHome((home) => {
+      const fakeBin = path.join(home, 'bin');
+      const log = path.join(home, 'pi.log');
+      const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+      fs.mkdirSync(fakeBin, { recursive: true });
+      fs.mkdirSync(packageRoot, { recursive: true });
+      fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0' }));
+      fs.writeFileSync(path.join(fakeBin, 'pi'), `#!/bin/sh\necho "$*" >> "${log}"\nexit 97\n`, { mode: 0o755 });
+      const dryRun = (args: string[], pathValue: string) => {
+        const result = spawnSync(process.execPath, [CLI, 'install', '--dry-run', ...args], {
+          cwd: ROOT, encoding: 'utf-8',
+          env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun'), PATH: pathValue, CODEX_SKILLS_ROOT: '', CLAUDE_SKILLS_ROOT: '' },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout;
+      };
+      const withPi = `${fakeBin}:/usr/bin:/bin`;
+      expect(JSON.parse(dryRun(['--json'], withPi)).piPackage).toEqual({
+        step: 'install Pi package', action: 'install', source: packageRoot, command: [path.join(fakeBin, 'pi'), 'install', packageRoot],
+      });
+      expect(dryRun([], withPi)).toContain(`[pi] would run: ${path.join(fakeBin, 'pi')} install ${packageRoot}`);
+      expect(JSON.parse(dryRun(['--json', '--target', 'claude'], withPi)).piPackage).toEqual({
+        step: 'install Pi package', action: 'skip', reason: 'target claude excludes Pi; Pi follows --target both',
+      });
+      expect(JSON.parse(dryRun(['--json', '--no-hooks'], withPi)).piPackage).toEqual({ step: 'install Pi package', action: 'skip', reason: 'disabled' });
+      expect(JSON.parse(dryRun(['--json'], '/usr/bin:/bin')).piPackage).toEqual({ step: 'install Pi package', action: 'skip', reason: 'pi not found on PATH' });
+      expect(fs.existsSync(log)).toBe(false);
+      expect(fs.existsSync(path.join(home, '.pi'))).toBe(false);
+    });
+  }, 60_000);
+
   test('install profiles bound host route inventory', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global', profile: 'minimal' });

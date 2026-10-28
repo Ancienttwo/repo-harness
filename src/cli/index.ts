@@ -22,7 +22,8 @@ import { runInstall, runUninstall, type InstallTargetSpec } from './commands/ins
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
-import { formatDoctor, runDoctor } from './commands/doctor';
+import { formatDoctor, runDoctor, skillProjectionSourceRoot } from './commands/doctor';
+import { planPiPackageInstall } from './installer/pi-package';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
@@ -435,13 +436,22 @@ async function runGlobalRuntimeBootstrap(
       true,
       currentProfile?.ownership_manifest,
     );
-    if (rawOpts.json === true) console.log(JSON.stringify({ ...profilePlan, removedDanglingSkillLinks }, null, 2));
+    const piPackage = planPiPackageInstall({
+      target,
+      hostAdapters: rawOpts.hooks !== false,
+      packageRoot: skillProjectionSourceRoot(process.env),
+      env: process.env,
+    });
+    if (rawOpts.json === true) console.log(JSON.stringify({ ...profilePlan, removedDanglingSkillLinks, piPackage }, null, 2));
     else {
       console.log(`[profile] requested=${profile} current=${currentProfile?.profile ?? 'none'}`);
       console.log(`[profile] install=${profilePlan.install.join(',') || '(none)'}`);
       console.log(`[profile] skip=${profilePlan.skip.join(',') || '(none)'}`);
       console.log(`[profile] remove=${profilePlan.remove.join(',') || '(none)'}`);
       for (const link of removedDanglingSkillLinks) console.log(`[sync-installed] would remove dangling skill symlink: ${link}`);
+      console.log(piPackage.action === 'install'
+        ? `[pi] would run: ${piPackage.command.join(' ')}`
+        : `[pi] skip: ${piPackage.reason}`);
     }
     process.exit(0);
   }

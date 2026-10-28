@@ -2,7 +2,9 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { stagedSkillRoot } from '../../effects/host-skill-roots';
+import { hostSkillRoot, stagedSkillRoot } from '../../effects/host-skill-roots';
+import { skillProjectionSourceRoot } from '../commands/doctor';
+import { planPiPackageRemoval, removePiPackage } from './pi-package';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
 import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
@@ -125,7 +127,8 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       }
     }
     if (!surface.path.startsWith(join(home, '.codex') + '/') && !surface.path.startsWith(join(home, '.claude') + '/')
-      && !surface.path.startsWith(join(home, '.agents') + '/') && surface.path !== join(home, '.claude.json')) {
+      && !surface.path.startsWith(join(home, '.agents') + '/') && !surface.path.startsWith(hostSkillRoot(home, 'pi', env) + '/')
+      && surface.path !== join(home, '.claude.json')) {
       items.push({ path: surface.path, action: 'preserve', reason: 'package-manager installation retained; remove separately after configuration cleanup' });
       continue;
     }
@@ -169,6 +172,11 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
       }
     } catch (error) { unresolved(path, String((error as Error).message)); }
   }
+
+  // The Pi package entry belongs to the all-hosts install. Pi removes only this source.
+  const piPackage = opts.target === 'both' ? planPiPackageRemoval(skillProjectionSourceRoot(env), env) : { action: 'none' as const };
+  if (piPackage.action === 'remove') items.push({ path: piPackage.source, action: 'remove', reason: 'repo-harness Pi package entry (pi remove)' });
+  if (piPackage.action === 'unresolved') unresolved(piPackage.source, `${piPackage.reason}; Pi package entry preserved`);
 
   if (opts.target === 'both') {
     const path = join(home, '.repo-harness/config.json');
@@ -228,6 +236,10 @@ export function runUserUninstall(opts: UninstallOptions): UninstallResult {
         assertConfigurationPath(path, home);
         if (content === null) { if (existsSync(path)) unlinkSync(path); }
         else writePrivateConfiguration(path, content, home);
+      }
+      if (piPackage.action === 'remove') {
+        const error = removePiPackage(piPackage, env);
+        if (error !== null) unresolved(piPackage.source, `pi remove failed: ${error}; Pi package entry preserved`);
       }
       for (const path of [...originals.keys()]) {
         const parent = dirname(path);

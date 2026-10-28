@@ -14,7 +14,8 @@ import {
 } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { configureRequiredHerdrSkill } from "./herdr-skill";
-import { readLatestPackageVersion } from "./doctor";
+import { readLatestPackageVersion, skillProjectionSourceRoot } from "./doctor";
+import { applyPiPackagePlan, planPiPackageInstall } from "../installer/pi-package";
 import { compareVersions } from "../../core/release/compare-versions";
 import { configureCodegraph } from "../tools/codegraph";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
@@ -1565,6 +1566,12 @@ export function runGlobalRuntimeSetup(
 
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
+  steps.push(applyPiPackagePlan(planPiPackageInstall({
+    target,
+    hostAdapters: opts.hostAdapters !== false,
+    packageRoot: skillProjectionSourceRoot(env),
+    env,
+  }), env));
 
   if (profile === 'full') steps.push(installAgentFleet(sourceRoot, bunExecutable, env));
   else steps.push({ step: AGENT_FLEET_STEP, status: 'skipped', detail: 'disabled by install profile' });

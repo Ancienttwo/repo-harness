@@ -15,6 +15,9 @@ import { planAdoption } from '../../src/effects/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { applyPiPackagePlan, inspectPiHost, planPiPackageInstall, type PiHostReport } from '../../src/cli/installer/pi-package';
+import { runUserUninstall } from '../../src/cli/installer/uninstall';
+import { MIN_PI_VERSION } from '../../src/pi/compat';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -878,3 +881,110 @@ describe('setup check builder', () => {
     });
   });
 });
+
+describe('setup check Pi host', () => {
+  const PACKAGE = '/opt/repo-harness';
+  function present(overrides: Partial<Extract<PiHostReport, { status: 'present' }>> = {}): PiHostReport {
+    return {
+      status: 'present', pi: '/opt/bin/pi', version: MIN_PI_VERSION, packageDir: '/opt/pi-coding-agent',
+      probe: { ok: true }, source: PACKAGE, packages: { ok: true, paths: [PACKAGE] }, ...overrides,
+    };
+  }
+  function check(home: string, repo: string, piHostReport: PiHostReport, target: 'codex' | 'claude' | 'both' = 'both', doctorReport = baseDoctorReport()) {
+    mkdirSync(join(home, '.codex'), { recursive: true });
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
+    writeFileSync(join(home, '.claude', 'CLAUDE.md'), currentRulesBlock());
+    return buildSetupCheck({
+      cwd: repo, target, env: { ...process.env, HOME: home },
+      statusReport: baseStatusReport(), doctorReport, toolingReport: baseToolingReport(), piHostReport,
+    });
+  }
+  const piRows = (build: ReturnType<typeof buildSetupCheck>) => Object.fromEntries(build.report.checks
+    .filter((entry) => entry.source === 'pi').map((entry) => [entry.id, `${entry.status}: ${entry.detail}`]));
+
+  test('a machine without Pi gets n/a rows and keeps setup ok', () => withTempHome((home, repo) => {
+    const build = check(home, repo, { status: 'absent' });
+    expect(piRows(build)).toEqual({
+      'pi.cli': 'na: pi not found on PATH',
+      'pi.version': 'na: pi not found on PATH',
+      'pi.capability': 'na: pi not found on PATH',
+      'pi.package': 'na: pi not found on PATH',
+      'pi.skills': 'na: the skill projection check reported no Pi rows',
+    });
+    expect(build.report.status).toBe('ok');
+  }));
+
+  test('a supported Pi with the package entry and current skills is ok', () => withTempHome((home, repo) => {
+    const doctor = baseDoctorReport([{ id: 'skill-projection', describe: 'skills', status: 'ok', detail: '', skills: [
+      { host: 'codex', name: 'repo-harness', state: 'ok link', ok: true },
+      { host: 'pi', name: 'repo-harness', state: 'ok link', ok: true },
+    ] }]);
+    const build = check(home, repo, present(), 'both', doctor);
+    expect(piRows(build)).toEqual({
+      'pi.cli': 'ok: pi=/opt/bin/pi',
+      'pi.version': `ok: Pi ${MIN_PI_VERSION}; repo-harness requires Pi >= ${MIN_PI_VERSION}`,
+      'pi.capability': 'ok: resolveToCwd loads from /opt/pi-coding-agent',
+      'pi.package': `ok: ${PACKAGE} is in pi list`,
+      'pi.skills': 'ok: 1 Pi skills match their source',
+    });
+    expect(build.report.status).toBe('ok');
+  }));
+
+  test('an old Pi, a failed probe, a missing entry and stale skills are reported without blocking setup', () => withTempHome((home, repo) => {
+    const doctor = baseDoctorReport([{ id: 'skill-projection', describe: 'skills', status: 'warn', detail: '', skills: [
+      { host: 'pi', name: 'repo-harness-check', state: 'missing', ok: false },
+    ] }]);
+    const message = `PI_HOST_UNSUPPORTED_VERSION: Pi 1.3.9; repo-harness requires Pi >= ${MIN_PI_VERSION}`;
+    const build = check(home, repo, present({ version: '1.3.9', probe: { ok: false, message }, packages: { ok: true, paths: ['/opt/other'] } }), 'both', doctor);
+    expect(piRows(build)).toMatchObject({
+      'pi.version': `warn: Pi 1.3.9; repo-harness requires Pi >= ${MIN_PI_VERSION}`,
+      'pi.capability': `warn: ${message}`,
+      'pi.package': `needs_agent: ${PACKAGE} is not in pi list`,
+      'pi.skills': 'warn: repo-harness-check: missing; see doctor.skill-projection',
+    });
+    expect(build.check_actions.get('pi.package')).toMatchObject({
+      id: 'pi.package.install', command: 'repo-harness install --profile full --target both',
+    });
+    expect(build.report.status).toBe('attention');
+
+    const listFailed = check(home, repo, present({ packages: { ok: false, error: 'boom' }, packageDir: null, probe: null }));
+    expect(piRows(listFailed)).toMatchObject({
+      'pi.capability': `warn: cannot find the @earendil-works/pi-coding-agent package above /opt/bin/pi`,
+      'pi.package': 'warn: pi list failed: boom',
+    });
+  }));
+
+  test('a single-host target reports no Pi rows', () => withTempHome((home, repo) => {
+    for (const target of ['codex', 'claude'] as const) expect(piRows(check(home, repo, present(), target))).toEqual({});
+  }));
+
+  const realPi = Bun.which('pi');
+  test.skipIf(realPi === null)('the real Pi records, reports and removes only the repo-harness package entry', () => withTempHome((home, repo) => {
+    const agentDir = join(home, 'pi-agent');
+    const packageRoot = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    const other = join(home, 'other-pi-package');
+    for (const [dir, name] of [[packageRoot, 'repo-harness'], [other, 'other-pi-package']] as const) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '0.0.0' }));
+    }
+    const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PI_CODING_AGENT_DIR: agentDir };
+    expect(spawnSync(realPi!, ['install', other], { env, encoding: 'utf8' }).status).toBe(0);
+
+    const plan = planPiPackageInstall({ target: 'both', hostAdapters: true, packageRoot, env });
+    expect(plan).toMatchObject({ action: 'install', source: packageRoot });
+    expect(applyPiPackagePlan(plan, env).status).toBe('ok');
+    const report = inspectPiHost(packageRoot, env);
+    expect(report.status === 'present' && report.packages).toEqual({ ok: true, paths: [other, packageRoot] });
+    const build = buildSetupCheck({ cwd: repo, env, statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
+    expect(build.report.checks.find((entry) => entry.id === 'pi.package')).toMatchObject({ status: 'ok', detail: `${packageRoot} is in pi list` });
+    expect(build.report.checks.find((entry) => entry.id === 'pi.cli')?.status).toBe('ok');
+
+    const removal = runUserUninstall({ target: 'both', env });
+    expect(removal.items).toContainEqual({ path: packageRoot, action: 'remove', reason: 'repo-harness Pi package entry (pi remove)' });
+    const after = inspectPiHost(packageRoot, env);
+    expect(after.status === 'present' && after.packages).toEqual({ ok: true, paths: [other] });
+    expect(existsSync(join(home, '.pi'))).toBe(false);
+  }), 120_000);
+});
+
