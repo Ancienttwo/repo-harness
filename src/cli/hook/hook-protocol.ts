@@ -68,6 +68,7 @@ export interface PiHookOutput {
   readonly additional_context: string | null;
   readonly system_message: string | null;
   readonly diagnostics: string;
+  readonly updated_input?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -87,6 +88,7 @@ function renderPiOutput(outcome: HookOutcome): HostOutput {
     additional_context: outcome.exitCode === 0 ? outcome.additionalContext : null,
     system_message: outcome.exitCode === 0 ? outcome.systemMessage ?? null : null,
     diagnostics: boundedHookDiagnostic(outcome.diagnostics),
+    ...(outcome.permission?.updatedInput ? { updated_input: outcome.permission.updatedInput } : {}),
   };
   return { stdout: `${JSON.stringify(output)}\n`, stderr: outcome.diagnostics };
 }

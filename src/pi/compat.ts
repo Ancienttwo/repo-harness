@@ -15,6 +15,29 @@ export type PiHostUnavailableCode =
   | 'PI_HOST_UNSUPPORTED_VERSION'
   | 'PI_HOST_PATH_RESOLVER_UNAVAILABLE';
 
+export type PiPathResolver = (filePath: string, cwd: string) => string;
+export type PiCapability =
+  | { readonly state: 'ready'; readonly resolveToCwd: PiPathResolver }
+  | { readonly state: 'unavailable'; readonly code: PiHostUnavailableCode };
+
+/** The SDK owns path syntax. A moved private export makes the host unavailable. */
+export async function probePiCapability(
+  version: string,
+  packageDir: string,
+  load: (url: string) => Promise<unknown> = (url) => import(url),
+): Promise<PiCapability> {
+  if (!piVersionSupported(version)) return { state: 'unavailable', code: 'PI_HOST_UNSUPPORTED_VERSION' };
+  try {
+    const { pathToFileURL } = await import('node:url');
+    const { join } = await import('node:path');
+    const module = await load(pathToFileURL(join(packageDir, 'dist/core/tools/path-utils.js')).href);
+    if (module && typeof module === 'object' && 'resolveToCwd' in module && typeof module.resolveToCwd === 'function') {
+      return { state: 'ready', resolveToCwd: module.resolveToCwd as PiPathResolver };
+    }
+  } catch { /* The fixed code also covers a missing or unloadable module. */ }
+  return { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' };
+}
+
 /** Semver core compare (major.minor.patch); a prerelease of the floor is below it. */
 export function piVersionSupported(version: string, minimum: string = MIN_PI_VERSION): boolean {
   const parse = (value: string) => {

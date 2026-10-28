@@ -8,6 +8,15 @@
     "url": "git+https://github.com/Ancienttwo/repo-harness.git"
   },
   "type": "module",
+  "pi": {
+    "extensions": ["./src/pi/extension.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true }
+  },
   "files": [
     "agents/",
     "assets/",
