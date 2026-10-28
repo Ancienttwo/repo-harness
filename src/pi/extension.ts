@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION, getPackageDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { probePiCapability, type PiCapability } from './compat';
 import { PiHookBridge, type PiHookRequest } from './hook-bridge';
 import type { PiHookOutput } from '../cli/hook/hook-protocol';
+import { gitExecFileSync } from '../effects/git/runner';
 
 type Session = {
   readonly id: string;
@@ -19,7 +19,9 @@ type Session = {
 
 function optedIn(cwd: string): boolean {
   try {
-    const root = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const root = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3_000,
+    }).trim();
     return existsSync(join(root, '.ai/harness/workflow-contract.json'));
   } catch { return false; }
 }
