@@ -16,6 +16,7 @@
 `repo-harness` 提供 CLI、skills 和 hooks，用于上下文、review 证据和 handoff。
 GitHub issue 和 PR 管理任务身份、范围和状态。
 仓库文件帮助 Claude 与 Codex 跨会话继续工作。
+Pi >= 1.4.0 通过 repo-harness 的 Pi package extension 运行同一组 hook 路由。
 
 ## 安装
 

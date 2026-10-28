@@ -176,7 +176,7 @@ sequenceDiagram
 1. **一条公开 tuple → 一个 typed handler → 一个 host-output 边界。** `Route` 接口（`route-registry.ts:54`）根本没有 `scripts` 字段，结构上排除了第二 dispatcher。
 2. **adapter 命令是信封，不是逻辑。** 任何写进 `~/.claude/settings.json` / `~/.codex/hooks.json` 的分支判断都是回归 —— host 配置无法被测试、无法被原子替换。
 3. **ROUTES 顺序是稳定契约。** Codex 按 `(absolute-path, event-snake, i, j)` 哈希 adapter 条目，重排会重新弹出信任提示（`route-registry.ts:14-16`）。新增 route 只能追加。
-4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude 与 Codex 的输出语义差异只能在这张表里表达。
+4. **handler 不碰 fd。** typed `HookHandlerResult` 是 handler 的唯一出口。`hook-protocol.ts` 的 `HOST_RENDERERS` 表是唯一入海口。Claude、Codex 与 Pi 的输出语义差异只能在这张表里表达。
 5. **opt-in marker 是硬门。** 没有 `.ai/harness/workflow-contract.json` 就静默退出 —— 装了 CLI 的用户在非 harness 仓库不应付出任何代价。
 6. **没有 shell operator library。** [archived hooks](https://github.com/Ancienttwo/repo-harness/tree/13a589c0c07f886891add648f0a54852dede7323/assets/hooks) 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
@@ -452,6 +452,12 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P1：Pi 不再是 hook、setup 或 skill host。Pi 扩展、Pi bridge、Pi 包投影与两个 Pi 包脚本已删除。Pi 只保留为 operator 的 runtime capture provider。Codex 的 `UserPromptSubmit.delegation` route 与 delegation advisor 已删除。`PostToolUse.bash` route 与 command observer 已删除。installer 不再保存 Codex hook 顺序确认状态。
 - P2：`ROUTES` 现在有 6 条 tuple。Claude 装 5 条，Codex 装 5 条。`HOST_RENDERERS` 只有 Claude 与 Codex 两行。circuit breaker 只保留 `semantic-review` kind，`repair` 归入退役 kind。
 - P3：删除没有 host 的路径，不保留兼容层。edit-guards 改名为 Edit Guard Handlers。release-packaging 不再读 skill catalog，所以它到 skill-surface-catalog 的关系已删除。
+
+### Pi host 回归，按最低版本支持（2026-10-29，#1099）
+
+- P1：Pi 重新成为 hook、skill、install 与 setup host。`src/pi/extension.ts` 是 Pi 的 adapter，没有 adapter 文件。`src/pi/hook-bridge.ts` 用 Bun 启动同一个包里的 `dist/hook-entry.js`，设 `HOOK_HOST=pi`，去掉继承的 `HOOK_*` 与身份变量。`src/pi/compat.ts` 持有 `MIN_PI_VERSION = '1.4.0'` 与能力探针。`HookHost` 只含有 adapter 文件的 Claude 与 Codex。
+- P2：Pi 跑 5 条 route：`SessionStart.default`、`PreToolUse.edit`、`PreToolUse.bash`、`UserPromptSubmit.inbox`、`Stop.default`。两条 subagent route 不含 `pi`。`HOST_RENDERERS.pi` 在 stdout 写一个 JSON 对象，stderr 为空。Pi 的 `agent_settled` 对应 Stop，因为 `agent_end` 之后还可能有重试、压缩与排队输入。每个 route 的超时都是 `HOOK_TIMEOUT_SECONDS`（30 秒），与 adapter 条目同一个常量。
+- P3：探针在 `session_start` 检查版本下限与 Pi 私有的 `resolveToCwd`。repo-harness 不复制 Pi 的路径语法。探针失败时，opted-in 会话变为 `unavailable`，并阻止 `edit`、`write` 与 `bash`。没有版本上限。代价：每次受控工具调用启动一个短 Bun 进程，遥测记录延迟；是否改为进程内调用，只按实测 p50/p99 决定。Pi 公开导出 `resolveToCwd` 后，在一次变更里换成公开导出并删除私有导入。
 
 ## 5. 验证面
 

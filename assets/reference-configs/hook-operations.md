@@ -33,18 +33,19 @@ time is the whole turn, not the duration of its currently displayed hook.
 
 This table is the one route inventory. It lists the 7 entries of `ROUTES` in
 `src/cli/hook/route-registry.ts`, in registry order. The Host column follows the
-`hosts` field of each route: Claude installs 6 routes and Codex installs 5.
+`hosts` field of each route: Claude installs 6 routes, Codex installs 5, and the
+Pi package extension runs 5.
 Other documents link here. They do not copy this table.
 
 | Route | Matcher | Host | Typed handler | Responsibility |
 | --- | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
-| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an `Edit`, `Write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
+| `SessionStart.default` | all sessions | Claude, Codex, Pi | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
+| `PreToolUse.edit` | `Edit\|Write` | Claude, Codex, Pi | `mutation-guard` | Block an `Edit`, `Write`, Pi `edit`/`write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
-| `PreToolUse.bash` | `Bash` | Claude | `bash-mutation-guard` | Check literal write destinations under `_ops/`, `_ref/` or outside the repository. Unsupported shell syntax remains unchecked. |
-| `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
+| `PreToolUse.bash` | `Bash` | Claude, Pi | `bash-mutation-guard` | Check literal write destinations under `_ops/`, `_ref/` or outside the repository. Unsupported shell syntax remains unchecked. |
+| `UserPromptSubmit.inbox` | all prompts | Claude, Codex, Pi | `agent-notice` | Deliver architecture debt on Codex and Pi; Claude emits nothing. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
-| `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |
+| `Stop.default` | session stop | Claude, Codex, Pi | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
 new command tuples once. Old adapters invoke removed routes and get exit 2.
@@ -87,6 +88,13 @@ a host file descriptor.
   model. A failed debt observation writes one diagnostic line and keeps exit 0.
 - A non-zero exit keeps its refusal channel. Claude reads stdout and stderr.
   Codex gets both on stderr.
+- Pi reads one JSON object on stdout and nothing on stderr: `protocol`,
+  `event`, `route_id`, `exit_code`, `reason`, `decision` (`allow`, `block` or
+  `none`), `additional_context`, `system_message` and `diagnostics` (at most
+  8 KiB). The extension delivers context as a hidden custom message at the next
+  run start. It blocks an `edit` or `write` unless the decision is `allow`, and a
+  `bash` call when the decision is `block`; a timeout, invalid result or bridge
+  crash blocks all three.
 
 No shell operator library exists. Product changes to handler behavior belong
 in `src/cli/hook/` and its tests. Run packaged helpers with
@@ -354,9 +362,9 @@ starts one more turn. Add `.ai/harness/state/` to `.gitignore`; the
 | Point | Hosts | When |
 | --- | --- | --- |
 | `PreToolUse.edit` | Claude, Codex | Existing `[CapabilityOwner]` line; no debt call |
-| `SessionStart.default` | Claude, Codex | Changed owned paths and a new id set, including worker sessions |
+| `SessionStart.default` | Claude, Codex, Pi | Changed owned paths and a new id set, including worker sessions |
 | `Stop.default` | Claude | Same rule; skip when `stop_hook_active` is true |
-| `UserPromptSubmit.inbox` | Codex | Same rule; the installed tuple stays unchanged |
+| `UserPromptSubmit.inbox` | Codex, Pi | Same rule; the installed tuple stays unchanged |
 
 Claude receives one human `systemMessage` from the same notice: count, first
 capability and one command. Multi-capability notices append `(+K capabilities)`

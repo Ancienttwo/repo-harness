@@ -2,7 +2,7 @@
 
 The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/long-run-continuation.md) for the tick and recovery protocol. The package does not ship that file, so this link points to the source repository.
 
-These requirements apply to Claude Code and Codex. The MCP write-safety section also covers Pi as an MCP client. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
+These requirements apply to Claude Code, Codex and Pi. The MCP write-safety section also covers Pi as an MCP client. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 
 ## Enforcement Levels
 
@@ -36,8 +36,11 @@ The grades describe repository boundaries. The delegation rows use evidence from
 |---|---|---|
 | Claude Code | Use the host's native subagent surface. The shared route registry attaches `PreToolUse` edit and subagent routes; the `Task`/`Agent` handler appends a return contract to the prompt (`src/cli/hook/route-registry.ts:76`, `src/cli/hook/route-registry.ts:84`, `src/cli/hook/return-channel.ts:36`). | **E** for installed typed-hook behavior and invoked CLI/MCP gates only. Appended instructions do not make writer ownership, fresh context, or spawn depth mechanically enforced. The Codex-only `SubagentStart.context` route does not run here. |
 | Codex | Use native `spawn_agent` with the installed role and a self-contained task packet. The registry selects the Codex-only `SubagentStart.context` route; the handler emits the child scope context (`src/cli/hook/route-registry.ts:100`, `src/cli/hook/subagent-context.ts:428`). | **E** for the installed route's handling. SubagentStart records the native role observation and refuses no spawn. Fresh-context and depth requirements remain **G**; scope text is guidance, not a filesystem lock. |
+| Pi | Pi has no built-in subagent, so the subagent routes exclude `pi`. The package extension (`src/pi/extension.ts`) maps `session_start` and the first `before_agent_start` to `SessionStart.default`, each user `before_agent_start` to `UserPromptSubmit.inbox`, `tool_call` for `edit`, `write` (also nested codemode calls) and `bash` to `PreToolUse.edit` and `PreToolUse.bash`, and `agent_settled` to `Stop.default`. Each call runs the package's own `dist/hook-entry.js` with Bun and a 30-second timeout. | **E** for those tool calls only. A block, timeout, invalid result or bridge crash blocks the call. At `session_start` the probe requires Pi >= `MIN_PI_VERSION` (`src/pi/compat.ts`) and Pi's own `resolveToCwd`; a failure makes an opted-in session `unavailable` (`PI_HOST_UNSUPPORTED_VERSION`, `PI_HOST_PATH_RESOLVER_UNAVAILABLE`) and blocks `edit`, `write` and `bash`. A repository without the opt-in marker stays `inactive`. |
 
-Install and trust the user-level hook adapters before relying on their routes. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
+Pi coverage stops at those tool calls. The extension does not see `powershell`, the `!` and `!!` user shell, file writes from other extensions, or third-party MCP writes. It is not an OS sandbox.
+
+Install and trust the user-level hook adapters before relying on their routes. For Pi, `repo-harness install` runs `pi install` with the installed package; reload Pi after an install. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
 
 ## MCP Write Safety
 

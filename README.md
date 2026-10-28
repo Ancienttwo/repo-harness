@@ -230,7 +230,7 @@ callers while the contract lifecycle is removed.
 | | |
 | --- | --- |
 | **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
-| **Typed hook runtime** | 6 public routes (Claude 5, Codex 5), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
+| **Typed hook runtime** | 7 public routes (Claude 6, Codex 5, Pi 5), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Issue → PR → Review** | One task authority with bounded changes, recorded verification and review evidence |
 | **Session handoff** | Record the issue, branch, evidence and next action so another agent can continue |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
@@ -372,8 +372,8 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ## Hooks
 
-The installed adapter binds 6 public hook routes: Claude installs 5 and Codex
-installs 5. The route tuple `event + routeId + matcher` is
+The installed adapters bind 7 public hook routes: Claude installs 6, Codex
+installs 5, and the Pi package extension runs 5. The route tuple `event + routeId + matcher` is
 the stable contract; each tuple binds exactly one typed in-process handler. The
 route table, with a Host column, is in
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md#hook-authority-map).
@@ -381,6 +381,9 @@ route table, with a Host column, is in
 `repo-harness-hook` and its typed handler registry are the host-event runtime;
 `~/.claude/settings.json` and `~/.codex/hooks.json` are the user-level adapters,
 and Codex must mark its file as trusted in Settings before those hooks run.
+Pi has no adapter file: `repo-harness install` runs `pi install` with the
+installed package, whose extension runs the same routes for Pi >= 1.4.0 (see
+[Host Invariants](docs/reference-configs/host-invariants.md#host-landing)).
 Repo-local `.claude/settings.json` and `.codex/hooks.json` are legacy config to
 retire. Debug in order: adapter config -> `repo-harness-hook` -> route registry
 -> typed handler.
