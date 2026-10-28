@@ -74,7 +74,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'agent-notice': {
     id: 'agent-notice',
     run: (context: HookHandlerContext) => {
-      if (context.identity.host !== 'codex') return { exitCode: 0 };
+      if (context.identity.host === 'claude') return { exitCode: 0 };
       const notice = collectAgentNotice(context.repoRoot,
         options => resolveCapabilityOwnership(context.repoRoot, undefined, options), { env: context.env });
       return { exitCode: 0, ...(notice.content ? { additionalContext: notice.content } : {}), ...(notice.diagnostics ? { diagnostics: notice.diagnostics } : {}) };

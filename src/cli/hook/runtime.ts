@@ -22,7 +22,7 @@ import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
-const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
+const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex', 'pi'];
 
 export interface RunHookOptions {
   readonly event: HookEvent;
@@ -158,7 +158,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const repoRoot = resolveHookRepoRoot(cwd, env);
   if (!repoRoot) return early(0, 'not-in-git-repo', null);
   if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
-  const repair = `Run repo-harness install --target ${host} --location global.`;
+  const repair = host === 'pi' ? 'Run repo-harness install, then /reload in Pi.' : `Run repo-harness install --target ${host} --location global.`;
   if (!route) {
     return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}. ${repair}\n`);
   }

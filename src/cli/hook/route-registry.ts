@@ -23,7 +23,10 @@ export type HookEvent =
   | 'SubagentStart'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex';
+export type RouteHost = 'claude' | 'codex' | 'pi';
+
+/** Every host stops one hook process after this many seconds: the adapter entries and the Pi bridge. */
+export const HOOK_TIMEOUT_SECONDS = 30;
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
@@ -95,7 +98,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PreToolUse' as const,
     routeId: 'bash' as const,
     matcher: 'Bash',
-    hosts: ['claude'] as const,
+    hosts: ['claude', 'pi'] as const,
     handler: 'bash-mutation-guard',
     // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
     minimalProfile: true as const,
@@ -103,9 +106,9 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'inbox' as const,
-    // Preserve the installed tuple. Only Codex delivers notice text here.
+    // Preserve the installed tuple. Codex and Pi deliver notice text here; Claude delivers it at Stop.
     handler: 'agent-notice',
-    hosts: ['claude', 'codex'] as const,
+    hosts: ['claude', 'codex', 'pi'] as const,
     minimalProfile: true as const,
   }),
   Object.freeze({

@@ -20,6 +20,19 @@ export interface HookOutcome {
   readonly diagnostics: string;
 }
 
+/** Pi bridge wire result: one JSON object on stdout. `src/pi/hook-bridge.ts` validates it. */
+export interface PiHookResult {
+  readonly protocol: 1;
+  readonly event: HookEvent;
+  readonly route_id: RouteId;
+  readonly exit_code: number;
+  readonly reason: string;
+  readonly decision: 'allow' | 'block' | 'none';
+  readonly additional_context: string | null;
+  readonly system_message: string | null;
+  readonly diagnostics: string;
+}
+
 export interface HostOutput {
   readonly stdout: string;
   readonly stderr: string;
@@ -55,7 +68,33 @@ function renderCodexOutput(outcome: HookOutcome): HostOutput {
   return outcome.event === 'Stop' ? { ...output, stdout: '' } : output;
 }
 
+/**
+ * Pi has no permission system of its own. A PreToolUse handler that exits 0
+ * without a deny admits the call; exit 2 or a deny blocks it, as in Claude.
+ */
+function piDecision(outcome: HookOutcome): PiHookResult['decision'] {
+  if (outcome.exitCode === 2 || outcome.permission?.decision === 'deny') return 'block';
+  return outcome.event === 'PreToolUse' && outcome.exitCode === 0 ? 'allow' : 'none';
+}
+
+/** Pi reads only stdout. Operator text travels in `diagnostics`, so stderr stays empty. */
+function renderPiOutput(outcome: HookOutcome): HostOutput {
+  const result: PiHookResult = {
+    protocol: 1,
+    event: outcome.event,
+    route_id: outcome.routeId,
+    exit_code: outcome.exitCode,
+    reason: outcome.reason,
+    decision: piDecision(outcome),
+    additional_context: outcome.exitCode === 0 ? outcome.additionalContext : null,
+    system_message: outcome.exitCode === 0 ? outcome.systemMessage ?? null : null,
+    diagnostics: boundedHookDiagnostic(outcome.diagnostics),
+  };
+  return { stdout: `${JSON.stringify(result)}\n`, stderr: '' };
+}
+
 export const HOST_RENDERERS: Readonly<Record<RouteHost, (outcome: HookOutcome) => HostOutput>> = Object.freeze({
   claude: (outcome) => renderHookSpecificOutput(outcome, outcome.systemMessage),
   codex: renderCodexOutput,
+  pi: renderPiOutput,
 });

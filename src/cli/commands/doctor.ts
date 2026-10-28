@@ -18,6 +18,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
+import { compareVersions } from '../../core/release/compare-versions';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatch, inspectManagedProjection, readInstalledProfileForStatus } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
@@ -125,23 +126,6 @@ function checkPath(): DoctorCheckResult {
 
 function checkVersion(): DoctorCheckResult {
   return { id: 'cli-version', describe: 'repo-harness CLI version', status: 'ok', detail: CLI_VERSION };
-}
-
-function parseVersion(value: string): number[] | null {
-  const match = value.trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-  if (!match) return null;
-  return match.slice(1).map((part) => Number(part));
-}
-
-export function compareVersions(a: string, b: string): number | null {
-  const left = parseVersion(a);
-  const right = parseVersion(b);
-  if (!left || !right) return null;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    const diff = (left[index] ?? 0) - (right[index] ?? 0);
-    if (diff !== 0) return diff > 0 ? 1 : -1;
-  }
-  return 0;
 }
 
 function checkCodexCliVersion(): DoctorCheckResult {

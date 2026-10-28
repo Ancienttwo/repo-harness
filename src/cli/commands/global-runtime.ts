@@ -14,7 +14,8 @@ import {
 } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { configureRequiredHerdrSkill } from "./herdr-skill";
-import { compareVersions, readLatestPackageVersion } from "./doctor";
+import { readLatestPackageVersion } from "./doctor";
+import { compareVersions } from "../../core/release/compare-versions";
 import { configureCodegraph } from "../tools/codegraph";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../effects/upgrade/legacy-inventory";

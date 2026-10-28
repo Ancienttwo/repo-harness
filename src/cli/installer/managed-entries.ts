@@ -14,7 +14,7 @@
  * An opted-in repository requires `repo-harness-hook` on PATH.
  */
 
-import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
+import { HOOK_TIMEOUT_SECONDS, routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
 import {
   MANAGED_TAG,
@@ -36,7 +36,8 @@ export interface HookEntry {
 }
 
 export type HooksByEvent = Record<string, HookEntry[]>;
-export type HookHost = RouteHost;
+/** Hosts with a hook adapter file. Pi runs the routes through its package extension instead. */
+export type HookHost = Exclude<RouteHost, 'pi'>;
 
 export type ManagedHookProjectionMismatchKind =
   | 'missing'
@@ -74,7 +75,7 @@ export function buildHookCommand(route: Route, host: HookHost): string {
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: 30 }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: HOOK_TIMEOUT_SECONDS }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;
