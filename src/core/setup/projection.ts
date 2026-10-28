@@ -52,12 +52,12 @@ export interface SetupRawSkillRow {
   readonly ok: boolean;
 }
 
-/** One `ROUTES` entry. */
+/** One `ROUTES` entry. Route hosts can include hosts outside SETUP_HOSTS; the projection reads only SETUP_HOSTS. */
 export interface SetupRawRoute {
   readonly event: string;
   readonly routeId: string;
   readonly matcher?: string;
-  readonly hosts?: readonly SetupHost[];
+  readonly hosts?: readonly string[];
 }
 
 /** `parseFrontmatter` output of one agents/fleet/*.md file. */

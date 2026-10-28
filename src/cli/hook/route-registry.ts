@@ -23,7 +23,14 @@ export type HookEvent =
   | 'SubagentStart'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex';
+export type RouteHost = 'claude' | 'codex' | 'pi';
+
+/**
+ * Hosts that read a JSON hook adapter file written by the installer
+ * (`~/.claude/settings.json`, `~/.codex/hooks.json`). Pi has no adapter file:
+ * the repo-harness Pi extension calls the hook runtime directly.
+ */
+export type AdapterHost = Exclude<RouteHost, 'pi'>;
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =

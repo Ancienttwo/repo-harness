@@ -14,7 +14,7 @@
  * An opted-in repository requires `repo-harness-hook` on PATH.
  */
 
-import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
+import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
 import {
   MANAGED_TAG,
@@ -36,7 +36,7 @@ export interface HookEntry {
 }
 
 export type HooksByEvent = Record<string, HookEntry[]>;
-export type HookHost = RouteHost;
+export type HookHost = AdapterHost;
 
 export type ManagedHookProjectionMismatchKind =
   | 'missing'
