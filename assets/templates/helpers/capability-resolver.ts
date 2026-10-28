@@ -955,6 +955,12 @@ export const REPOSITORY_SELECTING_GIT_ENV = [
   'GIT_ALTERNATE_OBJECT_DIRECTORIES',
 ] as const;
 
+export function withoutRepositorySelectingGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const next = { ...env };
+  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
+  return next;
+}
+
 const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
 
 export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {

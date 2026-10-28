@@ -100,23 +100,6 @@ if pi_should_generate_full_docs; then
   touch docs/decisions.md
 fi
 
-cat > tasks/todos.md << 'TASK_TODO_EOF'
-# Deferred Goal Ledger
-
-> **Status**: Backlog
-> **Updated**: (initial)
-> **Scope**: Medium/long-term goals deferred from active plan execution
-
-Current plan tasks live in the active plan's `## Task Breakdown`.
-Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
-
-## Deferred Goals
-
-| Goal | Why Deferred | Tradeoff | Revisit Trigger |
-|------|--------------|----------|-----------------|
-| (none) | No deferred medium/long-term goal recorded yet. | Keep the first sprint bounded. | Add a row when a real follow-up is postponed. |
-TASK_TODO_EOF
-
 cat > tasks/current.md << 'TASK_CURRENT_EOF'
 # Current Status Snapshot
 
@@ -146,8 +129,7 @@ cat > docs/researches/README.md << 'RESEARCH_README_EOF'
 Durable research reports live in this directory as topic-scoped Markdown files.
 
 Use `YYYYMMDD-topic.md` names when chronology matters, or `<topic>.md` for
-stable subject reports. Keep task-local implementation decisions in
-`tasks/notes/`, and keep repeated correction-derived rules in `tasks/lessons.md`.
+stable subject reports. Keep repeated correction-derived rules in `tasks/lessons.md`.
 RESEARCH_README_EOF
 
 write_templates

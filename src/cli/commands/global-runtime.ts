@@ -1,3 +1,4 @@
+import type { RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
@@ -55,6 +56,7 @@ export interface CandidateHandoffContext {
 }
 
 export interface GlobalRuntimeOptions {
+  runtimeLock?: RuntimeTransactionContext;
   sourceRoot?: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -1345,12 +1347,12 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
   }
   return projectStagedSkills(mermaidSkills, target, env, 'configure Mermaid skill');
 }
-function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv, runtimeLock?: RuntimeTransactionContext): GlobalRuntimeStep {
   try {
     const selected = root
       ? resolve(expandHomePath(root, env))
       : defaultBrainRootChoice({ env }).root;
-    const configured = configureBrainRoot(selected, env);
+    const configured = configureBrainRoot(selected, env, runtimeLock);
     return {
       step: "configure brain root",
       status: "ok",
@@ -1370,6 +1372,7 @@ export function configureProtectedHelperPlatform(
   bunExecutable: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
+  runtimeLock?: RuntimeTransactionContext,
 ): GlobalRuntimeStep {
   if (platform !== 'win32') {
     return {
@@ -1415,7 +1418,7 @@ export function configureProtectedHelperPlatform(
     if (taskkill.status !== 'ok') {
       return { ...taskkill, step: 'configure protected helper platform', detail: 'Windows taskkill probe failed' };
     }
-    const written = writeWindowsProtectedHelperContract(contract, account.homedir);
+    const written = writeWindowsProtectedHelperContract(contract, account.homedir, runtimeLock);
     return {
       step: 'configure protected helper platform',
       status: 'ok',
@@ -1514,7 +1517,7 @@ export function runGlobalRuntimeSetup(
   // that reaches the host-write section below applies this plan.
   const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
 
-  const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env);
+  const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env, process.platform, opts.runtimeLock);
   steps.push(protectedHelperPlatform);
   if (protectedHelperPlatform.status === 'failed') return finalizeRuntimeResult(steps);
 
@@ -1549,7 +1552,7 @@ export function runGlobalRuntimeSetup(
       : daemon);
   }
 
-  const architectureConfiguration = ensureGlobalArchitectureProjection(env);
+  const architectureConfiguration = ensureGlobalArchitectureProjection(env, opts.runtimeLock);
   steps.push(architectureConfiguration);
   if (architectureConfiguration.status === 'failed') return finalizeRuntimeResult(steps);
 
@@ -1664,7 +1667,7 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }
 
-  if (opts.brainRoot || profile === 'full') steps.push(configureBrain(opts.brainRoot, env));
+  if (opts.brainRoot || profile === 'full') steps.push(configureBrain(opts.brainRoot, env, opts.runtimeLock));
   else steps.push({ step: "configure brain root", status: "skipped", detail: "disabled by install profile" });
 
   const refreshCodegraph = opts.codegraph ?? updateMode;

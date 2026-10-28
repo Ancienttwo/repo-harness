@@ -215,7 +215,7 @@ access by using this mode.
       report.md           # the Protocol item 14 final report
     ```
 
-    Promote durable conclusions out of this directory into `tasks/notes/`,
+    Promote durable conclusions out of this directory into the PR description,
     `docs/researches/`, or another tracked workflow artifact; the raw
     contents of the delegation directory (conversation text, provider
     session ids, local diffs) stay local and are never committed.
@@ -292,7 +292,7 @@ consult/continue commands -- it does not introduce a new provider path.
   `BrowserSessionMeta` can still show `model.verified: false` and
   `conversationUrl: null` for a session that actually completed correctly --
   this is a gap in what the engine projects from Oracle's own output, not
-  evidence the run failed (see `tasks/todos.md` for the deferred engine
+  evidence the run failed (see the historical `tasks/todos.md` for the deferred engine
   fix). Until that projection is fixed, treat the session meta's
   `providerSessionId` as the join key and read the transport-native truth
   directly from `.ai/harness/chatgpt/oracle-home/sessions/<providerSessionId>/meta.json`:

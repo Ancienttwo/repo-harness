@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react';
 import { Badge, cn } from '@cloudflare/kumo';
 import { XIcon } from '@phosphor-icons/react';
 import type { DevActivityItem, DevActivitySnapshotV2 } from '../core/dev-activity/types';
+import type { WorktreeView } from '../core/operator/worktrees';
 import { ageWords } from './labels';
 import { repositoryLabel } from './dev-activity';
 import { DrawerFrame, useModalFocus } from './Drawer';
@@ -93,8 +94,8 @@ function historyOf(item: DevActivityItem, t: OperatorTranslate): readonly Histor
   return entries.sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
 }
 
-function ItemBody({ item, snapshot, executions, now, t }: {
-  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly executions: readonly ExecutionResult[] | null; readonly now: number; readonly t: OperatorTranslate;
+function ItemBody({ item, snapshot, reclaimable, executions, now, t }: {
+  readonly item: DevActivityItem; readonly snapshot: DevActivitySnapshotV2; readonly reclaimable: readonly WorktreeView[]; readonly executions: readonly ExecutionResult[] | null; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const pr = item.pull_request;
   const attention = snapshot.attention.filter(row => row.subject_id === item.id);
@@ -137,9 +138,9 @@ function ItemBody({ item, snapshot, executions, now, t }: {
             <Fact label={t('drawer.review')}>{t(`card.review.${pr.review}`)}</Fact>
           </> : <Fact label={t('drawer.pullRequest')}>{t('drawer.noPullRequest')}</Fact>}
         </Facts>
-        {item.cleanup_pending && (
-          <div className="mt-1 flex flex-col gap-1.5 rounded-lg bg-kumo-recessed p-3 text-sm">
-            <p>{t('drawer.cleanup', { directories: item.worktrees.map(tree => tree.directory).join(', ') })}</p>
+        {reclaimable.length > 0 && (
+          <div className="mt-1 flex flex-col gap-1.5 rounded-lg bg-kumo-recessed p-3 text-sm" data-reclaimable-worktrees={reclaimable.length}>
+            <p>{t('drawer.cleanup', { directories: reclaimable.map(tree => tree.directory).join(', ') })}</p>
             <CommandLine command="git worktree list" t={t} />
           </div>
         )}
@@ -169,9 +170,11 @@ function ItemBody({ item, snapshot, executions, now, t }: {
 }
 
 /** Read-only detail for one board item. Esc closes; j/k move through the visible order. */
-export function ItemDrawer({ item, snapshot, executions, itemId, now, onClose, t }: {
+export function ItemDrawer({ item, snapshot, reclaimable, executions, itemId, now, onClose, t }: {
   readonly item: DevActivityItem | null;
   readonly snapshot: DevActivitySnapshotV2;
+  /** Green worktrees of this item's branch from the worktree collector. */
+  readonly reclaimable: readonly WorktreeView[];
   readonly executions: readonly ExecutionResult[] | null;
   readonly itemId: string;
   readonly now: number;
@@ -198,7 +201,7 @@ export function ItemDrawer({ item, snapshot, executions, itemId, now, onClose, t
   );
   return (
     <DrawerFrame dialogRef={dialogRef} labelledBy="item-drawer-title" className="item-drawer max-w-[min(560px,100vw)]" closeLabel={t('drawer.close')} onClose={onClose} header={header}>
-      {item ? <ItemBody item={item} snapshot={snapshot} executions={executions} now={now} t={t} /> : <p className="py-6 text-sm text-kumo-subtle">{t('drawer.missingBody')}</p>}
+      {item ? <ItemBody item={item} snapshot={snapshot} reclaimable={reclaimable} executions={executions} now={now} t={t} /> : <p className="py-6 text-sm text-kumo-subtle">{t('drawer.missingBody')}</p>}
       <p className="pb-2 text-xs text-kumo-inactive">{t('drawer.keys')}</p>
     </DrawerFrame>
   );

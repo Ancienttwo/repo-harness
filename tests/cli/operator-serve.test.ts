@@ -16,6 +16,7 @@ import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { readArchitecture } from '../../src/effects/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
+import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
@@ -282,6 +283,22 @@ describe('operator serve command and HTTP boundary', () => {
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
       expect((await fetch(`${server.url}/api/v1/fleet/snapshot`)).status).toBe(200);
       expect(reads).toBe(1);
+    } finally { await server.close(); }
+  });
+
+  test('worktree route reads only its cache and rejects private or write payloads', async () => {
+    let reads = 0;
+    let current: unknown = { ...unavailableWorktrees(), status: 'ready', collected_at: '2026-10-27T00:00:00.000Z' };
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), worktree_collector: true,
+      read_worktrees: () => { reads++; return current as WorktreesSnapshot; } });
+    try {
+      expect(await (await fetch(`${server.url}/api/v1/worktrees`)).json()).toEqual(current);
+      expect((await fetch(`${server.url}/api/v1/worktrees`, { method: 'HEAD' })).status).toBe(200);
+      expect((await fetch(`${server.url}/api/v1/worktrees?path=/tmp/private`)).status).toBe(400);
+      expect((await fetch(`${server.url}/api/v1/worktrees`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect(reads).toBe(2);
+      current = { ...unavailableWorktrees(), path: '/tmp/private' };
+      expect(await (await fetch(`${server.url}/api/v1/worktrees`)).json()).toEqual(unavailableWorktrees());
     } finally { await server.close(); }
   });
 
@@ -1768,8 +1785,8 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     const filesBeforeGet = readdirSync(root).sort();
     const url = stdout.trim();
     const response = await fetch(`${url}/api/v1/runtime/status`); expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v4', status: 'ready',
-      badges: [], pane_observations: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
+    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v6', status: 'ready',
+      badges: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
         observations: [{ scope: 'terminal', state: 'idle', event_received_at: heartbeat }] }] });
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
@@ -1798,11 +1815,13 @@ describe('architecture map', () => {
     repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
     nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
     relations: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
+    layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' },
     layers: {
-      changes: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      changes: { state: 'unavailable', reason: 'history_starts_today' },
       pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' },
-      violations: { debt: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts },
+      violations: { debt: noCodeFacts, flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' } },
       tests: { state: 'unavailable', reason: 'tests_pending' },
+      decisions: { state: 'ok', items: [] },
     },
   });
 

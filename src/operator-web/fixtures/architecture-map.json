@@ -1,5 +1,5 @@
 {
- "schema_version": "repo-harness.architecture-map.v2",
+ "schema_version": "repo-harness.architecture-map.v4",
  "repository_id": "repo_a5b76eee64af71c3",
  "commit": "2698b8991d120735cb739dc25b171607d5d6d3d2",
  "collected_at": "2026-10-27T18:06:18.000Z",
@@ -4727,440 +4727,6424 @@
    }
   ]
  },
+ "layer_order": {
+  "state": "ok",
+  "layers": [
+   "assets",
+   "tests",
+   "scripts",
+   "web",
+   "cli",
+   "effects",
+   "core",
+   "external"
+  ]
+ },
  "layers": {
   "changes": {
    "state": "ok",
    "since": "2026-10-26T16:00:00.000Z",
    "base": "52e6cbafe95fdee1e64987129158ee43a9a50d9e",
    "commits": 53,
-   "files": 428,
-   "unowned_files": 18,
-   "nodes": [
+   "model": [
     {
-     "id": "capability.organization.task-fleet",
-     "files": 1,
-     "added": 20,
-     "deleted": 4
+     "kind": "nodes",
+     "id": "capability.organization.publication",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
     },
     {
+     "kind": "nodes",
+     "id": "capability.organization.task-fleet",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.public-surface.action-commands",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
      "id": "capability.public-surface.adoption",
-     "files": 1,
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.public-surface.root-router",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.public-surface.strategy-reflection",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.agent-runtime-effects",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.engineer-bindings",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.engineer-scheduling",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.engineering-overlay",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.evidence-ledger",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.external-source-intake",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.global-runtime-reconciliation",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.hook-adapters",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.integration-acceptance",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.mcp-sidecar",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.operator",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.refactor-program",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-harness.task-agent-host",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-mcp.chatgpt-browser",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.runtime-mcp.general-repo-access",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.verification.acceptance-review",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.verification.codegraph-readiness",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.verification.evals-checks",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.workflow-engine.contract-assets",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.workflow-engine.execution-primitives",
+     "change": "changed",
+     "fields": [
+      "extensions",
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.workflow-engine.inspection-migration",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "capability.workflow-engine.workflow-state",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.acceptance-review.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.action-commands.bundled-skills",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.action-commands.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.action-commands.skill-surface-catalog",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.adoption.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.agent-runtime-effects.journal",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.chatgpt-browser.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.codegraph-readiness.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.contract-assets.capability-registry",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.contract-assets.contract-worktree-lifecycle",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.contract-assets.planning-helpers",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.contract-assets.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.contract-assets.template-projection",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.engineer-bindings.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.engineer-scheduling.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.engineering-overlay.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evals-checks.ci-selection",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evals-checks.evals-and-benchmarks",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evals-checks.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evals-checks.test-suite",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evals-checks.workflow-gates",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.evidence-ledger.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.execution-primitives.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.external-source-intake.immutable-evidence",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.general-repo-access.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.global-runtime-reconciliation.archctx-closure",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.global-runtime-reconciliation.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.global-runtime-reconciliation.release-packaging",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.hook-adapters.edit-guards",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.hook-adapters.host-installer",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.hook-adapters.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.hook-adapters.session-lifecycle",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.inspection-migration.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.integration-acceptance.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.mcp-sidecar.coding-profile",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.mcp-sidecar.host-setup",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.mcp-sidecar.primary",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.mcp-sidecar.repo-policy-registry",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.mcp-sidecar.transport-auth",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.activity-feeds",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.architecture-view",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.console-collectors",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "parent",
+      "responsibilities",
+      "schemaVersion",
+      "source",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.primary",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities",
+      "source",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.view-projections",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.operator.web-console",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "responsibilities",
+      "source"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.publication.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.publication.provider-feedback",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.refactor-program.archctx-provider",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.root-router.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.strategy-reflection.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.task-agent-host.primary",
+     "change": "changed",
+     "fields": [
+      "layer",
+      "source",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.task-fleet.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.task-fleet.task-inbox",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.workflow-state.continuation-ledger",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.workflow-state.coordination-plane",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "component.workflow-state.primary",
+     "change": "changed",
+     "fields": [
+      "layer"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.archctx",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.chatgpt",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.claude-code",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.codegraph",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.codex",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.git",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.herdr",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "external.npm-registry",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "namespace.host.developer",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "namespace",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.agent-host",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.cli",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.herdr-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.hook",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.mcp-coding-shell",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.mcp-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.oar-review-host",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.operator-collector",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.operator-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.process-group-launcher",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.process-supervisor",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "nodes",
+     "id": "process.vendor-cli",
+     "change": "added",
+     "fields": [
+      "id",
+      "kind",
+      "layer",
+      "name",
+      "schemaVersion",
+      "status",
+      "summary"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.acceptance-review.claude-code",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.acceptance-review.codex",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.acceptance-review.deployed-on.oar-review-host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.agent-host.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.agent-host.spawns.hook",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.agent-host.spawns.mcp-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.agent-runtime-effects.herdr",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.chatgpt-browser.chatgpt",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.claude-code.hook-adapters",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.cli-root.deployed-on.cli",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.cli.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.cli.spawns.process-supervisor",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.codegraph-readiness.codegraph",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.codex.hook-adapters",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.evals-checks.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.evals-checks.imports.operator",
+     "change": "changed",
+     "fields": [
+      "intent"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.execution-primitives.deployed-on.process-supervisor",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.execution-primitives.git",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.external-source-intake.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.global-runtime-reconciliation.archctx",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.global-runtime-reconciliation.npm-registry",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.herdr-server.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.herdr-server.spawns.oar-review-host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.hook-adapters.deployed-on.hook",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.hook.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.hook.spawns.process-supervisor",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-coding-shell.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-server.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-server.spawns.mcp-coding-shell",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-server.spawns.process-supervisor",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-sidecar.deployed-on.mcp-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.mcp-sidecar.primary.task-agent-host",
+     "change": "changed",
+     "fields": [
+      "intent"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.oar-review-host.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.oar-review-host.spawns.vendor-cli",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator-collector.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator-server.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator-server.spawns.operator-collector",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.activity-feeds.npm-registry",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.activity-feeds",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.archctx",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.git",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.herdr",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.http-reader",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.mcp-sidecar",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.task-agent-host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.console-collectors.view-projections",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.deployed-on.operator-server",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.http-reader.console-collectors",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.primary.acceptance-review",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.primary.coordination-plane",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.primary.execution-primitives",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.operator.view-projections.repo-policy-registry",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.process-group-launcher.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.process-supervisor.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.process-supervisor.spawns.process-group-launcher",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.publication.github",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.task-agent-host.herdr",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.task-agent-host.primary.repo-policy-registry",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    },
+    {
+     "kind": "relations",
+     "id": "relation.vendor-cli.runs-in.host",
+     "change": "added",
+     "fields": [
+      "id",
+      "intent",
+      "kind",
+      "schemaVersion",
+      "source",
+      "target"
+     ]
+    }
+   ],
+   "paths": [
+    {
+     "path": ".archcontext/manifest.yaml",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.organization.publication.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.organization.task-fleet.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.public-surface.action-commands.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.public-surface.adoption.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.public-surface.root-router.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.public-surface.strategy-reflection.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.agent-runtime-effects.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.engineer-bindings.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.engineer-scheduling.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.engineering-overlay.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.evidence-ledger.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.external-source-intake.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.global-runtime-reconciliation.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.hook-adapters.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.integration-acceptance.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.mcp-sidecar.yaml",
+     "added": 3,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.operator.yaml",
+     "added": 2,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.refactor-program.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-mcp.chatgpt-browser.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.runtime-mcp.general-repo-access.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.verification.acceptance-review.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.verification.codegraph-readiness.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.verification.evals-checks.yaml",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.workflow-engine.contract-assets.yaml",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.workflow-engine.execution-primitives.yaml",
+     "added": 2,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.workflow-engine.inspection-migration.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/capability.workflow-engine.workflow-state.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.acceptance-review.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.action-commands.bundled-skills.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.action-commands.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.action-commands.skill-surface-catalog.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.adoption.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.agent-runtime-effects.journal.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.chatgpt-browser.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.codegraph-readiness.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.contract-assets.capability-registry.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.contract-assets.contract-worktree-lifecycle.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.contract-assets.planning-helpers.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.contract-assets.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.contract-assets.template-projection.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.engineer-bindings.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.engineer-scheduling.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.engineering-overlay.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evals-checks.ci-selection.yaml",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evals-checks.evals-and-benchmarks.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evals-checks.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evals-checks.test-suite.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evals-checks.workflow-gates.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.evidence-ledger.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.execution-primitives.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.external-source-intake.immutable-evidence.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.general-repo-access.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.global-runtime-reconciliation.archctx-closure.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.global-runtime-reconciliation.cli-root.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.global-runtime-reconciliation.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.global-runtime-reconciliation.release-packaging.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.hook-adapters.edit-guards.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.hook-adapters.host-installer.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.hook-adapters.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.hook-adapters.session-lifecycle.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.inspection-migration.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.integration-acceptance.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.mcp-sidecar.coding-profile.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.mcp-sidecar.host-setup.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.mcp-sidecar.primary.yaml",
+     "added": 3,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.mcp-sidecar.repo-policy-registry.yaml",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.mcp-sidecar.transport-auth.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.activity-feeds.yaml",
+     "added": 4,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.architecture-view.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.console-collectors.yaml",
+     "added": 29,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.primary.yaml",
+     "added": 40,
+     "deleted": 3,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.view-projections.yaml",
+     "added": 3,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.operator.web-console.yaml",
+     "added": 4,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.publication.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.publication.provider-feedback.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.refactor-program.archctx-provider.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.root-router.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.strategy-reflection.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.task-agent-host.primary.yaml",
+     "added": 4,
+     "deleted": 2,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.task-fleet.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.task-fleet.task-inbox.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.workflow-state.continuation-ledger.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.workflow-state.coordination-plane.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/component.workflow-state.primary.yaml",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.archctx.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.chatgpt.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.claude-code.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.codegraph.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.codex.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.git.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.github.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.herdr.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/external.npm-registry.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/namespace.host.developer.yaml",
+     "added": 9,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.agent-host.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.cli.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.herdr-server.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.hook.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.mcp-coding-shell.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.mcp-server.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.oar-review-host.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.operator-collector.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.operator-server.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.process-group-launcher.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.process-supervisor.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/nodes/process.vendor-cli.yaml",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.acceptance-review.claude-code.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.acceptance-review.codex.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.acceptance-review.deployed-on.oar-review-host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.agent-host.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.agent-host.spawns.hook.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.agent-host.spawns.mcp-server.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.agent-runtime-effects.herdr.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.chatgpt-browser.chatgpt.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.claude-code.hook-adapters.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.cli-root.deployed-on.cli.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.cli.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.cli.spawns.process-supervisor.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.codegraph-readiness.codegraph.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.codex.hook-adapters.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.evals-checks.github.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.evals-checks.imports.operator.yaml",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.execution-primitives.deployed-on.process-supervisor.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.execution-primitives.git.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.external-source-intake.github.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.global-runtime-reconciliation.archctx.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.global-runtime-reconciliation.npm-registry.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.herdr-server.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.herdr-server.spawns.oar-review-host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.hook-adapters.deployed-on.hook.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.hook.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.hook.spawns.process-supervisor.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-coding-shell.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-server.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-server.spawns.mcp-coding-shell.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-server.spawns.process-supervisor.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-sidecar.deployed-on.mcp-server.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.mcp-sidecar.primary.task-agent-host.yaml",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.oar-review-host.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.oar-review-host.spawns.vendor-cli.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator-collector.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator-server.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator-server.spawns.operator-collector.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.activity-feeds.npm-registry.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.activity-feeds.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.archctx.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.git.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.github.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.herdr.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.http-reader.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.mcp-sidecar.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.task-agent-host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.console-collectors.view-projections.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.deployed-on.operator-server.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.github.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.http-reader.console-collectors.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.primary.acceptance-review.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.primary.coordination-plane.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.primary.execution-primitives.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.operator.view-projections.repo-policy-registry.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.process-group-launcher.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.process-supervisor.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.process-supervisor.spawns.process-group-launcher.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.publication.github.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.task-agent-host.herdr.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.task-agent-host.primary.repo-policy-registry.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".archcontext/model/relations/relation.vendor-cli.runs-in.host.yaml",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.contract-assets.capability-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".claude/templates/delegation-brief.template.md",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".codex/agents/deep-worker.toml",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".codex/agents/fast-worker.toml",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": ".github/workflows/ci.yml",
+     "added": 48,
+     "deleted": 1,
+     "owners": [
+      "component.evals-checks.ci-selection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "AGENTS.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "capability.public-surface.root-router"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "CLAUDE.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "capability.public-surface.root-router"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "README.md",
+     "added": 18,
+     "deleted": 7,
+     "owners": [
+      "capability.public-surface.root-router"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "SKILL.md",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "capability.public-surface.root-router"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "agents/fleet/deep-worker.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "agents/fleet/fast-worker.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/herdr/webhook-notify/notify.mjs",
+     "added": 58,
+     "deleted": 3,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/reference-configs/agentic-development-flow.md",
+     "added": 14,
+     "deleted": 11,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/reference-configs/external-tooling.md",
+     "added": 28,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.global-runtime-reconciliation"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/reference-configs/global-working-rules.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/reference-configs/herdr-notify.md",
+     "added": 14,
+     "deleted": 3,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/templates/helpers/capability-resolver.ts",
+     "added": 5,
+     "deleted": 1,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "assets/tool-catalog.v1.json",
+     "added": 47,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.operator"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "bun.lock",
+     "added": 44,
+     "deleted": 0,
+     "owners": [
+      "component.global-runtime-reconciliation.release-packaging"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "deploy/release-checklists/261026-repo-harness-0.24.3.md",
+     "added": 34,
+     "deleted": 6,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/adr/ADR-0001-general-repo-codegraph-access.md",
+     "added": 174,
+     "deleted": 0,
+     "owners": [
+      "capability.workflow-engine.contract-assets"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/.projection-manifest.json",
+     "added": 13,
+     "deleted": 13,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/decisions/20260622-general-repo-codegraph-access.md",
+     "added": 0,
+     "deleted": 150,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/modules/runtime-harness/mcp-sidecar.md",
+     "added": 5,
+     "deleted": 5,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/modules/runtime-harness/operator.md",
+     "added": 22,
+     "deleted": 8,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/modules/runtime-mcp/general-repo-access.md",
+     "added": 1,
+     "deleted": 1,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/architecture/modules/verification/evals-checks.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/bot-onboarding.md",
+     "added": 102,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/control-bot-boundary.md",
+     "added": 13,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/DESIGN-local-human-control-board-v1.md",
+     "added": 19,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/DESIGN-operator-console-uiux.md",
+     "added": 421,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/README.md",
+     "added": 115,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/README.md",
+     "added": 113,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/logos/README.md",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/logos/repo-harness-carrot-mark-transparent.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/logos/repo-harness-carrot-mark.svg",
+     "added": 6,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/README.md",
+     "added": 11,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-alert.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-happy.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-party.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-reading.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-search.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-sleep.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy-wrench.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/buddy.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/bug.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/cloud-off.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/donkey-bags.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/donkey-happy.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/donkey.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/hook-cap.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/hook-carrot.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/hook.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/assets/mascots/terminal.svg",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/AgentRow.md",
+     "added": 9,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/Button.md",
+     "added": 10,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/CommandCopy.md",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/Conversation.md",
+     "added": 12,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/DiagramCanvas.md",
+     "added": 10,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/FolderCard.md",
+     "added": 16,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/HookRouteTable.md",
+     "added": 10,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/ListGroup.md",
+     "added": 10,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/MarketCard.md",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/NavRail.md",
+     "added": 14,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/SegmentedTabs.md",
+     "added": 9,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/SourceBanner.md",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/components/StatusBadge.md",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/design/operator-console/design-system/tokens.json",
+     "added": 145,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/agentic-development-flow.md",
+     "added": 14,
+     "deleted": 11,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/chatgpt-coding-mcp.md",
      "added": 17,
-     "deleted": 12
+     "deleted": 3,
+     "owners": [
+      "capability.runtime-harness.mcp-sidecar"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/external-tooling.md",
+     "added": 28,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.global-runtime-reconciliation"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/general-repo-mcp.md",
+     "added": 16,
+     "deleted": 8,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/global-working-rules.md",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/herdr-notify.md",
+     "added": 14,
+     "deleted": 3,
+     "owners": [
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/herdr-orchestrator-mcp.md",
+     "added": 79,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.mcp-sidecar",
+      "component.contract-assets.template-projection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "docs/reference-configs/install-profiles.md",
+     "added": 7,
+     "deleted": 6,
+     "owners": [
+      "capability.runtime-harness.global-runtime-reconciliation"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "package.json",
+     "added": 3,
+     "deleted": 0,
+     "owners": [
+      "component.global-runtime-reconciliation.release-packaging"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "plans/plan-20261005-0405-operator-ui-revamp.md",
+     "added": 29,
+     "deleted": 13,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "plans/plan-20261010-0320-operator-console-kumo.md",
+     "added": 22,
+     "deleted": 6,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "scripts/check-tarball-install-smoke.sh",
+     "added": 6,
+     "deleted": 2,
+     "owners": [
+      "component.global-runtime-reconciliation.release-packaging"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "scripts/lib/ci-run-tests.sh",
+     "added": 29,
+     "deleted": 1,
+     "owners": [
+      "component.inspection-migration.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "scripts/project-test-capabilities.ts",
+     "added": 167,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.ci-selection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "scripts/report-ci.ts",
+     "added": 5,
+     "deleted": 4,
+     "owners": [
+      "component.evals-checks.ci-selection"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/chatgpt-browser/file-policy.ts",
+     "added": 3,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.mcp-sidecar"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/adoption-plan.ts",
+     "added": 17,
+     "deleted": 12,
+     "owners": [
+      "capability.public-surface.adoption"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/bots.ts",
+     "added": 48,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/fleet.ts",
+     "added": 20,
+     "deleted": 4,
+     "owners": [
+      "component.task-fleet.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/global-runtime.ts",
+     "added": 66,
+     "deleted": 16,
+     "owners": [
+      "component.global-runtime-reconciliation.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/herdr.ts",
+     "added": 5,
+     "deleted": 1,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/mcp.ts",
+     "added": 33,
+     "deleted": 1,
+     "owners": [
+      "component.mcp-sidecar.host-setup"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/operator.ts",
+     "added": 22,
+     "deleted": 2,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/setup-snapshot.ts",
+     "added": 24,
+     "deleted": 3,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/upgrade-registered.ts",
+     "added": 271,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/commands/upgrade.ts",
+     "added": 59,
+     "deleted": 5,
+     "owners": [
+      "component.global-runtime-reconciliation.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/hook/event-telemetry.ts",
+     "added": 182,
+     "deleted": 1,
+     "owners": [
+      "component.hook-adapters.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/hook/runtime.ts",
+     "added": 5,
+     "deleted": 2,
+     "owners": [
+      "component.hook-adapters.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/index.ts",
+     "added": 7,
+     "deleted": 1,
+     "owners": [
+      "component.global-runtime-reconciliation.cli-root"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/audit.ts",
+     "added": 29,
+     "deleted": 0,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/auth.ts",
+     "added": 2,
+     "deleted": 2,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/coding-workspaces.ts",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.mcp-sidecar.coding-profile"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/general-repo-access.ts",
+     "added": 3,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-mcp.general-repo-access"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/general-repo-access/authority.ts",
+     "added": 22,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-mcp.general-repo-access"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/herdr-tools.ts",
+     "added": 267,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-harness.mcp-sidecar",
+      "component.mcp-sidecar.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/instructions.ts",
+     "added": 9,
+     "deleted": 1,
+     "owners": [
+      "component.mcp-sidecar.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/oauth.ts",
+     "added": 209,
+     "deleted": 90,
+     "owners": [
+      "component.mcp-sidecar.transport-auth"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/policy.ts",
+     "added": 34,
+     "deleted": 2,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/server.ts",
+     "added": 32,
+     "deleted": 24,
+     "owners": [
+      "component.mcp-sidecar.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/setup-ownership.ts",
+     "added": 2,
+     "deleted": 1,
+     "owners": [
+      "component.mcp-sidecar.host-setup"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/setup.ts",
+     "added": 29,
+     "deleted": 26,
+     "owners": [
+      "component.mcp-sidecar.host-setup"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/tools.ts",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.mcp-sidecar.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/transports/http.ts",
+     "added": 48,
+     "deleted": 64,
+     "owners": [
+      "component.mcp-sidecar.transport-auth"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/cli/mcp/types.ts",
+     "added": 1,
+     "deleted": 0,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/dev-activity/brief.ts",
+     "added": 15,
+     "deleted": 8,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/dev-activity/decode.ts",
+     "added": 3,
+     "deleted": 20,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/dev-activity/projection.ts",
+     "added": 23,
+     "deleted": 7,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/dev-activity/types.ts",
+     "added": 17,
+     "deleted": 3,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/agents-settings.ts",
+     "added": 275,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/architecture-map.ts",
+     "added": 472,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/bot-access.ts",
+     "added": 467,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/doc-citation.ts",
+     "added": 75,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/doc-session-events.ts",
+     "added": 211,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/docs.ts",
+     "added": 136,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/execution-state.ts",
+     "added": 155,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/notify-status.ts",
+     "added": 128,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/public-text.ts",
+     "added": 17,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/operator/tests.ts",
+     "added": 298,
+     "deleted": 0,
+     "owners": [
+      "component.operator.view-projections"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/review/review-runtimes.ts",
+     "added": 11,
+     "deleted": 0,
+     "owners": [
+      "component.acceptance-review.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/cli-inventory.ts",
+     "added": 463,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/cli-seed.v1.json",
+     "added": 538,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/decode.ts",
+     "added": 32,
+     "deleted": 3,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/hook-usage.ts",
+     "added": 94,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/projection.ts",
+     "added": 4,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/setup/types.ts",
+     "added": 40,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/core/tools/catalog.ts",
+     "added": 27,
+     "deleted": 1,
+     "owners": [
+      "capability.runtime-harness.operator"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/bot-registry.ts",
+     "added": 185,
+     "deleted": 0,
+     "owners": [],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/configuration/agents-configuration.ts",
+     "added": 171,
+     "deleted": 0,
+     "owners": [
+      "component.global-runtime-reconciliation.archctx-closure"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/configuration/global-configuration.ts",
+     "added": 19,
+     "deleted": 6,
+     "owners": [
+      "component.global-runtime-reconciliation.archctx-closure"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/dev-activity/collector.ts",
+     "added": 65,
+     "deleted": 20,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/git/common-directory.ts",
+     "added": 2,
+     "deleted": 1,
+     "owners": [
+      "component.execution-primitives.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/git/runner.ts",
+     "added": 5,
+     "deleted": 1,
+     "owners": [
+      "component.execution-primitives.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/agents-settings-route.ts",
+     "added": 90,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/architecture-map-collector.ts",
+     "added": 129,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/architecture-map-worker.ts",
+     "added": 428,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/architecture.ts",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/bot-access.ts",
+     "added": 311,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/doc-session-events.ts",
+     "added": 192,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/doc-session.ts",
+     "added": 252,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/docs-collector.ts",
+     "added": 184,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/docs-reader.ts",
+     "added": 464,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/execution-collector.ts",
+     "added": 131,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/execution-state-worker.ts",
+     "added": 23,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/execution-state.ts",
+     "added": 74,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/notify-collector.ts",
+     "added": 62,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/notify-status.ts",
+     "added": 101,
+     "deleted": 87,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/server.ts",
+     "added": 457,
+     "deleted": 13,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/tests-collector.ts",
+     "added": 317,
+     "deleted": 0,
+     "owners": [
+      "component.operator.console-collectors",
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/write-audit.ts",
+     "added": 183,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/write-channel.ts",
+     "added": 172,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/operator/write-run.ts",
+     "added": 197,
+     "deleted": 0,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/process-group-registry.ts",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.execution-primitives.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/repo-harness-home.ts",
+     "added": 8,
+     "deleted": 0,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/repo-registry.ts",
+     "added": 23,
+     "deleted": 15,
+     "owners": [
+      "component.mcp-sidecar.repo-policy-registry"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/review/docs-host-isolation.ts",
+     "added": 293,
+     "deleted": 0,
+     "owners": [
+      "component.acceptance-review.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/review/docs-host-proxy.ts",
+     "added": 162,
+     "deleted": 0,
+     "owners": [
+      "component.acceptance-review.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/review/oar-review-host.ts",
+     "added": 2,
+     "deleted": 1,
+     "owners": [
+      "component.acceptance-review.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/review/review-isolation.ts",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.acceptance-review.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/setup/agent-runtime-probe-child.ts",
+     "added": 9,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/setup/agent-runtime-probe.ts",
+     "added": 104,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/setup/cli-inventory.ts",
+     "added": 456,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/setup/collector.ts",
+     "added": 58,
+     "deleted": 2,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/setup/hook-usage.ts",
+     "added": 56,
+     "deleted": 0,
+     "owners": [
+      "component.operator.activity-feeds"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/state/coordination-worktree-topology.ts",
+     "added": 35,
+     "deleted": 20,
+     "owners": [
+      "component.workflow-state.coordination-plane"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/terminal/herdr-notify-install.ts",
+     "added": 88,
+     "deleted": 0,
+     "owners": [
+      "component.task-agent-host.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/terminal/herdr-observation.ts",
+     "added": 27,
+     "deleted": 1,
+     "owners": [
+      "component.operator.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/effects/upgrade/legacy-worktree-cleanup.ts",
+     "added": 215,
+     "deleted": 0,
+     "owners": [
+      "component.global-runtime-reconciliation.primary"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/App.tsx",
+     "added": 107,
+     "deleted": 204,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/ArchitectureMap.tsx",
+     "added": 432,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/ArchitectureWorkspace.tsx",
+     "added": 33,
+     "deleted": 4,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/Board.tsx",
+     "added": 23,
+     "deleted": 12,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/BotsPage.tsx",
+     "added": 380,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/Home.tsx",
+     "added": 329,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/ItemDrawer.tsx",
+     "added": 57,
+     "deleted": 4,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/NavRail.tsx",
+     "added": 383,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/RepositoryWorkspace.tsx",
+     "added": 0,
+     "deleted": 30,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/app.css",
+     "added": 67,
+     "deleted": 3,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/architecture-map-layers.ts",
+     "added": 73,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/architecture-map-layout.ts",
+     "added": 136,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/bots.ts",
+     "added": 90,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/brand.tsx",
+     "added": 22,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/design-tokens.ts",
+     "added": 58,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/dev-activity.ts",
+     "added": 28,
+     "deleted": 7,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/favicon.svg",
+     "added": 0,
+     "deleted": 6,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/fixtures/architecture-map.json",
+     "added": 4695,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/fixtures/bots.ts",
+     "added": 108,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/fixtures/dev-activity.ts",
+     "added": 32,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/fixtures/index.ts",
+     "added": 31,
+     "deleted": 1,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/fixtures/setup.ts",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/i18n.ts",
+     "added": 552,
+     "deleted": 6,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/index.html",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/labels.ts",
+     "added": 7,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/main.tsx",
+     "added": 2,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/marks.tsx",
+     "added": 0,
+     "deleted": 41,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/repository-reads.ts",
+     "added": 153,
+     "deleted": 0,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/ui.tsx",
+     "added": 19,
+     "deleted": 2,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "src/operator-web/workspace-location.ts",
+     "added": 30,
+     "deleted": 13,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/check-ci-isolate-aggregation.test.ts",
+     "added": 71,
+     "deleted": 1,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/check-ci-job-split.test.ts",
+     "added": 1,
+     "deleted": 1,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/ci-report.test.ts",
+     "added": 4,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/fleet-task-inbox.test.ts",
+     "added": 16,
+     "deleted": 1,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/global-runtime.test.ts",
+     "added": 93,
+     "deleted": 2,
+     "owners": [
+      "capability.runtime-harness.global-runtime-reconciliation"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-herdr-tools.test.ts",
+     "added": 246,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-http.test.ts",
+     "added": 42,
+     "deleted": 1,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-oauth.test.ts",
+     "added": 108,
+     "deleted": 2,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-policy.test.ts",
+     "added": 62,
+     "deleted": 15,
+     "owners": [
+      "capability.runtime-mcp.general-repo-access"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-reader-tools.test.ts",
+     "added": 110,
+     "deleted": 0,
+     "owners": [
+      "capability.runtime-mcp.general-repo-access"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/mcp-setup.test.ts",
+     "added": 61,
+     "deleted": 6,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/operator-serve.test.ts",
+     "added": 379,
+     "deleted": 16,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/cli/upgrade.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/core/cli-inventory.test.ts",
+     "added": 200,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/core/dev-activity-brief.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/core/dev-activity-projection.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/core/operator-tests.test.ts",
+     "added": 142,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/core/setup-snapshot.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/docs-host-isolation.test.ts",
+     "added": 453,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/admitted-task-inbox.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/bot-registry.test.ts",
+     "added": 103,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/cli-inventory-collector.test.ts",
+     "added": 183,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/dev-activity-collector.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-agents-settings.test.ts",
+     "added": 243,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-bot-access.test.ts",
+     "added": 472,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-doc-session.test.ts",
+     "added": 635,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-docs-collector.test.ts",
+     "added": 186,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-docs-reader.test.ts",
+     "added": 386,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-execution-state.test.ts",
+     "added": 390,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-herdr-runtime.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-notify-status.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-runtime-status.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-task-context.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-task-diff.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-tests-collector.test.ts",
+     "added": 375,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/operator-write-boundary.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/effects/operator-write-channel.test.ts",
+     "added": 506,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/effects/setup-collector.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/helpers/registered-repos.ts",
+     "added": 78,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/herdr-runtime-pin.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/hook-runtime.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/install-profiles.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/operator-web/operator-architecture.test.tsx",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/operator-web/operator-board.test.tsx",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/operator-web/operator-bots-page.test.tsx",
+     "added": 328,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/operator-web/operator-interactions.test.tsx",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/operator-web/operator-setup-pages.test.tsx",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/preload-home-isolation.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/test-capability-projection.test.ts",
+     "added": 86,
+     "deleted": 0,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": []
+    },
+    {
+     "path": "tests/tool-catalog.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/unit/candidate-bound-global-runtime-reconciliation.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/unit/hrd-08-event-telemetry-and-benchmark.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "tests/unit/operator-architecture.test.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.evals-checks.test-suite"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    },
+    {
+     "path": "vite.operator.config.ts",
+     "added": null,
+     "deleted": null,
+     "owners": [
+      "component.operator.web-console"
+     ],
+     "reason_codes": [
+      "diff-limit-exceeded"
+     ]
+    }
+   ],
+   "unowned_paths": [
+    "deploy/release-checklists/261026-repo-harness-0.24.3.md",
+    "docs/architecture/.projection-manifest.json",
+    "docs/architecture/decisions/20260622-general-repo-codegraph-access.md",
+    "docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md",
+    "docs/architecture/modules/runtime-harness/mcp-sidecar.md",
+    "docs/architecture/modules/runtime-harness/operator.md",
+    "docs/architecture/modules/runtime-mcp/general-repo-access.md",
+    "docs/architecture/modules/verification/evals-checks.md",
+    "docs/bot-onboarding.md",
+    "docs/control-bot-boundary.md",
+    "docs/design/DESIGN-local-human-control-board-v1.md",
+    "docs/design/DESIGN-operator-console-uiux.md",
+    "docs/design/operator-console/README.md",
+    "plans/plan-20261005-0405-operator-ui-revamp.md",
+    "plans/plan-20261010-0320-operator-console-kumo.md",
+    "src/cli/commands/bots.ts",
+    "src/cli/commands/upgrade-registered.ts",
+    "src/effects/bot-registry.ts"
+   ],
+   "nodes": [
+    {
+     "id": "capability.public-surface.adoption",
+     "files": 1
     },
     {
      "id": "capability.public-surface.root-router",
-     "files": 4,
-     "added": 23,
-     "deleted": 11
+     "files": 4
     },
     {
      "id": "capability.runtime-harness.global-runtime-reconciliation",
-     "files": 13,
-     "added": 746,
-     "deleted": 38
-    },
-    {
-     "id": "capability.runtime-harness.hook-adapters",
-     "files": 2,
-     "added": 187,
-     "deleted": 3
+     "files": 4
     },
     {
      "id": "capability.runtime-harness.mcp-sidecar",
-     "files": 19,
-     "added": 834,
-     "deleted": 230
+     "files": 4
     },
     {
      "id": "capability.runtime-harness.operator",
-     "files": 117,
-     "added": 16425,
-     "deleted": 507
-    },
-    {
-     "id": "capability.runtime-harness.task-agent-host",
-     "files": 7,
-     "added": 159,
-     "deleted": 12
+     "files": 2
     },
     {
      "id": "capability.runtime-mcp.general-repo-access",
-     "files": 4,
-     "added": 197,
-     "deleted": 15
-    },
-    {
-     "id": "capability.verification.acceptance-review",
-     "files": 5,
-     "added": 469,
-     "deleted": 2
-    },
-    {
-     "id": "capability.verification.evals-checks",
-     "files": 53,
-     "added": 8357,
-     "deleted": 110
+     "files": 4
     },
     {
      "id": "capability.workflow-engine.contract-assets",
-     "files": 179,
-     "added": 942,
-     "deleted": 55
-    },
-    {
-     "id": "capability.workflow-engine.execution-primitives",
-     "files": 3,
-     "added": 8,
-     "deleted": 3
-    },
-    {
-     "id": "capability.workflow-engine.inspection-migration",
-     "files": 1,
-     "added": 29,
-     "deleted": 1
-    },
-    {
-     "id": "capability.workflow-engine.workflow-state",
-     "files": 1,
-     "added": 35,
-     "deleted": 20
+     "files": 1
     },
     {
      "id": "component.acceptance-review.primary",
-     "files": 5,
-     "added": 469,
-     "deleted": 2
+     "files": 5
     },
     {
      "id": "component.contract-assets.capability-registry",
-     "files": 169,
-     "added": 686,
-     "deleted": 13
+     "files": 169
     },
     {
      "id": "component.contract-assets.template-projection",
-     "files": 9,
-     "added": 82,
-     "deleted": 42
+     "files": 10
     },
     {
      "id": "component.evals-checks.ci-selection",
-     "files": 3,
-     "added": 220,
-     "deleted": 5
+     "files": 3
     },
     {
      "id": "component.evals-checks.test-suite",
-     "files": 50,
-     "added": 8137,
-     "deleted": 105
+     "files": 50
     },
     {
      "id": "component.execution-primitives.primary",
-     "files": 3,
-     "added": 8,
-     "deleted": 3
+     "files": 3
     },
     {
      "id": "component.global-runtime-reconciliation.archctx-closure",
-     "files": 2,
-     "added": 190,
-     "deleted": 6
+     "files": 2
     },
     {
      "id": "component.global-runtime-reconciliation.cli-root",
-     "files": 1,
-     "added": 7,
-     "deleted": 1
+     "files": 1
     },
     {
      "id": "component.global-runtime-reconciliation.primary",
-     "files": 3,
-     "added": 340,
-     "deleted": 21
+     "files": 3
     },
     {
      "id": "component.global-runtime-reconciliation.release-packaging",
-     "files": 3,
-     "added": 53,
-     "deleted": 2
+     "files": 3
     },
     {
      "id": "component.hook-adapters.primary",
-     "files": 2,
-     "added": 187,
-     "deleted": 3
+     "files": 2
     },
     {
      "id": "component.inspection-migration.primary",
-     "files": 1,
-     "added": 29,
-     "deleted": 1
+     "files": 1
     },
     {
      "id": "component.mcp-sidecar.coding-profile",
-     "files": 1,
-     "added": 1,
-     "deleted": 1
+     "files": 1
     },
     {
      "id": "component.mcp-sidecar.host-setup",
-     "files": 3,
-     "added": 64,
-     "deleted": 28
+     "files": 3
     },
     {
      "id": "component.mcp-sidecar.primary",
-     "files": 4,
-     "added": 316,
-     "deleted": 25
+     "files": 4
     },
     {
      "id": "component.mcp-sidecar.repo-policy-registry",
-     "files": 6,
-     "added": 97,
-     "deleted": 19
+     "files": 6
     },
     {
      "id": "component.mcp-sidecar.transport-auth",
-     "files": 2,
-     "added": 257,
-     "deleted": 154
+     "files": 2
     },
     {
      "id": "component.operator.activity-feeds",
-     "files": 17,
-     "added": 2001,
-     "deleted": 66
+     "files": 17
     },
     {
      "id": "component.operator.console-collectors",
-     "files": 11,
-     "added": 2224,
-     "deleted": 87
+     "files": 11
     },
     {
      "id": "component.operator.primary",
-     "files": 10,
-     "added": 1593,
-     "deleted": 17
+     "files": 21
     },
     {
      "id": "component.operator.view-projections",
-     "files": 10,
-     "added": 2234,
-     "deleted": 0
+     "files": 10
     },
     {
      "id": "component.operator.web-console",
-     "files": 67,
-     "added": 8299,
-     "deleted": 336
+     "files": 67
     },
     {
      "id": "component.task-agent-host.primary",
-     "files": 7,
-     "added": 159,
-     "deleted": 12
+     "files": 7
     },
     {
      "id": "component.task-fleet.primary",
-     "files": 1,
-     "added": 20,
-     "deleted": 4
+     "files": 1
     },
     {
      "id": "component.workflow-state.coordination-plane",
-     "files": 1,
-     "added": 35,
-     "deleted": 20
+     "files": 1
     }
    ],
-   "model": {
-    "state": "ok",
-    "nodes_added": [
-     "component.operator.console-collectors",
-     "external.archctx",
-     "external.chatgpt",
-     "external.claude-code",
-     "external.codegraph",
-     "external.codex",
-     "external.git",
-     "external.github",
-     "external.herdr",
-     "external.npm-registry",
-     "namespace.host.developer",
-     "process.agent-host",
-     "process.cli",
-     "process.herdr-server",
-     "process.hook",
-     "process.mcp-coding-shell",
-     "process.mcp-server",
-     "process.oar-review-host",
-     "process.operator-collector",
-     "process.operator-server",
-     "process.process-group-launcher",
-     "process.process-supervisor",
-     "process.vendor-cli"
-    ],
-    "nodes_removed": [],
-    "nodes_changed": [
-     "capability.organization.publication",
-     "capability.organization.task-fleet",
-     "capability.public-surface.action-commands",
-     "capability.public-surface.adoption",
-     "capability.public-surface.root-router",
-     "capability.public-surface.strategy-reflection",
-     "capability.runtime-harness.agent-runtime-effects",
-     "capability.runtime-harness.engineer-bindings",
-     "capability.runtime-harness.engineer-scheduling",
-     "capability.runtime-harness.engineering-overlay",
-     "capability.runtime-harness.evidence-ledger",
-     "capability.runtime-harness.external-source-intake",
-     "capability.runtime-harness.global-runtime-reconciliation",
-     "capability.runtime-harness.hook-adapters",
-     "capability.runtime-harness.integration-acceptance",
-     "capability.runtime-harness.mcp-sidecar",
-     "capability.runtime-harness.operator",
-     "capability.runtime-harness.refactor-program",
-     "capability.runtime-harness.task-agent-host",
-     "capability.runtime-mcp.chatgpt-browser",
-     "capability.runtime-mcp.general-repo-access",
-     "capability.verification.acceptance-review",
-     "capability.verification.codegraph-readiness",
-     "capability.verification.evals-checks",
-     "capability.workflow-engine.contract-assets",
-     "capability.workflow-engine.execution-primitives",
-     "capability.workflow-engine.inspection-migration",
-     "capability.workflow-engine.workflow-state",
-     "component.acceptance-review.primary",
-     "component.action-commands.bundled-skills",
-     "component.action-commands.primary",
-     "component.action-commands.skill-surface-catalog",
-     "component.adoption.primary",
-     "component.agent-runtime-effects.journal",
-     "component.chatgpt-browser.primary",
-     "component.codegraph-readiness.primary",
-     "component.contract-assets.capability-registry",
-     "component.contract-assets.contract-worktree-lifecycle",
-     "component.contract-assets.planning-helpers",
-     "component.contract-assets.primary",
-     "component.contract-assets.template-projection",
-     "component.engineer-bindings.primary",
-     "component.engineer-scheduling.primary",
-     "component.engineering-overlay.primary",
-     "component.evals-checks.ci-selection",
-     "component.evals-checks.evals-and-benchmarks",
-     "component.evals-checks.primary",
-     "component.evals-checks.test-suite",
-     "component.evals-checks.workflow-gates",
-     "component.evidence-ledger.primary",
-     "component.execution-primitives.primary",
-     "component.external-source-intake.immutable-evidence",
-     "component.general-repo-access.primary",
-     "component.global-runtime-reconciliation.archctx-closure",
-     "component.global-runtime-reconciliation.cli-root",
-     "component.global-runtime-reconciliation.primary",
-     "component.global-runtime-reconciliation.release-packaging",
-     "component.hook-adapters.edit-guards",
-     "component.hook-adapters.host-installer",
-     "component.hook-adapters.primary",
-     "component.hook-adapters.session-lifecycle",
-     "component.inspection-migration.primary",
-     "component.integration-acceptance.primary",
-     "component.mcp-sidecar.coding-profile",
-     "component.mcp-sidecar.host-setup",
-     "component.mcp-sidecar.primary",
-     "component.mcp-sidecar.repo-policy-registry",
-     "component.mcp-sidecar.transport-auth",
-     "component.operator.activity-feeds",
-     "component.operator.architecture-view",
-     "component.operator.primary",
-     "component.operator.view-projections",
-     "component.operator.web-console",
-     "component.publication.primary",
-     "component.publication.provider-feedback",
-     "component.refactor-program.archctx-provider",
-     "component.root-router.primary",
-     "component.strategy-reflection.primary",
-     "component.task-agent-host.primary",
-     "component.task-fleet.primary",
-     "component.task-fleet.task-inbox",
-     "component.workflow-state.continuation-ledger",
-     "component.workflow-state.coordination-plane",
-     "component.workflow-state.primary"
-    ],
-    "relations_added": [
-     "relation.acceptance-review.claude-code",
-     "relation.acceptance-review.codex",
-     "relation.acceptance-review.deployed-on.oar-review-host",
-     "relation.agent-host.runs-in.host",
-     "relation.agent-host.spawns.hook",
-     "relation.agent-host.spawns.mcp-server",
-     "relation.agent-runtime-effects.herdr",
-     "relation.chatgpt-browser.chatgpt",
-     "relation.claude-code.hook-adapters",
-     "relation.cli-root.deployed-on.cli",
-     "relation.cli.runs-in.host",
-     "relation.cli.spawns.process-supervisor",
-     "relation.codegraph-readiness.codegraph",
-     "relation.codex.hook-adapters",
-     "relation.evals-checks.github",
-     "relation.execution-primitives.deployed-on.process-supervisor",
-     "relation.execution-primitives.git",
-     "relation.external-source-intake.github",
-     "relation.global-runtime-reconciliation.archctx",
-     "relation.global-runtime-reconciliation.npm-registry",
-     "relation.herdr-server.runs-in.host",
-     "relation.herdr-server.spawns.oar-review-host",
-     "relation.hook-adapters.deployed-on.hook",
-     "relation.hook.runs-in.host",
-     "relation.hook.spawns.process-supervisor",
-     "relation.mcp-coding-shell.runs-in.host",
-     "relation.mcp-server.runs-in.host",
-     "relation.mcp-server.spawns.mcp-coding-shell",
-     "relation.mcp-server.spawns.process-supervisor",
-     "relation.mcp-sidecar.deployed-on.mcp-server",
-     "relation.oar-review-host.runs-in.host",
-     "relation.oar-review-host.spawns.vendor-cli",
-     "relation.operator-collector.runs-in.host",
-     "relation.operator-server.runs-in.host",
-     "relation.operator-server.spawns.operator-collector",
-     "relation.operator.activity-feeds.npm-registry",
-     "relation.operator.console-collectors.activity-feeds",
-     "relation.operator.console-collectors.archctx",
-     "relation.operator.console-collectors.git",
-     "relation.operator.console-collectors.github",
-     "relation.operator.console-collectors.herdr",
-     "relation.operator.console-collectors.http-reader",
-     "relation.operator.console-collectors.mcp-sidecar",
-     "relation.operator.console-collectors.task-agent-host",
-     "relation.operator.console-collectors.view-projections",
-     "relation.operator.deployed-on.operator-server",
-     "relation.operator.github",
-     "relation.operator.http-reader.console-collectors",
-     "relation.operator.primary.acceptance-review",
-     "relation.operator.primary.coordination-plane",
-     "relation.operator.primary.execution-primitives",
-     "relation.operator.view-projections.repo-policy-registry",
-     "relation.process-group-launcher.runs-in.host",
-     "relation.process-supervisor.runs-in.host",
-     "relation.process-supervisor.spawns.process-group-launcher",
-     "relation.publication.github",
-     "relation.task-agent-host.herdr",
-     "relation.task-agent-host.primary.repo-policy-registry",
-     "relation.vendor-cli.runs-in.host"
-    ],
-    "relations_removed": [],
-    "relations_changed": [
-     "relation.evals-checks.imports.operator",
-     "relation.mcp-sidecar.primary.task-agent-host"
-    ]
-   },
+   "dependents": [
+    {
+     "id": "capability.organization.publication",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.publication.contract-assets"
+     ]
+    },
+    {
+     "id": "capability.organization.task-fleet",
+     "touched": "component.task-fleet.primary",
+     "relations": [
+      "relation.task-fleet.primary"
+     ]
+    },
+    {
+     "id": "capability.public-surface.action-commands",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.action-commands.imports.contract-assets"
+     ]
+    },
+    {
+     "id": "capability.public-surface.adoption",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.adoption.imports.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "capability.public-surface.adoption",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.adoption.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.agent-runtime-effects",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.agent-runtime-effects.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.engineer-bindings",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.engineer-bindings.imports.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.engineer-bindings",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.engineer-bindings.imports.contract-assets"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.engineer-scheduling",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.engineer-scheduling.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.engineering-overlay",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.engineering-overlay.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.evidence-ledger",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.evidence-ledger.adoption"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.external-source-intake",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.external-source-intake.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.global-runtime-reconciliation",
+     "touched": "component.global-runtime-reconciliation.primary",
+     "relations": [
+      "relation.global-runtime-reconciliation.primary"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.hook-adapters",
+     "touched": "component.hook-adapters.primary",
+     "relations": [
+      "relation.hook-adapters.primary"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.mcp-sidecar",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.mcp-sidecar.imports.contract-assets"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.mcp-sidecar",
+     "touched": "component.mcp-sidecar.primary",
+     "relations": [
+      "relation.mcp-sidecar.primary"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.operator",
+     "touched": "component.operator.primary",
+     "relations": [
+      "relation.operator.primary"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.refactor-program",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.refactor-program.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.runtime-harness.task-agent-host",
+     "touched": "component.task-agent-host.primary",
+     "relations": [
+      "relation.task-agent-host.primary"
+     ]
+    },
+    {
+     "id": "capability.runtime-mcp.chatgpt-browser",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.chatgpt-browser.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.verification.acceptance-review",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.acceptance-review.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.verification.acceptance-review",
+     "touched": "capability.runtime-harness.operator",
+     "relations": [
+      "relation.acceptance-review.imports.operator"
+     ]
+    },
+    {
+     "id": "capability.verification.acceptance-review",
+     "touched": "component.acceptance-review.primary",
+     "relations": [
+      "relation.acceptance-review.primary"
+     ]
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.evals-checks.imports.adoption"
+     ]
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "touched": "capability.public-surface.root-router",
+     "relations": [
+      "relation.evals-checks.imports.root-router"
+     ]
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.evals-checks.imports.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.evals-checks.imports.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "capability.verification.evals-checks",
+     "touched": "capability.runtime-harness.operator",
+     "relations": [
+      "relation.evals-checks.imports.operator"
+     ]
+    },
+    {
+     "id": "capability.workflow-engine.contract-assets",
+     "touched": "component.contract-assets.template-projection",
+     "relations": [
+      "relation.contract-assets.template-projection"
+     ]
+    },
+    {
+     "id": "capability.workflow-engine.execution-primitives",
+     "touched": "component.execution-primitives.primary",
+     "relations": [
+      "relation.execution-primitives.primary"
+     ]
+    },
+    {
+     "id": "capability.workflow-engine.inspection-migration",
+     "touched": "component.inspection-migration.primary",
+     "relations": [
+      "relation.inspection-migration.primary"
+     ]
+    },
+    {
+     "id": "capability.workflow-engine.workflow-state",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.workflow-state.imports.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "capability.workflow-engine.workflow-state",
+     "touched": "component.workflow-state.coordination-plane",
+     "relations": [
+      "relation.workflow-state.coordination-plane"
+     ]
+    },
+    {
+     "id": "component.contract-assets.contract-worktree-lifecycle",
+     "touched": "component.global-runtime-reconciliation.archctx-closure",
+     "relations": [
+      "relation.contract-assets.contract-worktree-lifecycle.archctx-closure"
+     ]
+    },
+    {
+     "id": "component.contract-assets.template-projection",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.contract-assets.template-projection.adoption"
+     ]
+    },
+    {
+     "id": "component.contract-assets.template-projection",
+     "touched": "capability.runtime-harness.operator",
+     "relations": [
+      "relation.contract-assets.template-projection.operator-catalog"
+     ]
+    },
+    {
+     "id": "component.evals-checks.ci-selection",
+     "touched": "component.evals-checks.test-suite",
+     "relations": [
+      "relation.evals-checks.ci-selection.test-suite"
+     ]
+    },
+    {
+     "id": "component.evals-checks.primary",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.evals-checks.primary.contract-assets"
+     ]
+    },
+    {
+     "id": "component.general-repo-access.primary",
+     "touched": "component.mcp-sidecar.repo-policy-registry",
+     "relations": [
+      "relation.general-repo-access.primary.mcp-policy"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.archctx-closure",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.global-runtime-reconciliation.archctx-closure.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.adoption"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "capability.public-surface.root-router",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.root-router"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "capability.runtime-harness.mcp-sidecar",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.mcp-sidecar"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "capability.runtime-harness.operator",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.operator"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.contract-assets"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "component.global-runtime-reconciliation.archctx-closure",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.archctx-closure"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.cli-root",
+     "touched": "component.global-runtime-reconciliation.primary",
+     "relations": [
+      "relation.global-runtime-reconciliation.cli-root.primary"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.primary",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.global-runtime-reconciliation.primary.adoption"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.primary",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.global-runtime-reconciliation.primary.contract-assets"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.primary",
+     "touched": "component.global-runtime-reconciliation.archctx-closure",
+     "relations": [
+      "relation.global-runtime-reconciliation.primary.archctx-closure"
+     ]
+    },
+    {
+     "id": "component.global-runtime-reconciliation.release-packaging",
+     "touched": "component.global-runtime-reconciliation.cli-root",
+     "relations": [
+      "relation.global-runtime-reconciliation.release-packaging.cli-root"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.edit-guards",
+     "touched": "component.hook-adapters.primary",
+     "relations": [
+      "relation.hook-adapters.edit-guards.route-runtime"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.host-installer",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.hook-adapters.host-installer.adoption"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.host-installer",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.hook-adapters.host-installer.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.host-installer",
+     "touched": "component.hook-adapters.primary",
+     "relations": [
+      "relation.hook-adapters.host-installer.route-runtime"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.primary",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.hook-adapters.route-runtime.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.session-lifecycle",
+     "touched": "capability.public-surface.adoption",
+     "relations": [
+      "relation.hook-adapters.session-lifecycle.adoption"
+     ]
+    },
+    {
+     "id": "component.hook-adapters.session-lifecycle",
+     "touched": "component.hook-adapters.primary",
+     "relations": [
+      "relation.hook-adapters.session-lifecycle.route-runtime"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.coding-profile",
+     "touched": "component.mcp-sidecar.repo-policy-registry",
+     "relations": [
+      "relation.mcp-sidecar.coding-profile.repo-policy-registry"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.host-setup",
+     "touched": "component.mcp-sidecar.coding-profile",
+     "relations": [
+      "relation.mcp-sidecar.host-setup.coding-profile"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.host-setup",
+     "touched": "component.mcp-sidecar.primary",
+     "relations": [
+      "relation.mcp-sidecar.host-setup.primary"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.host-setup",
+     "touched": "component.mcp-sidecar.transport-auth",
+     "relations": [
+      "relation.mcp-sidecar.host-setup.transport-auth"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.primary",
+     "touched": "capability.runtime-mcp.general-repo-access",
+     "relations": [
+      "relation.mcp-sidecar.primary.general-repo-access"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.primary",
+     "touched": "component.mcp-sidecar.coding-profile",
+     "relations": [
+      "relation.mcp-sidecar.primary.coding-profile"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.primary",
+     "touched": "component.mcp-sidecar.repo-policy-registry",
+     "relations": [
+      "relation.mcp-sidecar.primary.repo-policy-registry"
+     ]
+    },
+    {
+     "id": "component.mcp-sidecar.transport-auth",
+     "touched": "component.mcp-sidecar.primary",
+     "relations": [
+      "relation.mcp-sidecar.transport-auth.primary"
+     ]
+    },
+    {
+     "id": "component.operator.activity-feeds",
+     "touched": "component.operator.view-projections",
+     "relations": [
+      "relation.operator.activity-feeds.view-projections"
+     ]
+    },
+    {
+     "id": "component.operator.console-collectors",
+     "touched": "component.operator.primary",
+     "relations": [
+      "relation.operator.console-collectors.http-reader"
+     ]
+    },
+    {
+     "id": "component.operator.console-collectors",
+     "touched": "component.operator.view-projections",
+     "relations": [
+      "relation.operator.console-collectors.view-projections"
+     ]
+    },
+    {
+     "id": "component.operator.primary",
+     "touched": "component.operator.activity-feeds",
+     "relations": [
+      "relation.operator.http-reader.activity-feeds"
+     ]
+    },
+    {
+     "id": "component.operator.primary",
+     "touched": "component.operator.console-collectors",
+     "relations": [
+      "relation.operator.http-reader.console-collectors"
+     ]
+    },
+    {
+     "id": "component.operator.primary",
+     "touched": "component.operator.view-projections",
+     "relations": [
+      "relation.operator.http-reader.view-projections"
+     ]
+    },
+    {
+     "id": "component.operator.primary",
+     "touched": "component.workflow-state.coordination-plane",
+     "relations": [
+      "relation.operator.primary.coordination-plane"
+     ]
+    },
+    {
+     "id": "component.operator.web-console",
+     "touched": "component.operator.activity-feeds",
+     "relations": [
+      "relation.operator.web-console.activity-feeds"
+     ]
+    },
+    {
+     "id": "component.operator.web-console",
+     "touched": "component.operator.primary",
+     "relations": [
+      "relation.operator.web-console.http-reader"
+     ]
+    },
+    {
+     "id": "component.operator.web-console",
+     "touched": "component.operator.view-projections",
+     "relations": [
+      "relation.operator.web-console.view-projections"
+     ]
+    },
+    {
+     "id": "component.refactor-program.archctx-provider",
+     "touched": "capability.runtime-harness.global-runtime-reconciliation",
+     "relations": [
+      "relation.refactor-program.archctx-provider.global-runtime-reconciliation"
+     ]
+    },
+    {
+     "id": "component.workflow-state.primary",
+     "touched": "capability.workflow-engine.contract-assets",
+     "relations": [
+      "relation.workflow-state.primary.contract-assets"
+     ]
+    }
+   ],
+   "dependency_coverage": "complete",
    "flow_steps": {
-    "state": "unavailable",
-    "reason": "change_impact_not_exported"
+    "status": "unknown",
+    "reason_codes": [
+     "line-impact-unavailable",
+     "ref-code-facts-unavailable"
+    ],
+    "items": null
+   },
+   "truncated": {
+    "paths": false,
+    "nodes": false,
+    "relations": false,
+    "flow_steps": false,
+    "dependents": false,
+    "model": false
    }
   },
   "violations": {
@@ -5231,7 +11215,7 @@
    },
    "flows": {
     "state": "unavailable",
-    "reason": "flows_check_writes_index"
+    "reason": "code_facts_unavailable"
    },
    "anchors": {
     "state": "ok",
@@ -5400,7 +11384,7 @@
    },
    "layer_direction": {
     "state": "unavailable",
-    "reason": "layer_order_not_released"
+    "reason": "model_layers_undeclared"
    }
   },
   "pull_requests": {
@@ -5414,18 +11398,78 @@
      "head_sha": "6026026026026026026026026026026026026026",
      "impact": {
       "state": "ok",
-      "files": 3,
-      "unowned_files": 0,
+      "paths": [
+       {
+        "path": "bun.lock",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.global-runtime-reconciliation.release-packaging"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "package.json",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.global-runtime-reconciliation.release-packaging"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "tests/oar-public-types.test.ts",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.evals-checks.test-suite"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       }
+      ],
+      "unowned_paths": [],
       "nodes": [
        {
-        "id": "capability.runtime-harness.global-runtime-reconciliation",
-        "files": 3
+        "id": "component.evals-checks.test-suite",
+        "files": 1
        },
        {
         "id": "component.global-runtime-reconciliation.release-packaging",
         "files": 2
        }
-      ]
+      ],
+      "dependents": [
+       {
+        "id": "component.evals-checks.ci-selection",
+        "touched": "component.evals-checks.test-suite",
+        "relations": [
+         "relation.evals-checks.ci-selection.test-suite"
+        ]
+       }
+      ],
+      "dependency_coverage": "complete",
+      "flow_steps": {
+       "status": "unknown",
+       "reason_codes": [
+        "line-impact-unavailable",
+        "ref-code-facts-unavailable"
+       ],
+       "items": null
+      },
+      "truncated": {
+       "paths": false,
+       "nodes": false,
+       "relations": false,
+       "flow_steps": false,
+       "dependents": false,
+       "model": false
+      }
      }
     },
     {
@@ -5435,26 +11479,96 @@
      "head_sha": "6036036036036036036036036036036036036036",
      "impact": {
       "state": "ok",
-      "files": 3,
-      "unowned_files": 0,
+      "paths": [
+       {
+        "path": "src/core/dev-activity/types.ts",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.operator.activity-feeds"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "src/operator-web/Board.tsx",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.operator.web-console"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "tests/operator-web/operator-board.test.tsx",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.evals-checks.test-suite"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       }
+      ],
+      "unowned_paths": [],
       "nodes": [
-       {
-        "id": "capability.runtime-harness.operator",
-        "files": 2
-       },
-       {
-        "id": "capability.verification.evals-checks",
-        "files": 1
-       },
        {
         "id": "component.evals-checks.test-suite",
         "files": 1
        },
        {
         "id": "component.operator.activity-feeds",
-        "files": 2
+        "files": 1
+       },
+       {
+        "id": "component.operator.web-console",
+        "files": 1
        }
-      ]
+      ],
+      "dependents": [
+       {
+        "id": "component.evals-checks.ci-selection",
+        "touched": "component.evals-checks.test-suite",
+        "relations": [
+         "relation.evals-checks.ci-selection.test-suite"
+        ]
+       },
+       {
+        "id": "component.operator.primary",
+        "touched": "component.operator.activity-feeds",
+        "relations": [
+         "relation.operator.http-reader.activity-feeds"
+        ]
+       },
+       {
+        "id": "component.operator.web-console",
+        "touched": "component.operator.activity-feeds",
+        "relations": [
+         "relation.operator.web-console.activity-feeds"
+        ]
+       }
+      ],
+      "dependency_coverage": "complete",
+      "flow_steps": {
+       "status": "unknown",
+       "reason_codes": [
+        "line-impact-unavailable",
+        "ref-code-facts-unavailable"
+       ],
+       "items": null
+      },
+      "truncated": {
+       "paths": false,
+       "nodes": false,
+       "relations": false,
+       "flow_steps": false,
+       "dependents": false,
+       "model": false
+      }
      }
     },
     {
@@ -5474,17 +11588,65 @@
      "head_sha": "6086086086086086086086086086086086086086",
      "impact": {
       "state": "ok",
-      "files": 4,
-      "unowned_files": 0,
+      "paths": [
+       {
+        "path": "docs/control-bot-boundary.md",
+        "added": null,
+        "deleted": null,
+        "owners": [],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "src/operator-web/App.tsx",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.operator.web-console"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "src/operator-web/NavRail.tsx",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.operator.web-console"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "src/operator-web/app.css",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.operator.web-console"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       },
+       {
+        "path": "tests/operator-web/operator-ui.test.tsx",
+        "added": null,
+        "deleted": null,
+        "owners": [
+         "component.evals-checks.test-suite"
+        ],
+        "reason_codes": [
+         "paths-only"
+        ]
+       }
+      ],
+      "unowned_paths": [
+       "docs/control-bot-boundary.md"
+      ],
       "nodes": [
-       {
-        "id": "capability.runtime-harness.operator",
-        "files": 3
-       },
-       {
-        "id": "capability.verification.evals-checks",
-        "files": 1
-       },
        {
         "id": "component.evals-checks.test-suite",
         "files": 1
@@ -5493,14 +11655,36 @@
         "id": "component.operator.web-console",
         "files": 3
        }
-      ]
+      ],
+      "dependents": [
+       {
+        "id": "component.evals-checks.ci-selection",
+        "touched": "component.evals-checks.test-suite",
+        "relations": [
+         "relation.evals-checks.ci-selection.test-suite"
+        ]
+       }
+      ],
+      "dependency_coverage": "complete",
+      "flow_steps": {
+       "status": "unknown",
+       "reason_codes": [
+        "line-impact-unavailable",
+        "ref-code-facts-unavailable"
+       ],
+       "items": null
+      },
+      "truncated": {
+       "paths": false,
+       "nodes": false,
+       "relations": false,
+       "flow_steps": false,
+       "dependents": false,
+       "model": false
+      }
      }
     }
-   ],
-   "flow_steps": {
-    "state": "unavailable",
-    "reason": "change_impact_not_exported"
-   }
+   ]
   },
   "tests": {
    "state": "ok",
@@ -5738,8 +11922,21 @@
    ]
   },
   "decisions": {
-   "state": "unavailable",
-   "reason": "decisions_not_exported"
+   "state": "ok",
+   "items": [
+    {
+     "id": "ADR-0001-general-repo-codegraph-access",
+     "title": "General Repo Access Through CodeGraph",
+     "status": "accepted",
+     "decided_at": null,
+     "applies_to": [
+      "capability.runtime-mcp.general-repo-access",
+      "capability.verification.codegraph-readiness"
+     ],
+     "supersedes": [],
+     "path": "docs/adr/ADR-0001-general-repo-codegraph-access.md"
+    }
+   ]
   }
  }
 }

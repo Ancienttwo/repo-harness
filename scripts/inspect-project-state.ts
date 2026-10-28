@@ -46,11 +46,6 @@ function parseArgs(argv: string[]) {
   return { repo, format };
 }
 
-function fileHasContent(path: string, pattern: RegExp): boolean {
-  if (!existsSync(path)) return false;
-  return pattern.test(readFileSync(path, "utf-8"));
-}
-
 function jsonPathExists(path: string, keys: string[]): boolean {
   if (!existsSync(path)) return false;
   try {
@@ -114,8 +109,6 @@ export function inspectRepo(repo: string): InspectionResult {
   ];
 
   const runtimeManifest = join(repo, contract.artifacts.runtimeManifest);
-  const todoFile = join(repo, contract.documents.deferredGoalLedger ?? contract.documents.taskChecklist ?? "tasks/todos.md");
-  const legacySingularTodoFile = join(repo, "tasks", "todo.md");
   const legacyTaskSprintDir = join(repo, "tasks", "sprints");
   const policyFile = join(repo, ".ai", "harness", "policy.json");
   const generatedClaudeHookPaths = [
@@ -143,9 +136,6 @@ export function inspectRepo(repo: string): InspectionResult {
   if (existsSync(join(repo, "docs", "TODO.md"))) {
     driftSignals.push("legacy-docs-todo");
   }
-  if (existsSync(legacySingularTodoFile) && legacySingularTodoFile !== todoFile) {
-    driftSignals.push("legacy-singular-todo-file");
-  }
   if (existsSync(legacyTaskSprintDir)) {
     driftSignals.push("legacy-task-sprint-prds");
   }
@@ -160,15 +150,6 @@ export function inspectRepo(repo: string): InspectionResult {
   }
   if (existsSync(join(repo, "docs", "PROGRESS.md"))) {
     driftSignals.push("legacy-docs-progress");
-  }
-  if (
-    existsSync(todoFile) &&
-    (
-      !fileHasContent(todoFile, /^# Deferred Goal Ledger\s*$/m) ||
-      !fileHasContent(todoFile, /^\> \*\*Status\*\*:\s*Backlog\s*$/m)
-    )
-  ) {
-    driftSignals.push("legacy-task-checklist-format");
   }
   if (hasAnyPath(repo, generatedClaudeHookPaths)) {
     driftSignals.push("stale-generated-claude-hook-shims");
@@ -191,9 +172,6 @@ export function inspectRepo(repo: string): InspectionResult {
   }
   if (driftSignals.includes("legacy-docs-plan") || driftSignals.includes("legacy-docs-todo")) {
     requiredDecisions.push("Run legacy document migration before template refresh");
-  }
-  if (driftSignals.includes("legacy-singular-todo-file")) {
-    requiredDecisions.push("Migrate legacy tasks/todo.md into tasks/todos.md");
   }
   if (driftSignals.includes("legacy-task-sprint-prds")) {
     requiredDecisions.push("Move legacy tasks/sprints/*.sprint.md into plans/sprints/*.sprint.md");

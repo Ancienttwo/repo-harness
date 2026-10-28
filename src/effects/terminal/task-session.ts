@@ -13,6 +13,7 @@ import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
 import { taskWorkspaceKey } from '../git/repository-identity';
+import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -529,6 +530,9 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
       recheckTaskAdmission(repoRoot, { ...intent.spec, runtime: 'herdr', task_admission: intent.task_admission }, effects.taskAuthority);
       return reconcile(dir, intent);
     }
+    if (repository.execution_root !== repository.primary_root) {
+      recordWorktree(repository.primary_root, repository.execution_root, { creator: 'task', purpose: 'task agent', task_id: spec.task });
+    }
     const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, recheck);
     recheck();
     const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec, ...(taskAdmission ? { task_admission: taskAdmission } : {}) };
@@ -783,6 +787,77 @@ async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promi
   return termination.confirmed && !processProofAlive(proof);
 }
 export interface TaskCleanupResult { status: 'closed' | 'cleanup_pending'; pids: number[]; reason?: string }
+
+export interface WorktreeMergeNotice {
+  pr: number;
+  merge_sha: string;
+  worktree: string;
+  branch: string;
+}
+export interface WorktreeMergeNotification {
+  status: 'notified' | 'already_notified' | 'owner_gone' | 'retained';
+  reason?: string;
+}
+/** The caller owns merge readback. A notice carries no publication or deletion grant. */
+export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
+  notice: WorktreeMergeNotice): Promise<WorktreeMergeNotification> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$/.test(owner) || !Number.isSafeInteger(notice.pr) || notice.pr < 1
+    || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(notice.merge_sha)) {
+    throw new Error('worktree_merge_notice_invalid');
+  }
+  const repository = taskRepository(repoRoot), execution = taskRepository(notice.worktree);
+  if (repository.repository_id !== execution.repository_id || notice.worktree !== execution.execution_root
+    || execution.execution_root === repository.primary_root
+    || gitExecFileSync(['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd: notice.worktree, encoding: 'utf8' }).trim() !== notice.branch) {
+    throw new Error('worktree_merge_notice_owner_mismatch');
+  }
+  const dir = workspaceDirectory(execution);
+  assertSessionDirectory(repository.primary_root, dir);
+  return locked(repository.primary_root, dir, async () => {
+    const receipt = join(dir, `merge-notice-${notice.pr}-${notice.merge_sha}.json`);
+    if (existsSync(receipt)) {
+      const previous = readSessionArtifact<{ notice: WorktreeMergeNotice; owner: string; state: string }>(receipt);
+      if (!sameSessionData(previous.notice, notice) || previous.owner !== owner) throw new Error('worktree_merge_notice_changed');
+      return previous.state === 'accepted' ? { status: 'already_notified' }
+        : { status: 'retained', reason: 'delivery_unknown; inspect the same pane before further action; never replay' };
+    }
+    if (existsSync(join(dir, 'closed.json'))) return { status: 'owner_gone', reason: 'workspace_closed' };
+    const binding = readSessionArtifact<TaskWorkspaceBinding>(join(dir, 'binding.json'));
+    if (!sameSessionData(binding.repository, execution)) throw new Error('worktree_merge_notice_owner_mismatch');
+    try {
+      const spaces = workspaceReadback(binding.endpoint);
+      if (!spaces.some(space => space.workspace_id === binding.workspace_id)) return { status: 'owner_gone', reason: 'workspace_closed' };
+      assertWorkspace(binding);
+      const panes = info(binding.endpoint, ['pane', 'list', '--workspace', binding.workspace_id]).panes;
+      if (!Array.isArray(panes)) throw new Error('task_agent_workspace_response_invalid');
+      const agents = info(binding.endpoint, ['agent', 'list']).agents;
+      if (!Array.isArray(agents)) throw new Error('task_agent_workspace_response_invalid');
+      const matches = agents.filter(agent => agent.pane_id === owner);
+      if (!matches.length) return { status: 'owner_gone', reason: 'agent_exited' };
+      if (matches.length !== 1) throw new Error('task_agent_pane_identity_lost');
+      const agent = matches[0];
+      const pane = panes.find(pane => pane.pane_id === agent.pane_id && pane.terminal_id === agent.terminal_id);
+      if (!pane || pane.workspace_id !== binding.workspace_id
+        || realpathSync(pane.foreground_cwd ?? pane.cwd) !== execution.execution_root) throw new Error('task_agent_pane_identity_lost');
+    } catch (error) { return { status: 'retained', reason: String(error) }; }
+    const message = [
+      'Post-merge worktree closeout. Confirmed merge readback:', JSON.stringify(notice),
+      'Inspect tracked changes, untracked files and commits not in the merged PR. Gitignored files do not count as content.',
+      'Keep and report remaining content, locks or unknown state. Do not auto-commit or push.',
+      'For a merged, clean, unlocked worktree, hand closeout to the orchestrator in the primary checkout.',
+      'Acknowledge that inspection is complete, then exit the agent. The orchestrator must confirm agent exit and close its dispatch-owned split pane under existing authority; leave the workspace root shell for runtime cleanup.',
+      'The orchestrator must use existing runtime cleanup and exact branch/path removal to release the binding and active-worktree marker and remove the worktree and branch. Keep and report attached or unknown runtime state.',
+      'This notice grants no new merge, push or deletion authority. Report the closeout result.',
+    ].join('\n');
+    // A timeout can follow accepted input. Record the attempt before transport and never replay it.
+    writeSessionArtifact(receipt, { notice, owner, state: 'submitting' });
+    try { mutate(binding.endpoint, ['agent', 'prompt', owner, message]); }
+    catch (error) { return { status: 'retained', reason: `delivery_unknown; inspect the same pane; never replay: ${String(error)}` }; }
+    writeSessionArtifact(receipt, { notice, owner, state: 'accepted' }, false);
+    return { status: 'notified' };
+  });
+}
+
 interface UnboundCleanupReceipt { intent_id: string; pane_id: string; terminal_id: string; pids: number[] }
 function processRunning(pid: number): boolean {
   try { process.kill(pid, 0); return true; }
@@ -950,6 +1025,10 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
   const repository = taskRepository(repoRoot, gitBin);
   const expected = { ...repository, execution_root: checkoutPath };
   const dir = workspaceDirectory(expected);
+  const recordClosed = () => {
+    writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+    endWorktreeRecord(repository.repository_id, readWorktreeRecord(repository.repository_id, checkoutPath), 'closed');
+  };
   if (!existsSync(dir)) return { status: 'not_registered', pids: [] };
   assertSessionDirectory(repository.primary_root, dir);
   return locked(repository.primary_root, dir, async () => {
@@ -961,7 +1040,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
       const spaces = workspaceReadback(intent.endpoint);
       const existing = checkoutWorkspace(spaces, expected);
       if (!existing) {
-        if (!dryRun) writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+        if (!dryRun) recordClosed();
         return { status: 'closed', pids: [] };
       }
       if (dryRun) return { status: 'cleanup_pending', pids: [], reason: 'workspace_attached' };
@@ -987,7 +1066,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
     const spaces = info(workspace.endpoint, ['workspace', 'list']).workspaces;
     if (!Array.isArray(spaces)) throw new Error('task_agent_workspace_response_invalid');
     if (!spaces.some(item => item.workspace_id === workspace.workspace_id)) {
-      if (!dryRun) writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+      if (!dryRun) recordClosed();
       return { status: 'closed', pids: [] };
     }
     assertWorkspace(workspace);
@@ -1008,7 +1087,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
       mutate(workspace.endpoint, ['workspace', 'close', workspace.workspace_id]);
       const readback = info(workspace.endpoint, ['workspace', 'list']).workspaces;
       if (!Array.isArray(readback) || readback.some(item => item.workspace_id === workspace.workspace_id)) return { status: 'cleanup_pending', pids: [], reason: 'readback_failed' };
-      writeSessionArtifact(join(dir, 'closed.json'), { repository_id: repository.repository_id, checkout: checkoutPath });
+      recordClosed();
     }
     return { status: 'closed', pids: [] };
   });

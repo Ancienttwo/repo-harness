@@ -9,11 +9,9 @@ responsibilities:
   - Own CodeGraph installation detection, status normalization, and readiness diagnostics.
 source:
   include:
-    - "scripts/ensure-codegraph.sh"
-    - "src/cli/tools/codegraph.ts"
-    - "src/cli/mcp/codegraph-adapter.ts"
-    - "tests/cli/codegraph-resolver.test.ts"
-    - "src/cli/commands/tools.ts"
+    - src/cli/tools/codegraph.ts
+    - src/cli/mcp/codegraph-adapter.ts
+    - src/cli/commands/tools.ts
   entrypoints:
     - id: entrypoint.codegraph-readiness.primary
       path: "src/cli/tools/codegraph.ts"

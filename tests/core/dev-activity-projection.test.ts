@@ -90,16 +90,16 @@ describe('dev activity column rules (§3.3)', () => {
     expect(itemFor(snapshot, 'feat/closed')).toMatchObject({ column: 'building', hidden: 'closed_unmerged', pull_request: { ci: null } });
     expect(itemFor(snapshot, 'feat/old')).toBeUndefined();
     expect(itemFor(snapshot, 'feat/old-closed')).toBeUndefined();
-    expect(itemFor(snapshot, 'feat/old-local')).toMatchObject({ column: 'building', hidden: null, pull_request: null, cleanup_pending: false });
+    expect(itemFor(snapshot, 'feat/old-local')).toMatchObject({ column: 'building', hidden: null, pull_request: null });
     expect(itemFor(snapshot, 'feat/edge')).toMatchObject({ column: 'shipped', hidden: null, pull_request: { ci: null } });
   });
 
-  test('a merged PR with a remaining worktree is pending cleanup', () => {
+  test('a merged PR retains its worktree facts without deciding cleanup', () => {
     const snapshot = project(repo({
       worktrees: [worktree('feat/done')],
       pull_requests: [pr('feat/done', { state: 'merged', merged_at: iso(DAY), closed_at: iso(DAY) })],
     }));
-    expect(itemFor(snapshot, 'feat/done')).toMatchObject({ column: 'shipped', cleanup_pending: true });
+    expect(itemFor(snapshot, 'feat/done')).toMatchObject({ column: 'shipped', worktrees: [expect.objectContaining({ directory: expect.any(String) })] });
   });
 });
 

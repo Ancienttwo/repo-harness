@@ -12,6 +12,5 @@ responsibilities:
   - "Read exact current admitted inbox context and provider readiness through their shared implementations; historical receipts never substitute for current admission."
 source:
   include:
-    - "src/core/publication/feedback.ts"
-    - "src/effects/fleet/provider-feedback.ts"
-    - "src/effects/publication/feedback-store.ts"
+    - src/effects/fleet/provider-feedback.ts
+    - src/effects/publication/feedback-store.ts

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.release-packaging-core
+kind: component
+name: Release Packaging (core)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: core
+summary: The core-layer files of Release Packaging. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Release Packaging so layer direction is checked per directory.
+source:
+  include:
+    - src/core/release/**

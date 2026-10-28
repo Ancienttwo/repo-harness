@@ -11,5 +11,4 @@ responsibilities:
   - Expose module listing and review prompt export through the module CLI command.
 source:
   include:
-    - src/core/architecture/module-view.ts
     - src/cli/commands/module.ts

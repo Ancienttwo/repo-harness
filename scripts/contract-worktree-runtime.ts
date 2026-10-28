@@ -94,9 +94,30 @@ try {
       assertReusableWorktree(value('--repo'), realpathSync(value('--worktree')), value('--branch'));
       markActiveWorktree(value('--worktree'));
     });
+  } else if (action === 'end-record') {
+    const { readWorktreeRecord, endWorktreeRecord } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/worktree-record.ts')).href) as typeof import('../src/effects/git/worktree-record');
+    const { resolveGitCommonDirectory } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/common-directory.ts')).href) as typeof import('../src/effects/git/common-directory');
+    const common = resolveGitCommonDirectory(value('--repo'));
+    endWorktreeRecord(common, readWorktreeRecord(common, value('--worktree')), 'closed');
+  } else if (action === 'record') {
+    const { recordWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/worktree-record.ts')).href) as typeof import('../src/effects/git/worktree-record');
+    const creator = value('--creator');
+    if (!['contract', 'portal', 'manual'].includes(creator)) throw new Error('invalid worktree creator');
+    console.log(JSON.stringify(recordWorktree(value('--repo'), value('--worktree'), {
+      creator: creator as 'contract' | 'portal' | 'manual', purpose: value('--purpose'),
+      task_id: args.includes('--task') ? value('--task') : null,
+      pull_request: args.includes('--pr') ? Number(value('--pr')) : null,
+    })));
   } else if (action === 'register') {
     const input = readSessionArtifact<{ endpoint: HerdrEndpoint; parent_pane: string }>(value('--endpoint'));
     console.log(JSON.stringify(await registerTaskWorktree(value('--worktree'), input.endpoint, input.parent_pane)));
+  } else if (action === 'notify-merged') {
+    const { notifyTaskWorktreeMerged } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
+    const result = await notifyTaskWorktreeMerged(value('--repo'), value('--owner'), {
+      pr: Number(value('--pr')), merge_sha: value('--merge'), worktree: value('--worktree'), branch: value('--branch'),
+    });
+    console.log(JSON.stringify(result));
+    if (result.status === 'retained') process.exitCode = 1;
   } else if (action === 'cleanup') {
     const result = await cleanupTaskWorktree(value('--repo'), value('--worktree'), args.includes('--dry-run'));
     console.log(JSON.stringify(result));

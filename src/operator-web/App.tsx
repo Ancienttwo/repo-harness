@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
 import type { SetupSnapshotV1 } from '../core/setup/types';
+import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
@@ -40,10 +41,12 @@ import {
   fetchCiRepairs,
   fetchExecution,
   fetchRepositoryHead,
+  fetchTestsSnapshot,
   useRepositoryHead,
   type CiRepairsReader,
   type ExecutionReader,
   type RepositoryHeadReader,
+  type TestsReader,
 } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
@@ -56,6 +59,7 @@ import {
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
+import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
 import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
@@ -76,6 +80,8 @@ import {
 import { useNow } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
 import { parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { fetchWorktrees, useWorktrees, worktreesOf, type WorktreesReader, type WorktreesView } from './worktrees';
+import { WorktreesPage } from './WorktreesPage';
 import { taskKey } from './worklist';
 
 export interface OperatorAppProps {
@@ -104,6 +110,9 @@ export interface OperatorAppProps {
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
   readonly initialSetup?: SetupSnapshotV1;
+  /** The worktree collector's cached result behind the Worktree page, the Board cleanup signal and Home's reclaimable space. */
+  readonly readWorktrees?: WorktreesReader;
+  readonly initialWorktrees?: WorktreesSnapshot;
   readonly readCliInventory?: CliInventoryReader;
   readonly initialCliInventory?: CliInventorySnapshotV1;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */
@@ -119,6 +128,8 @@ export interface OperatorAppProps {
   /** The agents section and runtime probe behind the Settings page, and its one write. */
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly writeAgentsSettings?: AgentsSettingsWriter;
+  /** The read-only tests page's snapshot read, injectable on the same terms. */
+  readonly readTests?: TestsReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -185,6 +196,24 @@ function Freshness({ view, now, t }: { readonly view: DevActivityView; readonly 
   );
 }
 
+/** The same line for the Worktree page, about the collector result it shows. */
+function WorktreesFreshness({ view, now, t }: { readonly view: WorktreesView; readonly now: number; readonly t: OperatorTranslate }) {
+  if (view.kind === 'loading') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="worktrees"><Loader size={12} />{t('freshness.worktrees.loading')}</span>;
+  if (view.kind === 'unreachable') return <span className="text-kumo-danger" data-freshness="failed" data-freshness-source="worktrees">{t('freshness.worktrees.failed')}</span>;
+  const { snapshot } = view;
+  if (snapshot.status === 'unavailable' || snapshot.collected_at === null) {
+    return <span data-freshness="pending" data-freshness-source="worktrees">{t('freshness.worktrees.pending')}</span>;
+  }
+  const age = ageWords(snapshot.collected_at, now, t);
+  const unread = snapshot.repositories.filter(repository => repository.status === 'unavailable').length;
+  return (
+    <span className={cn('truncate', view.refreshFailed && 'text-kumo-warning')} data-freshness={view.refreshFailed ? 'refresh-failed' : snapshot.status} data-freshness-source="worktrees">
+      {view.refreshFailed ? t('freshness.worktrees.refreshFailed', { age }) : t('freshness.worktrees.read', { age })}
+      {unread > 0 && <>{' · '}{t('freshness.worktrees.partial', { count: unread })}</>}
+    </span>
+  );
+}
+
 /** The same line for the setup pages, about the setup check result they show. */
 function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly now: number; readonly t: OperatorTranslate }) {
   const state = setupPageState(view);
@@ -223,6 +252,8 @@ export function OperatorApp({
   initialNotifyStatus,
   readSetup = fetchSetup,
   initialSetup,
+  readWorktrees = fetchWorktrees,
+  initialWorktrees,
   readCliInventory = fetchCliInventory,
   initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,
@@ -232,6 +263,7 @@ export function OperatorApp({
   readBotAccess = fetchBotAccess,
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
+  readTests = fetchTestsSnapshot,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -251,7 +283,9 @@ export function OperatorApp({
   const workspace = place.workspace;
   const [systemMounted, setSystemMounted] = useState(workspace === 'system');
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
-  const fleetActive = workspace === 'repository' || workspace === 'architecture';
+  // Pages that name one repository: they activate the Fleet read and own the
+  // repository switch and docs-tree head.
+  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
 
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -274,6 +308,8 @@ export function OperatorApp({
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
+  // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
+  const worktrees = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
     ? { ...filters, repositoryId: null } : filters;
@@ -316,7 +352,7 @@ export function OperatorApp({
     navigate(id, null, workspaceHash(next));
     setPlace(next);
   };
-  const busy = state.kind === 'loading' && fleetActive;
+  const busy = state.kind === 'loading' && singleRepository;
 
   const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const previous = snapshotForState(stateRef.current);
@@ -345,8 +381,8 @@ export function OperatorApp({
       return false;
     }
   }, [fetchSnapshot]);
-  // Fleet feeds the repository and architecture pages only; the Board reads development activity.
-  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: fleetActive });
+  // Fleet feeds the pages that name one repository; the Board reads development activity.
+  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: singleRepository });
   const refresh = () => {
     // Explicit refresh supersedes every scoped observation.
     setRepositorySnapshot({ kind: 'idle' });
@@ -399,8 +435,7 @@ export function OperatorApp({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  // Single-repository pages name the repository they read; the board's task drawer names its item's repository.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture';
+  // The board's task drawer names its item's repository.
   const drawerItem = workspace === 'board' && place.item !== null ? devSnapshot?.items.find(item => item.id === place.item) ?? null : null;
   const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : drawerItem?.repository_id ?? null, refreshGeneration);
   const devRepositories = devSnapshot?.repositories ?? [];
@@ -454,23 +489,27 @@ export function OperatorApp({
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
             {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
               : workspace === 'settings' ? <SettingsFreshness view={agentsSettings.view} now={now} t={t} />
-              : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} /> : <Freshness view={devActivity} now={now} t={t} />}
+              : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} />
+              : workspace === 'worktrees' ? <WorktreesFreshness view={worktrees} now={now} t={t} />
+              : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
             <span className="max-sm:sr-only">{busy ? t('status.refreshing') : t('status.refresh')}</span>
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
-          {workspace === 'home' && <Home view={devActivity} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <Board view={devActivity} runtime={runtime} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
+          {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+          {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
+          {workspace === 'worktrees' && <WorktreesPage view={worktrees} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
           {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}
           {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
+          {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}

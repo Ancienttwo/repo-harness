@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  ViewportPortal,
   type Edge,
   type Node,
   type NodeChange,
@@ -18,12 +19,26 @@ import {
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
+  type ArchctxRefusalV1,
+  type ArchitectureImpactV1,
+  type ArchitectureLayerDirectionReason,
   type ArchitectureMapUnavailableReason,
   type ArchitectureMapV1,
   type ArchitectureViolationReason,
 } from '../core/operator/architecture-map';
-import { firstImpactPullRequest, MAP_LAYERS, mapLayerView, pullRequestDependents, type MapLayerId, type MapLayerView, type MapMark } from './architecture-map-layers';
-import { layoutArchitectureMap, type MapLayoutNode } from './architecture-map-layout';
+import {
+  archctxCode,
+  firstImpactPullRequest,
+  impactLines,
+  impactTargets,
+  MAP_LAYERS,
+  mapLayerView,
+  truncatedParts,
+  type MapLayerId,
+  type MapLayerView,
+  type MapMark,
+} from './architecture-map-layers';
+import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -119,6 +134,26 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
 
+/**
+ * Zoom of the first view of a banded map: a 13 px title shows at 11 px. The whole map of a
+ * real model is several canvases wide, so the first view starts at the top band's leftmost
+ * node and its label; Fit shows the whole map.
+ */
+const MAP_READABLE_ZOOM = 0.85;
+
+/** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
+const MAP_BAND_LABEL = 28;
+
+/** A labelled rule above each layer's rows, in canvas coordinates. */
+function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: OperatorTranslate }) {
+  return <ViewportPortal>
+    {layout.bands.map(band => <div key={band.layer ?? ''} className="architecture-map__band" data-band={band.layer ?? ''}
+      style={{ transform: `translate(${band.x}px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width - band.x, height: MAP_BAND_LABEL }}>
+      {band.layer ?? t('architecture.map.unlayered')}
+    </div>)}
+  </ViewportPortal>;
+}
+
 function ZoomControls({ t }: { readonly t: OperatorTranslate }) {
   const flow = useReactFlow();
   const { zoom } = useViewport();
@@ -151,14 +186,26 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   readonly t: OperatorTranslate;
 }) {
   const facts: { key: string; text: string; paths?: readonly string[] }[] = [];
-  const { changes, violations, pull_requests: pullRequests, tests } = map.layers;
+  const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
+  // The node's own changed paths and the changed nodes archctx says it depends on.
+  const impactFacts = (impact: ArchitectureImpactV1, text: (files: number) => string) => {
+    const entry = impact.nodes.find(item => item.id === nodeId);
+    if (entry) facts.push({ key: 'impact', text: text(entry.files), paths: impact.paths.filter(item => item.owners.includes(nodeId)).map(item => item.path) });
+    const targets = impactTargets(impact, nodeId);
+    if (targets.length > 0) facts.push({ key: 'dependent', text: t('architecture.layer.node.dependent', { names: targets.map(id => names.get(id) ?? id).join(', ') }) });
+  };
   if (layer === 'changes' && changes.state === 'ok') {
-    const entry = changes.nodes.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'changes', text: t('architecture.layer.node.changes', { files: entry.files, added: entry.added, deleted: entry.deleted }) });
+    const lines = impactLines(changes, nodeId);
+    impactFacts(changes, files => t('architecture.layer.node.changes', { files: counted(t, files, 'file'), added: lines.added, deleted: lines.deleted })
+      + (lines.unknown > 0 ? ` ${t('architecture.layer.node.lines_unknown', { count: lines.unknown })}` : ''));
   }
   if (layer === 'violations') {
     if (violations.debt.state === 'ok') {
       violations.debt.items.filter(item => item.nodes.includes(nodeId)).forEach((item, index) => facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths }));
+    }
+    if (violations.flows.state === 'ok') {
+      const flows = violations.flows.unprovable.find(item => item.id === nodeId);
+      if (flows) facts.push({ key: 'flows', text: t('architecture.layer.node.flows', { count: flows.diagnostics }) });
     }
     if (violations.anchors.state === 'ok') {
       const anchors = violations.anchors.nodes.find(item => item.id === nodeId);
@@ -172,14 +219,16 @@ function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
   }
   const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
   if (layer === 'pull_requests' && impact?.state === 'ok') {
-    const entry = impact.nodes.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'pull_request', text: t('architecture.layer.node.pull_request', { files: entry.files, number: pullRequest! }) });
-    const targets = pullRequestDependents(map, new Set(impact.nodes.map(item => item.id))).get(nodeId);
-    if (targets) facts.push({ key: 'dependent', text: t('architecture.layer.node.dependent', { names: targets.map(id => names.get(id) ?? id).join(', ') }) });
+    impactFacts(impact, files => t('architecture.layer.node.pull_request', { files: counted(t, files, 'file'), number: pullRequest! }));
   }
   if (layer === 'tests' && tests.state === 'ok') {
     const entry = tests.capabilities.find(item => item.id === nodeId);
     if (entry) facts.push({ key: 'tests', text: t('architecture.layer.node.tests', { files: entry.files, passed: entry.passed, failed: entry.failed, skipped: entry.skipped, noResult: entry.no_result }) });
+  }
+  if (layer === 'decisions') {
+    for (const item of decisions.items.filter(entry => entry.applies_to.includes(nodeId))) {
+      facts.push({ key: `decision-${item.id}`, text: item.status === null ? item.title : t('architecture.layer.node.decision', { title: item.title, status: item.status }), paths: [item.path] });
+    }
   }
   return <>
     <h4>{t(`architecture.layer.${layer}`)}</h4>
@@ -202,7 +251,7 @@ function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
   if (selected === null) {
     return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>
       <p className="detail-quiet">{t('architecture.map.pick')}</p>
-      <p className="detail-quiet">{t('architecture.map.counts', { nodes: map.nodes.length, relations: map.relations.length })}</p>
+      <p className="detail-quiet">{t('architecture.map.counts', { nodes: counted(t, map.nodes.length, 'node'), relations: counted(t, map.relations.length, 'relation') })}</p>
     </aside>;
   }
   const { node } = selected;
@@ -250,6 +299,11 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  const firstView = useMemo(() => {
+    const top = layout.bands[0];
+    if (top === undefined) return undefined;
+    return { x: -(top.x - 24) * MAP_READABLE_ZOOM, y: -(top.y - MAP_BAND_LABEL - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+  }, [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
 
   const nodes = useMemo<MapNode[]>(() => layout.nodes.map(item => {
@@ -317,16 +371,25 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        fitView
+        fitView={firstView === undefined}
+        {...(firstView === undefined ? {} : { defaultViewport: firstView })}
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
+        <LayerBands layout={layout} t={t} />
         <Panel position="bottom-left"><Legend map={map} view={view} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
     </div>
     <Inspector map={map} layer={layer} pullRequest={pullRequest} selected={selected} onModule={onModule} t={t} />
   </div>;
+}
+
+type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision';
+
+/** "1 node", "2 nodes". `atLeast` marks a count that archctx cut at its limit. Only English inflects; Chinese keeps the bare number and its own classifier. */
+function counted(t: OperatorTranslate, count: number, unit: CountUnit, atLeast = false): string {
+  return `${atLeast ? '≥' : ''}${t(count === 1 ? `architecture.unit.${unit}One` : `architecture.unit.${unit}`, { count })}`;
 }
 
 /** A layer with no data shows as unavailable; it stays selectable so its reason can be read. */
@@ -350,13 +413,32 @@ function LayerBar({ map, layer, onLayer, t }: {
   </div>;
 }
 
-function Gap({ part, reason, children }: { readonly part: string; readonly reason: string; readonly children: string }) {
-  return <p className="architecture-map__gap" data-gap={part} data-reason={reason}>{children}</p>;
+/** `code`: archctx's own error code when the gap is an archctx refusal. */
+function Gap({ part, reason, code, children }: { readonly part: string; readonly reason: string; readonly code?: string; readonly children: string }) {
+  return <p className="architecture-map__gap" data-gap={part} data-reason={reason} data-code={code}>{children}</p>;
 }
 
 /** A part that has no source until archctx or a collector provides one; a fixed limit, not a failed read. */
 function Note({ part, reason, children }: { readonly part: string; readonly reason: string; readonly children: string }) {
   return <p className="architecture-map__note" data-note={part} data-reason={reason}>{children}</p>;
+}
+
+/** The flow steps archctx ties to a change, or its reason codes when it cannot; and the parts it cut at its limits. */
+function ImpactNotes({ part, impact, t }: { readonly part: string; readonly impact: ArchitectureImpactV1; readonly t: OperatorTranslate }) {
+  const { flow_steps: steps } = impact;
+  const truncated = truncatedParts(impact.truncated);
+  return <>
+    {steps.status === 'known'
+      ? <p data-flow-steps={part}>{t('architecture.layer.flow_steps.known', { count: steps.items!.length })}</p>
+      : <Gap part={`${part}.flow_steps`} reason={steps.reason_codes.join(' ')}>{t('architecture.layer.flow_steps.unknown', { reasons: steps.reason_codes.join(', ') })}</Gap>}
+    {steps.items !== null && steps.items.length > 0 && <ul data-flow-step-list={part}>
+      {steps.items.map(item => <li key={`${item.flow}:${item.outcome ?? ''}:${item.step}`}><code>{item.flow}</code> · {item.step}{item.reason_codes.length > 0 && ` · ${item.reason_codes.join(', ')}`}</li>)}
+    </ul>}
+    {truncated.length > 0 && <Note part={`${part}.truncated`} reason={truncated.join(' ')}>{[
+      t('architecture.layer.truncated', { parts: truncated.map(item => t(`architecture.layer.truncated.part.${item}`)).join(', ') }),
+      ...(truncated.includes('paths') ? [t('architecture.layer.truncated.paths')] : []),
+    ].join(' ')}</Note>}
+  </>;
 }
 
 /** What the active layer covers, or why it has no data. Every number is a count from the collector. */
@@ -369,35 +451,47 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
 }) {
   const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
   if (layer === 'changes') {
-    if (changes.state === 'unavailable') return <Gap part="changes" reason={changes.reason}>{t(`architecture.layer.changes.${changes.reason}`)}</Gap>;
-    const { model } = changes;
+    if (changes.state === 'unavailable') {
+      return changes.reason === 'archctx_error'
+        ? <Gap part="changes" reason={changes.reason} code={archctxCode(changes)}>{t('architecture.layer.changes.archctx_error', { code: archctxCode(changes) })}</Gap>
+        : <Gap part="changes" reason={changes.reason}>{t(`architecture.layer.changes.${changes.reason}`)}</Gap>;
+    }
+    const count = (kind: 'nodes' | 'relations' | 'flows', change: 'added' | 'removed' | 'changed') => changes.model.filter(item => item.kind === kind && item.change === change).length;
     return <div className="architecture-layer-summary" data-layer-summary="changes">
-      <p>{t('architecture.layer.changes.summary', { commits: changes.commits, files: changes.files, unowned: changes.unowned_files })}{' '}
+      <p>{t('architecture.layer.changes.summary', {
+        commits: counted(t, changes.commits, 'commit'),
+        files: counted(t, changes.paths.length, 'file', changes.truncated.paths),
+        unowned: `${changes.truncated.paths ? '≥' : ''}${changes.unowned_paths.length}`,
+      })}{' '}
         <time dateTime={changes.since}>{new Date(changes.since).toLocaleString()}</time> · <code>{changes.base.slice(0, 12)}</code></p>
-      {model.state === 'ok'
-        ? <p>{t('architecture.layer.changes.model', {
-          nodesAdded: model.nodes_added.length, nodesRemoved: model.nodes_removed.length, nodesChanged: model.nodes_changed.length,
-          relationsAdded: model.relations_added.length, relationsRemoved: model.relations_removed.length, relationsChanged: model.relations_changed.length,
-        })}</p>
-        : <Gap part="model" reason={model.reason}>{t(`architecture.layer.model.${model.reason}`)}</Gap>}
-      <Note part="flow_steps" reason={changes.flow_steps.reason}>{t(`architecture.layer.changes.flow_steps.${changes.flow_steps.reason}`)}</Note>
+      <p>{t('architecture.layer.changes.model', {
+        nodesAdded: count('nodes', 'added'), nodesRemoved: count('nodes', 'removed'), nodesChanged: count('nodes', 'changed'),
+        relationsAdded: count('relations', 'added'), relationsRemoved: count('relations', 'removed'), relationsChanged: count('relations', 'changed'),
+        flowsAdded: count('flows', 'added'), flowsRemoved: count('flows', 'removed'), flowsChanged: count('flows', 'changed'),
+      })}</p>
+      <ImpactNotes part="changes" impact={changes} t={t} />
     </div>;
   }
   if (layer === 'violations') {
     const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = violations;
-    const text = (part: 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction', reason: ArchitectureViolationReason | typeof flows.reason | typeof layerDirection.reason) =>
-      t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason: t(`architecture.layer.reason.${reason}`) });
-    const gap = (part: 'debt' | 'anchors' | 'dependencies', reason: ArchitectureViolationReason) => <Gap part={`violations.${part}`} reason={reason}>{text(part, reason)}</Gap>;
+    type Part = 'debt' | 'flows' | 'anchors' | 'dependencies' | 'layer_direction';
+    const text = (part: Part, reason: string) => t('architecture.layer.violations.gap', { part: t(`architecture.layer.violations.${part}.label`), reason });
+    const gap = (part: Exclude<Part, 'layer_direction'>, missing: { readonly reason: ArchitectureViolationReason } | ArchctxRefusalV1) => missing.reason === 'archctx_error'
+      ? <Gap part={`violations.${part}`} reason={missing.reason} code={archctxCode(missing)}>{text(part, t('architecture.layer.reason.archctx_error', { code: archctxCode(missing) }))}</Gap>
+      : <Gap part={`violations.${part}`} reason={missing.reason}>{text(part, t(`architecture.layer.reason.${missing.reason}`))}</Gap>;
+    const direction = (reason: ArchitectureLayerDirectionReason) => text('layer_direction', t(`architecture.layer.reason.${reason}`));
     const unowned = debt.state === 'ok' ? debt.items.filter(item => item.nodes.length === 0) : [];
     return <div className="architecture-layer-summary" data-layer-summary="violations">
-      {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt.reason)}
+      {debt.state === 'ok' ? <p>{t('architecture.layer.violations.debt', { count: debt.items.length })}</p> : gap('debt', debt)}
       {unowned.length > 0 && <details><summary>{t('architecture.layer.unowned', { count: unowned.length })}</summary>
         <ul>{unowned.flatMap(item => item.paths.map(path => <li key={`${item.kind}:${path}`}><code>{path}</code> · {t(`architecture.layer.debt.${item.kind}`)}</li>))}</ul>
       </details>}
-      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors.reason)}
-      {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies.reason)}
-      <Note part="violations.flows" reason={flows.reason}>{text('flows', flows.reason)}</Note>
-      <Note part="violations.layer_direction" reason={layerDirection.reason}>{text('layer_direction', layerDirection.reason)}</Note>
+      {flows.state === 'ok'
+        ? <p>{t('architecture.layer.violations.flows', { proven: flows.proven, selectors: flows.selectors, unprovable: flows.unprovable.length })}</p>
+        : gap('flows', flows)}
+      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors)}
+      {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies)}
+      <Note part="violations.layer_direction" reason={layerDirection.reason}>{direction(layerDirection.reason)}</Note>
     </div>;
   }
   if (layer === 'tests') {
@@ -426,13 +520,25 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
       {chosen && <p data-pull-request={chosen.number}>
         <a href={chosen.url} target="_blank" rel="noreferrer">#{chosen.number}</a>
         {chosen.head_sha !== null && <> · <code>{chosen.head_sha.slice(0, 12)}</code></>}
-        {chosen.impact.state === 'ok' && <> · {t('architecture.layer.pull_requests.impact', { files: chosen.impact.files, nodes: chosen.impact.nodes.length, unowned: chosen.impact.unowned_files })}</>}
+        {chosen.impact.state === 'ok' && <> · {t('architecture.layer.pull_requests.impact', {
+          files: counted(t, chosen.impact.paths.length, 'file', chosen.impact.truncated.paths),
+          nodes: counted(t, chosen.impact.nodes.length, 'node', chosen.impact.truncated.nodes),
+          unowned: `${chosen.impact.truncated.paths ? '≥' : ''}${chosen.impact.unowned_paths.length}`,
+        })}</>}
       </p>}
-      {chosen?.impact.state === 'unavailable' && <Gap part="pull_request" reason={chosen.impact.reason}>{t(`architecture.layer.pull_requests.pr.${chosen.impact.reason}`)}</Gap>}
-      <Note part="pull_requests.flow_steps" reason={pullRequests.flow_steps.reason}>{t(`architecture.layer.changes.flow_steps.${pullRequests.flow_steps.reason}`)}</Note>
+      {chosen?.impact.state === 'ok' && <ImpactNotes part="pull_request" impact={chosen.impact} t={t} />}
+      {chosen?.impact.state === 'unavailable' && (chosen.impact.reason === 'archctx_error'
+        ? <Gap part="pull_request" reason={chosen.impact.reason} code={archctxCode(chosen.impact)}>{t('architecture.layer.pull_requests.pr.archctx_error', { code: archctxCode(chosen.impact) })}</Gap>
+        : <Gap part="pull_request" reason={chosen.impact.reason}>{t(`architecture.layer.pull_requests.pr.${chosen.impact.reason}`)}</Gap>)}
     </div>;
   }
-  return <Note part={layer} reason={decisions.reason}>{t(`architecture.layer.decisions.${decisions.reason}`)}</Note>;
+  const unapplied = decisions.items.filter(item => item.applies_to.length === 0);
+  return <div className="architecture-layer-summary" data-layer-summary="decisions">
+    <p>{t('architecture.layer.decisions.summary', { count: counted(t, decisions.items.length, 'decision'), applied: decisions.items.length - unapplied.length })}</p>
+    {unapplied.length > 0 && <details><summary>{t('architecture.layer.decisions.unapplied', { count: unapplied.length })}</summary>
+      <ul>{unapplied.map(item => <li key={item.id}>{item.title} · <code>{item.path}</code></li>)}</ul>
+    </details>}
+  </div>;
 }
 
 /** The whole committed model on one canvas, with line and import counts from the map collector. */
@@ -465,6 +571,7 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
       </p>
       {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
       {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
+      {map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
       <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
       <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
       <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.archctx-closure-scripts
+kind: component
+name: ArchContext Closure (scripts)
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: scripts
+summary: The scripts-layer files of ArchContext Closure. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of ArchContext Closure so layer direction is checked per directory.
+source:
+  include:
+    - scripts/axr5-archctx-clean-room.ts

@@ -1240,6 +1240,8 @@ describe('mcp http transport', () => {
         authToken: 'must-not-bypass-coding-oauth',
       })).rejects.toThrow('coding profile requires OAuth authentication');
 
+      mkdirSync(join(repoRoot, 'managed-worktrees'), { recursive: true });
+
       proc = Bun.spawn([
         'bun', 'src/cli/index.ts', 'mcp', 'serve',
         '--repo', repoRoot,
@@ -1247,7 +1249,7 @@ describe('mcp http transport', () => {
         '--host', '127.0.0.1',
         '--port', String(port),
         '--profile', 'coding',
-      ], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, ...(process.platform !== 'win32' ? { REPO_HARNESS_MCP_WORKTREE_ROOT: join(repoRoot, 'managed-worktrees') } : {}) } });
+      ], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_WORKTREE_ROOT: join(repoRoot, 'managed-worktrees') } });
       await waitForHealth(port);
 
       const badHost = await fetch(`http://127.0.0.1:${port}/health`, { headers: { 'x-forwarded-host': 'evil.test' } });

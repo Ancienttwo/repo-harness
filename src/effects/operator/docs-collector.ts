@@ -14,7 +14,7 @@ import { realpathSync } from 'node:fs';
 
 import { decodeDocsTree, githubRemoteRepository, OPERATOR_DOCS_TREE_KIND, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
-import { REPOSITORY_SELECTING_GIT_ENV, spawnGit } from '../git/runner';
+import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
 import { DocsReadError, DocsReader, validDocsRef } from './docs-reader';
 
@@ -47,9 +47,7 @@ export interface DocsCollectorHandle {
 }
 
 function gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' };
-  for (const key of REPOSITORY_SELECTING_GIT_ENV) delete next[key];
-  return next;
+  return withoutRepositorySelectingGitEnv({ ...env, GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' });
 }
 
 /** Remote name -> URL from the repository's own config. Null when git fails. */

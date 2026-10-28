@@ -1,8 +1,9 @@
 // Automatic layout of the architecture base map. A capability with components
 // is a group that holds them on a grid; dagre then places the groups and every
-// other top-level node, with each relation counted on its top-level ends. Box
-// width follows the node's line count from the collector. This module computes
-// positions only and adds no fact to the map.
+// other top-level node, with each relation counted on its top-level ends. With
+// the model's layer order, each top-level node sits in its own layer's band,
+// the first layer at the top. Box width follows the node's line count from the
+// collector. This module computes positions only and adds no fact to the map.
 
 import * as dagre from '@dagrejs/dagre';
 import type { ArchitectureMapNodeV1, ArchitectureMapRelationV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
@@ -38,10 +39,22 @@ export interface MapLayoutEdge {
   readonly strokeWidth: number;
 }
 
+/** The rows of one layer: the top-level nodes of that layer, and their members. */
+export interface MapLayoutBand {
+  /** null: top-level nodes that the model gives no layer. */
+  readonly layer: string | null;
+  /** Left edge of the band's leftmost node. */
+  readonly x: number;
+  readonly y: number;
+  readonly height: number;
+}
+
 export interface MapLayout {
   /** Every model node once; a group comes before its components. */
   readonly nodes: readonly MapLayoutNode[];
   readonly edges: readonly MapLayoutEdge[];
+  /** Top to bottom in the layer order; empty when the map has no layer order. */
+  readonly bands: readonly MapLayoutBand[];
   readonly width: number;
   readonly height: number;
 }
@@ -94,10 +107,28 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   graph.setGraph({ rankdir: 'TB', ranker: 'tight-tree', nodesep: 24, ranksep: 64, edgesep: 4, marginx: 24, marginy: 24 });
   graph.setDefaultEdgeLabel(() => ({}));
   for (const node of top) graph.setNode(node.id, sizeOf(node.id));
+  // Band of each top-level node: its layer's position in the order; the model's unlayered nodes go below the last layer.
+  const order = map.layer_order.state === 'ok' ? map.layer_order.layers : null;
+  const band = new Map(order === null ? [] : top.map(node => [node.id, node.layer === null ? order.length : order.indexOf(node.layer)]));
+  const used = [...new Set(band.values())].sort((a, b) => a - b);
+  // A zero-size anchor above each band and one below the last: every node of a band ranks below its anchor and above the next.
+  // The anchors leave one empty rank between two bands.
+  const anchor = (index: number) => `\0band:${index}`;
+  used.forEach((value, index) => {
+    graph.setNode(anchor(index), { width: 0, height: 0 });
+    if (index === used.length - 1) graph.setNode(anchor(index + 1), { width: 0, height: 0 });
+    for (const node of top) {
+      if (band.get(node.id) !== value) continue;
+      graph.setEdge(anchor(index), node.id, { weight: 1, minlen: 1 });
+      graph.setEdge(node.id, anchor(index + 1), { weight: 1, minlen: 1 });
+    }
+  });
   for (const relation of map.relations) {
-    const source = owner.get(relation.source)!;
-    const target = owner.get(relation.target)!;
+    let source = owner.get(relation.source)!;
+    let target = owner.get(relation.target)!;
     if (source === target) continue;
+    // A relation against the layer order still pulls its ends together; it points down so the bands stay acyclic.
+    if (order !== null && band.get(source)! > band.get(target)!) [source, target] = [target, source];
     const existing = graph.edge(source, target) as { weight?: number } | undefined;
     graph.setEdge(source, target, { weight: (existing?.weight ?? 0) + 1 });
   }
@@ -130,7 +161,13 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
     };
   });
 
+  const bands = used.map(value => {
+    const rows = top.filter(node => band.get(node.id) === value).map(node => placed.get(node.id)!);
+    const y = Math.min(...rows.map(box => box.y));
+    return { layer: order![value] ?? null, x: Math.min(...rows.map(box => box.x)), y, height: Math.max(...rows.map(box => box.y + box.height)) - y };
+  });
+
   const right = Math.max(0, ...nodes.map(node => node.x + node.width));
   const bottom = Math.max(0, ...nodes.map(node => node.y + node.height));
-  return { nodes, edges, width: right, height: bottom };
+  return { nodes, edges, bands, width: right, height: bottom };
 }

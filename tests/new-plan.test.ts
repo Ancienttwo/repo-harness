@@ -41,7 +41,9 @@ describe("new-plan helper integration", () => {
       expect(plan).toContain("## Promotion Gate");
       expect(plan).toContain("> **Artifact Level**: work-package");
       expect(plan).toContain("> **Task Contract**:");
-      expect(plan).toContain("> **Task Review**:");
+      expect(plan).not.toContain("tasks/reviews/");
+      expect(plan).not.toContain("tasks/notes/");
+      expect(plan).not.toContain("tasks/todos.md");
       expect(plan).not.toContain("> **Sprint Contract**:");
       expect(plan).not.toContain("> **Sprint Review**:");
       expect(plan).toContain("repo-harness run plan-to-todo --plan");

@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.template-projection-scripts
+kind: component
+name: Template Projection (scripts)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: scripts
+summary: The scripts-layer files of Template Projection. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Template Projection so layer direction is checked per directory.
+source:
+  include:
+    - scripts/sync-helper-sources.ts
+    - scripts/sync-reference-configs.ts

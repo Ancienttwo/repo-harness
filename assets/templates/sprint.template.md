@@ -13,7 +13,6 @@ Program-level sprint container. The Source PRD summary and ordered backlog
 decompose product intent into ordered rows. Contract rows become task-contract
 slices after `$think` expansion; inline rows stay in the sprint backlog or
 active plan Task Breakdown.
-`tasks/todos.md` stays the deferred-goal ledger and never carries this backlog.
 
 ## PRD
 

@@ -44,7 +44,7 @@ repo-harness chatgpt browser-cleanup --repo <repo> --status dry_run --limit 20
   implications, open questions, and a provenance block (raw artifact path,
   repo-harness `sessionId`, upstream provider session id when present,
   requested model, capture timestamp, conversation URL when available).
-- Keep task-local decisions in `tasks/notes/` and repeated correction rules in
+- Keep task-local decisions in the PR description and repeated correction rules in
   `tasks/lessons.md`; `docs/researches/` is for stable cross-task knowledge
   only.
 

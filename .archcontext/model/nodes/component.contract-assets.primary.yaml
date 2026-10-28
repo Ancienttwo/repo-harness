@@ -13,9 +13,6 @@ responsibilities:
   - "Check the context map and select agent context blocks."
 source:
   include:
-    - assets/workflow-contract.v1.json
-    - assets/AGENTS.md
-    - assets/CLAUDE.md
     - .ai/context/**
     - scripts/workflow-contract.ts
     - scripts/check-context-*

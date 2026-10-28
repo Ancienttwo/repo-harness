@@ -1,0 +1,22 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.cli-layer
+kind: component
+name: Operator Board (cli)
+status: active
+parent: capability.runtime-harness.operator
+layer: cli
+summary: The cli-layer files of Operator Board. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the cli-layer source files of Operator Board so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/operator.ts
+    - src/cli/commands/catch-up.ts
+    - src/cli/commands/module.ts
+    - src/cli/commands/setup-snapshot.ts
+    - src/cli/commands/setup-check-child.ts
+  exclude:
+    - src/cli/commands/module.ts
+    - src/cli/commands/operator.ts
+    - src/cli/commands/setup-check-child.ts
+    - src/cli/commands/setup-snapshot.ts

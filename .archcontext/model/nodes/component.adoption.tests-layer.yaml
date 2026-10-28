@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.adoption.tests-layer
+kind: component
+name: Adoption (tests)
+status: active
+parent: capability.public-surface.adoption
+layer: tests
+summary: The tests-layer files of Adoption. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the tests-layer source files of Adoption so layer direction is checked per directory.
+source:
+  include:
+    - tests/cli/adoption-plan.test.ts
+    - tests/fixtures/adoption/**

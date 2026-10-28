@@ -46,12 +46,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(deployReadme).toContain("operations.deploy_sql");
       expect(deployReadme).toContain("direct children of `deploy/sql/`");
       expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
-      expect(existsSync(join(cwd, "tasks/notes"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
       expect(readFileSync(join(cwd, "tasks/lessons.md"), "utf-8")).toBe(adoptionTemplateFile(cwd, "lessonsLog").content);
       expect(existsSync(join(cwd, ".claude/templates/contract.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".claude/templates/implementation-notes.template.md"))).toBe(true);
+      expect(existsSync(join(cwd, ".claude/templates/implementation-notes.template.md"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/spa-day-protocol.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/handoff-protocol.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/harness-overview.md"))).toBe(true);
@@ -81,7 +82,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/spec.md"))).toBe(true);
       expect(existsSync(join(cwd, "plans/prds"))).toBe(true);
       expect(existsSync(join(cwd, "plans/sprints"))).toBe(true);
-      expect(existsSync(join(cwd, "tasks/reviews"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/workstreams/.gitkeep"))).toBe(true);
       // repo-harness init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
@@ -271,8 +272,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredFiles).toContain("deploy/README.md");
       expect(workflowContract.artifacts.requiredDirectories).toContain("deploy/scripts");
       expect(workflowContract.artifacts.requiredDirectories).toContain("deploy/sql");
-      expect(workflowContract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
-      expect(workflowContract.artifacts.requiredDirectories).toContain("tasks/notes");
+      expect(workflowContract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("tasks/notes");
       expect(workflowContract.artifacts.requiredDirectories).toContain("tasks/workstreams");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/triage");
@@ -380,7 +381,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.operations.ignored).toContain("_ops/");
       expect(policy.operations.deploy_sql).toBeUndefined();
       expect(policy.operations.rule).toContain("operations.deploy_sql");
-      expect(policy.information_lifecycle.notes.dir).toBe("tasks/notes");
+      expect(policy.information_lifecycle.notes).toBeUndefined();
+      expect(policy.tasks.todo_file).toBeUndefined();
+      expect(policy.workstreams.todo_projection).toBeUndefined();
       expect(policy.information_lifecycle.evidence.snapshots_dir).toBe(".ai/harness/runs");
       expect(policy.information_lifecycle.external_knowledge.mode).toBe("manual-opt-in");
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");

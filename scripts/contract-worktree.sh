@@ -57,6 +57,7 @@ usage() {
 Usage:
   repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
+  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <pane-id> --pr <number> --merge <sha>
   repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
 
@@ -256,8 +257,7 @@ write_start_metadata() {
   "worktree": "$(json_escape "$worktree_path")",
   "source_repo": "$(json_escape "$REPO_ROOT")",
   "base_branch": "$(json_escape "$base_branch")",
-  "base_commit": "$(json_escape "$base_commit")",
-  "started_at": "$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  "base_commit": "$(json_escape "$base_commit")"
 }
 EOF_METADATA
 }
@@ -488,6 +488,7 @@ start_worktree() {
   fi
 
   worktree_path="$(cd "$worktree_path" && pwd -P)"
+  run_contract_runtime record --repo "$REPO_ROOT" --worktree "$worktree_path" --creator contract --purpose "$plan_file" --task "$slug" >&2
   if [[ -n "$herdr_endpoint" ]]; then
     if ! run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2; then
       echo "contract-worktree: Herdr registration incomplete; checkout preserved; register its runtime with the supplied endpoint before continuing" >&2
@@ -732,6 +733,9 @@ case "$command_name" in
     ;;
   cleanup)
     cleanup_worktree "$@"
+    ;;
+  notify-merged)
+    run_contract_runtime notify-merged --repo "$REPO_ROOT" "$@"
     ;;
   sweep)
     [[ $# -eq 0 ]] || { echo "contract-worktree: sweep takes no arguments" >&2; usage; exit 2; }

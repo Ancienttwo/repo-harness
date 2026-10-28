@@ -18,25 +18,20 @@ responsibilities:
   - "Bind native host session attribution to the exact immutable task binding; native attribution never grants admission. Keep immutable session reads usable by Node-safe consumers without loading owner preparation."
 source:
   include:
-    - "src/effects/terminal/herdr.ts"
-    - "src/effects/terminal/task-session.ts"
-    - "src/effects/terminal/task-runtime-observation.ts"
-    - "src/effects/terminal/task-role-profiles.ts"
-    - "src/cli/commands/herdr.ts"
-    - "src/cli/commands/herdr-skill.ts"
-    - "assets/herdr/**"
-    - "agents/fleet/**"
-    - ".codex/agents/**"
-    - "scripts/install-agent-fleet.sh"
-    - "src/core/decision/**"
-    - "src/effects/terminal/herdr-decision.ts"
-    - "src/core/sessions/session-selector.ts"
-    - "src/core/sessions/task-sessions.ts"
-    - "src/effects/sessions/admitted-source.ts"
-    - "src/effects/sessions/task-sessions.ts"
-    - "src/effects/terminal/native-task-session.ts"
-    - "src/effects/terminal/task-session-reader.ts"
-    - "src/effects/terminal/task-session-io.ts"
+    - src/effects/terminal/herdr.ts
+    - src/effects/terminal/task-session.ts
+    - src/effects/terminal/task-runtime-observation.ts
+    - src/effects/terminal/task-role-profiles.ts
+    - assets/herdr/**
+    - agents/fleet/**
+    - .codex/agents/**
+    - scripts/install-agent-fleet.sh
+    - src/effects/terminal/herdr-decision.ts
+    - src/effects/sessions/admitted-source.ts
+    - src/effects/sessions/task-sessions.ts
+    - src/effects/terminal/native-task-session.ts
+    - src/effects/terminal/task-session-reader.ts
+    - src/effects/terminal/task-session-io.ts
   entrypoints:
     - id: "entrypoint.task-agent-host.session"
       path: "src/effects/terminal/task-session.ts"

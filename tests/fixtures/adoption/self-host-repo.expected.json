@@ -5,8 +5,6 @@
     { "id": "mkdir:plans", "kind": "mkdir", "path": "plans", "status": "planned" },
     { "id": "mkdir:tasks", "kind": "mkdir", "path": "tasks", "status": "planned" },
     { "id": "mkdir:tasks/contracts", "kind": "mkdir", "path": "tasks/contracts", "status": "planned" },
-    { "id": "mkdir:tasks/reviews", "kind": "mkdir", "path": "tasks/reviews", "status": "planned" },
-    { "id": "mkdir:tasks/notes", "kind": "mkdir", "path": "tasks/notes", "status": "planned" },
     { "id": "mkdir:docs", "kind": "mkdir", "path": "docs", "status": "planned" },
     { "id": "mkdir:.ai/harness/checks", "kind": "mkdir", "path": ".ai/harness/checks", "status": "planned" },
     { "id": "mkdir:.ai/harness/handoff", "kind": "mkdir", "path": ".ai/harness/handoff", "status": "planned" },
@@ -20,7 +18,6 @@
     { "id": "mkdir:.ai/harness/architecture", "kind": "mkdir", "path": ".ai/harness/architecture", "status": "planned" },
     { "id": "mkdir:.ai/harness/runs", "kind": "mkdir", "path": ".ai/harness/runs", "status": "planned" },
     { "id": "writeFile:docs/spec.md:ifMissing", "kind": "writeFile", "path": "docs/spec.md", "status": "planned", "ifMissing": true },
-    { "id": "writeFile:tasks/todos.md:ifMissing", "kind": "writeFile", "path": "tasks/todos.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:tasks/current.md:ifMissing", "kind": "writeFile", "path": "tasks/current.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:tasks/lessons.md:ifMissing", "kind": "writeFile", "path": "tasks/lessons.md", "status": "planned", "ifMissing": true },
     { "id": "writeFile:.ai/harness/workflow-contract.json:workflow-contract", "kind": "writeFile", "path": ".ai/harness/workflow-contract.json", "status": "planned" },
@@ -28,22 +25,22 @@
     { "id": "runCheck:self-host-adoption-boundary-review", "kind": "runCheck", "status": "skipped", "command": "manual:self-host-hook-helper-pin-review" }
   ],
   "summary": {
-    "total": 24,
+    "total": 21,
     "byKind": {
-      "mkdir": 17,
-      "writeFile": 5,
+      "mkdir": 15,
+      "writeFile": 4,
       "appendManagedBlock": 1,
       "runCheck": 1
     },
     "byStatus": {
-      "planned": 23,
+      "planned": 20,
       "skipped": 1
     },
-    "plannedTotal": 23,
+    "plannedTotal": 20,
     "skippedTotal": 1,
     "failedTotal": 0,
     "userOwnedFilesTouched": 1,
-    "generatedFiles": 6,
+    "generatedFiles": 5,
     "repoHarnessOwnedFiles": 7,
     "requiresVerification": true
   },

@@ -175,6 +175,21 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
+The Worktree page reads `GET /api/v1/worktrees`. Background child processes collect
+Git topology, process cwd, merge proof and disk size. GET does no probes. The shared
+`inspectWorktree` predicate also gates live sweep selection. Unknown process state,
+unpublished commits and non-rebuildable ignored data prevent a green judgment.
+The browser gets stable opaque ids and directory names. Orphans without a retained
+Git pointer stay unassigned. Disk probes run at most once per directory incarnation
+per 15 minutes; a changed directory mtime makes the cached size unknown until then.
+
+Creation paths write lifecycle records in the clone's common Git directory under
+`repo-harness/worktree-records`. Contract recovery metadata and MCP/session bindings
+retain their operational fields; they do not supply the Console lifecycle view.
+Closeout records the end state. New MCP checkouts use `REPO_HARNESS_WORKTREE_ROOT`
+and the same naming rule as sweep. The retired MCP-specific root setting now fails
+with an instruction to use the shared setting. Existing paths remain readable.
+
 ### 3.1 必须保持的不变量
 
 环境页面复用 setup 与 CLI inventory 的缓存。`CliPage.tsx` 只在 CLI 页可见时读取 `/api/v1/cli-inventory`，并用 `decodeCliInventory` 校验。刷新失败保留上次数据并显示警告；`unused: null` 表示观察不足。卸载和配置删除分开显示为可复制命令。Hooks 页按事件、路由和宿主显示次数，guard 拒绝单独列出。Skills 页的宿主状态仍来自 setup check，推荐项来自 catalog 的 `skill` 类别。
@@ -182,7 +197,7 @@ sequenceDiagram
 1. **只有三种有界写入，其余只读。** 用户 2026-10-27 批准三种写入（[#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)，D1）：本机配置 `~/.repo-harness/config.json`（第三期）、文档会话（第四期）、worktree 清理（第五期）。默认仍只读，按这个顺序逐项开放。每个写入请求先过 Origin、`Sec-Fetch-Site`、写 token、封闭 schema、幂等、锁和前置条件，先写意图审计再执行（[PRD](../../../../plans/prds/20261026-2310-operator-console-uiux.prd.md)「写入与权限边界」「写入 API」）。代码现状：生产有一条写路由。`OPERATOR_ROUTES` 是冻结的生产路由表（`src/effects/operator/server.ts:130`），只有 `settings_agents_write`（`POST /api/v1/settings/agents`）是 `write: true`。它只改 `~/.repo-harness/config.json` 的 `agents` 一节，其他键原样保留；请求带读到的 revision，revision 过期返回 409，文件不变（`src/effects/operator/agents-settings-route.ts`、`src/effects/configuration/agents-configuration.ts`）。浏览器里只有设置页发这个请求：一次保存把草稿的全部改动和读到的 revision 放进一个请求；没有回应或回 `busy`、`audit_unavailable` 时，再保存沿用同一个 `request_id`；回 409 `reconcile_required` 时页面显示「待核对」并锁住表单，重新加载前不再发送（`src/operator-web/settings.ts`、`src/operator-web/SettingsPage.tsx`）。`startOperatorServer` 要求每个写处理和路由清单里 `method: 'POST'`、`write: true` 的条目一一对应，否则拒绝启动；只有测试追加写路由（`server.ts:1605-1620`）。`handleRequest` 只在 POST 带本服务的 Origin 和 `Sec-Fetch-Site: same-origin` 并命中写路由时放行；GET 和 HEAD 不变，其他方法返回 405（`server.ts:1649-1686`）。`tests/effects/operator-write-boundary.test.ts:67` 要求写路由集合只有 `settings_agents_write`，第四期、第五期各自把新端点加进这个清单。PR #482 删除了旧的浏览器写入口（composer）。文档会话创建（切片 4.2，`src/effects/operator/doc-session.ts`）已经走共用的写入运行：它按服务端 docs 视图的同一个提交校验每条引用，引用失效回 409 `citation_stale`；然后在受管 worktree 根目录下建 `docs/<slug>` 分支和 worktree，再写会话记录。它还不在 `OPERATOR_ROUTES` 里，也没有 CLI 命令，因为按批准的顺序本机配置写入（#1017）先开放。它不启动 agent。文档会话事件（切片 4.3，`src/effects/operator/doc-session-events.ts`）由宿主先脱敏、再按封闭 schema 校验，追加到会话目录的 `events.jsonl`（0600）。记录只有消息正文、工具类别、仓库内相对路径、执行状态、轮次边界和失败类别，原始工具参数、完整命令、终端输出和环境变量没有字段。`GET /api/v1/sessions/{sid}/events?after=<epoch>.<seq>` 只在路由清单声明它时响应，生产 `OPERATOR_ROUTES` 没有它。agent 启动（G5）还没开放，所以现在没有宿主写事件。
 2. **请求先过身份检查，再进路由。** Host 必须等于 loopback authority，否则返回 421（`server.ts:1638`）。Origin 不匹配返回 403（`server.ts:1644`）。`/api/*` 的 `Sec-Fetch-Site` 只接受 `same-origin` 和 `none`（`server.ts:1706`）。
 3. **GET 不启动工作。** 开发活动、setup、CLI 清单、Bot access、notify 状态、docs 和每日测试结果都来自后台 collector 的内存缓存。`startOperatorServer` 只在启动时创建这些 collector（`server.ts:2089-2111`）。Agent 设置（`/api/v1/settings/agents`）读配置文件和 setup collector 的 runtime 探测缓存。OAR 安装探测只在 setup collector 的周期里运行：setup check 之后，在一个 60 秒期限的受监督子进程里探测一次；探测失败时保留上一次成功的结果，标为 stale（`src/effects/setup/collector.ts`、`src/effects/setup/agent-runtime-probe.ts`）。Bot access 读 notify collector 的缓存，不自己调用 herdr 的 notify 探针。notify 和 Bot access collector 每个周期只从 `herdr notify install` 写的安装记录（`src/effects/terminal/herdr-notify-install.ts`）取 Herdr session，不读服务端的 `HERDR_SESSION`；没有记录是 `notify_session_missing`，记录读不出是 `notify_session_invalid`，Bot access 这时只有 herdr 一节不可用。docs 和 tests collector 只从开发活动缓存取每个仓库的 GitHub 名称和默认分支。collector 的 `read` 只读缓存（`src/effects/dev-activity/collector.ts:384`）。周期不重叠（`src/effects/dev-activity/collector.ts:372-381`）。docs 树也只读 collector 缓存（`src/effects/operator/docs-collector.ts`）。docs 文件读取向 docs collector 持有的常驻 `git cat-file` 进程发一个对象请求（PRD G7）。GET 不启动也不重启这个进程。进程不在时返回 503 `docs_reader_unavailable`。这个请求有并发上限（503 `docs_busy`）和期限（504 `docs_timeout`），客户端断开时服务端放弃它。任务执行状态（`/api/v1/repositories/<id>/execution`）也只读缓存（`src/effects/operator/execution-collector.ts`）。collector 在一个子进程里为每个注册仓库运行 `collectTaskExecutionStates`，因为它同步读文件、运行 `ps` 和 git。子进程沿用 setup collector 的受监督进程（`runSetupProcess`）：它是新进程组的组长，20 秒期限或服务关闭时整个进程组被 kill。子进程环境去掉选择仓库的 git 变量（`GIT_DIR`、`GIT_WORK_TREE`、`GIT_COMMON_DIR` 等），所以每个仓库从自己的路径解析。第一个周期完成前 GET 返回 503 `execution_state_pending`。子进程失败、超时或周期抛错时，该周期的所有仓库都是 503 `execution_state_unavailable`，不显示过期的已验证会话。binding hash、`native-session.json`、进程身份都通过并且没有 `closed.json` 时，任务才显示 Agent，否则是"没有已验证会话"。跟进只给 `buildTaskFollowUp` 生成的 resume 命令和 Herdr pane 位置。pane 位置只在 pane 的 session 等于 notify 安装记录的 session 时出现。架构底图（`/api/v1/repositories/<id>/architecture/map`）也只读缓存（`src/effects/operator/architecture-map-collector.ts`）。collector 为每个注册仓库运行一个子进程，同样用 `runSetupProcess`：`archctx export native` 给出已提交的模型，`git grep -c` 给出这个提交里每个已跟踪文本文件的行数，`archctx resolve` 给出每个文件的归属节点，`archctx deps` 给出 capability 之间的 import 数。行数沿模型的 `parent` 链累加。工作区里的模型有改动时，`archctx resolve` 读的不是这个提交的模型，所以行数是 `model_worktree_dirty`。CodeGraph 索引缺失、不完整或属于另一个提交时，import 数不可用并写原因；collector 不建索引。
-   架构底图的五个图层来自同一个子进程和同一个周期。今日变更是这个提交从本地零点起的 first-parent 提交（git），改动文件用 `archctx resolve` 归属，模型改动对比基准提交的 `archctx export native`。违规与漂移来自 `archctx debt`、`docs anchors` 和 `archctx deps` 里标为未声明的行。collector 不调 `archctx flows check`：它在索引存在时运行 `codegraph sync`，会写用户的索引，所以 flow 证明写原因 `flows_check_writes_index`。层方向等 arch-context#408 发版（`layer_order_not_released`），flow 步骤级影响等 arch-context#409（`change_impact_not_exported`）。测试覆盖由 collector 在服务进程里读 tests collector 的缓存。读工作区模型或 CodeGraph 索引的事实要求 HEAD 是这个提交、模型或整个工作区干净，周期结束时再查一次。PR 影响面来自 Dev Activity 缓存：开发活动的 open 查询（`gh pr list --author @me`）同时读每个 PR 的 head 提交、`changedFiles` 和 `files`。gh 最多列 100 个文件，列出的文件比 `changedFiles` 少时这个 PR 是 `files_truncated`，不显示部分列表。map collector 把一个仓库的 open PR 写进一个 0600 临时文件交给子进程，子进程退出后删掉文件。子进程用 `archctx resolve` 按这个提交的模型解析文件归属，和今日变更一样要求模型干净。每个 PR 的事实标着它的 head 提交；依赖方由浏览器从 map 已有的模型关系算出，不再解析模型。Dev Activity 还没读过 GitHub 时是 `dev_activity_pending`，这个仓库的 GitHub 读取不是 ok 时是 `dev_activity_unavailable`。决策图层等 archctx 导出决策的适用节点（`decisions_not_exported`，Ancienttwo/arch-context#407）。
+   架构底图的五个图层来自同一个子进程和同一个周期。今日变更是这个提交从本地零点起的 first-parent 提交（git）。子进程取零点前最近的 first-parent 提交作基准，运行 `archctx impact --base <基准> --head <提交> --json`，用 archctx 发布的 `ref-impact` schema 解码，并核对两个快照就是请求的提交。改动路径和行数、归属节点、没有 owner 的路径、沿 `calls` 和 `depends-on` 关系的依赖方、flow 步骤和模型改动（节点、关系、flow）都直接来自这个回答，map 不在本地累加或对比。改动路径、归属节点、依赖方和模型改动只读提交，不要求干净的检出。`flow_steps` 还依赖工作区的 CodeGraph 索引；archctx 核对索引事实与目标提交，索引缺失或不匹配时返回 `unknown` 和 `ref-code-facts-unavailable`，`dependency_coverage` 也可能是 `partial`。archctx 失败时（例如基准提交的模型不合 schema）图层不可用，保留 archctx 的错误码（`archctx_error`），没有本地兜底。archctx 在路径数等上限处截断回答时，图层标出被截断的部分，浏览器说明这些数字是下限。违规与漂移来自 `archctx debt`、`docs anchors`、`archctx flows check --no-sync` 和 `archctx deps` 里标为未声明的行。`flows check --no-sync` 只读已有 CodeGraph 索引的私有快照，不写索引。索引缺失、过期或仓库布局不支持快照时，archctx 返回 `AC_CODE_FACTS_UNAVAILABLE`，flow 证明是 `code_facts_unavailable`。其他 archctx 错误保留 archctx 的错误码和 reason code（`archctx_error`），map 只检查它们的形状。模型没有声明有序的 `model.layers` 时，层方向是 `model_layers_undeclared`；模型声明了层时是 `layer_direction_not_read`，因为 collector 不跑 archctx 的层方向约束检查。底图的层顺序也来自同一次 `archctx export native` 的 `model.layers`（第一层在最上面），archctx 校验它声明了每个节点的层。有层顺序时，dagre 把每个顶层节点排在它的层带里，层带之间留一行空 rank 放层标签；第一屏是 85% 缩放下最上面一层的最左节点，"全图"按钮显示整张图。模型没有声明 `model.layers` 时，底图保持不分带的布局，并显示 `layer_order` 缺口 `model_layers_undeclared`。测试覆盖由 collector 在服务进程里读 tests collector 的缓存。读工作区模型或 CodeGraph 索引的事实要求 HEAD 是这个提交、模型或整个工作区干净，周期结束时再查一次。PR 影响面来自 Dev Activity 缓存：开发活动的 open 查询（`gh pr list --author @me`）同时读每个 PR 的 head 提交、`changedFiles` 和 `files`。gh 最多列 100 个文件，列出的文件比 `changedFiles` 少时这个 PR 是 `files_truncated`，不显示部分列表。map collector 把一个仓库的 open PR 写进一个 0600 临时文件交给子进程，子进程退出后删掉文件。子进程把每个 PR 的文件列表写进临时文件，运行 `archctx impact --paths-from`，得到这个提交的工作区模型下的归属、依赖方和 flow 步骤。它读工作区模型，所以要求模型干净，并核对回答的 head 来自工作区、`headSha` 等于这个提交。路径列表没有行数和模型改动。每个 PR 的事实标着它的 head 提交；浏览器只显示 archctx 给出的依赖方，不自己遍历模型关系。Dev Activity 还没读过 GitHub 时是 `dev_activity_pending`，这个仓库的 GitHub 读取不是 ok 时是 `dev_activity_unavailable`。决策图层来自同一次 `archctx export native` 的 `decisions`：每条 ADR 的标题、状态、路径和适用节点。archctx 拒绝适用于未知节点的导出，模型读不出时整张 map 不可用，所以决策图层没有单独的缺失原因。
 4. **一个 schema 只有一个 decoder。** `src/core/**` 下的严格 decoder 同时服务服务端和浏览器。服务端在发送前重新 decode 缓存（`server.ts:1773`）。浏览器在渲染前用同一个函数 decode（`src/operator-web/dev-activity.ts:20`）。decode 失败时服务端返回 unavailable 快照，不合成替代值（`server.ts:1775`）。
 5. **CLI 和 HTTP 输出一致。** `module review-prompt` 与 architecture 路由使用同一个 `ArchitectureModelReader`。`tests/cli/operator-serve.test.ts:1270` 比较 GET、HEAD 与 CLI 的 digest。来源：PR #590、plan-20261005-0405 不变量 I7。
 6. **UI 只触发第 1 条的三种写入。** 其他动作只显示链接或可复制的命令。宿主投影（install、update、profile 切换）、registry 清理和卸载 CLI 只给命令。派活保持 Bot → CLI → herdr，不经 MCP（D9）。控制台不向用户 harness 里的编码会话发消息、停止或注入内容。来源：PR #609、plan-20261005-0405 不变量 I9（2026-10-27 修订）。
@@ -224,25 +239,48 @@ sequenceDiagram
 
 ## 4. 歷史決策記錄(append-only)
 
+### Layer order for layer-direction (2026-10-29, issue #1118)
+
+- ChangeSet `changeset.1118-model-layers-order-d` sets `model.layers` to `tests, scripts, cli, effects, web, core, assets, external`. It replaces the #1013 order, so the map bands follow the new list.
+- archctx `constraints check` reads `model.layers` as the allowed import direction: a layer imports only the layers below it. With this order the directory-level dry run and the node-level run after the #1125 split both give 0 violations.
+- web is below effects because operator-web imports only core and lower. assets is at the bottom because `src/core` imports `assets/*.json`.
+
+### Layered architecture map (2026-10-29, issue #1013)
+
+- The map route serves `repo-harness.architecture-map.v4`. It adds `layer_order`: archctx's `model.layers` from the same `export native` read, or `model_layers_undeclared`. No local layer list and no name-based order.
+- The layout ranks each top-level node in its layer's band, first layer at the top. A relation against the order still pulls its ends together but cannot reorder the bands. The model's unlayered top-level nodes take a band below the last layer.
+- The manifest declares this repository's order through one archctx ChangeSet: `assets, tests, scripts, web, cli, effects, core, external`. The order follows the layered-architecture view (mount surface, entry, effects, core, external) and the measured import direction: scripts and tests import the entry, effects and core code.
+- A banded map opens at 85% zoom on the top band, because the whole map of this model is about 6100 × 5100 px. Fit still shows the whole map.
+
+### Architecture map on archctx 0.9.4 (2026-10-28, issue #1014)
+
+- The map route serves `repo-harness.architecture-map.v3`.
+- Decisions come from `decisions` of the same `archctx export native` read as the model (Ancienttwo/arch-context#407). No new archctx call.
+- Flow proofs come from `archctx flows check --no-sync --json` under the clean-tree gate (Ancienttwo/arch-context#421). It writes no index. `AC_CODE_FACTS_UNAVAILABLE` is `code_facts_unavailable`; any other archctx error keeps its codes as `archctx_error`.
+- Layer direction states that the model declares no `model.layers` (`model_layers_undeclared`). Layer constraint checks (Ancienttwo/arch-context#408) stay out of scope.
+- Today's changes and PR impact come from `archctx impact` (Ancienttwo/arch-context#409), decoded with the published `ref-impact` schema and bound to the requested snapshots. The local `diff --numstat` and `resolve` roll-up, the local model delta and the browser's dependent walk are removed. Dependents follow archctx: `calls` and `depends-on` relations of the head model.
+- Today's changes read only commits, so they lose the clean-model gate. PR impact keeps it, because `--paths-from` reads the worktree model.
+- An archctx refusal keeps its codes (`archctx_error`). A truncated answer names the parts archctx cut.
+
 ### Architecture map PR impact (2026-10-28, issue #1014)
 
 - The user chose the source: the existing Dev Activity `gh pr list` open query also reads `headRefOid`, `changedFiles` and `files`. Dev Activity stays the one GitHub reader; no new reader or token.
 - An open PR record carries `head_sha` and `changed_files` (a complete list, or `files_missing`, `files_truncated` or `files_invalid`). A partial list never leaves the collector.
 - The map collector hands each repository's open PRs to its child in a private temporary file, because `runSetupProcess` gives the child no stdin. Owners come from `archctx resolve` at the map commit's model, under the same clean-model gate as today's changes.
-- Dependents come from the map's model relations in the browser. Flow-step impact stays `change_impact_not_exported` (Ancienttwo/arch-context#409).
+- Dependents come from the map's model relations in the browser. Flow-step impact stays `change_impact_not_exported` (Ancienttwo/arch-context#409): archctx 0.9.4 `impact` reports it, the collector does not call it.
 
 ### Architecture map layers (2026-10-28, issue #1014)
 
 - The map route serves `repo-harness.architecture-map.v2` with five layers. The map collector child reads today's changes, the model delta and the violations in the same cycle; the collector adds the tests layer from the tests collector cache.
 - Widen the console-collectors responsibility and the archctx relation intent. No new node, relation or route.
-- PR impact has no source on main (`pr_files_unavailable`). Decisions wait on Ancienttwo/arch-context#407 (`decisions_not_exported`).
-- The collector does not run `archctx flows check`: in 0.9.3 it runs `codegraph sync` on an existing index. Flow proofs show `flows_check_writes_index`.
+- PR impact has no source on main (`pr_files_unavailable`). Decisions wait on the collector reading the exported `appliesTo` nodes (`decisions_not_exported`, Ancienttwo/arch-context#407).
+- The collector does not run `archctx flows check`: without `--no-sync` it runs `codegraph sync` on an existing index. Flow proofs show `flows_check_writes_index`.
 
 ### Architecture base map (2026-10-27, issue #1013)
 
 - Add the architecture map GET route. It reads only the map collector cache.
 - Add the map collector and its child to `component.operator.console-collectors`. Primary excludes the two files. Add one collector sink to `startOperatorServer` and the relation from console-collectors to archctx.
-- archctx 0.9.3 orders layers by name only, so the map shows the layer as a node attribute and does not order by layer (Ancienttwo/arch-context#408).
+- The map shows the layer as a node attribute and does not order by layer (Ancienttwo/arch-context#408).
 
 ### Console collectors (2026-10-27, PR #1047, #1048, #1049, #1051, #1054)
 

@@ -2,9 +2,9 @@ import { worktreeUid } from '../../src/effects/state/worktree-trash';
 import { DEFAULT_WORKTREE_TEMPLATE, resolveWorktreeTemplate, systemWorktreeRoot, defaultWorktreeTemplate } from '../../src/core/worktree-location.mjs';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import {
@@ -79,7 +79,7 @@ function fixture(): {
   git(repo, 'add', '.');
   git(repo, 'commit', '-m', 'fixture');
 
-  const env = { ...process.env, REPO_HARNESS_HOME: home };
+  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: temporary('coding-worktrees-') };
   const grant = setRepoHarnessAccessMode(repo, 'read_write', { env });
   expect(grant.authorizationRevision).toBe(1);
   const manager = new CodingWorkspaceManager(env);
@@ -635,10 +635,29 @@ describe('coding MCP workspace and file tools', () => {
   }, 30_000);
 });
 
- test('coding worktrees use system tmp by default and keep the root override', async () => {
+ test('coding worktrees share the sweep root and reject the retired override', async () => {
   const { codingWorktreeRoot } = await import('../../src/cli/mcp/coding-workspaces');
-  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe(process.platform === 'win32' ? join(tmpdir(), 'repo-harness-mcp-worktrees') : '/tmp/repo-harness-mcp-worktrees');
-  expect(codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toBe(require('path').resolve('/custom'));
+  const { managedWorktreeRoot } = await import('../../src/effects/git/managed-worktree');
+  expect(codingWorktreeRoot({ HOME: '/unused', TMPDIR: '/unused-tmp' })).toBe(managedWorktreeRoot({}));
+  const root = temporary('mcp-shared-root-');
+  expect(codingWorktreeRoot({ REPO_HARNESS_WORKTREE_ROOT: root })).toBe(require('fs').realpathSync(root));
+  expect(() => codingWorktreeRoot({ REPO_HARNESS_MCP_WORKTREE_ROOT: '/custom' })).toThrow('REPO_HARNESS_WORKTREE_ROOT');
+});
+
+test('opening a coding worktree creates a configured root that does not exist yet', async () => {
+  const state = fixture();
+  try {
+    const fresh = join(temporary('mcp-fresh-root-'), 'not-created', 'worktrees');
+    const env = { ...state.env, REPO_HARNESS_WORKTREE_ROOT: fresh };
+    const workspaceManager = new CodingWorkspaceManager(env);
+    const opened = parse(await callCodingTool({ ...state.ctx, workspaceManager }, 'open_workspace', { repo_id: state.repoId }));
+    expect(opened).toMatchObject({ mode: 'worktree', managed: true });
+    const root = workspaceManager.get(opened.workspace_id).root;
+    expect(dirname(root)).toBe(realpathSync(fresh));
+    expect(statSync(fresh).mode & 0o777).toBe(0o700);
+  } finally {
+    await state.processManager.shutdown();
+  }
 });
 
 describe('system worktree root platform policy', () => {

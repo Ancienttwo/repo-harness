@@ -45,7 +45,7 @@ import {
   rollbackInstallHostTransaction,
   type InstallHostTransaction,
 } from '../installer/install-profile';
-import { globalRuntimeScope, withRuntimeTransactionLock } from '../installer/runtime-host-lock';
+import { globalRuntimeScope, withRuntimeTransactionLock, type RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
 import { gitExecFileSync } from '../../effects/git/runner';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade } from './upgrade-registered';
@@ -245,6 +245,7 @@ function applyLocked(
   dependencies: UpgradeDependencies,
   assertHostLock: () => void,
   lockedProjectPaths: ReadonlySet<string>,
+  runtimeLock: RuntimeTransactionContext,
   decisions: readonly UpgradeDecision[],
 ): UpgradeResult {
   const planned = planUpgrade(options, decisions);
@@ -292,7 +293,7 @@ function applyLocked(
     }
     if (!isLegacyPathSafe(options.home, auditPath, false)) throw new Error(`unsafe audit path: ${auditPath}`);
     const hostPaths = [...globalPaths, ...(manifestRefreshPaths.length > 0 ? [statePath] : [])];
-    if (hostPaths.length > 0) hostBackup = beginInstallHostTransaction(hostPaths, env, { retainBackup: true });
+    if (hostPaths.length > 0) hostBackup = beginInstallHostTransaction(hostPaths, env, { retainBackup: true, runtimeLock });
     projectBackup = backupProject(options.cwd, projectPaths, transactionId);
     if (projectBackup) writeProjectManifest(options.cwd, projectBackup);
     for (const path of [...globalPaths, ...projectPaths]) {
@@ -395,7 +396,7 @@ function applyLocked(
             || !snapshot.backup_path || !isLegacyPathSafe(backup.backup_root, snapshot.backup_path)) {
             throw new Error(`unsafe rollback target or backup: ${snapshot.path}`);
           }
-          rollbackInstallHostTransaction({ ...backup, snapshots: [snapshot] }, { retainBackup: true });
+          rollbackInstallHostTransaction({ ...backup, snapshots: [snapshot] }, { retainBackup: true, runtimeLock });
           rolledBackPaths.push(snapshot.path);
           const removedIndex = removedPaths.indexOf(snapshot.path);
           if (removedIndex >= 0) removedPaths.splice(removedIndex, 1);
@@ -470,7 +471,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
       const underHostLock = planUpgrade(options, decisions).items;
       const paths = [...new Set(underHostLock.filter((item) => item.location === 'project' && removable(item)).map((item) => item.path))].sort();
-      return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths), decisions));
+      return withProjectLocks(paths, () => applyLocked(options, env, dependencies, () => lock.assertOwned(), new Set(paths), lock, decisions));
     }));
   } catch (error) {
     return { items: [], apply, exitCode: 1, removedPaths: [], refreshedPaths: [], keptPaths: [], operatorKept: [], error: error instanceof Error ? error.message : String(error) };

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.strategy-reflection.primary-core
+kind: component
+name: Strategy Context Collector (core)
+status: active
+parent: capability.public-surface.strategy-reflection
+layer: core
+summary: The core-layer files of Strategy Context Collector. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the core-layer source files of Strategy Context Collector so layer direction is checked per directory.
+source:
+  include:
+    - src/core/strategy/**

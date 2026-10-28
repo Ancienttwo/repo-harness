@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.primary-scripts
+kind: component
+name: Herdr Task Session Host (scripts)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: scripts
+summary: The scripts-layer files of Herdr Task Session Host. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the scripts-layer source files of Herdr Task Session Host so layer direction is checked per directory.
+source:
+  include:
+    - scripts/install-agent-fleet.sh

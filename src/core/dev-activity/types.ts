@@ -2,6 +2,8 @@
 // plans/plan-20261010-0320-operator-console-kumo.md §3 for the authority table.
 // Values that have no authority are null; consumers must not infer them.
 
+import type { PullRequestFiles } from '../operator/pull-request-files';
+
 export const DEV_ACTIVITY_PROJECTION = 'repo-harness.dev-activity.v2' as const;
 export const DEV_ACTIVITY_SHIPPED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -58,19 +60,8 @@ export interface DevActivityPullRequest {
   /** Open PRs only: the head commit from gh; null when gh gave none. Null for merged and closed PRs. */
   head_sha: string | null;
   /** Open PRs only: every changed file, or why gh gave no complete list. Null for merged and closed PRs. */
-  changed_files: DevActivityPrFiles | null;
+  changed_files: PullRequestFiles | null;
 }
-
-/**
- * Why an open PR has no complete file list: gh gave no list or count
- * (`files_missing`), fewer files than the PR changed (`files_truncated`, gh
- * lists at most 100), or a path that is not a public repository path.
- */
-export const DEV_ACTIVITY_PR_FILES_REASONS = ['files_missing', 'files_truncated', 'files_invalid'] as const;
-export type DevActivityPrFilesReason = typeof DEV_ACTIVITY_PR_FILES_REASONS[number];
-export type DevActivityPrFiles =
-  | { state: 'ok'; paths: string[] }
-  | { state: 'unavailable'; reason: DevActivityPrFilesReason };
 
 export interface DevActivityWorktree {
   /** Directory basename only; never an absolute path. */
@@ -99,8 +90,6 @@ export interface DevActivityItem {
   column_since: string | null;
   worktrees: DevActivityWorktree[];
   pull_request: DevActivityPullRequest | null;
-  /** Merged PR whose worktree still exists. */
-  cleanup_pending: boolean;
 }
 
 export const DEV_ACTIVITY_ATTENTION_KINDS = ['ready_to_merge', 'changes_requested', 'merge_conflict', 'checks_failed'] as const;

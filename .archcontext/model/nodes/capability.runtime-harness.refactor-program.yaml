@@ -12,9 +12,7 @@ responsibilities:
   - Record an accept, defer or reject decision with its reason through ArchContext.
 source:
   include:
-    - "src/core/refactor/**"
-    - "src/effects/refactor/**"
-    - "src/cli/commands/refactor.ts"
+    - src/effects/refactor/**
   entrypoints:
     - id: entrypoint.refactor-program.observe
       path: "src/effects/refactor/recommendations.ts"
