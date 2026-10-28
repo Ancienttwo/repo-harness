@@ -2,21 +2,31 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readlinkSync, statSync } from 'node:fs';
 
 export interface WorktreeProcess { pid: number; cwd: string }
+export interface LinuxWorktreeProcessProbe {
+  readonly uid: number;
+  entries(): readonly string[];
+  owner(pid: string): number;
+  cwd(pid: string): string;
+}
 /** Null means occupancy could not be proved. Never turn a failed process probe into an empty list. */
-export function worktreeProcesses(deadline: number): WorktreeProcess[] | null {
+export function worktreeProcesses(deadline: number, linuxProbe?: LinuxWorktreeProcessProbe): WorktreeProcess[] | null {
   try {
-    if (process.platform === 'linux') {
+    if (linuxProbe || process.platform === 'linux') {
+      const probe = linuxProbe ?? {
+        uid: process.getuid!(),
+        entries: () => readdirSync('/proc'),
+        owner: (pid: string) => statSync(`/proc/${pid}`).uid,
+        cwd: (pid: string) => readlinkSync(`/proc/${pid}/cwd`),
+      };
       const result: WorktreeProcess[] = [];
-      for (const pid of readdirSync('/proc').filter(name => /^\d+$/u.test(name))) {
+      for (const pid of probe.entries().filter(name => /^\d+$/u.test(name))) {
         if (Date.now() >= deadline) return null;
         try {
           // Like unprivileged lsof on macOS, inventory this operator's processes.
-          if (statSync(`/proc/${pid}`).uid !== process.getuid?.()) continue;
-          result.push({ pid: Number(pid), cwd: readlinkSync(`/proc/${pid}/cwd`) });
+          if (probe.owner(pid) !== probe.uid) continue;
+          result.push({ pid: Number(pid), cwd: probe.cwd(pid) });
         }
-        // The kernel refuses the cwd of a same-UID non-dumpable process, for example systemd --user.
-        // Unprivileged lsof on macOS skips such a process too. Every other probe error is unknown.
-        catch (error) { if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) return null; }
+        catch (error) { if (!['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return null; }
       }
       return result;
     }
