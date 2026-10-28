@@ -75,7 +75,7 @@ test("readiness rejects a stale shared Herdr skill even when both host copies ar
     const shared = join(fixture.home, ".agents", "skills", "herdr");
     mkdirSync(shared, { recursive: true });
     writeFileSync(join(shared, "SKILL.md"), HERDR_SKILL);
-    const check = () => spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "both"], {
+    const check = (host = "both", json = true) => spawnSync("bash", [SCRIPT, ...(json ? ["--json"] : []), "--strict-readiness", "--host", host], {
       cwd: ROOT, encoding: "utf8",
       env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}` },
     });
@@ -86,6 +86,10 @@ test("readiness rejects a stale shared Herdr skill even when both host copies ar
     expect(report.hosts.claude.status).toBe("present");
     expect(report.hosts.shared.status).toBe("mismatch");
     expect(report.status).toBe("mismatch");
+    const claudeOnly = JSON.parse(check("claude").stdout).tools.herdr_skill;
+    expect(claudeOnly.status).toBe("present");
+    expect(claudeOnly.hosts.shared).toBeUndefined();
+    expect(check("both", false).stdout).toContain("shared: mismatch");
     writeFileSync(join(shared, "SKILL.md"), renderHerdrSkill(HERDR_SKILL));
     const fixed = check();
     expect(JSON.parse(fixed.stdout).tools.herdr_skill.status).toBe("present");

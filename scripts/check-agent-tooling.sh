@@ -939,11 +939,13 @@ function detectRequiredHerdrSkill(herdrRuntime) {
   }
   const skillRoots = SELECTED_HOSTS.map(host => [host, HOSTS[host].skillsDir]);
   const sharedRoot = path.join(HOME, ".agents", "skills");
-  try {
-    fs.lstatSync(path.join(sharedRoot, "herdr"));
-    skillRoots.push(["shared", sharedRoot]);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+  if (SELECTED_HOSTS.includes("codex")) {
+    try {
+      fs.lstatSync(path.join(sharedRoot, "herdr"));
+      skillRoots.push(["shared", sharedRoot]);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
   const hosts = Object.fromEntries(skillRoots.map(([host, root]) => {
     const skillFile = path.join(root, "herdr", "SKILL.md");
@@ -2035,7 +2037,7 @@ function printText(result) {
   const herdrSkill = result.tools.herdr_skill;
   console.log(`Herdr skill [${herdrSkill.status}]`);
   console.log(`  - Source: ${herdrSkill.source}`);
-  for (const host of SELECTED_HOSTS) console.log(`  - ${host}: ${herdrSkill.hosts[host].status} (${herdrSkill.hosts[host].path})`);
+  for (const [host, skill] of Object.entries(herdrSkill.hosts)) console.log(`  - ${host}: ${skill.status} (${skill.path})`);
   if (herdrSkill.status !== "present") console.log(`  - Install: ${herdrSkill.install_command}`);
   console.log("");
 

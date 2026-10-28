@@ -180,6 +180,8 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
 
     writeFileSync(join(shared, "SKILL.md"), "# shared user change\n");
     writeFileSync(source, `${afterCleanupFailure}New command.\n`);
+    expect(configureRequiredHerdrSkill("claude", env).status).toBe("ok");
+    expect(readFileSync(join(shared, "SKILL.md"), "utf8")).toBe("# shared user change\n");
     expect(configureRequiredHerdrSkill("both", env).status).toBe("failed");
     expect(readFileSync(join(shared, "SKILL.md"), "utf8")).toBe("# shared user change\n");
     expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(afterCleanupFailure));

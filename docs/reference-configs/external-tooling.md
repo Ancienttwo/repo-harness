@@ -406,8 +406,9 @@ The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
 `herdr --skill` with the caller-context policy in
 `assets/reference-configs/herdr-skill-context.md`. The shared renderer replaces
 the binary's introductory environment gate and rejects an unknown section layout.
-Both hosts receive the same generated skill. An existing shared copy at
-`~/.agents/skills/herdr` is also updated and checked because Codex can discover it.
+Both hosts receive the same generated skill. When Codex is selected, an existing
+shared copy at `~/.agents/skills/herdr` is also updated and checked because Codex
+can discover it. Claude-only operations leave that shared copy unchanged.
 Install refuses to replace a
 user-edited or unowned copy. Strict readiness compares against the same renderer.
 Missing tool environment variables do not prove that the user is outside Herdr.

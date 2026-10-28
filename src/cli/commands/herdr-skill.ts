@@ -101,7 +101,7 @@ export function configureRequiredHerdrSkill(
     const canonicalHome = realpathSync(home);
     const roots = hosts.map(host => [hostSkillRoot(home, host), hostSkillRoot(canonicalHome, host)]);
     // Codex can discover this shared copy as well as its host-specific copy.
-    if (pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
+    if (hosts.includes("codex") && pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
       roots.push([stagedSkillRoot(home), stagedSkillRoot(canonicalHome)]);
     }
     // Preflight all discoverable copies before writing any of them.
