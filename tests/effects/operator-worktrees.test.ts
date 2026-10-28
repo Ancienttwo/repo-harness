@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
+import * as childProcess from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
@@ -48,6 +49,15 @@ describe('read-only worktree judgment and lifecycle', () => {
       cwd: pid => { if (pid === '42') throw Object.assign(new Error('denied cwd'), { code }); return '/checkout'; },
     };
     expect(worktreeProcesses(Date.now() + 5000, probe)).toBeNull();
+  });
+
+  test.skipIf(process.platform !== 'darwin')('the macOS process observer launches lsof outside the checkout', () => {
+    const output = `p${process.pid}\0n/checkout\0\np42\0n/\0`;
+    const command = spyOn(childProcess, 'execFileSync').mockReturnValue(output);
+    try {
+      expect(worktreeProcesses(Date.now() + 5000)).toEqual([{ pid: process.pid, cwd: '/checkout' }, { pid: 42, cwd: '/' }]);
+      expect(command).toHaveBeenCalledWith('/usr/sbin/lsof', ['-a', '-d', 'cwd', '-Fpn0'], expect.objectContaining({ cwd: '/' }));
+    } finally { command.mockRestore(); }
   });
 
   test('the controlled Linux inventory keeps readable occupants and ignores vanished or other-UID processes', () => {
