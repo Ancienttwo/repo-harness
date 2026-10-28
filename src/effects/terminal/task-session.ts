@@ -530,7 +530,9 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
       recheckTaskAdmission(repoRoot, { ...intent.spec, runtime: 'herdr', task_admission: intent.task_admission }, effects.taskAuthority);
       return reconcile(dir, intent);
     }
-    recordWorktree(repository.primary_root, repository.execution_root, { creator: 'task', purpose: 'task agent', task_id: spec.task });
+    if (repository.execution_root !== repository.primary_root) {
+      recordWorktree(repository.primary_root, repository.execution_root, { creator: 'task', purpose: 'task agent', task_id: spec.task });
+    }
     const workspace = await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_pane, recheck);
     recheck();
     const intent: StartIntent = { protocol: 2, repository, intent_id: randomUUID(), agent_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec, ...(taskAdmission ? { task_admission: taskAdmission } : {}) };
