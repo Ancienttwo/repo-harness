@@ -154,9 +154,10 @@ test('the diff digest binds content and modes: a stat change or a display option
   const first = (await diffOf(s)).body;
   expect((await diffOf(s)).body.diff_sha256).toBe(first.diff_sha256);
 
-  // A changed mtime on an unchanged file, and display settings of the user's git, do not change what a commit stores.
+  // A changed mtime on an unchanged file, and diff settings of the user's git, do not change what a commit stores.
+  // Without the index refresh, git lists the touched file as modified; the read drops it because its content is the same.
   utimesSync(join(s.worktree, 'docs', 'old.md'), new Date(2001, 1, 1), new Date(2001, 1, 1));
-  for (const [key, value] of [['diff.noprefix', 'true'], ['diff.algorithm', 'patience'], ['color.ui', 'always'], ['diff.mnemonicPrefix', 'true']]) git(['config', key, value], s.repo);
+  for (const [key, value] of [['diff.noprefix', 'true'], ['diff.algorithm', 'patience'], ['color.ui', 'always'], ['diff.mnemonicPrefix', 'true'], ['diff.autoRefreshIndex', 'false']]) git(['config', key, value], s.repo);
   const displayed = (await diffOf(s)).body;
   expect(displayed.files).toEqual(first.files);
   expect(displayed.diff_sha256).toBe(first.diff_sha256);
@@ -244,15 +245,26 @@ test('an unknown session, a query, a missing worktree and a worktree on another 
   expectNoPrivatePath(s, gone.text);
 });
 
-test('a symlink, a clean filter, a hidden index entry and more changes than the cap are refused, never shown in part', async () => {
+test('a filter driver is refused only when a changed path uses it, so an installed git-lfs does not block the reads', async () => {
+  const s = await session();
+  // The git-lfs install writes these drivers to the global config of many machines, including the CI runners.
+  git(['config', 'filter.lfs.clean', 'git-lfs clean -- %f'], s.repo);
+  git(['config', 'filter.lfs.process', 'git-lfs filter-process'], s.repo);
+  writeFileSync(join(s.worktree, 'docs', 'new.md'), 'A new page.\n');
+  expect((await diffOf(s)).status).toBe(200);
+  expect((await lossOf(s)).status).toBe(200);
+
+  // The agent can write docs/.gitattributes; a changed path that names a driver would run it in the server.
+  writeFileSync(join(s.worktree, 'docs', '.gitattributes'), 'new.md filter=lfs\n');
+  expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+  expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+});
+
+test('a symlink, a hidden index entry and more changes than the cap are refused, never shown in part', async () => {
   const s = await session();
   symlinkSync('/etc/hosts', join(s.worktree, 'docs', 'link.md'));
   expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'path_unsupported' } });
   rmSync(join(s.worktree, 'docs', 'link.md'));
-
-  git(['config', 'filter.secret.clean', 'cat'], s.repo);
-  expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
-  git(['config', '--unset', 'filter.secret.clean'], s.repo);
 
   git(['update-index', '--assume-unchanged', 'docs/old.md'], s.worktree);
   expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'index_unsupported' } });

@@ -21,7 +21,7 @@ import { configuredGitBinary, gitSpawnSync, withoutRepositorySelectingGitEnv } f
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { SessionObservationError } from '../sessions/admitted-source';
 import { DocSessionEventsError, readDocSessionEvents, sessionDirectory } from './doc-session-events';
-import { refuseExternalFilters, refuseHiddenWorktreeEntries } from './task-diff';
+import { effectiveFilterCommands, refuseHiddenWorktreeEntries } from './task-diff';
 
 export const OPERATOR_SESSION_DIFF_ROUTE = /^\/api\/v1\/sessions\/([0-9a-f]{32})\/diff$/u;
 export const OPERATOR_SESSION_LOSS_ROUTE = /^\/api\/v1\/sessions\/([0-9a-f]{32})\/loss$/u;
@@ -167,6 +167,27 @@ function readWorktreeFile(worktree: string, path: string): Buffer {
   } finally { closeSync(fd); }
 }
 
+/** Filter drivers with an effective `clean` or `process` command: git runs them when it reads a path that names them. */
+function filterDrivers(runner: DocSessionGitRunner, worktree: string): Set<string> {
+  const driver = (key: string) => key.slice('filter.'.length, key.lastIndexOf('.'));
+  return new Set([...effectiveFilterCommands(worktree, runner.text)].filter(([, command]) => command !== '').map(([key]) => driver(key)));
+}
+
+/**
+ * Refuses when a path git reads names a configured filter driver, because the
+ * read would run that command in the server. A driver that no read path uses,
+ * such as an installed git-lfs, does not refuse. The worktree's own
+ * `.gitattributes` counts: the agent can write it.
+ */
+function refuseUsedFilters(runner: DocSessionGitRunner, worktree: string, paths: readonly string[]): void {
+  const drivers = filterDrivers(runner, worktree);
+  if (drivers.size === 0 || paths.length === 0) return;
+  const output = new TextDecoder().decode(runner.bytes(worktree, ['check-attr', '-z', '--stdin', 'filter'], [0], Buffer.from(`${paths.join('\0')}\0`)));
+  const fields = output === '' ? [] : output.slice(0, -1).split('\0');
+  if (fields.length !== paths.length * 3) return fail('unavailable');
+  for (let index = 2; index < fields.length; index += 3) if (drivers.has(fields[index]!)) fail('filters_unsupported');
+}
+
 /**
  * The changes of the worktree against `side` (a commit): tracked paths from
  * `git diff --raw`, untracked ones from `ls-files`. Each present path is a
@@ -185,6 +206,8 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
   const others = listed === '' ? [] : listed.slice(0, -1).split('\0');
   // Counted before any file is read, so an oversized worktree costs no hashing.
   if (tokens.length / 2 + others.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
+  const present = tokens.filter((_, index) => index % 2 === 1 && !tokens[index - 1]!.endsWith(' D'));
+  refuseUsedFilters(runner, worktree, [...present, ...others]);
   const changes: DocSessionChange[] = [];
   for (let index = 0; index < tokens.length; index += 2) {
     const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])$/u.exec(tokens[index]!);
@@ -195,12 +218,12 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
     const status = STATUS[letter!];
     if (status === undefined) return fail('unavailable');
     if (!isRepositoryRelativePath(path)) return fail('path_unsupported');
-    const present = status !== 'deleted';
-    if (oldMode === '160000' || (present && !REGULAR.has(newMode!))) return fail('path_unsupported');
+    const exists = status !== 'deleted';
+    if (oldMode === '160000' || (exists && !REGULAR.has(newMode!))) return fail('path_unsupported');
     const change: DocSessionChange = {
       path, status, tracked: true,
       old_mode: status === 'added' ? null : oldMode!, old_oid: status === 'added' || ZERO_OID.test(oldOid!) ? null : oldOid!,
-      new_mode: present ? newMode! : null, new_oid: present ? hashed(path, readWorktreeFile(worktree, path)) : null,
+      new_mode: exists ? newMode! : null, new_oid: exists ? hashed(path, readWorktreeFile(worktree, path)) : null,
     };
     // Without an index refresh, git lists a file whose stat changed but whose content did not.
     if (status === 'modified' && change.old_oid === change.new_oid && change.old_mode === change.new_mode) continue;
@@ -252,7 +275,6 @@ export function readDocSessionDiff(env: NodeJS.ProcessEnv, sessionId: string): O
     const runner = docSessionGitRunner(env);
     const { record, worktree } = resolveDocSession(env, sessionId, runner.text);
     const base = record.base_commit;
-    refuseExternalFilters(worktree, runner.text);
     let patch = '';
     let binary = new Set<string>();
     const observed = stable(() => {
@@ -303,7 +325,6 @@ export function readDocSessionLoss(env: NodeJS.ProcessEnv, sessionId: string): O
   return read(() => {
     const runner = docSessionGitRunner(env);
     const { record, worktree } = resolveDocSession(env, sessionId, runner.text);
-    refuseExternalFilters(worktree, runner.text);
     const loss = stable(() => observeDocSessionLoss(runner, record, worktree), docSessionLossDigestInput, () => {});
     return decodeOperatorDocSessionLoss({
       protocol: 1, kind: 'operator_docs_session_loss', session_id: sessionId, head_commit: loss.head_commit, turn: turnOf(env, sessionId),
