@@ -18,8 +18,9 @@ import type { WorkspaceLocation } from './workspace-location';
 export type MermaidRenderer = (id: string, source: string, mode: ThemeMode) => Promise<string>;
 
 // An image cannot load the page's web fonts, so the diagram names system faces.
+// Without suppressErrorRendering, a failed render leaves Mermaid's error SVG in document.body.
 export const MERMAID_CONFIG = {
-  startOnLoad: false, securityLevel: 'strict', htmlLabels: false,
+  startOnLoad: false, securityLevel: 'strict', htmlLabels: false, suppressErrorRendering: true,
   fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
 } as const;
 
