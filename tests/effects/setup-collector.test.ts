@@ -278,3 +278,23 @@ describe('setup hook usage reader', () => {
     }
   });
 });
+
+
+test('supervised private stdin reaches the child without argv exposure and refuses oversized input before spawn', async () => {
+  const dir = tmpWorkspace('setup-private-stdin');
+  try {
+    const script = join(dir, 'stdin.ts');
+    const marker = join(dir, 'started');
+    writeFileSync(script, `import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(marker)}, 'started');
+let text = ''; for await (const chunk of process.stdin) text += chunk.toString();
+console.log(JSON.stringify({ text, argv: process.argv.slice(2) }));
+`);
+    const options = { cwd: dir, env: process.env, timeout_ms: 5000, signal: new AbortController().signal };
+    expect(await runSetupProcess([script], { ...options, stdin: 'x'.repeat(65537) })).toEqual({ ok: false, code: 'failed' });
+    expect(existsSync(marker)).toBe(false);
+    const answer = await runSetupProcess([script], { ...options, stdin: 'Private message\nsecond line' });
+    expect(answer.ok).toBe(true);
+    if (answer.ok) expect(JSON.parse(answer.stdout)).toEqual({ text: 'Private message\nsecond line', argv: [] });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

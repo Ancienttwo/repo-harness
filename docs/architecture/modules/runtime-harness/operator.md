@@ -506,3 +506,15 @@ GET 不保存已读状态，跨 epoch 比较沿用事件游标规则。
 Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配置输出保持不变。
 #1023 的范围适配器可把它作为 `is_writable_path`，再组合既有 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
 这个函数不证明文件系统目标、安全退出或生成区域可写，不能单独授权提交或丢弃。
+
+
+### 文档提交与丢弃接线
+
+`POST /api/v1/sessions/<sid>/commit` 和 `/discard` 与 `operator doc-sessions commit|discard`
+共用 `docs_session:<sid>` 写锁、请求 ID、意图和结果审计。两端都启动有 120 秒期限的子进程。
+提交说明只经 stdin 传给子进程，不写入审计正文或子进程 argv。
+子进程组合既有 finalization journal、GitHub transport、宿主路径策略和生成区域检查；不另建状态库。
+生产 `withQuiescedDocSession` 目前对活动轮次回 409 `turn_active`，其他可读终态回 503 `quiescence_unavailable`。
+它不发送 stop、不恢复宿主、不执行 Git、PR 或删除。锁消失、stopped 和 OAR dispose 返回都不是后代清空证明。
+未知子进程结果保持 409 `reconcile_required`，不能自动重放。详细合同见
+[finalization integration](../../../reference-configs/doc-session-finalize-integration.md)。

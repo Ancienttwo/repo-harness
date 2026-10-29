@@ -1,3 +1,6 @@
+import { boundedDocSessionFinalizeOperation } from '../../src/effects/operator/doc-session-finalize-routes';
+import { decodeDocSessionFinalizeResponse } from '../../src/core/operator/doc-session-finalize-wire';
+import { runOperatorWrite } from '../../src/effects/operator/write-run';
 import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSION_LIST_MAX } from '../../src/core/operator/doc-session-views';
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -40,6 +43,7 @@ interface Session {
   readonly roots: readonly string[];
   readonly env: NodeJS.ProcessEnv;
   readonly get: (path: string) => Promise<{ status: number; body: Record<string, any>; text: string }>;
+  readonly post: (action: string, body: object) => Promise<{ status: number; body: any; text: string }>;
   readonly cli: (...args: string[]) => ReturnType<typeof spawnSync>;
 }
 
@@ -94,12 +98,20 @@ async function session(instruction = 'Tighten the intro.'): Promise<Session> {
   });
   const body = await created.json() as Record<string, any>;
   expect(created.status).toBe(201);
+  const createdSessionId = body.session_id;
   return {
     sid: body.session_id, url: server.url, base, repo, worktree: join(worktrees, body.worktree), roots, env,
     get: async (path) => {
       const response = await fetch(`${server.url}${path}`);
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) as Record<string, any> : {}, text };
+    },
+    post: async (action, body) => {
+      const response = await fetch(`${server.url}/api/v1/sessions/${createdSessionId}/${action}`, {
+        method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, body: JSON.parse(text), text };
     },
     cli: (...args) => spawnSync(process.execPath, [CLI, 'operator', 'doc-sessions', ...args], { cwd: repo, env, encoding: 'utf8', timeout: 60_000 }),
   };
@@ -515,4 +527,84 @@ test('public decoders reject added fields, wrong identities and private paths', 
   expect(() => decodeOperatorDocSessionList({ ...list, sessions: [{ ...list.sessions[0], control: '/private/control' }] }, { seen: {} })).toThrow();
   expect(() => decodeOperatorDocSessionDetail({ ...detail, worktree: '/private/repo' }, { session_id: s.sid, seen: null })).toThrow();
   expect(() => decodeOperatorDocSessionDetail(detail, { session_id: 'f'.repeat(32), seen: null })).toThrow();
+});
+
+
+test('production commit/discard worker refuses unknown cleanup, with HTTP/CLI replay and no lifecycle or Git effects', async () => {
+  const s = await session();
+  agentRecord(s, 'stopped');
+  const directory = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions', s.sid);
+  const before = readFileSync(join(directory, 'agent.json'), 'utf8');
+  const fields = { expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: 'Private commit explanation' };
+  const requestId = randomUUID();
+  const answer = await s.post('commit', { request_id: requestId, ...fields });
+  expect(answer).toMatchObject({ status: 503, body: { error: { code: 'quiescence_unavailable' } } });
+  expectNoPrivatePath(s, answer.text);
+  const replay = s.cli('commit', s.sid, '--expected-head', s.base, '--expected-diff-sha256', fields.expected_diff_sha256, '--message', fields.message, '--request-id', requestId, '--json');
+  expect(replay.status).toBe(2);
+  expect(JSON.parse(replay.stderr as string)).toEqual({ request_id: requestId, status: 503, ...answer.body });
+  const discardId = randomUUID();
+  const discard = s.cli('discard', s.sid, '--expected-head', s.base, '--expected-loss-sha256', 'b'.repeat(64), '--request-id', discardId, '--json');
+  expect(discard.status).toBe(2);
+  expect(JSON.parse(discard.stderr as string).error.code).toBe('quiescence_unavailable');
+  expect((await s.post('discard', { request_id: discardId, expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) })).status).toBe(503);
+  expect(readFileSync(join(directory, 'agent.json'), 'utf8')).toBe(before);
+  expect(git(['rev-parse', 'HEAD'], s.worktree).trim()).toBe(s.base);
+  expect(readFileSync(join(s.worktree, 'docs/guide.md'), 'utf8')).toBe(GUIDE);
+  const audit = readFileSync(join(s.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl'), 'utf8');
+  expect(audit).not.toContain(fields.message);
+  expect(audit.split('\n').filter(line => line.includes(requestId))).toHaveLength(2);
+  expect((await s.post('commit', { request_id: requestId, ...fields, message: 'changed' })).body.error.code).toBe('request_mismatch');
+});
+
+test('finalization keeps active-turn refusal and closed request admission; a new request observes recovery', async () => {
+  const s = await session();
+  const fields = { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) };
+  agentRecord(s, 'running');
+  const request = randomUUID();
+  const first = await s.post('discard', { request_id: request, ...fields });
+  expect(first).toMatchObject({ status: 409, body: { error: { code: 'turn_active' } } });
+  agentRecord(s, 'stopped', 2);
+  expect((await s.post('discard', { request_id: request, ...fields })).body).toEqual(first.body);
+  expect((await s.post('discard', { request_id: randomUUID(), ...fields })).body.error.code).toBe('quiescence_unavailable');
+  expect((await s.post('discard', { request_id: randomUUID(), ...fields, force: true })).status).toBe(400);
+  expect((await s.post('commit', { request_id: randomUUID(), expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: '' })).status).toBe(400);
+});
+
+test('bounded finalization rejects unknown worker output and shares the message target lock', async () => {
+  const s = await session();
+  const fields = { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) };
+  const id = randomUUID(); let starts = 0;
+  const operation = boundedDocSessionFinalizeOperation(s.env, 'discard', s.sid, fields, async (argv, options) => {
+    starts++;
+    expect(argv).toHaveLength(1);
+    expect(JSON.parse(options.stdin!)).toEqual({ action: 'discard', session_id: s.sid, fields });
+    expect(options.timeout_ms).toBe(120000);
+    return { ok: false, code: 'timeout' };
+  });
+  expect((await runOperatorWrite(id, operation, s.env)).body).toMatchObject({ error: { code: 'reconcile_required' } });
+  expect((await runOperatorWrite(id, operation, s.env)).body).toMatchObject({ error: { code: 'reconcile_required' } });
+  expect(starts).toBe(1);
+  expect(operation.target).toBe(`docs_session:${s.sid}`);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const blocking = boundedDocSessionFinalizeOperation(s.env, 'discard', s.sid, fields, async () => {
+    entered(); await held;
+    return { ok: false, code: 'failed' };
+  });
+  const pending = runOperatorWrite(randomUUID(), blocking, s.env);
+  await started;
+  let messageRan = false;
+  try {
+    const competing = await runOperatorWrite(randomUUID(), { operation: 'docs_session_message', target: blocking.target, input: {}, execute: async () => { messageRan = true; return { status: 202, body: {} }; } }, s.env);
+    expect(competing.body).toMatchObject({ error: { code: 'busy' } });
+    expect(messageRan).toBe(false);
+  } finally { release(); await pending; }
+
+  expect(() => decodeDocSessionFinalizeResponse({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete', private_path: s.worktree } }, 'discard')).toThrow();
+  const valid = { status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete' } };
+  expect(decodeDocSessionFinalizeResponse(valid, 'discard')).toEqual(valid);
+  expect(() => decodeDocSessionFinalizeResponse(valid, 'commit')).toThrow();
 });
