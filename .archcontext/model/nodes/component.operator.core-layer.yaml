@@ -29,6 +29,7 @@ source:
     - src/core/operator/bot-access.ts
     - src/core/operator/doc-citation.ts
     - src/core/operator/doc-session-events.ts
+    - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
     - src/core/operator/execution-state.ts
     - src/core/operator/fleet-snapshot.ts
@@ -47,6 +48,7 @@ source:
     - src/core/operator/task-diff.ts
     - src/core/operator/task-history.ts
     - src/core/operator/tests.ts
+    - src/core/operator/worktree-cleanup.ts
     - src/core/operator/worktrees.ts
     - src/core/setup/cli-inventory.ts
     - src/core/setup/cli-seed.v1.json

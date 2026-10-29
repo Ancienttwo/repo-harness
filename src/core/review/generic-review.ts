@@ -1,3 +1,5 @@
+import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
+
 export const REVIEW_FINDING_RULES = {
   prompt_version: '1',
   text: 'PASS requires no unresolved P0/P1. FAIL requires at least one unresolved finding. Each finding has EXACTLY id, severity:P0|P1|P2|P3, status:new|open|resolved, message. Keep stable IDs: every prior finding must remain resolved/open with current evidence. A previous verdict is not evidence for current code.',
@@ -18,7 +20,7 @@ export interface ReviewOutput {
   request_id: string;
   context_sha256: string;
   subject_sha256: string;
-  actual_harness: 'claude' | 'codex';
+  actual_harness: ReviewRuntimeId;
   actual_role: string;
   actual_model: string;
   verdict: 'PASS' | 'FAIL';
@@ -35,6 +37,8 @@ export function validateReviewOutput(value: unknown, expected: Omit<ReviewOutput
   for (const [field, wanted] of Object.entries(expected)) {
     if (output[field as keyof ReviewOutput] !== wanted) throw new Error(`review_${field}_mismatch`);
   }
+  if (!isReviewRuntimeId(output.actual_harness)
+    || typeof output.actual_model !== 'string' || !output.actual_model.trim()) throw new Error('review_actual_model_unverified');
   if (!['PASS', 'FAIL'].includes(output.verdict) || typeof output.summary !== 'string' || !output.summary.trim()
     || !Array.isArray(output.findings)) throw new Error('review_malformed_result');
   const ids = new Set<string>();

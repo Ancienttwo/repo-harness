@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';
 import { recordCircuitAttempt } from '../hook/circuit-breaker';
+import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 
 /** Both control operations accept only a closed JSON object from the trusted Bot. */
 function readControlRequest(file: string, fields: readonly string[]): Record<string, any> {
@@ -60,7 +61,7 @@ export function buildReviewCommand(): Command {
       .option('--engineer-contract-revision <sha256>', 'Exact selected engineer profile contract revision')
       .option('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}; required for --launch herdr')
       .option('--launch <mode>', 'herdr, or app-terminal: the Claude app operator runs the printed host command', 'herdr')
-      .option('--harness <kind>', 'Explicit claude or codex; no fallback for an explicit override')
+      .option('--harness <kind>', 'Explicit claude, codex or pi; no fallback for an explicit override')
       .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
     child.action(async opts => {
@@ -75,7 +76,7 @@ export function buildReviewCommand(): Command {
           if (!['herdr', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
           if ((opts.launch === 'herdr') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr and refused for app-terminal');
           const addressing = opts.herdrEndpoint ? JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8')) : {};
-          if (opts.harness && !['claude', 'codex'].includes(opts.harness)) throw new Error('review_harness_unsupported');
+          if (opts.harness && !isReviewRuntimeId(opts.harness)) throw new Error('review_harness_unsupported');
           result = await runReviewRound({ repoRoot: opts.repo, authority, taskClaim: { reference: opts.claimRef, revision: opts.claimRevision }, verification: opts.verification,
             engineerProfile: opts.engineerId === undefined ? undefined : { engineer_id: opts.engineerId, engineer_contract_revision: opts.engineerContractRevision },
             reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane, launch: opts.launch,

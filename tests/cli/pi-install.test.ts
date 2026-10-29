@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { copyPackageRuntimeFixture, tmpWorkspace } from '../helpers/repo-fixture';
-import { installPiPackage, piPackagePresent, piUserPackageSources, runPi } from '../../src/cli/installer/pi-package';
+import { installPiPackage, piPackagePresent, piUserPackageSources, runPi, planPiPackage } from '../../src/cli/installer/pi-package';
 import { installedProfileStatus, readInstalledProfile, recordPiInstallOwnership, type ManagedInstallSurface } from '../../src/cli/installer/install-profile';
 import { hostSkillRoot } from '../../src/effects/host-skill-roots';
 import { checkPiHost } from '../../src/cli/commands/doctor';
@@ -13,6 +13,7 @@ import { recordInstallOwnership } from '../helpers/install-ownership';
 import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import { piAgentDir } from '../../src/effects/pi-agent-dir';
+import { piExecutable } from '../../src/effects/pi-executable';
 import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -86,6 +87,31 @@ default: process.exit(99);
 }
 
 describe('Pi package and skill installation', () => {
+  test('the shared Pi executable resolver returns a canonical path or null and doctor names a dangling link', () => {
+    const root = tmpWorkspace('pi-executable');
+    try {
+      const target = join(root, 'native-pi'); writeFileSync(target, '#!/bin/sh\nexit 0\n'); chmodSync(target, 0o755);
+      const command = join(root, process.platform === 'win32' ? 'pi.EXE' : 'pi'); symlinkSync(target, command);
+      const env = { PATH: root, PATHEXT: '.EXE' };
+      expect(piExecutable(env)).toBe(realpathSync(target));
+      unlinkSync(command); symlinkSync(join(root, 'missing-pi'), command);
+      expect(piExecutable(env)).toBeNull();
+      expect(checkPiHost(env).find(check => check.id === 'pi-path')).toMatchObject({ status: 'fail', detail: 'PI_EXECUTABLE_DANGLING_SYMLINK' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a dangling Pi link is skipped by package planning and does not throw during profile status', () => fixture(f => {
+    recordInstallOwnership([], f.env);
+    recordPiInstallOwnership([packageSurface(f.source)], f.env);
+    unlinkSync(join(f.root, 'bin/pi')); symlinkSync(join(f.root, 'missing-pi'), join(f.root, 'bin/pi'));
+    const env = { ...f.env, PATH: join(f.root, 'bin') };
+    expect(planPiPackage(f.source, true, env)).toMatchObject({ status: 'skipped', detail: 'pi not found on PATH' });
+    const state = readInstalledProfile(env);
+    if (!state) throw new Error('fixture install profile missing');
+    expect(() => installedProfileStatus(state, env)).not.toThrow();
+    expect(installedProfileStatus(state, env).drift.status).toBe('drift');
+  }));
+
   test('rejects a relative agent directory before any skill tree is created', () => fixture(f => {
     copyPackageRuntimeFixture(ROOT, f.source);
     const result = spawnSync(process.execPath, [join(f.source, 'src/cli/index.ts'), 'install', '--profile', 'minimal', '--no-cli', '--no-external-skills', '--no-codegraph', '--json'],

@@ -1,8 +1,8 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:940d44eb17f6132544e5117a92fe05d7b5a22e6f7723ea0f0c0bd0e6bee199c0" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2fc9003a1a02bd46e834ed7030ff938a68e71b4e3ab616343462870188f57551" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
-> **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`src/cli/commands/tools.ts`
+> **Matched Prefixes**:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -16,6 +16,8 @@ Resolves and verifies the repository CodeGraph runtime and index readiness.
 flowchart LR
   p1_capability_verification_codegraph_readiness_2de91963["CodeGraph Readiness"]:::component
   p1_component_codegraph_readiness_primary_ea3c45ff["CodeGraph Readiness Check"]:::component
+  p1_component_codegraph_readiness_scripts_layer_411e29c3["CodeGraph Readiness (scripts)"]:::component
+  p1_component_codegraph_readiness_tests_layer_7504ac63["CodeGraph Readiness (tests)"]:::component
   p1_capability_verification_codegraph_readiness_2de91963 -->|"Verify CodeGraph readiness"| p1_component_codegraph_readiness_primary_ea3c45ff
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -23,8 +25,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:272869a741b414a399c49e3b3151dfb86771675452d083287682304fec3721e6`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:ecc6873738e51de4fdb544b42f351d865091a29b44ef37273e3020707519f044`).
+- Semantic nodes: `4`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -38,14 +40,15 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`src/cli/commands/tools.ts`
+- 規模量級:`2–5` 個文件 / `1000–2000` 行
+- 匹配前綴:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
+- `calls` → `external.codegraph` — Run codegraph to check index readiness and read code facts.
 - `depends-on` → `capability.verification.evals-checks` — Use shared repository fixtures for CodeGraph resolver tests.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded CodeGraph processes.
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host locks and configuration ownership for CodeGraph setup.
@@ -65,16 +68,22 @@ flowchart LR
 
 - `component.codegraph-readiness.primary`:
   - 無。
+- `component.codegraph-readiness.scripts-layer`:
+  - 無。
+- `component.codegraph-readiness.tests-layer`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.codegraph-readiness.primary` | CodeGraph Readiness Check | 未宣告 `source.include` | 未宣告 |
+| `component.codegraph-readiness.scripts-layer` | CodeGraph Readiness (scripts) | `1–2` 個文件 / `10–20` 行 | 未宣告 |
+| `component.codegraph-readiness.tests-layer` | CodeGraph Readiness (tests) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:272869a741b414a399c49e3b3151dfb86771675452d083287682304fec3721e6`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:ecc6873738e51de4fdb544b42f351d865091a29b44ef37273e3020707519f044`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

@@ -144,8 +144,8 @@
 
 | 端点 | 请求体 | 成功 | 失败码 |
 | --- | --- | --- | --- |
-| `POST /api/v1/settings/agents` | `request_id`、`expected_revision`、`changes[{runtime, enabled, uses}]`、`default_docs_runtime` | 200，新的 `config_revision` 和实际改动的键 | 409 `revision_conflict`；422 `use_not_supported`（评审只接 claude、codex）；503 `busy` |
-| `POST /api/v1/sessions` | `request_id`、`kind: docs \| worktree_cleanup`、`runtime`；docs 另带 `repository_id`、`citations[]`、`instruction` | 201，`session_id`；docs 另回分支名和 worktree 目录名 | 409 `citation_stale`；422 `runtime_not_enabled`；501 `platform_unsupported`；503 `busy` |
+| `POST /api/v1/settings/agents` | `request_id`、`expected_revision`、`changes[{runtime, enabled, uses}]`、`default_docs_runtime` | 200，新的 `config_revision` 和实际改动的键 | 409 `revision_conflict`；422 `use_not_supported`（评审只接 claude、codex）；422 `docs_isolation_unverified`（文档用途只接文档隔离验证过的 runtime）；503 `busy` |
+| `POST /api/v1/sessions` | `request_id`、`kind: docs \| worktree_cleanup`、`runtime`；docs 另带 `repository_id`、`citations[]`、`instruction` | 201，`session_id`；docs 另回分支名和 worktree 目录名 | 409 `citation_stale`；422 `docs_isolation_unverified`；422 `runtime_not_enabled`；501 `platform_unsupported`；503 `busy` |
 | `POST /api/v1/sessions/{sid}/messages` | `request_id`、`text`、`when: after_turn \| now` | 202，`landed: prompted \| queued \| steered` | 409 `steer_unsupported`，不自动改成排队；409 `session_closed` |
 | `POST /api/v1/sessions/{sid}/stop` | `request_id` | 202，本轮以 `aborted` 结束，会话保留 | 409 `no_active_turn` |
 | `POST /api/v1/sessions/{sid}/commit`（docs） | `request_id`、`expected_head`、`expected_diff_sha256`、`message` | 200，commit、推送结果和 Draft PR 链接；中途失败回已完成的步骤 | 409 `diff_changed`；422 `path_outside_scope`；422 `generated_region` |

@@ -126,6 +126,10 @@ describe("AXR7 repo-harness architecture consumer", () => {
 
 function topologyManifest(): ArchitectureDocsProjectionManifestV3 {
   const manifest = JSON.parse(readFileSync(join(ROOT, "docs", "architecture", ".projection-manifest.json"), "utf8")) as ArchitectureDocsProjectionManifestV3;
+  // The fixture must own the whole topology pair so repository targets cannot add conflicting source stamps.
+  for (const [id, target] of Object.entries(manifest.targets)) {
+    if (target.type === "diagram-runtime-topology" || target.type === "runtime-topology-summary") delete manifest.targets[id];
+  }
   for (const [id, type, path, format] of [
     ["runtime-diagram", "diagram-runtime-topology", "docs/architecture/runtime.mmd", "mermaid"],
     ["runtime-summary", "runtime-topology-summary", "docs/architecture/runtime.md", "markdown"],

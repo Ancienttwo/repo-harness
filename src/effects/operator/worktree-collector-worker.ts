@@ -8,7 +8,7 @@ import { decodeWorktrees, type WorktreeLifecycle, type WorktreesSnapshot, type W
 import { managedWorktreeRoot, isManagedWorktreePath } from '../git/managed-worktree';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readWorktreeRecord, worktreeId } from '../git/worktree-record';
-import { worktreeProcesses } from '../git/worktree-processes';
+import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
 import { entries, inspectWorktree } from '../state/coordination-worktree-topology';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
 
@@ -36,33 +36,53 @@ export function worktreeSize(path: string, previous: WorktreeSize | undefined, d
   } catch { return { bytes: null }; }
 }
 
+export type WorktreeTopologyEntry = ReturnType<typeof entries>[number];
+/** Canonical checkout paths of a clone's registered worktrees, each with its Git entry. */
+export function registeredWorktreePaths(topology: readonly WorktreeTopologyEntry[]): { readonly path: string; readonly entry: WorktreeTopologyEntry | undefined }[] {
+  const canonical = (path: string) => { try { return realpathSync(path); } catch { return path; } };
+  return [...new Set(topology.map(entry => canonical(entry.path)))].sort()
+    .map(path => ({ path, entry: topology.find(row => row.path === path || canonical(row.path) === path) }));
+}
+
+/**
+ * One public row. The collector and the cleanup effect both build rows here,
+ * so the selection digest of a row the page shows matches the effect's fresh row.
+ */
+export function repositoryWorktreeRow(input: {
+  readonly repo: RepoHarnessRegisteredRepo; readonly common: string; readonly managed_root: string; readonly id: string; readonly path: string;
+  readonly entry: WorktreeTopologyEntry | undefined; readonly size_bytes: number | null; readonly size_observed_at: string | null;
+  readonly caller_cwd: string | null; readonly env: NodeJS.ProcessEnv; readonly deadline: number; readonly processes: WorktreeProcess[] | null;
+}): WorktreeView {
+  const { repo, common, path, env } = input;
+  const saved = readWorktreeRecord(common, path);
+  let record: WorktreeLifecycle | null = null;
+  if (saved) record = { creator: saved.creator, purpose: safe(saved.purpose), task_id: saved.task_id === null ? null : safe(saved.task_id), pull_request: saved.pull_request,
+    created_at: saved.created_at, ended_at: saved.ended_at, end_state: saved.end_state };
+  let source: WorktreeSource = saved?.creator ?? 'unknown';
+  if (!saved) {
+    if (isManagedWorktreePath(path, input.managed_root, basename(repo.path))) source = 'manual';
+    else if (path.startsWith(join(repo.path, '.claude/worktrees') + '/')) source = 'claude';
+    else if (path.startsWith(join(env.HOME ?? '', '.codex/worktrees') + '/')) source = 'codex';
+    else if (path.startsWith(join(systemWorktreeRoot(process.platform, tmpdir()), 'repo-harness-mcp-worktrees') + '/')) source = 'mcp';
+  }
+  return { id: input.id, repository_id: repo.id, directory: safe(basename(path)), branch: input.entry?.branch ? safe(input.entry.branch.replace(/^refs\/heads\//u, '')) : null,
+    source, record, size_bytes: input.size_bytes, size_observed_at: input.size_observed_at,
+    ...inspectWorktree(repo.path, path, input.caller_cwd, { env, deadline: input.deadline, processes: input.processes }) };
+}
+
 export function collectRepositoryWorktrees(repo: RepoHarnessRegisteredRepo, previous: WorktreeSizes = {}, env: NodeJS.ProcessEnv = process.env) {
   const deadline = Date.now() + 20_000;
   const common = resolveGitCommonDirectory(repo.path);
   const topology = entries(repo.path, { deadline });
   const root = managedWorktreeRoot(env);
-  const paths = new Set(topology.map(entry => { try { return realpathSync(entry.path); } catch { return entry.path; } }));
   const processes = worktreeProcesses(Math.min(deadline, Date.now() + 5_000))?.filter(row => row.pid !== process.pid) ?? null;
   const sizes: WorktreeSizes = {};
-  const worktrees: WorktreeView[] = [...paths].sort().map(path => {
+  const worktrees: WorktreeView[] = registeredWorktreePaths(topology).map(({ path, entry }) => {
     const id = worktreeId(common, path);
-    const entry = topology.find(row => row.path === path || (() => { try { return realpathSync(row.path) === path; } catch { return false; } })());
-    const saved = readWorktreeRecord(common, path);
-    let record: WorktreeLifecycle | null = null;
-    if (saved) record = { creator: saved.creator, purpose: safe(saved.purpose), task_id: saved.task_id === null ? null : safe(saved.task_id), pull_request: saved.pull_request,
-      created_at: saved.created_at, ended_at: saved.ended_at, end_state: saved.end_state };
-    let source: WorktreeSource = saved?.creator ?? 'unknown';
-    if (!saved) {
-      if (isManagedWorktreePath(path, root, basename(repo.path))) source = 'manual';
-      else if (path.startsWith(join(repo.path, '.claude/worktrees') + '/')) source = 'claude';
-      else if (path.startsWith(join(env.HOME ?? '', '.codex/worktrees') + '/')) source = 'codex';
-      else if (path.startsWith(join(systemWorktreeRoot(process.platform, tmpdir()), 'repo-harness-mcp-worktrees') + '/')) source = 'mcp';
-    }
     const size = worktreeSize(path, previous[id], deadline);
     if (size.cache) sizes[id] = size.cache;
-    return { id, repository_id: repo.id, directory: safe(basename(path)), branch: entry?.branch ? safe(entry.branch.replace(/^refs\/heads\//u, '')) : null,
-      source, record, size_bytes: size.bytes, size_observed_at: size.cache?.observed_at ?? null,
-      ...inspectWorktree(repo.path, path, null, { env, deadline, processes }) };
+    return repositoryWorktreeRow({ repo, common, managed_root: root, id, path, entry, size_bytes: size.bytes, size_observed_at: size.cache?.observed_at ?? null,
+      caller_cwd: null, env, deadline, processes });
   });
   const snapshot: WorktreesSnapshot = { version: 1, status: 'ready', collected_at: new Date().toISOString(), unassigned: [], repositories: [
     { repository_id: repo.id, display_name: safe(basename(repo.path)), status: 'ready', worktrees },

@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e9efa1bfdfe5fdfeb67bf394698bb177b1f0c5082fd296dcb07c81dc41630acb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:989467d22fc385aadf6c0ee22c834941a5f29287f8b35dda0aec8c20c99da4bc" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -42,7 +42,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 規模量級:`20–50` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -50,6 +50,8 @@ flowchart LR
 
 出向關係:
 
+- `deployed-on` → `process.process-supervisor` — Execution primitives own the supervisor protocol.
+- `calls` → `external.git` — Run git for refs, worktrees and the common directory.
 - `calls` → `component.execution-primitives.primary` — Run a bounded child process
 
 入向關係:
@@ -70,7 +72,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Run processes and read lock owners during runtime reconciliation
 - `calls` ← `component.global-runtime-reconciliation.release-packaging` — Run installed binaries to read back runtime evidence
 - `calls` ← `component.hook-adapters.edit-guards` — Lock the circuit breaker records
-- `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock
+- `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
 - `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
 - `calls` ← `component.integration-acceptance.primary` — Resolve the Git common directory for integration records
@@ -96,7 +98,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

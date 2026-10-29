@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4c10a0e4438d579805654bbce6b7e94e44d1712acbf361e5df9b55bd851107b1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:640d3f97e2ebb04ead01245d521166ecc754254207f96a02eb4be0acabe921bf" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
@@ -17,7 +17,10 @@ Projects registry-scoped provider issue and admitted session fleet boards and ow
 flowchart LR
   p1_capability_organization_task_fleet_134b5125["Task Fleet"]:::component
   p1_component_task_fleet_primary_77e10674["Fleet Task Observations and Board"]:::component
+  p1_component_task_fleet_primary_core_c17386da["Fleet Task Observations and Board (core)"]:::component
+  p1_component_task_fleet_primary_effects_7eda8367["Fleet Task Observations and Board (effects)"]:::component
   p1_component_task_fleet_task_inbox_b42db72f["Task Inbox"]:::component
+  p1_component_task_fleet_task_inbox_effects_52f45cf0["Task Inbox (effects)"]:::component
   p1_capability_organization_task_fleet_134b5125 -->|"Project per-repository task observations and fleet board cards from the owning readers"| p1_component_task_fleet_primary_77e10674
   p1_component_task_fleet_primary_77e10674 -->|"Send deliver and summarize task-addressed messages without lease mutation"| p1_component_task_fleet_task_inbox_b42db72f
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -26,8 +29,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:eb361411207af56ac31c7b854f3877deb0c96e2415eafe1ec9730b228172c400`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:a67cb6c015234f27ee4a3a83ab00c3bd90fa7d490598604aed41ae518089b741`).
+- Semantic nodes: `6`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -75,20 +78,29 @@ flowchart LR
 - `component.task-fleet.primary`:
   - `calls` → `component.task-fleet.task-inbox` — Send deliver and summarize task-addressed messages without lease mutation
   - `reads` → `capability.workflow-engine.workflow-state` — Read provider issue and admitted session board observations without Sprint or lease authority
+- `component.task-fleet.primary-core`:
+  - 無。
+- `component.task-fleet.primary-effects`:
+  - 無。
 - `component.task-fleet.task-inbox`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory for the task inbox
   - `calls` → `capability.runtime-harness.task-agent-host` — Reobserve the exact task session and live admission before current inbox operations
+- `component.task-fleet.task-inbox-effects`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.task-fleet.primary` | Fleet Task Observations and Board | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-fleet.primary` | Fleet Task Observations and Board | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.task-fleet.primary-core` | Fleet Task Observations and Board (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.task-fleet.primary-effects` | Fleet Task Observations and Board (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.task-fleet.task-inbox-effects` | Task Inbox (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:eb361411207af56ac31c7b854f3877deb0c96e2415eafe1ec9730b228172c400`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:a67cb6c015234f27ee4a3a83ab00c3bd90fa7d490598604aed41ae518089b741`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

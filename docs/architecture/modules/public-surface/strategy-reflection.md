@@ -1,6 +1,6 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:88740aff17632aa00a9a4a5e7e25a0a86f6a1474ffc99e3b081ea4339fc580ec" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:66ac07dab254c5691df8d18a14af8b6358f9660178845d4d95442791dec9bcf6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
 > **Matched Prefixes**:`docs/plans/**`、`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
@@ -17,6 +17,8 @@ Collects a bounded strategy context packet and validates inert strategic proposa
 flowchart LR
   p1_capability_public_surface_strategy_reflection_a8519b3d["Strategy Reflection"]:::component
   p1_component_strategy_reflection_primary_80a43936["Strategy Context Collector"]:::component
+  p1_component_strategy_reflection_primary_cli_fba2a2af["Strategy Context Collector (cli)"]:::component
+  p1_component_strategy_reflection_primary_core_eb76469b["Strategy Context Collector (core)"]:::component
   p1_capability_public_surface_strategy_reflection_a8519b3d -->|"Collect strategy context and validate a proposal"| p1_component_strategy_reflection_primary_80a43936
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -24,8 +26,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:168920c6c345980dec6497acbf74ca00c85486f701afc1313b76a583f1ad264d`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:cbc97340d9bb197e35c2630b8bfa46991954b423ffb395dcd4bb7c93597e0a33`).
+- Semantic nodes: `4`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -59,16 +61,22 @@ flowchart LR
 - `component.strategy-reflection.primary`:
   - `calls` → `component.action-commands.skill-surface-catalog` — Read the skill catalog to keep the strategy skill explicit-setup before projection
   - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only for strategy context
+- `component.strategy-reflection.primary-cli`:
+  - 無。
+- `component.strategy-reflection.primary-core`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.strategy-reflection.primary` | Strategy Context Collector | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.strategy-reflection.primary` | Strategy Context Collector | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.strategy-reflection.primary-cli` | Strategy Context Collector (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.strategy-reflection.primary-core` | Strategy Context Collector (core) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:168920c6c345980dec6497acbf74ca00c85486f701afc1313b76a583f1ad264d`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:cbc97340d9bb197e35c2630b8bfa46991954b423ffb395dcd4bb7c93597e0a33`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

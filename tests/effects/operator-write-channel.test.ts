@@ -13,7 +13,8 @@ import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusi
 import { OPERATOR_ROUTES, OperatorServerError, startOperatorServer, type OperatorRouteV1, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 import { handleOperatorWrite, operatorWriteTokenCookieName, type OperatorWriteRoute } from '../../src/effects/operator/write-channel';
-import { OperatorWriteRefusal } from '../../src/effects/operator/write-run';
+import { OperatorWriteRefusal, runOperatorWrite } from '../../src/effects/operator/write-run';
+import { runWorktreeCleanupChild, worktreeCleanupOperation } from '../../src/effects/operator/worktree-cleanup';
 
 type Mode = 'ok' | 'refuse' | 'break_result_audit' | 'hold' | 'undecodable_result';
 const ECHO_PATH = /^\/api\/v1\/test-echo\/([a-z]+)$/u;
@@ -502,5 +503,45 @@ describe('operator write channel', () => {
     }
     const operatorDir = join(harness.home, 'operator');
     expect(events).toEqual([`sync:${harness.home}`, `sync:${operatorDir}`, 'execute:first', 'execute:second']);
+  });
+
+  test('the worktree cleanup route refuses approval fields and binds reordered ids to one request', async () => {
+    const harness = await startHarness();
+    const path = '/api/v1/worktrees/cleanup';
+    const a = `wt_${'a'.repeat(64)}`, b = `wt_${'b'.repeat(64)}`, digest = 'c'.repeat(64);
+    // Approval input belongs to the cleanup session (5.2); slice 5.1 knows only ids and the digest.
+    for (const extra of [{ session_id: 'session' }, { approvals: [{ id: a, loss_sha256: digest, plan_sha256: digest }] }, { path: '/tmp/repo-wt-x' }]) {
+      const response = await post(harness, { request_id: randomUUID(), ids: [a], expected_digest: digest, ...extra }, {}, path);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe('invalid_body');
+    }
+    expect(auditRecords(harness)).toEqual([]);
+    const requestId = randomUUID();
+    const first = await post(harness, { request_id: requestId, ids: [a, b], expected_digest: digest }, {}, path);
+    expect(first.status).toBe(409);
+    const body = await first.json();
+    expect(body.error.code).toBe('digest_changed');
+    const replay = await post(harness, { request_id: requestId, ids: [b, a], expected_digest: digest }, {}, path);
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toEqual(body);
+    expect(auditRecords(harness).map(record => [record.phase, record.operation ?? record.status])).toEqual([['intent', 'worktrees_cleanup'], ['result', 409]]);
+  });
+
+  test('a cleanup child that fails after the intent record is reconcile_required, and a child refusal is recorded', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-cleanup-child-'));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    const env = { REPO_HARNESS_HOME: home };
+    const request = { ids: [`wt_${'a'.repeat(64)}`], expected_digest: 'c'.repeat(64) };
+    const outcomes: [string, string][] = [];
+    for (const stdout of [null, 'not json', JSON.stringify({ ok: false, refusal: 'in_use' })]) {
+      const operation = worktreeCleanupOperation(request, () => runWorktreeCleanupChild(request, {
+        run_process: async () => stdout === null ? { ok: false, code: 'timeout' } : { ok: true, stdout },
+      }));
+      const response = await runOperatorWrite(randomUUID(), operation, env);
+      outcomes.push([String(response.status), (response.body as { error: { code: string } }).error.code]);
+    }
+    expect(outcomes).toEqual([['409', 'reconcile_required'], ['409', 'reconcile_required'], ['422', 'in_use']]);
+    const records = readFileSync(operatorAuditPath(env), 'utf-8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    expect(records.map(record => record.phase)).toEqual(['intent', 'intent', 'intent', 'result']);
   });
 });

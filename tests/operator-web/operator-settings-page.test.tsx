@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../src/core/operator/agents-settings';
+import { isReviewRuntimeId } from '../../src/core/review/review-runtimes';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
@@ -43,10 +44,13 @@ const REVISION_B = `sha256:${'b'.repeat(64)}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const entry = (id: string, installation: Record<string, unknown>, group = 'default') => ({
-  id, group, installation, review_supported: id === 'claude' || id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
-/** claude is on for docs and review and is the default; codex and kimi are installed and off; grok is not installed. */
+/**
+ * claude is on for docs and review and is the default, a docs use stored before the docs isolation check;
+ * codex and kimi are installed and off; grok is not installed. Only codex has verified docs isolation.
+ */
 function settings(config: Partial<AgentsSettingsV1['config']> = {}, extra: readonly Record<string, unknown>[] = []): AgentsSettingsV1 {
   return decodeAgentsSettings({
     protocol: 1, kind: 'operator_agents_settings',
@@ -140,15 +144,23 @@ describe('settings page', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
-  test('3-SET-N1 the form has no credential input, offers review only on claude and codex, and gives no switch to an agent that is not installed', async () => {
-    await mount(props(server(settings({ enabled: ['claude', 'kimi'] }), [])));
+  test('3-SET-N1 the form has no credential input, offers review only on supported runtimes, docs only with verified isolation, and gives no switch to an agent that is not installed', async () => {
+    await mount(props(server(settings({ enabled: ['claude', 'codex', 'kimi'] }), [])));
     // The switches carry their own checkbox inputs; nothing takes typed text.
     expect(all('input').map(input => input.getAttribute('type')).filter(type => type !== 'radio' && type !== 'checkbox')).toEqual([]);
     expect(all('textarea, select, [contenteditable]')).toHaveLength(0);
-    await click(use('kimi', 'docs'));
-    expect(use('kimi', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(use('kimi', 'docs').disabled).toBe(true);
+    expect(use('kimi', 'docs').title).toBe('Docs sessions need verified docs isolation; this agent has none.');
+    expect(row('kimi').querySelector('[data-use-reasons]')?.textContent).toBe('Docs sessions need verified docs isolation; this agent has none. Only claude, codex and pi can review.');
+    await click(use('codex', 'docs'));
+    expect(use('codex', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(row('codex').querySelector('[data-use-reasons]')).toBeNull();
+    // A stored docs use of an agent without verified isolation stays on and can be removed; it stays the default it was.
+    expect(use('claude', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(use('claude', 'docs').disabled).toBe(false);
+    expect(all('[data-default-docs] input').map(input => input.getAttribute('value'))).toEqual(['', 'claude', 'codex']);
     expect(use('kimi', 'review').disabled).toBe(true);
-    expect(use('kimi', 'review').title).toBe('Only claude and codex can review.');
+    expect(use('kimi', 'review').title).toBe('Only claude, codex and pi can review.');
     expect(use('claude', 'review').disabled).toBe(false);
     expect(toggle('grok')).toBeNull();
     expect(use('grok', 'docs').disabled).toBe(true);
@@ -156,6 +168,19 @@ describe('settings page', () => {
     expect(row('cursor').closest('[data-runtime-group]')?.getAttribute('data-runtime-group')).toBe('settings-group-extra');
     expect(row('cursor').textContent).toContain('@cursor/sdk');
     expect(all('[data-capabilities]').map(line => line.textContent)).toEqual(['Every agent can stop a turn · steer depends on the session · withdrawing a queued message depends on the session']);
+  });
+
+  test('Pi review fixture offers the review use and saves it without changing the docs default', async () => {
+    const route = server(settings({}, [entry('pi', { kind: 'available', via: 'bundled', version: null })]),
+      [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled', 'agents.uses.review'] } }]);
+    await mount(props(route));
+    await click(toggle('pi')!);
+    expect(use('pi', 'review').disabled).toBe(false);
+    await click(use('pi', 'review')); await click(saveButton());
+    expect(route.posts).toHaveLength(1);
+    expect(route.posts[0]!.changes).toEqual([{ runtime: 'pi', enabled: true, uses: ['review'] }]);
+    expect(route.posts[0]!.default_docs_runtime).toBeUndefined();
+    expect(agentsSettingsFixture(NOW, 'busy').runtimes.entries.find(entry => entry.id === 'pi')?.review_supported).toBe(true);
   });
 
   test('3-SET-F1 a stale revision asks for a reload, sends nothing more, and the reload starts from the new section', async () => {
@@ -283,7 +308,7 @@ describe('settings page', () => {
   test.each(['en', 'zh'] as const)('the rail and the System page name Settings as the one page that writes in %s', async locale => {
     await mount(props(server(settings(), []), locale), '#system');
     expect(document.querySelector('[data-operator-status]')?.textContent).toContain('read-only except Settings');
-    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Settings page' : '除了设置页，它是只读的。');
+    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Settings page' : '除了设置页和 Worktree 页，它是只读的。');
   });
 
   test.each([...FIXTURE_NAMES])('the %s fixture renders the page and reads only the settings route', async name => {

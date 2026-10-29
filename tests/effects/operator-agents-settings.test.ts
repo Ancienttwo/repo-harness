@@ -87,6 +87,25 @@ async function settings(harness: Harness): Promise<ReturnType<typeof decodeAgent
 const sha256 = (path: string) => `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 
 describe('agent settings routes', () => {
+  test('Pi review fixture is admitted through the settings route and named in unsupported-runtime guidance', async () => {
+    const harness = await startHarness();
+    harness.cache = { status: 'ready', probe: { ...PROBE, entries: [...PROBE.entries,
+      { id: 'pi', group: 'default', installation: { kind: 'available', via: 'bundled', version: null } }] } };
+    const before = await settings(harness);
+    expect(before.runtimes.entries.find(entry => entry.id === 'pi')?.review_supported).toBe(true);
+    const response = await post(harness, { expected_revision: before.config.revision,
+      changes: [{ runtime: 'pi', enabled: true, uses: ['review'] }] });
+    expect(response.status).toBe(200);
+    const saved = await response.json();
+    expect((await settings(harness)).config.uses.review).toEqual(['pi']);
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents.uses.review).toEqual(['pi']);
+    const invalid = await post(harness, { expected_revision: saved.config_revision,
+      changes: [{ runtime: 'grok', enabled: true, uses: ['review'] }] });
+    expect(invalid.status).toBe(422);
+    const error = (await invalid.json()).error;
+    expect(error.message).toContain('pi'); expect(error.next_action).toContain('pi');
+  });
+
   test('GET reads the absent section and the probe cache without command paths', async () => {
     const harness = await startHarness();
     const value = await settings(harness);
@@ -95,6 +114,7 @@ describe('agent settings routes', () => {
     expect(value.runtimes.entries.map(entry => [entry.id, entry.review_supported])).toEqual([
       ['claude', true], ['codex', true], ['grok', false], ['morph', false], ['cursor', false],
     ]);
+    expect(value.runtimes.entries.filter(entry => entry.docs_supported).map(entry => entry.id)).toEqual(['codex']);
     expect(value.runtimes.entries[0]!.capabilities).toEqual({ stop: 'available', steer: 'session', withdraw: 'session' });
     expect((await fetch(`${harness.server.url}/api/v1/settings/agents?x=1`)).status).toBe(400);
     expect((await fetch(`${harness.server.url}/api/v1/settings/agents`, { method: 'PUT' })).status).toBe(405);
@@ -108,7 +128,7 @@ describe('agent settings routes', () => {
     const before = await settings(harness);
     const response = await post(harness, {
       expected_revision: before.config.revision,
-      changes: [{ runtime: 'codex', enabled: true, uses: ['docs', 'review'] }, { runtime: 'grok', enabled: true, uses: ['docs'] }],
+      changes: [{ runtime: 'codex', enabled: true, uses: ['docs', 'review'] }, { runtime: 'grok', enabled: true, uses: [] }],
       default_docs_runtime: 'codex',
     });
     expect(response.status).toBe(200);
@@ -120,7 +140,7 @@ describe('agent settings routes', () => {
     const stored = JSON.parse(readFileSync(harness.configPath, 'utf8'));
     expect(stored).toEqual({
       security: { mode: 'strict' }, brainRoot: '/srv/brain',
-      agents: { enabled: ['codex', 'grok'], uses: { docs: ['codex', 'grok'], review: ['codex'] }, default_docs: 'codex' },
+      agents: { enabled: ['codex', 'grok'], uses: { docs: ['codex'], review: ['codex'] }, default_docs: 'codex' },
     });
     expect((await settings(harness)).config.revision).toBe(result.config_revision);
     expect(existsSync(join(harness.home, '.repo-harness', 'operator'))).toBe(false);
@@ -162,6 +182,7 @@ describe('agent settings routes', () => {
     const harness = await startHarness();
     for (const [body, code] of [
       [{ changes: [{ runtime: 'grok', enabled: true, uses: ['review'] }] }, 'use_not_supported'],
+      [{ changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] }, 'docs_isolation_unverified'],
       [{ changes: [{ runtime: 'nope', enabled: true, uses: [] }] }, 'runtime_unknown'],
       [{ changes: [{ runtime: 'codex', enabled: false, uses: ['docs'] }] }, 'runtime_not_enabled'],
       [{ changes: [{ runtime: 'codex', enabled: true, uses: [] }], default_docs_runtime: 'codex' }, 'default_docs_invalid'],
@@ -170,6 +191,27 @@ describe('agent settings routes', () => {
       expect([response.status, (await response.json()).error.code]).toEqual([422, code]);
     }
     expect(existsSync(harness.configPath)).toBe(false);
+  });
+
+  test('3-SET-N1 a docs use stored before the isolation check stays and can be removed, but none is added and it cannot become the default', async () => {
+    const harness = await startHarness({ agents: { enabled: ['claude', 'codex'], uses: { docs: ['claude', 'codex'], review: ['claude'] }, default_docs: 'codex' } });
+    const before = await settings(harness);
+    const keep = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] });
+    expect(keep.status).toBe(200);
+    const kept = await keep.json();
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents.uses).toEqual({ docs: ['claude', 'codex'], review: [] });
+
+    const unchanged = readFileSync(harness.configPath, 'utf8');
+    const promote = await post(harness, { expected_revision: kept.config_revision, changes: [], default_docs_runtime: 'claude' });
+    expect([promote.status, (await promote.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(unchanged);
+
+    const remove = await post(harness, { expected_revision: kept.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: [] }] });
+    expect(remove.status).toBe(200);
+    const removed = await remove.json();
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents.uses.docs).toEqual(['codex']);
+    const readd = await post(harness, { expected_revision: removed.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] });
+    expect([readd.status, (await readd.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
   });
 
   test('refuses an unknown field, a missing probe, an invalid section and a linked file', async () => {

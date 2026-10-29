@@ -11,3 +11,4 @@ responsibilities:
 source:
   include:
     - src/cli/commands/operator.ts
+    - src/cli/commands/worktrees.ts

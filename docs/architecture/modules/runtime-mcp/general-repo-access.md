@@ -1,8 +1,8 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:156ea882482b5f26c97cb6a0260b06e5f047fdf9019dc4c381df7280e714df3d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b97bf87458e8ce972ffa881e0cd8b7605e6f996c7c0a49e1280c5e040b862054" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
-> **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`
+> **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`assets/mcp/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -16,6 +16,7 @@ Exposes bounded read-only repository tools through MCP.
 flowchart LR
   p1_capability_runtime_mcp_general_repo_access_5a2e164b["General Repository Access"]:::component
   p1_component_general_repo_access_primary_4234dd17["Stable File Reader"]:::component
+  p1_component_general_repo_access_tests_layer_36715740["General Repository Access (tests)"]:::component
   p1_capability_runtime_mcp_general_repo_access_5a2e164b -->|"Read a repository file"| p1_component_general_repo_access_primary_4234dd17
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -23,8 +24,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:06213d431dd01abc74ce121eda4dc4f2f3214010b462616665feb9c7a828fe26`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:9489949deae0374d6bfa617459c321495ec1eacc7fe339167c9ecec4577de427`).
+- Semantic nodes: `3`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -38,8 +39,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`、`assets/mcp/**`
+- 規模量級:`2–5` 個文件 / `2000–5000` 行
+- 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`assets/mcp/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -57,16 +58,19 @@ flowchart LR
 - `component.general-repo-access.primary`:
   - `calls` → `capability.verification.codegraph-readiness` — Read CodeGraph index metadata through the adapter after path authorization
   - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve registered repositories then redact and audit through the shared MCP policy
+- `component.general-repo-access.tests-layer`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.general-repo-access.primary` | Stable File Reader | 未宣告 `source.include` | 未宣告 |
+| `component.general-repo-access.tests-layer` | General Repository Access (tests) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:06213d431dd01abc74ce121eda4dc4f2f3214010b462616665feb9c7a828fe26`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:9489949deae0374d6bfa617459c321495ec1eacc7fe339167c9ecec4577de427`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

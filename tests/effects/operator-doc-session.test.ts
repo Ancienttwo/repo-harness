@@ -58,6 +58,14 @@ interface HarnessOptions {
   readonly production_reads?: boolean;
   /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
   readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
+  /** The runtimes with the docs use in the agent settings; codex by default. */
+  readonly docs_runtimes?: readonly string[];
+}
+
+/** The agent settings live under HOME; each harness gives HOME its own temporary root. */
+function writeAgentsSettings(home: string, docs: readonly string[]): void {
+  mkdirSync(join(home, '.repo-harness'), { recursive: true });
+  writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: [...docs], uses: { docs: [...docs], review: [] }, default_docs: null } }));
 }
 
 async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -75,7 +83,9 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
-  const env = { ...process.env, ...options.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const userHome = tmpWorkspace('operator-doc-session-user');
+  writeAgentsSettings(userHome, options.docs_runtimes ?? ['codex']);
+  const env = { ...process.env, ...options.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
@@ -94,7 +104,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   cleanups.push(async () => {
     await server.close();
     reader.close();
-    for (const dir of [repo, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [repo, home, userHome, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
   return {
     repo, repositoryId, worktrees, home, url: server.url, env,
@@ -218,7 +228,7 @@ test('the request cannot choose a location: an unknown field, a path outside doc
     request(h, [{ ...good, start_line: 3, end_line: 2 }]),
     request(h, [{ ...good, extra: true } as DocCitationV1]),
     request(h, []),
-    request(h, [good], { runtime: 'claude' }),
+    request(h, [good], { runtime: 'Not A Runtime' }),
   ]) {
     const answer = await h.post(body);
     expect(answer.status).toBe(400);
@@ -268,6 +278,21 @@ test('the same request_id returns the stored session and creates one worktree', 
   expect(h.branches()).toHaveLength(1);
 });
 
+test('a runtime without verified docs isolation or without the docs use is refused with 422 before any worktree', async () => {
+  const unverified = await harness({ docs_runtimes: ['claude', 'codex'] });
+  const refused = await unverified.post(request(unverified, [cite(GUIDE, 'docs/guide.md', 1, 1, unverified.head())], { runtime: 'claude' }));
+  expect([refused.status, refused.body.error.code]).toEqual([422, 'docs_isolation_unverified']);
+  expect(readdirSync(unverified.worktrees)).toEqual([]);
+  expect(existsSync(sessionsDir(unverified))).toBe(false);
+
+  const off = await harness({ docs_runtimes: [] });
+  const notEnabled = await off.post(request(off, [cite(GUIDE, 'docs/guide.md', 1, 1, off.head())]));
+  expect([notEnabled.status, notEnabled.body.error.code]).toEqual([422, 'runtime_not_enabled']);
+  expect(readdirSync(off.worktrees)).toEqual([]);
+  expect(off.branches()).toEqual([]);
+  expect(existsSync(sessionsDir(off))).toBe(false);
+});
+
 test('doc sessions are macOS only for now', async () => {
   const h = await harness({ platform: 'linux' });
   const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
@@ -276,8 +301,8 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit exactly the settings write and the session create write', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['settings_agents_write', 'sessions_create']);
+test('production routes admit exactly the settings, worktree cleanup and session create writes', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create']);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
@@ -775,7 +800,9 @@ test('the production inventory binds POST /api/v1/sessions to the server-built r
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
-  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const userHome = tmpWorkspace('operator-doc-session-user');
+  writeAgentsSettings(userHome, ['codex']);
+  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
@@ -793,7 +820,7 @@ test('the production inventory binds POST /api/v1/sessions to the server-built r
   cleanups.push(async () => {
     await server.close();
     reader.close();
-    for (const dir of [repo, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [repo, home, userHome, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
   const post = async (citations: readonly DocCitationV1[]) => {
     const response = await fetch(`${server.url}/api/v1/sessions`, {
