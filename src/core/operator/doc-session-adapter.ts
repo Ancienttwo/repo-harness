@@ -1,4 +1,4 @@
-import { DOC_SESSION_EVENT_MAX_PATHS, DOC_SESSION_EVENT_TEXT_MAX_BYTES, isRepositoryRelativePath, type DocSessionEventInput, type DocSessionToolCategory } from './doc-session-events';
+import { DOC_SESSION_EVENT_MAX_PATHS, DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_TEXT_WITHHELD, isRepositoryRelativePath, type DocSessionEventInput, type DocSessionToolCategory } from './doc-session-events';
 
 /**
  * OAR session events -> doc session event records (PRD G3, G4; issue #1021).
@@ -31,8 +31,8 @@ export interface DocSessionOarEvent {
 }
 
 /**
- * The most text one message holds. The writer keeps at most DOC_SESSION_EVENT_TEXT_MAX_BYTES of the redacted text,
- * so text past this bound cannot be stored; it is dropped and the message is marked truncated.
+ * The most raw text one message holds. Overflow withholds the whole message:
+ * cutting before redaction can leave a secret fragment that no longer matches.
  */
 export const DOC_SESSION_MESSAGE_HOLD_CHARS = 4 * DOC_SESSION_EVENT_TEXT_MAX_BYTES;
 
@@ -94,7 +94,7 @@ export class DocSessionAdapter {
   /** The host disposes the session, so the runtime exit that follows is not a failure. */
   disposed(): void { this.disposing = true; }
 
-  /** The held message, whole, or nothing. The host calls it before it records a failure or the end of a turn itself. */
+  /** The whole message or its withheld marker. The host calls it before it records a failure or the end of a turn itself. */
   flush(): DocSessionEventBody[] {
     const held = this.message;
     this.message = null;
@@ -113,9 +113,13 @@ export class DocSessionAdapter {
   private hold(key: string, text: string): DocSessionEventBody[] {
     const ended = this.message !== null && this.message.key !== key ? this.flush() : [];
     const held = this.message ??= { key, text: '', dropped: false };
-    const room = DOC_SESSION_MESSAGE_HOLD_CHARS - held.text.length;
-    held.text += text.slice(0, Math.max(0, room));
-    if (text.length > room) held.dropped = true;
+    if (held.dropped) return ended;
+    if (held.text.length + text.length > DOC_SESSION_MESSAGE_HOLD_CHARS) {
+      held.text = DOC_SESSION_TEXT_WITHHELD;
+      held.dropped = true;
+    } else {
+      held.text += text;
+    }
     return ended;
   }
 

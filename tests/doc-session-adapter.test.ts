@@ -5,7 +5,7 @@ import { scriptedRuntime } from '@botiverse/oar/testing';
 import type { Event, Session } from '@botiverse/oar';
 
 import { DOC_SESSION_MESSAGE_HOLD_CHARS, DocSessionAdapter, docSessionRepositoryPath, type DocSessionEventBody } from '../src/core/operator/doc-session-adapter';
-import { DOC_SESSION_EVENT_MAX_PATHS } from '../src/core/operator/doc-session-events';
+import { DOC_SESSION_EVENT_MAX_PATHS, DOC_SESSION_TEXT_WITHHELD } from '../src/core/operator/doc-session-events';
 import { containsSecret } from '../src/core/security/secret-patterns';
 import { appendDocSessionEvents } from '../src/effects/operator/doc-session-events';
 import { DOC_SESSION_ABORT_GRACE_MS, DocsTurnControl, scriptedDocsTurn } from '../src/effects/operator/oar-docs-host';
@@ -139,14 +139,43 @@ test('a secret split across two text deltas, with a pause longer than the coales
   expect(log).toContain('The token is ghp_[REDACTED] and nothing else.');
 }, 30_000);
 
-test('a message past the hold bound keeps only the bound and is stored as truncated', () => {
+for (const split of [false, true]) test(`hold overflow with a compressed secret prefix withholds the whole message (${split ? 'three deltas' : 'one delta'})`, () => {
+  const prefix = ('sk-' + 'A'.repeat(1000) + ' ').repeat(65) + ' '.repeat(262);
+  const head = 'ghp_0123456789', rest = 'abcdefghijklmnopqrstuvwxyzAB';
+  expect(prefix.length + head.length).toBe(DOC_SESSION_MESSAGE_HOLD_CHARS);
+  const adapter = new DocSessionAdapter('/private/tmp/wt');
+  for (const text of split ? [prefix, head, rest] : [prefix + head + rest]) {
+    expect(adapter.map({ agentPath: [], kind: 'text_delta', messageId: 'm', text })).toEqual([]);
+  }
+  const s = sessionStore();
+  store(s.env, adapter.flush());
+  const log = readFileSync(s.log, 'utf8');
+  expect(JSON.parse(log)).toMatchObject({ type: 'message', text: DOC_SESSION_TEXT_WITHHELD, truncated: true });
+  for (const fragment of [head, rest, 'sk-' + 'A'.repeat(1000)]) expect(log).not.toContain(fragment);
+});
+
+test('a complete message at the hold bound keeps the writer redaction after prefix compression', () => {
+  const prefix = ('sk-' + 'A'.repeat(1000) + ' ').repeat(64);
+  const token = 'ghp_0123456789abcdefghijklmnopqrstuvwxyzAB';
+  const padding = ' '.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS - prefix.length - token.length);
+  const adapter = new DocSessionAdapter('/private/tmp/wt');
+  adapter.map({ agentPath: [], kind: 'text_delta', messageId: 'm', text: prefix + token + padding });
+  const s = sessionStore();
+  store(s.env, adapter.flush());
+  const log = readFileSync(s.log, 'utf8');
+  expect(JSON.parse(log)).toMatchObject({ text: 'sk-[REDACTED] '.repeat(64) + 'ghp_[REDACTED]' + padding, truncated: false });
+  expect(log).not.toContain(token);
+});
+
+test('a message past the hold bound is withheld and stored as truncated', () => {
   const adapter = new DocSessionAdapter('/private/tmp/wt');
   const root = { agentPath: [] as string[] };
   adapter.map({ ...root, kind: 'turn_started' });
   expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'x'.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS - 2) })).toEqual([]);
   expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'yyyyy' })).toEqual([]);
+  expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'later text must also be withheld' })).toEqual([]);
   const [message, end] = adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'completed' } });
-  expect(message).toEqual({ type: 'message', role: 'agent', text: `${'x'.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS - 2)}yy`, truncated: true });
+  expect(message).toEqual({ type: 'message', role: 'agent', text: DOC_SESSION_TEXT_WITHHELD, truncated: true });
   expect(end).toEqual({ type: 'turn', boundary: 'ended' });
   // A message from another id ends the held one first.
   adapter.map({ ...root, kind: 'text_delta', messageId: 'a', text: 'first' });
