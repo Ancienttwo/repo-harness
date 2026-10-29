@@ -853,14 +853,36 @@ export interface AuthorizedCleanupOptions extends WorktreeRemovalOptions {
   readonly env: NodeJS.ProcessEnv;
   readonly deadline: number;
   readonly caller_cwd: string;
-  /** Server check of the persisted plan, per-item approval, full fingerprint and archive/provider readback. */
+  /** Fresh approval and loss check; only applicable while the original source exists. */
   readonly verify: () => Promise<void>;
+  /** Read current archive/provider preservation without depending on the source checkout. Required on recovery too. */
+  readonly verifyPreservation: () => Promise<void>;
   readonly processes?: (deadline: number) => WorktreeProcess[] | null;
 }
 function authorizedReadback(root: string, receipt: AuthorizedWorktreeTrashReceipt, limits: Limits): void {
   if (pathExists(receipt.expected.worktree) || entries(root, limits).some(row => checkoutPath(row.path) === receipt.expected.worktree
     || (receipt.expected.branch !== null && row.branch === `refs/heads/${receipt.expected.branch}`))) throw new Error('authorized cleanup registration removal is unproven');
   if (receipt.expected.branch !== null && git(root, ['for-each-ref', '--format=%(refname)', `refs/heads/${receipt.expected.branch}`], limits).split('\n').includes(`refs/heads/${receipt.expected.branch}`)) throw new Error('authorized cleanup branch remains');
+}
+/** Inode identity alone does not bind the Git registration's mutable contents. */
+function assertAuthorizedRegistration(context: SweepContext, receipt: AuthorizedWorktreeTrashReceipt): void {
+  const expected = receipt.expected;
+  const topology = entries(context.main, context.limits);
+  const binding = topology.find(row => checkoutPath(row.path) === expected.worktree);
+  if (receipt.git_directory === null || !pathExists(receipt.git_directory)) {
+    if (binding || (expected.branch !== null && topology.some(row => row.branch === `refs/heads/${expected.branch}`))) throw new Error('authorized registration changed');
+    return;
+  }
+  const admin = assertOwnedTrashDirectory(receipt.git_directory);
+  if (admin.dev !== receipt.git_directory_dev || admin.ino !== receipt.git_directory_ino || expected.branch === null
+    || !binding || binding.path !== expected.worktree || binding.branch !== `refs/heads/${expected.branch}` || binding.head !== expected.head_sha) throw new Error('authorized registration changed');
+  const field = (name: string) => {
+    const path = join(receipt.git_directory!, name), stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== receipt.uid) throw new Error('authorized registration metadata unsafe');
+    return readFileSync(path, 'utf8').trim();
+  };
+  if (field('HEAD') !== `ref: refs/heads/${expected.branch}` || field('gitdir') !== join(expected.worktree, '.git')
+    || realpathSync(resolve(receipt.git_directory, field('commondir'))) !== context.common) throw new Error('authorized registration metadata changed');
 }
 /** Read only. A tombstone is accepted only with exact receipt and current topology/ref readback. */
 export function readAuthorizedCleanupState(root: string, expected: AuthorizedWorktreeCleanup, deadline: number): 'absent' | 'pending' | 'completed' {
@@ -883,6 +905,25 @@ async function cleanupAuthorizedWorktree(root: string, expected: AuthorizedWorkt
     const context: SweepContext = { main, cwd, env: options.env, common, managedRoot,
       managed: path => path === expected.worktree, limits, trashDeadline: options.deadline, options,
       processes: options.processes ?? worktreeProcesses };
+    const preservedReceipt = async () => {
+      // This barrier applies even when the original checkout is gone. An earlier
+      // archive check or immutable intent cannot prove that preservation still holds.
+      await options.verifyPreservation();
+      timeout(limits);
+      const current = readAuthorizedWorktreeTrash(common, expected);
+      if (!current) throw new Error('authorized cleanup receipt disappeared');
+      assertTrashIsUnregistered(context, current.directory);
+      assertAuthorizedRegistration(context, current);
+      const active = context.processes(options.deadline);
+      if (active === null || active.some(process => protectsCwd(expected.worktree, process.cwd) || protectsCwd(current.directory, process.cwd))
+        || !taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: expected.worktree })) throw new Error('authorized cleanup became in use');
+      return current;
+    };
+    const finish = async () => {
+      const current = await preservedReceipt();
+      authorizedReadback(main, current, limits);
+      completeAuthorizedWorktreeTrash(current, options.deadline, options);
+    };
     let receipt = readAuthorizedWorktreeTrash(common, expected);
     if (receipt && authorizedWorktreeTrashCompleted(receipt)) { authorizedReadback(main, receipt, limits); return; }
     const payload = receipt !== null && pathExists(trashPayload(receipt));
@@ -896,7 +937,7 @@ async function cleanupAuthorizedWorktree(root: string, expected: AuthorizedWorkt
         // an intent that never moved the source requires the original fresh authorization again.
         if (!pathExists(expected.worktree)) {
           authorizedReadback(main, receipt, limits);
-          completeAuthorizedWorktreeTrash(receipt, options.deadline, options); return;
+          await finish(); return;
         }
       }
       const inspection = inspectWorktree(main, expected.worktree, cwd, { env: options.env, deadline: options.deadline, processes });
@@ -909,6 +950,7 @@ async function cleanupAuthorizedWorktree(root: string, expected: AuthorizedWorkt
       } else if (expected.branch !== null || expected.head_sha !== null) throw new Error('authorized orphan cannot delete a branch');
       // A whole prune is forbidden if any other registration would be affected.
       assertPruneScope(context);
+      await options.verifyPreservation();
       await options.verify();
       timeout(limits);
       const finalProcesses = context.processes(options.deadline);
@@ -925,8 +967,10 @@ async function cleanupAuthorizedWorktree(root: string, expected: AuthorizedWorkt
       options.afterRemovalStep?.('renamed', receipt.directory);
     } else if (pathExists(expected.worktree)) throw new Error('authorized source name was reused');
     if (!receipt) throw new Error('authorized cleanup receipt missing');
+    // Prune also destroys index-only bytes. Preserve them before registration/ref
+    // removal, then verify again immediately before deleting the remaining payload.
+    receipt = await preservedReceipt();
     recordAuthorizedWorktreeTrashRename(receipt);
-    assertTrashIsUnregistered(context, receipt.directory);
     if (receipt.git_directory !== null) {
       if (expected.branch === null || receipt.git_directory_dev === null || receipt.git_directory_ino === null) throw new Error('authorized registration identity missing');
       const admin = pathExists(receipt.git_directory) ? assertOwnedTrashDirectory(receipt.git_directory) : null;
@@ -958,6 +1002,6 @@ async function cleanupAuthorizedWorktree(root: string, expected: AuthorizedWorkt
       endWorktreeRecord(common, record, 'removed');
     }
     retireWorktreeIdentity(common, expected.worktree, limits);
-    completeAuthorizedWorktreeTrash(receipt, options.deadline, options);
+    await finish();
   }, limits);
 }

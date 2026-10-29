@@ -14,7 +14,7 @@ export interface CleanupRemovalInput {
   readonly loss: CleanupLossEvidence;
   readonly archive: { readonly manifest_sha256: string; readonly pr: string | null } | null;
 }
-export interface CleanupRemovalOptions extends AuthorizedCleanupOptions {
+export interface CleanupRemovalOptions extends Omit<AuthorizedCleanupOptions, 'verifyPreservation'> {
   /** Read actual private artifacts and exact pushed archive/PR, and verify remote preservation for excluded commits.
    * Must fail closed on stale refs, changed archives or unavailable provider evidence. This is the #1023/server adapter. */
   readonly verifyPreservation: (input: CleanupRemovalInput) => Promise<void>;
@@ -43,9 +43,8 @@ export function reconcileCleanupWorktree(input: CleanupRemovalInput, deadline: n
 /** The same operation also resumes an exact pending receipt. It never renames a different source incarnation. */
 export async function removeCleanupWorktree(input: CleanupRemovalInput, options: CleanupRemovalOptions): Promise<void> {
   const expected = identity(input);
-  await cleanupExactWorktree(input.target.repository, expected, { ...options, verify: async () => {
+  await cleanupExactWorktree(input.target.repository, expected, { ...options, verifyPreservation: () => options.verifyPreservation(input), verify: async () => {
     await options.verify();
-    await options.verifyPreservation(input);
     const view = { ...input.item.worktree, ...inspectWorktree(input.target.repository, input.target.worktree, options.caller_cwd,
       { env: options.env, deadline: options.deadline, processes: options.processes?.(options.deadline) }) };
     if (view.judgment === 'red' || view.process_count === null || view.reasons.some(reason => ['primary', 'probe_failed', 'runtime_unknown', 'process_unknown'].includes(reason))) throw new Error('cleanup target in use or unknown');
