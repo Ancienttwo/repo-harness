@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
+import { containsSecret } from '../../core/security/secret-patterns';
 import { docSessionLossDigestInput, type DocSessionLossInput } from '../../core/operator/doc-session-changes';
 import {
   cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan,
@@ -131,10 +132,12 @@ async function executeItem(request: AuthorizedCleanupRequest, item: CleanupPlanI
       stage = 'archive_commit'; await ports.archiveCommit(key, structuredClone(item));
       if (item.advice.archive.git !== null) {
         stage = 'archive_push'; await ports.archivePush(key, structuredClone(item));
-        stage = 'archive_pr'; archivePr = await ports.archivePr(key, structuredClone(item));
-        if (archivePr === null || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(archivePr)) {
+        stage = 'archive_pr';
+        const published = await ports.archivePr(key, structuredClone(item));
+        if (typeof published !== 'string' || containsSecret(published) || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(published)) {
           throw new Error('archive PR readback missing');
         }
+        archivePr = published;
       }
     }
     stage = 'remove';

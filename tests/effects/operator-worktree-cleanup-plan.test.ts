@@ -118,6 +118,13 @@ describe('cleanup plan contract and execution boundary', () => {
     expect((await executeCleanupPlan(h.request, { ...h.ports, archivePr: async () => null })).items[0]).toMatchObject({ outcome: 'reconcile_required', stage: 'archive_pr' });
     expect(h.calls.some(c => c.startsWith('remove:'))).toBe(false);
   });
+  test.each(['/private/checkout', 'https://github.com/example/repo/pull/5?token=synthetic', `https://github.com/ghp_${'q'.repeat(36)}/repo/pull/5`])('invalid publication readback is withheld: %s', async published => {
+    const h = harness();
+    const result = await executeCleanupPlan(h.request, { ...h.ports, archivePr: async () => published });
+    expect(result.items[0]).toMatchObject({ outcome: 'reconcile_required', stage: 'archive_pr', archive_pr: null });
+    expect(JSON.stringify(result)).not.toContain(published);
+    expect(h.calls.some(c => c.startsWith('remove:'))).toBe(false);
+  });
   test('an item changed after approval is skipped while the other selected item proceeds', async () => {
     const h = harness([observation(), observation(2, 'green')]);
     h.observations[0] = { ...h.observations[0]!, loss: { ...h.observations[0]!.loss!, head_commit: 'f'.repeat(40) } };
