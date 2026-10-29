@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2693b1d53e6eb47c14a0799c0016415bb307ce182d57d186d42a3f0dfc6e2839" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:16123a7178e5240214e3d9107137a8e22739d76665f3d0c7742d13dfdb5560db" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`
@@ -18,6 +18,7 @@ flowchart LR
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3["Integration Product Acceptance"]:::component
   p1_component_engineer_scheduling_primary_1e5aff8c["Provider Work Graph Reader"]:::component
+  p1_component_engineer_scheduling_primary_core_499ae9ee["Provider Work Graph Reader (core)"]:::component
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose"| p1_capability_runtime_harness_integration_acceptance_8c7dd2d3
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Validate and project the immutable provider graph selected by exact commit and path"| p1_component_engineer_scheduling_primary_1e5aff8c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -26,8 +27,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d232cf094cc6cdc8842c33d0e3b9b77e78da007eece332ecccc8a4d21a96dbf6`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:ae285f62fc371da2fedd360b89710e27b3703cbd9e20dfbf3dde24711c273377`).
+- Semantic nodes: `4`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -70,16 +71,19 @@ flowchart LR
 
 - `component.engineer-scheduling.primary`:
   - 無。
+- `component.engineer-scheduling.primary-core`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.engineer-scheduling.primary` | Provider Work Graph Reader | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.engineer-scheduling.primary` | Provider Work Graph Reader | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.engineer-scheduling.primary-core` | Provider Work Graph Reader (core) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d232cf094cc6cdc8842c33d0e3b9b77e78da007eece332ecccc8a4d21a96dbf6`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:ae285f62fc371da2fedd360b89710e27b3703cbd9e20dfbf3dde24711c273377`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

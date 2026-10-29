@@ -23,7 +23,14 @@ export type HookEvent =
   | 'SubagentStart'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex';
+export type RouteHost = 'claude' | 'codex' | 'pi';
+
+/**
+ * Hosts that read a JSON hook adapter file written by the installer
+ * (`~/.claude/settings.json`, `~/.codex/hooks.json`). Pi has no adapter file:
+ * the repo-harness Pi extension calls the hook runtime directly.
+ */
+export type AdapterHost = Exclude<RouteHost, 'pi'>;
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
@@ -95,7 +102,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PreToolUse' as const,
     routeId: 'bash' as const,
     matcher: 'Bash',
-    hosts: ['claude'] as const,
+    hosts: ['claude', 'pi'] as const,
     handler: 'bash-mutation-guard',
     // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
     minimalProfile: true as const,
@@ -103,9 +110,9 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'inbox' as const,
-    // Preserve the installed tuple. Only Codex delivers notice text here.
+    // Preserve the installed tuple and adapter order.
     handler: 'agent-notice',
-    hosts: ['claude', 'codex'] as const,
+    hosts: ['claude', 'codex', 'pi'] as const,
     minimalProfile: true as const,
   }),
   Object.freeze({

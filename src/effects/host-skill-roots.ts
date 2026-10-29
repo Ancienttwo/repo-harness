@@ -1,4 +1,5 @@
 import { join } from 'path';
+import { piAgentDir } from './pi-agent-dir';
 
 /**
  * Host skill root rules. Every host skill writer derives its root here:
@@ -6,9 +7,11 @@ import { join } from 'path';
  * profile-projection), the bundled and staged skill projections, the Herdr
  * skill, the Strategy and ChatGPT Skills, and install ownership.
  */
-export type SkillHost = 'claude' | 'codex';
+export const SKILL_HOSTS = ['claude', 'codex', 'pi'] as const;
+export type SkillHost = (typeof SKILL_HOSTS)[number];
 
-export function hostSkillRoot(home: string, host: SkillHost): string {
+export function hostSkillRoot(home: string, host: SkillHost, env: Readonly<Record<string, string | undefined>> = process.env): string {
+  if (host === 'pi') return join(piAgentDir(home, env), 'skills');
   return join(home, `.${host}`, 'skills');
 }
 
@@ -18,6 +21,7 @@ export function stagedSkillRoot(home: string): string {
 }
 
 export interface SyncSkillRoots {
+  readonly pi: string | null;
   readonly codex: string;
   /** Null when an explicit CODEX_SKILLS_ROOT comes without CLAUDE_SKILLS_ROOT. */
   readonly claude: string | null;
@@ -33,7 +37,7 @@ function withoutTrailingSlash(root: string): string {
 export function syncSkillRoots(env: Readonly<Record<string, string | undefined>>, home: string): SyncSkillRoots {
   const claudeOverride = env.CLAUDE_SKILLS_ROOT ? withoutTrailingSlash(env.CLAUDE_SKILLS_ROOT) : null;
   if (env.CODEX_SKILLS_ROOT) {
-    return { codex: withoutTrailingSlash(env.CODEX_SKILLS_ROOT), claude: claudeOverride, overridden: true };
+    return { codex: withoutTrailingSlash(env.CODEX_SKILLS_ROOT), claude: claudeOverride, pi: null, overridden: true };
   }
-  return { codex: hostSkillRoot(home, 'codex'), claude: claudeOverride ?? hostSkillRoot(home, 'claude'), overridden: false };
+  return { codex: hostSkillRoot(home, 'codex'), claude: claudeOverride ?? hostSkillRoot(home, 'claude'), pi: env.REPO_HARNESS_INCLUDE_PI === '0' ? null : hostSkillRoot(home, 'pi', env), overridden: false };
 }

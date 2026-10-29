@@ -128,7 +128,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | 任务抽屉 | `src/operator-web/ItemDrawer.tsx:120`、`src/operator-web/Drawer.tsx`、`TaskEvidence.tsx`、`TaskDiff.tsx` | extend | 加「跟进」命令块（G15）、执行状态（G2）和「这次改到的测试」（1.6） |
 | 给 owner 发消息 | `repo-harness fleet message send`（`src/cli/commands/fleet.ts:412`） | reuse via Bot | 控制台只读显示 inbox 和回执（`RepositoryWorkspace.tsx:253-295`），不发 |
 | 仓库页与失效登记 | `src/operator-web/RepositoriesPage.tsx:12`、`:61-71`（`fleet prune` 命令、unreachable 状态） | reuse | — |
-| Agents、Skills、Hooks | `src/operator-web/SetupPages.tsx:298`、`:328`、`:416`；`src/core/setup/types.ts:138`（`SetupSnapshotV1`）；`src/cli/hook/route-registry.ts:69`（`ROUTES`） | extend | Hooks 的次数和拒绝要读 hook 事件（G16）；profile 路由数从 registry 读（G17） |
+| Agents、Skills、Hooks | `src/operator-web/SetupPages.tsx:298`、`:328`、`:416`；`src/core/setup/types.ts:138`（`SetupSnapshotV2`）；`src/cli/hook/route-registry.ts:69`（`ROUTES`） | extend | Hooks 的次数和拒绝要读 hook 事件（G16）；profile 路由数从 registry 读（G17） |
 | 系统页 | `src/operator-web/SystemPage.tsx:67`；notify 状态 `src/effects/operator/notify-status.ts:126-131` | extend | 读插件状态时补 `--session`（PRD「Bot 接入管理」） |
 | 工具页 | `src/operator-web/ToolsPage.tsx:118`；`assets/tool-catalog.v1.json`（7 项） | extend | catalog 加作者、标签、是否随 profile 安装（G14） |
 | 架构模块页 | `src/operator-web/ArchitectureWorkspace.tsx:239`、`src/operator-web/ModuleGraph.tsx:73`；`.archcontext/model/` | extend | 四张底图和五个图层（G11、G22、G27），布局依赖见 D7 |

@@ -1,6 +1,6 @@
 # runtime-harness/integration-acceptance 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9e63bfed7c7ffa81b1f98a86a10115602b063a06ace7768a7c0daaf9a7df2759" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:18d41c267499efee3f1d8bfc37b0fce9d0e47e84f090daf668527994360c0435" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
 > **Matched Prefixes**:`src/core/integration/product-acceptance.ts`、`src/effects/integration/product-acceptance.ts`、`src/cli/commands/integration.ts`
@@ -18,6 +18,8 @@ flowchart LR
   p1_capability_organization_publication_44355620["Publication Observations"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3["Integration Product Acceptance"]:::component
   p1_component_integration_acceptance_primary_d3db0bd8["Integration Acceptance Evidence Plane"]:::component
+  p1_component_integration_acceptance_primary_core_24d429f5["Integration Acceptance Evidence Plane (core)"]:::component
+  p1_component_integration_acceptance_primary_effects_edc398d3["Integration Acceptance Evidence Plane (effects)"]:::component
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection"| p1_component_integration_acceptance_primary_d3db0bd8
   p1_capability_runtime_harness_integration_acceptance_8c7dd2d3 -->|"Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority"| p1_capability_organization_publication_44355620
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -26,8 +28,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:845ce197f0447d74714728deb853a8b4bc987ea4b72f0f2c0ea5a609e0a9836a`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:0213bb5b958a9dc9fbcb37a0bcb81b3703994f7e58db6a40b7c07ec2de19b69e`).
+- Semantic nodes: `5`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -73,16 +75,22 @@ flowchart LR
 - `component.integration-acceptance.primary`:
   - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt for an integration candidate
   - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for integration records
+- `component.integration-acceptance.primary-core`:
+  - 無。
+- `component.integration-acceptance.primary-effects`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.integration-acceptance.primary` | Integration Acceptance Evidence Plane | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.integration-acceptance.primary` | Integration Acceptance Evidence Plane | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.integration-acceptance.primary-core` | Integration Acceptance Evidence Plane (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.integration-acceptance.primary-effects` | Integration Acceptance Evidence Plane (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:845ce197f0447d74714728deb853a8b4bc987ea4b72f0f2c0ea5a609e0a9836a`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:0213bb5b958a9dc9fbcb37a0bcb81b3703994f7e58db6a40b7c07ec2de19b69e`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

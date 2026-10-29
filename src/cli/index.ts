@@ -19,6 +19,8 @@ import { createInterface } from 'readline/promises';
 import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { planPiPackage, removePiPackage } from './installer/pi-package';
+import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -230,11 +232,12 @@ function runTransactionalProfileProjection(
       migrationSource = prepareProjection();
       result = runGlobalRuntimeSetup({ ...options, runtimeLock: lock });
     } catch (error) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
       throw error;
     }
     if (result.exitCode !== 0) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
     try {
@@ -243,14 +246,47 @@ function runTransactionalProfileProjection(
       commitInstallHostTransaction(transaction);
       return { result, state };
     } catch (error) {
-      try {
-        rollbackInstallHostTransaction(transaction);
-      } catch (rollbackError) {
-        throw new AggregateError([error, rollbackError], `install profile ${profile} failed and compensation was incomplete`);
-      }
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;
     }
   });
+}
+
+function newPiSurfaces(result?: GlobalRuntimeResult) {
+  return result?.steps.flatMap(step => step.owned_surface ? [step.owned_surface] : []) ?? [];
+}
+
+function compensatePiPackages(surfaces: Iterable<ManagedInstallSurface>, env: NodeJS.ProcessEnv) {
+  const unresolved: ManagedInstallSurface[] = [];
+  const failures: unknown[] = [];
+  for (const surface of surfaces) {
+    try { removePiPackage(surface.path, env); }
+    catch (error) { unresolved.push(surface); failures.push(error); }
+  }
+  return { unresolved, failures };
+}
+
+function rollbackRuntimeTransaction(
+  transaction: ReturnType<typeof beginInstallHostTransaction>, env: NodeJS.ProcessEnv,
+  profile: InstallProfile, cause: unknown, result?: GlobalRuntimeResult,
+): void {
+  const failures: unknown[] = [];
+  const surfaces = new Map(newPiSurfaces(result).map(surface => [surface.path, surface]));
+  try {
+    for (const surface of newPiPackagesSinceTransaction(transaction, env)) surfaces.set(surface.path, surface);
+  } catch (error) { failures.push(error); }
+  const compensation = compensatePiPackages(surfaces.values(), env);
+  const unresolved = compensation.unresolved;
+  failures.push(...compensation.failures);
+  // The filesystem contains the ownership ledger. Restore it even when Pi
+  // cleanup fails, then retain the unresolved external resources in that ledger.
+  try {
+    rollbackInstallHostTransaction(transaction, { unresolvedPi: unresolved.length ? { profile, surfaces: unresolved, env } : undefined });
+  } catch (error) { failures.push(error); }
+  if (failures.length) {
+    const errors = [cause, ...failures];
+    throw new AggregateError(errors, `runtime transaction failed and compensation was incomplete: ${errors.map(error => error instanceof Error ? error.message : String(error)).join('; ')}`);
+  }
 }
 
 function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
@@ -321,50 +357,63 @@ export function runCandidateRuntimeReconciliation(
   if (runtime.exitCode !== 0) {
     throw new Error(`candidate reconciliation failed: ${runtime.lines.join('; ')}`);
   }
-  // Stdout is the protocol-1 receipt. Keep maintenance advice visible without
-  // changing the receipt parsed by an already released parent.
-  const daemon = runtime.steps.find(step => step.step === 'check shared ArchContext daemon');
-  if (daemon?.status === 'skipped') console.error(daemon.detail);
-  // The parent shows candidate stderr in its reconcile step. Files that update
-  // did not sync must stay visible with their next action.
-  const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
-  if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
+  try {
+    // Stdout is the protocol-1 receipt. Keep maintenance advice visible without
+    // changing the receipt parsed by an already released parent.
+    const daemon = runtime.steps.find(step => step.step === 'check shared ArchContext daemon');
+    if (daemon?.status === 'skipped') console.error(daemon.detail);
+    // The parent shows candidate stderr in its reconcile step. Files that update
+    // did not sync must stay visible with their next action.
+    const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
+    if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
 
-  const complete = request.sync_skill && request.host_adapters;
-  const adapterDigests = request.host_adapters
-    ? assertInstalledAdapterProjection(request.target, request.profile, env)
-    : {};
-  let ownershipManifestDigest: string | null = null;
-  if (complete) {
-    const applied = applyInstallProfile(request.profile, env);
-    const status = installedProfileStatus(applied.state, env);
-    if (status.drift.status !== 'consistent') {
-      throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);
+    const complete = request.sync_skill && request.host_adapters;
+    const adapterDigests = request.host_adapters
+      ? assertInstalledAdapterProjection(request.target, request.profile, env)
+      : {};
+    let ownershipManifestDigest: string | null = null;
+    if (complete) {
+      const applied = applyInstallProfile(request.profile, env, new Date(), undefined, undefined, { additionalSurfaces: newPiSurfaces(runtime) });
+      const status = installedProfileStatus(applied.state, env);
+      if (status.drift.status !== 'consistent') {
+        throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);
+      }
+      ownershipManifestDigest = sha256(JSON.stringify(applied.state.ownership_manifest));
     }
-    ownershipManifestDigest = sha256(JSON.stringify(applied.state.ownership_manifest));
+    const receipt: CandidateReconciliationReceipt = {
+      protocol: 1,
+      transaction_id: request.transaction_id,
+      candidate_package_root: candidate.root,
+      candidate_version: candidate.version,
+      candidate_package_digest: candidate.package_digest,
+      route_registry_digest: routeRegistryDigest(),
+      selected_target: request.target,
+      adapter_projection_digests: adapterDigests,
+      ownership_manifest_digest: ownershipManifestDigest,
+      reconciliation_scope: complete ? 'complete' : 'partial',
+      verified_at: new Date().toISOString(),
+    };
+    assertCandidateReconciliationReceipt(receipt, {
+      transaction_id: request.transaction_id,
+      candidate,
+      target: request.target,
+      profile: request.profile,
+      require_complete: complete,
+      require_adapter_projection: request.host_adapters,
+    });
+    return receipt;
+  } catch (error) {
+    const compensation = compensatePiPackages(newPiSurfaces(runtime), env);
+    // The parent must still see ownership when candidate cleanup fails, so
+    // its filesystem rollback can preserve the unresolved external effect.
+    try { recordUnresolvedPiOwnership(request.profile, compensation.unresolved, env, request.transaction_id); }
+    catch (ownershipError) { compensation.failures.push(ownershipError); }
+    if (compensation.failures.length) {
+      const errors = [error, ...compensation.failures];
+      throw new AggregateError(errors, `candidate reconciliation failed: ${errors.map(item => item instanceof Error ? item.message : String(item)).join('; ')}`);
+    }
+    throw error;
   }
-  const receipt: CandidateReconciliationReceipt = {
-    protocol: 1,
-    transaction_id: request.transaction_id,
-    candidate_package_root: candidate.root,
-    candidate_version: candidate.version,
-    candidate_package_digest: candidate.package_digest,
-    route_registry_digest: routeRegistryDigest(),
-    selected_target: request.target,
-    adapter_projection_digests: adapterDigests,
-    ownership_manifest_digest: ownershipManifestDigest,
-    reconciliation_scope: complete ? 'complete' : 'partial',
-    verified_at: new Date().toISOString(),
-  };
-  assertCandidateReconciliationReceipt(receipt, {
-    transaction_id: request.transaction_id,
-    candidate,
-    target: request.target,
-    profile: request.profile,
-    require_complete: complete,
-    require_adapter_projection: request.host_adapters,
-  });
-  return receipt;
 }
 
 function candidateHandoffContext(
@@ -393,28 +442,27 @@ export function runTransactionalRuntimeRefresh(
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
+    const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let result: GlobalRuntimeResult;
     try {
       result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
     } catch (error) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
       throw error;
     }
     if (result.exitCode !== 0) {
-      rollbackInstallHostTransaction(transaction);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`runtime refresh failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return result;
     }
     try {
+      if ((options.target ?? 'both') === 'both') recordPiInstallOwnership(newPiSurfaces(result), transactionEnv, transaction);
       captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
       commitInstallHostTransaction(transaction);
       return result;
     } catch (error) {
-      try {
-        rollbackInstallHostTransaction(transaction);
-      } catch (rollbackError) {
-        throw new AggregateError([error, rollbackError], 'runtime refresh failed and compensation was incomplete');
-      }
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;
     }
   });
@@ -428,9 +476,13 @@ async function runGlobalRuntimeBootstrap(
   const profile = assertInstallProfile(rawOpts.profile ?? 'full');
   const migrationRequested = rawOpts.migrateProfileState === true;
   const currentProfile = migrationRequested ? null : readInstalledProfile();
-  const profilePlan = migrationRequested
+  const baseProfilePlan = migrationRequested
     ? planLegacyInstallProfileMigration(profile)
     : planInstallProfile(profile, currentProfile);
+  const profilePlan = { ...baseProfilePlan,
+    pi_package: planPiPackage(baseProfilePlan.pi_package.source, target === 'both' && rawOpts.hooks !== false),
+    skill_projections: rawOpts.syncSkill === false ? [] : baseProfilePlan.skill_projections.filter(projection => projection.host !== 'pi' || target === 'both'),
+  };
   if (rawOpts.dryRun === true) {
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
@@ -487,7 +539,7 @@ async function runGlobalRuntimeBootstrap(
       new Date(),
       transaction,
       migrationSource ?? undefined,
-      { agentFleetVerified: agentFleetVerified(result) },
+      { agentFleetVerified: agentFleetVerified(result), additionalSurfaces: newPiSurfaces(result) },
     ).state
   ), migrationRequested
     ? () => prepareLegacyInstallProfileMigration(profile)

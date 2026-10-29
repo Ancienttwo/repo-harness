@@ -5,12 +5,12 @@
 // packaged agent fleet. Values that have no authority are null; consumers must
 // not infer them. Free text is redacted with `publicAgentConfigText`.
 
-export const SETUP_PROJECTION = 'repo-harness.setup.v1' as const;
+export const SETUP_PROJECTION = 'repo-harness.setup.v2' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
-export const SETUP_HOSTS = ['claude', 'codex'] as const;
+export const SETUP_HOSTS = ['claude', 'codex', 'pi'] as const;
 export type SetupHost = typeof SETUP_HOSTS[number];
-/** One value per host, always both keys. */
+/** One value per declared setup host. */
 export type SetupPerHost<T> = { readonly [H in SetupHost]: T };
 
 export const SETUP_SNAPSHOT_STATUSES = ['ready', 'stale', 'unavailable'] as const;
@@ -72,8 +72,7 @@ export interface SetupAdapterFacts {
   mismatches: SetupHookMismatch[];
 }
 
-export interface SetupHostFacts {
-  host: SetupHost;
+export type SetupHostFacts = {
   /** False when setup check has no install check for this host. Then every other field is null. */
   reported: boolean;
   /** Status of the `status.adapter.<host>` check. */
@@ -82,9 +81,9 @@ export interface SetupHostFacts {
   detected: boolean | null;
   /** Null when not reported or the host was not detected. */
   adapter: SetupAdapterFacts | null;
-  /** Host CLI version only when setup check measured it (Codex today). */
+  /** Host CLI version only when setup check measured it. */
   cli_version: string | null;
-}
+} & ({ host: 'pi'; package_check: SetupCheckStatus | null } | { host: Exclude<SetupHost, 'pi'> });
 
 /** The `skillProjectionState` vocabulary in src/cli/commands/doctor.ts. Link targets are never exposed. */
 export const SKILL_PROJECTION_STATES = [
@@ -173,7 +172,7 @@ export interface SetupFleetRole {
   hosts: SetupPerHost<'installed' | 'missing' | null>;
 }
 
-export interface SetupSnapshotV1 {
+export interface SetupSnapshotV2 {
   projection_version: typeof SETUP_PROJECTION;
   status: SetupSnapshotStatus;
   /** Null exactly when status is ready. */
@@ -183,7 +182,7 @@ export interface SetupSnapshotV1 {
   setup_status: SetupOverallStatus | null;
   summary: SetupSummary | null;
   checks: SetupCheck[];
-  /** Always claude, codex in that order when data is present. */
+  /** Always claude, codex, pi in that order when data is present. */
   hosts: SetupHostFacts[];
   /** Skills that setup check judged on at least one host, in setup check order. */
   skills: SetupSkill[];

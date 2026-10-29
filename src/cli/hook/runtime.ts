@@ -22,7 +22,7 @@ import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 export const HOOK_COMMAND_NAME = 'repo-harness-hook';
-const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex'];
+const HOOK_HOSTS: readonly RouteHost[] = ['claude', 'codex', 'pi'];
 
 export interface RunHookOptions {
   readonly event: HookEvent;

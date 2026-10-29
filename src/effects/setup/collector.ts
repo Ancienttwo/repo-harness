@@ -19,7 +19,7 @@ import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
-import type { SetupReason, SetupSnapshotV1 } from '../../core/setup/types';
+import type { SetupReason, SetupSnapshotV2 } from '../../core/setup/types';
 import { decodeAgentRuntimeProbe, type AgentRuntimeProbeV1, type AgentRuntimesCacheV1, type AgentRuntimesReason } from '../../core/operator/agents-settings';
 
 export const SETUP_INTERVAL_MS = 10 * 60_000;
@@ -110,7 +110,7 @@ export interface SetupCollectorOptions {
 
 export interface SetupCollectorHandle {
   /** Cache read only; never starts work. */
-  readonly read: () => SetupSnapshotV1;
+  readonly read: () => SetupSnapshotV2;
   /** Agent runtime probe cache; `collection_pending` until the first probe settles, or always when the probe is off. */
   readonly read_agent_runtimes: () => AgentRuntimesCacheV1;
   /** Resolves when the cycle in flight, if any, has settled. */
@@ -127,7 +127,7 @@ function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 /** A ready snapshot from the child, or the fixed reason it is not one. */
 export async function collectSetupSnapshot(options: SetupCollectorOptions & { readonly signal: AbortSignal }):
-Promise<{ readonly ok: true; readonly snapshot: SetupSnapshotV1 } | { readonly ok: false; readonly reason: SetupReason | null }> {
+Promise<{ readonly ok: true; readonly snapshot: SetupSnapshotV2 } | { readonly ok: false; readonly reason: SetupReason | null }> {
   const result = await (options.run_process ?? runSetupProcess)(SETUP_CHILD_ARGV, {
     cwd: options.cwd ?? process.cwd(),
     env: childEnv(options.env ?? process.env),
@@ -178,8 +178,8 @@ export async function collectAgentRuntimeProbe(options: {
  */
 export function startSetupCollector(options: SetupCollectorOptions = {}): SetupCollectorHandle {
   const controller = new AbortController();
-  let cache: SetupSnapshotV1 = unavailableSetupSnapshot('collection_pending');
-  let lastGood: SetupSnapshotV1 | null = null;
+  let cache: SetupSnapshotV2 = unavailableSetupSnapshot('collection_pending');
+  let lastGood: SetupSnapshotV2 | null = null;
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;

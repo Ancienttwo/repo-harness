@@ -6,7 +6,7 @@ import type {
   SetupHostFacts,
   SetupSkill,
   SetupSkillHostRow,
-  SetupSnapshotV1,
+  SetupSnapshotV2,
 } from '../core/setup/types';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -15,12 +15,12 @@ import { useObservationRefresh } from './useObservationRefresh';
  * check` in the background and caches its result; this module only reads and
  * orders what that result already decided. It never runs a command.
  */
-export type SetupReader = (signal: AbortSignal) => Promise<SetupSnapshotV1>;
+export type SetupReader = (signal: AbortSignal) => Promise<SetupSnapshotV2>;
 
 /** The one command that produces everything these pages show. */
 export const SETUP_CHECK_COMMAND = 'repo-harness setup check';
 
-export async function fetchSetup(signal: AbortSignal): Promise<SetupSnapshotV1> {
+export async function fetchSetup(signal: AbortSignal): Promise<SetupSnapshotV2> {
   const response = await fetch('/api/v1/setup', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error('setup_unavailable');
   return decodeSetupSnapshot(await response.json());
@@ -30,10 +30,10 @@ export async function fetchSetup(signal: AbortSignal): Promise<SetupSnapshotV1> 
 export type SetupView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'unreachable' }
-  | { readonly kind: 'ready'; readonly snapshot: SetupSnapshotV1; readonly refreshFailed: boolean };
+  | { readonly kind: 'ready'; readonly snapshot: SetupSnapshotV2; readonly refreshFailed: boolean };
 
 /** Reads only while a setup page is shown; a return to the page reads at once. */
-export function useSetup(read: SetupReader, initial: SetupSnapshotV1 | undefined, generation: number, enabled: boolean): SetupView {
+export function useSetup(read: SetupReader, initial: SetupSnapshotV2 | undefined, generation: number, enabled: boolean): SetupView {
   const [view, setView] = useState<SetupView>(() => initial ? { kind: 'ready', snapshot: initial, refreshFailed: false } : { kind: 'loading' });
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     try {
@@ -54,8 +54,8 @@ export function useSetup(read: SetupReader, initial: SetupSnapshotV1 | undefined
 /** What a setup page can show: a wait, a failure, or data (possibly old). */
 export type SetupPageState =
   | { readonly kind: 'pending' }
-  | { readonly kind: 'failed'; readonly reason: 'unreachable' | Exclude<SetupSnapshotV1['reason'], null> }
-  | { readonly kind: 'data'; readonly snapshot: SetupSnapshotV1; readonly refreshFailed: boolean };
+  | { readonly kind: 'failed'; readonly reason: 'unreachable' | Exclude<SetupSnapshotV2['reason'], null> }
+  | { readonly kind: 'data'; readonly snapshot: SetupSnapshotV2; readonly refreshFailed: boolean };
 
 export function setupPageState(view: SetupView): SetupPageState {
   if (view.kind === 'loading') return { kind: 'pending' };
@@ -97,12 +97,14 @@ export function skillCell(row: SetupSkillHostRow | null): SkillCell {
   return row.state;
 }
 
-/** The setup check whose command repairs this host's adapter, when one carries a command. */
+/** The setup check whose command repairs this host's installation. */
 export function hostCommand(checks: readonly SetupCheck[], host: SetupHost): SetupCheck | null {
-  return checks.find(check => check.command !== null && (check.id === `status.adapter.${host}` || check.id === `doctor.${host}-adapter`)) ?? null;
+  return checks.find(check => check.command !== null && (check.id === `status.adapter.${host}` || check.id === `doctor.${host}-adapter`
+    || (host === 'pi' && check.id === 'doctor.pi-package'))) ?? null;
 }
 
 export type HostSentence =
+  | { readonly kind: 'package'; readonly status: NonNullable<Extract<SetupHostFacts, { host: 'pi' }>['package_check']> }
   | { readonly kind: 'not_reported' }
   | { readonly kind: 'not_detected' }
   | { readonly kind: 'not_inspected' }
@@ -113,6 +115,7 @@ export type HostSentence =
 export function hostSentence(host: SetupHostFacts): HostSentence {
   if (!host.reported) return { kind: 'not_reported' };
   if (host.detected === false) return { kind: 'not_detected' };
+  if (host.host === 'pi' && host.package_check !== null) return { kind: 'package', status: host.package_check };
   const adapter = host.adapter;
   if (adapter === null) return { kind: 'not_inspected' };
   if (!adapter.configured) return { kind: 'not_configured', managed: adapter.managed_entries, expected: adapter.expected_entries };

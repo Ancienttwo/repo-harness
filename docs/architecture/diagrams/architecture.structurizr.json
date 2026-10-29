@@ -9,7 +9,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.organization.task-fleet",
@@ -17,7 +18,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "capability.public-surface.action-commands",
@@ -25,7 +27,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "assets"
       },
       {
         "id": "capability.public-surface.adoption",
@@ -33,7 +36,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "capability.public-surface.root-router",
@@ -41,7 +45,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.public-surface.strategy-reflection",
@@ -49,7 +54,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.agent-runtime-effects",
@@ -57,7 +63,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.engineer-bindings",
@@ -65,7 +72,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "capability.runtime-harness.engineer-scheduling",
@@ -73,7 +81,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.engineering-overlay",
@@ -81,7 +90,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.evidence-ledger",
@@ -89,7 +99,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.external-source-intake",
@@ -97,7 +108,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.global-runtime-reconciliation",
@@ -105,7 +117,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.hook-adapters",
@@ -113,7 +126,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.runtime-harness.integration-acceptance",
@@ -121,7 +135,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.runtime-harness.mcp-sidecar",
@@ -129,7 +144,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.runtime-harness.operator",
@@ -137,7 +153,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "web"
       },
       {
         "id": "capability.runtime-harness.refactor-program",
@@ -145,7 +162,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-harness.task-agent-host",
@@ -153,7 +171,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.runtime-mcp.chatgpt-browser",
@@ -161,7 +180,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.runtime-mcp.general-repo-access",
@@ -169,7 +189,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.verification.acceptance-review",
@@ -177,7 +198,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.verification.codegraph-readiness",
@@ -185,7 +207,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "capability.verification.evals-checks",
@@ -193,7 +216,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "capability.workflow-engine.contract-assets",
@@ -201,7 +225,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "assets"
       },
       {
         "id": "capability.workflow-engine.execution-primitives",
@@ -209,7 +234,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "capability.workflow-engine.inspection-migration",
@@ -217,7 +243,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "capability.workflow-engine.workflow-state",
@@ -225,7 +252,8 @@
         "type": "Software System",
         "tags": [
           "capability"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "component.acceptance-review.primary",
@@ -233,7 +261,35 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.acceptance-review.primary-cli",
+        "name": "Generic Review Round (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.acceptance-review.primary-core",
+        "name": "Generic Review Round (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.acceptance-review.primary-scripts",
+        "name": "Generic Review Round (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.action-commands.bundled-skills",
@@ -241,7 +297,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "assets"
       },
       {
         "id": "component.action-commands.primary",
@@ -249,7 +306,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "assets"
       },
       {
         "id": "component.action-commands.skill-surface-catalog",
@@ -257,7 +315,35 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.action-commands.skill-surface-catalog-core",
+        "name": "Skill Surface Catalog (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.adoption.cli-layer",
+        "name": "Adoption (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.adoption.effects-layer",
+        "name": "Adoption (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.adoption.primary",
@@ -265,7 +351,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.adoption.tests-layer",
+        "name": "Adoption (tests)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
+      },
+      {
+        "id": "component.agent-runtime-effects.core-layer",
+        "name": "Agent Runtime Effects (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.agent-runtime-effects.journal",
@@ -273,7 +378,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "component.chatgpt-browser.primary",
@@ -281,7 +387,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.codegraph-readiness.primary",
@@ -289,7 +396,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.codegraph-readiness.scripts-layer",
+        "name": "CodeGraph Readiness (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.codegraph-readiness.tests-layer",
+        "name": "CodeGraph Readiness (tests)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
       },
       {
         "id": "component.contract-assets.capability-registry",
@@ -297,7 +423,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.contract-assets.capability-registry-cli",
+        "name": "Capability Registry (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.contract-assets.capability-registry-core",
+        "name": "Capability Registry (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.contract-assets.capability-registry-effects",
+        "name": "Capability Registry (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.contract-assets.cli-layer",
+        "name": "Contract Assets (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
       },
       {
         "id": "component.contract-assets.contract-worktree-lifecycle",
@@ -305,7 +468,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.contract-assets.effects-layer",
+        "name": "Contract Assets (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.contract-assets.planning-helpers",
@@ -313,7 +486,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.contract-assets.planning-helpers-cli",
+        "name": "Planning Helpers (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.contract-assets.planning-helpers-effects",
+        "name": "Planning Helpers (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.contract-assets.primary",
@@ -321,7 +513,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.contract-assets.primary-assets",
+        "name": "Workflow Contract And Policy (assets)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "assets"
       },
       {
         "id": "component.contract-assets.template-projection",
@@ -329,7 +531,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "assets"
+      },
+      {
+        "id": "component.contract-assets.template-projection-cli",
+        "name": "Template Projection (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.contract-assets.template-projection-effects",
+        "name": "Template Projection (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.contract-assets.template-projection-scripts",
+        "name": "Template Projection (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.engineer-bindings.effects-layer",
+        "name": "Engineer Bindings (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.engineer-bindings.primary",
@@ -337,7 +576,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "component.engineer-scheduling.primary",
@@ -345,7 +585,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.engineer-scheduling.primary-core",
+        "name": "Provider Work Graph Reader (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.engineering-overlay.primary",
@@ -353,7 +603,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "component.evals-checks.ci-selection",
@@ -361,7 +612,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.evals-checks.evals-and-benchmarks",
@@ -369,7 +621,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.evals-checks.evals-and-benchmarks-tests",
+        "name": "Evals And Benchmarks (tests)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
       },
       {
         "id": "component.evals-checks.primary",
@@ -377,7 +639,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.evals-checks.test-suite",
@@ -385,7 +648,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "tests"
       },
       {
         "id": "component.evals-checks.workflow-gates",
@@ -393,7 +657,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.evidence-ledger.primary",
@@ -401,7 +666,35 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.evidence-ledger.primary-core",
+        "name": "Evidence Event Store (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.evidence-ledger.primary-scripts",
+        "name": "Evidence Event Store (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.evidence-ledger.scripts-layer",
+        "name": "Evidence Ledger (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.execution-primitives.primary",
@@ -409,7 +702,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.external-source-intake.cli-layer",
+        "name": "External Source Intake (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.external-source-intake.core-layer",
+        "name": "External Source Intake (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.external-source-intake.immutable-evidence",
@@ -417,7 +729,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
       },
       {
         "id": "component.general-repo-access.primary",
@@ -425,7 +738,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.general-repo-access.tests-layer",
+        "name": "General Repository Access (tests)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
       },
       {
         "id": "component.global-runtime-reconciliation.archctx-closure",
@@ -433,7 +756,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.archctx-closure-cli",
+        "name": "ArchContext Closure (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.archctx-closure-core",
+        "name": "ArchContext Closure (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.archctx-closure-scripts",
+        "name": "ArchContext Closure (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.cli-layer",
+        "name": "Global Runtime Reconciliation (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
       },
       {
         "id": "component.global-runtime-reconciliation.cli-root",
@@ -441,7 +801,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.global-runtime-reconciliation.primary",
@@ -449,7 +810,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.primary-cli",
+        "name": "Global Runtime Reconciler (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.primary-scripts",
+        "name": "Global Runtime Reconciler (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.global-runtime-reconciliation.release-packaging",
@@ -457,7 +837,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.release-packaging-assets",
+        "name": "Release Packaging (assets)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "assets"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.release-packaging-core",
+        "name": "Release Packaging (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.release-packaging-effects",
+        "name": "Release Packaging (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.global-runtime-reconciliation.tests-layer",
+        "name": "Global Runtime Reconciliation (tests)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
       },
       {
         "id": "component.hook-adapters.edit-guards",
@@ -465,7 +882,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.hook-adapters.host-installer",
@@ -473,7 +891,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.hook-adapters.host-installer-effects",
+        "name": "Host Adapter Installer (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.hook-adapters.primary",
@@ -481,7 +909,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.hook-adapters.primary-effects",
+        "name": "Hook Route Runtime (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.hook-adapters.session-lifecycle",
@@ -489,7 +927,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.hook-adapters.session-lifecycle-effects",
+        "name": "Session Lifecycle Handlers (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.inspection-migration.primary",
@@ -497,7 +945,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.integration-acceptance.primary",
@@ -505,7 +954,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.integration-acceptance.primary-core",
+        "name": "Integration Acceptance Evidence Plane (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.integration-acceptance.primary-effects",
+        "name": "Integration Acceptance Evidence Plane (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.mcp-sidecar.coding-profile",
@@ -513,7 +981,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.mcp-sidecar.host-setup",
@@ -521,7 +990,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.mcp-sidecar.primary",
@@ -529,7 +999,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.mcp-sidecar.repo-policy-registry",
@@ -537,7 +1008,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.mcp-sidecar.repo-policy-registry-core",
+        "name": "Config Policy and Repository Registry (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.mcp-sidecar.repo-policy-registry-effects",
+        "name": "Config Policy and Repository Registry (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.mcp-sidecar.transport-auth",
@@ -545,7 +1035,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.operator.activity-feeds",
@@ -553,7 +1044,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.operator.activity-feeds-cli",
+        "name": "Setup and Activity Feeds (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.operator.activity-feeds-effects",
+        "name": "Setup and Activity Feeds (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.operator.architecture-view",
@@ -561,7 +1071,53 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.operator.architecture-view-core",
+        "name": "Architecture View (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.operator.assets-layer",
+        "name": "Operator Board (assets)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "assets"
+      },
+      {
+        "id": "component.operator.cli-layer",
+        "name": "Operator Board (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.operator.console-collectors",
+        "name": "Console Collectors",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.operator.core-layer",
+        "name": "Operator Board (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.operator.primary",
@@ -569,7 +1125,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.operator.primary-cli",
+        "name": "Operator HTTP Reader (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
       },
       {
         "id": "component.operator.view-projections",
@@ -577,7 +1143,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
       },
       {
         "id": "component.operator.web-console",
@@ -585,7 +1152,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "web"
       },
       {
         "id": "component.publication.primary",
@@ -593,7 +1161,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.publication.primary-cli",
+        "name": "PR Readiness and Integration Evidence (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.publication.primary-effects",
+        "name": "PR Readiness and Integration Evidence (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.publication.provider-feedback",
@@ -601,7 +1188,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.publication.provider-feedback-core",
+        "name": "Provider Feedback (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.publication.pstack-watch-pr-experiment",
+        "name": "Private pstack watcher experiment",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "tests"
       },
       {
         "id": "component.refactor-program.archctx-provider",
@@ -609,7 +1215,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.refactor-program.cli-layer",
+        "name": "Refactor Recommendations (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.refactor-program.core-layer",
+        "name": "Refactor Recommendations (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.root-router.primary",
@@ -617,7 +1242,8 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
       },
       {
         "id": "component.strategy-reflection.primary",
@@ -625,7 +1251,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.strategy-reflection.primary-cli",
+        "name": "Strategy Context Collector (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.strategy-reflection.primary-core",
+        "name": "Strategy Context Collector (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.task-agent-host.cli-layer",
+        "name": "Task Agent Host (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.task-agent-host.core-layer",
+        "name": "Task Agent Host (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.task-agent-host.primary",
@@ -633,7 +1296,44 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.task-agent-host.primary-assets",
+        "name": "Herdr Task Session Host (assets)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "assets"
+      },
+      {
+        "id": "component.task-agent-host.primary-cli",
+        "name": "Herdr Task Session Host (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.task-agent-host.primary-core",
+        "name": "Herdr Task Session Host (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.task-agent-host.primary-scripts",
+        "name": "Herdr Task Session Host (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
       },
       {
         "id": "component.task-fleet.primary",
@@ -641,7 +1341,26 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.task-fleet.primary-core",
+        "name": "Fleet Task Observations and Board (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.task-fleet.primary-effects",
+        "name": "Fleet Task Observations and Board (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.task-fleet.task-inbox",
@@ -649,7 +1368,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.task-fleet.task-inbox-effects",
+        "name": "Task Inbox (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.workflow-state.continuation-ledger",
@@ -657,7 +1386,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.workflow-state.continuation-ledger-effects",
+        "name": "Continuation Ledger (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
       },
       {
         "id": "component.workflow-state.coordination-plane",
@@ -665,7 +1404,17 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.workflow-state.coordination-plane-core",
+        "name": "Provider Board Observations and Historical Worktree Safety (core)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "core"
       },
       {
         "id": "component.workflow-state.primary",
@@ -673,10 +1422,263 @@
         "type": "Component",
         "tags": [
           "component"
-        ]
+        ],
+        "group": "core"
+      },
+      {
+        "id": "component.workflow-state.primary-cli",
+        "name": "Effective State Resolver (cli)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "component.workflow-state.primary-effects",
+        "name": "Effective State Resolver (effects)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "component.workflow-state.primary-scripts",
+        "name": "Effective State Resolver (scripts)",
+        "type": "Component",
+        "tags": [
+          "component"
+        ],
+        "group": "scripts"
+      },
+      {
+        "id": "external.archctx",
+        "name": "ArchContext",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.chatgpt",
+        "name": "ChatGPT",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.claude-code",
+        "name": "Claude Code",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.codegraph",
+        "name": "CodeGraph",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.codex",
+        "name": "Codex CLI",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.git",
+        "name": "Git",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.github",
+        "name": "GitHub",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.herdr",
+        "name": "Herdr",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.npm-registry",
+        "name": "npm Registry",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "external.pi",
+        "name": "Pi Coding Agent",
+        "type": "External System",
+        "tags": [
+          "external-system"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "namespace.host.developer",
+        "name": "Developer host",
+        "type": "Deployment Node",
+        "tags": [
+          "namespace"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "process.agent-host",
+        "name": "Agent host",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "process.cli",
+        "name": "CLI process",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "process.herdr-server",
+        "name": "Herdr server",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "process.hook",
+        "name": "Hook process",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "process.mcp-coding-shell",
+        "name": "MCP coding shell",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "external"
+      },
+      {
+        "id": "process.mcp-server",
+        "name": "MCP server",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "cli"
+      },
+      {
+        "id": "process.oar-review-host",
+        "name": "OAR review host",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "process.operator-collector",
+        "name": "Operator collector",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "process.operator-server",
+        "name": "Operator server",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "process.process-group-launcher",
+        "name": "Process group launcher",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "process.process-supervisor",
+        "name": "Process supervisor",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "effects"
+      },
+      {
+        "id": "process.vendor-cli",
+        "name": "Vendor reviewer CLI",
+        "type": "Container Instance",
+        "tags": [
+          "process"
+        ],
+        "group": "external"
       }
     ],
     "relationships": [
+      {
+        "id": "relation.acceptance-review.claude-code",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "external.claude-code",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.codex",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "external.codex",
+        "description": "calls"
+      },
+      {
+        "id": "relation.acceptance-review.deployed-on.oar-review-host",
+        "sourceId": "capability.verification.acceptance-review",
+        "destinationId": "process.oar-review-host",
+        "description": "deployed-on"
+      },
       {
         "id": "relation.acceptance-review.hook-adapters",
         "sourceId": "capability.verification.acceptance-review",
@@ -804,6 +1806,24 @@
         "description": "calls"
       },
       {
+        "id": "relation.agent-host.runs-in.host",
+        "sourceId": "process.agent-host",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.agent-host.spawns.hook",
+        "sourceId": "process.agent-host",
+        "destinationId": "process.hook",
+        "description": "spawns"
+      },
+      {
+        "id": "relation.agent-host.spawns.mcp-server",
+        "sourceId": "process.agent-host",
+        "destinationId": "process.mcp-server",
+        "description": "spawns"
+      },
+      {
         "id": "relation.agent-runtime-effects.engineer-bindings",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -813,6 +1833,12 @@
         "id": "relation.agent-runtime-effects.engineer-scheduling",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.herdr",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "external.herdr",
         "description": "calls"
       },
       {
@@ -846,6 +1872,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.chatgpt-browser.chatgpt",
+        "sourceId": "capability.runtime-mcp.chatgpt-browser",
+        "destinationId": "external.chatgpt",
+        "description": "calls"
+      },
+      {
         "id": "relation.chatgpt-browser.imports.mcp-sidecar",
         "sourceId": "capability.runtime-mcp.chatgpt-browser",
         "destinationId": "capability.runtime-harness.mcp-sidecar",
@@ -855,6 +1887,36 @@
         "id": "relation.chatgpt-browser.primary",
         "sourceId": "capability.runtime-mcp.chatgpt-browser",
         "destinationId": "component.chatgpt-browser.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.claude-code.hook-adapters",
+        "sourceId": "external.claude-code",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.cli-root.deployed-on.cli",
+        "sourceId": "component.global-runtime-reconciliation.cli-root",
+        "destinationId": "process.cli",
+        "description": "deployed-on"
+      },
+      {
+        "id": "relation.cli.runs-in.host",
+        "sourceId": "process.cli",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.cli.spawns.process-supervisor",
+        "sourceId": "process.cli",
+        "destinationId": "process.process-supervisor",
+        "description": "spawns"
+      },
+      {
+        "id": "relation.codegraph-readiness.codegraph",
+        "sourceId": "capability.verification.codegraph-readiness",
+        "destinationId": "external.codegraph",
         "description": "calls"
       },
       {
@@ -879,6 +1941,12 @@
         "id": "relation.codegraph-readiness.primary",
         "sourceId": "capability.verification.codegraph-readiness",
         "destinationId": "component.codegraph-readiness.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.codex.hook-adapters",
+        "sourceId": "external.codex",
+        "destinationId": "capability.runtime-harness.hook-adapters",
         "description": "calls"
       },
       {
@@ -1134,6 +2202,12 @@
         "description": "reads"
       },
       {
+        "id": "relation.evals-checks.github",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "external.github",
+        "description": "calls"
+      },
+      {
         "id": "relation.evals-checks.imports.acceptance-review",
         "sourceId": "capability.verification.evals-checks",
         "destinationId": "capability.verification.acceptance-review",
@@ -1308,6 +2382,18 @@
         "description": "calls"
       },
       {
+        "id": "relation.execution-primitives.deployed-on.process-supervisor",
+        "sourceId": "capability.workflow-engine.execution-primitives",
+        "destinationId": "process.process-supervisor",
+        "description": "deployed-on"
+      },
+      {
+        "id": "relation.execution-primitives.git",
+        "sourceId": "capability.workflow-engine.execution-primitives",
+        "destinationId": "external.git",
+        "description": "calls"
+      },
+      {
         "id": "relation.execution-primitives.primary",
         "sourceId": "capability.workflow-engine.execution-primitives",
         "destinationId": "component.execution-primitives.primary",
@@ -1318,6 +2404,12 @@
         "sourceId": "capability.runtime-harness.external-source-intake",
         "destinationId": "capability.verification.acceptance-review",
         "description": "depends-on"
+      },
+      {
+        "id": "relation.external-source-intake.github",
+        "sourceId": "capability.runtime-harness.external-source-intake",
+        "destinationId": "external.github",
+        "description": "reads"
       },
       {
         "id": "relation.external-source-intake.immutable-evidence",
@@ -1365,6 +2457,12 @@
         "id": "relation.general-repo-access.primary.mcp-policy",
         "sourceId": "component.general-repo-access.primary",
         "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "calls"
+      },
+      {
+        "id": "relation.global-runtime-reconciliation.archctx",
+        "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
+        "destinationId": "external.archctx",
         "description": "calls"
       },
       {
@@ -1536,6 +2634,12 @@
         "description": "depends-on"
       },
       {
+        "id": "relation.global-runtime-reconciliation.npm-registry",
+        "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
+        "destinationId": "external.npm-registry",
+        "description": "reads"
+      },
+      {
         "id": "relation.global-runtime-reconciliation.primary",
         "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
         "destinationId": "component.global-runtime-reconciliation.primary",
@@ -1602,6 +2706,24 @@
         "description": "calls"
       },
       {
+        "id": "relation.herdr-server.runs-in.host",
+        "sourceId": "process.herdr-server",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.herdr-server.spawns.oar-review-host",
+        "sourceId": "process.herdr-server",
+        "destinationId": "process.oar-review-host",
+        "description": "spawns"
+      },
+      {
+        "id": "relation.hook-adapters.deployed-on.hook",
+        "sourceId": "capability.runtime-harness.hook-adapters",
+        "destinationId": "process.hook",
+        "description": "deployed-on"
+      },
+      {
         "id": "relation.hook-adapters.edit-guards.execution-primitives",
         "sourceId": "component.hook-adapters.edit-guards",
         "destinationId": "capability.workflow-engine.execution-primitives",
@@ -1635,6 +2757,12 @@
         "id": "relation.hook-adapters.host-installer.global-runtime-reconciliation",
         "sourceId": "component.hook-adapters.host-installer",
         "destinationId": "capability.runtime-harness.global-runtime-reconciliation",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.host-installer.pi",
+        "sourceId": "component.hook-adapters.host-installer",
+        "destinationId": "external.pi",
         "description": "calls"
       },
       {
@@ -1734,6 +2862,18 @@
         "description": "calls"
       },
       {
+        "id": "relation.hook.runs-in.host",
+        "sourceId": "process.hook",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.hook.spawns.process-supervisor",
+        "sourceId": "process.hook",
+        "destinationId": "process.process-supervisor",
+        "description": "spawns"
+      },
+      {
         "id": "relation.inspection-migration.primary",
         "sourceId": "capability.workflow-engine.inspection-migration",
         "destinationId": "component.inspection-migration.primary",
@@ -1770,6 +2910,30 @@
         "description": "reads"
       },
       {
+        "id": "relation.mcp-coding-shell.runs-in.host",
+        "sourceId": "process.mcp-coding-shell",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.mcp-server.runs-in.host",
+        "sourceId": "process.mcp-server",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.mcp-server.spawns.mcp-coding-shell",
+        "sourceId": "process.mcp-server",
+        "destinationId": "process.mcp-coding-shell",
+        "description": "spawns"
+      },
+      {
+        "id": "relation.mcp-server.spawns.process-supervisor",
+        "sourceId": "process.mcp-server",
+        "destinationId": "process.process-supervisor",
+        "description": "spawns"
+      },
+      {
         "id": "relation.mcp-sidecar.agent-runtime-effects",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.agent-runtime-effects",
@@ -1804,6 +2968,12 @@
         "sourceId": "component.mcp-sidecar.coding-profile",
         "destinationId": "capability.workflow-engine.workflow-state",
         "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.deployed-on.mcp-server",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "process.mcp-server",
+        "description": "deployed-on"
       },
       {
         "id": "relation.mcp-sidecar.host-setup.chatgpt-browser",
@@ -1938,6 +3108,36 @@
         "description": "reads"
       },
       {
+        "id": "relation.oar-review-host.runs-in.host",
+        "sourceId": "process.oar-review-host",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.oar-review-host.spawns.vendor-cli",
+        "sourceId": "process.oar-review-host",
+        "destinationId": "process.vendor-cli",
+        "description": "spawns"
+      },
+      {
+        "id": "relation.operator-collector.runs-in.host",
+        "sourceId": "process.operator-collector",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.operator-server.runs-in.host",
+        "sourceId": "process.operator-server",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.operator-server.spawns.operator-collector",
+        "sourceId": "process.operator-server",
+        "destinationId": "process.operator-collector",
+        "description": "spawns"
+      },
+      {
         "id": "relation.operator.acceptance-review",
         "sourceId": "capability.runtime-harness.operator",
         "destinationId": "capability.verification.acceptance-review",
@@ -1947,6 +3147,12 @@
         "id": "relation.operator.activity-feeds.hook-adapters",
         "sourceId": "component.operator.activity-feeds",
         "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.activity-feeds.npm-registry",
+        "sourceId": "component.operator.activity-feeds",
+        "destinationId": "external.npm-registry",
         "description": "reads"
       },
       {
@@ -1962,9 +3168,87 @@
         "description": "reads"
       },
       {
+        "id": "relation.operator.console-collectors.activity-feeds",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "component.operator.activity-feeds",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.archctx",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "external.archctx",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.git",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "external.git",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.github",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "external.github",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.herdr",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "external.herdr",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.http-reader",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "component.operator.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.console-collectors.mcp-sidecar",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "capability.runtime-harness.mcp-sidecar",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.task-agent-host",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "component.task-agent-host.primary",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.console-collectors.view-projections",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "component.operator.view-projections",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.console-collectors.workflow-state",
+        "sourceId": "component.operator.console-collectors",
+        "destinationId": "capability.workflow-engine.workflow-state",
+        "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.deployed-on.operator-server",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "process.operator-server",
+        "description": "deployed-on"
+      },
+      {
+        "id": "relation.operator.github",
+        "sourceId": "capability.runtime-harness.operator",
+        "destinationId": "external.github",
+        "description": "reads"
+      },
+      {
         "id": "relation.operator.http-reader.activity-feeds",
         "sourceId": "component.operator.primary",
         "destinationId": "component.operator.activity-feeds",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.http-reader.console-collectors",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.operator.console-collectors",
         "description": "calls"
       },
       {
@@ -2040,6 +3324,24 @@
         "description": "calls"
       },
       {
+        "id": "relation.operator.primary.acceptance-review",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.acceptance-review.primary",
+        "description": "reads"
+      },
+      {
+        "id": "relation.operator.primary.coordination-plane",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.workflow-state.coordination-plane",
+        "description": "calls"
+      },
+      {
+        "id": "relation.operator.primary.execution-primitives",
+        "sourceId": "component.operator.primary",
+        "destinationId": "component.execution-primitives.primary",
+        "description": "reads"
+      },
+      {
         "id": "relation.operator.primary.task-fleet",
         "sourceId": "component.operator.primary",
         "destinationId": "capability.organization.task-fleet",
@@ -2056,6 +3358,12 @@
         "sourceId": "component.operator.view-projections",
         "destinationId": "component.operator.architecture-view",
         "description": "depends-on"
+      },
+      {
+        "id": "relation.operator.view-projections.repo-policy-registry",
+        "sourceId": "component.operator.view-projections",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "reads"
       },
       {
         "id": "relation.operator.view-projections.task-fleet",
@@ -2082,9 +3390,39 @@
         "description": "calls"
       },
       {
+        "id": "relation.pi.hook-adapters",
+        "sourceId": "external.pi",
+        "destinationId": "capability.runtime-harness.hook-adapters",
+        "description": "calls"
+      },
+      {
+        "id": "relation.process-group-launcher.runs-in.host",
+        "sourceId": "process.process-group-launcher",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.process-supervisor.runs-in.host",
+        "sourceId": "process.process-supervisor",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
+      },
+      {
+        "id": "relation.process-supervisor.spawns.process-group-launcher",
+        "sourceId": "process.process-supervisor",
+        "destinationId": "process.process-group-launcher",
+        "description": "spawns"
+      },
+      {
         "id": "relation.publication.contract-assets",
         "sourceId": "capability.organization.publication",
         "destinationId": "capability.workflow-engine.contract-assets",
+        "description": "calls"
+      },
+      {
+        "id": "relation.publication.github",
+        "sourceId": "capability.organization.publication",
+        "destinationId": "external.github",
         "description": "calls"
       },
       {
@@ -2184,6 +3522,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.task-agent-host.herdr",
+        "sourceId": "capability.runtime-harness.task-agent-host",
+        "destinationId": "external.herdr",
+        "description": "calls"
+      },
+      {
         "id": "relation.task-agent-host.imports.hook-adapters",
         "sourceId": "capability.runtime-harness.task-agent-host",
         "destinationId": "capability.runtime-harness.hook-adapters",
@@ -2200,6 +3544,12 @@
         "sourceId": "component.task-agent-host.primary",
         "destinationId": "capability.workflow-engine.execution-primitives",
         "description": "calls"
+      },
+      {
+        "id": "relation.task-agent-host.primary.repo-policy-registry",
+        "sourceId": "component.task-agent-host.primary",
+        "destinationId": "component.mcp-sidecar.repo-policy-registry",
+        "description": "reads"
       },
       {
         "id": "relation.task-fleet.agent-runtime-effects",
@@ -2260,6 +3610,12 @@
         "sourceId": "component.task-fleet.task-inbox",
         "destinationId": "capability.runtime-harness.task-agent-host",
         "description": "calls"
+      },
+      {
+        "id": "relation.vendor-cli.runs-in.host",
+        "sourceId": "process.vendor-cli",
+        "destinationId": "namespace.host.developer",
+        "description": "runs-in"
       },
       {
         "id": "relation.workflow-state.continuation-ledger.execution-primitives",
@@ -2374,61 +3730,161 @@
         "capability.workflow-engine.inspection-migration",
         "capability.workflow-engine.workflow-state",
         "component.acceptance-review.primary",
+        "component.acceptance-review.primary-cli",
+        "component.acceptance-review.primary-core",
+        "component.acceptance-review.primary-scripts",
         "component.action-commands.bundled-skills",
         "component.action-commands.primary",
         "component.action-commands.skill-surface-catalog",
+        "component.action-commands.skill-surface-catalog-core",
+        "component.adoption.cli-layer",
+        "component.adoption.effects-layer",
         "component.adoption.primary",
+        "component.adoption.tests-layer",
+        "component.agent-runtime-effects.core-layer",
         "component.agent-runtime-effects.journal",
         "component.chatgpt-browser.primary",
         "component.codegraph-readiness.primary",
+        "component.codegraph-readiness.scripts-layer",
+        "component.codegraph-readiness.tests-layer",
         "component.contract-assets.capability-registry",
+        "component.contract-assets.capability-registry-cli",
+        "component.contract-assets.capability-registry-core",
+        "component.contract-assets.capability-registry-effects",
+        "component.contract-assets.cli-layer",
         "component.contract-assets.contract-worktree-lifecycle",
+        "component.contract-assets.effects-layer",
         "component.contract-assets.planning-helpers",
+        "component.contract-assets.planning-helpers-cli",
+        "component.contract-assets.planning-helpers-effects",
         "component.contract-assets.primary",
+        "component.contract-assets.primary-assets",
         "component.contract-assets.template-projection",
+        "component.contract-assets.template-projection-cli",
+        "component.contract-assets.template-projection-effects",
+        "component.contract-assets.template-projection-scripts",
+        "component.engineer-bindings.effects-layer",
         "component.engineer-bindings.primary",
         "component.engineer-scheduling.primary",
+        "component.engineer-scheduling.primary-core",
         "component.engineering-overlay.primary",
         "component.evals-checks.ci-selection",
         "component.evals-checks.evals-and-benchmarks",
+        "component.evals-checks.evals-and-benchmarks-tests",
         "component.evals-checks.primary",
         "component.evals-checks.test-suite",
         "component.evals-checks.workflow-gates",
         "component.evidence-ledger.primary",
+        "component.evidence-ledger.primary-core",
+        "component.evidence-ledger.primary-scripts",
+        "component.evidence-ledger.scripts-layer",
         "component.execution-primitives.primary",
+        "component.external-source-intake.cli-layer",
+        "component.external-source-intake.core-layer",
         "component.external-source-intake.immutable-evidence",
         "component.general-repo-access.primary",
+        "component.general-repo-access.tests-layer",
         "component.global-runtime-reconciliation.archctx-closure",
+        "component.global-runtime-reconciliation.archctx-closure-cli",
+        "component.global-runtime-reconciliation.archctx-closure-core",
+        "component.global-runtime-reconciliation.archctx-closure-scripts",
+        "component.global-runtime-reconciliation.cli-layer",
         "component.global-runtime-reconciliation.cli-root",
         "component.global-runtime-reconciliation.primary",
+        "component.global-runtime-reconciliation.primary-cli",
+        "component.global-runtime-reconciliation.primary-scripts",
         "component.global-runtime-reconciliation.release-packaging",
+        "component.global-runtime-reconciliation.release-packaging-assets",
+        "component.global-runtime-reconciliation.release-packaging-core",
+        "component.global-runtime-reconciliation.release-packaging-effects",
+        "component.global-runtime-reconciliation.tests-layer",
         "component.hook-adapters.edit-guards",
         "component.hook-adapters.host-installer",
+        "component.hook-adapters.host-installer-effects",
         "component.hook-adapters.primary",
+        "component.hook-adapters.primary-effects",
         "component.hook-adapters.session-lifecycle",
+        "component.hook-adapters.session-lifecycle-effects",
         "component.inspection-migration.primary",
         "component.integration-acceptance.primary",
+        "component.integration-acceptance.primary-core",
+        "component.integration-acceptance.primary-effects",
         "component.mcp-sidecar.coding-profile",
         "component.mcp-sidecar.host-setup",
         "component.mcp-sidecar.primary",
         "component.mcp-sidecar.repo-policy-registry",
+        "component.mcp-sidecar.repo-policy-registry-core",
+        "component.mcp-sidecar.repo-policy-registry-effects",
         "component.mcp-sidecar.transport-auth",
         "component.operator.activity-feeds",
+        "component.operator.activity-feeds-cli",
+        "component.operator.activity-feeds-effects",
         "component.operator.architecture-view",
+        "component.operator.architecture-view-core",
+        "component.operator.assets-layer",
+        "component.operator.cli-layer",
+        "component.operator.console-collectors",
+        "component.operator.core-layer",
         "component.operator.primary",
+        "component.operator.primary-cli",
         "component.operator.view-projections",
         "component.operator.web-console",
         "component.publication.primary",
+        "component.publication.primary-cli",
+        "component.publication.primary-effects",
         "component.publication.provider-feedback",
+        "component.publication.provider-feedback-core",
+        "component.publication.pstack-watch-pr-experiment",
         "component.refactor-program.archctx-provider",
+        "component.refactor-program.cli-layer",
+        "component.refactor-program.core-layer",
         "component.root-router.primary",
         "component.strategy-reflection.primary",
+        "component.strategy-reflection.primary-cli",
+        "component.strategy-reflection.primary-core",
+        "component.task-agent-host.cli-layer",
+        "component.task-agent-host.core-layer",
         "component.task-agent-host.primary",
+        "component.task-agent-host.primary-assets",
+        "component.task-agent-host.primary-cli",
+        "component.task-agent-host.primary-core",
+        "component.task-agent-host.primary-scripts",
         "component.task-fleet.primary",
+        "component.task-fleet.primary-core",
+        "component.task-fleet.primary-effects",
         "component.task-fleet.task-inbox",
+        "component.task-fleet.task-inbox-effects",
         "component.workflow-state.continuation-ledger",
+        "component.workflow-state.continuation-ledger-effects",
         "component.workflow-state.coordination-plane",
-        "component.workflow-state.primary"
+        "component.workflow-state.coordination-plane-core",
+        "component.workflow-state.primary",
+        "component.workflow-state.primary-cli",
+        "component.workflow-state.primary-effects",
+        "component.workflow-state.primary-scripts",
+        "external.archctx",
+        "external.chatgpt",
+        "external.claude-code",
+        "external.codegraph",
+        "external.codex",
+        "external.git",
+        "external.github",
+        "external.herdr",
+        "external.npm-registry",
+        "external.pi",
+        "namespace.host.developer",
+        "process.agent-host",
+        "process.cli",
+        "process.herdr-server",
+        "process.hook",
+        "process.mcp-coding-shell",
+        "process.mcp-server",
+        "process.oar-review-host",
+        "process.operator-collector",
+        "process.operator-server",
+        "process.process-group-launcher",
+        "process.process-supervisor",
+        "process.vendor-cli"
       ]
     }
   }

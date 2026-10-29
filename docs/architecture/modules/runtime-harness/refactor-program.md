@@ -1,8 +1,8 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:995aa454511ef9686ac80db12796b4cde08b2350dc48e771a2142cd682ae2108" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:28bb1c7d065548b2bc7c951b61c94b2ac4d8cbbde1cf2121247ad75c449a4b9d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
-> **Matched Prefixes**:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
+> **Matched Prefixes**:`src/effects/refactor/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -16,6 +16,8 @@ Shows measured ArchContext refactor suggestions with their evidence and records 
 flowchart LR
   p1_capability_runtime_harness_refactor_program_75614af4["Refactor Recommendations"]:::component
   p1_component_refactor_program_archctx_provider_66030fac["Refactor ArchContext Provider Boundary"]:::component
+  p1_component_refactor_program_cli_layer_6d432d7a["Refactor Recommendations (cli)"]:::component
+  p1_component_refactor_program_core_layer_a84bb8d1["Refactor Recommendations (core)"]:::component
   p1_capability_runtime_harness_refactor_program_75614af4 -->|"Scan for structural observations and record user decisions through the pinned package-local ArchContext CLI"| p1_component_refactor_program_archctx_provider_66030fac
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -23,8 +25,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:af8597794113e9dd3284c6f4a7f390912ac84a60dd44b32adf7c3aab8810ab9a`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:70a38496c9eaffdca240305700abe006db7aefb5f82b9de25a2b4e4505d490b0`).
+- Semantic nodes: `4`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -39,8 +41,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`2–5` 個文件 / `200–500` 行
-- 匹配前綴:`src/core/refactor/**`、`src/effects/refactor/**`、`src/cli/commands/refactor.ts`
+- 規模量級:`2–5` 個文件 / `100–200` 行
+- 匹配前綴:`src/effects/refactor/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -60,16 +62,22 @@ flowchart LR
 - `component.refactor-program.archctx-provider`:
   - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize refactor provider records
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Run the pinned package-local archctx CLI through the shared architecture provider
+- `component.refactor-program.cli-layer`:
+  - 無。
+- `component.refactor-program.core-layer`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.refactor-program.archctx-provider` | Refactor ArchContext Provider Boundary | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+| `component.refactor-program.cli-layer` | Refactor Recommendations (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.refactor-program.core-layer` | Refactor Recommendations (core) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:af8597794113e9dd3284c6f4a7f390912ac84a60dd44b32adf7c3aab8810ab9a`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:70a38496c9eaffdca240305700abe006db7aefb5f82b9de25a2b4e4505d490b0`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

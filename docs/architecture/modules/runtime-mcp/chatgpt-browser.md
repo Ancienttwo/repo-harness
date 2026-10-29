@@ -1,6 +1,6 @@
 # runtime-mcp/chatgpt-browser 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d884a9a57f984e7c3f46e0df86db0cb78212b11940e219df0fba0d571b9db51f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-chatgpt-browser" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5345a238ecf2fd02194fb3323e617355bf78f6a7bcd8ed328e5feaa1346add25" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.chatgpt-browser`(kind `capability`)
 > **Matched Prefixes**:`src/cli/chatgpt-browser/**`、`src/cli/chatgpt-skill/**`、`src/cli/commands/chatgpt.ts`、`docs/repo-harness-chatgpt-browser-engine.md`
@@ -50,6 +50,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `external.chatgpt` — Drive ChatGPT sessions through Chrome or oracle.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Apply shared file policy to browser prompts and sessions.
 - `calls` → `component.chatgpt-browser.primary` — Run a ChatGPT Web consult
 

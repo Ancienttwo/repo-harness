@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:60b3018b24e4028f403aeea2aa39e5c7227a08b483e62a7406a816430e6d24f9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c4f8c4e0ebcd933c410801e81fce3ed1109d6e20526651676f6dfa9bbdba395a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -18,6 +18,7 @@ flowchart LR
   p1_component_action_commands_bundled_skills_d9a66507["Bundled Skill Packages"]:::component
   p1_component_action_commands_primary_c9e77bd1["Command Facades and Manifest"]:::component
   p1_component_action_commands_skill_surface_catalog_a72c29bc["Skill Surface Catalog"]:::component
+  p1_component_action_commands_skill_surface_catalog_core_988720fd["Skill Surface Catalog (core)"]:::component
   p1_capability_public_surface_action_commands_26efab87 -->|"Install action command skills"| p1_component_action_commands_primary_c9e77bd1
   p1_component_action_commands_primary_c9e77bd1 -->|"Name bundled skill packages as manifest package sources"| p1_component_action_commands_bundled_skills_d9a66507
   p1_capability_public_surface_action_commands_26efab87 -->|"Select the facade and host placement projection for a profile"| p1_component_action_commands_skill_surface_catalog_a72c29bc
@@ -28,8 +29,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`).
+- Semantic nodes: `5`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
@@ -72,6 +73,8 @@ flowchart LR
   - `depends-on` → `component.action-commands.bundled-skills` — Name bundled skill packages as manifest package sources
 - `component.action-commands.skill-surface-catalog`:
   - `reads` → `component.action-commands.primary` — Read manifest.json as the single catalog authority
+- `component.action-commands.skill-surface-catalog-core`:
+  - 無。
 
 ### 1.5 組件結構
 
@@ -80,10 +83,11 @@ flowchart LR
 | `component.action-commands.bundled-skills` | Bundled Skill Packages | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.action-commands.primary` | Command Facades and Manifest | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.profile-projection` |
+| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -126,9 +130,9 @@ sequenceDiagram
 1. **manifest 是唯一的发现权威。** `assets/skill-commands/manifest.json` 声明全部 22 个 package、两个 profile 和三个 host（claude、codex、pi）的投影。其余表示都是投影。
 2. **声明的投影必须等于计算的投影。** `expectedProjections` 是声明。catalog 用同一个 selector 重新计算 facade、external skill 和 host placement。二者不等就报 `PROJECTION_MISMATCH`（`src/core/skill-surface/catalog.ts:760-790`）。selector 只有一份实现，导出的 selector 与内部自检共用（`catalog.ts:214-215` 的注释）。
 3. **catalog 是纯函数。** `catalog.ts` 没有 import，不碰文件系统和进程。调用方负责读取 `manifest.json`（`catalog.ts:1-6`）。`profile-components.ts` 是 profile 组件表的唯一来源，installer 只是再导出（`src/cli/installer/install-profile.ts:35`、`:76`）。
-4. **shell 不复制选择逻辑与根规则。** 同步脚本调用一次 `scripts/skill-surface-select.ts profile-projection`，用它的输出决定两个 skill 根、copy 或 link 的默认方式、facade 与 host placement。根规则只在 `src/effects/host-skill-roots.ts`。
+4. **shell 不复制选择逻辑与根规则。** 同步脚本调用一次 `scripts/skill-surface-select.ts profile-projection`，用它的输出决定各 host 的 skill 根、copy 或 link 的默认方式、facade 与 host placement。根规则只在 `src/effects/host-skill-roots.ts`。
 5. **内部步骤永远不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 列在 `nonPublicInternalSteps`（`manifest.json:485-489`）。`tests/action-command-skills.test.ts:84`、`:267` 钉住这一点。
-6. **写 host skill 目录之前先证明归属。** 同步脚本只接受三种证明：指向包内目标的 symlink、三项全中的 owner marker（`owner`、`surface`、`content_hash`），或与包内源逐字节相同的目录。最后一种是 marker 引入前的一次性迁移分支（`scripts/sync-codex-installed-copies.sh:182-203`）。两个 host 根目录的 `preflight_skill_root` 在任何写入之前执行（`:406-407`）。未知或被改动的目录让整个同步以 exit 1 结束。
+6. **写 host skill 目录之前先证明归属。** 同步脚本只接受三种证明：指向包内目标的 symlink、三项全中的 owner marker（`owner`、`surface`、`content_hash`），或与包内源逐字节相同的目录。最后一种是 marker 引入前的一次性迁移分支（`scripts/sync-codex-installed-copies.sh:182-203`）。所选 host 根目录的 `preflight_skill_root` 在任何写入之前执行。未知或被改动的目录让整个同步以 exit 1 结束。
 7. **facade 必须编排多个 CLI 能力，或携带超出单个命令的领域规则。** 只给一个 CLI 子命令改名的 skill 不允许。每个 engine verb 一个 skill 也不允许。`repo-harness-chatgpt` 是 ChatGPT engine 唯一的 facade（`assets/skill-commands/CLAUDE.md:7-9`）。
 8. **退役是数据。** `retiredPackages` 有 20 条记录。每条指向替代者，或者是 `null`（`repo-harness-autoplan`、`codex-review`）。它不参与投影，只回答"这个名字去哪了"，并给出清理动作和历史指纹。
 
@@ -162,6 +166,19 @@ catalog 的消费者分布在多个 capability：`src/cli/commands/init.ts` 和 
 
 - `scripts/run-skill-routing-eval.ts`（1603 行）调用 evals-checks 的 `scripts/run-skill-evals.ts`。它归 catalog 还是归 evals-checks？归属提议 §1d 放在本 capability，理由是"Skill surface"。这个选择的置信度没有记录。
 - `scripts/skill-surface-select.ts` 动态 import `src/cli/installer/install-profile.ts`（hook-adapters）来计算树哈希。catalog 组件因此依赖 hook-adapters。这是否应该改为依赖一个共享的树哈希模块？没有记录。
+
+### Pi skill placement (2026-10-29, #1099)
+
+The Skill Surface Catalog selects packages and placements for Claude, Codex
+and Pi from the same manifest and profile rules. It does not select filesystem
+roots or write host configuration. Host Installer computes the owned
+destinations in `src/cli/installer/skill-projection.ts`, using the catalog's
+`hostSkillPlacements` and Global Runtime's `hostSkillRoot`.
+
+Pi receives the selected skills through that owned projection. The package's
+`pi.extensions` entry loads the event adapter; there is no `pi.skills` entry
+that would load the same skills twice. The restored Pi host adds no separate
+skill catalog or visibility rule.
 
 ## 4. 历史决策记录（append-only）
 

@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { hostSkillRoot, stagedSkillRoot, type SkillHost } from "../../effects/host-skill-roots";
+import { dirname, isAbsolute, join } from "node:path";
+import { hostSkillRoot, stagedSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import type { InstallTargetSpec } from "./install";
 
 const STEP = "configure required Herdr skill";
@@ -42,9 +42,9 @@ function pathEntryExists(path: string): boolean {
 /** Remove only old, directly contained staging entries with known contents. */
 function cleanupStaleStages(root: string, remove: BackupCleanup): string[] {
   const notes: string[] = [];
+  if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()
+    || realpathSync(root) !== root) throw new Error(`non-canonical skill root: ${root}`);
   try {
-    if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()
-      || realpathSync(root) !== root) throw new Error("non-canonical skill root");
     const cutoff = Date.now() - STALE_STAGE_AGE_MS;
     for (const name of readdirSync(root)) {
       if (!/^\.herdr-stage-[A-Za-z0-9]{6}(-backup)?$/.test(name)) continue;
@@ -95,17 +95,18 @@ export function configureRequiredHerdrSkill(
     return { step: STEP, status: "failed", detail: error instanceof Error ? error.message : String(error) };
   }
   const home = env.HOME || homedir();
-  const hosts: readonly SkillHost[] = target === "both" ? ["claude", "codex"] : [target];
+  const hosts: readonly SkillHost[] = target === "both" ? SKILL_HOSTS : [target];
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);
-    const roots = hosts.map(host => [hostSkillRoot(home, host), hostSkillRoot(canonicalHome, host)]);
+    const roots = hosts.map(host => [hostSkillRoot(home, host, env), hostSkillRoot(canonicalHome, host, env)]);
     // Codex can discover this shared copy as well as its host-specific copy.
     if (hosts.includes("codex") && pathEntryExists(join(stagedSkillRoot(home), "herdr"))) {
       roots.push([stagedSkillRoot(home), stagedSkillRoot(canonicalHome)]);
     }
     // Preflight all discoverable copies before writing any of them.
     for (const [root, canonicalRoot] of roots) {
+      if (!isAbsolute(root)) throw new Error(`refusing non-canonical host skill root: ${root}`);
       const destination = join(root, "herdr");
       for (const [directory, expected] of [
         [dirname(root), dirname(canonicalRoot)],
@@ -165,7 +166,9 @@ export function configureRequiredHerdrSkill(
     try { removeBackup(plan.backup); }
     catch (error) { cleanupFailures.push(`${plan.backup}: ${error instanceof Error ? error.message : String(error)}`); }
   }
-  const stageCleanup = plans.flatMap(plan => cleanupStaleStages(plan.root, removeBackup));
+  let stageCleanup: string[];
+  try { stageCleanup = plans.flatMap(plan => cleanupStaleStages(plan.root, removeBackup)); }
+  catch (error) { return { step: STEP, status: 'failed', detail: (error as Error).message }; }
   return {
     step: STEP,
     status: "ok",

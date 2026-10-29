@@ -55,7 +55,47 @@ function renderCodexOutput(outcome: HookOutcome): HostOutput {
   return outcome.event === 'Stop' ? { ...output, stdout: '' } : output;
 }
 
+/** Version of the single JSON object that the Pi renderer writes to stdout. */
+export const PI_HOOK_PROTOCOL = 1 as const;
+
+export interface PiHookOutput {
+  readonly protocol: typeof PI_HOOK_PROTOCOL;
+  readonly event: HookEvent;
+  readonly route_id: RouteId;
+  readonly exit_code: number;
+  readonly reason: string;
+  readonly decision: 'allow' | 'block' | 'none';
+  readonly additional_context: string | null;
+  readonly system_message: string | null;
+  readonly diagnostics: string;
+  readonly updated_input?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * The repo-harness Pi extension reads exactly one JSON object from stdout.
+ * Exit 2 or a deny permission is a block. Operator text stays on stderr.
+ */
+function renderPiOutput(outcome: HookOutcome): HostOutput {
+  const permission = outcome.exitCode === 0 ? outcome.permission?.decision : undefined;
+  const decision = outcome.exitCode === 2 || permission === 'deny' ? 'block' : permission === 'allow' ? 'allow' : 'none';
+  const output: PiHookOutput = {
+    protocol: PI_HOOK_PROTOCOL,
+    event: outcome.event,
+    route_id: outcome.routeId,
+    exit_code: outcome.exitCode,
+    reason: outcome.reason,
+    decision,
+    additional_context: outcome.exitCode === 0 ? outcome.additionalContext : null,
+    system_message: outcome.exitCode === 0 ? outcome.systemMessage ?? null : null,
+    diagnostics: boundedHookDiagnostic(outcome.diagnostics),
+    // Preserve requested changes on the wire. A block is the only allowed outcome until Pi can apply them.
+    ...(outcome.permission?.updatedInput ? { updated_input: outcome.permission.updatedInput } : {}),
+  };
+  return { stdout: `${JSON.stringify(output)}\n`, stderr: outcome.diagnostics };
+}
+
 export const HOST_RENDERERS: Readonly<Record<RouteHost, (outcome: HookOutcome) => HostOutput>> = Object.freeze({
   claude: (outcome) => renderHookSpecificOutput(outcome, outcome.systemMessage),
   codex: renderCodexOutput,
+  pi: renderPiOutput,
 });

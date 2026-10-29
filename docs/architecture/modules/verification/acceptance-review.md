@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:03af336ef3866491d0147149dff6affeade179e3106389da491de6e053b26eec" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:871405b352183c60120318f8bd7b3fa996c57591ed0842c3797e2e8200adafbb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
@@ -20,6 +20,9 @@ flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_capability_verification_acceptance_review_f80a24d6["Acceptance Review"]:::component
   p1_component_acceptance_review_primary_b86fb286["Generic Review Round"]:::component
+  p1_component_acceptance_review_primary_cli_16f323d1["Generic Review Round (cli)"]:::component
+  p1_component_acceptance_review_primary_core_dad45fa1["Generic Review Round (core)"]:::component
+  p1_component_acceptance_review_primary_scripts_fb66eb00["Generic Review Round (scripts)"]:::component
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Admit at most one persistent semantic review session per work package through the circuit breaker"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Run one generic acceptance review round for an admitted review campaign"| p1_component_acceptance_review_primary_b86fb286
   p1_component_acceptance_review_primary_b86fb286 -->|"Run the persistent review session#44; bind exact native attribution#44; read immutable session/request and OAR observations#44; and persist the accepted-input proof through protected session artifacts"| p1_capability_runtime_harness_task_agent_host_d81dadb6
@@ -33,8 +36,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:333a2c2e1c0d55b1b0666a1ddcb8853de5f4f0f08b2304ce15a080a426a93db5`).
-- Semantic nodes: `5`; declared relations: `7`.
+- Proof: `proven` (`sha256:a092a9e918c17dbf2802a57aa9ce98dc1624c68ebe89983d9af7092fa7fb54bb`).
+- Semantic nodes: `8`; declared relations: `7`.
 
 ### 1.2 模組職責表
 
@@ -60,6 +63,9 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `external.claude-code` — Run Claude Code as a sandboxed reviewer in the OAR review host.
+- `calls` → `external.codex` — Run Codex as a sandboxed reviewer in the OAR review host.
+- `deployed-on` → `process.oar-review-host` — Acceptance review runs review sessions in the OAR review host.
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Apply secret patterns to module review context.
 - `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
@@ -89,16 +95,25 @@ flowchart LR
   - `calls` → `capability.runtime-harness.task-agent-host` — Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts
   - `calls` → `capability.organization.task-fleet` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
   - `reads` → `capability.workflow-engine.workflow-state` — Observe Git and files read-only and resolve the workflow profile for the review subject
+- `component.acceptance-review.primary-cli`:
+  - 無。
+- `component.acceptance-review.primary-core`:
+  - 無。
+- `component.acceptance-review.primary-scripts`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.acceptance-review.primary` | Generic Review Round | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.acceptance-review.primary` | Generic Review Round | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.acceptance-review.primary-cli` | Generic Review Round (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.acceptance-review.primary-core` | Generic Review Round (core) | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.acceptance-review.primary-scripts` | Generic Review Round (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:333a2c2e1c0d55b1b0666a1ddcb8853de5f4f0f08b2304ce15a080a426a93db5`); selectors `14/14`.
+> **Proof**: `proven` (`sha256:a092a9e918c17dbf2802a57aa9ce98dc1624c68ebe89983d9af7092fa7fb54bb`); selectors `14/14`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
