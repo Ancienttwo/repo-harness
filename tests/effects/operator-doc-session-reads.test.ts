@@ -46,7 +46,7 @@ interface Session {
  * the production route inventory, so the reads run in the
  * bounded task-read child as in `operator serve`.
  */
-async function session(prepare?: (repo: string) => void): Promise<Session> {
+async function session(prepare?: (repo: string) => void, gitBin?: string): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
@@ -72,7 +72,8 @@ async function session(prepare?: (repo: string) => void): Promise<Session> {
   }] }));
   mkdirSync(join(userHome, '.repo-harness'), { recursive: true });
   writeFileSync(join(userHome, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: ['codex'], uses: { docs: ['codex'], review: [] }, default_docs: null } }));
-  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees,
+    ...(gitBin === undefined ? {} : { REPO_HARNESS_GIT_BIN: gitBin }) };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
@@ -381,6 +382,39 @@ test('index admission preserves the name-list capacity for unchanged short paths
     for (const name of names) writeFileSync(join(repo, name), '');
   });
   expect(await diffOf(s)).toMatchObject({ status: 200, body: { files: [], patch: '' } });
+});
+
+test('session reads use the portable staged-index interface without ls-files format fields', async () => {
+  // This is an option-surface constraint around real Git, not an old Git
+  // emulator. Every accepted command executes Git against the actual fixture.
+  const realGit = Bun.which('git');
+  expect(realGit).not.toBeNull();
+  const root = tmpWorkspace('doc-session-portable-git');
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+  const wrapper = join(root, 'git');
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const observed = join(root, 'stage-reads');
+  writeFileSync(observed, '');
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'is_ls_files=0',
+    'for arg do if [ "$arg" = ls-files ]; then is_ls_files=1; fi; done',
+    'if [ "$is_ls_files" = 1 ]; then',
+    '  for arg do',
+    '    case "$arg" in',
+    '      --format*) echo "unsupported ls-files format" >&2; exit 129 ;;',
+    `      --stage) printf x >> ${quote(observed)} ;;`,
+    '    esac',
+    '  done',
+    'fi',
+    `exec ${quote(realGit!)} "$@"`,
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const s = await session(undefined, wrapper);
+  writeFileSync(join(s.worktree, 'docs', 'guide.md'), `${GUIDE}Changed.\n`);
+  expect(await diffOf(s)).toMatchObject({ status: 200, body: { files: [{ path: 'docs/guide.md', status: 'modified' }] } });
+  expect(await lossOf(s)).toMatchObject({ status: 200, body: { files: [{ path: 'docs/guide.md', status: 'modified' }] } });
+  expect(readFileSync(observed).length).toBeGreaterThan(0);
 });
 
 test.each(['edit', 'add', 'mode'])('the loss digest binds ignored leaves when they %s inside an existing directory', async action => {

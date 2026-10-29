@@ -31,6 +31,10 @@ const RECORD_MAX_BYTES = 1024 * 1024;
 /** A changed file is read once to hash it; a larger one is refused rather than hashed. */
 const FILE_MAX_BYTES = 16 * 1024 * 1024;
 const ZERO_OID = /^0+$/u;
+// `ls-files --stage -z`: mode(6), spaces(2), SHA-256 oid(64), stage(1), tab(1).
+const INDEX_ENTRY_HEADER_MAX_BYTES = 74;
+// Each nonempty path needs at least one byte plus NUL in the existing name cap.
+const INDEX_OUTPUT_MAX_BYTES = DOC_SESSION_PATCH_MAX_BYTES * (1 + INDEX_ENTRY_HEADER_MAX_BYTES / 2);
 
 export class DocSessionReadError extends Error {
   constructor(readonly code: DocSessionReadFailure) { super(code); }
@@ -48,8 +52,8 @@ type Git = (cwd: string, args: string[], allowNoMatch?: boolean) => string;
 export interface DocSessionGitRunner {
   /** UTF-8 stdout; a path that is not UTF-8 is refused. Exit 1 is empty output when `allowNoMatch`. */
   readonly text: Git;
-  /** Raw stdout for the listed exit statuses. */
-  readonly bytes: (cwd: string, args: string[], statuses?: readonly number[], input?: Buffer) => Buffer;
+  /** Raw stdout. A larger derived limit is allowed only for staged index metadata. */
+  readonly bytes: (cwd: string, args: string[], statuses?: readonly number[], input?: Buffer, maxOutputBytes?: number) => Buffer;
 }
 
 /**
@@ -58,9 +62,12 @@ export interface DocSessionGitRunner {
  */
 export function docSessionGitRunner(env: NodeJS.ProcessEnv): DocSessionGitRunner {
   const gitEnv = withoutRepositorySelectingGitEnv({ ...env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' });
-  const bytes: DocSessionGitRunner['bytes'] = (cwd, args, statuses = [0], input) => {
+  const bytes: DocSessionGitRunner['bytes'] = (cwd, args, statuses = [0], input, maxOutputBytes = DOC_SESSION_PATCH_MAX_BYTES) => {
+    const indexMetadata = args.length === 3 && args[0] === 'ls-files' && args[1] === '--stage' && args[2] === '-z';
+    const ceiling = indexMetadata ? INDEX_OUTPUT_MAX_BYTES : DOC_SESSION_PATCH_MAX_BYTES;
+    if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 0 || maxOutputBytes > ceiling) return fail('too_large');
     const result = gitSpawnSync(['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
-      cwd, env: gitEnv, gitBin: configuredGitBinary(env), timeout: GIT_TIMEOUT_MS, maxBuffer: DOC_SESSION_PATCH_MAX_BYTES,
+      cwd, env: gitEnv, gitBin: configuredGitBinary(env), timeout: GIT_TIMEOUT_MS, maxBuffer: maxOutputBytes,
       stdio: ['pipe', 'pipe', 'pipe'], ...(input === undefined ? {} : { input }),
     });
     if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS') return fail('too_large');
@@ -209,6 +216,31 @@ function refuseUsedFilters(runner: DocSessionGitRunner, worktree: string, paths:
 
 const pathsFrom = (listed: string): string[] => listed === '' ? [] : listed.slice(0, -1).split('\0');
 
+/** Old Git supports --stage too; no --format capability or version fallback is needed. */
+function admittedIndexPaths(runner: DocSessionGitRunner, worktree: string): string[] {
+  const listed = runner.text(worktree, ['ls-files', '--cached', '-z']);
+  if (listed !== '' && !listed.endsWith('\0')) return fail('unavailable');
+  const paths = pathsFrom(listed);
+  if (paths.some(path => path === '')) return fail('path_unsupported');
+  // Metadata adds a fixed header per name. Derive its bound from the already
+  // bounded name list, so neither long paths nor many short paths lower capacity.
+  const limit = Buffer.byteLength(listed) + paths.length * INDEX_ENTRY_HEADER_MAX_BYTES;
+  const bytes = runner.bytes(worktree, ['ls-files', '--stage', '-z'], [0], undefined, limit);
+  let staged: string;
+  try { staged = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return fail('path_unsupported'); }
+  if (staged !== '' && !staged.endsWith('\0')) return fail('unavailable');
+  const entries = pathsFrom(staged);
+  if (entries.length !== paths.length) return fail('stale');
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    const header = /^([0-7]{6}) (?:[0-9a-f]{40}|[0-9a-f]{64}) [0-3]\t/u.exec(entry);
+    if (header === null) return fail('unavailable');
+    if (header[1] === '160000') return fail('path_unsupported');
+    if (entry.slice(header[0].length) !== paths[index]) return fail('stale');
+  }
+  return paths;
+}
+
 function worktreeFileMode(worktree: string, path: string): string {
   if (!isRepositoryRelativePath(path)) return fail('path_unsupported');
   try {
@@ -261,14 +293,9 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
   };
   // Read index metadata before a diff can inspect a populated submodule. Its
   // nested filters are invisible to the top-level attribute/config checks.
-  // Git derives objecttype from the index mode, without reading an object or
-  // entering the submodule. `blob\0` is shorter than mode records, so this
-  // stays within the existing name-list bound even for many short names.
-  const types = pathsFrom(runner.text(worktree, ['ls-files', '--format=%(objecttype)', '-z']));
-  if (types.includes('commit')) return fail('path_unsupported');
+  const tracked = admittedIndexPaths(runner, worktree);
   // Raw diff can run clean/process filters even for a stat-only or racy entry,
   // so admit every candidate before comparing.
-  const tracked = pathsFrom(runner.text(worktree, ['ls-files', '--cached', '-z']));
   const others = pathsFrom(runner.text(worktree, ['ls-files', '--others', '--exclude-standard', '-z']));
   refuseUsedFilters(runner, worktree, [...new Set([...tracked, ...others])]);
   const raw = runner.text(worktree, ['diff', '--raw', '-z', '--no-renames', '--no-abbrev', '--ignore-submodules=none', side, '--']);
