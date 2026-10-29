@@ -12,6 +12,7 @@ export const WORKSPACES = [
   { id: 'board', group: 'work' },
   { id: 'repositories', group: 'work' },
   { id: 'worktrees', group: 'work' },
+  { id: 'docs', group: 'work' },
   { id: 'agents', group: 'setup' },
   { id: 'skills', group: 'setup' },
   { id: 'hooks', group: 'setup' },
@@ -38,6 +39,8 @@ export interface WorkspaceLocation {
   /**
    * The drawer subject. `#board/<item>` opens one board item; its id is
    * URI-encoded in the hash. `#tools/<id>` opens one catalog entry.
+   * `#docs/<path>` names one repository-relative file; the docs route decides
+   * whether it may be read.
    */
   readonly item: string | null;
 }
@@ -55,6 +58,11 @@ function decodeItem(value: string): string | null {
 /** An empty or unknown fragment is Home. A malformed parameter also falls to Home. */
 export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   const [name, parameter, ...rest] = hash.replace(/^#/u, '').split('/');
+  if (name === 'docs') {
+    if (parameter === undefined) return { workspace: 'docs', module: null, item: null };
+    const segments = [parameter, ...rest].map(decodeItem);
+    return segments.some(segment => segment === null) ? HOME : { workspace: 'docs', module: null, item: segments.join('/') };
+  }
   if (rest.length > 0) return HOME;
   if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'settings' || name === 'tests') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
@@ -80,5 +88,7 @@ export function workspaceHash({ workspace, module, item }: WorkspaceLocation): s
   if (workspace === 'board') return item === null ? '#board' : `#board/${encodeURIComponent(item)}`;
   if (workspace === 'architecture' && module !== null) return `#architecture/${module}`;
   if (workspace === 'tools' && item !== null) return `#tools/${item}`;
+  // Each segment is encoded on its own, so the path stays readable in the address bar.
+  if (workspace === 'docs' && item !== null) return `#docs/${item.split('/').map(encodeURIComponent).join('/')}`;
   return `#${workspace}`;
 }

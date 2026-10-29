@@ -136,7 +136,7 @@ describe('navigation', () => {
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
-    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['worktrees', 'worktrees'], ['agents', 'agents'], ['skills', 'skills'],
+    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
@@ -152,8 +152,8 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'worktrees', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
-    for (const later of ['docs', 'sessions', 'recent']) {
+      .toEqual(['home', 'board', 'repositories', 'worktrees', 'docs', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
+    for (const later of ['sessions', 'recent']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });

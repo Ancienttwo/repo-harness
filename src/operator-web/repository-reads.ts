@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { DevActivityItem } from '../core/dev-activity/types';
-import { decodeDocsTree } from '../core/operator/docs';
+import { decodeDocsFile, decodeDocsTree, type DocsFileV1, type DocsTreeV1, type DocsUnavailableReason } from '../core/operator/docs';
 import {
   decodeTaskExecutionView,
   type ExecutionStateUnavailableReason,
@@ -191,4 +191,89 @@ export function useTestsSnapshot(read: TestsReader, repositoryId: string | null,
   }, [read, repositoryId]);
   useObservationRefresh(observe, JSON.stringify(['tests-snapshot', repositoryId, generation]), { enabled });
   return state !== null && state.id === repositoryId ? state.read : null;
+}
+
+/**
+ * Every refusal code the docs routes send: the repository-level reasons of
+ * both routes, the file-read refusals, and the read cap and deadline. The
+ * record keeps the list complete against the reason type; `docs_invalid` is a
+ * body that failed the shared decoder.
+ */
+export type DocsReason = DocsUnavailableReason
+  | 'path_invalid' | 'path_denied' | 'path_escape' | 'not_found' | 'not_a_file' | 'too_large' | 'not_text'
+  | 'docs_busy' | 'docs_timeout' | 'invalid_request' | 'docs_invalid' | 'unreachable';
+const DOCS_REASONS: Readonly<Record<Exclude<DocsReason, 'unreachable'>, true>> = {
+  docs_pending: true, registry_unavailable: true, repository_not_found: true, default_branch_unknown: true, github_remote_missing: true,
+  github_remote_ambiguous: true, branch_missing: true, ref_invalid: true, docs_too_large: true, docs_reader_unavailable: true,
+  path_invalid: true, path_denied: true, path_escape: true, not_found: true, not_a_file: true, too_large: true, not_text: true,
+  docs_busy: true, docs_timeout: true, invalid_request: true, docs_invalid: true,
+};
+
+export type DocsRead<T> = { readonly state: 'ok'; readonly value: T } | { readonly state: 'unavailable'; readonly reason: DocsReason };
+export type DocsTreeReader = (repositoryId: string, signal: AbortSignal) => Promise<DocsRead<DocsTreeV1>>;
+export type DocsFileReader = (repositoryId: string, path: string, signal: AbortSignal) => Promise<DocsRead<DocsFileV1>>;
+
+async function readDocs<T>(url: string, decode: (value: unknown) => T, signal: AbortSignal): Promise<DocsRead<T>> {
+  let response: Response;
+  try {
+    response = await fetch(url, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { state: 'unavailable', reason: 'unreachable' };
+  }
+  return docsAnswer(response, decode);
+}
+
+/** One docs route answer: the decoded body, or the refusal code when the browser knows it. */
+export async function docsAnswer<T>(response: Response, decode: (value: unknown) => T): Promise<DocsRead<T>> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const { code } = asApiError(body);
+    return { state: 'unavailable', reason: Object.hasOwn(DOCS_REASONS, code) ? code as DocsReason : 'unreachable' };
+  }
+  try { return { state: 'ok', value: decode(body) }; } catch { return { state: 'unavailable', reason: 'docs_invalid' }; }
+}
+
+export function fetchDocsTree(repositoryId: string, signal: AbortSignal): Promise<DocsRead<DocsTreeV1>> {
+  return readDocs(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/docs/tree`, decodeDocsTree, signal);
+}
+
+export function fetchDocsFile(repositoryId: string, path: string, signal: AbortSignal): Promise<DocsRead<DocsFileV1>> {
+  return readDocs(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/docs/file?${new URLSearchParams({ path })}`, decodeDocsFile, signal);
+}
+
+/** The same answer twice keeps the first object, so a periodic re-read does not re-render the page. */
+function sameDocsRead<T>(left: DocsRead<T>, right: DocsRead<T>, key: (value: T) => string): boolean {
+  if (left.state !== right.state) return false;
+  return left.state === 'ok' ? key(left.value) === key((right as typeof left).value) : left.reason === (right as typeof left).reason;
+}
+
+function useDocsRead<T>(name: string, read: (signal: AbortSignal) => Promise<DocsRead<T>>, subject: string | null, refresh: string, key: (value: T) => string): DocsRead<T> | null {
+  const [state, setState] = useState<{ readonly subject: string; readonly read: DocsRead<T> } | null>(null);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (subject === null) return false;
+    const result = await read(signal);
+    if (signal.aborted) return false;
+    setState(current => current !== null && current.subject === subject && sameDocsRead(current.read, result, key) ? current : { subject, read: result });
+    // A typed refusal is an answer; only a request with no answer backs the loop off.
+    return result.state === 'ok' || result.reason !== 'unreachable';
+  }, [read, subject, key]);
+  useObservationRefresh(observe, JSON.stringify([name, subject, refresh]), { enabled: subject !== null });
+  return state !== null && state.subject === subject ? state.read : null;
+}
+
+const treeKey = (tree: DocsTreeV1) => `${tree.commit}\n${tree.collected_at}`;
+const fileKey = (file: DocsFileV1) => `${file.commit}\n${file.sha256}\n${file.worktree_differs}`;
+
+/** The docs tree of one repository; null until the first read settles. */
+export function useDocsTree(read: DocsTreeReader, repositoryId: string | null, generation: number): DocsRead<DocsTreeV1> | null {
+  const observe = useCallback((signal: AbortSignal) => read(repositoryId!, signal), [read, repositoryId]);
+  return useDocsRead('docs-tree', observe, repositoryId, String(generation), treeKey);
+}
+
+/** One file, re-read when the tree names another commit; null until the read settles. */
+export function useDocsFile(read: DocsFileReader, repositoryId: string | null, path: string | null, commit: string | null, generation: number): DocsRead<DocsFileV1> | null {
+  const observe = useCallback((signal: AbortSignal) => read(repositoryId!, path!, signal), [read, repositoryId, path]);
+  const subject = repositoryId === null || path === null ? null : JSON.stringify([repositoryId, path]);
+  return useDocsRead('docs-file', observe, subject, `${generation}:${commit ?? ''}`, fileKey);
 }

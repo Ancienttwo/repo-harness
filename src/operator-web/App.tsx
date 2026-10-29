@@ -39,11 +39,15 @@ import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
 import {
   fetchCiRepairs,
+  fetchDocsFile,
+  fetchDocsTree,
   fetchExecution,
   fetchRepositoryHead,
   fetchTestsSnapshot,
   useRepositoryHead,
   type CiRepairsReader,
+  type DocsFileReader,
+  type DocsTreeReader,
   type ExecutionReader,
   type RepositoryHeadReader,
   type TestsReader,
@@ -135,6 +139,9 @@ export interface OperatorAppProps {
   readonly writeAgentsSettings?: AgentsSettingsWriter;
   /** The read-only tests page's snapshot read, injectable on the same terms. */
   readonly readTests?: TestsReader;
+  /** The docs page's tree and file reads; the browser default is the same-origin docs routes. */
+  readonly readDocsTree?: DocsTreeReader;
+  readonly readDocsFile?: DocsFileReader;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -167,6 +174,8 @@ function writeStorage(key: string, value: string | null): void {
 
 // Vite emits the workspace as its own chunk; the Board never loads it.
 const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(module => ({ default: module.ArchitectureWorkspace })));
+// The markdown renderer and Mermaid load only with the docs page.
+const DocsPage = lazy(() => import('./DocsPage').then(module => ({ default: module.DocsPage })));
 
 /** Fleet names a duplicate display name by its registry id, so two rows never look the same. */
 function fleetLabel(repositories: readonly OperatorFleetRepositoryV1[], repository: OperatorFleetRepositoryV1): string {
@@ -270,6 +279,8 @@ export function OperatorApp({
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
   readTests = fetchTestsSnapshot,
+  readDocsTree = fetchDocsTree,
+  readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -291,7 +302,7 @@ export function OperatorApp({
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
   // Pages that name one repository: they activate the Fleet read and own the
   // repository switch and docs-tree head.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests';
+  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests' || workspace === 'docs';
 
   const snapshot = snapshotForState(state);
   const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
@@ -516,6 +527,10 @@ export function OperatorApp({
           {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}
           {workspace === 'tools' && <ToolsPage toolId={place.item} onOpen={id => openPlace({ workspace: 'tools', module: null, item: id })}
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
+          {workspace === 'docs' && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+            <DocsPage repositoryId={activeRepository?.repository_id ?? null} path={place.item} readTree={readDocsTree} readFile={readDocsFile}
+              generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
+          </Suspense>}
           {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
