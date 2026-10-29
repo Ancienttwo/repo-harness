@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { decodeCleanupSessionRecord, decodeCleanupPlanPreview, type CleanupPlanPreview } from '../../core/operator/worktree-cleanup-session';
 import { decodeCleanupAdvice, decodeCleanupPlan, type CleanupAdvice, type CleanupPlan } from '../../core/operator/worktree-cleanup-plan';
-import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
+import { readSessionArtifact, writeSessionArtifact, writeSessionBytes } from '../terminal/task-session-io';
 import { createCleanupPlan, type CleanupObservation } from './worktree-cleanup-plan';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { sessionDirectory } from './doc-session-events';
@@ -31,6 +31,12 @@ function readBounded(path: string): unknown {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, used)));
   } finally { closeSync(fd); }
 }
+/** Use the exact persisted bytes for both preflight admission and the durable write. */
+function observationBytes(value: CleanupSessionObservation): string {
+  const bytes = `${JSON.stringify(value, null, 2)}\n`;
+  if (Buffer.byteLength(bytes) > MAX_BYTES) throw new Error('cleanup_observation_too_large');
+  return bytes;
+}
 export function validateCleanupObservation(value: unknown, sid: string): CleanupSessionObservation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('cleanup_observation_invalid');
   const v = value as CleanupSessionObservation;
@@ -45,12 +51,12 @@ export function validateCleanupObservation(value: unknown, sid: string): Cleanup
   }
   // Reuse the one public plan decoder and complete-content fingerprint authority.
   createCleanupPlan(sid, v.items.map(item => ({ observation: item.observation, advice: KEEP })));
-  if (Buffer.byteLength(JSON.stringify(v)) > MAX_BYTES) throw new Error('cleanup_observation_too_large');
+  observationBytes(v);
   return v;
 }
 export function saveCleanupObservation(directory: string, value: CleanupSessionObservation): void {
   validateCleanupObservation(value, value.session_id);
-  writeSessionArtifact(join(directory, 'cleanup-observation.json'), value);
+  writeSessionBytes(join(directory, 'cleanup-observation.json'), observationBytes(value));
 }
 export function readCleanupObservation(env: NodeJS.ProcessEnv, sid: string): CleanupSessionObservation {
   return validateCleanupObservation(readBounded(join(sessionDirectory(env, sid), 'cleanup-observation.json')), sid);

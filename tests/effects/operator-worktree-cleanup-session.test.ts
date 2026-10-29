@@ -5,7 +5,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { join, resolve } from 'node:path';
 import { decodeCleanupSessionCreate } from '../../src/core/operator/worktree-cleanup-session';
 import { prepareCleanupSession } from '../../src/effects/operator/worktree-cleanup-session';
-import { beginCleanupPlan, readCleanupObservation, readCleanupPlanPreview, saveCleanupAdvice } from '../../src/effects/operator/worktree-cleanup-session-store';
+import { beginCleanupPlan, readCleanupObservation, readCleanupPlanPreview, saveCleanupAdvice, saveCleanupObservation } from '../../src/effects/operator/worktree-cleanup-session-store';
+import { writeSessionRecord } from '../../src/effects/operator/doc-session';
 import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -100,4 +101,43 @@ test('production plan HTTP and CLI return the same safe plan; corrupt storage is
     const createCli = spawnSync(process.execPath, [CLI, 'operator', 'doc-sessions', 'cleanup', '--runtime', 'codex', '--json'], { env: f.env, cwd: f.repo, encoding: 'utf8', timeout: 60_000 });
     expect(createCli.status).toBe(2); expect(JSON.parse(createCli.stderr).error.code).toBe('platform_unsupported');
   }
+}, 60_000);
+
+
+test('the private observation size guard rejects the actual persisted format before writing an unreadable artifact', () => {
+  const f = fixture(), seed = f.create(), saved = readCleanupObservation(f.env, seed), base = saved.items[0]!;
+  // Valid evidence dimensions below the observer's 20,000-entry per-target bound.
+  // Expand the real observed fixture shape; this exercises the real validator,
+  // artifact writer and reader, not 80,000 live files or provider acceptance.
+  const loss = base.observation.loss!;
+  const files = Array.from({ length: 8000 }, (_, i) => ({ path: `file-${String(i).padStart(5, '0')}.txt`, kind: 'file' as const, mode: 420, size: 1, sha256: 'a'.repeat(64), git_oid: 'b'.repeat(40) }));
+  const index = files.map(file => ({ path: file.path, mode: '100644', oid: file.git_oid, stage: 0 }));
+  const sid = randomUUID().replaceAll('-', '');
+  const observed = { ...saved, session_id: sid, items: Array.from({ length: 10 }, (_, i) => {
+    const id = 'wt_' + String(i).padStart(64, '0');
+    return { target: { ...base.target!, id }, observation: { worktree: { ...base.observation.worktree, id }, loss: { ...loss,
+      files: [...files, { path: 'directory', kind: 'directory' as const, mode: 493, size: 0, sha256: null, git_oid: null }], index, changed_paths: [], ignored: [], commits: [] } } };
+  }) };
+  const compact = Buffer.byteLength(JSON.stringify(observed)), persisted = Buffer.byteLength(JSON.stringify(observed, null, 2) + '\n');
+  expect(compact).toBeLessThan(32 * 1024 * 1024); expect(persisted).toBeGreaterThan(32 * 1024 * 1024);
+  const record = JSON.parse(readFileSync(join(f.directory(seed), 'session.json'), 'utf8'));
+  writeSessionRecord(f.env, sid, { ...record, session_id: sid });
+  const path = join(f.directory(sid), 'cleanup-observation.json');
+  let refusal: unknown;
+  try { saveCleanupObservation(f.directory(sid), observed); } catch (error) { refusal = error; }
+  if (refusal === undefined) {
+    const actual = statSync(path).size;
+    let readFailure = 'none';
+    try { readCleanupObservation(f.env, sid); } catch (error) { readFailure = (error as Error).message; }
+    throw new Error(`accepted an unreadable observation: compact=${compact}, persisted=${persisted}, actual=${actual}, read=${readFailure}`);
+  }
+  expect((refusal as Error).message).toBe('cleanup_observation_too_large');
+  expect(existsSync(path)).toBe(false);
+  // The same format below the bound remains readable through the production reader.
+  const admitted = { ...observed, items: observed.items.slice(0, 8) };
+  const admittedBytes = Buffer.byteLength(JSON.stringify(admitted, null, 2) + '\n');
+  expect(admittedBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+  saveCleanupObservation(f.directory(sid), admitted);
+  expect(statSync(path).size).toBe(admittedBytes);
+  expect(readCleanupObservation(f.env, sid).items).toHaveLength(8);
 }, 60_000);
