@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { decodeDocSessionMessage, DOC_SESSION_MESSAGE_RESULTS, OPERATOR_SESSION_MESSAGES_ROUTE, type DocSessionMessageInput, type DocSessionMessageResult } from '../../core/operator/doc-session-messages';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import { docSessionDirectory, docSessionRequestsDirectory, isTerminalAgentState, readDocSessionAgent } from './doc-session-agent';
+import { docSessionDirectory, docSessionRequestsDirectory, isTerminalAgentState, readDocSessionAgent, resumeDocSessionAgent } from './doc-session-agent';
 import type { OperatorWriteRoute } from './write-channel';
 import { OperatorWriteRefusal, type OperatorWriteOperation } from './write-run';
 
@@ -37,7 +37,8 @@ export async function requestDocSessionMessage(env: NodeJS.ProcessEnv, sessionId
     }
     throw error;
   }
-  const record = readDocSessionAgent(directory);
+  let record = readDocSessionAgent(directory);
+  if (record?.state === 'stopped') record = await resumeDocSessionAgent(env, sessionId);
   if (record === null || isTerminalAgentState(record.state)) return 'session_closed';
   if (record.state === 'starting') return 'starting';
   const inputId = randomUUID();

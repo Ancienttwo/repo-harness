@@ -481,4 +481,20 @@ GET 不保存已读状态，跨 epoch 比较沿用事件游标规则。
 不支持 steer 回 409 `steer_unsupported`，不会改为排队。已结束回 409 `session_closed`；尚在启动回 503 `busy`。
 请求和确认都绑定 epoch。确认丢失或宿主中途退出回 409 `reconcile_required`，同一个 request_id 不再执行。
 接受的用户说明先于该次调用产生的模型事件写入脱敏事件流。请求文本只存私有 0600 控制文件，不进审计正文。
-此片不恢复已释放的宿主；resume 在 #1152 中处理。
+空闲释放后的恢复由 #1152 的同一宿主生命周期处理，仍从这个写入操作进入。
+
+
+### 空闲释放后的同会话恢复
+
+宿主空闲释放时在私有 `agent.json` 保留 OAR 原生会话 id，并记录 `reason: docs_host_idle`。
+只有状态为 stopped、凭据副本已删除、事件无错误且原生 id 已知时，追加说明才可恢复；取消、失败和历史记录缺少原生 id 时仍回 `session_closed`。
+新子进程先取得原有 `agent.lock`，再次核对旧 epoch 和可恢复状态，再写 `epoch + 1`。
+它以 OAR `SessionOptions.resume` 打开原会话，核对返回的 id，不重放创建指令，也不退回新建会话。
+事件从新 epoch 的 seq 0 继续，浏览器沿用同一个 sid 和 epoch.seq 游标。
+只读接口不恢复宿主；提交与丢弃必须继续在同一个 `docs_session:<sid>` 写锁下处理已停止状态，不调用 resume。
+
+每个 epoch 使用独立的不可变 `docs-host-<epoch>.sb` 和 `runtime-launcher-<epoch>`，以绑定本次模型代理端口。
+权限规则不变，私有 scratch 和原生历史目录不变；每次重新做准入、边界证明和凭据复制，退出时删除副本。
+旧控制目录或 scratch 被链接替换时拒绝恢复，清理不沿链接删除其他凭据。
+空闲上限仍为 30 分钟，启动和单宿主总时长沿用 G5；是否调整空闲上限仍等 owner 决定。
+脚本化 OAR 测试验证的是生命周期、游标和入口合同，真实 provider 的历史连续性和 macOS 隔离仍需 D1 验收。

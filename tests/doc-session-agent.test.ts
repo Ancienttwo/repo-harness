@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { writeSessionArtifact } from '../src/effects/terminal/task-session-io';
@@ -407,4 +407,122 @@ test('a lost message acknowledgement keeps intent unresolved and neither HTTP re
   const audit = readFileSync(join(h.env.REPO_HARNESS_HOME!, 'operator', 'audit.jsonl'), 'utf8');
   expect(audit).not.toContain(input.text);
   expect(audit.split('\n').filter(line => line.includes(input.request_id)).map(line => JSON.parse(line).phase)).toEqual(['intent']);
+}, 60_000);
+
+
+test('idle disposal resumes the same native identity at the next epoch through HTTP and CLI without replaying the first instruction', async () => {
+  const h = await harness({ env: { REPO_HARNESS_DOCS_HOST_IDLE_MS: '1000' } });
+  const sid = (await h.create('The original instruction.')).body.session_id as string;
+  reapHost(h, sid);
+  const first = await until(h, sid, agent => agent.state === 'stopped', 'idle disposal');
+  expect(first).toMatchObject({ epoch: 1, reason: 'docs_host_idle', credential: 'removed' });
+  expect(typeof first.native_session_id).toBe('string');
+  expect(existsSync(authCopy(h, sid))).toBe(false);
+  const before = events(h, sid);
+  const cursor = `${before.at(-1)!.epoch}.${before.at(-1)!.seq}`;
+  const detail = await fetch(`${h.server.url}/api/v1/sessions/${sid}`, { headers: { Cookie: h.cookie } });
+  expect(detail.status).toBe(200);
+  expect(await detail.text()).not.toContain(first.native_session_id!);
+  expect(readDocSessionAgent(h.sessionDir(sid))).toEqual(first);
+  // Native history uses this same private directory; this marker only proves directory preservation.
+  const marker = join(first.control!, 'scratch', '.codex-home', 'history-fixture');
+  writeFileSync(marker, 'preserved private directory');
+  const freshAuth = `${fakeAuth()}\n`;
+  writeFileSync(join(h.home, '.codex', 'auth.json'), freshAuth);
+  const oldId = randomUUID();
+  writeSessionArtifact(join(h.sessionDir(sid), 'requests', `stop-${oldId}.json`), { kind: 'stop', epoch: 1 });
+  const request_id = randomUUID();
+  const input = { request_id, text: 'Continue this conversation.', when: 'now' };
+  const response = await h.post(`/api/v1/sessions/${sid}/messages`, input);
+  expect([response.status, response.body.landed]).toEqual([202, 'prompted']);
+  const second = await until(h, sid, agent => agent.epoch === 2 && agent.state === 'idle', 'resumed turn complete');
+  expect(second).toMatchObject({ epoch: 2, native_session_id: first.native_session_id, control: first.control });
+  expect(readFileSync(marker, 'utf8')).toBe('preserved private directory');
+  expect(readFileSync(authCopy(h, sid), 'utf8')).toBe(freshAuth);
+  expect(existsSync(join(h.sessionDir(sid), 'requests', `stop-${oldId}.ack.json`))).toBe(false);
+  const recorded = events(h, sid);
+  expect(recorded.slice(0, before.length)).toEqual([...before]);
+  expect(recorded.slice(before.length).map(event => [event.epoch, event.seq])).toEqual(recorded.slice(before.length).map((_, seq) => [2, seq]));
+  expect(recorded.filter(event => event.type === 'message' && event.role === 'user').map(event => (event as { text: string }).text)).toEqual(['The original instruction.', input.text]);
+  const tailResponse = await fetch(`${h.server.url}/api/v1/sessions/${sid}/events?after=${cursor}`, { headers: { Cookie: h.cookie } });
+  expect(tailResponse.status).toBe(200);
+  const tail = await tailResponse.json() as { events: DocSessionEventV1[] };
+  expect(tail.events).toEqual(recorded.slice(before.length));
+  // Same request across HTTP and CLI reads the audit result; it does not send another input or advance epoch.
+  const cli = Bun.spawn([process.execPath, join(import.meta.dir, '../src/cli/index.ts'), 'operator', 'doc-sessions', 'message', sid,
+    '--text', input.text, '--when', 'now', '--request-id', request_id, '--json'], { env: h.env, stdout: 'pipe', stderr: 'pipe' });
+  expect(await cli.exited).toBe(0);
+  expect(JSON.parse(await new Response(cli.stdout).text())).toMatchObject({ status: 202, landed: 'prompted' });
+  expect(events(h, sid)).toEqual(recorded);
+  await until(h, sid, agent => agent.state === 'stopped', 'second idle disposal');
+  // A fresh CLI request resumes once more using the same audited entrypoint.
+  const next = Bun.spawn([process.execPath, join(import.meta.dir, '../src/cli/index.ts'), 'operator', 'doc-sessions', 'message', sid,
+    '--text', 'Third epoch.', '--when', 'after_turn', '--json'], { env: h.env, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err, code] = await Promise.all([new Response(next.stdout).text(), new Response(next.stderr).text(), next.exited]);
+  expect({ code, err }).toEqual({ code: 0, err: '' });
+  expect(JSON.parse(out)).toMatchObject({ status: 202, landed: 'prompted' });
+  expect(readDocSessionAgent(h.sessionDir(sid))).toMatchObject({ epoch: 3, native_session_id: first.native_session_id });
+  expect(await requestDocSessionControl(h.env, sid, 'cancel')).toBe('accepted');
+  await until(h, sid, agent => agent.state === 'stopped', 'cancelled');
+  const closed = await h.post(`/api/v1/sessions/${sid}/messages`, { text: 'Cannot resume cancel.', when: 'now' });
+  expect([closed.status, closed.body.error.code]).toEqual([409, 'session_closed']);
+}, 60_000);
+
+test('resume credential failure preserves earlier conversation and leaves an unresolved request without retrying a host', async () => {
+  const h = await harness({ env: { REPO_HARNESS_DOCS_HOST_IDLE_MS: '100' } });
+  const sid = (await h.create('Existing conversation.')).body.session_id as string;
+  reapHost(h, sid);
+  await until(h, sid, agent => agent.state === 'stopped', 'idle disposal');
+  const before = events(h, sid);
+  writeFileSync(join(h.home, '.codex', 'auth.json'), '{}');
+  const input = { request_id: randomUUID(), text: 'Must not reach the runtime.', when: 'now' };
+  const response = await h.post(`/api/v1/sessions/${sid}/messages`, input);
+  expect([response.status, response.body.error.code]).toEqual([409, 'reconcile_required']);
+  const failed = readDocSessionAgent(h.sessionDir(sid))!;
+  expect(failed).toMatchObject({ epoch: 2, state: 'failed', failure: 'runtime_error' });
+  expect(existsSync(authCopy(h, sid))).toBe(false);
+  expect(events(h, sid).slice(0, before.length)).toEqual([...before]);
+  expect(events(h, sid).slice(before.length)).toMatchObject([{ epoch: 2, seq: 0, type: 'failure', category: 'runtime_error' }]);
+  expect(await h.post(`/api/v1/sessions/${sid}/messages`, input)).toEqual(response);
+  expect(readDocSessionAgent(h.sessionDir(sid))).toEqual(failed);
+}, 60_000);
+
+
+test('resume rejects a replaced control directory and cleanup never follows it to another credential copy', async () => {
+  const h = await harness({ env: { REPO_HARNESS_DOCS_HOST_IDLE_MS: '100' } });
+  const sid = (await h.create('Keep the conversation.')).body.session_id as string;
+  reapHost(h, sid);
+  const old = await until(h, sid, agent => agent.state === 'stopped', 'idle disposal');
+  const outside = tmpWorkspace('doc-session-other-control');
+  cleanups.push(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(outside, 'scratch', '.codex-home'), { recursive: true, mode: 0o700 });
+  const otherCopy = join(outside, 'scratch', '.codex-home', 'auth.json');
+  writeFileSync(otherCopy, 'must remain', { mode: 0o600 });
+  renameSync(old.control!, `${old.control!}-retained`);
+  symlinkSync(outside, old.control!);
+  const response = await h.post(`/api/v1/sessions/${sid}/messages`, { text: 'Do not open.', when: 'now' });
+  expect([response.status, response.body.error.code]).toEqual([409, 'reconcile_required']);
+  expect(readDocSessionAgent(h.sessionDir(sid))).toMatchObject({ epoch: 2, state: 'failed', failure: 'boundary_denied', credential: 'cleanup_pending' });
+  expect(readFileSync(otherCopy, 'utf8')).toBe('must remain');
+}, 60_000);
+
+test('concurrent resume requests share the target lock and a late old-epoch child cannot advance the session', async () => {
+  const h = await harness({ env: { REPO_HARNESS_DOCS_HOST_IDLE_MS: '100' } });
+  const sid = (await h.create('First turn.')).body.session_id as string;
+  reapHost(h, sid);
+  const old = await until(h, sid, agent => agent.state === 'stopped', 'idle disposal');
+  const path = `/api/v1/sessions/${sid}/messages`;
+  const responses = await Promise.all([
+    h.post(path, { text: 'fixture:hold new epoch', when: 'now' }),
+    h.post(path, { text: 'A competing resume.', when: 'now' }),
+  ]);
+  expect(responses.map(response => response.status).sort()).toEqual([202, 503]);
+  expect(responses.find(response => response.status === 503)!.body.error.code).toBe('busy');
+  const second = readDocSessionAgent(h.sessionDir(sid))!;
+  expect(second).toMatchObject({ epoch: 2, native_session_id: old.native_session_id });
+  const late = spawnSync(host().node, [host().entry, h.sessionDir(sid), '--resume-epoch', '1'], { env: h.env, encoding: 'utf8', timeout: 5_000 });
+  expect(late.status).not.toBe(0);
+  expect(readDocSessionAgent(h.sessionDir(sid))!.epoch).toBe(2);
+  expect(await requestDocSessionControl(h.env, sid, 'cancel')).toBe('accepted');
+  await until(h, sid, agent => agent.state === 'stopped', 'cancelled');
 }, 60_000);

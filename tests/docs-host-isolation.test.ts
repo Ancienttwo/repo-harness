@@ -385,11 +385,11 @@ darwinTest('docs host reads its own control directory, but not the repo-harness 
   const policyFile = writeDocsHostPolicy(f.admission);
   const scratch = prepareDocsHostScratch(f.admission, 60_000);
   proveDocsHostBoundary(f.admission, policyFile, scratch);
-  const probe = "const fs=require('node:fs');const c=f=>{try{f();return 'ok'}catch(e){return e.code}};const [state,control]=process.argv.slice(1);const root=require('node:path').dirname(control);"
-    + "console.log(JSON.stringify({control:c(()=>fs.readdirSync(control)),profile:c(()=>fs.readFileSync(control+'/docs-host.sb')),codexHome:c(()=>fs.realpathSync(control+'/scratch/.codex-home')),"
+  const probe = "const fs=require('node:fs');const c=f=>{try{f();return 'ok'}catch(e){return e.code}};const [state,control,profile]=process.argv.slice(1);const root=require('node:path').dirname(control);"
+    + "console.log(JSON.stringify({control:c(()=>fs.readdirSync(control)),profile:c(()=>fs.readFileSync(profile)),codexHome:c(()=>fs.realpathSync(control+'/scratch/.codex-home')),"
     + "state:c(()=>fs.readdirSync(state)),stateStat:c(()=>fs.statSync(state+'/operator')),audit:c(()=>fs.readFileSync(state+'/operator/audit.jsonl')),"
     + "controlRoot:c(()=>fs.readdirSync(root)),otherSession:c(()=>fs.readdirSync(root+'/other'))}))";
-  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, f.admission.node, '-e', probe, f.state, f.control],
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, f.admission.node, '-e', probe, f.state, f.control, policyFile],
     { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ control: 'ok', profile: 'ok', codexHome: 'ok', state: 'EPERM', stateStat: 'EPERM', audit: 'EPERM', controlRoot: 'EPERM', otherSession: 'EPERM' });
@@ -528,4 +528,25 @@ darwinTest('docs host denies the pasteboard and LaunchServices lookups and Apple
   expect(launchServices.stderr).not.toContain('execvp');
   expect(launchServices).toMatchObject({ status: 0, stdoutBytes: 0 });
   expect(run('launchservices-control', `${exec}\n${lookup('com.apple.coreservices.launchservicesd')}`, '/usr/bin/lsappinfo', 'list').stdoutBytes).toBeGreaterThan(0);
+}, 60_000);
+
+
+darwinTest('each resumed epoch has immutable policy and launcher files for its own proxy port with the same boundary rules', async () => {
+  const f = await seedFixture();
+  const scratch = prepareDocsHostScratch(f.admission, 60_000);
+  const firstPolicy = writeDocsHostPolicy(f.admission, 1);
+  const firstLauncher = writeDocsHostLauncher(f.admission, firstPolicy, docsHostEnvironment(scratch, f.proxy.port), 1);
+  const oldPolicy = readFileSync(firstPolicy, 'utf8'), oldLauncher = readFileSync(firstLauncher, 'utf8');
+  const nextProxy = await startModelApiProxy([{ host: 'model.example.test', port: 443 }]);
+  closers.push(() => nextProxy.close());
+  const admission = { ...f.admission, proxyPort: nextProxy.port };
+  const secondPolicy = writeDocsHostPolicy(admission, 2);
+  const secondLauncher = writeDocsHostLauncher(admission, secondPolicy, docsHostEnvironment(scratch, nextProxy.port), 2);
+  expect(secondPolicy).not.toBe(firstPolicy);
+  expect(secondLauncher).not.toBe(firstLauncher);
+  expect(readFileSync(firstPolicy, 'utf8')).toBe(oldPolicy);
+  expect(readFileSync(firstLauncher, 'utf8')).toBe(oldLauncher);
+  expect(readFileSync(secondPolicy, 'utf8')).toBe(docsHostPolicy(admission));
+  expect(() => writeDocsHostPolicy(admission, 1)).toThrow('docs_host_profile_changed');
+  proveDocsHostBoundary(admission, secondPolicy, scratch);
 }, 60_000);
