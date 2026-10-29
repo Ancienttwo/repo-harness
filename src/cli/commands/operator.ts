@@ -8,6 +8,7 @@ import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operato
 import { readRepoHarnessRegistryStrictSnapshot } from '../../effects/repo-registry';
 import type { CliUsageSource } from '../../effects/setup/cli-inventory';
 import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
+import { buildDocSessionsCommand } from './doc-sessions';
 
 import {
   OPERATOR_DEFAULT_HOST,
@@ -187,5 +188,6 @@ export function buildOperatorCommand(): Command {
         if (snapshot.graph.status === 'unavailable') process.exitCode = 1;
       } catch (error) { outputOperatorError(error); }
     });
+  operator.addCommand(buildDocSessionsCommand());
   return operator;
 }

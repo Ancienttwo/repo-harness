@@ -12,6 +12,8 @@ import { OperatorTaskActivityError, readOperatorTaskActivity } from './task-acti
 import { readOperatorTaskContext } from './task-context';
 import { SessionObservationError } from '../sessions/admitted-source';
 import { readOperatorTaskDiff } from './task-diff';
+import { isDocSessionReadRequest } from '../../core/operator/doc-session-changes';
+import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from './doc-session-changes';
 import { OperatorTaskHistoryError, readOperatorTaskHistory } from './task-history';
 
 // Stay inert until the supervisor has assigned this process to its ownership boundary.
@@ -59,10 +61,14 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
       } else if (message.kind === 'history' && isTaskHistoryRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
+      } else if (message.kind === 'doc_session_diff' && isDocSessionReadRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionDiff(env ?? process.env,message.request.session_id)});
+      } else if (message.kind === 'doc_session_loss' && isDocSessionReadRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionLoss(env ?? process.env,message.request.session_id)});
       } else throw new Error('invalid reader');
     } catch (error) {
       finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof SessionObservationError
-        || error instanceof OperatorTaskHistoryError ? error.code : 'unavailable'});
+        || error instanceof OperatorTaskHistoryError || error instanceof DocSessionReadError ? error.code : 'unavailable'});
     }
   });
 }
