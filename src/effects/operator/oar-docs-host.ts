@@ -25,7 +25,7 @@ import { DOCS_HOST_MODEL_API, docsHostDeveloperDirectory, docsHostEnvironment, p
 import { startModelApiProxy, type ModelApiProxy } from '../review/docs-host-proxy';
 import { prepareCodexHome } from '../review/review-isolation';
 import {
-  DOC_SESSION_AGENT_LIMITS, DOC_SESSION_AGENT_LOCK, DOC_SESSION_CREDENTIAL_WINDOW_MS, docSessionControlDirectory, docSessionRequestsDirectory, errorCode,
+  DOC_SESSION_AGENT_LIMITS, DOC_SESSION_AGENT_LOCK, DOC_SESSION_CREDENTIAL_WINDOW_MS, docSessionRequestsDirectory, errorCode,
   nextAgentRecord, readDocSessionAgent, removeDocSessionCredential, writeDocSessionAgent, type DocSessionAgentRecord, type DocSessionControlResult,
 } from './doc-session-agent';
 import { appendDocSessionEvents, DocSessionEventsError } from './doc-session-events';
@@ -164,11 +164,44 @@ async function withDeadline<T>(promise: Promise<T>, deadline: number): Promise<T
   } finally { clearTimeout(timer); }
 }
 
+/** How long an accepted interrupt may take to end its turn before the host disposes the runtime. */
+export const DOC_SESSION_ABORT_GRACE_MS = 30_000;
+
+/**
+ * The host's interrupts of one session. A stop or a time bound counts only
+ * when OAR accepts the interrupt; a rejected one (OAR returns `rejected`, for
+ * example `runtime_refused` when the interrupt RPC fails) leaves the turn
+ * open and is retried by the next request or bound. An accepted interrupt
+ * whose turn does not end within the grace period is overdue.
+ */
+export class DocsTurnControl {
+  private acceptedAt: number | null = null;
+  constructor(private readonly session: Pick<Session, 'abort'>, private readonly adapter: DocSessionAdapter, private readonly graceMs = DOC_SESSION_ABORT_GRACE_MS) {}
+
+  /** A new turn has no interrupt yet. */
+  turnStarted(): void { this.acceptedAt = null; }
+
+  /** True when the turn is ending: this interrupt or an earlier one was accepted. */
+  async abort(cause: 'cancelled' | 'timeout', now = Date.now()): Promise<boolean> {
+    if (!this.adapter.turnOpen) return false;
+    if (this.acceptedAt !== null) return true;
+    this.adapter.aborting(cause);
+    const outcome = await this.session.abort();
+    if (outcome.kind === 'accepted') { this.acceptedAt = now; return true; }
+    this.adapter.aborting('cancelled');
+    return false;
+  }
+
+  overdue(now = Date.now()): boolean {
+    return this.adapter.turnOpen && this.acceptedAt !== null && now - this.acceptedAt > this.graceMs;
+  }
+}
+
 /** Runs one session until it is stopped, times out or fails. The caller holds `agent.lock`. */
 async function runSession(sessionDirectory: string, initial: DocSessionAgentRecord, env: NodeJS.ProcessEnv): Promise<void> {
   const started = Date.now();
   const record = readSessionArtifact<SessionRecord>(join(sessionDirectory, 'session.json'));
-  const control = docSessionControlDirectory(sessionDirectory), scratch = join(control, 'scratch'), requests = docSessionRequestsDirectory(sessionDirectory);
+  const requests = docSessionRequestsDirectory(sessionDirectory);
   const sink = new EventSink(env, record.session_id, initial.epoch);
   const adapter = new DocSessionAdapter(record.worktree);
   let agent = initial;
@@ -177,6 +210,8 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
   let final: { state: 'stopped' | 'failed'; failure: DocSessionFailureCategory | null; reason: string | null } = { state: 'stopped', failure: null, reason: null };
   try {
     if (record.session_id !== initial.session_id || !isDocsHostRuntimeId(record.runtime)) throw new HostFailure('boundary_denied', 'docs_host_runtime_unverified');
+    if (initial.control === null) throw new HostFailure('boundary_denied', 'docs_host_control_unplanned');
+    const control = initial.control, scratch = join(control, 'scratch');
     assertWorktree(record);
     // The codex app-server inherits this directory; the boundary denies reads of the session directory.
     process.chdir(record.worktree);
@@ -188,15 +223,16 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     const deadline = started + DOC_SESSION_AGENT_LIMITS.start_ms;
     opened = await withDeadline(env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE === '1' ? openScripted(record) : openCodex(record, control, env), deadline);
     const session = opened.session;
+    const turns = new DocsTurnControl(session, adapter);
 
-    let turnStartedAt = 0, idleSince = 0, abortRequested = false, exited = false, ended = false;
+    let turnStartedAt = 0, idleSince = 0, exited = false, ended = false;
     session.events(event => {
       const bodies = adapter.map(event);
       sink.push(bodies);
       // A turn boundary reaches the log before the state that follows from it.
       if (bodies.some(body => body.type === 'turn')) sink.flush();
       if (event.agentPath.length !== 0) return;
-      if (event.kind === 'turn_started') { turnStartedAt = Date.now(); abortRequested = false; update({ state: 'running' }); }
+      if (event.kind === 'turn_started') { turnStartedAt = Date.now(); turns.turnStarted(); update({ state: 'running' }); }
       if (event.kind === 'turn_ended') { idleSince = Date.now(); update({ state: 'idle', actual_model: session.model().value }); }
       if (event.kind === 'exited' && !ended) exited = true;
     }, { cursor: { sessionId: session.id, afterSeq: -1 }, coalesceText: { maxHoldMs: 500 } });
@@ -207,16 +243,10 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     // OAR's control_rejected event gives the failure record of a rejected prompt.
     if (prompted.kind === 'rejected') throw new HostFailure('runtime_error', `docs_host_prompt_${prompted.code}`, true);
 
-    const abort = async (cause: 'cancelled' | 'timeout') => {
-      if (!adapter.turnOpen || abortRequested) return;
-      abortRequested = true;
-      adapter.aborting(cause);
-      await session.abort();
-    };
     const answered = new Set<string>();
     const answer = (name: string, result: DocSessionControlResult) => { answered.add(name); writeSessionArtifact(join(requests, `${name}.ack.json`), { result }); };
     const turnMs = turnLimit(env);
-    let stopping: 'cancel' | 'idle' | 'lifetime' | 'signal' | null = null;
+    let stopping: 'cancel' | 'idle' | 'lifetime' | 'signal' | 'turn_timeout' | null = null;
     const signal = () => { stopping ??= 'signal'; };
     process.once('SIGTERM', signal); process.once('SIGINT', signal); process.once('SIGHUP', signal);
     try {
@@ -225,34 +255,46 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
         for (const file of readdirSync(requests).filter(name => /^(stop|cancel)-[0-9a-f-]{36}\.json$/u.test(name)).sort()) {
           const name = file.slice(0, -'.json'.length);
           if (answered.has(name)) continue;
-          if (name.startsWith('cancel-')) { await abort('cancelled'); stopping = 'cancel'; answer(name, 'accepted'); break; }
+          // A cancel ends the agent whether or not the runtime accepts the interrupt: disposal ends the turn.
+          if (name.startsWith('cancel-')) { await turns.abort('cancelled'); stopping = 'cancel'; answer(name, 'accepted'); break; }
           if (!adapter.turnOpen) { answer(name, 'no_active_turn'); continue; }
-          await abort('cancelled');
-          answer(name, 'accepted');
+          answer(name, await turns.abort('cancelled') ? 'accepted' : 'refused');
         }
         const now = Date.now();
-        if (adapter.turnOpen && now - turnStartedAt > turnMs) await abort('timeout');
+        // D5: a turn past its bound ends. A rejected interrupt, or one that does not end the turn, ends the runtime instead.
+        if (adapter.turnOpen && now - turnStartedAt > turnMs && !(await turns.abort('timeout'))) stopping = 'turn_timeout';
+        if (turns.overdue(now)) stopping = 'turn_timeout';
         if (!adapter.turnOpen && idleSince > 0 && now - idleSince > DOC_SESSION_AGENT_LIMITS.idle_ms) stopping = 'idle';
-        if (now - started > DOC_SESSION_AGENT_LIMITS.lifetime_ms) { await abort('timeout'); stopping = 'lifetime'; }
+        if (now - started > DOC_SESSION_AGENT_LIMITS.lifetime_ms) { await turns.abort('timeout'); stopping = 'lifetime'; }
         sink.flush();
       }
       if (exited) final = { state: 'failed', failure: 'runtime_error', reason: 'docs_host_runtime_exited' };
-      // An abort in flight ends its turn before disposal, so the turn's records are complete.
-      for (const until = Date.now() + 5_000; adapter.turnOpen && !exited && Date.now() < until;) await new Promise(resolve => setTimeout(resolve, 25));
+      // An accepted interrupt ends its turn before disposal, so the turn's records are complete.
+      if (stopping !== 'turn_timeout') {
+        for (const until = Date.now() + 5_000; adapter.turnOpen && !exited && Date.now() < until;) await new Promise(resolve => setTimeout(resolve, 25));
+      }
       ended = true;
+      if (adapter.turnOpen) {
+        // The runtime goes with the turn still open: its records end here.
+        const cause = stopping === 'turn_timeout' || stopping === 'lifetime' ? 'timeout' : 'cancelled';
+        sink.push([...adapter.flush(), { type: 'failure', category: cause }]);
+        if (stopping === 'turn_timeout') final = { state: 'failed', failure: 'timeout', reason: 'docs_host_turn_not_interrupted' };
+      }
     } finally { process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); process.removeListener('SIGHUP', signal); }
   } catch (error) {
     const failure = error instanceof HostFailure ? error : new HostFailure('runtime_error', errorCode(error));
     final = { state: 'failed', failure: failure.category, reason: failure.code };
+    sink.push(adapter.flush());
     if (!failure.recorded) sink.push([{ type: 'failure', category: failure.category }]);
   } finally {
     adapter.disposed();
     try { await opened?.session.dispose(); } catch { /* the runtime is gone either way; the state below records the outcome */ }
     try { await opened?.close(); } catch { /* the proxy closes with the process */ }
+    sink.push(adapter.flush());
     if (adapter.turnOpen) sink.push([{ type: 'turn', boundary: 'ended' }]);
     // The credential copy goes and the state is recorded even when the event log refuses the last batch.
     try { sink.flush(); } catch (error) { if (final.state !== 'failed') final = { state: 'failed', failure: 'runtime_error', reason: errorCode(error) }; }
-    update({ ...final, credential: removeDocSessionCredential(sessionDirectory) });
+    update({ ...final, credential: removeDocSessionCredential(agent) });
   }
 }
 

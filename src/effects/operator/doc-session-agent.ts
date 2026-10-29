@@ -2,13 +2,16 @@
 // per session runs the OAR runtime inside the docs host boundary
 // (oar-docs-host.ts). The server starts it after the session record exists,
 // passes stop and cancel requests as files, and records the failure of a host
-// that died. `agent.json` holds the state; the host, while it holds
-// `agent.lock`, is its only writer, and the server writes it only after it
-// took over the lock of a dead host.
+// that died. `agent.json` holds the state; the server creates it before the
+// host starts, the host, while it holds `agent.lock`, is its only writer, and
+// the server writes it again only after it took over the lock of a dead host.
+// The control directory lives under the OS temp directory, outside the
+// repo-harness home, whose reads the docs host boundary denies (D3).
 
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { accessSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,10 +44,15 @@ export interface DocSessionAgentRecord {
   /** The model the runtime reported (D7); never in events. */
   readonly actual_model: string | null;
   readonly credential: DocSessionCredentialCleanup | null;
+  /** `<os temp>/repo-harness-docs-host/<sid>`: profile, launcher, git link and the writable scratch. Null when it could not be planned. */
+  readonly control: string | null;
+  /** The error code of a failure record the server could not append to the event log; the log is kept as it is. */
+  readonly events_error: string | null;
 }
 
 export type DocSessionControl = 'stop' | 'cancel';
-export type DocSessionControlResult = 'accepted' | 'no_active_turn' | 'session_closed';
+/** `refused`: the runtime rejected the interrupt, so the turn may still run. */
+export type DocSessionControlResult = 'accepted' | 'refused' | 'no_active_turn' | 'session_closed';
 
 const SESSION_ID = /^[0-9a-f]{32}$/u;
 const AGENT_FILE = 'agent.json';
@@ -62,14 +70,25 @@ export function docSessionDirectory(env: NodeJS.ProcessEnv, sessionId: string): 
   return realpathSync(directory);
 }
 
-/** The docs host control directory: profile, launcher, git link and the writable scratch. Only it is readable inside the boundary. */
-export const docSessionControlDirectory = (sessionDirectory: string): string => join(sessionDirectory, 'host');
 export const docSessionRequestsDirectory = (sessionDirectory: string): string => join(sessionDirectory, 'requests');
 
-/** Removes the session's model credential copy (the review copy lifecycle). A host that failed before its scratch existed copied nothing. */
-export function removeDocSessionCredential(sessionDirectory: string): DocSessionCredentialCleanup {
-  const scratch = join(docSessionControlDirectory(sessionDirectory), 'scratch');
-  return existsSync(scratch) ? removeCopiedAuth(scratch).status : 'absent';
+/**
+ * The per-user root of docs host control directories: `<os temp>/repo-harness-docs-host`, mode 0700. The
+ * temp directory comes from the given environment (TMPDIR, else os.tmpdir()). A root that another user owns,
+ * a link or a wider mode is refused.
+ */
+export function docsHostControlRoot(env: NodeJS.ProcessEnv): string {
+  const root = join(realpathSync(env.TMPDIR || tmpdir()), 'repo-harness-docs-host');
+  try { mkdirSync(root, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  const stat = lstatSync(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('docs_host_control_root_unsafe');
+  return root;
+}
+
+/** Removes the session's model credential copy (the review copy lifecycle). A control directory or scratch that does not exist holds no copy. */
+export function removeDocSessionCredential(record: DocSessionAgentRecord): DocSessionCredentialCleanup {
+  const scratch = record.control === null ? null : join(record.control, 'scratch');
+  return scratch !== null && existsSync(scratch) ? removeCopiedAuth(scratch).status : 'absent';
 }
 
 export function readDocSessionAgent(sessionDirectory: string): DocSessionAgentRecord | null {
@@ -117,11 +136,14 @@ function hostEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
  */
 export function startDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string, host: () => DocsHostExecutable): DocSessionAgentState {
   const directory = docSessionDirectory(env, sessionId);
+  let control: string | null = null, planning: unknown = null;
+  try { control = join(docsHostControlRoot(env), sessionId); } catch (error) { planning = error; }
   writeSessionArtifact(join(directory, AGENT_FILE), {
     protocol: 1, kind: 'docs_session_agent', session_id: sessionId, epoch: 1, state: 'starting', failure: null, reason: null,
-    updated_at: new Date().toISOString(), actual_model: null, credential: null,
+    updated_at: new Date().toISOString(), actual_model: null, credential: null, control, events_error: null,
   } satisfies DocSessionAgentRecord);
   try {
+    if (planning !== null) throw planning;
     mkdirSync(docSessionRequestsDirectory(directory), { mode: 0o700 });
     const { node, entry } = host();
     const log = openSync(join(directory, 'host.log'), 'a', 0o600);
@@ -146,9 +168,10 @@ export const errorCode = (error: unknown): string => (/^([a-z][a-z0-9]*(?:_[a-z0
 
 /**
  * Takes over the lock of a host that is proven dead (or never ran) and ends a
- * non-terminal session: the failure record, the end of an open turn, the
- * failed state and the removal of the credential copy. A live or unverified
- * owner keeps the session.
+ * non-terminal session. The credential copy goes and the failed state is
+ * published first; the failure record and the end of an open turn follow. A
+ * log that refuses them stays as it is, and `events_error` records why. A live
+ * or unverified owner keeps the session.
  */
 export function failDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string, category: DocSessionFailureCategory, reason: string): void {
   let directory: string;
@@ -161,15 +184,19 @@ export function failDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string, c
   try {
     const record = readDocSessionAgent(directory);
     if (record === null || isTerminalAgentState(record.state)) return;
-    const tail = docSessionEventsTail(env, sessionId);
-    let seq = tail.last === null || tail.last.epoch !== record.epoch ? 0 : tail.last.seq + 1;
-    const at = new Date().toISOString();
-    appendDocSessionEvents(env, sessionId, [
-      { type: 'failure', category, epoch: record.epoch, seq: seq++, at },
-      ...(tail.activity === 'running' ? [{ type: 'turn' as const, boundary: 'ended' as const, epoch: record.epoch, seq: seq++, at }] : []),
-    ]);
-    const credential = removeDocSessionCredential(directory);
-    writeDocSessionAgent(directory, nextAgentRecord(record, { state: 'failed', failure: category, reason, credential }));
+    const failed = nextAgentRecord(record, { state: 'failed', failure: category, reason, credential: removeDocSessionCredential(record) });
+    writeDocSessionAgent(directory, failed);
+    try {
+      const tail = docSessionEventsTail(env, sessionId);
+      let seq = tail.last === null || tail.last.epoch !== record.epoch ? 0 : tail.last.seq + 1;
+      const at = new Date().toISOString();
+      appendDocSessionEvents(env, sessionId, [
+        { type: 'failure', category, epoch: record.epoch, seq: seq++, at },
+        ...(tail.activity === 'running' ? [{ type: 'turn' as const, boundary: 'ended' as const, epoch: record.epoch, seq: seq++, at }] : []),
+      ]);
+    } catch (error) {
+      writeDocSessionAgent(directory, nextAgentRecord(failed, { events_error: errorCode(error) }));
+    }
   } finally { lock.release(); }
 }
 

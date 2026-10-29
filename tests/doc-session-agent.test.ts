@@ -1,6 +1,6 @@
-import { afterEach, expect } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,7 +8,7 @@ import type { DocCitationV1 } from '../src/core/operator/doc-citation';
 import type { DocSessionEventV1 } from '../src/core/operator/doc-session-events';
 import { readExclusiveDirectoryLockOwner } from '../src/effects/locking/exclusive-directory-lock';
 import {
-  DOC_SESSION_AGENT_LOCK, docSessionControlDirectory, readDocSessionAgent, requestDocSessionControl, startDocSessionAgent,
+  DOC_SESSION_AGENT_LOCK, readDocSessionAgent, reconcileDocSessionAgent, requestDocSessionControl, startDocSessionAgent,
   type DocSessionAgentRecord, type DocSessionAgentState,
 } from '../src/effects/operator/doc-session-agent';
 import { readDocSessionEvents } from '../src/effects/operator/doc-session-events';
@@ -65,6 +65,8 @@ async function harness(options: { readonly env?: NodeJS.ProcessEnv; readonly lau
   const home = tmpWorkspace('doc-session-agent-home');
   const worktrees = realpathSync(tmpWorkspace('doc-session-agent-worktrees'));
   const staticRoot = tmpWorkspace('doc-session-agent-ui');
+  // The control root lands under this TMPDIR: `<TMPDIR>/repo-harness-docs-host/<sid>`.
+  const temp = tmpWorkspace('doc-session-agent-tmp');
   writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
   mkdirSync(join(home, '.repo-harness'), { recursive: true });
   writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: ['codex'], uses: { docs: ['codex'], review: [] }, default_docs: 'codex' } }));
@@ -76,7 +78,7 @@ async function harness(options: { readonly env?: NodeJS.ProcessEnv; readonly lau
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH, HOME: home, REPO_HARNESS_HOME: state, REPO_HARNESS_WORKTREE_ROOT: worktrees, REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', ...options.env,
+    PATH: process.env.PATH, HOME: home, REPO_HARNESS_HOME: state, REPO_HARNESS_WORKTREE_ROOT: worktrees, TMPDIR: temp, REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', ...options.env,
   };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
@@ -106,7 +108,7 @@ async function harness(options: { readonly env?: NodeJS.ProcessEnv; readonly lau
   cleanups.push(async () => {
     await server.close();
     reader.close();
-    for (const dir of [repo, state, home, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [repo, state, home, worktrees, staticRoot, temp]) rmSync(dir, { recursive: true, force: true });
   });
   return h;
 }
@@ -136,7 +138,8 @@ async function until(h: Harness, sid: string, done: (agent: DocSessionAgentRecor
 
 const events = (h: Harness, sid: string): readonly DocSessionEventV1[] => readDocSessionEvents(h.env, sid, null).events;
 const shape = (list: readonly DocSessionEventV1[]) => list.map(({ protocol: _p, epoch: _e, seq: _s, at: _a, ...rest }) => (rest.type === 'message' ? { type: 'message', role: rest.role } : rest));
-const authCopy = (h: Harness, sid: string) => join(docSessionControlDirectory(h.sessionDir(sid)), 'scratch', '.codex-home', 'auth.json');
+/** The control directory comes from agent.json; it is outside the repo-harness home. */
+const authCopy = (h: Harness, sid: string) => join(readDocSessionAgent(h.sessionDir(sid))!.control!, 'scratch', '.codex-home', 'auth.json');
 
 darwinTest('a launched agent runs its first turn, records it, waits idle, and a cancel stops it and removes the credential copy', async () => {
   const h = await harness();
@@ -145,7 +148,7 @@ darwinTest('a launched agent runs its first turn, records it, waits idle, and a 
   const sid = created.body.session_id as string;
   reapHost(h, sid);
   const idle = await until(h, sid, agent => agent.state === 'idle', 'idle');
-  expect(idle).toMatchObject({ epoch: 1, failure: null, actual_model: 'fixture-oar', credential: null });
+  expect(idle).toMatchObject({ epoch: 1, failure: null, actual_model: 'fixture-oar', credential: null, control: join(realpathSync(h.env.TMPDIR!), 'repo-harness-docs-host', sid), events_error: null });
   expect(existsSync(authCopy(h, sid))).toBe(true);
   const recorded = events(h, sid);
   expect(shape(recorded)).toEqual([
@@ -225,7 +228,7 @@ darwinTest('a server start records the failure of a host that died while no serv
   // The state a host leaves when it dies between two records: running, no lock owner.
   writeFileSync(join(h.sessionDir(sid), 'agent.json'), JSON.stringify({
     protocol: 1, kind: 'docs_session_agent', session_id: sid, epoch: 1, state: 'running', failure: null, reason: null,
-    updated_at: new Date().toISOString(), actual_model: null, credential: null,
+    updated_at: new Date().toISOString(), actual_model: null, credential: null, control: null, events_error: null,
   }), { mode: 0o600 });
   const next = await startOperatorServer({ port: 0, env: h.env, static_root: tmpWorkspace('doc-session-agent-ui-2'), docs_agent_launcher: () => 'starting' });
   cleanups.push(() => next.close());
@@ -253,4 +256,70 @@ darwinTest('a docs host whose admission or boundary proof fails records boundary
   expect(shape(events(h, sid))).toEqual([{ type: 'failure', category: 'boundary_denied' }]);
   expect(existsSync(authCopy(h, sid))).toBe(false);
   expect(readFileSync(join(fake, 'calls.log'), 'utf8')).not.toContain('--listen');
+}, 60_000);
+
+/**
+ * A dead host's session: agent.json running, a fake credential copy in its control directory, and an
+ * event log that ends in a torn line (the host died during an append). The lock owner is a real process.
+ */
+function deadHostSession(): { env: NodeJS.ProcessEnv; sid: string; directory: string; copy: string; log: string; torn: string; cleanup: () => void } {
+  const state = tmpWorkspace('doc-session-agent-crash-state'), temp = tmpWorkspace('doc-session-agent-crash-tmp');
+  const sid = 'd'.repeat(32), directory = join(state, 'operator', 'sessions', sid), control = join(temp, 'repo-harness-docs-host', sid);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(join(directory, 'session.json'), '{}');
+  mkdirSync(join(control, 'scratch', '.codex-home'), { recursive: true, mode: 0o700 });
+  const copy = join(control, 'scratch', '.codex-home', 'auth.json');
+  writeFileSync(copy, fakeAuth(), { mode: 0o600 });
+  writeFileSync(join(directory, 'agent.json'), JSON.stringify({
+    protocol: 1, kind: 'docs_session_agent', session_id: sid, epoch: 1, state: 'running', failure: null, reason: null,
+    updated_at: new Date().toISOString(), actual_model: null, credential: null, control, events_error: null,
+  }), { mode: 0o600 });
+  const log = join(directory, 'events.jsonl');
+  const torn = `${JSON.stringify({ protocol: 1, epoch: 1, seq: 0, at: '2026-10-29T00:00:00.000Z', type: 'turn', boundary: 'started' })}\n{"protocol":1`;
+  writeFileSync(log, torn, { mode: 0o600 });
+  return { env: { HOME: state, REPO_HARNESS_HOME: state }, sid, directory: realpathSync(directory), copy, log, torn,
+    cleanup: () => { for (const dir of [state, temp]) rmSync(dir, { recursive: true, force: true }); } };
+}
+
+/** A real process takes `agent.lock` and either exits holding it (a dead owner) or keeps running (a live owner). */
+function lockOwner(directory: string, exit: boolean): ReturnType<typeof spawn> {
+  const lock = join(import.meta.dir, '..', 'src', 'effects', 'locking', 'exclusive-directory-lock.ts');
+  const script = `const { acquireExclusiveDirectoryLock } = await import(${JSON.stringify(lock)}); acquireExclusiveDirectoryLock(${JSON.stringify(directory)}, ${JSON.stringify(DOC_SESSION_AGENT_LOCK)});`
+    + (exit ? 'process.exit(0);' : 'console.log("held"); setInterval(() => {}, 1000);');
+  return spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+}
+
+test('a dead host with a torn event log still loses its credential copy and gets a failed state; reconcile repeats safely; a live host keeps its session', async () => {
+  const s = deadHostSession();
+  cleanups.push(s.cleanup);
+  const live = lockOwner(s.directory, false);
+  await new Promise<void>(resolve => live.stdout!.once('data', () => resolve()));
+  try {
+    reconcileDocSessionAgent(s.env, s.sid);
+    expect(readDocSessionAgent(s.directory)).toMatchObject({ state: 'running', credential: null, events_error: null });
+    expect(existsSync(s.copy)).toBe(true);
+  } finally {
+    live.kill('SIGKILL');
+    await new Promise(resolve => live.once('exit', resolve));
+  }
+  // SIGKILL leaves the lock to a dead owner. The first reconcile ends the session; the second finds it terminal and changes nothing.
+  for (let attempt = 0; attempt < 2; attempt++) reconcileDocSessionAgent(s.env, s.sid);
+  expect(readDocSessionAgent(s.directory)).toMatchObject({
+    state: 'failed', failure: 'runtime_error', reason: 'docs_host_exited', credential: 'removed', events_error: 'events_unavailable',
+  });
+  expect(existsSync(s.copy)).toBe(false);
+  // The damaged log is kept as it was; nothing truncates or rewrites it.
+  expect(readFileSync(s.log, 'utf8')).toBe(s.torn);
+}, 60_000);
+
+test('a host that exited holding agent.lock is a proven dead owner, and a missing control directory is no credential copy', async () => {
+  const s = deadHostSession();
+  cleanups.push(s.cleanup);
+  rmSync(join(s.copy, '..', '..', '..'), { recursive: true, force: true });
+  const dead = lockOwner(s.directory, true);
+  expect(await new Promise(resolve => dead.once('exit', resolve))).toBe(0);
+  expect(readExclusiveDirectoryLockOwner(s.directory, DOC_SESSION_AGENT_LOCK)?.pid).toBe(dead.pid);
+  reconcileDocSessionAgent(s.env, s.sid);
+  expect(readDocSessionAgent(s.directory)).toMatchObject({ state: 'failed', credential: 'absent', events_error: 'events_unavailable' });
+  expect(readFileSync(s.log, 'utf8')).toBe(s.torn);
 }, 60_000);

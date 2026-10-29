@@ -1,11 +1,14 @@
-import { DOC_SESSION_EVENT_MAX_PATHS, isRepositoryRelativePath, type DocSessionEventInput, type DocSessionToolCategory } from './doc-session-events';
+import { DOC_SESSION_EVENT_MAX_PATHS, DOC_SESSION_EVENT_TEXT_MAX_BYTES, isRepositoryRelativePath, type DocSessionEventInput, type DocSessionToolCategory } from './doc-session-events';
 
 /**
  * OAR session events -> doc session event records (PRD G3, G4; issue #1021).
- * Only the root agent's events are kept. A record takes message text, the tool
- * category, repository-relative paths, the execution status, turn boundaries
- * and the failure category; reasoning, tool input, tool output, commands,
- * usage and the model are never read into a record.
+ * Only the root agent's events are kept. A record takes message text, the
+ * tool category, repository-relative paths, the execution status, turn
+ * boundaries and the failure category; reasoning, tool input, tool output,
+ * commands, usage and the model are never read into a record. Message text is
+ * held until the message ends, so the writer redacts it whole: a secret that
+ * arrives in two deltas, with any pause between them, is redacted as if it
+ * came at once.
  */
 
 /** A record without its cursor; the host gives each one `epoch`, `seq` and `at`. */
@@ -19,12 +22,19 @@ export interface DocSessionOarEvent {
   readonly tool?: string;
   readonly input?: string;
   readonly text?: string;
+  readonly messageId?: string;
   readonly result?: 'ok' | 'failed';
   readonly exitCode?: number | null;
   /** A turn outcome object on `turn_ended`; other events use the name for a plain word. */
   readonly outcome?: unknown;
   readonly action?: string;
 }
+
+/**
+ * The most text one message holds. The writer keeps at most DOC_SESSION_EVENT_TEXT_MAX_BYTES of the redacted text,
+ * so text past this bound cannot be stored; it is dropped and the message is marked truncated.
+ */
+export const DOC_SESSION_MESSAGE_HOLD_CHARS = 4 * DOC_SESSION_EVENT_TEXT_MAX_BYTES;
 
 /** Why the host aborts a turn: a user stop or cancel, or a host time bound. */
 export type DocSessionAbortCause = 'cancelled' | 'timeout';
@@ -72,6 +82,7 @@ export class DocSessionAdapter {
   private open = false;
   private abortCause: DocSessionAbortCause = 'cancelled';
   private disposing = false;
+  private message: { readonly key: string; text: string; dropped: boolean } | null = null;
 
   constructor(private readonly worktree: string) {}
 
@@ -83,14 +94,36 @@ export class DocSessionAdapter {
   /** The host disposes the session, so the runtime exit that follows is not a failure. */
   disposed(): void { this.disposing = true; }
 
+  /** The held message, whole, or nothing. The host calls it before it records a failure or the end of a turn itself. */
+  flush(): DocSessionEventBody[] {
+    const held = this.message;
+    this.message = null;
+    if (held === null || held.text === '') return [];
+    return [{ type: 'message', role: 'agent', text: held.text, ...(held.dropped ? { truncated: true as const } : {}) }];
+  }
+
   map(event: DocSessionOarEvent): DocSessionEventBody[] {
     if (event.agentPath.length !== 0) return [];
+    if (event.kind === 'text_delta') return this.hold(event.messageId ?? '', event.text ?? '');
+    // Any other event that marks a step ends the held message first, so records keep their order.
+    const ended = ['turn_started', 'turn_ended', 'tool_call_started', 'tool_call_ended', 'control_rejected', 'input_dropped', 'exited'].includes(event.kind) ? this.flush() : [];
+    return [...ended, ...this.step(event)];
+  }
+
+  private hold(key: string, text: string): DocSessionEventBody[] {
+    const ended = this.message !== null && this.message.key !== key ? this.flush() : [];
+    const held = this.message ??= { key, text: '', dropped: false };
+    const room = DOC_SESSION_MESSAGE_HOLD_CHARS - held.text.length;
+    held.text += text.slice(0, Math.max(0, room));
+    if (text.length > room) held.dropped = true;
+    return ended;
+  }
+
+  private step(event: DocSessionOarEvent): DocSessionEventBody[] {
     switch (event.kind) {
       case 'turn_started':
         this.open = true;
         return [{ type: 'turn', boundary: 'started' }];
-      case 'text_delta':
-        return event.text ? [{ type: 'message', role: 'agent', text: event.text }] : [];
       case 'tool_call_started': {
         const category = TOOL_CATEGORIES[event.tool ?? ''] ?? 'other';
         const paths = category === 'edit' ? changedPaths(this.worktree, event.input) : [];

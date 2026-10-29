@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import type { Event, Session } from '@botiverse/oar';
 
-import { DocSessionAdapter, docSessionRepositoryPath, type DocSessionEventBody } from '../src/core/operator/doc-session-adapter';
+import { DOC_SESSION_MESSAGE_HOLD_CHARS, DocSessionAdapter, docSessionRepositoryPath, type DocSessionEventBody } from '../src/core/operator/doc-session-adapter';
 import { DOC_SESSION_EVENT_MAX_PATHS } from '../src/core/operator/doc-session-events';
+import { containsSecret } from '../src/core/security/secret-patterns';
 import { appendDocSessionEvents } from '../src/effects/operator/doc-session-events';
-import { scriptedDocsTurn } from '../src/effects/operator/oar-docs-host';
+import { DOC_SESSION_ABORT_GRACE_MS, DocsTurnControl, scriptedDocsTurn } from '../src/effects/operator/oar-docs-host';
 import { tmpWorkspace } from './helpers/repo-fixture';
 
 const SESSION_ID = 'c'.repeat(32);
@@ -15,10 +16,10 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 /** A real scripted OAR session (the docs host's zero-model seam) and every event it emits. */
-async function scriptedSession(worktree: string): Promise<{ session: Session; events: Event[] }> {
-  const session = await scriptedRuntime({ id: 'fixture', model: 'fixture-oar', turn: scriptedDocsTurn }).session({ kind: 'available', via: 'bundled' }, { cwd: worktree });
+async function scriptedSession(worktree: string, turn = scriptedDocsTurn, maxHoldMs = 20): Promise<{ session: Session; events: Event[] }> {
+  const session = await scriptedRuntime({ id: 'fixture', model: 'fixture-oar', turn }).session({ kind: 'available', via: 'bundled' }, { cwd: worktree });
   const events: Event[] = [];
-  session.events(event => events.push(event), { cursor: { sessionId: session.id, afterSeq: -1 }, coalesceText: { maxHoldMs: 20 } });
+  session.events(event => events.push(event), { cursor: { sessionId: session.id, afterSeq: -1 }, coalesceText: { maxHoldMs } });
   return { session, events };
 }
 
@@ -107,3 +108,90 @@ test('paths stay inside the worktree, at most 32 per record; subagent events, a 
   adapter.disposed();
   expect(adapter.map({ ...root, kind: 'exited' })).toEqual([]);
 });
+
+const STORE_AT = '2026-10-29T00:00:00.000Z';
+const store = (env: NodeJS.ProcessEnv, bodies: readonly DocSessionEventBody[]) =>
+  appendDocSessionEvents(env, SESSION_ID, bodies.map((body, seq) => ({ ...body, epoch: 1, seq, at: STORE_AT } as Parameters<typeof appendDocSessionEvents>[2][number])));
+
+test('a secret split across two text deltas, with a pause longer than the coalescer hold, is redacted whole', async () => {
+  const worktree = tmpWorkspace('doc-session-adapter-wt'); roots.push(worktree);
+  // Neither fragment matches the secret rules alone; joined they are one GitHub token.
+  const head = 'ghp_0123456789', rest = 'abcdefghijklmnopqrstuvwxyzAB';
+  expect([containsSecret(head), containsSecret(rest), containsSecret(head + rest)]).toEqual([false, false, true]);
+  const { session, events } = await scriptedSession(worktree, async turn => {
+    turn.say(`The token is ${head}`);
+    await Bun.sleep(650);
+    turn.say(`${rest} and nothing else.`);
+  }, 500);
+  expect((await session.prompt('split')).kind).toBe('accepted');
+  await untilTurnEnds(events);
+  const adapter = new DocSessionAdapter(worktree);
+  adapter.disposed();
+  await session.dispose();
+  // The real coalescer with the host's hold (500 ms) and a 650 ms pause delivered two separate deltas of one message.
+  expect(events.filter(event => event.kind === 'text_delta')).toHaveLength(2);
+  const bodies = events.flatMap(event => adapter.map(event));
+  expect(bodies.filter(body => body.type === 'message')).toHaveLength(1);
+  const s = sessionStore();
+  store(s.env, bodies);
+  const log = readFileSync(s.log, 'utf8');
+  for (const fragment of [head, rest]) expect(log).not.toContain(fragment);
+  expect(log).toContain('The token is ghp_[REDACTED] and nothing else.');
+}, 30_000);
+
+test('a message past the hold bound keeps only the bound and is stored as truncated', () => {
+  const adapter = new DocSessionAdapter('/private/tmp/wt');
+  const root = { agentPath: [] as string[] };
+  adapter.map({ ...root, kind: 'turn_started' });
+  expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'x'.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS - 2) })).toEqual([]);
+  expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'yyyyy' })).toEqual([]);
+  const [message, end] = adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'completed' } });
+  expect(message).toEqual({ type: 'message', role: 'agent', text: `${'x'.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS - 2)}yy`, truncated: true });
+  expect(end).toEqual({ type: 'turn', boundary: 'ended' });
+  // A message from another id ends the held one first.
+  adapter.map({ ...root, kind: 'text_delta', messageId: 'a', text: 'first' });
+  expect(adapter.map({ ...root, kind: 'text_delta', messageId: 'b', text: 'second' })).toEqual([{ type: 'message', role: 'agent', text: 'first' }]);
+  expect(adapter.flush()).toEqual([{ type: 'message', role: 'agent', text: 'second' }]);
+  // The writer keeps a producer's truncation even when the stored text is short.
+  const s = sessionStore();
+  store(s.env, [{ type: 'message', role: 'agent', text: 'short', truncated: true }]);
+  expect(JSON.parse(readFileSync(s.log, 'utf8'))).toMatchObject({ text: 'short', truncated: true });
+});
+
+test('a rejected interrupt is not a stop: the cause resets, the next bound retries it, and an accepted one that does not end the turn becomes overdue', async () => {
+  const worktree = tmpWorkspace('doc-session-adapter-wt'); roots.push(worktree);
+  // The producer's own outcome objects: OAR rejects an interrupt with no turn running and accepts one while a turn runs.
+  // The control reads only `kind`, which is also what a `runtime_refused` rejection carries.
+  const { session, events } = await scriptedSession(worktree);
+  const rejected = await session.abort();
+  expect(rejected).toMatchObject({ kind: 'rejected', code: 'no_active_turn' });
+  expect((await session.prompt('fixture:hold')).kind).toBe('accepted');
+  for (const until = Date.now() + 5_000; !events.some(event => event.kind === 'turn_started');) { if (Date.now() > until) throw new Error('no turn'); await Bun.sleep(10); }
+  const accepted = await session.abort();
+  expect(accepted.kind).toBe('accepted');
+  await untilTurnEnds(events);
+  await session.dispose();
+
+  const adapter = new DocSessionAdapter(worktree);
+  const root = { agentPath: [] as string[] };
+  adapter.map({ ...root, kind: 'turn_started' });
+  const calls: string[] = [];
+  const refusing = new DocsTurnControl({ abort: async () => { calls.push('abort'); return rejected; } }, adapter);
+  expect(await refusing.abort('timeout')).toBe(false);
+  expect(await refusing.abort('timeout')).toBe(false);
+  expect(calls).toHaveLength(2);
+  expect(refusing.overdue(Date.now() + DOC_SESSION_ABORT_GRACE_MS + 1)).toBe(false);
+  // The rejected timeout did not leave its cause behind: a later aborted turn is a cancel.
+  expect(adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'aborted' } })).toEqual([{ type: 'failure', category: 'cancelled' }, { type: 'turn', boundary: 'ended' }]);
+
+  adapter.map({ ...root, kind: 'turn_started' });
+  const accepting = new DocsTurnControl({ abort: async () => { calls.push('abort'); return accepted; } }, adapter);
+  const now = Date.now();
+  expect(await accepting.abort('timeout', now)).toBe(true);
+  expect(await accepting.abort('cancelled', now)).toBe(true);
+  expect(calls).toHaveLength(3);
+  expect(accepting.overdue(now + DOC_SESSION_ABORT_GRACE_MS)).toBe(false);
+  expect(accepting.overdue(now + DOC_SESSION_ABORT_GRACE_MS + 1)).toBe(true);
+  expect(adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'aborted' } })[0]).toEqual({ type: 'failure', category: 'timeout' });
+  expect(accepting.overdue(now + DOC_SESSION_ABORT_GRACE_MS + 1)).toBe(false);
+}, 30_000);

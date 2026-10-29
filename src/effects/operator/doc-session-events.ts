@@ -103,7 +103,9 @@ function storedEvent(input: DocSessionEventInput): DocSessionEventV1 {
   let record: Record<string, unknown>;
   if (input.type === 'message') {
     if (typeof value.text !== 'string') return fail('invalid_event');
-    record = { ...value, protocol: 1, ...storedDocSessionText(value.text) };
+    if (value.truncated !== undefined && value.truncated !== true) return fail('invalid_event');
+    const stored = storedDocSessionText(value.text);
+    record = { ...value, protocol: 1, text: stored.text, truncated: stored.truncated || value.truncated === true };
   } else if (input.type === 'tool') {
     if (!Array.isArray(value.paths) || !value.paths.every(path => typeof path === 'string')) return fail('invalid_event');
     record = { ...value, protocol: 1, paths: (value.paths as string[]).map(redactDocSessionPath) };

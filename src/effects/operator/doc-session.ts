@@ -307,6 +307,7 @@ export function docSessionStopRoute(env: NodeJS.ProcessEnv): OperatorWriteRoute 
           }
           if (result === 'accepted') return { status: 202, body: { protocol: 1, kind: 'operator_docs_session_stop', session_id: sessionId, result: 'aborting' } };
           if (result === 'unanswered') throw refuse(503, 'agent_unanswered', 'The session agent did not answer the stop request.', 'Read the session events, then retry with a new request_id.');
+          if (result === 'refused') throw refuse(503, 'stop_refused', 'The runtime refused the interrupt; the turn still runs.', 'Retry the stop with a new request_id. The turn time bound ends the turn at the latest.');
           throw result === 'no_active_turn'
             ? refuse(409, 'no_active_turn', 'No turn is running in this session.', 'Send a message to start a turn.')
             : refuse(409, 'session_closed', 'The session agent has ended.', 'Start a new doc session.');
