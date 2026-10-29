@@ -283,7 +283,7 @@ describe('settings page', () => {
   test.each(['en', 'zh'] as const)('the rail and the System page name Settings as the one page that writes in %s', async locale => {
     await mount(props(server(settings(), []), locale), '#system');
     expect(document.querySelector('[data-operator-status]')?.textContent).toContain('read-only except Settings');
-    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Settings page' : '除了设置页，它是只读的。');
+    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Settings page' : '除了设置页和 Worktree 页，它是只读的。');
   });
 
   test.each([...FIXTURE_NAMES])('the %s fixture renders the page and reads only the settings route', async name => {

@@ -80,7 +80,10 @@ import {
 import { useNow } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
 import { parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
-import { fetchWorktrees, useWorktrees, worktreesOf, type WorktreesReader, type WorktreesView } from './worktrees';
+import {
+  fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
+  type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
+} from './worktrees';
 import { WorktreesPage } from './WorktreesPage';
 import { taskKey } from './worklist';
 
@@ -113,6 +116,8 @@ export interface OperatorAppProps {
   /** The worktree collector's cached result behind the Worktree page, the Board cleanup signal and Home's reclaimable space. */
   readonly readWorktrees?: WorktreesReader;
   readonly initialWorktrees?: WorktreesSnapshot;
+  /** Sends the Worktree page's one-click cleanup of the selected green rows. */
+  readonly writeWorktreeCleanup?: WorktreeCleanupWriter;
   readonly readCliInventory?: CliInventoryReader;
   readonly initialCliInventory?: CliInventorySnapshotV1;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */
@@ -254,6 +259,7 @@ export function OperatorApp({
   initialSetup,
   readWorktrees = fetchWorktrees,
   initialWorktrees,
+  writeWorktreeCleanup = postWorktreeCleanup,
   readCliInventory = fetchCliInventory,
   initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,
@@ -309,7 +315,8 @@ export function OperatorApp({
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
   // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
-  const worktrees = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
+  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
+  const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
     ? { ...filters, repositoryId: null } : filters;
@@ -502,7 +509,7 @@ export function OperatorApp({
           {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
-          {workspace === 'worktrees' && <WorktreesPage view={worktrees} now={now} t={t} />}
+          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}

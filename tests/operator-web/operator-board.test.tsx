@@ -8,7 +8,9 @@ import tokens from '../../docs/design/operator-console/design-system/tokens.json
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
-import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
+import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
 import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
@@ -735,14 +737,24 @@ describe('worktree page', () => {
     expect(document.querySelector('main')?.textContent).not.toContain('0 B');
   });
 
-  test('1-WT-N1 offers no selection, cleanup or agent control and shows no absolute path', async () => {
+  // 5.1 (#1024) adds the green-only cleanup, so checkboxes and the clean button are expected now; 5-WT-N1 below owns their rules.
+  test('1-WT-N1 offers no agent control, shows no absolute path and gives no age as a reason', async () => {
     installDom(WORKTREES_URL);
     await mount(<OperatorApp {...props(busy())} />);
+    await settle();
     const main = document.querySelector('main')!;
-    expect(main.querySelectorAll('input, select, textarea, form, button, [draggable="true"], [contenteditable], [data-write-action]')).toHaveLength(0);
-    for (const word of ['Clean', 'Delete', 'Remove', 'Prune', 'Let the agent']) expect(main.textContent).not.toContain(word);
+    expect(main.querySelectorAll('select, textarea, form, [draggable="true"], [contenteditable], [data-write-action]')).toHaveLength(0);
+    for (const input of main.querySelectorAll('input')) expect(input.matches('input[type="checkbox"][data-select]')).toBe(true);
+    for (const button of main.querySelectorAll('button')) expect(button.matches('[data-clean]') || button.closest('[data-command]') !== null).toBe(true);
+    for (const word of ['Delete', 'Prune', 'Let the agent']) expect(main.textContent).not.toContain(word);
     for (const cell of main.querySelectorAll('[data-directory]')) expect(cell.textContent).not.toContain('/');
     expect(main.textContent).not.toMatch(/(?:^|[\s(])(?:\/(?:Users|home|tmp|private|var)\/|~\/)/u);
+    const reasons = Array.from(main.querySelectorAll('[data-worktree] [data-reason]'));
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const reason of reasons) {
+      expect(WORKTREE_REASONS).toContain(reason.getAttribute('data-reason') as typeof WORKTREE_REASONS[number]);
+      expect(reason.textContent).not.toMatch(/\bago\b|\bold\b|\bdays?\b|\bweeks?\b|\bhours?\b/u);
+    }
   });
 
   test('pending, unreachable and partial collections each say so', async () => {
@@ -790,6 +802,177 @@ describe('worktree page', () => {
     expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('refresh-failed');
     expect(document.querySelectorAll('[data-worktree]').length).toBeGreaterThan(0);
     expect(document.querySelector('[data-freshness]')?.textContent).toBe('Refresh failed · showing worktrees from 2m ago');
+  });
+});
+
+const CLEANUP_PATH = '/api/v1/worktrees/cleanup';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const GREEN = ['feat-kanban-status', 'repo-harness-wt-pi-host', 'operator-site-wt-footer'];
+const rowOf = (directory: string) => [...trees().repositories.flatMap(repository => repository.worktrees), ...trees().unassigned].find(tree => tree.directory === directory)!;
+const checkbox = (directory: string) => worktreeRow(directory).querySelector<HTMLInputElement>('input[data-select]')!;
+const cleanButton = () => document.querySelector<HTMLButtonElement>('button[data-clean]')!;
+const cleanupResult = () => document.querySelector<HTMLElement>('[data-cleanup-result]');
+/** Waits on the page's own async work (crypto.subtle, the write, the reload) until `ready` holds. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 50 && !ready(); turn++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(ready()).toBe(true);
+}
+/** The server's error envelope (write-run.ts) with the effect's own sentences (effects/operator/worktree-cleanup.ts). */
+const REFUSAL_BODIES = {
+  digest_changed: { status: 409, message: 'A selected worktree changed or is no longer listed. Nothing was removed.', next_action: 'Reload the worktree list, select again, then send a new request_id.' },
+  in_use: { status: 422, message: 'A selected worktree is in use. Nothing was removed.', next_action: 'Stop the process or session that uses it, reload the list, then send a new request_id.' },
+  not_approved: { status: 422, message: 'A selected worktree is not green. Nothing was removed.', next_action: 'Select only green worktrees. A non-green worktree needs a cleanup session.' },
+  inventory_unavailable: { status: 503, message: 'The worktree inventory cannot be read. Nothing was removed.', next_action: 'Check the registered repositories, then send a new request_id.' },
+  busy: { status: 503, message: 'Another write to this target is running.', next_action: 'Wait for the other write to finish, then retry with the same request_id.' },
+} as const;
+const refusalResponse = (code: keyof typeof REFUSAL_BODIES) => {
+  const { status, message, next_action } = REFUSAL_BODIES[code];
+  return Response.json({ error: { code, message, next_action } }, { status });
+};
+
+interface CleanupCall { readonly method: string; readonly url: string; readonly headers: Headers; readonly body: Record<string, unknown> }
+
+/** Answers POST /api/v1/worktrees/cleanup in order through the real `postWorktreeCleanup` and its decoders. */
+function serveCleanup(answers: (() => Response)[]): { readonly calls: CleanupCall[]; readonly restore: () => void } {
+  const original = globalThis.fetch;
+  const calls: CleanupCall[] = [];
+  globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+    if (String(url) !== CLEANUP_PATH) return new Response(null, { status: 404 });
+    calls.push({ method: options?.method ?? 'GET', url: String(url), headers: new Headers(options?.headers), body: JSON.parse(String(options?.body)) as Record<string, unknown> });
+    return answers[calls.length - 1]!();
+  }) as typeof fetch;
+  return { calls, restore: () => { globalThis.fetch = original; } };
+}
+
+describe('worktree cleanup (5.1)', () => {
+  test('5-WT-P1 the checked green rows go out as ids and the server digest, and each item reports removed or skipped', async () => {
+    installDom(WORKTREES_URL);
+    const snapshot = trees();
+    let reads = 0;
+    const footer = rowOf('operator-site-wt-footer'), status = rowOf('feat-kanban-status'), piHost = rowOf('repo-harness-wt-pi-host');
+    const server = serveCleanup([
+      () => Response.json({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
+        { id: status.id, repository_id: status.repository_id, directory: status.directory, outcome: 'removed', reason: null },
+        { id: footer.id, repository_id: footer.repository_id, directory: footer.directory, outcome: 'skipped', reason: 'process_in_use' },
+      ] }),
+      () => Response.json({ protocol: 1, kind: 'operator_worktree_cleanup', items: [
+        { id: piHost.id, repository_id: piHost.repository_id, directory: piHost.directory, outcome: 'removed', reason: null },
+        { id: footer.id, repository_id: footer.repository_id, directory: footer.directory, outcome: 'skipped', reason: 'changed' },
+      ] }),
+    ]);
+    try {
+      await mount(<OperatorApp {...props(busy(), { initialWorktrees: snapshot, readWorktrees: async () => { reads++; return snapshot; } })} />);
+      for (const directory of GREEN) expect(checkbox(directory).checked).toBe(true);
+      expect(cleanButton().textContent).toBe('Clean 3 selected');
+      await act(async () => checkbox('repo-harness-wt-pi-host').click());
+      expect(cleanButton().textContent).toBe('Clean 2 selected');
+
+      const readsBefore = reads;
+      await act(async () => cleanButton().click());
+      await until(() => cleanupResult()?.getAttribute('data-cleanup-result') === 'cleaned');
+      expect(server.calls).toHaveLength(1);
+      const [first] = server.calls;
+      expect([first!.method, first!.url, first!.headers.get('content-type')]).toEqual(['POST', CLEANUP_PATH, 'application/json']);
+      expect(Object.keys(first!.body).sort()).toEqual(['expected_digest', 'ids', 'request_id']);
+      const { request_id: firstId, ...request } = first!.body;
+      expect(firstId).toMatch(UUID);
+      // The server's own request decoder accepts the body, and the browser digest equals the server's.
+      expect(decodeWorktreeCleanupRequest(request)).toEqual({ ids: [status.id, footer.id].sort(), expected_digest: selectionDigest([status, footer].map(worktreeDigestRow)) });
+      expect(request.ids).toEqual([status.id, footer.id].sort());
+
+      const result = cleanupResult()!;
+      expect(result.querySelector('p')?.textContent).toBe('removed: 1 · skipped: 1');
+      const items = Array.from(result.querySelectorAll('[data-cleanup-item]'));
+      expect(items.map(item => [item.querySelector('code')?.textContent, item.getAttribute('data-outcome'), item.getAttribute('data-reason')]))
+        .toEqual([['feat-kanban-status', 'removed', null], ['operator-site-wt-footer', 'skipped', 'process_in_use']]);
+      expect(items[1]!.textContent).toContain('a process is using it');
+      await until(() => reads > readsBefore);
+      // The collector still lists the removed row until its next cycle; the page marks it and drops it from the selection.
+      expect(worktreeRow('feat-kanban-status').querySelector('[data-removed]')).not.toBeNull();
+      expect(checkbox('feat-kanban-status').disabled).toBe(true);
+      expect(checkbox('feat-kanban-status').checked).toBe(false);
+      expect(cleanButton().textContent).toBe('Clean 1 selected');
+
+      await act(async () => checkbox('repo-harness-wt-pi-host').click());
+      await act(async () => cleanButton().click());
+      await until(() => server.calls.length === 2 && cleanupResult()?.textContent?.includes('it changed after the page read it') === true);
+      const second = server.calls[1]!.body;
+      expect(second.request_id).toMatch(UUID);
+      expect(second.request_id).not.toBe(firstId);
+      expect(second.ids).toEqual([piHost.id, footer.id].sort());
+      expect(second.expected_digest).toBe(selectionDigest([piHost, footer].map(worktreeDigestRow)));
+    } finally { server.restore(); }
+  });
+
+  test('5-WT-N1 yellow and red rows cannot be selected, and a 422 or 503 refusal states its code and removes nothing', async () => {
+    installDom(WORKTREES_URL);
+    const server = serveCleanup([() => refusalResponse('not_approved'), () => refusalResponse('in_use'), () => refusalResponse('inventory_unavailable'), () => refusalResponse('busy'),
+      () => Response.json({ error: { code: 'a_code_from_a_newer_server', message: 'Server sentence.', next_action: 'Server next step.' } }, { status: 503 })]);
+    try {
+      await mount(<OperatorApp {...props(busy())} />);
+      for (const row of document.querySelectorAll<HTMLElement>('[data-worktree]')) {
+        const box = row.querySelector<HTMLInputElement>('input[data-select]')!;
+        const green = row.getAttribute('data-judgment') === 'green';
+        expect([box.disabled, box.checked]).toEqual([!green, green]);
+      }
+      const expected: [string, string][] = [
+        ['not_approved', 'A selected worktree is not green. Nothing was removed.'],
+        ['in_use', 'A selected worktree is in use. Nothing was removed.'],
+        ['inventory_unavailable', 'The worktree inventory cannot be read. Nothing was removed.'],
+        ['busy', 'Another worktree cleanup is running. Nothing was removed.'],
+        ['a_code_from_a_newer_server', 'Server sentence.'],
+      ];
+      for (const [index, [code, message]] of expected.entries()) {
+        await act(async () => cleanButton().click());
+        await until(() => server.calls.length === index + 1 && cleanupResult()?.getAttribute('data-cleanup-result') === code);
+        expect(cleanupResult()!.textContent).toContain(message);
+        expect(cleanupResult()!.textContent).toContain(code);
+        expect(cleanButton().disabled).toBe(false);
+      }
+      expect(cleanupResult()!.textContent).toContain('Message from the server:');
+      expect(document.querySelectorAll('[data-removed]')).toHaveLength(0);
+      expect(new Set(server.calls.map(call => (call.body.ids as string[]).join(',')))).toEqual(new Set([GREEN.map(directory => rowOf(directory).id).sort().join(',')]));
+    } finally { server.restore(); }
+  });
+
+  test('5-WT-F1 a 409 digest_changed asks for a reload and a new selection, and nothing is marked removed', async () => {
+    installDom(WORKTREES_URL);
+    const snapshot = trees();
+    let reads = 0;
+    const server = serveCleanup([() => refusalResponse('digest_changed')]);
+    try {
+      await mount(<OperatorApp {...props(busy(), { initialWorktrees: snapshot, readWorktrees: async () => { reads++; return snapshot; } })} />);
+      await act(async () => checkbox('operator-site-wt-footer').click());
+      await act(async () => cleanButton().click());
+      await until(() => cleanupResult()?.getAttribute('data-cleanup-result') === 'digest_changed');
+      expect(cleanupResult()!.textContent).toContain('A selected worktree changed or is no longer listed. Nothing was removed.');
+      expect(cleanupResult()!.textContent).toContain('Reload the list, then select again.');
+      expect(document.querySelectorAll('[data-removed]')).toHaveLength(0);
+
+      const readsBefore = reads;
+      const reselect = Array.from(cleanupResult()!.querySelectorAll('button')).find(button => button.textContent === 'Reload and select again')!;
+      await act(async () => reselect.click());
+      await until(() => reads > readsBefore);
+      expect(cleanupResult()).toBeNull();
+      for (const directory of GREEN) expect(checkbox(directory).checked).toBe(true);
+      expect(cleanButton().textContent).toBe('Clean 3 selected');
+    } finally { server.restore(); }
+  });
+
+  test('C8 a green row copies its one-row clean command; yellow rows have none and red rows show only what occupies them', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    await until(() => document.querySelectorAll('[data-clean-command]').length === GREEN.length);
+    for (const directory of GREEN) {
+      const row = rowOf(directory);
+      const command = worktreeRow(directory).querySelector('[data-clean-command] [data-command]')!;
+      expect(command.querySelector('code')?.textContent).toBe(`repo-harness worktrees clean --ids ${row.id} --expected-digest ${selectionDigest([worktreeDigestRow(row)])}`);
+      expect(command.querySelector('button')?.getAttribute('aria-label') ?? command.querySelector('button')?.textContent).toContain('Copy');
+    }
+    for (const row of document.querySelectorAll<HTMLElement>('[data-worktree]:not([data-judgment="green"])')) expect(row.querySelector('[data-clean-command], [data-command]')).toBeNull();
+    const kept = worktreeRow('repo-harness-wt-kanban-redesign');
+    expect(kept.querySelector('[data-processes]')?.textContent).toContain('processes using it: 2');
+    expect(kept.textContent).not.toContain('repo-harness worktrees clean');
   });
 });
 
