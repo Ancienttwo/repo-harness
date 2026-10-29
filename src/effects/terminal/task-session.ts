@@ -88,6 +88,8 @@ export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<TaskAge
 function sessionDigest(value: unknown): string {
   return `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
 }
+/** The request and native-session `session_binding_sha256` of a task binding. */
+export function taskBindingSha256(binding: TaskPaneBinding): string { return sessionDigest(binding); }
 function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, 'task' | 'role' | 'harness_kind' | 'runtime' | 'task_admission'>,
   authority?: TaskSessionAuthority): TaskSessionAdmission | undefined {
   if (!binding.task_admission && !authority) return undefined; // Generic runtime use has no task admission.

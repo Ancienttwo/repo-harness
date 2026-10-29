@@ -2,7 +2,7 @@ import { startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goal';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
-import { parseAcceptancePolicy, acceptanceBenchmarkRequirement } from '../src/core/review/acceptance-receipt';
+import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelFamily, modelRelation } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
 import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest } from '../src/effects/terminal/task-session';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
@@ -69,11 +69,26 @@ test('provider expected-context fence rejects each stale identity without overwr
   }
 });
 
+test('model family ignores routing providers and the relation fails closed', () => {
+  expect(['magpie/anthropic/claude-opus-5-5', 'cursor/deepseek-v41-flash-1017', 'deepseek-v41-flash-1017', 'GPT-6.1-Sol', 'o3-mini', 'fixture/unlisted']
+    .map(modelFamily)).toEqual(['anthropic', 'deepseek', 'deepseek', 'openai', 'openai', null]);
+  expect(modelRelation(['gpt-6.1-sol'], 'gpt-6-astra')).toBe('same-family');
+  expect(modelRelation(['magpie/anthropic/claude-opus-5-5'], 'claude-sonnet-5')).toBe('same-family');
+  expect(modelRelation(['gpt-6.1-sol', 'deepseek-v41'], 'anthropic/claude-opus-5-5')).toBe('different-family');
+  // One known shared family is enough to deny; one unknown family cannot prove a difference.
+  expect(modelRelation(['fixture/unlisted', 'claude-opus-5-5'], 'claude-sonnet-5')).toBe('same-family');
+  expect(modelRelation(['fixture/unlisted', 'gpt-6.1-sol'], 'claude-sonnet-5')).toBe('unknown');
+  expect(modelRelation(['gpt-6.1-sol'], 'fixture/unlisted')).toBe('unknown');
+  expect(modelRelation(['gpt-6.1-sol'], null)).toBe('unknown');
+  expect(modelRelation(null, 'claude-sonnet-5')).toBe('unknown');
+  expect(modelRelation([], 'claude-sonnet-5')).toBe('unknown');
+});
+
 test('generic review Receipt is launcher-independent and rejects every added binding tamper', async () => {
   const { root, home } = makeFixture();
   const input = { root, authority: authorityFor(root), authorityHome: home,
     verification: '.ai/harness/runs/acceptance.report.json', disposition: 'external_pass' as const,
-    reviewer: 'Claude', source: 'generic-review', actor: null,
+    reviewer: 'Claude', source: 'generic-review', actor: null, author: null,
     summary: '[fixture opinion] candidate accepted; no real model verdict', findings: [],
     now: () => new Date('2026-10-02T00:00:00.000Z') };
   const reviewResult = await fixtureReviewResult(input);
@@ -94,8 +109,24 @@ test('generic review Receipt is launcher-independent and rejects every added bin
     writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,[field]:value }));
     await expect(verifyAcceptance({root, authority: authorityFor(root),authorityHome:home})).rejects.toThrow(`AcceptanceReceipt generic-review ${field} mismatch`);
   }
+  // Null is a valid unobserved model, so a null tamper fails the Result join.
   writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,actual_model:null }));
+  await expect(verifyAcceptance({root, authority:authorityFor(root),authorityHome:home})).rejects.toThrow('AcceptanceReceipt generic-review actual_model mismatch');
+  writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,actual_model:'' }));
   await expect(verifyAcceptance({root, authority:authorityFor(root),authorityHome:home})).rejects.toThrow('actual_model is invalid');
+  expect([valid.author_session_binding_sha256, valid.author_actual_models, valid.model_relation]).toEqual([null, null, 'unknown']);
+  for (const [patch, error] of [
+    [{ model_relation: 'different-family' }, 'model_relation must be unknown without both models'],
+    [{ model_relation: null }, 'model_relation is invalid'],
+    [{ author_actual_models: ['gpt-6.1-sol'] }, 'author_actual_models requires an author session binding'],
+    [{ author_session_binding_sha256: 'not-a-digest' }, 'author_session_binding_sha256 is invalid'],
+    [{ author_session_binding_sha256: `sha256:${'c'.repeat(64)}`, author_actual_models: ['b', 'a'] }, 'author_actual_models must be sorted unique model strings'],
+  ] as const) {
+    writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,...patch }));
+    await expect(verifyAcceptance({root, authority:authorityFor(root),authorityHome:home})).rejects.toThrow(error);
+  }
+  writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,protocol:3 }));
+  await expect(verifyAcceptance({root, authority:authorityFor(root),authorityHome:home})).rejects.toThrow('AcceptanceReceipt kind/protocol is invalid');
   writeFileSync(acceptanceReceiptPath(root,home),bytes[0]!);
   for (const source of ['claude-review','codex-review']) {
     await expect(recordAcceptance({ ...input,reviewResult,source })).rejects.toThrow('approved reviewer policy');
@@ -304,6 +335,7 @@ describe('AcceptanceReceipt', () => {
     const projection = readFileSync(reviewPath, 'utf-8');
     expect(projection.match(/^## Acceptance Receipt Projection$/gm)).toHaveLength(1);
     expect(projection).not.toContain('> **Disposition**: unavailable');
+    expect(projection).toContain('> **Model Relation**: unknown');
     expect(projection).toContain('## Summary\n\n- pending');
     await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).rejects.toThrow('verification evidence is stale');
 
@@ -436,7 +468,8 @@ describe('AcceptanceReceipt', () => {
     });
     expect(grant.scope).toBe('admission-authority');
     expect(receipt.disposition).toBe('user_waiver');
-    expect(receipt.protocol).toBe(3);
+    expect(receipt.protocol).toBe(4);
+    expect([receipt.author_session_binding_sha256, receipt.author_actual_models, receipt.model_relation]).toEqual([null, null, null]);
     expect(receipt.waiver_grant_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect((await verifyAcceptance({ root: allowed.root, authority: authorityFor(allowed.root), authorityHome: allowed.home })).disposition).not.toBe('external_pass');
     await expect(recordFixtureAcceptance({

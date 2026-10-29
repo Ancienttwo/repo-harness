@@ -412,7 +412,7 @@ function input(
 
 function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceipt> = {}): AcceptanceReceipt {
   return {
-    protocol: 3,
+    protocol: 4,
     kind: 'repo-harness-acceptance-receipt',
     repository_root: subject.root,
     campaign_sha256: approval(subject.root).admission.campaign_sha256,
@@ -432,6 +432,7 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     reviewer: 'Codex',
     source: 'generic-review',
     request_id: 'fixture-request', context_sha256: `sha256:${'1'.repeat(64)}`, result_sha256: `sha256:${'2'.repeat(64)}`, actual_harness: 'codex', actual_role: 'deep-reasoner', actual_model: 'fixture-model',
+    author_session_binding_sha256: null, author_actual_models: null, model_relation: 'unknown',
     actor: null,
     summary: 'accepted wp-a',
     findings: [],
@@ -480,6 +481,7 @@ function waivedReceipt(subject: Fixture, grant: UserWaiverGrant, overrides: Part
     reviewer: 'User',
     source: 'user-waiver',
     request_id: null, context_sha256: null, result_sha256: null, actual_harness: null, actual_role: null, actual_model: null,
+    author_session_binding_sha256: null, author_actual_models: null, model_relation: null,
     actor: OWNER,
     summary: grant.summary,
     waiver_grant_sha256: engineerSha256(stableJson(grant)),
@@ -838,6 +840,16 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${PROVIDER_REPO_ID}:${ISSUE_A}`);
     expect(accepted.authority_revision).not.toBe(absent.authority_revision);
 
+    // A pre-upgrade external_pass observation pins a protocol-3 record. The
+    // observation protocol did not change, so the pinned record decides: unavailable.
+    const { author_session_binding_sha256: _binding, author_actual_models: _models, model_relation: _relation, ...protocol3 } = acceptanceReceipt(subject);
+    const preUpgrade = recordAcceptanceObservation(subject, { ...protocol3, protocol: 3 } as unknown as AcceptanceReceipt);
+    expect(preUpgrade.disposition).toBe('external_pass');
+    expect(() => readAcceptanceReceiptRecord(subject.root, subject.home, preUpgrade.acceptance_receipt_sha256)).toThrow('AcceptanceReceipt kind/protocol is invalid');
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
+    expect(recordAcceptanceObservation(subject).observation_id).toBe(observation.observation_id);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+
     // The committed selector still names the old task, so it does not prove the moved target.
     const movedTarget = resolveDependencyAuthority(input(subject, 'module_accepted',
       retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } })));
@@ -888,6 +900,12 @@ describe('issue #284 closed dependency authority', () => {
     rmSync(waivedRecord);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
     writeFileSync(waivedRecord, waivedRecordBytes);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+    // A protocol-3 record has no model relation. Only protocol 4 is read, so it fails closed.
+    const { author_session_binding_sha256: _binding, author_actual_models: _models, model_relation: _relation, ...protocol3 } = waivedReceipt(subject, grant);
+    recordAcceptanceObservation(subject, { ...protocol3, protocol: 3 } as unknown as AcceptanceReceipt);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
+    recordAcceptanceObservation(subject, waivedReceipt(subject, grant));
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
     const clock = spyOn(Date, 'now').mockReturnValue(grant.authorization.expires_at + 1);
     try {
@@ -1428,6 +1446,7 @@ describe('issue #284 closed dependency authority', () => {
       reviewer: 'Claude',
       source: 'codex-review',
       request_id: '', context_sha256: 'not-a-digest', result_sha256: 'not-a-digest', actual_harness: 'claude', actual_role: 'fast-worker', actual_model: '',
+      author_session_binding_sha256: 'not-a-digest', author_actual_models: ['gpt-6.1-sol'], model_relation: 'different-family',
       actor: 'someone-else',
       summary: '   ',
       findings: [{ severity: 'P0', message: 'blocked' }],
