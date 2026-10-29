@@ -1,25 +1,36 @@
-import { useEffect } from 'react';
-import { Banner, Loader } from '@cloudflare/kumo';
-import type { DocSessionCitationView } from '../core/operator/doc-session-api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Banner, Button, Loader, cn } from '@cloudflare/kumo';
+import type { DocSessionCitationView, OperatorDocSessionDetailV1, OperatorDocSessionDiscardV1 } from '../core/operator/doc-session-api';
+import type { DocSessionEventV1 } from '../core/operator/doc-session-events';
 import { Conversation } from './Conversation';
 import {
   docSessionReadText,
+  docSessionStatus,
   markSessionSeen,
   useDocSessionDetail,
   useDocSessionEvents,
+  useSessionRead,
+  useSessionWrite,
   type DocSessionCommitWriter,
   type DocSessionDetailReader,
   type DocSessionDiffReader,
+  type DocSessionDiscardRequest,
   type DocSessionDiscardWriter,
   type DocSessionEventsReader,
   type DocSessionEventsView,
   type DocSessionLossReader,
   type DocSessionMessageWriter,
+  type DocSessionRead,
   type DocSessionReadReason,
   type DocSessions,
+  type DocSessionStatus,
   type DocSessionStopWriter,
 } from './doc-sessions';
-import type { OperatorTranslate } from './i18n';
+import { isOperatorMessageKey, relativeAge, type OperatorTranslate } from './i18n';
+import { CommitControl, FollowUp, SessionWriteResult } from './SessionControls';
+import { SessionDiff, type SessionDiffMode } from './SessionDiff';
+import type { ThemeMode } from './theme';
+import { StatusDot, type DotTone } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 
 export interface DocSessionPageProps {
@@ -36,15 +47,20 @@ export interface DocSessionPageProps {
   readonly writeCommit: DocSessionCommitWriter;
   readonly writeDiscard: DocSessionDiscardWriter;
   readonly generation: number;
+  /** The resolved theme; reading mode draws mermaid diagrams with it. */
+  readonly mode: ThemeMode;
   readonly now: number;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly t: OperatorTranslate;
 }
 
-/** A session read that failed: which source, why, and what to do next. */
-export function SessionReadFailure({ source, reason, t }: { readonly source: string; readonly reason: DocSessionReadReason; readonly t: OperatorTranslate }) {
+/** A session read that failed: which source, why, what to do next, and how old the data still shown is. */
+export function SessionReadFailure({ source, reason, stale, t }: {
+  readonly source: string; readonly reason: DocSessionReadReason; readonly stale?: string; readonly t: OperatorTranslate;
+}) {
   const text = docSessionReadText(reason, t);
-  return <Banner variant="error" data-session-failure={reason} title={`${source} · ${text.message}`} description={text.next_action} />;
+  return <Banner variant="error" data-session-failure={reason} title={`${source} · ${text.message}`}
+    description={stale === undefined ? text.next_action : <><span className="block">{stale}</span><span className="block">{text.next_action}</span></>} />;
 }
 
 /** The record stream with its loading and failure states. Shared with the cleanup session page. */
@@ -65,23 +81,188 @@ export function SessionRecord({ sessionId, events, runtime, citations, t }: {
   );
 }
 
-/** One doc session (4-DSES). This shell shows the record; the review, composer and delivery controls come with the page slice. */
-export function DocSessionPage({ sessionId, docSessions, readDetail, readEvents, generation, t }: DocSessionPageProps) {
-  const listed = docSessions.view.kind !== 'absent';
-  const { read: detail } = useDocSessionDetail(readDetail, listed ? sessionId : null, generation);
-  const events = useDocSessionEvents(readEvents, listed ? sessionId : null);
-  const header = (
-    <header className="border-b border-kumo-hairline pb-4">
-      <h1 className="text-xl font-semibold text-kumo-strong [overflow-wrap:anywhere]">{detail?.state === 'ok' ? detail.value.title : t('docSession.title')}</h1>
-    </header>
-  );
-  if (!listed) return <div className="flex min-w-0 flex-col gap-5" data-doc-session-page="absent">{header}<p role="status" className="text-sm text-kumo-subtle">{t('docSession.absent')}</p></div>;
+/** The last successful value of a read, so a failed refresh keeps it on screen and says how old it is. */
+function useLastOk<T extends { readonly observed_at: string }>(read: DocSessionRead<T> | null): T | null {
+  const [last, setLast] = useState<T | null>(null);
+  useEffect(() => { if (read?.state === 'ok') setLast(read.value); }, [read]);
+  return read?.state === 'ok' ? read.value : last;
+}
+
+function staleText(value: { readonly observed_at: string } | null, now: number, t: OperatorTranslate): string | undefined {
+  const age = value === null ? null : relativeAge(value.observed_at, now);
+  return age === null ? undefined : t('docSession.stale', { age: t(age.key, { count: age.count }) });
+}
+
+const STATUS_TONE: Readonly<Record<DocSessionStatus, DotTone>> = {
+  running: 'active', awaiting_review: 'accent', pr_open: 'ok', discarded: 'neutral', cleaned: 'neutral', failed: 'danger',
+};
+
+function Fact({ label, children }: { readonly label: string; readonly children: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-5" data-doc-session-page={sessionId}>
-      {header}
-      {detail?.state === 'unavailable' && <SessionReadFailure source={t('docSession.source.detail')} reason={detail.reason} t={t} />}
-      <SessionRecord sessionId={sessionId} events={events} runtime={detail?.state === 'ok' ? detail.value.runtime : null}
-        citations={detail?.state === 'ok' ? detail.value.citations : undefined} t={t} />
+    <div className="flex min-w-0 items-baseline gap-1.5">
+      <dt className="type-caption shrink-0 text-kumo-subtle">{label}</dt>
+      <dd className="min-w-0 font-mono text-xs text-kumo-default [overflow-wrap:anywhere]">{children}</dd>
     </div>
   );
+}
+
+function SessionFacts({ detail, t }: { readonly detail: OperatorDocSessionDetailV1; readonly t: OperatorTranslate }) {
+  const status = docSessionStatus(detail.agent, detail.outcome);
+  const runtime = `setup.host.${detail.runtime}`;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-kumo-strong" data-session-status={status}>
+        <StatusDot tone={STATUS_TONE[status]} pulse={status === 'running'} />{t(`docSession.status.${status}`)}
+      </span>
+      <dl className="flex flex-wrap gap-x-5 gap-y-1">
+        <Fact label={t('docSession.fact.repository')}>{detail.repository_id}</Fact>
+        <Fact label={t('docSession.agent')}>{isOperatorMessageKey(runtime) ? t(runtime) : detail.runtime}</Fact>
+        <Fact label={t('docSession.fact.branch')}>{detail.branch}</Fact>
+        <Fact label={t('docSession.fact.worktree')}>{detail.worktree}</Fact>
+      </dl>
+    </div>
+  );
+}
+
+type FailureEvent = Extract<DocSessionEventV1, { readonly type: 'failure' }>;
+
+/** `4-DSES-F3`: a refused boundary or a failed host ends the session; nothing offers to run it without isolation. */
+function IsolationFailure({ detail, events, t }: { readonly detail: OperatorDocSessionDetailV1; readonly events: readonly DocSessionEventV1[]; readonly t: OperatorTranslate }) {
+  const failures = events.filter((event): event is FailureEvent => event.type === 'failure');
+  const denied = failures.some(event => event.category === 'boundary_denied');
+  if (!denied && detail.agent !== 'failed') return null;
+  const reason = denied ? 'boundary_denied' : failures.at(-1)?.category;
+  return <Banner variant="error" data-session-isolation={reason ?? 'failed'}
+    title={reason === undefined ? t('docSession.status.failed') : t(`docSession.failure.${reason}`)} description={t('docSession.isolation.kept')} />;
+}
+
+/** `4-DSES-F4`: the loss read first, then a confirm bound to its head and digest. A pushed branch gets no delete control. */
+function Discard({ sessionId, readLoss, writeDiscard, generation, onDiscarded, t }: {
+  readonly sessionId: string; readonly readLoss: DocSessionLossReader; readonly writeDiscard: DocSessionDiscardWriter;
+  readonly generation: number; readonly onDiscarded: () => void; readonly t: OperatorTranslate;
+}) {
+  const [open, setOpen] = useState(false);
+  const { read: loss, reload } = useSessionRead('doc-session-loss', readLoss, open ? sessionId : null, generation);
+  const discard = useSessionWrite<DocSessionDiscardRequest, OperatorDocSessionDiscardV1>(
+    useCallback(body => writeDiscard(sessionId, body), [writeDiscard, sessionId]));
+  const answered = discard.state.kind === 'answered' ? discard.state.outcome : null;
+  const pushed = (loss?.state === 'ok' && loss.value.pushed) || (answered?.state === 'refused' && answered.refusal.code === 'branch_pushed');
+  if (!open) return <Button variant="secondary-destructive" className="w-fit" onClick={() => setOpen(true)} data-discard-open>{t('docSession.discard')}</Button>;
+  const confirm = async () => {
+    if (loss?.state !== 'ok') return;
+    const outcome = await discard.submit({ expected_head: loss.value.head_commit, expected_loss_sha256: loss.value.loss_sha256 });
+    if (outcome?.state === 'refused' && outcome.refusal.code === 'loss_changed') reload();
+    if (outcome?.state === 'ok') onDiscarded();
+  };
+  const list = (title: string, items: readonly { readonly key: string; readonly text: string; readonly note?: string }[], name: string) => items.length > 0 && (
+    <div className="flex flex-col gap-1">
+      <h4 className="type-caption text-kumo-subtle">{title}</h4>
+      <ul className="flex flex-col gap-0.5" data-loss={name}>
+        {items.map(item => <li key={item.key} className="flex min-w-0 items-baseline gap-2"><code className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{item.text}</code>
+          {item.note !== undefined && <span className="shrink-0 text-xs text-kumo-subtle">{item.note}</span>}</li>)}
+      </ul>
+    </div>
+  );
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-base p-4" data-discard aria-label={t('docSession.discard')}>
+      <h3 className="text-sm font-semibold text-kumo-strong">{t('docSession.discard.title')}</h3>
+      {loss === null && <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-subtle"><Loader size={12} />{t('docSession.discard.loading')}</p>}
+      {loss?.state === 'unavailable' && <SessionReadFailure source={t('docSession.source.loss')} reason={loss.reason} t={t} />}
+      {loss?.state === 'ok' && (
+        <>
+          <p className="text-sm text-kumo-default">{t('docSession.discard.removes')}</p>
+          {list(t('docSession.discard.files'), loss.value.files.map(file => ({
+            key: file.path, text: file.path, note: `${t(`docSession.change.${file.status}`)}${file.tracked ? '' : ` · ${t('docSession.diff.untracked')}`}`,
+          })), 'files')}
+          {list(t('docSession.discard.ignored'), loss.value.ignored.map(path => ({ key: path, text: path })), 'ignored')}
+          {list(t('docSession.discard.commits'), loss.value.commits.map(commit => ({ key: commit, text: commit.slice(0, 12) })), 'commits')}
+          {loss.value.pushed && <p className="text-sm text-kumo-warning" data-loss-pushed>{t('docSession.error.branch_pushed.message')}</p>}
+        </>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {loss?.state === 'ok' && !pushed && (
+          <Button variant="destructive" onClick={() => void confirm()} disabled={discard.state.kind === 'sending'} data-discard-confirm>{t('docSession.discard.confirm')}</Button>
+        )}
+        <Button variant="ghost" onClick={() => { setOpen(false); discard.reset(); }}>{t('docSession.discard.cancel')}</Button>
+      </div>
+      {answered?.state === 'ok' && <p role="status" className="text-sm text-kumo-default" data-discard-done>{t('docSession.discard.done')}</p>}
+      {answered !== null && <SessionWriteResult outcome={answered} t={t} />}
+    </section>
+  );
+}
+
+const VIEWS: readonly SessionDiffMode[] = ['diff', 'reading'];
+
+/** One session's page state; keyed by session id, so nothing carries over to another session. */
+function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, writeMessage, writeStop, writeCommit, writeDiscard, generation, mode, now, onOpen, t }:
+  Omit<DocSessionPageProps, 'docSessions'>) {
+  const { read: detailRead, reload: reloadDetail } = useDocSessionDetail(readDetail, sessionId, generation);
+  const { read: diffRead, reload: reloadDiff } = useSessionRead('doc-session-diff', readDiff, sessionId, generation);
+  const events = useDocSessionEvents(readEvents, sessionId);
+  const detail = useLastOk(detailRead);
+  const diffShown = useLastOk(diffRead);
+  const diff = diffRead?.state === 'ok' ? diffRead.value : null;
+  const [view, setView] = useState<SessionDiffMode>('diff');
+  const [reviewed, setReviewed] = useState<string | null>(null);
+  // Showing the diff view of a loaded diff is what binds a commit to its digest.
+  useEffect(() => { if (view === 'diff' && diff !== null) setReviewed(diff.diff_sha256); }, [view, diff]);
+  // A turn that starts or ends changes the host state and the worktree; read both again then.
+  const activity = useRef(events.activity);
+  useEffect(() => {
+    if (activity.current !== null && activity.current !== events.activity) { reloadDetail(); reloadDiff(); }
+    activity.current = events.activity;
+  }, [events.activity, reloadDetail, reloadDiff]);
+  const diffChanged = useCallback(() => { setReviewed(null); reloadDiff(); }, [reloadDiff]);
+  const status = detail === null ? null : docSessionStatus(detail.agent, detail.outcome);
+  return (
+    <div className="flex min-w-0 flex-col gap-5" data-doc-session-page={sessionId}>
+      <header className="border-b border-kumo-hairline pb-4">
+        <h1 className="text-xl font-semibold text-kumo-strong [overflow-wrap:anywhere]">{detail?.title ?? t('docSession.title')}</h1>
+        {detail !== null && <SessionFacts detail={detail} t={t} />}
+        {detail === null && detailRead === null && <p role="status" className="mt-2 flex items-center gap-1.5 text-sm text-kumo-subtle"><Loader size={12} />{t('docSession.loading')}</p>}
+      </header>
+      {detailRead?.state === 'unavailable' && <SessionReadFailure source={t('docSession.source.detail')} reason={detailRead.reason} stale={staleText(detail, now, t)} t={t} />}
+      {detail !== null && <IsolationFailure detail={detail} events={events.events} t={t} />}
+      <div className="grid min-w-0 gap-8 xl:grid-cols-2">
+        <section className="flex min-w-0 flex-col gap-4" data-session-changes aria-label={t('docSession.source.diff')}>
+          <div className="flex w-fit gap-0.5 rounded-lg border border-kumo-line bg-kumo-base p-0.5" role="group" aria-label={t('docSession.view.label')}>
+            {VIEWS.map(option => (
+              <button key={option} type="button" aria-pressed={view === option} data-view={option} onClick={() => setView(option)}
+                className={cn('h-8 cursor-pointer rounded-md px-3 text-sm font-medium', view === option ? 'bg-kumo-tint text-kumo-strong' : 'text-kumo-subtle hover:text-kumo-default')}>
+                {t(`docSession.view.${option}`)}
+              </button>
+            ))}
+          </div>
+          {diffRead?.state === 'unavailable' && <SessionReadFailure source={t('docSession.source.diff')} reason={diffRead.reason} stale={staleText(diffShown, now, t)} t={t} />}
+          {diffRead === null && <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-subtle"><Loader size={12} />{t('docSession.diff.loading')}</p>}
+          {diffShown !== null && <SessionDiff diff={diffShown} view={view} mode={mode} onOpen={onOpen} t={t} />}
+          {detail !== null && (detail.outcome === null || detail.delivery !== null) && (
+            <CommitControl sessionId={sessionId} title={detail.title} awaitingReview={status === 'awaiting_review'} diff={diff}
+              reviewed={diff !== null && reviewed === diff.diff_sha256} delivery={detail.delivery} writeCommit={writeCommit}
+              onDiffChanged={diffChanged} onDelivered={reloadDetail} t={t} />
+          )}
+          {detail !== null && detail.outcome === null && (
+            <Discard sessionId={sessionId} readLoss={readLoss} writeDiscard={writeDiscard} generation={generation} onDiscarded={reloadDetail} t={t} />
+          )}
+        </section>
+        <section className="flex min-w-0 flex-col gap-4" aria-label={t('docSession.source.events')}>
+          <SessionRecord sessionId={sessionId} events={events} runtime={detail?.runtime ?? null} citations={detail?.citations} t={t} />
+          {detail !== null && <FollowUp sessionId={sessionId} detail={detail} writeMessage={writeMessage} writeStop={writeStop} onSent={reloadDetail} t={t} />}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** One doc session (4-DSES): the changes with commit and discard on the left, the record and follow-up on the right. */
+export function DocSessionPage({ docSessions, ...props }: DocSessionPageProps) {
+  if (docSessions.view.kind === 'absent') {
+    return (
+      <div className="flex min-w-0 flex-col gap-5" data-doc-session-page="absent">
+        <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{props.t('docSession.title')}</h1></header>
+        <p role="status" className="text-sm text-kumo-subtle">{props.t('docSession.absent')}</p>
+      </div>
+    );
+  }
+  return <SessionView key={props.sessionId} {...props} />;
 }
