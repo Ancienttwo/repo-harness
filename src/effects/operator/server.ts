@@ -181,7 +181,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
 /** HTTP status of each doc session read failure; the body is `{code}` only. */
 const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> = Object.freeze({
   session_not_found: 404, worktree_missing: 409, worktree_changed: 409, stale: 409, too_large: 413,
-  filters_unsupported: 422, index_unsupported: 422, path_unsupported: 422, unavailable: 503, busy: 503, timeout: 504,
+  filters_unsupported: 422, index_unsupported: 422, path_unsupported: 422, encoding_unsupported: 422, unavailable: 503, busy: 503, timeout: 504,
 });
 
 export type OperatorServerHost = '127.0.0.1' | '::1';

@@ -188,6 +188,47 @@ function refuseUsedFilters(runner: DocSessionGitRunner, worktree: string, paths:
   for (let index = 2; index < fields.length; index += 3) if (drivers.has(fields[index]!)) fail('filters_unsupported');
 }
 
+const pathsFrom = (listed: string): string[] => listed === '' ? [] : listed.slice(0, -1).split('\0');
+
+function worktreeFileMode(worktree: string, path: string): string {
+  if (!isRepositoryRelativePath(path)) return fail('path_unsupported');
+  try {
+    const entry = lstatSync(join(worktree, path));
+    if (!entry.isFile()) return fail('path_unsupported');
+    return (entry.mode & 0o100) !== 0 ? '100755' : '100644';
+  } catch (error) { if (error instanceof DocSessionReadError) throw error; return fail('stale'); }
+}
+
+/** Cached diff compares tree and index objects; it does not read working-file content. */
+function observeIndexChanges(runner: DocSessionGitRunner, worktree: string, head: string): DocSessionChange[] {
+  const tokens = pathsFrom(runner.text(worktree, ['diff', '--cached', '--raw', '-z', '--no-renames', '--no-abbrev', head, '--']));
+  if (tokens.length % 2 !== 0) return fail('unavailable');
+  const changes: DocSessionChange[] = [];
+  for (let offset = 0; offset < tokens.length; offset += 2) {
+    const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])$/u.exec(tokens[offset]!);
+    if (header === null) return fail('unavailable');
+    const [, oldMode, newMode, oldOid, newOid, letter] = header;
+    if (letter === 'U') return fail('index_unsupported');
+    const status = STATUS[letter!];
+    if (status === undefined) return fail('unavailable');
+    const change: DocSessionChange = {
+      path: tokens[offset + 1]!, status, tracked: true,
+      old_mode: status === 'added' ? null : oldMode!, old_oid: status === 'added' ? null : oldOid!,
+      new_mode: status === 'deleted' ? null : newMode!, new_oid: status === 'deleted' ? null : newOid!,
+    };
+    if (!isDocSessionChange(change)) return fail('path_unsupported');
+    changes.push(change);
+  }
+  return changes;
+}
+
+/** One public row per lost path. Index-only versions remain visible even when the working file matches HEAD. */
+function lossFiles(loss: Pick<DocSessionLossInput, 'changes' | 'index'>): DocSessionChange[] {
+  const files = new Map<string, DocSessionChange>();
+  for (const change of [...loss.changes, ...loss.index]) if (!files.has(change.path)) files.set(change.path, change);
+  return [...files.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+}
+
 /**
  * The changes of the worktree against `side` (a commit): tracked paths from
  * `git diff --raw`, untracked ones from `ls-files`. Each present path is a
@@ -199,15 +240,16 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
     const oid = new TextDecoder().decode(runner.bytes(worktree, ['hash-object', '--stdin', `--path=${path}`], [0], input)).trim();
     return oid || fail('unavailable');
   };
+  // ls-files only enumerates names. Raw diff can run clean/process filters even
+  // for a stat-only or racy entry, so admit every candidate before comparing.
+  const tracked = pathsFrom(runner.text(worktree, ['ls-files', '--cached', '-z']));
+  const others = pathsFrom(runner.text(worktree, ['ls-files', '--others', '--exclude-standard', '-z']));
+  refuseUsedFilters(runner, worktree, [...new Set([...tracked, ...others])]);
   const raw = runner.text(worktree, ['diff', '--raw', '-z', '--no-renames', '--no-abbrev', '--ignore-submodules=none', side, '--']);
   const tokens = raw === '' ? [] : raw.slice(0, -1).split('\0');
   if (tokens.length % 2 !== 0) return fail('unavailable');
-  const listed = runner.text(worktree, ['ls-files', '--others', '--exclude-standard', '-z']);
-  const others = listed === '' ? [] : listed.slice(0, -1).split('\0');
   // Counted before any file is read, so an oversized worktree costs no hashing.
   if (tokens.length / 2 + others.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
-  const present = tokens.filter((_, index) => index % 2 === 1 && !tokens[index - 1]!.endsWith(' D'));
-  refuseUsedFilters(runner, worktree, [...present, ...others]);
   const changes: DocSessionChange[] = [];
   for (let index = 0; index < tokens.length; index += 2) {
     const header = /^:(\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])$/u.exec(tokens[index]!);
@@ -230,13 +272,7 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
     changes.push(change);
   }
   for (const path of others) {
-    if (!isRepositoryRelativePath(path)) return fail('path_unsupported');
-    let mode: string;
-    try {
-      const entry = lstatSync(join(worktree, path));
-      if (!entry.isFile()) return fail('path_unsupported');
-      mode = (entry.mode & 0o100) !== 0 ? '100755' : '100644';
-    } catch (error) { if (error instanceof DocSessionReadError) throw error; return fail('stale'); }
+    const mode = worktreeFileMode(worktree, path);
     changes.push({ path, status: 'added', tracked: false, old_mode: null, old_oid: null, new_mode: mode, new_oid: hashed(path, readWorktreeFile(worktree, path)) });
   }
   if (!changes.every(isDocSessionChange)) return fail('unavailable');
@@ -292,8 +328,8 @@ export function readDocSessionDiff(env: NodeJS.ProcessEnv, sessionId: string): O
       }
       const bytes = Buffer.concat(parts);
       if (bytes.length > DOC_SESSION_PATCH_MAX_BYTES) fail('too_large');
-      // The digest binds the bytes; text that is not UTF-8 is shown with replacement characters.
-      patch = new TextDecoder('utf-8').decode(bytes);
+      try { patch = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+      catch { fail('encoding_unsupported'); }
     });
     return decodeOperatorDocSessionDiff({
       protocol: 1, kind: 'operator_docs_session_diff', session_id: sessionId, base_commit: base, head_commit: observed.head,
@@ -309,15 +345,22 @@ export function observeDocSessionLoss(runner: DocSessionGitRunner, record: DocSe
   refuseHiddenWorktreeEntries(worktree, runner.text);
   const head = runner.text(worktree, ['rev-parse', '--verify', 'HEAD^{commit}']).trim();
   const changes = observeDocSessionChanges(runner, worktree, head);
+  const index = observeIndexChanges(runner, worktree, head);
   const listed = runner.text(worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']);
   const ignored = listed === '' ? [] : listed.slice(0, -1).split('\0');
   if (!ignored.every(isDocSessionLossPath)) return fail('path_unsupported');
+  const leaves = pathsFrom(runner.text(worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z']));
   const commits = runner.text(worktree, ['rev-list', `${record.base_commit}..${head}`, '--not', '--remotes']).split('\n').filter(Boolean);
   const slug = record.branch.slice('docs/'.length);
   const pushed = runner.text(worktree, ['for-each-ref', '--format=%(refname)', 'refs/remotes/']).split('\n')
     .some(ref => new RegExp(`^refs/remotes/[^/]+/docs/${slug}$`, 'u').test(ref));
-  if (changes.length + ignored.length + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
-  return { head_commit: head, changes, ignored: ignored.sort(), commits, pushed };
+  if (lossFiles({ changes, index }).length + leaves.length + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
+  const ignored_leaves = leaves.map(path => ({
+    path, mode: worktreeFileMode(worktree, path),
+    // Ignored loss binds the bytes removal deletes, without Git conversions.
+    oid: new TextDecoder().decode(runner.bytes(worktree, ['hash-object', '--stdin', '--no-filters'], [0], readWorktreeFile(worktree, path))).trim(),
+  }));
+  return { head_commit: head, changes, index, ignored: ignored.sort(), ignored_leaves, commits, pushed };
 }
 
 /** `GET /api/v1/sessions/{sid}/loss`: the discard loss list, with `loss_sha256`. */
@@ -328,7 +371,7 @@ export function readDocSessionLoss(env: NodeJS.ProcessEnv, sessionId: string): O
     const loss = stable(() => observeDocSessionLoss(runner, record, worktree), docSessionLossDigestInput, () => {});
     return decodeOperatorDocSessionLoss({
       protocol: 1, kind: 'operator_docs_session_loss', session_id: sessionId, head_commit: loss.head_commit, turn: turnOf(env, sessionId),
-      files: loss.changes.map(change => ({ path: change.path, status: change.status, tracked: change.tracked })),
+      files: lossFiles(loss).map(change => ({ path: change.path, status: change.status, tracked: change.tracked })),
       ignored: loss.ignored, commits: loss.commits, pushed: loss.pushed, loss_sha256: docSessionLossSha256(loss), observed_at: new Date().toISOString(),
     }, { session_id: sessionId });
   });

@@ -22,7 +22,10 @@ function runRead<T>(sessionId: string, options: ReadOptions, read: (env: NodeJS.
   if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
   let value: T;
   try { value = read(process.env, sessionId); }
-  catch (error) { refuse(options.json, error instanceof DocSessionReadError ? error.code : 'unavailable', 1); return; }
+  catch (error) {
+    refuse(options.json, error instanceof DocSessionReadError ? error.code : 'unavailable', error instanceof DocSessionReadError ? 2 : 1);
+    return;
+  }
   if (options.json) console.log(JSON.stringify(value));
   else print(value);
 }

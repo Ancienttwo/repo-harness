@@ -20,7 +20,7 @@ export const DOC_SESSION_PATCH_MAX_BYTES = SESSION_OBSERVATION_MAX_BYTES;
 
 export const DOC_SESSION_READ_FAILURES = [
   'session_not_found', 'worktree_missing', 'worktree_changed', 'stale', 'too_large',
-  'filters_unsupported', 'index_unsupported', 'path_unsupported', 'unavailable', 'busy', 'timeout',
+  'filters_unsupported', 'index_unsupported', 'path_unsupported', 'encoding_unsupported', 'unavailable', 'busy', 'timeout',
 ] as const;
 export type DocSessionReadFailure = typeof DOC_SESSION_READ_FAILURES[number];
 
@@ -65,7 +65,7 @@ export interface OperatorDocSessionLossV1 {
   readonly session_id: string;
   readonly head_commit: string;
   readonly turn: DocSessionTurn;
-  /** Uncommitted and untracked changes against HEAD. */
+  /** Working-tree and index changes against HEAD, including untracked files. */
   readonly files: readonly Omit<DocSessionFileView, 'binary'>[];
   /** Ignored entries the worktree removal deletes; a directory ends with `/`. */
   readonly ignored: readonly string[];
@@ -102,7 +102,10 @@ export function docSessionDiffDigestInput(baseCommit: string, changes: readonly 
 export interface DocSessionLossInput {
   readonly head_commit: string;
   readonly changes: readonly DocSessionChange[];
+  /** Index-to-HEAD changes, separate from working-tree content. */
+  readonly index: readonly DocSessionChange[];
   readonly ignored: readonly string[];
+  readonly ignored_leaves: readonly { readonly path: string; readonly mode: string; readonly oid: string }[];
   readonly commits: readonly string[];
   readonly pushed: boolean;
 }
@@ -111,7 +114,9 @@ export interface DocSessionLossInput {
 export function docSessionLossDigestInput(loss: DocSessionLossInput): string {
   return canonicalize({
     version: 1, kind: 'docs_session_loss', head_commit: loss.head_commit, changes: digestEntries(loss.changes),
-    ignored: [...loss.ignored].sort(), commits: [...loss.commits], pushed: loss.pushed,
+    index: digestEntries(loss.index),
+    ignored: [...loss.ignored].sort(), ignored_leaves: [...loss.ignored_leaves].sort(byPath).map(leaf => ({ path: leaf.path, mode: leaf.mode, oid: leaf.oid })),
+    commits: [...loss.commits], pushed: loss.pushed,
   });
 }
 

@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
 import {
   docSessionDiffSha256, docSessionGitRunner, docSessionLossSha256, observeDocSessionChanges, observeDocSessionLoss, resolveDocSession,
+  readDocSessionDiff, readDocSessionLoss,
 } from '../../src/effects/operator/doc-session-changes';
 import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents } from '../../src/effects/operator/doc-session-events';
@@ -231,7 +232,7 @@ test('an unknown session, a query, a missing worktree and a worktree on another 
   expect((await s.get(`/api/v1/sessions/${s.sid}/diff?all=1`)).status).toBe(400);
   expect(s.cli('diff', 'not-a-session').status).toBe(2);
   const missing = s.cli('loss', unknown, '--json');
-  expect(missing.status).toBe(1);
+  expect(missing.status).toBe(2);
   expect(JSON.parse(missing.stderr as string)).toEqual({ error: { code: 'session_not_found' } });
 
   git(['checkout', '-q', '-b', 'elsewhere'], s.worktree);
@@ -245,7 +246,7 @@ test('an unknown session, a query, a missing worktree and a worktree on another 
   expectNoPrivatePath(s, gone.text);
 });
 
-test('a filter driver is refused only when a changed path uses it, so an installed git-lfs does not block the reads', async () => {
+test('a filter driver is refused only when a candidate path uses it, so an installed git-lfs does not block the reads', async () => {
   const s = await session();
   // The git-lfs install writes these drivers to the global config of many machines, including the CI runners.
   git(['config', 'filter.lfs.clean', 'git-lfs clean -- %f'], s.repo);
@@ -258,6 +259,103 @@ test('a filter driver is refused only when a changed path uses it, so an install
   writeFileSync(join(s.worktree, 'docs', '.gitattributes'), 'new.md filter=lfs\n');
   expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
   expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+});
+
+test.each(['changed', 'stat-only', 'racy'])('filter admission precedes every content comparison for a tracked %s file', async state => {
+  const s = await session();
+  const path = join(s.worktree, 'docs', 'guide.md');
+  const stat = statSync(path);
+  const marker = join(s.worktree, 'filter-marker.log');
+  git(['config', 'filter.marker.clean', 'printf x >> filter-marker.log; cat'], s.repo);
+  git(['config', 'diff.autoRefreshIndex', 'false'], s.repo);
+  writeFileSync(join(s.worktree, 'docs', '.gitattributes'), 'guide.md filter=marker\n');
+  if (state === 'changed') writeFileSync(path, GUIDE.replace('reads', 'edits'));
+  else if (state === 'stat-only') utimesSync(path, new Date(2001, 1, 1), new Date(2001, 1, 1));
+  else {
+    writeFileSync(path, GUIDE.replace('reads', 'edits'));
+    utimesSync(path, stat.atime, stat.mtime);
+  }
+  const executions: number[] = [];
+  for (const effect of [readDocSessionDiff, readDocSessionLoss]) {
+    writeFileSync(marker, '');
+    expect(() => effect(s.env, s.sid)).toThrow('filters_unsupported');
+    executions.push(readFileSync(marker).length);
+  }
+  for (const route of [diffOf, lossOf]) {
+    writeFileSync(marker, '');
+    expect(await route(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+    executions.push(readFileSync(marker).length);
+  }
+  expect(executions).toEqual([0, 0, 0, 0]);
+});
+
+test.each(['edit', 'add', 'mode'])('the loss digest binds ignored leaves when they %s inside an existing directory', async action => {
+  const s = await session();
+  writeFileSync(join(s.worktree, '.gitignore'), '*.log\ndocs/cache/\n');
+  mkdirSync(join(s.worktree, 'docs', 'cache'));
+  const leaf = join(s.worktree, 'docs', 'cache', 'one.md');
+  writeFileSync(leaf, 'one\n');
+  const before = await lossOf(s);
+  expect(before.status).toBe(200);
+  expect(before.body.ignored).toContain('docs/cache/');
+  if (action === 'edit') writeFileSync(leaf, 'changed\n');
+  else if (action === 'add') writeFileSync(join(s.worktree, 'docs', 'cache', 'two.md'), 'two\n');
+  else chmodSync(leaf, 0o755);
+  const after = await lossOf(s);
+  expect(after.status).toBe(200);
+  expect(after.body.ignored).toEqual(before.body.ignored);
+  expect(after.body.loss_sha256).not.toBe(before.body.loss_sha256);
+});
+
+test('ignored leaves count toward the loss cap and ignored symlinks are never followed', async () => {
+  const s = await session();
+  writeFileSync(join(s.worktree, '.gitignore'), '*.log\ndocs/cache/\n');
+  mkdirSync(join(s.worktree, 'docs', 'cache'));
+  symlinkSync('/etc/hosts', join(s.worktree, 'docs', 'cache', 'link'));
+  expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'path_unsupported' } });
+  rmSync(join(s.worktree, 'docs', 'cache', 'link'));
+  for (let index = 0; index < 1000; index += 1) writeFileSync(join(s.worktree, 'docs', 'cache', `${index}.md`), 'x\n');
+  // The changed .gitignore plus 1000 leaves exceeds the existing loss limit.
+  expect(await lossOf(s)).toMatchObject({ status: 413, body: { code: 'too_large' } });
+});
+
+test.each(['modified', 'added', 'deleted'])('staged-only %s data changes the loss digest and public list', async status => {
+  const s = await session();
+  const beforeLoss = await lossOf(s);
+  const beforeDiff = await diffOf(s);
+  const path = status === 'added' ? 'docs/staged.md' : 'docs/guide.md';
+  if (status === 'deleted') git(['rm', path], s.worktree);
+  else {
+    writeFileSync(join(s.worktree, path), 'staged only\n');
+    git(['add', path], s.worktree);
+  }
+  if (status === 'added') rmSync(join(s.worktree, path));
+  else writeFileSync(join(s.worktree, path), GUIDE);
+  const after = await lossOf(s);
+  expect(after.status).toBe(200);
+  expect(after.body.loss_sha256).not.toBe(beforeLoss.body.loss_sha256);
+  expect(after.body.files).toContainEqual({ path, status, tracked: true });
+  if (status !== 'deleted') {
+    expect((await diffOf(s)).body.diff_sha256).toBe(beforeDiff.body.diff_sha256);
+    writeFileSync(join(s.worktree, path), 'another staged version\n');
+    git(['add', path], s.worktree);
+    if (status === 'added') rmSync(join(s.worktree, path));
+    else writeFileSync(join(s.worktree, path), GUIDE);
+    const next = await lossOf(s);
+    expect(next.status).toBe(200);
+    expect(next.body.files).toEqual(after.body.files);
+    expect(next.body.loss_sha256).not.toBe(after.body.loss_sha256);
+    expect((await diffOf(s)).body.diff_sha256).toBe(beforeDiff.body.diff_sha256);
+  }
+});
+
+test('invalid UTF-8 text refuses the diff instead of replacing the reviewed bytes', async () => {
+  const s = await session();
+  writeFileSync(join(s.worktree, 'docs', 'guide.md'), Buffer.from([0x23, 0x20, 0xff, 0x0a]));
+  expect(() => readDocSessionDiff(s.env, s.sid)).toThrow('encoding_unsupported');
+  const answer = await diffOf(s);
+  expect(answer).toMatchObject({ status: 422, body: { code: 'encoding_unsupported' } });
+  expect(answer.text).not.toContain('\ufffd');
 });
 
 test('a symlink, a hidden index entry and more changes than the cap are refused, never shown in part', async () => {
