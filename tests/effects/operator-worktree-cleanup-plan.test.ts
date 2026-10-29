@@ -33,6 +33,7 @@ function harness(observations = [observation()]) {
   const calls: string[] = [], keys: string[] = [];
   const ports: CleanupExecutionPorts = {
     loadPlan: async () => plan,
+    reconcile: async () => ({ state: 'absent' }),
     observe: async id => { calls.push(`observe:${id.slice(-1)}`); return observations.find(o => o.worktree.id === id)!; },
     archiveCommit: async key => { calls.push('commit'); keys.push(key); },
     archivePush: async key => { calls.push('push'); keys.push(key); },
@@ -160,6 +161,45 @@ describe('cleanup plan contract and execution boundary', () => {
     const h = harness([observation(1, 'green')]);
     expect((await executeCleanupPlan(h.request, { ...h.ports, remove: async () => {} })).items[0]).toMatchObject({ outcome: 'reconcile_required', reason: 'removal_unproven' });
     expect((await executeCleanupPlan(h.request, { ...h.ports, remove: async (_key, _item, verify) => { await verify(); throw new Error('lost result'); } })).items[0].outcome).toBe('reconcile_required');
+  });
+  test('a lost removal result is recovered before observing a now-missing worktree', async () => {
+    const h = harness();
+    let exists = true, removals = 0, reconciliations = 0;
+    const ports = { ...h.ports,
+      reconcile: async (key: string, item: typeof h.plan.items[number]) => {
+        reconciliations++;
+        return exists ? { state: 'absent' as const } : { state: 'completed' as const, key,
+          id: item.worktree.id, loss_sha256: item.loss_sha256!, plan_sha256: item.plan_sha256,
+          archive_pr: 'https://github.com/example/repo/pull/5' };
+      },
+      observe: async (id: string) => { if (!exists) throw new Error('notfound'); return h.ports.observe(id); },
+      remove: async (_key: string, _item: typeof h.plan.items[number], verify: () => Promise<void>) => {
+        await verify(); removals++; exists = false; throw new Error('result lost after deletion');
+      },
+    };
+    expect((await executeCleanupPlan(h.request, ports)).items[0]).toMatchObject({ outcome: 'reconcile_required', reason: 'removal_unproven' });
+    const beforeRetry = h.calls.length;
+    expect((await executeCleanupPlan(h.request, ports)).items[0]).toMatchObject({ outcome: 'removed', archive_pr: 'https://github.com/example/repo/pull/5' });
+    expect(h.calls).toHaveLength(beforeRetry);
+    expect(removals).toBe(1); expect(reconciliations).toBe(2);
+  });
+  test.each(['pending', 'wrong-key', 'wrong-id', 'wrong-loss', 'wrong-plan', 'private-link', 'extra-field', 'throws'])('reconciliation %s does not inspect or remove a live source', async mode => {
+    const h = harness();
+    const result = await executeCleanupPlan(h.request, { ...h.ports, reconcile: async (key, item) => {
+      if (mode === 'throws') throw new Error('/private/receipt-unreadable');
+      const value = { state: mode === 'pending' ? 'pending' as const : 'completed' as const, key,
+        id: item.worktree.id, loss_sha256: item.loss_sha256!, plan_sha256: item.plan_sha256,
+        archive_pr: 'https://github.com/example/repo/pull/5' };
+      if (mode === 'wrong-key') value.key += ':another-session';
+      if (mode === 'wrong-id') value.id = observation(2).worktree.id;
+      if (mode === 'wrong-loss') value.loss_sha256 = '0'.repeat(64);
+      if (mode === 'wrong-plan') value.plan_sha256 = '0'.repeat(64);
+      if (mode === 'private-link') value.archive_pr = '/private/receipt';
+      return mode === 'extra-field' ? { ...value, raw: 'private' } : value;
+    } });
+    expect(result.items[0]).toMatchObject({ outcome: 'reconcile_required', reason: 'removal_unproven', stage: 'reconcile' });
+    expect(h.calls).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('/private');
   });
   test('retry reuses the archive identity and does not silently retry in one execution', async () => {
     const h = harness();

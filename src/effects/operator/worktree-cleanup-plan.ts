@@ -57,7 +57,7 @@ export function cleanupPlanSelectionDigest(plan: CleanupPlan, ids: readonly stri
   return sha256(selectionDigestInput(selected.map(item => worktreeDigestRow(item.worktree))));
 }
 
-export type CleanupStage = 'observe' | 'archive_commit' | 'archive_push' | 'archive_pr' | 'remove';
+export type CleanupStage = 'reconcile' | 'observe' | 'archive_commit' | 'archive_push' | 'archive_pr' | 'remove';
 export type CleanupReason = 'in_use' | 'not_approved' | 'loss_changed' | 'plan_changed' | 'unavailable' | 'archive_failed' | 'removal_unproven';
 export interface CleanupExecutionItem {
   readonly id: string;
@@ -73,6 +73,30 @@ export interface CleanupExecutionResult {
   readonly items: readonly CleanupExecutionItem[];
 }
 
+/** A readback result, not a receipt supplied by the caller. The adapter verifies the durable receipt. */
+export type CleanupReconciliation = { readonly state: 'absent' } | {
+  readonly state: 'pending' | 'completed';
+  readonly key: string;
+  readonly id: string;
+  readonly loss_sha256: string;
+  readonly plan_sha256: string;
+  readonly archive_pr: string | null;
+};
+
+const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
+  && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
+
+function reconciliation(value: unknown, key: string, item: CleanupPlanItem): CleanupReconciliation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('cleanup reconciliation invalid');
+  const record = value as Record<string, unknown>;
+  const fields = Object.keys(record).sort().join(',');
+  if (record.state === 'absent' && fields === 'state') return { state: 'absent' };
+  if (fields !== 'archive_pr,id,key,loss_sha256,plan_sha256,state' || !['pending', 'completed'].includes(record.state as string)
+    || record.key !== key || record.id !== item.worktree.id || record.loss_sha256 !== item.loss_sha256 || record.plan_sha256 !== item.plan_sha256
+    || (item.advice.archive.git === null ? record.archive_pr !== null : !isArchivePr(record.archive_pr))) throw new Error('cleanup reconciliation identity invalid');
+  return value as CleanupReconciliation;
+}
+
 /**
  * Integration ports, not browser inputs. No production actuator is installed by this module.
  * The host owns loadPlan and observe. #1023 owns archive publication. The deletion
@@ -83,6 +107,10 @@ export interface CleanupExecutionResult {
 export interface CleanupExecutionPorts {
   readonly loadPlan: (sessionId: string) => Promise<CleanupPlan>;
   readonly observe: (id: string) => Promise<CleanupObservation>;
+  /** Read only, before live observation. absent means no durable intent exists. pending never means success.
+   * completed requires the exact key/plan/loss-bound receipt plus registration and local-branch removal
+   * readback. A missing source alone is not proof. Do not synthesize an old observation on retry. */
+  readonly reconcile: (key: string, item: CleanupPlanItem) => Promise<CleanupReconciliation>;
   /** Stage private files (0600), SOURCE.md, all selected worktree/index versions and format-patches, then commit.
    * Re-observe and verify the bound loss while capturing bytes; never publish credential files to Git. */
   readonly archiveCommit: (key: string, item: CleanupPlanItem) => Promise<void>;
@@ -126,6 +154,13 @@ async function executeItem(request: AuthorizedCleanupRequest, item: CleanupPlanI
   };
   try {
     approved(request, item);
+    stage = 'reconcile';
+    const prior = reconciliation(await ports.reconcile(key, structuredClone(item)), key, item);
+    if (prior.state !== 'absent') {
+      archivePr = prior.archive_pr;
+      return prior.state === 'completed' ? result('removed', null) : result('reconcile_required', 'removal_unproven');
+    }
+    stage = 'observe';
     await verify();
     if (item.advice.recommendation === 'archive_then_delete') {
       // Hashes bind the plan and loss. Publication adapters use the same key on retry.
@@ -134,7 +169,7 @@ async function executeItem(request: AuthorizedCleanupRequest, item: CleanupPlanI
         stage = 'archive_push'; await ports.archivePush(key, structuredClone(item));
         stage = 'archive_pr';
         const published = await ports.archivePr(key, structuredClone(item));
-        if (typeof published !== 'string' || containsSecret(published) || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(published)) {
+        if (!isArchivePr(published)) {
           throw new Error('archive PR readback missing');
         }
         archivePr = published;
@@ -150,7 +185,7 @@ async function executeItem(request: AuthorizedCleanupRequest, item: CleanupPlanI
     if (error instanceof CleanupRefusal) return result('skipped', error.reason);
     if (stage === 'observe') return result('skipped', 'unavailable');
     // A thrown provider write or removal may already have taken effect. Do not auto-retry it.
-    return result('reconcile_required', stage === 'remove' ? 'removal_unproven' : 'archive_failed');
+    return result('reconcile_required', stage === 'remove' || stage === 'reconcile' ? 'removal_unproven' : 'archive_failed');
   }
 }
 
