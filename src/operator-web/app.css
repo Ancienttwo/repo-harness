@@ -7,6 +7,9 @@
 /* 760px: below it the side rail becomes a drawer (design brief U4). */
 @theme { --breakpoint-rail: 47.5rem; }
 
+/* A registered length computes where it is set, so a block's 1lh reaches its ::before as pixels. */
+@property --docs-line { syntax: '<length>'; inherits: true; initial-value: 1.5em; }
+
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -57,6 +60,62 @@
   .copy-value { @apply flex min-w-0 items-center gap-2 text-xs; }
   .copy-value > code { @apply min-w-0 truncate rounded bg-kumo-recessed px-1.5 py-0.5; }
   .signal-grid { @apply flex flex-wrap gap-4 text-sm; }
+
+  /* Docs page: a file tree beside a 672px reading column (design system container-prose). */
+  .docs-tree { @apply flex min-w-0 flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-elevated max-lg:max-h-[45dvh] lg:sticky lg:top-16 lg:max-h-[calc(100dvh-6rem)]; }
+  .docs-tree__list { @apply m-0 min-h-0 flex-1 list-none overflow-y-auto p-1.5; }
+  .docs-tree__list ul { @apply m-0 list-none p-0; }
+  .docs-tree__row { @apply flex min-h-8 items-center gap-1.5 rounded-md pr-2 text-left text-[13px] hover:bg-kumo-tint; }
+  .docs-tree__count { @apply shrink-0 rounded-full bg-kumo-recessed px-1.5 text-xs tabular-nums text-kumo-subtle; }
+  .docs-reader { @apply mx-auto flex w-full min-w-0 max-w-[calc(42rem+2.75rem)] flex-col gap-4 pl-9 sm:pl-11; }
+  .docs-reader > header, .docs-reader > h2, .docs-reader > [role="alert"], .docs-reader > p { margin-left: -2.25rem; }
+  @media (min-width: 40rem) { .docs-reader > header, .docs-reader > h2, .docs-reader > [role="alert"], .docs-reader > p { margin-left: -2.75rem; } }
+
+  .docs-prose { @apply min-w-0 text-kumo-default; font-size: 16px; line-height: 1.65; overflow-wrap: break-word; }
+  .docs-prose > * { @apply relative; margin-block: 0 1em; }
+  /* The number sits on the block's first line: --docs-line is that line's height, computed on the block. */
+  .docs-prose > [data-line] { --docs-line: 1lh; }
+  .docs-prose > [data-line]::before {
+    content: attr(data-line);
+    @apply pointer-events-none absolute top-0 w-7 text-right font-mono text-[11px] text-kumo-subtle select-none;
+    left: -2.25rem; line-height: var(--docs-line); opacity: .7;
+  }
+  @media (min-width: 40rem) { .docs-prose > [data-line]::before { left: -2.75rem; width: 2.25rem; } }
+  .docs-prose h1, .docs-prose h2, .docs-prose h3, .docs-prose h4, .docs-prose h5, .docs-prose h6 {
+    @apply font-semibold text-kumo-strong; font-family: var(--font-display); letter-spacing: -0.015em; line-height: 1.3; margin-top: 1.6em;
+  }
+  .docs-prose > :first-child { margin-top: 0; }
+  .docs-prose h1 { font-size: 1.75rem; }
+  .docs-prose h2 { @apply border-b border-kumo-hairline pb-1; font-size: 1.375rem; }
+  .docs-prose h3 { font-size: 1.125rem; }
+  .docs-prose h4, .docs-prose h5, .docs-prose h6 { font-size: 1rem; }
+  .docs-prose ul, .docs-prose ol { padding-left: 1.5em; }
+  .docs-prose ul { list-style: disc; }
+  .docs-prose ol { list-style: decimal; }
+  .docs-prose li + li { margin-top: .25em; }
+  .docs-prose li > ul, .docs-prose li > ol { margin-top: .25em; }
+  .docs-prose li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.25em; }
+  .docs-prose input[type="checkbox"] { @apply mr-1.5 align-middle; }
+  .docs-prose blockquote { @apply border-l-2 border-kumo-line pl-4 text-kumo-subtle; }
+  .docs-prose hr { @apply border-0 border-t border-kumo-hairline; }
+  .docs-prose :not(pre) > code { @apply rounded bg-kumo-recessed px-1 py-px text-[0.875em]; }
+  .docs-prose pre { @apply m-0 overflow-x-auto rounded-lg bg-kumo-recessed p-3 text-[13px] leading-5; }
+  .docs-prose a { @apply text-kumo-link underline decoration-kumo-line underline-offset-2 hover:decoration-current; }
+  .docs-prose .docs-link-blocked { @apply text-kumo-default; }
+  .docs-prose strong { @apply font-semibold text-kumo-strong; }
+  .docs-table { @apply overflow-x-auto; }
+  .docs-table table { @apply w-full border-collapse text-sm; line-height: 1.5; }
+  .docs-table th, .docs-table td { @apply border border-kumo-line px-2.5 py-1.5 text-left align-top; }
+  .docs-table th { @apply bg-kumo-recessed font-semibold text-kumo-strong; }
+  .docs-figure { @apply flex flex-col items-center gap-2 rounded-lg border border-kumo-hairline bg-kumo-base p-3; }
+  .docs-figure__image { @apply h-auto max-w-full; }
+  .docs-figure__note { @apply self-stretch text-sm text-kumo-subtle; }
+  .docs-image { @apply inline-flex items-center gap-1 rounded bg-kumo-recessed px-1.5 text-sm text-kumo-subtle; }
+  .docs-source { @apply m-0 list-none p-0 font-mono text-[13px] leading-5; }
+  /* A blank source line has no text; the minimum height keeps its row and its number. */
+  .docs-source li { @apply relative min-h-5 whitespace-pre-wrap; overflow-wrap: anywhere; }
+  .docs-source li::before { content: attr(data-line); @apply absolute w-7 text-right text-[11px] text-kumo-subtle select-none; left: -2.25rem; opacity: .7; }
+  @media (min-width: 40rem) { .docs-source li::before { left: -2.75rem; width: 2.25rem; } }
 
   .tone-user { @apply text-kumo-warning; }
   .tone-agent { @apply text-kumo-info; }
