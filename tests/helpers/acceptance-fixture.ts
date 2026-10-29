@@ -13,8 +13,9 @@ export async function fixtureReviewResult(args: {
     summary: args.summary, findings: args.findings };
 }
 
-export async function recordFixtureAcceptance(args: Parameters<typeof import('../../scripts/acceptance-receipt').recordAcceptance>[0]) {
+/** A fixture opinion has no bound author task session. */
+export async function recordFixtureAcceptance(args: Omit<Parameters<typeof import('../../scripts/acceptance-receipt').recordAcceptance>[0], 'author'>) {
   const { recordAcceptance } = await import('../../scripts/acceptance-receipt');
-  if (args.disposition === 'user_waiver') return recordAcceptance(args);
-  return recordAcceptance({ ...args, reviewResult: args.reviewResult ?? await fixtureReviewResult(args) });
+  if (args.disposition === 'user_waiver') return recordAcceptance({ ...args, author: null });
+  return recordAcceptance({ ...args, author: null, reviewResult: args.reviewResult ?? await fixtureReviewResult(args) });
 }

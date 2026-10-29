@@ -93,7 +93,7 @@ test('reservation and unknown send stay pending; exact accepted host proof commi
   writeFileSync(join(f.bound.dir,'started-1.json'),JSON.stringify({request_id:f.request.request_id,provider:f.bound.binding.provider}));
   const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:f.request.request_id, round:1,
     host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:f.native.native_session_id,input_id:f.request.request_id,
-    seq:1,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:null,rejection:null };
+    seq:1,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:null,rejection:null,actual_model:null };
   recordPrePromptInboxAccepted({...consume,consumed_at,observation});
   expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'pending'});
   observation.control='accepted';observation.seq=2;
@@ -129,7 +129,7 @@ function publishAccepted(f: Awaited<ReturnType<typeof fixture>>, request: TaskRe
   writeFileSync(join(f.bound.dir,`started-${request.round}.json`),JSON.stringify({request_id:request.request_id,provider:f.bound.binding.provider}));
   const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:request.request_id, round:request.round,
     host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:nativeSessionId,input_id:request.request_id,
-    seq:2,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:'accepted',rejection:null };
+    seq:2,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:'accepted',rejection:null,actual_model:null };
   writeFileSync(join(f.bound.dir,oarObservationFile(request.round)),JSON.stringify(observation));
   recordPrePromptInboxAccepted({ request,requestDirectory:f.bound.dir,native_session_id:nativeSessionId,host:'codex',consumed_at:Date.now(),observation });
 }

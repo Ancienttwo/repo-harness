@@ -275,7 +275,7 @@ describe('ME-4C integration product acceptance', () => {
 
     const legacy = readFileSync(value.legacyPath);
     const acceptance = {
-      protocol: 3,
+      protocol: 4,
       kind: 'repo-harness-acceptance-receipt',
       repository_root: value.root,
       campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
@@ -293,6 +293,7 @@ describe('ME-4C integration product acceptance', () => {
       reviewer: 'User',
       source: 'user-waiver',
       request_id: null, context_sha256: null, result_sha256: null, actual_harness: null, actual_role: null, actual_model: null,
+      author_session_binding_sha256: null, author_actual_models: null, model_relation: null,
       actor: 'owner',
       summary: 'approved fixture',
       findings: [],
@@ -397,7 +398,7 @@ describe('ME-4C integration product acceptance', () => {
 
     const receiptRace = fixture();
     const acceptance = {
-      protocol: 3,
+      protocol: 4,
       kind: 'repo-harness-acceptance-receipt',
       repository_root: receiptRace.root,
       campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
@@ -415,6 +416,7 @@ describe('ME-4C integration product acceptance', () => {
       reviewer: 'Codex',
       source: 'generic-review',
       request_id: 'fixture-request', context_sha256: `sha256:${'1'.repeat(64)}`, result_sha256: `sha256:${'2'.repeat(64)}`, actual_harness: 'codex', actual_role: 'deep-reasoner', actual_model: 'fixture-model',
+      author_session_binding_sha256: null, author_actual_models: null, model_relation: 'unknown',
       actor: null,
       summary: 'verified before read race',
       findings: [],
@@ -440,7 +442,7 @@ describe('ME-4C integration product acceptance', () => {
     const value = fixture();
     const home = realpathSync(mkdtempSync(join(tmpdir(), 'product-receipt-record-'))); roots.push(home);
     const acceptance = {
-      protocol: 3,
+      protocol: 4,
       kind: 'repo-harness-acceptance-receipt',
       repository_root: realpathSync(value.root),
       campaign_sha256: DIGEST, admission_sha256: DIGEST, grant_sha256: DIGEST,
@@ -458,6 +460,7 @@ describe('ME-4C integration product acceptance', () => {
       reviewer: 'Codex',
       source: 'generic-review',
       request_id: 'fixture-request', context_sha256: `sha256:${'1'.repeat(64)}`, result_sha256: `sha256:${'2'.repeat(64)}`, actual_harness: 'codex', actual_role: 'deep-reasoner', actual_model: 'fixture-model',
+      author_session_binding_sha256: null, author_actual_models: null, model_relation: 'unknown',
       actor: null,
       summary: 'recorded receipt',
       findings: [],
