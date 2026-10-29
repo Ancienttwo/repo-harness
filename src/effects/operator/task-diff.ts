@@ -6,8 +6,8 @@ import { observeAdmittedSessionSource, SessionObservationError, runSessionObserv
 /** Filters may execute commands even with --no-ext-diff and --no-textconv.
  * Refuse them rather than silently changing the repository's Git semantics.
  */
-function refuseExternalFilters(cwd: string): void {
-  const output = git(cwd, ['config', '--includes', '--null', '--get-regexp', '^filter\\..*\\.(clean|process)$'], true);
+export function refuseExternalFilters(cwd: string, run: typeof git = git): void {
+  const output = run(cwd, ['config', '--includes', '--null', '--get-regexp', '^filter\\..*\\.(clean|process)$'], true);
   if (!output) return;
   if (!output.endsWith('\0')) return refuse('unavailable');
   const effective = new Map<string, string>();
@@ -21,8 +21,8 @@ function refuseExternalFilters(cwd: string): void {
 
 // Git omits worktree checks for assume-unchanged (lowercase tag) and
 // skip-worktree (`S`) entries; never label that an empty diff.
-function refuseHiddenWorktreeEntries(cwd: string): void {
-  const entries = git(cwd, ['ls-files', '-v', '-z']);
+export function refuseHiddenWorktreeEntries(cwd: string, run: typeof git = git): void {
+  const entries = run(cwd, ['ls-files', '-v', '-z']);
   if (entries && !entries.endsWith('\0')) return refuse('unavailable');
   if (entries.split('\0').some(entry => /^[a-zS] /.test(entry))) return refuse('index_unsupported');
 }

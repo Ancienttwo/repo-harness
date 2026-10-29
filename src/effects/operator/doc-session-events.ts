@@ -37,7 +37,7 @@ const fail = (code: DocSessionEventsFailure): never => { throw new DocSessionEve
  * and `<sid>` must be real directories: a symlink at either level would move
  * the log out of the operator state directory.
  */
-function sessionDirectory(env: NodeJS.ProcessEnv, sessionId: string): string {
+export function sessionDirectory(env: NodeJS.ProcessEnv, sessionId: string): string {
   if (!SESSION_ID.test(sessionId)) return fail('session_not_found');
   const sessions = join(operatorStateDir(env), 'sessions');
   const directory = join(sessions, sessionId);
