@@ -59,8 +59,9 @@ function listed(f: ReturnType<typeof fixture>) {
   expect(output).toMatchObject({ protocol: 1, kind: 'operator_worktree_list', snapshot: { version: 1, status: 'ready' } });
   const rows = output.snapshot.repositories[0].worktrees as { id: string; directory: string; judgment: string }[];
   const greenIds = rows.filter(row => row.judgment === 'green').map(row => row.id).sort();
-  expect(output.green.ids).toEqual(greenIds);
-  if (greenIds.length === 1) expect(output.green.digest).toBe(output.digests[greenIds[0]!]);
+  expect(output.green.flatMap((batch: { ids: string[] }) => batch.ids)).toEqual(greenIds);
+  if (greenIds.length === 1) expect(output.green).toEqual([{ ids: greenIds, digest: output.digests[greenIds[0]!] }]);
+  if (greenIds.length === 0) expect(output.green).toEqual([]);
   return { output, row: (directory: string) => rows.find(row => row.directory === directory)! };
 }
 
@@ -108,7 +109,7 @@ test('clean removes exactly the green selection, replays a reused request id and
   expect(audit.split('\n').filter(Boolean).map(line => JSON.parse(line).phase)).toEqual(Array.from({ length: 3 }, () => ['intent', 'result']).flat());
 });
 
-test('human output splits 17 green rows into commands that each pass the request decoder, and JSON keeps one green selection', () => {
+test('17 green rows give JSON batches and human commands that each pass the request decoder', () => {
   const view = (index: number): WorktreeView => ({
     id: `wt_${index.toString(16).padStart(64, '0')}`, repository_id: 'repo_0123456789abcdef', directory: `repo-wt-${index}`, branch: `task-${index}`,
     source: 'manual', judgment: 'green', reasons: [], size_bytes: null, size_observed_at: null, process_count: 0, dirty_files: 0, ignored_entries: 0,
@@ -126,6 +127,6 @@ test('human output splits 17 green rows into commands that each pass the request
     const request = decodeWorktreeCleanupRequest({ ids: command[command.indexOf('--ids') + 1]!.split(','), expected_digest: command[command.indexOf('--expected-digest') + 1]! });
     expect(request.expected_digest).toBe(selectionDigest(rows.filter(row => batch.ids.includes(row.id)).map(worktreeDigestRow)));
   }
-  const output = worktreeListOutput(snapshot);
-  expect(output.green).toEqual({ ids, digest: selectionDigest(rows.map(worktreeDigestRow)) });
+  // One builder: the JSON batches are the batches the human output prints.
+  expect(worktreeListOutput(snapshot).green).toEqual(batches);
 });

@@ -20,33 +20,35 @@ export interface WorktreeListOutput {
   readonly snapshot: WorktreesSnapshot;
   /** The selection digest of each row alone, for a one-row clean command. */
   readonly digests: Readonly<Record<string, string>>;
-  readonly green: { readonly ids: readonly string[]; readonly digest: string | null };
+  /** Green rows in id order, in selections that one clean request accepts; empty when nothing is green. */
+  readonly green: readonly GreenCleanupBatch[];
 }
+
+export interface GreenCleanupBatch { readonly ids: readonly string[]; readonly digest: string }
 
 const rowsOf = (snapshot: WorktreesSnapshot): WorktreeView[] => [...snapshot.repositories.flatMap(group => group.worktrees), ...snapshot.unassigned];
 const byId = (left: WorktreeView, right: WorktreeView) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 
-export function worktreeListOutput(snapshot: WorktreesSnapshot): WorktreeListOutput {
-  const rows = rowsOf(snapshot);
-  const green = rows.filter(row => row.judgment === 'green').sort(byId);
-  return {
-    protocol: 1,
-    kind: 'operator_worktree_list',
-    snapshot,
-    digests: Object.fromEntries(rows.map(row => [row.id, selectionDigest([worktreeDigestRow(row)])])),
-    green: { ids: green.map(row => row.id), digest: green.length ? selectionDigest(green.map(worktreeDigestRow)) : null },
-  };
-}
-
 /** Green rows in id order, split into selections that one clean request accepts, each with its own digest. */
-export function greenCleanupBatches(snapshot: WorktreesSnapshot): { readonly ids: readonly string[]; readonly digest: string }[] {
+export function greenCleanupBatches(snapshot: WorktreesSnapshot): GreenCleanupBatch[] {
   const green = rowsOf(snapshot).filter(row => row.judgment === 'green').sort(byId);
-  const batches: { ids: string[]; digest: string }[] = [];
+  const batches: GreenCleanupBatch[] = [];
   for (let start = 0; start < green.length; start += WORKTREE_CLEANUP_MAX_IDS) {
     const batch = green.slice(start, start + WORKTREE_CLEANUP_MAX_IDS);
     batches.push({ ids: batch.map(row => row.id), digest: selectionDigest(batch.map(worktreeDigestRow)) });
   }
   return batches;
+}
+
+/** The JSON of `worktrees list --json`; its green batches are the ones the human output prints. */
+export function worktreeListOutput(snapshot: WorktreesSnapshot): WorktreeListOutput {
+  return {
+    protocol: 1,
+    kind: 'operator_worktree_list',
+    snapshot,
+    digests: Object.fromEntries(rowsOf(snapshot).map(row => [row.id, selectionDigest([worktreeDigestRow(row)])])),
+    green: greenCleanupBatches(snapshot),
+  };
 }
 
 export const cleanCommand = (ids: readonly string[], digest: string) => `repo-harness worktrees clean --ids ${ids.join(',')} --expected-digest ${digest}`;
@@ -59,10 +61,9 @@ function printList(output: WorktreeListOutput): void {
       row.branch ?? '-', row.reasons.join(',') || '-', size, row.id].join('\t'));
   }
   if (output.snapshot.status !== 'ready') console.log(`[repo-harness worktrees] inventory ${output.snapshot.status}`);
-  const batches = greenCleanupBatches(output.snapshot);
-  if (!batches.length) console.log('[repo-harness worktrees] no green worktrees');
-  else console.log(`[repo-harness worktrees] ${output.green.ids.length} green:`);
-  for (const batch of batches) console.log(cleanCommand(batch.ids, batch.digest));
+  if (!output.green.length) console.log('[repo-harness worktrees] no green worktrees');
+  else console.log(`[repo-harness worktrees] ${output.green.reduce((total, batch) => total + batch.ids.length, 0)} green:`);
+  for (const batch of output.green) console.log(cleanCommand(batch.ids, batch.digest));
 }
 
 interface CleanOptions { readonly ids: string; readonly expectedDigest: string; readonly requestId?: string; readonly json?: boolean }
