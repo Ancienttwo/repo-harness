@@ -285,7 +285,7 @@ function cleanupPlan(now: number, worktrees: WorktreesSnapshot): unknown {
     };
   };
   return {
-    protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: CLEANUP_SESSION, agent: 'idle', state: 'ready', plan_sha256: PLAN_SHA,
+    protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: CLEANUP_SESSION, runtime: 'codex', agent: 'idle', state: 'ready', plan_sha256: PLAN_SHA,
     items: [
       item('feat-kanban-status', { evidence: ['PR #606 merged into main'] }),
       item('operator-site-wt-footer', {}),

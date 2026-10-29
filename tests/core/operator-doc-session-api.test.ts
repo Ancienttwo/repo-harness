@@ -97,7 +97,7 @@ const item = (overrides: Record<string, unknown> = {}) => ({
 });
 const yellow = item({ id: WT_YELLOW, directory: 'repo-harness-wt-oar', judgment: 'yellow', advice: 'archive_then_delete', reason: 'Its notes are worth keeping.',
   archive: { branch: 'docs/archive-oar', private_directory: null } });
-const plan = { protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, agent: 'idle', state: 'ready', plan_sha256: SHA, items: [item(), yellow], observed_at: AT };
+const plan = { protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, runtime: 'codex', agent: 'idle', state: 'ready', plan_sha256: SHA, items: [item(), yellow], observed_at: AT };
 const result = { protocol: 1, kind: 'operator_worktree_cleanup_session', session_id: SID,
   archive: { state: 'done', failed_step: null, pull_request: PR },
   items: [{ id: WT, repository_id: REPO, directory: 'feat-kanban-status', outcome: 'removed', reason: null },
@@ -122,6 +122,11 @@ describe('worktree cleanup session wire decoders', () => {
 
   test('enforce the cross-field rules', () => {
     refuses(() => decodeOperatorCleanupPlan(plan, OTHER));
+    // The runtime names the agent in the record: it is required and must be a runtime id.
+    expect(decodeOperatorCleanupPlan(plan, SID).runtime).toBe('codex');
+    const { runtime: _, ...withoutRuntime } = plan;
+    refuses(() => decodeOperatorCleanupPlan(withoutRuntime, SID));
+    refuses(() => decodeOperatorCleanupPlan({ ...plan, runtime: 'Codex CLI' }, SID));
     // Only a yellow item carries advice; green follows the sweep rule and red has no delete entry.
     refuses(() => decodeOperatorCleanupPlan({ ...plan, items: [item({ advice: 'delete', reason: 'Merged.' })] }, SID));
     refuses(() => decodeOperatorCleanupPlan({ ...plan, items: [item({ judgment: 'yellow' })] }, SID));

@@ -1,3 +1,4 @@
+import { isAgentRuntimeId } from './agents-settings';
 import { DOC_SESSION_AGENT_STATES, DOC_SESSION_ID, type DocSessionAgentState } from './doc-session-api';
 import { WORKTREE_CLEANUP_MAX_IDS, WORKTREE_CLEANUP_SKIP_REASONS, type WorktreeCleanupRequest } from './worktree-cleanup';
 import { isPublicWorktreeDirectory, WORKTREE_REASONS, type WorktreeView } from './worktrees';
@@ -54,6 +55,8 @@ export interface OperatorCleanupPlanV1 {
   readonly protocol: 1;
   readonly kind: 'operator_worktree_cleanup_plan';
   readonly session_id: string;
+  /** The runtime that works the session; the record names it as the agent. */
+  readonly runtime: string;
   readonly agent: DocSessionAgentState;
   readonly state: CleanupPlanState;
   readonly plan_sha256: string | null;
@@ -143,9 +146,9 @@ export function decodeOperatorCleanupSessionCreated(value: unknown): OperatorCle
 }
 
 export function decodeOperatorCleanupPlan(value: unknown, sessionId: string): OperatorCleanupPlanV1 {
-  const plan = exact(value, ['agent', 'items', 'kind', 'observed_at', 'plan_sha256', 'protocol', 'session_id', 'state'], 'plan');
+  const plan = exact(value, ['agent', 'items', 'kind', 'observed_at', 'plan_sha256', 'protocol', 'runtime', 'session_id', 'state'], 'plan');
   if (plan.protocol !== 1 || plan.kind !== 'operator_worktree_cleanup_plan' || plan.session_id !== sessionId || !DOC_SESSION_ID.test(sessionId)
-    || !one(plan.agent, DOC_SESSION_AGENT_STATES) || !one(plan.state, CLEANUP_PLAN_STATES) || !timestamp(plan.observed_at)
+    || !isAgentRuntimeId(plan.runtime) || !one(plan.agent, DOC_SESSION_AGENT_STATES) || !one(plan.state, CLEANUP_PLAN_STATES) || !timestamp(plan.observed_at)
     || !(plan.plan_sha256 === null || (typeof plan.plan_sha256 === 'string' && SHA256.test(plan.plan_sha256)))
     || (plan.state === 'investigating') !== (plan.plan_sha256 === null) || !Array.isArray(plan.items)) fail('plan');
   const ids = new Set<string>();
