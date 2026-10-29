@@ -498,3 +498,11 @@ GET 不保存已读状态，跨 epoch 比较沿用事件游标规则。
 旧控制目录或 scratch 被链接替换时拒绝恢复，清理不沿链接删除其他凭据。
 空闲上限仍为 30 分钟，启动和单宿主总时长沿用 G5；是否调整空闲上限仍等 owner 决定。
 脚本化 OAR 测试验证的是生命周期、游标和入口合同，真实 provider 的历史连续性和 macOS 隔离仍需 D1 验收。
+
+
+### 提交范围的宿主策略交接
+
+`isDocsHostWritablePath(path)` 从 `docs-host-isolation.ts` 导出宿主的词法写入范围。
+Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配置输出保持不变。
+#1023 的范围适配器可把它作为 `is_writable_path`，再组合既有 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
+这个函数不证明文件系统目标、安全退出或生成区域可写，不能单独授权提交或丢弃。
