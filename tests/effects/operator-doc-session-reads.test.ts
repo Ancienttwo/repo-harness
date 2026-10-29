@@ -447,6 +447,24 @@ test('ignored leaves count toward the loss cap and ignored symlinks are never fo
   expect(await lossOf(s)).toMatchObject({ status: 413, body: { code: 'too_large' } });
 });
 
+test('empty ignored directories at the loss cap remain readable; exceeding it refuses too_large through HTTP and CLI', async () => {
+  const s = await session();
+  for (let index = 0; index < 1000; index += 1) mkdirSync(join(s.worktree, 'docs', `${index}.log`));
+  const atLimit = await lossOf(s);
+  expect(atLimit.status).toBe(200);
+  expect(atLimit.body.ignored).toHaveLength(1000);
+  expect(atLimit.body.files).toEqual([]);
+
+  mkdirSync(join(s.worktree, 'docs', 'overflow.log'));
+  const overLimit = await lossOf(s);
+  expect(overLimit).toMatchObject({ status: 413, body: { code: 'too_large' } });
+  expectNoPrivatePath(s, overLimit.text);
+  const cli = s.cli('loss', s.sid, '--json');
+  expect(cli.status).toBe(2);
+  expect(cli.stdout).toBe('');
+  expect(JSON.parse(cli.stderr as string)).toEqual({ error: { code: 'too_large' } });
+});
+
 test.each(['modified', 'added', 'deleted'])('staged-only %s data changes the loss digest and public list', async status => {
   const s = await session();
   const beforeLoss = await lossOf(s);
