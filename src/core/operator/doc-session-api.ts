@@ -39,6 +39,12 @@ export const DOC_SESSION_PATH_REFUSALS = ['path_outside_scope', 'generated_regio
 export const DOC_SESSION_TITLE_MAX = 120;
 export const DOC_SESSION_MESSAGE_MAX = 8_000;
 export const DOC_SESSION_COMMIT_MESSAGE_MAX = 500;
+/**
+ * The most lines one citation names. Each relocation candidate is hashed, so
+ * the cap bounds the work of one check. It lives here, not beside the node
+ * hash in `doc-citation.ts`, so the page that builds citations can import it.
+ */
+export const DOC_CITATION_MAX_LINES = 500;
 
 export interface DocSessionCitationView {
   readonly path: string;

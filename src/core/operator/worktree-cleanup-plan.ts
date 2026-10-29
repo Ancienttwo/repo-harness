@@ -42,6 +42,13 @@ export interface CleanupPlanItemV1 {
   readonly archive: { readonly branch: string | null; readonly private_directory: string | null } | null;
 }
 
+/** `POST /api/v1/sessions` with `kind: worktree_cleanup`: 201 and the new session id. */
+export interface OperatorCleanupSessionCreatedV1 {
+  readonly protocol: 1;
+  readonly kind: 'operator_worktree_cleanup_session_created';
+  readonly session_id: string;
+}
+
 /** `GET /api/v1/sessions/{sid}/plan`. `plan_sha256` is null until the agent hands in the plan. */
 export interface OperatorCleanupPlanV1 {
   readonly protocol: 1;
@@ -126,6 +133,13 @@ function decodePlanItem(raw: unknown): CleanupPlanItemV1 {
       || (archive.branch === null && archive.private_directory === null) || item.advice !== 'archive_then_delete') fail('item archive');
   } else if (item.advice === 'archive_then_delete') fail('item archive');
   return item as unknown as CleanupPlanItemV1;
+}
+
+export function decodeOperatorCleanupSessionCreated(value: unknown): OperatorCleanupSessionCreatedV1 {
+  const created = exact(value, ['kind', 'protocol', 'session_id'], 'created');
+  if (created.protocol !== 1 || created.kind !== 'operator_worktree_cleanup_session_created'
+    || typeof created.session_id !== 'string' || !DOC_SESSION_ID.test(created.session_id)) fail('created');
+  return value as OperatorCleanupSessionCreatedV1;
 }
 
 export function decodeOperatorCleanupPlan(value: unknown, sessionId: string): OperatorCleanupPlanV1 {
