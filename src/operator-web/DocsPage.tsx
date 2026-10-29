@@ -163,6 +163,8 @@ function FileView({ file, mode, onOpen, renderMermaid, t }: {
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-kumo-subtle">
           <span title={file.commit} data-docs-commit={file.commit}>{refName(file.ref)} @ {file.commit.slice(0, 7)}</span>
           <span aria-hidden="true">·</span>
+          <time dateTime={file.committed_at} title={file.committed_at} data-docs-committed>{file.committed_at.slice(0, 10)}</time>
+          <span aria-hidden="true">·</span>
           <span data-docs-lines={file.lines.length}>{t('docs.lines', { count: file.lines.length })}</span>
           {file.worktree_differs && (
             <span className="operator-badge bg-kumo-warning-tint font-sans text-kumo-default" title={t('docs.dirty.title')} data-docs-dirty>

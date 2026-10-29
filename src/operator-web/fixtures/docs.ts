@@ -7,6 +7,7 @@ import { docsLines, OPERATOR_DOCS_FILE_KIND, OPERATOR_DOCS_TREE_KIND } from '../
 
 export const DOCS_REF = 'refs/remotes/origin/main';
 export const DOCS_COMMIT = '49f7ba6fa3c1d2e4b5a6978877665544332211aa';
+export const DOCS_COMMITTED_AT = '2026-10-27T08:15:42.000Z';
 
 const README = `# Operator console
 
@@ -120,7 +121,7 @@ export function docsFileAnswer(repositoryId: string, path: string): DocsWireAnsw
   return {
     status: 200,
     body: {
-      protocol: 1, kind: OPERATOR_DOCS_FILE_KIND, repository_id: repositoryId, ref: DOCS_REF, commit: DOCS_COMMIT,
+      protocol: 1, kind: OPERATOR_DOCS_FILE_KIND, repository_id: repositoryId, ref: DOCS_REF, commit: DOCS_COMMIT, committed_at: DOCS_COMMITTED_AT,
       path, size: bytes(file.text), sha256: digest(index + 1), text: file.text, lines: docsLines(file.text), worktree_differs: file.worktree_differs,
     },
   };

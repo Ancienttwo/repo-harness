@@ -585,7 +585,7 @@ describe('operator serve command and HTTP boundary', () => {
       const ok = await file('repo-a', 'path=docs/guide.md');
       expect(ok.status).toBe(200);
       expect(await ok.json()).toEqual({ protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: 'refs/remotes/origin/main', commit,
-        path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n',
+        committed_at: new Date(gitIn('log', '-1', '--format=%cI', commit)).toISOString(), path: 'docs/guide.md', size: 8, sha256: createHash('sha256').update('# Guide\n').digest('hex'), text: '# Guide\n',
         lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
       const head = await file('repo-a', 'path=docs/guide.md', { method: 'HEAD' });
       expect(head.status).toBe(200);

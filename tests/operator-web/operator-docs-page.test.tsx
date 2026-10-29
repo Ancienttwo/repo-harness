@@ -9,7 +9,7 @@ import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { docsLink, MERMAID_CONFIG } from '../../src/operator-web/DocsMarkdown';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
-import { DOCS_COMMIT, docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from '../../src/operator-web/fixtures/docs';
+import { DOCS_COMMIT, DOCS_COMMITTED_AT, docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from '../../src/operator-web/fixtures/docs';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 // Mermaid needs a layout engine to draw; this stand-in records how the page
@@ -145,6 +145,9 @@ describe('docs page', () => {
     const header = document.querySelector<HTMLElement>('[data-docs-file-header]')!;
     expect(header.querySelector('h2')?.textContent).toBe('docs/design/console.md');
     expect(header.querySelector('[data-docs-commit]')?.textContent).toBe(`origin/main @ ${DOCS_COMMIT.slice(0, 7)}`);
+    const committed = header.querySelector('time[data-docs-committed]')!;
+    expect(committed.getAttribute('datetime')).toBe(DOCS_COMMITTED_AT);
+    expect(committed.textContent).toBe('2026-10-27');
     expect(header.querySelector('[data-docs-lines]')?.textContent).toBe('11 lines');
     expect(header.querySelector('[data-docs-dirty]')?.textContent).toBe('Working copy differs · citations use the commit');
     expect(body().querySelector('h1')?.textContent).toBe('Console design');
