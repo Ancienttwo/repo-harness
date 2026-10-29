@@ -25,7 +25,7 @@ import { decodeTestsSnapshot } from '../../core/operator/tests';
 import type { CiRepairsRead, ExecutionRead, TestsRead } from '../repository-reads';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
-import { busyWorktrees, degradedWorktrees, emptyWorktrees } from './worktrees';
+import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
 import { agentsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
@@ -123,6 +123,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialSetup: setup,
     readWorktrees: () => Promise.resolve(worktrees),
     initialWorktrees: worktrees,
+    writeWorktreeCleanup: worktreeCleanupFixture(worktrees),
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),

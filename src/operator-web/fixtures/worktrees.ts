@@ -2,7 +2,9 @@
 // src/core/operator/worktrees.ts; every fixture passes the same decoder the
 // browser applies to served snapshots. Branches line up with the board fixture
 // so its merged `feat/kanban-status` card joins a green worktree.
+import { decodeWorktreeCleanupResult } from '../../core/operator/worktree-cleanup';
 import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/operator/worktrees';
+import type { WorktreeCleanupWriter } from '../worktrees';
 import { HARNESS_ID } from './dev-activity';
 
 const SITE_ID = 'repo_1f2e3d4c5b6a7980';
@@ -97,4 +99,17 @@ export function degradedWorktrees(now: number): WorktreesSnapshot {
     ],
     unassigned: [],
   };
+}
+
+/** Removes every requested row but the last of several, which a process took after the page read it. */
+export function worktreeCleanupFixture(snapshot: WorktreesSnapshot): WorktreeCleanupWriter {
+  const rows = new Map(snapshot.repositories.flatMap(repository => repository.worktrees).map(row => [row.id, row]));
+  return body => Promise.resolve({ state: 'cleaned', result: decodeWorktreeCleanupResult({
+    protocol: 1, kind: 'operator_worktree_cleanup',
+    items: body.ids.map((id, index) => {
+      const row = rows.get(id)!;
+      const skipped = body.ids.length > 1 && index === body.ids.length - 1;
+      return { id, repository_id: row.repository_id, directory: row.directory, outcome: skipped ? 'skipped' : 'removed', reason: skipped ? 'process_in_use' : null };
+    }),
+  }) });
 }
