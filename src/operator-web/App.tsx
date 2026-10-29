@@ -597,7 +597,7 @@ export function OperatorApp({
           {workspace === 'session' && place.item !== null && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <DocSessionPage sessionId={place.item} docSessions={docSessions} readDetail={readDocSession} readEvents={readDocSessionEvents}
               readDiff={readDocSessionDiff} readLoss={readDocSessionLoss} writeMessage={writeDocSessionMessage} writeStop={writeDocSessionStop}
-              writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />
+              writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
           {workspace === 'cleanup' && place.item !== null && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <CleanupSessionPage sessionId={place.item} docSessions={docSessions} readEvents={readDocSessionEvents} readPlan={readCleanupPlan}
