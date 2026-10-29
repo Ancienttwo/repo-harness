@@ -1,6 +1,6 @@
 import { isAgentRuntimeId } from './agents-settings';
-import { DOC_SESSION_AGENT_STATES, DOC_SESSION_ID, type DocSessionAgentState } from './doc-session-api';
-import { WORKTREE_CLEANUP_MAX_IDS, WORKTREE_CLEANUP_SKIP_REASONS, type WorktreeCleanupRequest } from './worktree-cleanup';
+import { DOC_SESSION_AGENT_STATES, DOC_SESSION_ID, PULL_URL, type DocSessionAgentState } from './doc-session-api';
+import { DIGEST, WORKTREE_CLEANUP_MAX_IDS, WORKTREE_CLEANUP_SKIP_REASONS, WORKTREE_ID, type WorktreeCleanupRequest } from './worktree-cleanup';
 import { isPublicWorktreeDirectory, WORKTREE_REASONS, type WorktreeView } from './worktrees';
 
 /**
@@ -101,11 +101,8 @@ export interface OperatorCleanupSessionResultV1 {
   readonly items: readonly CleanupSessionItemV1[];
 }
 
-const WORKTREE_ID = /^wt_[a-f0-9]{64}$/u;
 const REPOSITORY_ID = /^repo_[a-f0-9]{16}$/u;
-const SHA256 = /^[a-f0-9]{64}$/u;
 const ARCHIVE_BRANCH = /^docs\/archive-[a-z0-9][a-z0-9-]{0,99}$/u;
-const PULL_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u;
 const REASONS: readonly string[] = [...WORKTREE_REASONS, ...WORKTREE_CLEANUP_SKIP_REASONS, ...CLEANUP_SESSION_SKIP_REASONS];
 
 const fail = (what: string): never => { throw new Error(`cleanup plan ${what}`); };
@@ -123,7 +120,7 @@ function decodePlanItem(raw: unknown): CleanupPlanItemV1 {
   const item = exact(raw, ['advice', 'archive', 'branch', 'directory', 'evidence', 'id', 'judgment', 'loss', 'loss_sha256', 'reason', 'repository_id'], 'item');
   if (typeof item.id !== 'string' || !WORKTREE_ID.test(item.id) || typeof item.repository_id !== 'string' || !REPOSITORY_ID.test(item.repository_id)
     || !isPublicWorktreeDirectory(item.directory) || !(item.branch === null || text(item.branch)) || !one(item.judgment, ['green', 'yellow', 'red'] as const)
-    || typeof item.loss_sha256 !== 'string' || !SHA256.test(item.loss_sha256)) fail('item');
+    || typeof item.loss_sha256 !== 'string' || !DIGEST.test(item.loss_sha256)) fail('item');
   // Only a yellow item carries the agent's advice; green follows the sweep rule and red has no delete entry.
   if (item.judgment === 'yellow' ? !one(item.advice, CLEANUP_PLAN_ADVICE) || !text(item.reason) : item.advice !== null || item.reason !== null) fail('item advice');
   if (!Array.isArray(item.evidence) || item.evidence.length > CLEANUP_PLAN_EVIDENCE_MAX || !item.evidence.every(text)) fail('item evidence');
@@ -149,7 +146,7 @@ export function decodeOperatorCleanupPlan(value: unknown, sessionId: string): Op
   const plan = exact(value, ['agent', 'items', 'kind', 'observed_at', 'plan_sha256', 'protocol', 'runtime', 'session_id', 'state'], 'plan');
   if (plan.protocol !== 1 || plan.kind !== 'operator_worktree_cleanup_plan' || plan.session_id !== sessionId || !DOC_SESSION_ID.test(sessionId)
     || !isAgentRuntimeId(plan.runtime) || !one(plan.agent, DOC_SESSION_AGENT_STATES) || !one(plan.state, CLEANUP_PLAN_STATES) || !timestamp(plan.observed_at)
-    || !(plan.plan_sha256 === null || (typeof plan.plan_sha256 === 'string' && SHA256.test(plan.plan_sha256)))
+    || !(plan.plan_sha256 === null || (typeof plan.plan_sha256 === 'string' && DIGEST.test(plan.plan_sha256)))
     || (plan.state === 'investigating') !== (plan.plan_sha256 === null) || !Array.isArray(plan.items)) fail('plan');
   const ids = new Set<string>();
   for (const raw of plan.items as unknown[]) {

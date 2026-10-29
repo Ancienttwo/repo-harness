@@ -238,6 +238,7 @@ export function docSessionFixture(now: number, fixture: DocSessionFixtureName, w
         protocol: 1, kind: 'operator_docs_session', session_id: sessionId, state: 'created', repository_id: body.repository_id, runtime: body.runtime,
         branch: `docs/session-${created}`, worktree: `repo-harness-wt-docs-session-${created}`, base_commit: BASE_COMMIT,
         citations: body.citations.map(citation => ({ path: citation.path, start_line: citation.start_line, end_line: citation.end_line, relocated: false })),
+        agent: 'starting',
       } };
     }).then(response => sessionWriteAnswer(response, decodeOperatorDocSessionCreated)),
     writeDocSessionMessage: (sessionId, body) => write(() => ok({
@@ -270,6 +271,11 @@ export function docSessionFixture(now: number, fixture: DocSessionFixtureName, w
   };
 }
 
+/** The plan lists only items whose loss was counted; an unknown count has no place in it. */
+const known = (count: number | null): number => {
+  if (count === null) throw new Error('cleanup plan fixture item has an unknown loss count');
+  return count;
+};
 const LOSS_SHA = (seed: string) => seed.repeat(64).slice(0, 64);
 
 /** Two green items, a yellow one to archive and one to delete, and a red one with no delete entry. */
@@ -280,7 +286,7 @@ function cleanupPlan(now: number, worktrees: WorktreesSnapshot): unknown {
     return {
       id: row.id, repository_id: row.repository_id, directory, branch: row.branch, judgment: row.judgment,
       advice: null, reason: null, evidence: [], archive: null,
-      loss: { unpushed_commits: row.unpushed_commits ?? 0, dirty_files: row.dirty_files ?? 0, ignored_entries: row.ignored_entries ?? 0 },
+      loss: { unpushed_commits: known(row.unpushed_commits), dirty_files: known(row.dirty_files), ignored_entries: known(row.ignored_entries) },
       loss_sha256: LOSS_SHA(row.id.slice(3, 5)), ...fields,
     };
   };
@@ -295,7 +301,7 @@ function cleanupPlan(now: number, worktrees: WorktreesSnapshot): unknown {
         archive: { branch: 'docs/archive-oar-0-45', private_directory: null },
       }),
       item('repo-harness-wt-docs-cleanup', {
-        advice: 'delete', reason: 'Its branch is in main and its task ended a day ago; only the lock keeps it.',
+        advice: 'delete', reason: 'Its branch is in main; only the lock keeps it.',
         evidence: ['docs/feynman is an ancestor of main', 'task run closed'],
       }),
       item('repo-harness-wt-kanban-redesign', {}),

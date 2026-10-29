@@ -31,7 +31,7 @@ const summary = { session_id: SID, title: 'Tighten the column', repository_id: R
 const list = { protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs', 'worktree_cleanup'], sessions: [summary], observed_at: AT };
 const citation = { path: 'docs/a.md', start_line: 3, end_line: 5, relocated: false };
 const created = { protocol: 1, kind: 'operator_docs_session', session_id: SID, state: 'created', repository_id: REPO, runtime: 'codex',
-  branch: 'docs/tighten', worktree: 'repo-harness-wt-docs-tighten', base_commit: OID, citations: [citation] };
+  branch: 'docs/tighten', worktree: 'repo-harness-wt-docs-tighten', base_commit: OID, citations: [citation], agent: 'starting' };
 const { last_event: _, ...detailSummary } = summary;
 const detail = { protocol: 1, kind: 'operator_docs_session_detail', ...detailSummary, branch: 'docs/tighten', worktree: 'repo-harness-wt-docs-tighten',
   base_commit: OID, steer: 'supported', citations: [citation], delivery: null, observed_at: AT };
@@ -43,6 +43,7 @@ describe('doc session wire decoders', () => {
     expect(decodeOperatorDocSessions(list).sessions[0]!.session_id).toBe(SID);
     expect(decodeOperatorDocSessions({ ...list, kinds: [], sessions: [] }).kinds).toEqual([]);
     expect(decodeOperatorDocSessionCreated(created).citations).toEqual([citation]);
+    for (const agent of ['starting', 'running', 'idle', 'stopped', 'failed']) expect(decodeOperatorDocSessionCreated({ ...created, agent }).agent).toBe(agent);
     expect(decodeOperatorDocSessionDetail(detail, SID).steer).toBe('supported');
     expect(decodeOperatorDocSessionDetail({ ...detail, outcome: 'pr_open', delivery: DONE }, SID).delivery?.pull_request?.number).toBe(12);
     expect(decodeOperatorDocSessionMessage({ protocol: 1, kind: 'operator_docs_session_message', session_id: SID, landed: 'steered' }, SID).landed).toBe('steered');
@@ -71,6 +72,9 @@ describe('doc session wire decoders', () => {
     refuses(() => decodeOperatorDocSessions({ ...list, sessions: [{ ...summary, last_event: '01.4' }] }));
     refuses(() => decodeOperatorDocSessions({ ...list, sessions: [{ ...summary, last_activity_at: '2026-10-30' }] }));
     refuses(() => decodeOperatorDocSessionCreated({ ...created, citations: [{ ...citation, start_line: 6 }] }));
+    // The create body carries the agent state; a missing or unknown one is not the contract.
+    refuses(() => decodeOperatorDocSessionCreated({ ...created, agent: 'paused' }));
+    refuses(() => decodeOperatorDocSessionCreated(Object.fromEntries(Object.entries(created).filter(([key]) => key !== 'agent'))));
     refuses(() => decodeOperatorDocSessionCreated({ ...created, citations: [{ ...citation, path: '/etc/passwd' }] }));
     // Delivery steps run in order, and a PR link must name its own number.
     refuses(() => decodeOperatorDocSessionCommit({ protocol: 1, kind: 'operator_docs_session_commit', session_id: SID, delivery: { ...DONE, steps: [...DONE.steps].reverse() } }, SID));

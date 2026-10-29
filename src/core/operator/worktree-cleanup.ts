@@ -12,8 +12,8 @@ export const WORKTREE_CLEANUP_MAX_IDS = 16;
 export const WORKTREE_CLEANUP_SKIP_REASONS = ['changed', 'busy', 'deadline', 'recovery_pending', 'removal_unproven'] as const;
 export type WorktreeCleanupReason = typeof WORKTREE_REASONS[number] | typeof WORKTREE_CLEANUP_SKIP_REASONS[number];
 const CLEANUP_REASONS: readonly string[] = [...WORKTREE_REASONS, ...WORKTREE_CLEANUP_SKIP_REASONS];
-const WORKTREE_ID = /^wt_[a-f0-9]{64}$/u;
-const DIGEST = /^[a-f0-9]{64}$/u;
+export const WORKTREE_ID = /^wt_[a-f0-9]{64}$/u;
+export const DIGEST = /^[a-f0-9]{64}$/u;
 const REPOSITORY_ID = /^repo_[a-f0-9]{16}$/u;
 
 export interface WorktreeCleanupRequest {

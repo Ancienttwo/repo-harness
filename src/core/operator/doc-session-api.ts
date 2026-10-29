@@ -31,8 +31,8 @@ export const DOC_SESSION_WRITE_REFUSALS = [
   'citation_stale', 'path_outside_scope', 'generated_region', 'docs_isolation_unverified', 'runtime_not_enabled',
   'platform_unsupported', 'repository_not_found', 'worktree_exists', 'steer_unsupported', 'session_closed',
   'no_active_turn', 'diff_changed', 'turn_active', 'loss_changed', 'branch_pushed', 'request_mismatch', 'busy',
+  'agent_unanswered', 'stop_refused',
 ] as const;
-export type DocSessionWriteRefusal = typeof DOC_SESSION_WRITE_REFUSALS[number];
 /** Only these refusals name files; the page lists them (`4-DSES-F1`). */
 export const DOC_SESSION_PATH_REFUSALS = ['path_outside_scope', 'generated_region'] as const;
 
@@ -69,6 +69,8 @@ export interface OperatorDocSessionCreatedV1 {
   readonly worktree: string;
   readonly base_commit: string;
   readonly citations: readonly DocSessionCitationView[];
+  /** The docs host state right after the server started the session's agent. */
+  readonly agent: DocSessionAgentState;
 }
 
 export interface DocSessionSummaryV1 {
@@ -90,7 +92,11 @@ export type SessionKind = typeof SESSION_KINDS[number];
 export interface OperatorDocSessionsV1 {
   readonly protocol: 1;
   readonly kind: 'operator_docs_sessions';
-  /** Session kinds this server can start. The page shows a start control only for a listed kind. */
+  /**
+   * Session kinds whose routes this server mounts. The page shows a start control only for a listed kind.
+   * A platform without the OS boundary still lists `docs` and refuses create with 501 `platform_unsupported`
+   * (D6, `4-HOME-F1`).
+   */
   readonly kinds: readonly SessionKind[];
   readonly sessions: readonly DocSessionSummaryV1[];
   readonly observed_at: string;
@@ -131,7 +137,10 @@ export interface OperatorDocSessionStopV1 {
   readonly result: 'aborting';
 }
 
-/** 200 also when a later step failed: `delivery` says which step stopped. */
+/**
+ * 200 also when a later step failed: `delivery` says which step stopped. A resumed delivery sends the
+ * current head from a fresh diff read, not the head of the first attempt (`4-DSES-F2`).
+ */
 export interface OperatorDocSessionCommitV1 {
   readonly protocol: 1;
   readonly kind: 'operator_docs_session_commit';
@@ -160,7 +169,7 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const CURSOR = /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/u;
 const WORKTREE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/u;
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/u;
-const PULL_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u;
+export const PULL_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u;
 
 const fail = (what: string): never => { throw new Error(`doc session ${what}`); };
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -211,10 +220,11 @@ function decodeDelivery(value: unknown): void {
 }
 
 export function decodeOperatorDocSessionCreated(value: unknown): OperatorDocSessionCreatedV1 {
-  const record = header(value, ['base_commit', 'branch', 'citations', 'kind', 'protocol', 'repository_id', 'runtime', 'session_id', 'state', 'worktree'], 'operator_docs_session');
+  const record = header(value, ['agent', 'base_commit', 'branch', 'citations', 'kind', 'protocol', 'repository_id', 'runtime', 'session_id', 'state', 'worktree'], 'operator_docs_session');
   if (record.state !== 'created' || typeof record.repository_id !== 'string' || !REPOSITORY_ID.test(record.repository_id)
     || !isAgentRuntimeId(record.runtime) || typeof record.branch !== 'string' || !BRANCH.test(record.branch)
-    || typeof record.worktree !== 'string' || !WORKTREE.test(record.worktree) || typeof record.base_commit !== 'string' || !OID.test(record.base_commit)) fail('created');
+    || typeof record.worktree !== 'string' || !WORKTREE.test(record.worktree) || typeof record.base_commit !== 'string' || !OID.test(record.base_commit)
+    || !one(record.agent, DOC_SESSION_AGENT_STATES)) fail('created');
   decodeCitations(record.citations);
   return value as OperatorDocSessionCreatedV1;
 }
