@@ -307,8 +307,8 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit exactly the settings, worktree cleanup, session create, message and stop writes', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_stop']);
+test('production routes admit exactly the settings, worktree cleanup and five session writes', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_commit', 'sessions_discard', 'sessions_stop']);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
