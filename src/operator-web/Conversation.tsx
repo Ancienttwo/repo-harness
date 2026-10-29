@@ -77,7 +77,7 @@ function AgentName({ runtime, t }: { readonly runtime: string | null; readonly t
   );
 }
 
-const circled = (index: number) => index < 20 ? String.fromCodePoint(0x2460 + index) : `(${index + 1})`;
+export const circled = (index: number) => index < 20 ? String.fromCodePoint(0x2460 + index) : `(${index + 1})`;
 
 function Citations({ citations, t }: { readonly citations: readonly DocSessionCitationView[]; readonly t: OperatorTranslate }) {
   return (

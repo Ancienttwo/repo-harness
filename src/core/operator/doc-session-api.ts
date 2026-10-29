@@ -39,6 +39,9 @@ export const DOC_SESSION_PATH_REFUSALS = ['path_outside_scope', 'generated_regio
 export const DOC_SESSION_TITLE_MAX = 120;
 export const DOC_SESSION_MESSAGE_MAX = 8_000;
 export const DOC_SESSION_COMMIT_MESSAGE_MAX = 500;
+/** Limits of the create request, which the server enforces and the start form respects. */
+export const DOC_SESSION_MAX_CITATIONS = 16;
+export const DOC_SESSION_MAX_INSTRUCTION = 8_000;
 /**
  * The most lines one citation names. Each relocation candidate is hashed, so
  * the cap bounds the work of one check. It lives here, not beside the node
@@ -178,7 +181,7 @@ function header(value: unknown, keys: readonly string[], kind: string, sessionId
 }
 
 function decodeCitations(value: unknown): void {
-  if (!Array.isArray(value) || value.length > 16) fail('citations');
+  if (!Array.isArray(value) || value.length > DOC_SESSION_MAX_CITATIONS) fail('citations');
   for (const raw of value as unknown[]) {
     const citation = exact(raw, ['end_line', 'path', 'relocated', 'start_line'], 'citation');
     if (!isRepositoryRelativePath(citation.path) || !line(citation.start_line) || !line(citation.end_line)

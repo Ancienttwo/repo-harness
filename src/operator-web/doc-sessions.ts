@@ -286,6 +286,23 @@ export function startableKinds(view: DocSessionsView): readonly SessionKind[] {
   return view.kind === 'ready' ? view.list.kinds : [];
 }
 
+/**
+ * Why a list read failed, when the failure shows that the session routes exist. `unreachable` is no answer
+ * or an unknown code, so it says nothing about the routes and the session controls stay hidden.
+ */
+export function listFailure(view: DocSessionsView): DocSessionReadReason | null {
+  return view.kind === 'unavailable' && view.reason !== 'unreachable' ? view.reason : null;
+}
+
+/**
+ * Whether the doc session start controls show. They exist for a server that lists the `docs` kind. While the
+ * list cannot be read for a typed reason, the composer stays and says why: that read cannot say which kinds can start.
+ */
+export function docSessionStartState(view: DocSessionsView): { readonly show: boolean; readonly failure: DocSessionReadReason | null } {
+  const failure = listFailure(view);
+  return { show: failure !== null || startableKinds(view).includes('docs'), failure };
+}
+
 /** One read of one session, re-read every 30 s and on `reload`; null until it settles. */
 export function useSessionRead<T>(name: string, read: DocSessionReader<T>, sessionId: string | null, generation: number): {
   readonly read: DocSessionRead<T> | null; readonly reload: () => void;

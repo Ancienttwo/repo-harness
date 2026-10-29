@@ -15,6 +15,7 @@ import { basename, join } from 'node:path';
 
 import { isAgentRuntimeId } from '../../core/operator/agents-settings';
 import { checkDocCitation, decodeDocCitation, docCitationBudget, type DocCitationV1 } from '../../core/operator/doc-citation';
+import { DOC_SESSION_MAX_CITATIONS, DOC_SESSION_MAX_INSTRUCTION } from '../../core/operator/doc-session-api';
 import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { JsonValue } from '../../core/evidence/types';
 import { AgentsConfigurationError, readAgentsConfiguration } from '../configuration/agents-configuration';
@@ -31,8 +32,6 @@ import { prepareOperatorStateDir } from './write-audit';
 import { OperatorWriteRefusal, type OperatorWriteResponse } from './write-run';
 
 export const OPERATOR_SESSIONS_ROUTE = /^\/api\/v1\/sessions$/u;
-export const DOC_SESSION_MAX_CITATIONS = 16;
-export const DOC_SESSION_MAX_INSTRUCTION = 8_000;
 /** Bounds the topology lock wait and the git calls of one creation. */
 const DOC_SESSION_GIT_DEADLINE_MS = 30_000;
 
