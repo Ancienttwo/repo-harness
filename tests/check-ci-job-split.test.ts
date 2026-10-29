@@ -493,6 +493,14 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.on.schedule).toEqual([{ cron: '0 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'verify', 'home-isolation', 'native-oar']);
+    const boundarySteps = jobs.selection.steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
+    expect(boundarySteps).toHaveLength(1);
+    const boundary = boundarySteps[0];
+    expect(boundary.if).toBeUndefined();
+    expect(boundary['continue-on-error']).toBeUndefined();
+    expect(jobs.selection.steps.indexOf(boundary)).toBeGreaterThan(
+      jobs.selection.steps.findIndex((step: any) => step.run === 'bun install --frozen-lockfile'),
+    );
     expect(jobs.verify.if).toBe("needs.selection.outputs.mode == 'affected'");
     const affected = jobs.verify.steps.find((step: any) => step.run === 'bash scripts/check-ci.sh affected');
     const total = Number(/^\$\{\{ matrix\.shard \}\}\/(\d+)$/.exec(affected.env.CI_SHARD)![1]);
