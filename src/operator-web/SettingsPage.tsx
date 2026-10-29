@@ -48,6 +48,8 @@ function installText(entry: AgentRuntimeSettingsEntryV1, t: OperatorTranslate): 
   }
 }
 
+const UNSUPPORTED_REASON = { docs: 'settings.use.docsIsolationUnverified', review: 'settings.use.reviewUnsupported' } as const satisfies Record<AgentUse, OperatorMessageKey>;
+
 /** A runtime the section names but the probe no longer lists can only be turned off. */
 type Row = { readonly id: string; readonly entry: AgentRuntimeSettingsEntryV1 | null };
 
@@ -57,11 +59,11 @@ function UseToggle({ use, row, draft, locked, onEdit, t }: {
 }) {
   const on = (use === 'docs' ? draft.docs : draft.review).includes(row.id);
   const enabled = draft.enabled.includes(row.id);
-  const unsupported = use === 'review' && row.entry !== null && !row.entry.review_supported;
+  const unsupported = row.entry !== null && !(use === 'review' ? row.entry.review_supported : row.entry.docs_supported);
   // The server accepts a runtime the probe no longer lists only in a change that turns it off, so its uses
   // go only with the switch. Otherwise a use can be removed whatever the reason, and added only to an enabled runtime.
   const disabled = locked || row.entry === null || (!on && (!enabled || unsupported));
-  const reason = unsupported ? t('settings.use.reviewUnsupported') : !enabled ? t('settings.use.needsEnabled') : undefined;
+  const reason = unsupported ? t(UNSUPPORTED_REASON[use]) : !enabled ? t('settings.use.needsEnabled') : undefined;
   return (
     <button type="button" aria-pressed={on} disabled={disabled} title={disabled && !locked ? reason : undefined} data-use={use}
       onClick={() => onEdit(current => setUse(current, row.id, use, !on))}
@@ -80,7 +82,10 @@ function RuntimeRow({ row, draft, locked, onEdit, t }: {
 }) {
   const enabled = draft.enabled.includes(row.id);
   const installed = row.entry?.installation.kind === 'available';
-  const unsupportedReview = row.entry !== null && !row.entry.review_supported;
+  const unsupported = row.entry === null ? [] : [
+    ...(row.entry.docs_supported ? [] : [UNSUPPORTED_REASON.docs]),
+    ...(row.entry.review_supported ? [] : [UNSUPPORTED_REASON.review]),
+  ];
   return (
     <li className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:gap-4" data-runtime={row.id}>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -92,7 +97,7 @@ function RuntimeRow({ row, draft, locked, onEdit, t }: {
           <StatusDot tone={row.entry ? INSTALL_TONE[row.entry.installation.kind] : 'unknown'} className="mt-1" />
           <span className="min-w-0 [overflow-wrap:anywhere]">{row.entry ? installText(row.entry, t) : t('settings.install.missing')}</span>
         </p>
-        {unsupportedReview && enabled && <p className="text-xs text-kumo-subtle">{t('settings.use.reviewUnsupported')}</p>}
+        {enabled && unsupported.length > 0 && <p className="text-xs text-kumo-subtle" data-use-reasons>{unsupported.map(key => t(key)).join(' ')}</p>}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <UseToggle use="docs" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
@@ -122,8 +127,9 @@ function RuntimeGroup({ id, title, rows, draft, locked, onEdit, t }: {
   );
 }
 
-function DefaultDocs({ draft, locked, onEdit, t }: {
-  readonly draft: AgentsDraft; readonly locked: boolean;
+/** A runtime without verified docs isolation is offered only while it is the saved default, so the saved state stays visible. */
+function DefaultDocs({ draft, settings, locked, onEdit, t }: {
+  readonly draft: AgentsDraft; readonly settings: AgentsSettingsV1; readonly locked: boolean;
   readonly onEdit: (change: (draft: AgentsDraft) => AgentsDraft) => void; readonly t: OperatorTranslate;
 }) {
   const option = (value: string | null, label: ReactNode) => (
@@ -133,6 +139,8 @@ function DefaultDocs({ draft, locked, onEdit, t }: {
       {label}
     </label>
   );
+  const supported = new Set(settings.runtimes.entries.filter(entry => entry.docs_supported).map(entry => entry.id));
+  const choices = draft.docs.filter(id => supported.has(id) || id === settings.config.default_docs);
   return (
     <fieldset className="flex flex-col gap-2" data-default-docs>
       <legend className="mb-2 text-sm font-semibold text-kumo-strong">{t('settings.defaultDocs.title')}</legend>
@@ -140,7 +148,7 @@ function DefaultDocs({ draft, locked, onEdit, t }: {
         ? <p className="text-sm text-kumo-subtle">{t('settings.defaultDocs.empty')}</p>
         : <div className="flex flex-wrap gap-x-4 gap-y-2">
           {option(null, t('settings.defaultDocs.none'))}
-          {draft.docs.map(id => option(id, <span className="font-mono">{id}</span>))}
+          {choices.map(id => option(id, <span className="font-mono">{id}</span>))}
         </div>}
     </fieldset>
   );
@@ -221,7 +229,7 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
           <RuntimeGroup id="settings-group-default" title={t('settings.group.default')} rows={rows.main} draft={draft} locked={locked} onEdit={form.edit} t={t} />
           <RuntimeGroup id="settings-group-extra" title={t('settings.group.extra')} rows={rows.extra} draft={draft} locked={locked} onEdit={form.edit} t={t} />
           <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} onEdit={form.edit} t={t} />
-          <DefaultDocs draft={draft} locked={locked} onEdit={form.edit} t={t} />
+          <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />
           {/* Next to Save, where the result of a save is read. */}
           <SaveResult form={form} changedElsewhere={changedElsewhere} t={t} />
           <div className="flex flex-wrap items-center gap-3 border-t border-kumo-hairline pt-4">

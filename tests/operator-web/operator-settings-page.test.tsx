@@ -43,10 +43,13 @@ const REVISION_B = `sha256:${'b'.repeat(64)}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const entry = (id: string, installation: Record<string, unknown>, group = 'default') => ({
-  id, group, installation, review_supported: id === 'claude' || id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: id === 'claude' || id === 'codex', docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
-/** claude is on for docs and review and is the default; codex and kimi are installed and off; grok is not installed. */
+/**
+ * claude is on for docs and review and is the default, a docs use stored before the docs isolation check;
+ * codex and kimi are installed and off; grok is not installed. Only codex has verified docs isolation.
+ */
 function settings(config: Partial<AgentsSettingsV1['config']> = {}, extra: readonly Record<string, unknown>[] = []): AgentsSettingsV1 {
   return decodeAgentsSettings({
     protocol: 1, kind: 'operator_agents_settings',
@@ -140,13 +143,21 @@ describe('settings page', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
-  test('3-SET-N1 the form has no credential input, offers review only on claude and codex, and gives no switch to an agent that is not installed', async () => {
-    await mount(props(server(settings({ enabled: ['claude', 'kimi'] }), [])));
+  test('3-SET-N1 the form has no credential input, offers review only on claude and codex, docs only with verified isolation, and gives no switch to an agent that is not installed', async () => {
+    await mount(props(server(settings({ enabled: ['claude', 'codex', 'kimi'] }), [])));
     // The switches carry their own checkbox inputs; nothing takes typed text.
     expect(all('input').map(input => input.getAttribute('type')).filter(type => type !== 'radio' && type !== 'checkbox')).toEqual([]);
     expect(all('textarea, select, [contenteditable]')).toHaveLength(0);
-    await click(use('kimi', 'docs'));
-    expect(use('kimi', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(use('kimi', 'docs').disabled).toBe(true);
+    expect(use('kimi', 'docs').title).toBe('Docs sessions need verified docs isolation; this agent has none.');
+    expect(row('kimi').querySelector('[data-use-reasons]')?.textContent).toBe('Docs sessions need verified docs isolation; this agent has none. Only claude and codex can review.');
+    await click(use('codex', 'docs'));
+    expect(use('codex', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(row('codex').querySelector('[data-use-reasons]')).toBeNull();
+    // A stored docs use of an agent without verified isolation stays on and can be removed; it stays the default it was.
+    expect(use('claude', 'docs').getAttribute('aria-pressed')).toBe('true');
+    expect(use('claude', 'docs').disabled).toBe(false);
+    expect(all('[data-default-docs] input').map(input => input.getAttribute('value'))).toEqual(['', 'claude', 'codex']);
     expect(use('kimi', 'review').disabled).toBe(true);
     expect(use('kimi', 'review').title).toBe('Only claude and codex can review.');
     expect(use('claude', 'review').disabled).toBe(false);

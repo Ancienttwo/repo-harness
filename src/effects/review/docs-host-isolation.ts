@@ -2,13 +2,14 @@ import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readF
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
+import { isDocsHostRuntimeId, type DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { ModelApiEndpoint } from './docs-host-proxy';
 
-/** Runtimes whose boundary has a zero-model proof. Claude keeps its macOS login in the Keychain, which this host denies. */
-export type DocsHostRuntime = 'codex';
-
-/** Model API hosts per runtime. The access token is checked for the whole run, so no auth refresh host is open. */
-export const DOCS_HOST_MODEL_API: Readonly<Record<DocsHostRuntime, readonly ModelApiEndpoint[]>> = {
+/**
+ * Model API hosts per verified runtime (`DOCS_HOST_RUNTIME_IDS`). Claude keeps its macOS login in the Keychain,
+ * which this host denies. The access token is checked for the whole run, so no auth refresh host is open.
+ */
+export const DOCS_HOST_MODEL_API: Readonly<Record<DocsHostRuntimeId, readonly ModelApiEndpoint[]>> = {
   codex: [{ host: 'chatgpt.com', port: 443 }, { host: 'api.openai.com', port: 443 }],
 };
 
@@ -47,7 +48,7 @@ const DESKTOP_SERVICES = [
 
 /** Operator input. A session request cannot supply or change it. */
 export interface DocsHostAdmission {
-  readonly runtime: DocsHostRuntime;
+  readonly runtime: DocsHostRuntimeId;
   /** Canonical linked worktree root. */
   readonly worktree: string;
   /** Owner-only directory outside the worktree. It holds the profile; only its `scratch` child is writable. */
@@ -150,7 +151,7 @@ export function docsHostProtectedProjection(worktree: string): readonly string[]
 /** Validate operator input and the worktree before any policy text exists. */
 export function assertDocsHostAdmission(admission: DocsHostAdmission, platform: NodeJS.Platform = process.platform): void {
   assertDocsHostPlatform(platform);
-  if (admission.runtime !== 'codex') throw new Error('docs_host_runtime_unverified');
+  if (!isDocsHostRuntimeId(admission.runtime)) throw new Error('docs_host_runtime_unverified');
   const worktree = canonicalDirectory(admission.worktree, 'docs_host_worktree_unsafe');
   const dotGit = lstatSync(join(worktree, '.git'), { throwIfNoEntry: false });
   if (!dotGit?.isFile()) throw new Error('docs_host_linked_worktree_required');
