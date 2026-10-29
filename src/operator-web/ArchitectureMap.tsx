@@ -8,8 +8,6 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  useReactFlow,
-  useViewport,
   ViewportPortal,
   type Edge,
   type Node,
@@ -28,8 +26,6 @@ import {
 import {
   archctxCode,
   firstImpactPullRequest,
-  impactLines,
-  impactTargets,
   MAP_LAYERS,
   mapLayerView,
   truncatedParts,
@@ -37,7 +33,10 @@ import {
   type MapLayerView,
   type MapMark,
 } from './architecture-map-layers';
+import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
+import { ArchitectureSequence } from './ArchitectureSequence';
+import { ArchitectureTopology } from './ArchitectureTopology';
 import { asApiError } from './fleet-api';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -95,10 +94,6 @@ interface MapNodeData extends Record<string, unknown> {
 }
 type MapNode = Node<MapNodeData, 'box' | 'group'>;
 
-function Mark({ mark }: { readonly mark: MapMark | null }) {
-  return mark === null ? null : <span className="architecture-map__mark mono-value" data-tone={mark.tone}>{mark.label}</span>;
-}
-
 function Size({ item, t }: { readonly item: MapLayoutNode; readonly t: OperatorTranslate }) {
   return item.size === null ? null : <span className="architecture-map__lines">{t('architecture.map.lines', { lines: item.size.lines })}</span>;
 }
@@ -133,13 +128,6 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
 
-/**
- * Zoom of the first view of a banded map: a 13 px title shows at 11 px. The whole map of a
- * real model is several canvases wide, so the first view starts at the top band's leftmost
- * node and its label; Fit shows the whole map.
- */
-const MAP_READABLE_ZOOM = 0.85;
-
 /** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
 const MAP_BAND_LABEL = 28;
 
@@ -153,17 +141,6 @@ function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: Ope
   </ViewportPortal>;
 }
 
-function ZoomControls({ t }: { readonly t: OperatorTranslate }) {
-  const flow = useReactFlow();
-  const { zoom } = useViewport();
-  return <div className="architecture-map__zoom" role="group" aria-label={t('architecture.map.zoom')}>
-    <button type="button" aria-label={t('architecture.map.zoomOut')} onClick={() => { void flow.zoomOut(); }}>−</button>
-    <button type="button" aria-label={t('architecture.map.zoomReset')} className="mono-value" onClick={() => { void flow.zoomTo(1); }}>{Math.round(zoom * 100)}%</button>
-    <button type="button" aria-label={t('architecture.map.zoomIn')} onClick={() => { void flow.zoomIn(); }}>+</button>
-    <button type="button" aria-label={t('architecture.map.fitLabel')} onClick={() => { void flow.fitView(); }}>{t('architecture.map.fit')}</button>
-  </div>;
-}
-
 function Legend({ map, view, t }: { readonly map: ArchitectureMapV1; readonly view: MapLayerView; readonly t: OperatorTranslate }) {
   return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
     <div><dt><span className="architecture-map__swatch" /></dt><dd>{t('architecture.map.legend.code')}</dd></div>
@@ -175,76 +152,6 @@ function Legend({ map, view, t }: { readonly map: ArchitectureMapV1; readonly vi
   </dl>;
 }
 
-/** The active layer's facts for one node, straight from the collector. */
-function LayerFacts({ map, layer, pullRequest, nodeId, names, t }: {
-  readonly map: ArchitectureMapV1;
-  readonly layer: MapLayerId;
-  readonly pullRequest: number | null;
-  readonly nodeId: string;
-  readonly names: ReadonlyMap<string, string>;
-  readonly t: OperatorTranslate;
-}) {
-  const facts: { key: string; text: string; paths?: readonly string[] }[] = [];
-  const { changes, violations, pull_requests: pullRequests, tests, decisions } = map.layers;
-  // The node's own changed paths and the changed nodes archctx says it depends on.
-  const impactFacts = (impact: ArchitectureImpactV1, text: (files: number) => string) => {
-    const entry = impact.nodes.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'impact', text: text(entry.files), paths: impact.paths.filter(item => item.owners.includes(nodeId)).map(item => item.path) });
-    const targets = impactTargets(impact, nodeId);
-    if (targets.length > 0) facts.push({ key: 'dependent', text: t('architecture.layer.node.dependent', { names: targets.map(id => names.get(id) ?? id).join(', ') }) });
-  };
-  if (layer === 'changes' && changes.state === 'ok') {
-    const lines = impactLines(changes, nodeId);
-    impactFacts(changes, files => t('architecture.layer.node.changes', { files: counted(t, files, 'file'), added: lines.added, deleted: lines.deleted })
-      + (lines.unknown > 0 ? ` ${t('architecture.layer.node.lines_unknown', { count: lines.unknown })}` : ''));
-  }
-  if (layer === 'violations') {
-    if (violations.debt.state === 'ok') {
-      violations.debt.items.filter(item => item.nodes.includes(nodeId)).forEach((item, index) => facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths }));
-    }
-    if (violations.flows.state === 'ok') {
-      const flows = violations.flows.unprovable.find(item => item.id === nodeId);
-      if (flows) facts.push({ key: 'flows', text: t('architecture.layer.node.flows', { count: flows.diagnostics }) });
-    }
-    if (violations.anchors.state === 'ok') {
-      const anchors = violations.anchors.nodes.find(item => item.id === nodeId);
-      if (anchors) facts.push({ key: 'anchors', text: t('architecture.layer.node.anchors', { count: anchors.findings }) });
-    }
-    if (violations.dependencies.state === 'ok') {
-      for (const edge of violations.dependencies.edges.filter(item => item.source === nodeId)) {
-        facts.push({ key: `undeclared-${edge.target}`, text: t('architecture.layer.node.undeclared', { name: names.get(edge.target) ?? edge.target, count: edge.imports }) });
-      }
-    }
-    if (violations.layer_direction.state === 'ok') {
-      for (const edge of violations.layer_direction.edges.filter(item => item.source === nodeId)) {
-        facts.push({ key: `layer-${edge.target}`, text: t('architecture.layer.node.layer_direction', {
-          name: names.get(edge.target) ?? edge.target, count: edge.imports, from: edge.source_layer, to: edge.target_layer,
-        }) });
-      }
-    }
-  }
-  const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
-  if (layer === 'pull_requests' && impact?.state === 'ok') {
-    impactFacts(impact, files => t('architecture.layer.node.pull_request', { files: counted(t, files, 'file'), number: pullRequest! }));
-  }
-  if (layer === 'tests' && tests.state === 'ok') {
-    const entry = tests.capabilities.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'tests', text: t('architecture.layer.node.tests', { files: entry.files, passed: entry.passed, failed: entry.failed, skipped: entry.skipped, noResult: entry.no_result }) });
-  }
-  if (layer === 'decisions') {
-    for (const item of decisions.items.filter(entry => entry.applies_to.includes(nodeId))) {
-      facts.push({ key: `decision-${item.id}`, text: item.status === null ? item.title : t('architecture.layer.node.decision', { title: item.title, status: item.status }), paths: [item.path] });
-    }
-  }
-  return <>
-    <h4>{t(`architecture.layer.${layer}`)}</h4>
-    {facts.length ? <ul data-layer-facts={layer}>{facts.map(fact => <li key={fact.key}>
-      {fact.text}
-      {fact.paths?.length ? <ul>{fact.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : null}
-    </li>)}</ul> : <p className="detail-quiet">{t('architecture.layer.node.none')}</p>}
-  </>;
-}
-
 function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
@@ -253,44 +160,14 @@ function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
-  const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
   if (selected === null) {
     return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>
       <p className="detail-quiet">{t('architecture.map.pick')}</p>
       <p className="detail-quiet">{t('architecture.map.counts', { nodes: counted(t, map.nodes.length, 'node'), relations: counted(t, map.relations.length, 'relation') })}</p>
     </aside>;
   }
-  const { node } = selected;
-  const imports = map.dependencies.state === 'ok' ? map.dependencies.edges : [];
-  const lines = (direction: 'out' | 'in') => map.relations
-    .filter(relation => (direction === 'out' ? relation.source : relation.target) === node.id)
-    .map(relation => {
-      const other = direction === 'out' ? relation.target : relation.source;
-      const count = imports.find(edge => edge.source === relation.source && edge.target === relation.target)?.imports;
-      return <li key={relation.id} data-relation-id={relation.id}>
-        <code>{relation.kind}</code> {names.get(other)}{count !== undefined && <span className="mono-value"> · {t('architecture.map.imports', { count })}</span>}
-      </li>;
-    });
-  const outgoing = lines('out');
-  const incoming = lines('in');
-  return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={node.id}>
-    <h3>{node.name}</h3>
-    <code className="architecture-map__id">{node.id}</code>
-    <p>{node.summary}</p>
-    <dl className="detail-list">
-      <div><dt>{t('architecture.map.kind')}</dt><dd>{node.kind}</dd></div>
-      <div><dt>{t('architecture.map.layer')}</dt><dd>{node.layer ?? t('architecture.none')}</dd></div>
-      <div><dt>{t('architecture.map.status')}</dt><dd>{node.status}</dd></div>
-      {map.sizes.state === 'ok' && <div><dt>{t('architecture.map.size')}</dt><dd>
-        {selected.size === null ? t('architecture.map.noSize') : t('architecture.map.sizeValue', { lines: selected.size.lines, files: selected.size.files })}
-      </dd></div>}
-    </dl>
-    {node.kind === 'capability' && <button type="button" className="operator-button operator-button--secondary" onClick={() => onModule(node.id)}>{t('architecture.map.open')}</button>}
-    <LayerFacts map={map} layer={layer} pullRequest={pullRequest} nodeId={node.id} names={names} t={t} />
-    <h4>{t('architecture.map.outgoing', { count: outgoing.length })}</h4>
-    {outgoing.length ? <ul>{outgoing}</ul> : <p className="detail-quiet">{t('architecture.none')}</p>}
-    <h4>{t('architecture.map.incoming', { count: incoming.length })}</h4>
-    {incoming.length ? <ul>{incoming}</ul> : <p className="detail-quiet">{t('architecture.none')}</p>}
+  return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected.node.id}>
+    <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={selected.node.id} onModule={onModule} t={t} />
   </aside>;
 }
 
@@ -305,10 +182,10 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  // A banded map opens on its top band's leftmost node and label.
   const firstView = useMemo(() => {
     const top = layout.bands[0];
-    if (top === undefined) return undefined;
-    return { x: -(top.x - 24) * MAP_READABLE_ZOOM, y: -(top.y - MAP_BAND_LABEL - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+    return top === undefined ? undefined : firstViewport(top.x, top.y - MAP_BAND_LABEL);
   }, [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
 
@@ -391,13 +268,6 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   </div>;
 }
 
-type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision';
-
-/** "1 node", "2 nodes". `atLeast` marks a count that archctx cut at its limit. Only English inflects; Chinese keeps the bare number and its own classifier. */
-function counted(t: OperatorTranslate, count: number, unit: CountUnit, atLeast = false): string {
-  return `${atLeast ? '≥' : ''}${t(count === 1 ? `architecture.unit.${unit}One` : `architecture.unit.${unit}`, { count })}`;
-}
-
 /** A layer with no data shows as unavailable; it stays selectable so its reason can be read. */
 function layerAvailable(map: ArchitectureMapV1, layer: MapLayerId): boolean {
   return layer === 'violations' ? Object.values(map.layers.violations).some(part => part.state === 'ok') : map.layers[layer].state === 'ok';
@@ -417,16 +287,6 @@ function LayerBar({ map, layer, onLayer, t }: {
       </button>
     ))}
   </div>;
-}
-
-/** `code`: archctx's own error code when the gap is an archctx refusal. */
-function Gap({ part, reason, code, children }: { readonly part: string; readonly reason: string; readonly code?: string; readonly children: string }) {
-  return <p className="architecture-map__gap" data-gap={part} data-reason={reason} data-code={code}>{children}</p>;
-}
-
-/** A part that has no source until archctx or a collector provides one; a fixed limit, not a failed read. */
-function Note({ part, reason, children }: { readonly part: string; readonly reason: string; readonly children: string }) {
-  return <p className="architecture-map__note" data-note={part} data-reason={reason}>{children}</p>;
 }
 
 /** The flow steps archctx ties to a change, or its reason codes when it cannot; and the parts it cut at its limits. */
@@ -554,9 +414,16 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
   </div>;
 }
 
-/** The whole committed model on one canvas, with line and import counts from the map collector. */
-export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, refreshGeneration, onModule, t }: {
+/** The base maps that read the map route: modules (layered by the model's layer order), sequence and topology. */
+export type ArchitectureBaseMap = 'modules' | 'sequence' | 'topology';
+
+/**
+ * The committed model on one base map, with line and import counts from the map collector.
+ * The read, the active layer and the chosen PR stay when the base map changes.
+ */
+export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchArchitectureMap, refreshGeneration, onModule, t }: {
   readonly repositoryId: string;
+  readonly view?: ArchitectureBaseMap;
   readonly read?: ArchitectureMapReader;
   readonly refreshGeneration: number;
   readonly onModule: (id: string) => void;
@@ -587,7 +454,9 @@ export function ArchitectureMap({ repositoryId, read = fetchArchitectureMap, ref
       {map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
       <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
       <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
-      <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>
+      {view === 'modules' && <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>}
+      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} />}
+      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} />}
     </>}
   </div>;
 }

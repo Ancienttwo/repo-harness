@@ -667,7 +667,7 @@ describe('worktree page', () => {
     installDom(HOME_URL);
     await mount(<OperatorApp {...props(busy(), { readCiRepairs: noRepairs })} />);
     const work = Array.from(document.querySelectorAll('ul[aria-labelledby="nav-group-work"] a[data-workspace]')).map(link => link.getAttribute('data-workspace'));
-    expect(work).toEqual(['board', 'repositories', 'worktrees']);
+    expect(work).toEqual(['board', 'repositories', 'worktrees', 'docs']);
     await act(async () => document.querySelector<HTMLAnchorElement>('.workspace-nav a[data-workspace="worktrees"]')!.click());
     expect(window.location.hash).toBe('#worktrees');
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('worktrees');

@@ -49,6 +49,8 @@ export interface DocsTree { commit: string; files: DocsTreeFile[] }
 export interface DocsFile {
   path: string;
   commit: string;
+  /** The served commit's committer date, from its commit object, in UTC. */
+  committed_at: string;
   size: number;
   sha256: string;
   text: string;
@@ -70,7 +72,7 @@ export interface DocsReaderOptions {
 type GitObject = { oid: string; type: string; size: number; bytes: Buffer | null };
 /** A committed path that is not a listed file: a directory, a symlink or submodule (`escape`), or another mode. */
 type PathKind = 'dir' | 'escape' | 'other';
-type Listing = { commit: string; files: Map<string, { oid: string; facts: BlobFacts }>; kinds: Map<string, PathKind>; tree: DocsTree };
+type Listing = { commit: string; committed_at: string; files: Map<string, { oid: string; facts: BlobFacts }>; kinds: Map<string, PathKind>; tree: DocsTree };
 type TreeEntry = { mode: string; name: string; oid: string };
 type BlobFacts = { size: number; sha256: string; text: boolean };
 type PhysicalFile = { path: string; absolute: string; dev: number; ino: number };
@@ -280,7 +282,7 @@ export class DocsReader {
    * is cached for `tree` and `file`.
    */
   async refresh(): Promise<DocsTree> {
-    const { commit, tree } = await this.tip();
+    const { commit, committed_at, tree } = await this.tip();
     if (this.listing?.commit === commit) {
       this.listing = { ...this.listing, tree: { commit, files: this.listed(this.listing.files) } };
       return this.listing.tree;
@@ -295,7 +297,7 @@ export class DocsReader {
     // Facts of blobs that left the tree are dropped, so the cache follows one commit.
     const keep = new Set([...files.values()].map(file => file.oid));
     for (const oid of this.facts.keys()) if (!keep.has(oid)) this.facts.delete(oid);
-    this.listing = { commit, files, kinds, tree: { commit, files: this.listed(files) } };
+    this.listing = { commit, committed_at, files, kinds, tree: { commit, files: this.listed(files) } };
     return this.listing.tree;
   }
 
@@ -343,18 +345,23 @@ export class DocsReader {
     const worktree = this.physical(path);
     const text = utf8(blob.bytes)!;
     return {
-      path, commit: listing.commit, size: blob.size, sha256: entry.facts.sha256, text, lines: docsLines(text),
+      path, commit: listing.commit, committed_at: listing.committed_at, size: blob.size, sha256: entry.facts.sha256, text, lines: docsLines(text),
       worktree_differs: worktree === null || worktree.path !== path || !this.sameBytes(path, worktree, blob.bytes),
     };
   }
 
-  private async tip(): Promise<{ commit: string; tree: string }> {
+  private async tip(): Promise<{ commit: string; committed_at: string; tree: string }> {
     const object = await this.worker.contents(`${this.ref}^{commit}`);
     if (!object) throw new DocsReadError('branch_missing');
     if (object.type !== 'commit' || !object.bytes) throw new DocsReadError('git_read_failed');
     const tree = /^tree ([0-9a-f]{40}|[0-9a-f]{64})\n/.exec(object.bytes.toString('latin1'))?.[1];
     if (!tree || tree.length !== object.oid.length) throw new DocsReadError('git_read_failed');
-    return { commit: object.oid, tree };
+    // The header ends at the first blank line; the message after it can hold any text.
+    const header = object.bytes.toString('latin1').split('\n\n', 1)[0]!;
+    const seconds = /^committer .* (\d+) [+-]\d{4}$/m.exec(header)?.[1];
+    const date = new Date(Number(seconds) * 1000);
+    if (seconds === undefined || Number.isNaN(date.getTime())) throw new DocsReadError('git_read_failed');
+    return { commit: object.oid, committed_at: date.toISOString(), tree };
   }
 
   private async treeEntries(oid: string, hexLength: number): Promise<TreeEntry[]> {

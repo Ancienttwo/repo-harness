@@ -17,7 +17,7 @@ const MAP_GROUP_PADDING = 12;
 const MAP_GROUP_GAP = 12;
 
 /** Relations between processes, hosts and data. The canvas draws them dashed; code relations stay solid. */
-const DASHED_KINDS: ReadonlySet<string> = new Set(['spawns', 'runs-in', 'deployed-on', 'mounts', 'reads', 'writes', 'publishes', 'subscribes']);
+export const DASHED_KINDS: ReadonlySet<string> = new Set(['spawns', 'runs-in', 'deployed-on', 'mounts', 'reads', 'writes', 'publishes', 'subscribes']);
 
 export interface MapLayoutNode {
   readonly node: ArchitectureMapNodeV1;
