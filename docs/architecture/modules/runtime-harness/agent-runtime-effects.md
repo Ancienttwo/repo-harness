@@ -1,9 +1,9 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7ab9a07cc278f487ff930c83234908c304ec2820930f4487d20d3e9b55e3ce41" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0f1f7bed73e3db0ec59486c636b6a104ca052e0da88c555abe4d36ed8b90d94f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
-> **Matched Prefixes**:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
+> **Matched Prefixes**:`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
 > **Local Contracts**:`src/core/engineers/AGENTS.md`、`src/core/engineers/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -18,6 +18,7 @@ flowchart LR
   p1_capability_organization_task_fleet_134b5125["Task Fleet"]:::component
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433["Agent Runtime Effects"]:::component
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
+  p1_component_agent_runtime_effects_core_layer_1cf112f2["Agent Runtime Effects (core)"]:::component
   p1_component_agent_runtime_effects_journal_f6727f8f["Agent Runtime Effect Journal"]:::component
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned"| p1_component_agent_runtime_effects_journal_f6727f8f
   p1_capability_runtime_harness_agent_runtime_effects_f1bcf433 -->|"Observe the exact admitted task session and use its closed Herdr transport endpoint"| p1_capability_runtime_harness_task_agent_host_d81dadb6
@@ -29,8 +30,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:fb9255554f78f28b7a4b82d4f43d6501a15ebe0cc31e3bd29bf2a30b1217f3a5`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:16f5ab6d0f1fea46cd4c2e21ba39bfb9daff8cd61b7ae312d871ab3079cb0253`).
+- Semantic nodes: `5`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
@@ -50,8 +51,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`2–5` 個文件 / `1000–2000` 行
-- 匹配前綴:`src/core/engineers/agent-runtime-effect.ts`、`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
+- 規模量級:`2–5` 個文件 / `500–1000` 行
+- 匹配前綴:`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -60,6 +61,7 @@ flowchart LR
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Use canonical engineer JSON and digest helpers for profile evidence; do not resolve a legacy binding endpoint
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Validate the whole offers document with the scheduling validator before a wake is armed
+- `calls` → `external.herdr` — Start Herdr CLI agents for agent runtime effects.
 - `calls` → `component.agent-runtime-effects.journal` — Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned
 - `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry and the authorization revision for the wake fence
 - `calls` → `capability.runtime-harness.task-agent-host` — Observe the exact admitted task session and use its closed Herdr transport endpoint
@@ -74,6 +76,8 @@ flowchart LR
 
 組件出向關係:
 
+- `component.agent-runtime-effects.core-layer`:
+  - 無。
 - `component.agent-runtime-effects.journal`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
 
@@ -81,11 +85,12 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.agent-runtime-effects.core-layer` | Agent Runtime Effects (core) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.agent-runtime-effects.journal` | Agent Runtime Effect Journal | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:fb9255554f78f28b7a4b82d4f43d6501a15ebe0cc31e3bd29bf2a30b1217f3a5`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:16f5ab6d0f1fea46cd4c2e21ba39bfb9daff8cd61b7ae312d871ab3079cb0253`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

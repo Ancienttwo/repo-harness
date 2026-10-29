@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:60b3018b24e4028f403aeea2aa39e5c7227a08b483e62a7406a816430e6d24f9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c4f8c4e0ebcd933c410801e81fce3ed1109d6e20526651676f6dfa9bbdba395a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -18,6 +18,7 @@ flowchart LR
   p1_component_action_commands_bundled_skills_d9a66507["Bundled Skill Packages"]:::component
   p1_component_action_commands_primary_c9e77bd1["Command Facades and Manifest"]:::component
   p1_component_action_commands_skill_surface_catalog_a72c29bc["Skill Surface Catalog"]:::component
+  p1_component_action_commands_skill_surface_catalog_core_988720fd["Skill Surface Catalog (core)"]:::component
   p1_capability_public_surface_action_commands_26efab87 -->|"Install action command skills"| p1_component_action_commands_primary_c9e77bd1
   p1_component_action_commands_primary_c9e77bd1 -->|"Name bundled skill packages as manifest package sources"| p1_component_action_commands_bundled_skills_d9a66507
   p1_capability_public_surface_action_commands_26efab87 -->|"Select the facade and host placement projection for a profile"| p1_component_action_commands_skill_surface_catalog_a72c29bc
@@ -28,8 +29,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`).
+- Semantic nodes: `5`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
@@ -72,6 +73,8 @@ flowchart LR
   - `depends-on` → `component.action-commands.bundled-skills` — Name bundled skill packages as manifest package sources
 - `component.action-commands.skill-surface-catalog`:
   - `reads` → `component.action-commands.primary` — Read manifest.json as the single catalog authority
+- `component.action-commands.skill-surface-catalog-core`:
+  - 無。
 
 ### 1.5 組件結構
 
@@ -80,10 +83,11 @@ flowchart LR
 | `component.action-commands.bundled-skills` | Bundled Skill Packages | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.action-commands.primary` | Command Facades and Manifest | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.profile-projection` |
+| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:36a686603f4bce395fe6d80b41c15029bb33755bda6b0322703b200e4c86e612`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

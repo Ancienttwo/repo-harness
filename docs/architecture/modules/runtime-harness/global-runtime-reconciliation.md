@@ -1,9 +1,9 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8c065271be577fbb5d744fc8d0105f977867949e4925909539e53fdde138ca85" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:31c751486e957f6b6b47e2018b6e89cfcd9888f3b7c13b06a33ca04a5b2db87f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
-> **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`src/cli/commands/candidate-reconciliation.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
+> **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -18,16 +18,26 @@ flowchart LR
   p1_capability_runtime_harness_global_runtime_reconciliation_401730e8["Global Runtime Reconciliation"]:::component
   p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
   p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7["ArchContext Closure"]:::component
+  p1_component_global_runtime_reconciliation_archctx_closure_cli_a2249d79["ArchContext Closure (cli)"]:::component
+  p1_component_global_runtime_reconciliation_archctx_closure_core_8aa566c4["ArchContext Closure (core)"]:::component
+  p1_component_global_runtime_reconciliation_archctx_closure_scripts_f4032cbc["ArchContext Closure (scripts)"]:::component
+  p1_component_global_runtime_reconciliation_cli_layer_c602aa84["Global Runtime Reconciliation (cli)"]:::component
   p1_component_global_runtime_reconciliation_cli_root_389856ab["CLI Root and Diagnostics"]:::component
   p1_component_global_runtime_reconciliation_primary_d41cdd38["Global Runtime Reconciler"]:::component
+  p1_component_global_runtime_reconciliation_primary_cli_6acfbdac["Global Runtime Reconciler (cli)"]:::component
+  p1_component_global_runtime_reconciliation_primary_scripts_d78bfd83["Global Runtime Reconciler (scripts)"]:::component
   p1_component_global_runtime_reconciliation_release_packaging_b4257d9e["Release Packaging"]:::component
+  p1_component_global_runtime_reconciliation_release_packaging_assets_42f3cd87["Release Packaging (assets)"]:::component
+  p1_component_global_runtime_reconciliation_release_packaging_core_40f9fec6["Release Packaging (core)"]:::component
+  p1_component_global_runtime_reconciliation_release_packaging_effects_c2f69754["Release Packaging (effects)"]:::component
+  p1_component_global_runtime_reconciliation_tests_layer_04289ccd["Global Runtime Reconciliation (tests)"]:::component
   p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7 -->|"Write the private global configuration through the installer ownership writer"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the architecture-projection command"| p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the install and status and security and hook commands and run host transactions with the install profile"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the update and upgrade commands and run the setup inside the candidate runtime"| p1_component_global_runtime_reconciliation_primary_d41cdd38
   p1_capability_runtime_harness_global_runtime_reconciliation_401730e8 -->|"Reconcile and verify the selected global runtime closure"| p1_component_global_runtime_reconciliation_primary_d41cdd38
   p1_component_global_runtime_reconciliation_primary_d41cdd38 -->|"Configure the global architecture projection and verify the archctx daemon handshake"| p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7
-  p1_component_global_runtime_reconciliation_primary_d41cdd38 -->|"Install host adapters and project skills through the install profile under the host lock"| p1_capability_runtime_harness_hook_adapters_75a11743
+  p1_component_global_runtime_reconciliation_primary_d41cdd38 -->|"Install host adapters#44; project owned host skills#44; and register the Pi package from the installed candidate after mandatory setup succeeds"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_global_runtime_reconciliation_release_packaging_b4257d9e -->|"Smoke the packed tarball CLI and hook binaries in a clean app"| p1_component_global_runtime_reconciliation_cli_root_389856ab
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -35,14 +45,14 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:124dd2a23751ef1571f8d0a8a63aede2548b3d3812e1701cbdfd04a724f30024`).
-- Semantic nodes: `6`; declared relations: `8`.
+- Proof: `proven` (`sha256:2b3ce7485209e1ffcb49c037801c43714e5a2320915cfa4adf13dd3cc353fac3`).
+- Semantic nodes: `16`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.global-runtime-reconciliation.update` | `src/cli/commands/global-runtime.ts#runGlobalRuntimeSetup` | `sink.global-runtime-reconciliation.readback` → `src/cli/commands/global-runtime.ts#reconcileManagedRuntime`、`sink.global-runtime-reconciliation.architecture-configuration` → `src/cli/commands/architecture-configuration.ts#ensureGlobalArchitectureProjection` |
+| `entrypoint.global-runtime-reconciliation.update` | `src/cli/commands/global-runtime.ts#runGlobalRuntimeSetup` | `sink.global-runtime-reconciliation.readback` → `src/cli/commands/global-runtime.ts#reconcileManagedRuntime`、`sink.global-runtime-reconciliation.architecture-configuration` → `src/cli/commands/architecture-configuration.ts#ensureGlobalArchitectureProjection`、`sink.global-runtime-reconciliation.pi-package` → `src/cli/installer/pi-package.ts#installPiPackage` |
 | `entrypoint.global-runtime-reconciliation.update` | `src/cli/commands/global-runtime.ts#installHostAdapters` | `sink.global-runtime-reconciliation.host-adapters` → `src/cli/commands/install.ts#runInstall` |
 | `entrypoint.global-runtime-reconciliation.candidate-readback` | `src/cli/commands/global-runtime.ts#verifyInstalledManagedRuntime` | `sink.global-runtime-reconciliation.candidate-readback` → `src/cli/commands/global-runtime.ts#reconcileManagedRuntime` |
 | `entrypoint.global-runtime-reconciliation.architecture-writer` | `src/cli/commands/architecture-projection.ts#publish` | `sink.global-runtime-reconciliation.architecture-writer` → `src/effects/architecture/projection-writer.ts#runArchitectureWriter` |
@@ -55,8 +65,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `10k–20k` 行
-- 匹配前綴:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`src/cli/commands/candidate-reconciliation.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/cli/runtime/**`、`src/cli/tty-prompt.ts`、`src/cli/commands/validators.ts`、`src/cli/commands/doctor.ts`、`src/cli/commands/init-hook.ts`、`src/cli/commands/upgrade.ts`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`src/cli/commands/architecture-projection.ts`、`src/cli/commands/architecture-configuration.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
+- 匹配前綴:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
 - 排除前綴:`src/effects/architecture/archcontext-owners.ts`、`src/effects/architecture/archcontext-resolve-cache.ts`、`src/effects/architecture/capability-resolver.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -64,7 +74,9 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `external.archctx` — Run the package-local archctx for model reads, ownership resolution and projections.
 - `depends-on` → `capability.verification.evals-checks` — Use shared test fixtures for global runtime checks.
+- `reads` → `external.npm-registry` — Check that a release version is published on the npm registry.
 - `calls` → `component.global-runtime-reconciliation.primary` — Reconcile and verify the selected global runtime closure
 
 入向關係:
@@ -72,7 +84,7 @@ flowchart LR
 - `depends-on` ← `capability.public-surface.adoption` — Use the legacy inventory during adoption planning.
 - `depends-on` ← `capability.runtime-harness.engineer-bindings` — Read the architecture model for Engineer profiles.
 - `depends-on` ← `capability.verification.evals-checks` — Test Global Runtime Reconciliation behavior through its source modules.
-- `calls` ← `component.hook-adapters.host-installer` — Report architecture projection readiness in status
+- `calls` ← `component.hook-adapters.host-installer` — Read the shared host skill roots for install projections and report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
 - `reads` ← `component.operator.architecture-view` — List modules and export review prompts through the shared ArchitectureModelReader
 - `reads` ← `component.operator.primary` — Read the committed architecture model through the shared ArchitectureModelReader
@@ -88,7 +100,16 @@ flowchart LR
   - `calls` → `capability.runtime-harness.hook-adapters` — Write the private global configuration through the installer ownership writer
   - `calls` → `capability.runtime-harness.mcp-sidecar` — Resolve registered repositories for the model reader
   - `reads` → `capability.workflow-engine.workflow-state` — Parse Markdown headers of plans and contracts
+- `component.global-runtime-reconciliation.archctx-closure-cli`:
+  - 無。
+- `component.global-runtime-reconciliation.archctx-closure-core`:
+  - 無。
+- `component.global-runtime-reconciliation.archctx-closure-scripts`:
+  - 無。
+- `component.global-runtime-reconciliation.cli-layer`:
+  - 無。
 - `component.global-runtime-reconciliation.cli-root`:
+  - `deployed-on` → `process.cli` — The CLI root dispatches commands in the per-command process.
   - `calls` → `capability.verification.acceptance-review` — Register the review command
   - `calls` → `capability.public-surface.adoption` — Register the adoption-plan command and run the adoption plan for the setup check
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command
@@ -116,25 +137,47 @@ flowchart LR
   - `calls` → `capability.verification.codegraph-readiness` — Configure the exact CodeGraph CLI and MCP registration
   - `calls` → `capability.workflow-engine.contract-assets` — Sync the cross-review skills through the init command
   - `calls` → `capability.workflow-engine.execution-primitives` — Run processes and read lock owners during runtime reconciliation
-  - `calls` → `capability.runtime-harness.hook-adapters` — Install host adapters and project skills through the install profile under the host lock
+  - `calls` → `capability.runtime-harness.hook-adapters` — Install host adapters, project owned host skills, and register the Pi package from the installed candidate after mandatory setup succeeds
   - `calls` → `component.action-commands.skill-surface-catalog` — Read external skill install groups from the skill surface catalog
   - `calls` → `capability.runtime-harness.task-agent-host` — Configure the required Herdr skill during global runtime setup
+- `component.global-runtime-reconciliation.primary-cli`:
+  - 無。
+- `component.global-runtime-reconciliation.primary-scripts`:
+  - 無。
 - `component.global-runtime-reconciliation.release-packaging`:
   - `calls` → `component.global-runtime-reconciliation.cli-root` — Smoke the packed tarball CLI and hook binaries in a clean app
   - `calls` → `capability.workflow-engine.execution-primitives` — Run installed binaries to read back runtime evidence
+- `component.global-runtime-reconciliation.release-packaging-assets`:
+  - 無。
+- `component.global-runtime-reconciliation.release-packaging-core`:
+  - 無。
+- `component.global-runtime-reconciliation.release-packaging-effects`:
+  - 無。
+- `component.global-runtime-reconciliation.tests-layer`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.archctx-closure-cli` | ArchContext Closure (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.archctx-closure-core` | ArchContext Closure (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.archctx-closure-scripts` | ArchContext Closure (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.cli-layer` | Global Runtime Reconciliation (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-root` | CLI Root and Diagnostics | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
-| `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `10–20` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.primary-cli` | Global Runtime Reconciler (cli) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.primary-scripts` | Global Runtime Reconciler (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging-assets` | Release Packaging (assets) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging-core` | Release Packaging (core) | `1–2` 個文件 / `10–20` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging-effects` | Release Packaging (effects) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.tests-layer` | Global Runtime Reconciliation (tests) | `2–5` 個文件 / `5000–10000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:124dd2a23751ef1571f8d0a8a63aede2548b3d3812e1701cbdfd04a724f30024`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:2b3ce7485209e1ffcb49c037801c43714e5a2320915cfa4adf13dd3cc353fac3`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -150,6 +193,7 @@ sequenceDiagram
   alt Mandatory closure and selected profile tooling are ready
   p2_reconciler_93a3ce0f->>p2_archctx_closure_c0374f9d: Ensure the global architecture projection configuration
   p2_reconciler_93a3ce0f->>p2_hook_adapters_e2a7f63a: Install the managed host adapters for the selected profile
+  p2_reconciler_93a3ce0f->>p2_hook_adapters_e2a7f63a: Check and register the installed candidate's Pi package when the host selection enables it
     Note over p2_reconciler_93a3ce0f: Continue host runtime refresh
   else Package or Node or capability or tooling readback failed
   p2_update_command_da52852b->>p2_reconciler_93a3ce0f: Return typed failure before later host mutation

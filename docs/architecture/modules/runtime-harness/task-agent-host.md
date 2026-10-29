@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:aeeef9c79aec8a6f62eaa89351d22d668c4960b4bd5c55e7c1770ad4d3e1fd21" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d63a4be503f21d128573721df4d7ea239d8ca7e8b241c61bb079539be1fdb115" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`、`src/core/sessions/session-selector.ts`、`src/core/sessions/task-sessions.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -16,7 +16,13 @@ Hosts persistent task-agent participants in Herdr panes with role profiles, task
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
+  p1_component_task_agent_host_cli_layer_209be438["Task Agent Host (cli)"]:::component
+  p1_component_task_agent_host_core_layer_b57e2a37["Task Agent Host (core)"]:::component
   p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
+  p1_component_task_agent_host_primary_assets_5212098e["Herdr Task Session Host (assets)"]:::component
+  p1_component_task_agent_host_primary_cli_1076e150["Herdr Task Session Host (cli)"]:::component
+  p1_component_task_agent_host_primary_core_a2a0dfb5["Herdr Task Session Host (core)"]:::component
+  p1_component_task_agent_host_primary_scripts_e0855c5f["Herdr Task Session Host (scripts)"]:::component
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -24,8 +30,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f740737d70b0b6659e790b9b781e5e2295b01eedb5743d6b1f50c35d7e18f357`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:635aa10e476fd3f44ed0a87ccb7aa577f51592eb9deda3c25963a89003adcc51`).
+- Semantic nodes: `8`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -42,7 +48,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`src/cli/commands/herdr.ts`、`src/cli/commands/herdr-skill.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/core/decision/**`、`src/effects/terminal/herdr-decision.ts`、`src/core/sessions/session-selector.ts`、`src/core/sessions/task-sessions.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -50,6 +56,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
+- `calls` → `external.herdr` — Split and run Herdr panes for task agents and review hosts.
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
 - `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
 
@@ -64,7 +71,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Resolve task role profiles during host installation.
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
-- `calls` ← `component.mcp-sidecar.primary` — Start task agents and send task requests through Herdr
+- `calls` ← `component.mcp-sidecar.primary` — Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr
 - `depends-on` ← `capability.runtime-harness.operator` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
 - `calls` ← `component.publication.provider-feedback` — Read the exact selected immutable task session for current feedback attribution
 - `calls` ← `component.task-fleet.task-inbox` — Reobserve the exact task session and live admission before current inbox operations
@@ -72,18 +79,37 @@ flowchart LR
 
 組件出向關係:
 
+- `component.task-agent-host.cli-layer`:
+  - 無。
+- `component.task-agent-host.core-layer`:
+  - 無。
 - `component.task-agent-host.primary`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner and hold task session locks
+  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Root the Herdr notify install record in the account-level repo-harness home.
+- `component.task-agent-host.primary-assets`:
+  - 無。
+- `component.task-agent-host.primary-cli`:
+  - 無。
+- `component.task-agent-host.primary-core`:
+  - 無。
+- `component.task-agent-host.primary-scripts`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.task-agent-host.primary` | Herdr Task Session Host | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
+| `component.task-agent-host.core-layer` | Task Agent Host (core) | `2–5` 個文件 / `50–100` 行 | 未宣告 |
+| `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.task-agent-host.primary-cli` | Herdr Task Session Host (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `2–5` 個文件 / `50–100` 行 | 未宣告 |
+| `component.task-agent-host.primary-scripts` | Herdr Task Session Host (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f740737d70b0b6659e790b9b781e5e2295b01eedb5743d6b1f50c35d7e18f357`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:635aa10e476fd3f44ed0a87ccb7aa577f51592eb9deda3c25963a89003adcc51`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

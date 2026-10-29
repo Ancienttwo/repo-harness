@@ -1,8 +1,8 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:416ef99fa318311a60f87c1671946a1b7d8933551f213c7ccf941e8efb5203ba" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:82af4d2d17e623bafe8ec35ea8f0d8f163299bfa0c39c7b4f7151c3228d1069c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
-> **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/adoption/**`、`src/effects/source-checkout.ts`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
+> **Matched Prefixes**:`src/core/adoption/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -15,7 +15,10 @@ Plans and applies repository adoption through the canonical filesystem transacti
 ```mermaid
 flowchart LR
   p1_capability_public_surface_adoption_30ebba6e["Adoption"]:::component
+  p1_component_adoption_cli_layer_fffb9daa["Adoption (cli)"]:::component
+  p1_component_adoption_effects_layer_337cfde8["Adoption (effects)"]:::component
   p1_component_adoption_primary_8ecdbd06["Adoption Transaction"]:::component
+  p1_component_adoption_tests_layer_93307fc5["Adoption (tests)"]:::component
   p1_capability_public_surface_adoption_30ebba6e -->|"Apply repository adoption"| p1_component_adoption_primary_8ecdbd06
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -23,8 +26,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:10dbfde8a2200fc50316ccffa30c6730cecbe1b0f9c1579db07c0681af104316`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:acb2ef929acde979a66c42db08087e9085f74acfd15249f123b63bdcc63fbf64`).
+- Semantic nodes: `5`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -38,8 +41,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/adoption/**`、`src/effects/source-checkout.ts`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`src/cli/repo-adoption/**`、`src/cli/commands/migrate.ts`
+- 規模量級:`5–10` 個文件 / `500–1000` 行
+- 匹配前綴:`src/core/adoption/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -65,18 +68,27 @@ flowchart LR
 
 組件出向關係:
 
+- `component.adoption.cli-layer`:
+  - 無。
+- `component.adoption.effects-layer`:
+  - 無。
 - `component.adoption.primary`:
+  - 無。
+- `component.adoption.tests-layer`:
   - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.adoption.cli-layer` | Adoption (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.adoption.effects-layer` | Adoption (effects) | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.adoption.primary` | Adoption Transaction | 未宣告 `source.include` | 未宣告 |
+| `component.adoption.tests-layer` | Adoption (tests) | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:10dbfde8a2200fc50316ccffa30c6730cecbe1b0f9c1579db07c0681af104316`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:acb2ef929acde979a66c42db08087e9085f74acfd15249f123b63bdcc63fbf64`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

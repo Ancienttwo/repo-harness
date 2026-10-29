@@ -1,8 +1,8 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0a83f2428032d15b1adcdbb22063bdf4c17f94e261a5825b3949916cd68d02ca" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bfad687200899af2e1732b87daa67407652406e36f42b79589dc6c6c16173c6e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
-> **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`src/core/security/**`
+> **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/reference-configs/herdr-orchestrator-mcp.md`、`src/core/security/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -19,6 +19,8 @@ flowchart LR
   p1_component_mcp_sidecar_host_setup_a05a1958["CLI and Host Setup"]:::component
   p1_component_mcp_sidecar_primary_8f9b418c["Server and Tool Dispatch"]:::component
   p1_component_mcp_sidecar_repo_policy_registry_40f1ea26["Config Policy and Repository Registry"]:::component
+  p1_component_mcp_sidecar_repo_policy_registry_core_7c0f35d6["Config Policy and Repository Registry (core)"]:::component
+  p1_component_mcp_sidecar_repo_policy_registry_effects_6c93657b["Config Policy and Repository Registry (effects)"]:::component
   p1_component_mcp_sidecar_transport_auth_2511e63e["Transport and Authorization"]:::component
   p1_component_mcp_sidecar_coding_profile_c04b21a1 -->|"Contain workspace paths against registered roots then redact and audit coding results"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
   p1_component_mcp_sidecar_host_setup_a05a1958 -->|"List and clean up managed coding workspaces"| p1_component_mcp_sidecar_coding_profile_c04b21a1
@@ -36,8 +38,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:3907fcb17c197ce0712afec1d409a27428d3ed7803d37f3593a58fde403c7189`).
-- Semantic nodes: `6`; declared relations: `10`.
+- Proof: `proven` (`sha256:9c7aecf5760094e094e97afdd8049f7b14017a0a907ee8283a3e6546991ad51c`).
+- Semantic nodes: `8`; declared relations: `10`.
 
 ### 1.2 模組職責表
 
@@ -57,7 +59,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `10k–20k` 行
-- 匹配前綴:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`src/core/security/**`
+- 匹配前綴:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/reference-configs/herdr-orchestrator-mcp.md`、`src/core/security/**`
 - 排除前綴:`src/cli/mcp/codegraph-adapter.ts`、`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -66,6 +68,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
+- `deployed-on` → `process.mcp-server` — The MCP sidecar runs in the MCP server process.
 - `depends-on` → `capability.workflow-engine.contract-assets` — Run declared helpers from MCP tools.
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
@@ -81,6 +84,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.external-source-intake` — Read the strict repo registry snapshot for repository identity and authorization
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Resolve registered repositories for the model reader
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the mcp command
+- `reads` ← `component.operator.console-collectors` — Run mcp doctor without live registration and read the OAuth token store and the newest audit rows for Bot access, and read the strict repository registry snapshot for Bot access, docs and tests.
 - `reads` ← `component.operator.primary` — Resolve a registered repository root from the strict repo-harness registry snapshot
 - `calls` ← `capability.runtime-harness.refactor-program` — Resolve the canonical repository path through the repo registry
 
@@ -108,11 +112,15 @@ flowchart LR
   - `calls` → `capability.runtime-mcp.general-repo-access` — Dispatch the general repository reader and writer tools
   - `calls` → `capability.organization.publication` — Reopen and take over publications and read merge readiness
   - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve repositories and paths under the profile policy then redact and audit each result
-  - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents and send task requests through Herdr
+  - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr
   - `calls` → `capability.organization.task-fleet` — Acquire fleet tasks and handle task steers from the MCP tools
   - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only for the state MCP tools
 - `component.mcp-sidecar.repo-policy-registry`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git for repository roots and lock guarded writes
+- `component.mcp-sidecar.repo-policy-registry-core`:
+  - 無。
+- `component.mcp-sidecar.repo-policy-registry-effects`:
+  - 無。
 - `component.mcp-sidecar.transport-auth`:
   - `calls` → `component.mcp-sidecar.primary` — Create one MCP server per authorized session and dispatch its tool calls
   - `reads` → `component.mcp-sidecar.repo-policy-registry` — Load the local config and credentials at startup and recheck the profile on each new session
@@ -124,12 +132,14 @@ flowchart LR
 | `component.mcp-sidecar.coding-profile` | Coding Profile Runtime | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.mcp-sidecar.host-setup` | CLI and Host Setup | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.cli` |
 | `component.mcp-sidecar.primary` | Server and Tool Dispatch | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.tool-dispatch` |
-| `component.mcp-sidecar.repo-policy-registry` | Config Policy and Repository Registry | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.mcp-sidecar.repo-policy-registry` | Config Policy and Repository Registry | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.mcp-sidecar.repo-policy-registry-core` | Config Policy and Repository Registry (core) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.mcp-sidecar.repo-policy-registry-effects` | Config Policy and Repository Registry (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.mcp-sidecar.transport-auth` | Transport and Authorization | `2–5` 個文件 / `1000–2000` 行 | `entrypoint.mcp-sidecar.http-transport` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:3907fcb17c197ce0712afec1d409a27428d3ed7803d37f3593a58fde403c7189`); selectors `6/6`.
+> **Proof**: `proven` (`sha256:9c7aecf5760094e094e97afdd8049f7b14017a0a907ee8283a3e6546991ad51c`); selectors `6/6`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
