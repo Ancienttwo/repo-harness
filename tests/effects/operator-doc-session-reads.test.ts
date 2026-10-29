@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
+import { DOC_SESSION_PATCH_MAX_BYTES, docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
 import {
   docSessionDiffSha256, docSessionGitRunner, docSessionLossSha256, observeDocSessionChanges, observeDocSessionLoss, resolveDocSession,
@@ -46,12 +46,13 @@ interface Session {
  * the production route inventory, so the reads run in the
  * bounded task-read child as in `operator serve`.
  */
-async function session(): Promise<Session> {
+async function session(prepare?: (repo: string) => void): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
   writeFileSync(join(repo, 'docs', 'old.md'), 'old\n');
   writeFileSync(join(repo, '.gitignore'), '*.log\n');
+  prepare?.(repo);
   commitAll(repo, 'docs');
   git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
   const home = tmpWorkspace('doc-session-reads-home');
@@ -287,6 +288,77 @@ test.each(['changed', 'stat-only', 'racy'])('filter admission precedes every con
     executions.push(readFileSync(marker).length);
   }
   expect(executions).toEqual([0, 0, 0, 0]);
+});
+
+test.each(['staged', 'committed'])('a %s populated gitlink is refused before its nested clean filter can run', async state => {
+  const s = await session();
+  // The fixture owner installs this state, including both indexes and the
+  // nested config. The docs host cannot create .git entries or edit an index.
+  const nested = join(s.worktree, 'docs', 'nested');
+  mkdirSync(nested);
+  initGitRepo(nested);
+  writeFileSync(join(nested, 'guide.md'), 'before\n');
+  writeFileSync(join(nested, '.gitignore'), '*.log\n');
+  writeFileSync(join(nested, '.gitattributes'), 'guide.md filter=marker\n');
+  commitAll(nested, 'nested docs');
+  const oid = git(['rev-parse', 'HEAD'], nested).trim();
+  git(['update-index', '--add', '--cacheinfo', `160000,${oid},docs/nested`], s.worktree);
+  if (state === 'committed') git(['commit', '-m', 'nested gitlink'], s.worktree);
+  git(['config', 'filter.marker.clean', 'printf x >> filter-marker.log; cat'], nested);
+  // Keep the size: status must compare the bytes, not just detect a size change.
+  writeFileSync(join(nested, 'guide.md'), 'after!\n');
+  const marker = join(nested, 'filter-marker.log');
+  const executions: number[] = [];
+  for (const effect of [readDocSessionDiff, readDocSessionLoss]) {
+    writeFileSync(marker, '');
+    expect(() => effect(s.env, s.sid)).toThrow('path_unsupported');
+    executions.push(readFileSync(marker).length);
+  }
+  for (const route of [diffOf, lossOf]) {
+    writeFileSync(marker, '');
+    expect(await route(s)).toMatchObject({ status: 422, body: { code: 'path_unsupported' } });
+    executions.push(readFileSync(marker).length);
+  }
+  expect(executions).toEqual([0, 0, 0, 0]);
+});
+
+test('filter admission handles bounded path lists whose attribute replies exceed the single-command buffer', async () => {
+  const pathAt = (index: number) => `capacity/${String(index).padStart(5, '0')}-${'x'.repeat(35)}.md`;
+  const pathBytes = Buffer.byteLength(`${pathAt(0)}\0`);
+  const replyBytes = pathBytes + Buffer.byteLength('filter\0unspecified\0');
+  const count = Math.floor(DOC_SESSION_PATCH_MAX_BYTES / replyBytes) + 1;
+  expect(count * pathBytes).toBeLessThan(DOC_SESSION_PATCH_MAX_BYTES);
+  expect(count * replyBytes).toBeGreaterThan(DOC_SESSION_PATCH_MAX_BYTES);
+  const s = await session(repo => {
+    // Unchanged repository paths outside docs also participate in admission.
+    // Keep the independent DocsReader tree cap out of this fixture.
+    mkdirSync(join(repo, 'capacity'));
+    for (let index = 0; index < count; index += 1) writeFileSync(join(repo, pathAt(index)), 'same\n');
+  });
+  const beforeDiff = await diffOf(s);
+  const beforeLoss = await lossOf(s);
+  expect(beforeDiff.status).toBe(200);
+  expect(beforeLoss.status).toBe(200);
+  git(['config', 'filter.marker.clean', 'printf x >> filter-marker.log; cat'], s.repo);
+  const marker = join(s.worktree, 'filter-marker.log');
+  // An unused installed driver must not change either observation or digest.
+  const afterDiff = await diffOf(s);
+  const afterLoss = await lossOf(s);
+  expect(afterDiff.status).toBe(200);
+  expect(afterLoss.status).toBe(200);
+  expect(afterDiff.body.diff_sha256).toBe(beforeDiff.body.diff_sha256);
+  expect(afterLoss.body.loss_sha256).toBe(beforeLoss.body.loss_sha256);
+
+  // Matching paths near the end of the tracked list, and then the untracked
+  // list, must still be checked. Neither refusal may run the configured filter.
+  for (const path of [pathAt(count - 1), 'docs/zz-untracked.md']) {
+    writeFileSync(join(s.worktree, path), 'changed\n');
+    writeFileSync(join(s.worktree, '.gitattributes'), `${path} filter=marker\n`);
+    writeFileSync(marker, '');
+    expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+    expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+    expect(readFileSync(marker).length).toBe(0);
+  }
 });
 
 test.each(['edit', 'add', 'mode'])('the loss digest binds ignored leaves when they %s inside an existing directory', async action => {

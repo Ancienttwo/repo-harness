@@ -182,10 +182,29 @@ function filterDrivers(runner: DocSessionGitRunner, worktree: string): Set<strin
 function refuseUsedFilters(runner: DocSessionGitRunner, worktree: string, paths: readonly string[]): void {
   const drivers = filterDrivers(runner, worktree);
   if (drivers.size === 0 || paths.length === 0) return;
-  const output = new TextDecoder().decode(runner.bytes(worktree, ['check-attr', '-z', '--stdin', 'filter'], [0], Buffer.from(`${paths.join('\0')}\0`)));
-  const fields = output === '' ? [] : output.slice(0, -1).split('\0');
-  if (fields.length !== paths.length * 3) return fail('unavailable');
-  for (let index = 2; index < fields.length; index += 3) if (drivers.has(fields[index]!)) fail('filters_unsupported');
+  // Each reply repeats its path and adds the attribute name and value. Bound
+  // both batch bytes and path count; keep the existing whole-list input caps
+  // and per-command output cap, including for an oversized attribute value.
+  for (let offset = 0; offset < paths.length;) {
+    const batch: string[] = [];
+    let bytes = 0;
+    while (offset < paths.length && batch.length < 256) {
+      const path = paths[offset]!;
+      const size = Buffer.byteLength(path) + 1;
+      if (batch.length > 0 && bytes + size > 64 * 1024) break;
+      batch.push(path);
+      bytes += size;
+      offset += 1;
+    }
+    const output = new TextDecoder().decode(runner.bytes(worktree, ['check-attr', '-z', '--stdin', 'filter'], [0], Buffer.from(`${batch.join('\0')}\0`)));
+    if (!output.endsWith('\0')) return fail('unavailable');
+    const fields = output.slice(0, -1).split('\0');
+    if (fields.length !== batch.length * 3) return fail('unavailable');
+    for (let index = 0; index < batch.length; index += 1) {
+      if (fields[index * 3] !== batch[index] || fields[index * 3 + 1] !== 'filter') return fail('unavailable');
+      if (drivers.has(fields[index * 3 + 2]!)) fail('filters_unsupported');
+    }
+  }
 }
 
 const pathsFrom = (listed: string): string[] => listed === '' ? [] : listed.slice(0, -1).split('\0');
@@ -240,8 +259,14 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
     const oid = new TextDecoder().decode(runner.bytes(worktree, ['hash-object', '--stdin', `--path=${path}`], [0], input)).trim();
     return oid || fail('unavailable');
   };
-  // ls-files only enumerates names. Raw diff can run clean/process filters even
-  // for a stat-only or racy entry, so admit every candidate before comparing.
+  // Read index metadata before a diff can inspect a populated submodule. Its
+  // nested filters are invisible to the top-level attribute/config checks.
+  // List only modes here: full --stage rows would spend the bounded output
+  // budget on object ids and reject otherwise admissible large path lists.
+  const modes = pathsFrom(runner.text(worktree, ['ls-files', '--format=%(objectmode)', '-z']));
+  if (modes.includes('160000')) return fail('path_unsupported');
+  // Raw diff can run clean/process filters even for a stat-only or racy entry,
+  // so admit every candidate before comparing.
   const tracked = pathsFrom(runner.text(worktree, ['ls-files', '--cached', '-z']));
   const others = pathsFrom(runner.text(worktree, ['ls-files', '--others', '--exclude-standard', '-z']));
   refuseUsedFilters(runner, worktree, [...new Set([...tracked, ...others])]);
