@@ -204,14 +204,25 @@ function stageCommits(target: CleanupObservationTarget, loss: CleanupLossEvidenc
   save: (storage: 'git' | 'private', path: string, source: string, bytes: Buffer, original: Original) => void): void {
   if (loss.kind !== 'registered') fail('unsupported');
   const runner = docSessionGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
-  for (const commit of loss.commits) {
+  const commits = loss.commits.map(commit => {
+    checkDeadline(options.deadline);
+    const raw = runner.bytes(target.worktree, ['cat-file', 'commit', commit]);
+    const oid = createHash(commit.length === 64 ? 'sha256' : 'sha1').update(`commit ${raw.length}\0`).update(raw).digest('hex');
+    if (oid !== commit) fail('changed');
+    const parents = raw.toString('utf8').split('\n\n', 1)[0]!.split('\n').filter(line => line.startsWith('parent ')).map(line => line.slice(7));
+    const listed = runner.text(target.worktree, ['rev-list', '--parents', '-n', '1', commit]).trim().split(' ');
+    if (listed[0] !== commit || listed.slice(1).join(' ') !== parents.join(' ')) fail('changed');
+    // format-patch -1 can skip a merge and return an ancestor's patch. Never treat it as a backup of the merge.
+    if (parents.length > 1) fail('unsupported');
+    return { commit, parents };
+  });
+  for (const { commit, parents } of commits) {
     checkDeadline(options.deadline);
     const changed = runner.text(target.worktree, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', commit]).split('\0').filter(Boolean);
     if (changed.some(path => PRIVATE_FILE.test(path))) fail('unsafe_git_content');
-    const patch = runner.bytes(target.worktree, ['format-patch', '-1', '--stdout', '--binary', '--full-index', '--no-signature', '--no-ext-diff', '--no-textconv', commit]);
-    // Empty merge output is not a backup. Such commits need a separately approved representation.
-    if (patch.length === 0) fail('unsupported');
-    const parents = runner.text(target.worktree, ['rev-list', '--parents', '-n', '1', commit]).trim().split(' ').slice(1);
+    const patch = runner.bytes(target.worktree, ['format-patch', '--root', '-1', '--stdout', '--binary', '--full-index', '--no-zero-commit', '--no-signature', '--no-ext-diff', '--no-textconv', commit]);
+    const identity = Buffer.from(`From ${commit} Mon Sep 17 00:00:00 2001\n`);
+    if (!patch.subarray(0, identity.length).equals(identity)) fail('unsupported');
     save('git', `.cleanup/commits/${commit}.patch`, 'commit.patch', patch, { kind: 'commit', oid: commit, parents });
   }
 }

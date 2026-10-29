@@ -115,6 +115,7 @@ test('unpublished commit format-patch can be applied in a separate fixture check
     const commit = f.git(f.tree, 'rev-parse', 'HEAD');
     const result = stageCleanupArchive(sid, f.target, f.plan([], [], true), f.options());
     const patch = join(result.git_directory!, archivePath, '.cleanup/commits', commit + '.patch');
+    expect(readFileSync(patch, 'utf8').startsWith(`From ${commit} Mon Sep 17 00:00:00 2001\n`)).toBe(true);
     const source = readFileSync(join(result.git_directory!, archivePath, 'SOURCE.md'), 'utf8');
     const manifest = JSON.parse(source.split('```json\n')[1]!.split('```')[0]!);
     const recorded = manifest.files.find((file: { original: { kind: string } }) => file.original.kind === 'commit').original;
@@ -166,4 +167,36 @@ test('each ancestor of a private artifact is durably linked before staging succe
       expect(synced.has(statSync(path).ino)).toBe(true);
     }
   } finally { sync.mockRestore(); f.cleanup(); }
+});
+
+test('a merge with unique conflict resolution refuses instead of archiving an ancestor patch under its identity', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tree, 'docs/guide.md'), 'feature text\n'); commitAll(f.tree, 'feature');
+    writeFileSync(join(f.repo, 'docs/guide.md'), 'main text\n'); commitAll(f.repo, 'main');
+    const merge = run('git', ['merge', '--no-edit', 'main'], f.tree); expect(merge.status).toBe(1);
+    writeFileSync(join(f.tree, 'docs/guide.md'), 'unique conflict resolution\n'); commitAll(f.tree, 'resolve conflict');
+    const head = f.git(f.tree, 'rev-parse', 'HEAD');
+    expect(f.git(f.tree, 'rev-list', '--parents', '-n', '1', head).split(' ')).toHaveLength(3);
+    expect(() => stageCleanupArchive(sid, f.target, f.plan([], [], true), f.options())).toThrow('unsupported');
+    expect(readFileSync(join(f.tree, 'docs/guide.md'), 'utf8')).toBe('unique conflict resolution\n');
+    for (const operation of readdirSync(f.staging)) expect(existsSync(join(f.staging, operation, archivePath, 'SOURCE.md'))).toBe(false);
+  } finally { f.cleanup(); }
+});
+
+test('a root commit patch keeps its exact identity and restores into an empty repository', () => {
+  const f = fixture();
+  try {
+    f.git(f.repo, 'update-ref', '-d', 'refs/remotes/origin/main');
+    f.git(f.repo, 'config', 'format.zeroCommit', 'true');
+    const head = f.git(f.tree, 'rev-parse', 'HEAD');
+    const result = stageCleanupArchive(sid, f.target, f.plan([], [], true), f.options());
+    const patch = join(result.git_directory!, archivePath, '.cleanup/commits', head + '.patch');
+    expect(readFileSync(patch, 'utf8').startsWith(`From ${head} Mon Sep 17 00:00:00 2001\n`)).toBe(true);
+    const source = readFileSync(join(result.git_directory!, archivePath, 'SOURCE.md'), 'utf8');
+    const manifest = JSON.parse(source.split('```json\n')[1]!.split('```')[0]!);
+    expect(manifest.files.find((file: { original: { kind: string } }) => file.original.kind === 'commit').original.parents).toEqual([]);
+    const restore = join(f.parent, 'root-restore'); mkdirSync(restore); initGitRepo(restore); f.git(restore, 'am', patch);
+    expect(readFileSync(join(restore, 'docs/guide.md'), 'utf8')).toBe('base\n');
+  } finally { f.cleanup(); }
 });
