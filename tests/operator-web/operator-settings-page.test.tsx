@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../src/core/operator/agents-settings';
+import { isReviewRuntimeId } from '../../src/core/review/review-runtimes';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
@@ -43,7 +44,7 @@ const REVISION_B = `sha256:${'b'.repeat(64)}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const entry = (id: string, installation: Record<string, unknown>, group = 'default') => ({
-  id, group, installation, review_supported: id === 'claude' || id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: isReviewRuntimeId(id), capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
 /** claude is on for docs and review and is the default; codex and kimi are installed and off; grok is not installed. */
@@ -140,7 +141,7 @@ describe('settings page', () => {
     expect(saveButton().disabled).toBe(true);
   });
 
-  test('3-SET-N1 the form has no credential input, offers review only on claude and codex, and gives no switch to an agent that is not installed', async () => {
+  test('3-SET-N1 the form has no credential input, offers review only on supported runtimes, and gives no switch to an agent that is not installed', async () => {
     await mount(props(server(settings({ enabled: ['claude', 'kimi'] }), [])));
     // The switches carry their own checkbox inputs; nothing takes typed text.
     expect(all('input').map(input => input.getAttribute('type')).filter(type => type !== 'radio' && type !== 'checkbox')).toEqual([]);
@@ -148,7 +149,7 @@ describe('settings page', () => {
     await click(use('kimi', 'docs'));
     expect(use('kimi', 'docs').getAttribute('aria-pressed')).toBe('true');
     expect(use('kimi', 'review').disabled).toBe(true);
-    expect(use('kimi', 'review').title).toBe('Only claude and codex can review.');
+    expect(use('kimi', 'review').title).toBe('Only claude, codex and pi can review.');
     expect(use('claude', 'review').disabled).toBe(false);
     expect(toggle('grok')).toBeNull();
     expect(use('grok', 'docs').disabled).toBe(true);
@@ -156,6 +157,19 @@ describe('settings page', () => {
     expect(row('cursor').closest('[data-runtime-group]')?.getAttribute('data-runtime-group')).toBe('settings-group-extra');
     expect(row('cursor').textContent).toContain('@cursor/sdk');
     expect(all('[data-capabilities]').map(line => line.textContent)).toEqual(['Every agent can stop a turn · steer depends on the session · withdrawing a queued message depends on the session']);
+  });
+
+  test('Pi review fixture offers the review use and saves it without changing the docs default', async () => {
+    const route = server(settings({}, [entry('pi', { kind: 'available', via: 'bundled', version: null })]),
+      [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled', 'agents.uses.review'] } }]);
+    await mount(props(route));
+    await click(toggle('pi')!);
+    expect(use('pi', 'review').disabled).toBe(false);
+    await click(use('pi', 'review')); await click(saveButton());
+    expect(route.posts).toHaveLength(1);
+    expect(route.posts[0]!.changes).toEqual([{ runtime: 'pi', enabled: true, uses: ['review'] }]);
+    expect(route.posts[0]!.default_docs_runtime).toBeUndefined();
+    expect(agentsSettingsFixture(NOW, 'busy').runtimes.entries.find(entry => entry.id === 'pi')?.review_supported).toBe(true);
   });
 
   test('3-SET-F1 a stale revision asks for a reload, sends nothing more, and the reload starts from the new section', async () => {
