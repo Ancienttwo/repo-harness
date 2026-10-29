@@ -5,10 +5,11 @@ name: Operator HTTP Reader
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Returns public JSON observations and typed failures; its two write routes change the agents section of the global configuration and create doc sessions.
+summary: Returns public JSON observations and typed failures; its three write routes change the agents section of the global configuration, create doc sessions and remove green worktrees.
 responsibilities:
   - Accept GET and HEAD from a loopback Host and same-origin callers; accept POST only with this service's Origin and Sec-Fetch-Site same-origin, and only on a declared write route; refuse every other method with 405.
-  - Route each path through the frozen OPERATOR_ROUTES list; production declares two write routes, settings_agents_write, which changes only the agents section of ~/.repo-harness/config.json, and sessions_create, and the server refuses to start unless each write handler and each inventory entry with method POST and write true match.
+  - Route each path through the frozen OPERATOR_ROUTES list; production declares three write routes, settings_agents_write, which changes only the agents section of ~/.repo-harness/config.json, sessions_create, and worktrees_cleanup, which removes green worktrees; the server refuses to start unless each write handler and each inventory entry with method POST and write true match.
+  - Own the green worktree cleanup effect shared by POST /api/v1/worktrees/cleanup and repo-harness worktrees clean: refuse the whole selection when a row is unknown, in use, not green or its selection digest changed; then remove each row through the sweep's green path, which checks the row again inside the topology barrier. HTTP runs the effect in a supervised child process; the CLI runs it in its own process; both go through the shared write run. Remote branches are never touched.
   - Run slow reads in supervised worker processes and start background collectors once per server.
   - Serve the Bot access, CLI inventory, notify status, docs, tests and task execution GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
   - Own the operator serve and runtime capture CLI entry and the Herdr observation transport.
