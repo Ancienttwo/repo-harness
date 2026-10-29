@@ -672,7 +672,8 @@ describe('sequence and topology base maps', () => {
     violations: {
       debt: { state: 'ok', items: [] },
       flows: { state: 'ok', selectors: 4, proven: 1, unproven: 1, used_unproven: 1, unprovable: [{ id: CENTER, diagnostics: 2 }],
-        evidence: [{ ...selector('route'), status: 'proven' }, { ...selector('append'), status: 'no-direct-call' }] },
+        evidence: [{ ...selector('route'), status: 'proven', call_sites: [{ path: 'src/router.ts', line: 12 }, { path: 'src/router-entry.ts', line: null }] },
+          { ...selector('append'), status: 'no-direct-call', call_sites: [] }] },
       anchors: noCodeFacts,
       dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
       layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' },
@@ -792,6 +793,7 @@ describe('sequence and topology base maps', () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('sequence');
     expect(document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow')).toBe(FLOW);
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
     expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
       ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
     expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
@@ -805,6 +807,7 @@ describe('sequence and topology base maps', () => {
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
+    expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
     expect([...inspector().querySelectorAll('[data-node-size]')].map(item => item.textContent)).toEqual([' · 100 lines in 1 files', ' · 900 lines in 1 files']);
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CALLER} → Name ${CENTER} · 7 imports`]);
     expect(inspector().querySelectorAll('[data-fix-command]')).toHaveLength(0);
@@ -812,6 +815,7 @@ describe('sequence and topology base maps', () => {
     await click('.react-flow__node[data-id="message::append"]');
     expect(inspector().querySelector('[data-path-withheld]')?.textContent).toBe('path withheld (it fails the public-path check)');
     expect(inspector().querySelector('[data-step-proof]')?.textContent).toBe('Not proven: archctx reports no-direct-call.');
+    expect(inspector().querySelector('[data-call-sites]')).toBeNull();
     expect(inspector().querySelector('[data-step-today]')).not.toBeNull();
     expect(inspector().querySelector('[data-fix-command="flows"]')?.textContent).toBe('archctx flows check --no-sync --json');
 
@@ -874,6 +878,9 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
     expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
     expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
+    // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
+    const host = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap())).boxes.find(item => item.node.id === HOST)!;
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(host.x - 24) * 0.85}px,${-(host.y - 24) * 0.85}px) scale(0.85)`);
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;

@@ -33,7 +33,7 @@ import {
   type MapLayerView,
   type MapMark,
 } from './architecture-map-layers';
-import { counted, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
+import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { ArchitectureSequence } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
@@ -128,13 +128,6 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>
 
 const NODE_TYPES = { box: BoxNode, group: GroupNode };
 
-/**
- * Zoom of the first view of a banded map: a 13 px title shows at 11 px. The whole map of a
- * real model is several canvases wide, so the first view starts at the top band's leftmost
- * node and its label; Fit shows the whole map.
- */
-const MAP_READABLE_ZOOM = 0.85;
-
 /** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
 const MAP_BAND_LABEL = 28;
 
@@ -189,10 +182,10 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  // A banded map opens on its top band's leftmost node and label.
   const firstView = useMemo(() => {
     const top = layout.bands[0];
-    if (top === undefined) return undefined;
-    return { x: -(top.x - 24) * MAP_READABLE_ZOOM, y: -(top.y - MAP_BAND_LABEL - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+    return top === undefined ? undefined : firstViewport(top.x, top.y - MAP_BAND_LABEL);
   }, [layout]);
   const selected = selectedId === null ? null : items.get(selectedId) ?? null;
 

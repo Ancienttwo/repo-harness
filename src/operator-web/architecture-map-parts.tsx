@@ -14,6 +14,18 @@ import { impactLines, impactTargets, type MapLayerId, type MapMark } from './arc
 import type { OperatorTranslate } from './i18n';
 import { CopyButton } from './ui';
 
+/** Zoom of the first view: a 13 px title shows at 11 px. */
+const MAP_READABLE_ZOOM = 0.85;
+
+/**
+ * The first view of a base map: readable zoom, anchored at the top-left content corner
+ * (`left`, `top`). The map of a real model is wider than the canvas, and a fit would shrink
+ * its labels below reading size; Fit still shows the whole map.
+ */
+export function firstViewport(left: number, top: number): { readonly x: number; readonly y: number; readonly zoom: number } {
+  return { x: -(left - 24) * MAP_READABLE_ZOOM, y: -(top - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+}
+
 export type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision';
 
 /** "1 node", "2 nodes". `atLeast` marks a count that archctx cut at its limit. Only English inflects; Chinese keeps the bare number and its own classifier. */

@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/base.css';
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { firstViewport, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement } from './architecture-runtime';
 import { layoutTopology, TOPOLOGY_BOX_HEADER, TOPOLOGY_BOX_WIDTH, TOPOLOGY_MEMBER, type TopologyBox } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
@@ -86,6 +86,11 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
   const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const boxes = useMemo(() => new Map(layout.boxes.map(box => [box.node.id, box])), [layout]);
+  // The first view opens on the first top-level runtime box; the external systems are a pan or a Fit away.
+  const firstView = useMemo(() => {
+    const anchor = layout.boxes.find(box => box.parent === null && box.node.kind !== 'external-system')!;
+    return firstViewport(anchor.x, anchor.y);
+  }, [layout]);
   // A box is lit when a node it shows, or a node that runs in it, holds a mark; a namespace is lit through what it holds.
   const lit = useMemo(() => {
     const result = new Set<string>();
@@ -147,7 +152,7 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        fitView
+        defaultViewport={firstView}
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />

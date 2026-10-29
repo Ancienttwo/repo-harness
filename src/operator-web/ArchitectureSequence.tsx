@@ -10,7 +10,7 @@ import {
   type ArchitectureMapV1,
 } from '../core/operator/architecture-map';
 import { archctxCode, mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { firstViewport, FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN, SEQUENCE_HEADER, type SequenceBox } from './architecture-sequence-layout';
 import type { OperatorTranslate } from './i18n';
@@ -108,7 +108,8 @@ function StepDetails({ map, flow, outcome, step, t }: {
   const key = flowSelectorKey(step.evidence);
   const evidence = map.flow_evidence.find(entry => flowSelectorKey(entry) === key);
   const { flows } = map.layers.violations;
-  const status = flows.state === 'ok' ? flows.evidence.find(entry => flowSelectorKey(entry) === key)?.status ?? null : null;
+  const proof = flows.state === 'ok' ? flows.evidence.find(entry => flowSelectorKey(entry) === key) ?? null : null;
+  const status = proof?.status ?? null;
   const imports = map.dependencies.state === 'ok' ? map.dependencies.edges : [];
   const between = map.relations.filter(relation => (relation.source === from && relation.target === to) || (relation.source === to && relation.target === from));
   const { changes, pull_requests: pullRequests } = map.layers;
@@ -135,6 +136,9 @@ function StepDetails({ map, flow, outcome, step, t }: {
       : <p className="architecture-map__gap" data-gap="proof" data-reason={flows.reason} data-code={flows.reason === 'archctx_error' ? archctxCode(flows) : undefined}>
         {flows.reason === 'archctx_error' ? t('architecture.layer.reason.archctx_error', { code: archctxCode(flows) }) : t(`architecture.layer.reason.${flows.reason}`)}
       </p>}
+    {proof !== null && proof.call_sites.length > 0 && <ul data-call-sites aria-label={t('architecture.sequence.callSites')}>
+      {proof.call_sites.map(site => <li key={`${site.path}:${site.line ?? ''}`}><code>{site.line === null ? site.path : `${site.path}:${site.line}`}</code></li>)}
+    </ul>}
     {status !== 'proven' && <FixCommand part="flows" t={t} />}
     <h4>{t('architecture.inspector.pullRequests')}</h4>
     {today && <p data-step-today>{t('architecture.sequence.today')}</p>}
@@ -170,6 +174,7 @@ function SequenceCanvas({ map, flow, layer, pullRequest, onModule, t }: {
 }) {
   const placement = useMemo(() => runtimePlacement(map), [map]);
   const layout = useMemo(() => layoutSequence(flow, placement), [flow, placement]);
+  const firstView = useMemo(() => firstViewport(Math.min(...layout.boxes.map(box => box.x)), Math.min(...layout.boxes.map(box => box.y))), [layout]);
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
@@ -245,7 +250,7 @@ function SequenceCanvas({ map, flow, layer, pullRequest, onModule, t }: {
         nodesConnectable={false}
         minZoom={0.1}
         maxZoom={2}
-        fitView
+        defaultViewport={firstView}
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
