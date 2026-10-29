@@ -132,6 +132,7 @@ function fileBytes(root: number, file: CleanupFileEvidence, deadline: number): B
 export function stageCleanupArchive(sessionId: string, target: CleanupObservationTarget, item: CleanupPlanItem, options: CleanupArchiveOptions): StagedCleanupArchive {
   let source = -1, staging = -1, privateRoot = -1;
   try {
+    if (process.platform === 'darwin' && process.arch === 'arm64') fail('unsupported');
     decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: sessionId, items: [item] });
     if (hex(cleanupPlanDigestInput(sessionId, item)) !== item.plan_sha256 || target.id !== item.worktree.id
       || item.advice.recommendation !== 'archive_then_delete' || item.worktree.repository_id === null) fail('changed');

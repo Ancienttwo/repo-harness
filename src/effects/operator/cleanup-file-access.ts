@@ -121,6 +121,9 @@ export function ensureCleanupPrivateDirectory(parent: number, name: string): num
   catch (error) { closeSync(child.fd); throw error; }
 }
 export function createCleanupPrivateFile(parent: number, name: string): number {
+  // Apple arm64 passes variadic arguments on the stack. Bun's fixed FFI
+  // declaration cannot pass openat's creation mode there. Reads omit O_CREAT.
+  if (process.platform === 'darwin' && process.arch === 'arm64') throw new UnsupportedCleanupPath('archive creation needs a native openat wrapper on Apple arm64');
   const fd = native().openat(parent, cName(name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | closeOnExec, 0o600);
   if (fd < 0) throw new Error('cleanup archive create failed');
   return fd;
