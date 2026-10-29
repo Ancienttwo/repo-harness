@@ -358,6 +358,24 @@ test('invalid UTF-8 text refuses the diff instead of replacing the reviewed byte
   expect(answer.text).not.toContain('\ufffd');
 });
 
+test('an unexpected internal read exception exits 1 and exposes only the public unavailable code', async () => {
+  const s = await session();
+  const core = resolve(import.meta.dir, '../../src/core/operator/doc-session-changes.ts');
+  // Inject an internal fault inside the real reader, before its error wrapper.
+  // The child isolates the module replacement from all other tests.
+  const script = `
+    import { mock } from 'bun:test';
+    const core = await import(${JSON.stringify(core)});
+    mock.module(${JSON.stringify(core)}, () => ({ ...core, docSessionDiffDigestInput() { throw new Error('private internal fault'); } }));
+    const { runCli } = await import(${JSON.stringify(CLI)});
+    await runCli(['bun', 'repo-harness', 'operator', 'doc-sessions', 'diff', ${JSON.stringify(s.sid)}, '--json']);
+  `;
+  const result = spawnSync(process.execPath, ['-e', script], { cwd: s.repo, env: s.env, encoding: 'utf8', timeout: 60_000 });
+  expect(result.status).toBe(1);
+  expect(result.stdout).toBe('');
+  expect(JSON.parse(result.stderr)).toEqual({ error: { code: 'unavailable' } });
+});
+
 test('a symlink, a hidden index entry and more changes than the cap are refused, never shown in part', async () => {
   const s = await session();
   symlinkSync('/etc/hosts', join(s.worktree, 'docs', 'link.md'));

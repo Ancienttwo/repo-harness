@@ -296,12 +296,12 @@ function stable<T>(observe: () => T, key: (value: T) => string, project: (value:
   return before;
 }
 
-/** Converts every failure of a read to its public code. */
+/** Preserve unexpected exceptions for the CLI exit status; HTTP sanitizes them in the read worker. */
 function read<T>(run: () => T): T {
   try { return run(); } catch (error) {
     if (error instanceof DocSessionReadError) throw error;
     if (error instanceof SessionObservationError) return fail(error.code);
-    return fail('unavailable');
+    throw error;
   }
 }
 
