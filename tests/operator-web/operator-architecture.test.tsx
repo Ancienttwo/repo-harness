@@ -350,7 +350,7 @@ describe('architecture map', () => {
     pull_requests: { state: 'unavailable', reason: 'dev_activity_unavailable' },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'stale-anchor', nodes: [PART], paths: [] }] },
-      flows: { state: 'ok', selectors: 2, proven: 1, unproven: 1, used_unproven: 1, unprovable: [{ id: CENTER, diagnostics: 1 }] },
+      flows: { state: 'ok', selectors: 2, proven: 1, unproven: 1, used_unproven: 1, unprovable: [{ id: CENTER, diagnostics: 1 }], evidence: [] },
       anchors: noCodeFacts,
       dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
       layer_direction: undeclaredLayers,
@@ -366,7 +366,7 @@ describe('architecture map', () => {
     return projectArchitectureMap({
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
-      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)],
+      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)], flows: [], flow_evidence: [],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
         : { state: 'unavailable', reason: 'model_worktree_dirty' },
       dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
@@ -390,7 +390,7 @@ describe('architecture map', () => {
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
-      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')],
+      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')], flows: [], flow_evidence: [],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
       layer_order: undeclaredLayers,
     });
@@ -437,7 +437,7 @@ describe('architecture map', () => {
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
         { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
-      relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)],
+      relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)], flows: [], flow_evidence: [],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
       layer_order: { state: 'ok', layers: ['cli', 'web', 'core', 'external'] },
     });
