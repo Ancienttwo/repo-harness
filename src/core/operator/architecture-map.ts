@@ -244,7 +244,10 @@ export interface ArchitectureDebtItemV1 { readonly kind: ArchitectureDebtKind; r
 /** The evidence of a flow step: archctx's selector key, an entrypoint symbol and a sink of one model node. */
 export interface ArchitectureFlowSelectorV1 { readonly entrypoint: string; readonly source_symbol: string; readonly sink: string }
 /** archctx's proof status for one selector that a flow step names, for example `proven` or `no-direct-call`. */
-export interface ArchitectureFlowProofV1 extends ArchitectureFlowSelectorV1 { readonly status: string }
+export interface ArchitectureFlowProofV1 extends ArchitectureFlowSelectorV1 {
+  readonly status: string;
+  readonly call_sites: readonly { readonly path: string; readonly line: number | null }[];
+}
 /** `archctx flows check --no-sync`: selector proof counts, each flow step selector's status, and the capabilities whose P2 flow proof archctx calls unprovable. */
 export interface ArchitectureFlowProofsV1 {
   readonly selectors: number;
@@ -467,7 +470,7 @@ const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
   flows: either(section({
     selectors: count, proven: count, unproven: count, used_unproven: count, unprovable: list(object({ id, diagnostics: count })),
-    evidence: list(object({ ...selectorFields, status: match(ARCHCTX_TOKEN) })),
+    evidence: list(object({ ...selectorFields, status: match(ARCHCTX_TOKEN), call_sites: list(object({ path: repoPath, line: nullable(positive) })) })),
   }, ARCHITECTURE_VIOLATION_REASONS), refusal),
   anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
@@ -550,10 +553,11 @@ function mapIndex(nodes: readonly ArchitectureMapNodeV1[], relations: readonly A
  * Each required flow names nodes of the map; its steps and its outcome
  * terminals name its own participants. Ids are unique where archctx keys by
  * them. Each declared selector and each proof names a selector that a step
- * names, once.
+ * names, once. Each proof also names declared evidence.
  */
 function flowsValid(map: ArchitectureMapV1, nodes: ReadonlyMap<string, ArchitectureMapNodeV1>): boolean {
   const selectors = new Set(map.flows.flatMap(entry => flowSteps(entry).map(({ step }) => flowSelectorKey(step.evidence))));
+  const declared = new Set(map.flow_evidence.map(flowSelectorKey));
   const named = (entries: readonly ArchitectureFlowSelectorV1[]) => unique(entries.map(flowSelectorKey)) && entries.every(entry => selectors.has(flowSelectorKey(entry)));
   const { flows: proofs } = map.layers.violations;
   return unique(map.flows.map(entry => entry.id)) && map.flows.every(entry => {
@@ -565,7 +569,7 @@ function flowsValid(map: ArchitectureMapV1, nodes: ReadonlyMap<string, Architect
       && stepsValid(entry.steps) && unique(entry.outcomes.map(outcome => outcome.id))
       && entry.outcomes.every(outcome => stepsValid(outcome.steps) && participants.has(outcome.terminal.participant));
   }) && named(map.flow_evidence) && map.flow_evidence.every(entry => nodes.has(entry.node))
-    && (proofs.state !== 'ok' || named(proofs.evidence));
+    && (proofs.state !== 'ok' || (named(proofs.evidence) && proofs.evidence.every(entry => declared.has(flowSelectorKey(entry)))));
 }
 
 /**

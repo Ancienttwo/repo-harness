@@ -418,27 +418,31 @@ function readDependencies(root: string, commit: string, checkout: CheckoutState,
  * private snapshot and writes no index. A missing, stale or unsupported index is
  * `AC_CODE_FACTS_UNAVAILABLE`.
  */
-function readFlows(root: string, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
+function readFlows(root: string, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>, declaredSelectors: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
   const read = runArchctx(root, ARCHITECTURE_VIOLATION_READS.flows);
   if (!read.ok) return archctxGap(read.error);
   const report = decoded(decodeFlowSelectorCheck, read.data);
-  return report === null ? ARCHCTX_FAILED : flowProofSection(report, capabilities, stepSelectors);
+  return report === null ? ARCHCTX_FAILED : flowProofSection(report, capabilities, stepSelectors, declaredSelectors);
 }
 
 /**
  * The map's form of a `flows check` report. `stepSelectors` are the selector
  * keys that the model's flow steps name; the map keeps archctx's status for
- * those. A key that archctx reports twice, or an unprovable capability the map
- * lacks, is `archctx_failed`.
+ * those. A duplicate key, a proof without declared evidence, or an unprovable
+ * capability the map lacks is `archctx_failed`. Unsafe call sites are withheld.
  */
-export function flowProofSection(report: ArchitectureFlowSelectorCheckV1, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
+export function flowProofSection(report: ArchitectureFlowSelectorCheckV1, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>, declaredSelectors: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
   if (report.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
   const unprovable = report.capabilities.filter(entry => entry.p2Status === 'unprovable');
   if (!unprovable.every(entry => capabilities.has(entry.capabilityId))) return ARCHCTX_FAILED;
   const evidence = report.selectors
-    .map(entry => ({ entrypoint: entry.entrypointId, source_symbol: entry.sourceSymbol, sink: entry.sinkId, status: entry.status }))
+    .map(entry => ({
+      entrypoint: entry.entrypointId, source_symbol: entry.sourceSymbol, sink: entry.sinkId, status: entry.status,
+      call_sites: entry.callSites.filter(site => isPublicRepoPath(site.path)).map(site => ({ path: site.path, line: site.line ?? null })),
+    }))
     .filter(entry => stepSelectors.has(flowSelectorKey(entry)));
   if (new Set(evidence.map(flowSelectorKey)).size !== evidence.length) return ARCHCTX_FAILED;
+  if (!evidence.every(entry => declaredSelectors.has(flowSelectorKey(entry)))) return ARCHCTX_FAILED;
   const { selectors, proven, unproven, usedUnproven } = report.summary;
   return {
     state: 'ok', selectors, proven, unproven, used_unproven: usedUnproven,
@@ -510,14 +514,14 @@ export function layerDirectionSection(report: DependencyConstraintEvaluationV1, 
 
 /** The violation checks that read the CodeGraph index; each runs only on a clean tree at the commit. */
 function readViolations(
-  root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>,
+  root: string, commit: string, checkout: CheckoutState, known: ReadonlySet<string>, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>, declaredSelectors: ReadonlySet<string>,
 ): Pick<CollectedViolations, 'debt' | 'flows' | 'anchors'> {
   const gate = treeGate(commit, checkout);
   if (gate !== null) {
     const gap = { state: 'unavailable', reason: gate === 'unreadable' ? 'archctx_failed' : gate } as const;
     return { debt: gap, flows: gap, anchors: gap };
   }
-  return { debt: readDebt(root, known), flows: readFlows(root, capabilities, stepSelectors), anchors: readAnchors(root, known) };
+  return { debt: readDebt(root, known), flows: readFlows(root, capabilities, stepSelectors, declaredSelectors), anchors: readAnchors(root, known) };
 }
 
 const records = (value: unknown): Record_[] => (Array.isArray(value) ? value.filter(isRecord) : []);
@@ -634,13 +638,14 @@ export function collectArchitectureMap(
   const known = new Set(nodes.map(node => node.id));
   const capabilities = new Set(nodes.filter(node => node.kind === 'capability').map(node => node.id));
   const stepSelectors = new Set(flows.flatMap(flow => flowSteps(flow).map(({ step }) => flowSelectorKey(step.evidence))));
+  const declaredSelectors = new Set(evidence.map(flowSelectorKey));
   const deps = readDependencies(path, commit, before, capabilities);
   const read = { sizes: readSizes(path, commit, before), dependencies: deps.dependencies };
   const changes = readChanges(path, commit, since);
   const layers = {
     pull_requests: readPullRequests(path, commit, before, pullRequests, pullRequestBudgetMs),
     violations: {
-      ...readViolations(path, commit, before, known, capabilities, stepSelectors), dependencies: deps.undeclared,
+      ...readViolations(path, commit, before, known, capabilities, stepSelectors, declaredSelectors), dependencies: deps.undeclared,
       layer_direction: readLayerDirection(path, commit, before, context.model.layers, known),
     },
   } as const;
