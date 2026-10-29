@@ -35,6 +35,8 @@ import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/
 import { Worker as ObservationWorker } from 'node:worker_threads';
 import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
 import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
+import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
 import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -161,6 +163,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
+  // The doc session diff and discard loss list, with the digests that commit and discard (#1023) check.
+  Object.freeze({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false }),
+  Object.freeze({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false }),
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
@@ -172,6 +177,12 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
+
+/** HTTP status of each doc session read failure; the body is `{code}` only. */
+const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> = Object.freeze({
+  session_not_found: 404, worktree_missing: 409, worktree_changed: 409, stale: 409, too_large: 413,
+  filters_unsupported: 422, index_unsupported: 422, path_unsupported: 422, encoding_unsupported: 422, unavailable: 503, busy: 503, timeout: 504,
+});
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
@@ -1509,7 +1520,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1764,6 +1775,17 @@ export async function startOperatorServer(
         const code = error instanceof DocSessionEventsError && (error.code === 'invalid_cursor' || error.code === 'session_not_found') ? error.code : 'events_unavailable';
         sendJson(response, code === 'invalid_cursor' ? 400 : code === 'session_not_found' ? 404 : 503, { code }, headOnly);
       }
+      return;
+    }
+
+    const sessionDiff = OPERATOR_SESSION_DIFF_ROUTE.exec(pathname);
+    const sessionLoss = sessionDiff === null ? OPERATOR_SESSION_LOSS_ROUTE.exec(pathname) : null;
+    if (sessionDiff !== null || sessionLoss !== null) {
+      if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      const input = { session_id: (sessionDiff ?? sessionLoss)![1]! };
+      const status = (failure: string) => DOC_SESSION_READ_STATUS[failure as DocSessionReadFailure] ?? 503;
+      if (sessionDiff !== null) handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionDiff, DOC_SESSION_READ_FAILURES, 'doc_session_diff', undefined, status);
+      else handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, 'doc_session_loss', undefined, status);
       return;
     }
 
