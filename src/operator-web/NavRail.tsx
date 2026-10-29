@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@cloudflare/kumo';
 import {
+  BookOpenTextIcon,
   CaretUpDownIcon,
   CpuIcon,
   DesktopIcon,
@@ -36,6 +37,7 @@ const NAV_ICON: Readonly<Record<NavWorkspace, ReactNode>> = {
   board: <KanbanIcon size={16} />,
   repositories: <FoldersIcon size={16} />,
   worktrees: <GitForkIcon size={16} />,
+  docs: <BookOpenTextIcon size={16} />,
   agents: <RobotIcon size={16} />,
   skills: <PuzzlePieceIcon size={16} />,
   hooks: <PlugsConnectedIcon size={16} />,

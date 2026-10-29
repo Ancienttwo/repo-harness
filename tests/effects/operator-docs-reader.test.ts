@@ -75,8 +75,19 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 test('file returns the default branch blob with commit, digest and a clean worktree', async () => {
   const { root, commit } = fixture({ 'docs/guide.md': '# Guide\n', 'README.md': 'root\n' });
   const result = await (await reader(root)).file('docs/guide.md');
-  expect(result).toEqual({ path: 'docs/guide.md', commit, size: 8, sha256: hash('# Guide\n'), text: '# Guide\n',
-    lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
+  expect(result).toEqual({ path: 'docs/guide.md', commit, committed_at: new Date(git(root, 'log', '-1', '--format=%cI', commit)).toISOString(),
+    size: 8, sha256: hash('# Guide\n'), text: '# Guide\n', lines: [{ number: 1, text: '# Guide\n' }], worktree_differs: false });
+});
+
+test('committed_at is the committer date of the served commit in UTC, not its author date or message text', async () => {
+  const { root } = fixture({ 'docs/a.md': 'v1\n' });
+  write(root, 'docs/a.md', 'v2\n');
+  execFileSync('git', ['commit', '-q', '-am', 'v2\n\ncommitter Fake <f@example.invalid> 1 +0000'], {
+    cwd: root, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: '1600000000 +0000', GIT_COMMITTER_DATE: '1700000000 +0800' },
+  });
+  const result = await (await reader(root)).file('docs/a.md');
+  expect(result.commit).toBe(git(root, 'rev-parse', 'main'));
+  expect(result.committed_at).toBe('2023-11-14T22:13:20.000Z');
 });
 
 test('numbered lines preserve committed UTF-8 bytes, blank lines, CRLF and final-line boundaries', async () => {
@@ -97,6 +108,8 @@ test('numbered lines preserve committed UTF-8 bytes, blank lines, CRLF and final
     const wire = { protocol: 1, kind: 'operator_docs_file', repository_id: 'repo-a', ref: docs.ref, ...result } as const;
     expect(decodeDocsFile(wire)).toEqual(wire);
     expect(() => decodeDocsFile({ ...wire, lines: undefined })).toThrow();
+    expect(() => decodeDocsFile({ ...wire, committed_at: undefined })).toThrow();
+    expect(() => decodeDocsFile({ ...wire, committed_at: '2023-11-15T06:13:20+08:00' })).toThrow();
     expect(() => decodeDocsFile({ ...wire, lines: [...result.lines, { number: result.lines.length + 1, text: '' }] })).toThrow();
     if (result.lines.length) {
       expect(() => decodeDocsFile({ ...wire, lines: result.lines.map(line => ({ ...line, number: line.number + 1 })) })).toThrow();
