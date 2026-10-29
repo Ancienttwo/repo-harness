@@ -82,7 +82,7 @@ export class DocSessionAdapter {
   private open = false;
   private abortCause: DocSessionAbortCause = 'cancelled';
   private disposing = false;
-  private message: { readonly key: string; text: string; dropped: boolean } | null = null;
+  private message: { readonly key: string; text: string; dropped: boolean; readonly after: DocSessionEventBody[] } | null = null;
 
   constructor(private readonly worktree: string) {}
 
@@ -98,21 +98,27 @@ export class DocSessionAdapter {
   flush(): DocSessionEventBody[] {
     const held = this.message;
     this.message = null;
-    if (held === null || held.text === '') return [];
-    return [{ type: 'message', role: 'agent', text: held.text, ...(held.dropped ? { truncated: true as const } : {}) }];
+    if (held === null) return [];
+    if (held.text === '') return held.after;
+    return [{ type: 'message', role: 'agent', text: held.text, ...(held.dropped ? { truncated: true as const } : {}) }, ...held.after];
   }
 
   map(event: DocSessionOarEvent): DocSessionEventBody[] {
     if (event.agentPath.length !== 0) return [];
     if (event.kind === 'text_delta') return this.hold(event.messageId ?? '', event.text ?? '');
-    // Any other event that marks a step ends the held message first, so records keep their order.
-    const ended = ['turn_started', 'turn_ended', 'tool_call_started', 'tool_call_ended', 'control_rejected', 'input_dropped', 'exited'].includes(event.kind) ? this.flush() : [];
-    return [...ended, ...this.step(event)];
+    const records = this.step(event);
+    // An input refusal does not end the agent message. Keep its failure after the whole text for redaction.
+    if (event.kind === 'input_dropped' && this.message !== null && this.message.text !== '') {
+      this.message.after.push(...records);
+      return [];
+    }
+    // Ignored events keep the message and its overflow latch; an exit ends it even during disposal.
+    return records.length > 0 || event.kind === 'exited' ? [...this.flush(), ...records] : [];
   }
 
   private hold(key: string, text: string): DocSessionEventBody[] {
     const ended = this.message !== null && this.message.key !== key ? this.flush() : [];
-    const held = this.message ??= { key, text: '', dropped: false };
+    const held = this.message ??= { key, text: '', dropped: false, after: [] };
     if (held.dropped) return ended;
     if (held.text.length + text.length > DOC_SESSION_MESSAGE_HOLD_CHARS) {
       held.text = DOC_SESSION_TEXT_WITHHELD;

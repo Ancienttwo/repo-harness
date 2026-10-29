@@ -187,6 +187,71 @@ test('a message past the hold bound is withheld and stored as truncated', () => 
   expect(JSON.parse(readFileSync(s.log, 'utf8'))).toMatchObject({ text: 'short', truncated: true });
 });
 
+for (const interleave of [{ kind: 'control_rejected', action: 'abort' }, { kind: 'input_dropped' }]) {
+  test(`interleaved ${interleave.kind} keeps a split secret in one stored message`, () => {
+    const adapter = new DocSessionAdapter('/private/tmp/wt');
+    const root = { agentPath: [] as string[] };
+    const head = 'ghp_0123456789', rest = 'abcdefghijklmnopqrstuvwxyzAB';
+    const bodies = [
+      ...adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: `Token: ${head}` }),
+      ...adapter.map({ ...root, ...interleave }),
+      ...adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: `${rest} done` }),
+      ...adapter.flush(),
+    ];
+    const s = sessionStore();
+    store(s.env, bodies);
+    const log = readFileSync(s.log, 'utf8');
+    const records = log.trim().split('\n').map(line => JSON.parse(line));
+    expect(records).toMatchObject([
+      { type: 'message', text: 'Token: ghp_[REDACTED] done', truncated: false },
+      ...(interleave.kind === 'input_dropped' ? [{ type: 'failure', category: 'runtime_error' }] : []),
+    ]);
+    for (const fragment of [head, rest]) expect(log).not.toContain(fragment);
+    expect(adapter.flush()).toEqual([]);
+  });
+
+  test(`interleaved ${interleave.kind} keeps hold overflow latched for later deltas`, () => {
+    const adapter = new DocSessionAdapter('/private/tmp/wt');
+    const root = { agentPath: [] as string[] };
+    const bodies = [
+      ...adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'x'.repeat(DOC_SESSION_MESSAGE_HOLD_CHARS + 1) }),
+      ...adapter.map({ ...root, ...interleave }),
+      ...adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'ghp_0123456789' }),
+      ...adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'abcdefghijklmnopqrstuvwxyzAB tail after the latch' }),
+      ...adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'completed' } }),
+    ];
+    const s = sessionStore();
+    store(s.env, bodies);
+    const log = readFileSync(s.log, 'utf8');
+    expect(log.trim().split('\n').map(line => JSON.parse(line))).toMatchObject([
+      { type: 'message', text: DOC_SESSION_TEXT_WITHHELD, truncated: true },
+      ...(interleave.kind === 'input_dropped' ? [{ type: 'failure', category: 'runtime_error' }] : []),
+      { type: 'turn', boundary: 'ended' },
+    ]);
+    for (const fragment of ['ghp_', 'abcdefghijklmnopqrstuvwxyzAB', 'tail after the latch']) expect(log).not.toContain(fragment);
+    expect(adapter.flush()).toEqual([]);
+  });
+}
+
+test('input drops without held text are immediate; repeated drops wait after the held message until exit', () => {
+  const adapter = new DocSessionAdapter('/private/tmp/wt');
+  const root = { agentPath: [] as string[] };
+  expect(adapter.map({ ...root, kind: 'input_dropped' })).toEqual([{ type: 'failure', category: 'runtime_error' }]);
+  adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: '' });
+  expect(adapter.map({ ...root, kind: 'input_dropped' })).toEqual([{ type: 'failure', category: 'runtime_error' }]);
+  adapter.map({ ...root, kind: 'text_delta', messageId: 'm', text: 'complete message' });
+  for (let index = 0; index < 2; index++) expect(adapter.map({ ...root, kind: 'input_dropped' })).toEqual([]);
+  adapter.disposed();
+  const s = sessionStore();
+  store(s.env, adapter.map({ ...root, kind: 'exited' }));
+  expect(readFileSync(s.log, 'utf8').trim().split('\n').map(line => JSON.parse(line))).toMatchObject([
+    { type: 'message', text: 'complete message', truncated: false },
+    { type: 'failure', category: 'runtime_error' },
+    { type: 'failure', category: 'runtime_error' },
+  ]);
+  expect(adapter.flush()).toEqual([]);
+});
+
 test('a rejected interrupt is not a stop: the cause resets, the next bound retries it, and an accepted one that does not end the turn becomes overdue', async () => {
   const worktree = tmpWorkspace('doc-session-adapter-wt'); roots.push(worktree);
   // The producer's own outcome objects: OAR rejects an interrupt with no turn running and accepts one while a turn runs.
