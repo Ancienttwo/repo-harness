@@ -8,7 +8,14 @@ import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
 import type { ArchitectureMapRead, ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
-import { decodeArchitectureMap, projectArchitectureMap, type ArchitectureLayerOrderV1, type ArchitectureMapLayersInput, type ArchitectureMapV1 } from '../../src/core/operator/architecture-map';
+import {
+  architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
+  type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
+  type ArchitectureMapRelationV1, type ArchitectureMapV1,
+} from '../../src/core/operator/architecture-map';
+import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
+import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
 import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
@@ -625,6 +632,296 @@ describe('architecture map', () => {
     const flows = document.querySelector('.architecture-map__gap[data-gap="violations.flows"]')!;
     expect([flows.getAttribute('data-reason'), flows.getAttribute('data-code'), flows.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-document-marker-invalid',
       'Flow proofs: unknown, archctx refused with AC_SCHEMA_INVALID native-document-marker-invalid']);
+  });
+});
+
+describe('sequence and topology base maps', () => {
+  const PART = 'component.pipeline.ledger';
+  const EXTERNAL = 'external.git';
+  const SERVER = 'process.operator-server';
+  const CLI = 'process.cli';
+  const HOST = 'namespace.host.developer';
+  const FLOW = 'flow.pipeline.ledger';
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const selector = (name: string): ArchitectureFlowSelectorV1 => ({ entrypoint: `entrypoint.pipeline.${name}`, source_symbol: name, sink: `sink.pipeline.${name}` });
+  const step = (id: string, from: string, to: string, name: string) => ({ id, from, to, label: `Step ${id}`, evidence: selector(name) });
+  const flow: ArchitectureMapFlowV1 = {
+    id: FLOW, capability: CENTER, name: 'Append a ledger row', applicability: 'required',
+    participants: [{ id: 'router', node: CALLER }, { id: 'pipe', node: CENTER }, { id: 'ledger', node: PART }, { id: 'git', node: EXTERNAL }],
+    steps: [step('route', 'router', 'pipe', 'route'), step('append', 'pipe', 'ledger', 'append')],
+    outcomes: [
+      { id: 'kept', kind: 'success', label: 'Row kept', steps: [step('commit', 'ledger', 'git', 'commit')], terminal: { participant: 'pipe', label: 'Done' } },
+      { id: 'refused', kind: 'error', label: 'Row refused', steps: [step('refuse', 'ledger', 'pipe', 'refuse')], terminal: { participant: 'router', label: 'Stop' } },
+    ],
+  };
+  const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
+  const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
+  const layers: ArchitectureMapLayersInput = {
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+      paths: [{ path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }], unowned_paths: [], nodes: [{ id: PART, files: 1 }],
+      dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }], dependency_coverage: 'complete',
+      flow_steps: { status: 'known', reason_codes: [], items: [{ flow: FLOW, step: 'append', outcome: null, reason_codes: [] }] }, truncated: whole },
+    pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
+      { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: 'e'.repeat(40), impact: {
+        state: 'ok', paths: [{ path: 'src/ledger.ts', added: null, deleted: null, owners: [PART], reason_codes: ['paths-only'] }], unowned_paths: [],
+        nodes: [{ id: PART, files: 1 }], dependents: [], dependency_coverage: 'complete',
+        flow_steps: { status: 'known', reason_codes: [], items: [{ flow: FLOW, step: 'commit', outcome: 'kept', reason_codes: [] }] }, truncated: whole,
+      } },
+    ] },
+    violations: {
+      debt: { state: 'ok', items: [] },
+      flows: { state: 'ok', selectors: 4, proven: 1, unproven: 1, used_unproven: 1, unprovable: [{ id: CENTER, diagnostics: 2 }],
+        evidence: [{ ...selector('route'), status: 'proven', call_sites: [{ path: 'src/router.ts', line: 12 }, { path: 'src/router-entry.ts', line: null }] },
+          { ...selector('append'), status: 'no-direct-call', call_sites: [] }] },
+      anchors: noCodeFacts,
+      dependencies: { state: 'ok', edges: [{ source: CENTER, target: CALLER, imports: 3 }] },
+      layer_direction: { state: 'unavailable', reason: 'model_layers_undeclared' },
+    },
+    tests: { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [
+      { id: CALLER, files: 1, passed: 1, failed: 0, skipped: 0, no_result: 0 }, { id: CENTER, files: 2, passed: 1, failed: 1, skipped: 0, no_result: 0 }] },
+    decisions: { state: 'ok', items: [{ id: 'ADR-0001-ledger', title: 'Keep one ledger', status: 'accepted', decided_at: null, applies_to: [CENTER], supersedes: [], path: 'docs/adr/ADR-0001-ledger.md' }] },
+  };
+  function runtimeMap(change: { layers?: ArchitectureMapLayersInput; flows?: ArchitectureMapFlowV1[]; nodes?: readonly ArchitectureMapNodeV1[]; relations?: readonly ArchitectureMapRelationV1[] } = {}): ArchitectureMapV1 {
+    return projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: { state: 'ok', layers: ['core'] },
+      nodes: change.nodes ?? [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system'),
+        mapNode(SERVER, 'process'), mapNode(CLI, 'process'), mapNode(HOST, 'namespace')],
+      relations: change.relations ?? [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER),
+        mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-deploy', 'deployed-on', CENTER, SERVER),
+        mapRelation('relation.e-runs', 'runs-in', SERVER, HOST), mapRelation('relation.f-runs', 'runs-in', CLI, HOST), mapRelation('relation.g-spawns', 'spawns', CLI, SERVER)],
+      flows: change.flows ?? [flow, { id: 'flow.router.none', capability: CALLER, name: 'No router flow', applicability: 'not-applicable', rationale: 'The router makes no call.' }],
+      // Declared code names the default flow's selectors only.
+      flow_evidence: change.flows !== undefined ? [] : [{ ...selector('route'), node: CALLER, source_path: 'src/router.ts', sink_path: 'src/pipeline.ts', sink_symbol: 'route' },
+        { ...selector('append'), node: CENTER, source_path: 'src/pipeline.ts', sink_path: null, sink_symbol: 'append' }],
+      sizes: { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) },
+      dependencies: { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] },
+      layers: change.layers ?? layers,
+    });
+  }
+  const reader = (map: ArchitectureMapV1): ArchitectureMapReader => async () => ({ state: 'ok', map });
+  const click = async (selector: string) => {
+    await act(async () => document.querySelector(selector)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+  };
+  const tab = async (id: string) => { await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${id}`)!.click()); await settle(); };
+  const chooseLayer = async (layer: string) => { await act(async () => document.querySelector<HTMLButtonElement>(`.architecture-layers [data-layer="${layer}"]`)!.click()); await settle(); };
+  const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
+  const inspector = () => document.querySelector('.architecture-map__inspector')!;
+
+  beforeEach(() => {
+    Object.assign(globalThis, {
+      ResizeObserver: window.ResizeObserver, SVGElement: window.SVGElement, DOMMatrixReadOnly: window.DOMMatrixReadOnly,
+      requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    });
+  });
+
+  test('a participant runs in its nearest deployed process, and each process box is contiguous; rows follow the model with one fragment per outcome', () => {
+    const map = runtimeMap();
+    const place = runtimePlacement(map);
+    expect([CALLER, CENTER, PART, EXTERNAL, SERVER].map(place)).toEqual([
+      { kind: 'unknown', reason: 'deployment_undeclared' }, { kind: 'process', process: SERVER }, { kind: 'process', process: SERVER }, { kind: 'external' }, { kind: 'process', process: SERVER }]);
+    const twice = runtimeMap({ relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI)] });
+    expect(runtimePlacement(twice)(PART)).toEqual({ kind: 'unknown', reason: 'deployment_ambiguous' });
+    // The ledger is listed after the router but shares the pipe's process, so it sits next to the pipe.
+    const reordered = { ...flow, participants: [flow.participants[1]!, flow.participants[0]!, flow.participants[3]!, flow.participants[2]!] };
+    const layout = layoutSequence(reordered, place);
+    expect(layout.boxes.map(box => [box.key, box.participants])).toEqual([[`process:${SERVER}`, ['pipe', 'ledger']], ['unknown:deployment_undeclared', ['router']], ['external', ['git']]]);
+    expect(layout.columns.map(column => column.participant.id)).toEqual(['pipe', 'ledger', 'router', 'git']);
+    for (const [index, column] of layout.columns.entries()) {
+      const box = layout.boxes.find(entry => entry.key === column.box)!;
+      expect(column.x > box.x && column.x < box.x + box.width).toBe(true);
+      if (index > 0) expect(column.x > layout.columns[index - 1]!.x).toBe(true);
+    }
+    expect(layout.messages.map(message => `${message.outcome ?? ''}:${message.step.id}`)).toEqual([':route', ':append', 'kept:commit', 'refused:refuse']);
+    for (const [index, message] of layout.messages.slice(1).entries()) expect(message.y > layout.messages[index]!.y).toBe(true);
+    const kept = layout.fragments[0]!;
+    const commit = layout.messages[2]!;
+    expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
+      .toEqual([['success', 'error'], true, ['pipe', 'router']]);
+  });
+
+  test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
+    const map = runtimeMap();
+    const layout = layoutTopology(map, runtimePlacement(map));
+    const box = new Map(layout.boxes.map(item => [item.node.id, item]));
+    // Every topology node once, code nodes not as boxes; a namespace comes before what it holds.
+    expect(layout.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, HOST, SERVER].sort());
+    expect(layout.boxes.findIndex(item => item.node.id === HOST)).toBeLessThan(Math.min(...[SERVER, CLI].map(id => layout.boxes.findIndex(item => item.node.id === id))));
+    const inside = (inner: string, outer: string) => {
+      const a = box.get(inner)!, b = box.get(outer)!;
+      return a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+    };
+    expect([inside(SERVER, HOST), inside(CLI, HOST), inside(EXTERNAL, HOST), box.get(HOST)!.group, box.get(SERVER)!.parent]).toEqual([true, true, false, true, HOST]);
+    expect(box.get(SERVER)!.members.map(member => member.id)).toEqual([CENTER]);
+    // The spawn joins two processes; the ledger's read of git is drawn from its process; the router runs in no process.
+    expect(layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.dashed, edge.relations])).toEqual([
+      [SERVER, EXTERNAL, 'io', true, ['relation.c-git']], [CLI, SERVER, 'spawns', true, ['relation.g-spawns']]]);
+    expect([layout.unplaced, layout.stacked]).toEqual([['relation.b-router'], []]);
+    // Two mounts of one process: the map has no mount order, so the layout names the mounter.
+    const mounted = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.a', 'mount'), mapNode('mount.b', 'mount')],
+      relations: [...runtimeMap().relations, mapRelation('relation.m-a', 'mounts', CLI, 'mount.a'), mapRelation('relation.m-b', 'mounts', CLI, 'mount.b')] });
+    const stacked = layoutTopology(mounted, runtimePlacement(mounted));
+    expect([stacked.stacked, stacked.boxes.find(item => item.node.id === 'mount.a')?.parent]).toEqual([[CLI], HOST]);
+  });
+
+  test('the tabs follow the design order and the layer stays when the base map changes', async () => {
+    await mount(workspace({ readMap: reader(runtimeMap()) }));
+    expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => item.textContent)).toEqual(['Modules', 'Sequence', 'Topology', 'Module list']);
+    await chooseLayer('violations');
+    await tab('sequence');
+    expect(document.querySelector('#architecture-tab-sequence')?.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
+    await tab('topology');
+    expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
+  });
+
+  test('2-ARCH-P2 on the module map, which holds the layered view: a node shows its size, dependency edges, violations and the command that lists them', async () => {
+    await mount(workspace({ readMap: reader(runtimeMap()) }));
+    await click(`.react-flow__node[data-id="${CENTER}"]`);
+    expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
+    expect(inspector().querySelector('[data-node-size]')?.textContent).toBe('900 lines in 1 files');
+    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
+    expect(inspector().querySelector('[data-layer-facts="violations"]')?.textContent).toContain(`Imports Name ${CALLER} with no declared relation (3 imports)`);
+    expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.textContent)).toEqual([architectureViolationCommand('flows'), architectureViolationCommand('dependencies')]);
+    expect(architectureViolationCommand('flows')).toBe('archctx flows check --no-sync --json');
+    await click(`.react-flow__node[data-id="${PART}"]`);
+    expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows · changes 1 file');
+  });
+
+  test('2-ARCH-P2 on the sequence map: a message shows its declared code, archctx proof, related PR, dependency edges and the proof command; unknown parts say why', async () => {
+    await mount(workspace({ readMap: reader(runtimeMap()) }));
+    await tab('sequence');
+    expect(document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow')).toBe(FLOW);
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
+    expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
+      ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
+    expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
+    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => item.getAttribute('data-kind'))).toEqual(['success', 'error']);
+    // Today's changes reach the append step.
+    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
+    expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
+
+    await click('.react-flow__node[data-id="message::route"]');
+    expect(message(':route').hasAttribute('data-selected')).toBe(true);
+    expect(inspector().getAttribute('data-step-id')).toBe(':route');
+    expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
+    expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
+    expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
+    expect([...inspector().querySelectorAll('[data-node-size]')].map(item => item.textContent)).toEqual([' · 100 lines in 1 files', ' · 900 lines in 1 files']);
+    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CALLER} → Name ${CENTER} · 7 imports`]);
+    expect(inspector().querySelectorAll('[data-fix-command]')).toHaveLength(0);
+
+    await click('.react-flow__node[data-id="message::append"]');
+    expect(inspector().querySelector('[data-path-withheld]')?.textContent).toBe('path withheld (it fails the public-path check)');
+    expect(inspector().querySelector('[data-step-proof]')?.textContent).toBe('Not proven: archctx reports no-direct-call.');
+    expect(inspector().querySelector('[data-call-sites]')).toBeNull();
+    expect(inspector().querySelector('[data-step-today]')).not.toBeNull();
+    expect(inspector().querySelector('[data-fix-command="flows"]')?.textContent).toBe('archctx flows check --no-sync --json');
+
+    await click('.react-flow__node[data-id="message:kept:commit"]');
+    expect(inspector().querySelector('[data-gap="evidence"]')?.getAttribute('data-reason')).toBe('selector_undeclared');
+    expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('missing');
+    expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows');
+
+    await click('.react-flow__node[data-id="participant:router"]');
+    expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
+    await click('.react-flow__node[data-id="participant:ledger"]');
+    expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
+    // A not-applicable flow states its rationale instead of a diagram.
+    await act(async () => {
+      const select = document.querySelector<HTMLSelectElement>('.architecture-sequence select')!;
+      select.value = 'flow.router.none';
+      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
+    });
+    await settle();
+    expect(notes()).toContain('sequence.not_applicable:flow_not_applicable');
+  });
+
+  test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
+    await mount(workspace({ readMap: reader(runtimeMap()) }));
+    await tab('sequence');
+    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
+    const header = (id: string) => document.querySelector(`.react-flow__node[data-id="participant:${id}"] .architecture-sequence__header`)!;
+    expect([header('ledger').getAttribute('data-tone'), header('pipe').getAttribute('data-tone'), header('router').hasAttribute('data-quiet')]).toEqual(['change', 'muted', true]);
+    await chooseLayer('violations');
+    expect([message(':append').getAttribute('data-tone'), message(':append').querySelector('.architecture-map__mark')?.textContent, message(':route').hasAttribute('data-tone')]).toEqual(['danger', 'no-direct-call', false]);
+    // The layer summary keeps its own note; the sequence map adds why it draws no import edge.
+    expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared', 'sequence.violations:imports_on_module_map']);
+    await chooseLayer('pull_requests');
+    expect([message('kept:commit').getAttribute('data-tone'), message(':append').hasAttribute('data-tone')]).toEqual(['change', false]);
+    await chooseLayer('tests');
+    expect([notes(), header('pipe').getAttribute('data-tone'), header('router').getAttribute('data-tone')]).toEqual([['sequence.tests:tests_by_capability'], 'danger', 'success']);
+    await chooseLayer('decisions');
+    expect([notes(), header('pipe').getAttribute('data-tone')]).toEqual([['sequence.decisions:decisions_by_node'], 'muted']);
+
+    // Without a flows check answer each step proof is unknown with archctx's reason, and the read command stays.
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-proofless', readMap: reader(runtimeMap({ layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
+    await settle();
+    await tab('sequence');
+    await click('.react-flow__node[data-id="message::route"]');
+    expect(inspector().querySelector('[data-gap="proof"]')?.getAttribute('data-reason')).toBe('code_facts_unavailable');
+    expect(inspector().querySelector('[data-fix-command="flows"]')).not.toBeNull();
+    // A model without flows has no sequence map, and says so.
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-flowless', readMap: reader(runtimeMap({ flows: [], layers: { ...layers, changes: { ...layers.changes, flow_steps: { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null } } as ArchitectureMapLayersInput['changes'],
+      pull_requests: { state: 'unavailable', reason: 'dev_activity_pending' }, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
+    await settle();
+    await tab('sequence');
+    expect(notes()).toEqual(['sequence.flows:flows_undeclared']);
+  });
+
+  test('2-ARCH-P2 on the topology map: a deployed node shows its size, edges, violations and command; layers light boxes and unplaced parts say why', async () => {
+    await mount(workspace({ readMap: reader(runtimeMap()) }));
+    await tab('topology');
+    const canvas = document.querySelector('[data-view="topology"]')!;
+    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['4', '2']);
+    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
+    expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
+    expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
+    // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
+    const host = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap())).boxes.find(item => item.node.id === HOST)!;
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(host.x - 24) * 0.85}px,${-(host.y - 24) * 0.85}px) scale(0.85)`);
+    expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
+    // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
+    const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet'), box(HOST).hasAttribute('data-quiet')]).toEqual(['muted', false, true, false]);
+
+    await click(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`);
+    expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
+    expect(inspector().querySelector('[data-node-size]')?.textContent).toBe('900 lines in 1 files');
+    expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
+    expect(inspector().querySelector('[data-layer-facts="violations"]')?.textContent).toContain('Flow proof cannot be proven (2 diagnostics)');
+    expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.getAttribute('data-fix-command'))).toEqual(['flows', 'dependencies']);
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
+    expect([inspector().querySelector('[data-runs-in]')?.textContent, inspector().querySelector('[data-deployed]')?.textContent]).toEqual([`In: Name ${HOST}`, `Name ${CENTER} · 900 lines in 1 files`]);
+
+    await chooseLayer('tests');
+    expect(notes()).toEqual(['topology.unplaced_marks:deployment_undeclared', 'topology.unplaced:deployment_undeclared']);
+    await chooseLayer('violations');
+    expect(notes()).toContain('topology.violations:imports_on_module_map');
+    // A model without processes, namespaces or mounts has no topology map.
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-flat', readMap: reader(runtimeMap({ nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
+      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)] })) })));
+    await settle();
+    await tab('topology');
+    expect(notes()).toContain('topology.empty:topology_undeclared');
+  });
+
+  test('a namespace that mounts gets routing handles for its edge, and a node deployed on two processes is one canvas node per process with one inspector', async () => {
+    const map = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.cache', 'mount')],
+      relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI), mapRelation('relation.i-mount', 'mounts', HOST, 'mount.cache')] });
+    expect(layoutTopology(map, runtimePlacement(map)).edges.map(edge => [edge.source, edge.target, edge.kind])).toContainEqual([HOST, 'mount.cache', 'mounts']);
+    await mount(workspace({ readMap: reader(map) }));
+    await tab('topology');
+    // In happy-dom React Flow draws no edge, so the handles that the namespace edge routes through stand for it.
+    expect([...document.querySelectorAll(`.react-flow__node[data-id="${HOST}"] .react-flow__handle`)].map(item => item.classList.contains('source') ? 'source' : 'target').sort()).toEqual(['source', 'target']);
+    const members = [...document.querySelectorAll('.react-flow__node-member')].map(item => item.getAttribute('data-id'));
+    expect(members.sort()).toEqual([`${CLI}/${CENTER}`, `${SERVER}/${CENTER}`]);
+    for (const process of [SERVER, CLI]) {
+      await click(`.react-flow__node[data-id="${process}/${CENTER}"]`);
+      expect([inspector().getAttribute('data-node-id'), document.querySelectorAll('.architecture-topology__member[data-selected]').length]).toEqual([CENTER, 2]);
+      expect(inspector().querySelector('[data-runtime]')).toBeNull();
+    }
   });
 });
 

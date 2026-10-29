@@ -65,7 +65,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | Hooks | `Hooks` | 接入 | 1（1.4） | 无 | `1-HOOKS` |
 | CLI | `CLI` | 接入 | 1（1.4） | 无，卸载只给命令 | `1-CLI` |
 | Bots | `Bots` | 接入 | 1（1.8）；登记归属与 Slack 渠道 3（3.3、3.4） | 无，只给命令 | `1-BOTS`、`3-BOTS` |
-| 架构 | `ArchModules`、`ArchLayers`、`ArchSequence`、`ArchTopology` | 观测 | 现有模块页 1（1.1，U2）；四张底图与图层 2（2.1–2.3） | 无 | `1-ARCH`、`2-ARCH` |
+| 架构 | `ArchModules`（`ArchLayers` 并入，见 C20）、`ArchSequence`、`ArchTopology` | 观测 | 现有模块页 1（1.1，U2）；模块（按层分带）、时序、拓扑三张底图与图层 2（2.1–2.4） | 无 | `1-ARCH`、`2-ARCH` |
 | 测试 | `Tests` | 观测 | 1（1.6） | 无 | `1-TESTS` |
 | 系统 | `System` | 观测 | 1（1.1；notify 会话修正 1.8） | 无 | `1-SYS` |
 | 工具 | `Tools` | 观测 | 1（1.1；展示字段 1.4） | 无 | `1-TOOLS` |
@@ -131,7 +131,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | Agents、Skills、Hooks | `src/operator-web/SetupPages.tsx:298`、`:328`、`:416`；`src/core/setup/types.ts:138`（`SetupSnapshotV2`）；`src/cli/hook/route-registry.ts:69`（`ROUTES`） | extend | Hooks 的次数和拒绝要读 hook 事件（G16）；profile 路由数从 registry 读（G17） |
 | 系统页 | `src/operator-web/SystemPage.tsx:67`；notify 状态 `src/effects/operator/notify-status.ts:126-131` | extend | 读插件状态时补 `--session`（PRD「Bot 接入管理」） |
 | 工具页 | `src/operator-web/ToolsPage.tsx:118`；`assets/tool-catalog.v1.json`（7 项） | extend | catalog 加作者、标签、是否随 profile 安装（G14） |
-| 架构模块页 | `src/operator-web/ArchitectureWorkspace.tsx:239`、`src/operator-web/ModuleGraph.tsx:73`；`.archcontext/model/` | extend | 四张底图和五个图层（G11、G22、G27），布局依赖见 D7 |
+| 架构模块页 | `src/operator-web/ArchitectureWorkspace.tsx:239`、`src/operator-web/ModuleGraph.tsx:73`；`.archcontext/model/` | extend | 模块（按层分带，即分层视图）、时序、拓扑三张底图和五个图层（G11、G22、G27、#1145），布局依赖见 D7 |
 | HTTP 路由与写入门 | `src/effects/operator/server.ts:106-125`（17 条 GET 路由，全部 `write:false`）、`:1440-1444`（非 GET 回 405）、`:320-326`（`errorBody`） | extend | 第三期起按 PRD「写入 API」加 POST 白名单；第一期只加 GET |
 | 错误体 | `server.ts:320-326` 已是 `{error:{code,message,next_action}}`；`server.ts:1460` 仍回裸 `{code}` | reuse | 新路由只用 `errorBody` |
 | 锁与 worktree 删除 | `src/effects/locking/exclusive-directory-lock.ts`；`src/effects/state/coordination-worktree-topology.ts:234`（`cleanupExactWorktree`） | reuse / extend | 清理会话要一个带授权的删除模式（G25） |
@@ -176,6 +176,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | C17 | `Settings` | 「通过 Console Runtime API 接入」；子导航有「通用、文档会话、外观与语言、关于」 | 不写 Console Runtime API；子导航只有「Agent 接入」，其余不做，不放占位 | PRD「背景与目标」非目标：不显示 OAR 以外的内部实现名；C9 |
 | C18 | `Docs` | agent 选择列出未安装的 runtime（置灰） | 只列已启用文档用途的 runtime；其余去设置页启用（链接「管理 ›」） | PRD「写入 API」422 `runtime_not_enabled` |
 | C19 | `DocsSession` | 会话状态写「等你回复」；没有提交说明；运行中没有「停止」 | 状态写「等你审阅」（与首页一致）；提交按钮上方加一行可改的提交说明，默认取会话标题；运行中在发送旁显示「停止」 | PRD「文档会话」状态图；`POST …/commit` 的 `message`；`POST …/stop` |
+| C20 | `ArchLayers` | 单独一张分层底图 | 并入模块底图：模块底图已按模型的 `model.layers` 分带，违规图层画逆着层顺序的 import；视图切换为「模块 · 时序 · 拓扑 · 模块列表」 | #1145；`architecture-map-layout.ts` 的层带，`constraints check` 的层方向 |
 
 ### BDD Acceptance Scenarios
 
@@ -292,7 +293,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 
 - `1-ARCH-P1`（U2）：Given 第一期上线，When 用户打开架构页，Then 现有模块列表和一跳依赖图在新外框里照常工作，没有新图层。
 - `2-ARCH-P1`：Given 第二期上线，When 用户打开架构页，Then 默认是模块底图并打开「今日变更」图层；节点和边来自 `archctx export native`，节点大小按行数，能力之间的边粗细按 import 次数；侧栏收起。
-- `2-ARCH-P2`：Given 用户切到分层、时序或拓扑底图，When 选中一个元素，Then 右侧面板显示代码量、依赖边、相关 PR 或违规项和可复制的修复命令。
+- `2-ARCH-P2`：Given 用户在模块底图（按模型的层顺序分带，即分层视图）、时序或拓扑底图上，When 选中一个元素，Then 右侧面板显示代码量、依赖边、相关 PR 或违规项和可复制的命令。命令是 collector 运行的那条 archctx 读取，archctx 的回答给出修复办法。时序底图一条 flow 一张图，每个 OS 进程一个框，按 `deployed-on` 关系找进程，找不到写「进程未知」和原因。
 - `2-ARCH-N1`：Given archctx 还没有导出 ADR 的 `appliesTo`（arch-context#407），When 用户查看图层开关，Then「决策」图层不可用并写原因；页面上没有手写数字，也没有改模型的控件。
 - `2-ARCH-F1`：Given CodeGraph 索引缺失或过期，When 违规图层加载，Then 依赖和 flow 证明写「未知」；collector 不建索引。
 
@@ -353,6 +354,7 @@ PRD、画布和 design system 里与代码事实或彼此不一致的地方。�
 | I12 | design system README「像素角色」表 | Agents 写 `donkey`、设置写 `donkey-happy`，画布用的是 `donkey-bags`；画布有 5 页一屏两个角色，违反「一屏最多一个」 | 画布各画板引用的 `px/*.svg` | 角色表按画布改；画布按 C6 改 |
 | I13 | 画布内嵌的 design system 副本 | 版本 `1793015921-3114`，比 design system 现版旧，缺 `rh-diagram-bg`、`rh-diagram-dot`、`rh-diagram-line` | 画布 `project/ds/rhconsole/tokens.json` 与 design system `project/tokens.json` 的差异 | 画布重新引入现版 design system |
 | I14 | design system 组件说明 Conversation、DiagramCanvas | 前者写 G3「没定」，后者写用 ELK 布局；与 D2、D7 和 PRD「elkjs 排除」冲突 | #980 初版的英文副本 | repo 副本已改；design system 原件也要改 |
+| I15 | PRD「架构」一节：「分层、时序、拓扑、模块四张底图够用」；PRD「页面需求」架构一行；design system DiagramCanvas：「Layered, sequence and topology diagrams share it」 | 分层底图已并入模块底图（C20），实际是模块、时序、拓扑三张底图 | #1145；模块底图的层带（#1121）和层方向违规（#1131） | 写成「模块（按层分带）、时序、拓扑三张底图」；画布 `ArchLayers` 标「并入模块底图」（#1148 跟踪） |
 
 ## Reference Sources
 
