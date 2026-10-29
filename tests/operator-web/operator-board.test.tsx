@@ -8,6 +8,7 @@ import tokens from '../../docs/design/operator-console/design-system/tokens.json
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
+import { cleanCommand } from '../../src/cli/commands/worktrees';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
@@ -966,6 +967,8 @@ describe('worktree cleanup (5.1)', () => {
     for (const directory of GREEN) {
       const row = rowOf(directory);
       const command = worktreeRow(directory).querySelector('[data-clean-command] [data-command]')!;
+      // The CLI's own formatter is the authority for the command text.
+      expect(command.querySelector('code')?.textContent).toBe(cleanCommand([row.id], selectionDigest([worktreeDigestRow(row)])));
       expect(command.querySelector('code')?.textContent).toBe(`repo-harness worktrees clean --ids ${row.id} --expected-digest ${selectionDigest([worktreeDigestRow(row)])}`);
       expect(command.querySelector('button')?.getAttribute('aria-label') ?? command.querySelector('button')?.textContent).toContain('Copy');
     }

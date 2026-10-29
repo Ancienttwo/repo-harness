@@ -119,7 +119,7 @@ export async function selectionDigest(rows: readonly WorktreeView[]): Promise<st
   return Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** The terminal equivalent of cleaning one green row. */
+/** The terminal equivalent of cleaning one green row; tests pin it to the CLI's `cleanCommand`. */
 export function cleanupCommand(id: string, digest: string): string {
   return `repo-harness worktrees clean --ids ${id} --expected-digest ${digest}`;
 }
