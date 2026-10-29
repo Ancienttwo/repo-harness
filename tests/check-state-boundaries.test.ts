@@ -202,6 +202,35 @@ describe('state architecture boundary checker', () => {
     expect(messages(result, 'EFFECTS_REVERSE_IMPORT')).toHaveLength(2);
   });
 
+  test('accepts only the audited host SDK probe loads and rejects changed sources', async () => {
+    const paths = ['src/effects/setup/agent-runtime-probe.ts', 'src/effects/setup/pi-capability-child.ts'];
+    const { root, result } = await checkWith((root) => {
+      for (const path of paths) write(root, path, readFileSync(join(ROOT, path), 'utf8'));
+    });
+    expect(result.ok).toBe(true);
+
+    // A changed constant must revoke the exception, even with the same import expression.
+    write(root, paths[0]!, readFileSync(join(ROOT, paths[0]!), 'utf8')
+      .replace("const CURSOR_SDK_PACKAGE = '@cursor/sdk'", "const CURSOR_SDK_PACKAGE = '../../cli/hook/state-snapshot'"));
+    // A changed computed target must also fail closed at the original Pi child path.
+    write(root, paths[1]!, readFileSync(join(ROOT, paths[1]!), 'utf8')
+      .replace("'dist/index.js'", "'../../cli/hook/state-snapshot.ts'"));
+    const changed = await checkStateBoundaries(root);
+    expect(changed.violations.filter(item => item.code === 'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED')
+      .map(item => item.file).sort()).toEqual(paths);
+  });
+
+  test('does not extend host SDK exceptions to other files or extra computed imports', async () => {
+    const { result } = await checkWith((root) => {
+      const path = 'src/effects/setup/pi-capability-child.ts';
+      const source = readFileSync(join(ROOT, path), 'utf8');
+      write(root, path, `${source}\nconst target = '../../cli/hook/state-snapshot'; await import(target);\n`);
+      write(root, 'src/effects/setup/copied-probe.ts', source);
+      write(root, 'src/effects/state/computed-cli.ts', "const target = '../../cli/hook/state-snapshot'; export const load = () => import(target);\n");
+    });
+    expect(result.violations.filter(item => item.code === 'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED')).toHaveLength(4);
+  });
+
   test('reports an intra-layer directory cycle across import forms', async () => {
     const { result } = await checkWith((root) => {
       write(root, 'src/effects/alpha/a.ts', "export { b } from '../beta/b';\nexport const a = 1;\n");

@@ -48,6 +48,20 @@ export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {
     'agent-runtime effects read task inbox deliveries and the fleet board reads runtime effects; the model declares both relations',
 };
 
+// Cursor is an optional lazy host package. Pi must load the SDK selected on
+// PATH. Pin the entire audited source and exact load. Any edit revokes the
+// exception until the dependency path is reviewed. All other loads fail closed.
+const HOST_SDK_LOADS: Readonly<Record<string, { readonly sha256: string; readonly expression: string }>> = {
+  'src/effects/setup/agent-runtime-probe.ts': {
+    sha256: 'c6532c27e5ad1acb92945c84a808ab7a96d6fa79a4c20bb45bd68a4179dbf2d8',
+    expression: 'import(CURSOR_SDK_PACKAGE)',
+  },
+  'src/effects/setup/pi-capability-child.ts': {
+    sha256: '4cacacb96c44ba3e107ea624c0341351d7c11d6d1f517345b4f537d59d94acb9',
+    expression: "import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href)",
+  },
+};
+
 const CAPABILITY_SOURCE = 'src/core/capabilities/registry.ts';
 const CAPABILITY_SCRIPT = 'scripts/capability-resolver.ts';
 const CAPABILITY_PROJECTION = 'assets/templates/helpers/capability-resolver.ts';
@@ -471,13 +485,17 @@ function checkEffectDependencies(
 
   const references = moduleReferences(source);
   for (const reference of references.resolved) inspectModule(reference.node, reference.specifier);
+  const hostSdkLoad = HOST_SDK_LOADS[relPath(repoRoot, source.fileName)];
+  const auditedSource = hostSdkLoad !== undefined
+    && createHash('sha256').update(source.text.replaceAll('\r\n', '\n')).digest('hex') === hostSdkLoad.sha256;
   for (const node of references.unresolvedLoads) {
+    if (auditedSource && node.getText(source) === hostSdkLoad.expression) continue;
     violations.push(nodeViolation(
       repoRoot,
       source,
       node,
       'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED',
-      'effect dynamic module loads must use a literal so reverse CLI dependencies can be verified',
+      'effect dynamic module loads must use a literal or match a source-pinned host SDK load so reverse CLI dependencies can be verified',
     ));
   }
 }
