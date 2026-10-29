@@ -22,7 +22,8 @@ import {
   observeDocSessionLoss, readDocSessionDiff, resolveDocSession,
 } from './doc-session-changes';
 import { readDocSessionEvents, sessionDirectory } from './doc-session-events';
-import { OperatorWriteRefusal, runOperatorWrite, type OperatorWriteOperation, type OperatorWriteResponse } from './write-run';
+import { operatorAuditPath, prepareOperatorStateDir, readOperatorAuditRequest } from './write-audit';
+import { OperatorWriteRefusal, parseOperatorRequestId, runOperatorWrite, type OperatorWriteOperation, type OperatorWriteResponse } from './write-run';
 
 export interface DocSessionFinalizeDependencies {
   readonly env: NodeJS.ProcessEnv;
@@ -59,16 +60,23 @@ interface CommitState {
   remote_url: string;
   stage: 'prepared' | 'committed' | 'pushed' | 'creating_pr' | 'pr_failed' | 'complete';
   pr: DocSessionDraftPr | null;
+  audit: StepAttempt | null;
 }
 interface DiscardState {
   protocol: 1;
   kind: 'discard';
   input: DocSessionDiscardInput;
   stage: 'removing' | 'removed' | 'complete';
+  audit: StepAttempt | null;
 }
 type State = CommitState | DiscardState;
+interface StepAttempt { step: string; request_id: string; previous_request_id: string | null }
+const AUDIT_STEPS = ['commit', 'push', 'draft_pr', 'draft_pr_reconcile', 'discard_worktree', 'discard_branch'];
+const JOURNAL_MAX_BYTES = 32_768;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const AUDIT_RECONCILE_ACTION = 'Reconcile the saved step request_id with the operator audit log. Do not retry publication until its result is established.';
 const refusal = (code: string, status = 409) => new OperatorWriteRefusal(status, code, code, 'Read the session state before retrying with a new request_id.');
+const auditIncomplete = () => new OperatorWriteRefusal(409, 'step_audit_incomplete', 'The saved step has no complete audit result.', AUDIT_RECONCILE_ACTION);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** The policy adapter reports only safe relative paths to the caller. */
@@ -86,9 +94,12 @@ function readState(directory: string): State | null {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
   try {
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > 32_768) throw new Error('finalize state invalid');
+    if (!stat.isFile() || stat.size > JOURNAL_MAX_BYTES) throw new Error('finalize state invalid');
     const state = JSON.parse(readFileSync(fd, 'utf8')) as State;
     if (state.protocol !== 1) throw new Error('finalize state protocol');
+    if (state.audit !== null && (!state.audit || !AUDIT_STEPS.includes(state.audit.step)
+      || parseOperatorRequestId(state.audit.request_id) === null
+      || (state.audit.previous_request_id !== null && parseOperatorRequestId(state.audit.previous_request_id) === null))) throw new Error('finalize audit identity');
     if (state.kind === 'commit') {
       decodeDocSessionCommit(state.input as unknown as Record<string, unknown>);
       validateTarget(state.target);
@@ -104,10 +115,24 @@ function readState(directory: string): State | null {
   } finally { closeSync(fd); }
 }
 function saveState(directory: string, state: State): void {
+  const bytes = encodeState(state);
   const temporary = join(directory, `finalize-${randomUUID()}.tmp`);
-  createFileExclusiveDurably(temporary, Buffer.from(JSON.stringify(state) + '\n'));
+  createFileExclusiveDurably(temporary, bytes);
   renameSync(temporary, join(directory, 'finalize.json'));
   syncDirectoryDurably(directory);
+}
+function encodeState(state: State): Buffer {
+  const bytes = Buffer.from(JSON.stringify(state) + '\n');
+  if (bytes.length > JOURNAL_MAX_BYTES) throw refusal('finalize_state_too_large', 413);
+  return bytes;
+}
+/** Reserve the largest later phase before writing any Git object or journal. */
+function checkCommitCapacity(state: CommitState): void {
+  const id = '00000000-0000-4000-8000-000000000000';
+  encodeState({ ...state, commit: '0'.repeat(64), stage: 'creating_pr',
+    pr: { number: Number.MAX_SAFE_INTEGER, url: `https://github.com/${state.target.repository}/pull/${Number.MAX_SAFE_INTEGER}` },
+    audit: { step: 'discard_worktree_reconcile', request_id: id, previous_request_id: id },
+  });
 }
 function validateTarget(target: DocSessionPublicationTarget): void {
   if (!target || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(target.remote)
@@ -141,20 +166,46 @@ function outcome(state: State, code?: string): OperatorWriteResponse {
   return { status: code ? 503 : 200, body: {
     protocol: 1, kind: 'operator_docs_session_finalize', operation: state.kind, stage: state.stage,
     ...(state.kind === 'commit' ? { commit: state.commit, pushed: ['pushed', 'creating_pr', 'pr_failed', 'complete'].includes(state.stage), pr: state.pr as unknown as JsonValue } : {}),
-    ...(code ? { error: { code, message: code, next_action: 'Retry the same session action with a new request_id and unchanged fields. An uncertain PR create needs reconciliation.' } } : {}),
+    ...(code ? { error: { code, message: code, next_action: code === 'step_audit_incomplete' ? AUDIT_RECONCILE_ACTION : 'Retry the same session action with a new request_id and unchanged fields. An uncertain PR create needs reconciliation.' } } : {}),
   } };
 }
 
 /** Each externally visible step has its own global intent and result audit.
  * An absent result is not success, even when its side effect has happened. */
-async function auditedStep<T>(sid: string, step: string, deps: DocSessionFinalizeDependencies, action: () => Promise<T>): Promise<T> {
+function observedStepAudit(sid: string, state: State, deps: DocSessionFinalizeDependencies): { completed: boolean; value: JsonValue } | null {
+  if (state.audit === null) return null;
+  const lock = acquireExclusiveDirectoryLock(prepareOperatorStateDir(deps.env), 'locks/audit', { waitTimeoutMs: 1000 });
+  try {
+    lock.assertOwned();
+    const { intent, result } = readOperatorAuditRequest(operatorAuditPath(deps.env), state.audit.request_id);
+    const body = result?.body as Record<string, JsonValue> | undefined;
+    if (!intent || !result || intent.operation !== `docs_finalize_${state.audit.step}` || intent.target !== `docs_finalize_step:${sid}`
+      || result.binding_sha256 !== intent.binding_sha256 || !body || body.step !== state.audit.step
+      || typeof body.completed !== 'boolean' || result.status !== (body.completed ? 200 : 503)) throw auditIncomplete();
+    return { completed: body.completed, value: body.value ?? null };
+  } finally { lock.release(); }
+}
+
+async function auditedStep<T>(sid: string, step: string, deps: DocSessionFinalizeDependencies, directory: string, state: State, action: () => Promise<T>): Promise<T> {
+  const previous = observedStepAudit(sid, state, deps);
+  const knownNoPr = step === 'draft_pr' && previous?.value !== null && typeof previous?.value === 'object'
+    && !Array.isArray(previous.value) && (previous.value as { readonly [key: string]: JsonValue }).state === 'not_created';
+  if (state.audit?.step === step && previous?.completed && !knownNoPr) return previous.value as T;
+  if (previous && !previous.completed && state.audit?.step !== step && step !== 'draft_pr_reconcile') throw auditIncomplete();
+  state.audit = { step, request_id: randomUUID(), previous_request_id: state.audit?.request_id ?? null };
+  saveState(directory, state);
   let result: T | undefined;
-  let completed = false;
-  const answer = await runOperatorWrite(randomUUID(), {
-    operation: `docs_finalize_${step}`, target: `docs_finalize_step:${sid}`, input: { session_id: sid, step },
-    execute: async () => { result = await action(); completed = true; return { status: 200, body: { step, completed: true } }; },
+  let actionError: unknown;
+  await runOperatorWrite(state.audit.request_id, {
+    operation: `docs_finalize_${step}`, target: `docs_finalize_step:${sid}`,
+    input: { session_id: sid, step, previous_request_id: state.audit.previous_request_id },
+    execute: async (): Promise<OperatorWriteResponse> => {
+      try { result = await action(); return { status: 200, body: { step, completed: true, value: (result ?? null) as JsonValue } }; }
+      catch (error) { actionError = error; return { status: 503, body: { step, completed: false } }; }
+    },
   }, deps.env);
-  if (answer.status !== 200 || !completed) throw new Error('finalization step audit incomplete');
+  const recorded = observedStepAudit(sid, state, deps);
+  if (!recorded?.completed) throw actionError ?? new Error('finalization step failed');
   return result as T;
 }
 
@@ -187,6 +238,7 @@ function prepareCommit(env: NodeJS.ProcessEnv, directory: string, session: DocSe
 async function commitLocked(sid: string, input: DocSessionCommitInput, deps: DocSessionFinalizeDependencies, directory: string): Promise<OperatorWriteResponse> {
   let state = readState(directory);
   if (state && (state.kind !== 'commit' || !same(state.input, input))) throw refusal('finalization_conflict');
+  if (state) observedStepAudit(sid, state, deps);
   if (state?.kind === 'commit' && state.stage === 'complete') return outcome(state);
   const { record, worktree } = resolveDocSession(deps.env, sid);
   const runner = docSessionGitRunner(deps.env);
@@ -204,10 +256,12 @@ async function commitLocked(sid: string, input: DocSessionCommitInput, deps: Doc
     const target = await deps.publication_target(record); validateTarget(target);
     const url = remoteUrl(deps.env, worktree, target);
     if (remoteHead(deps.env, worktree, url, record.branch) !== null) throw refusal('branch_pushed');
+    const prepared: CommitState = { protocol: 1, kind: 'commit', input, commit: '0'.repeat(64), target, remote_url: url, stage: 'prepared', pr: null, audit: null };
+    checkCommitCapacity(prepared);
     const commit = prepareCommit(deps.env, directory, record, changes, input);
     const fresh = readDocSessionDiff(deps.env, sid);
     if (fresh.head_commit !== input.expected_head || fresh.diff_sha256 !== input.expected_diff_sha256) throw refusal('diff_changed');
-    state = { protocol: 1, kind: 'commit', input, commit, target, remote_url: url, stage: 'prepared', pr: null };
+    state = { ...prepared, commit };
     saveState(directory, state);
   }
   if (state.kind !== 'commit') throw refusal('finalization_conflict');
@@ -219,17 +273,19 @@ async function commitLocked(sid: string, input: DocSessionCommitInput, deps: Doc
         const diff = readDocSessionDiff(deps.env, sid);
         if (diff.diff_sha256 !== input.expected_diff_sha256) throw refusal('diff_changed');
         await deps.validate_changes(record, observeDocSessionChanges(runner, worktree, record.base_commit));
-        await auditedStep(sid, 'commit', deps, async () => {
+        await auditedStep(sid, 'commit', deps, directory, state, async () => {
           git(deps.env, worktree, ['update-ref', `refs/heads/${record.branch}`, state.commit, input.expected_head]);
         });
       } else if (head !== state.commit) throw refusal('head_changed');
+      else await auditedStep(sid, 'commit', deps, directory, state, async () => {});
       state.stage = 'committed'; saveState(directory, state);
     } else if (head !== state.commit) throw refusal('head_changed');
     if (state.stage === 'committed') {
       const remote = remoteHead(deps.env, worktree, state.remote_url, record.branch);
       if (remote !== null && remote !== state.commit) throw refusal('remote_changed');
-      if (remote === null) await auditedStep(sid, 'push', deps, async () => {
-        git(deps.env, worktree, ['push', '--porcelain', '--', state.remote_url, `${state.commit}:refs/heads/${record.branch}`]);
+      await auditedStep(sid, 'push', deps, directory, state, async () => {
+        if (remote === null) git(deps.env, worktree, ['push', '--porcelain', '--', state.remote_url, `${state.commit}:refs/heads/${record.branch}`]);
+        if (remoteHead(deps.env, worktree, state.remote_url, record.branch) !== state.commit) throw new Error('push readback failed');
       });
       if (remoteHead(deps.env, worktree, state.remote_url, record.branch) !== state.commit) throw new Error('push readback failed');
       state.stage = 'pushed'; saveState(directory, state);
@@ -237,17 +293,28 @@ async function commitLocked(sid: string, input: DocSessionCommitInput, deps: Doc
     if (remoteHead(deps.env, worktree, state.remote_url, record.branch) !== state.commit) throw refusal('remote_changed');
     const existing = await deps.find_draft_pr(state.target, record.branch, state.commit);
     if (existing) {
-      validatePr(existing, state.target); state.pr = existing; state.stage = 'complete'; saveState(directory, state); return outcome(state);
+      validatePr(existing, state.target);
+      await auditedStep(sid, 'draft_pr_reconcile', deps, directory, state, async () => ({ number: existing.number, url: existing.url }));
+      state.pr = existing; state.stage = 'complete'; saveState(directory, state); return outcome(state);
     }
     if (state.stage === 'creating_pr') return outcome(state, 'pr_outcome_unknown');
     state.stage = 'creating_pr'; saveState(directory, state);
-    const created = await auditedStep(sid, 'draft_pr', deps, () => deps.create_draft_pr(state.target, record.branch, state.commit, state.input.message));
+    const created = await auditedStep(sid, 'draft_pr', deps, directory, state, async () => {
+      const value = await deps.create_draft_pr(state.target, record.branch, state.commit, state.input.message);
+      if (value.state === 'created') {
+        validatePr(value.pr, state.target);
+        return { state: 'created' as const, pr: { number: value.pr.number, url: value.pr.url } };
+      }
+      if (value.state !== 'not_created' && value.state !== 'unknown') throw new Error('PR outcome invalid');
+      return { state: value.state };
+    });
     if (created.state === 'created') {
       validatePr(created.pr, state.target); state.pr = created.pr; state.stage = 'complete';
     } else if (created.state === 'not_created') state.stage = 'pr_failed';
     saveState(directory, state);
     return outcome(state, state.stage === 'complete' ? undefined : state.stage === 'pr_failed' ? 'pr_create_failed' : 'pr_outcome_unknown');
   } catch (error) {
+    if (error instanceof DocSessionScopeRefusal) throw error;
     // Publication can have happened. Do not label this an unapplied refusal.
     return outcome(state, error instanceof OperatorWriteRefusal ? error.code : 'finalize_step_failed');
   }
@@ -256,6 +323,7 @@ async function commitLocked(sid: string, input: DocSessionCommitInput, deps: Doc
 async function discardLocked(sid: string, input: DocSessionDiscardInput, deps: DocSessionFinalizeDependencies, directory: string): Promise<OperatorWriteResponse> {
   let state = readState(directory);
   if (state) {
+    observedStepAudit(sid, state, deps);
     if (state.kind === 'commit') throw refusal(['pushed', 'creating_pr', 'pr_failed', 'complete'].includes(state.stage) ? 'branch_pushed' : 'finalization_conflict');
     if (!same(state.input, input)) throw refusal('finalization_conflict');
     if (state.stage === 'complete') return outcome(state);
@@ -280,14 +348,14 @@ async function discardLocked(sid: string, input: DocSessionDiscardInput, deps: D
     // Last observation occurs in the topology and lifecycle critical sections.
     const fresh = observeDocSessionLoss(runner, record, worktree);
     if (docSessionLossSha256(fresh) !== input.expected_loss_sha256) throw refusal('loss_changed');
-    state = { protocol: 1, kind: 'discard', input, stage: 'removing' }; saveState(directory, state);
+    state = { protocol: 1, kind: 'discard', input, stage: 'removing', audit: null }; saveState(directory, state);
     try {
-      await auditedStep(sid, 'discard_worktree', deps, async () => {
+      await auditedStep(sid, 'discard_worktree', deps, directory, state, async () => {
         git(deps.env, repo.path, ['worktree', 'remove', '--force', '--', worktree]);
       });
       state.stage = 'removed'; saveState(directory, state);
       if (entries(repo.path, { gitBin: configuredGitBinary(deps.env) }).some(entry => entry.branch === `refs/heads/${record.branch}`)) throw new Error('branch has another worktree');
-      await auditedStep(sid, 'discard_branch', deps, async () => {
+      await auditedStep(sid, 'discard_branch', deps, directory, state, async () => {
         git(deps.env, repo.path, ['update-ref', '-d', `refs/heads/${record.branch}`, input.expected_head]);
       });
       state.stage = 'complete'; saveState(directory, state);

@@ -61,6 +61,21 @@ records the outer intent/result. Commit, push, PR creation, worktree removal and
 branch deletion each record their own global intent/result before and after
 execution. Audit failure cannot authorize the next step.
 
+The journal persists each step's request_id before execution and links a retry
+to its prior attempt. Recovery reads that exact intent/result pair through the
+shared audit authority. A missing result stays `step_audit_incomplete`, even if
+HEAD or the remote matches. This slice does not repair missing audit results:
+operator reconciliation is required. A recorded failed attempt can retry under
+a new linked step ID. The new attempt audits the observed Git result before it
+advances. Provider readback recovery also has a separate audited step.
+
+Before writing a Git object or journal, commit checks the encoded JSON size
+against the same 32 KiB bound used by the journal reader and writer. The check
+reserves the largest later PR and audit fields. Oversized escaping or target
+metadata returns 413 `finalize_state_too_large`; the message is never truncated.
+An unchanged prepared attempt that fails scope validation returns 422 and its
+safe relative file list before further Git operations.
+
 Commit snapshots use the canonical #1153 digest and a temporary private index.
 They preserve the user's index, including independently staged bytes. A new
 initial finalization requires HEAD at the session base: the docs host cannot

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { decodeDocSessionCommit, decodeDocSessionDiscard } from '../../src/core/operator/doc-session-finalize';
 import { readDocSessionDiff, readDocSessionLoss } from '../../src/effects/operator/doc-session-changes';
@@ -184,4 +184,64 @@ test('unknown process inventory refuses discard without deleting data', async ()
   const s = fixture();
   expect(body(await s.discard(s.lossInput(), { processes: () => null })).error.code).toBe('worktree_in_use');
   expect(existsSync(s.worktree)).toBe(true);
+});
+
+for (const step of ['commit', 'push'] as const) test(`a ${step} result-audit failure cannot authorize the next step on retry`, async () => {
+  const s = fixture();
+  const audit = join(s.env.REPO_HARNESS_HOME, 'operator/audit.jsonl');
+  const breaker = join(s.root, 'break-audit.js');
+  writeFileSync(breaker, `const fs = require('node:fs'); const path = ${JSON.stringify(audit)}; fs.renameSync(path, path + '.saved'); fs.mkdirSync(path);`);
+  const hook = step === 'commit' ? join(s.repo, '.git/hooks/reference-transaction') : join(s.remote, 'hooks/post-receive');
+  writeFileSync(hook, `#!/bin/sh\n${step === 'commit' ? '[ "$1" = committed ] || exit 0\n' : ''}exec '${process.execPath}' '${breaker}'\n`, { mode: 0o755 });
+  const first = await s.commit();
+  expect(body(first).error.code).toBe('reconcile_required');
+  const head = git(s.worktree, ['rev-parse', 'HEAD']);
+  expect(head).not.toBe(s.base);
+  unlinkSync(hook); rmSync(audit, { recursive: true }); renameSync(audit + '.saved', audit);
+  const retry = await s.commit();
+  expect(body(retry).error.code).toBe('step_audit_incomplete');
+  const journal = JSON.parse(readFileSync(join(s.directory, 'finalize.json'), 'utf8'));
+  expect(journal.stage).toBe(step === 'commit' ? 'prepared' : 'committed');
+  expect(journal.audit.step).toBe(step);
+  const stepRecords = readFileSync(audit, 'utf8').trim().split('\n').map(line => JSON.parse(line)).filter(record => record.request_id === journal.audit.request_id);
+  expect(stepRecords.map(record => record.phase)).toEqual(['intent']);
+  expect(git(s.worktree, ['rev-parse', 'HEAD'])).toBe(head);
+  expect(git(s.remote, ['for-each-ref', '--format=%(objectname)', `refs/heads/${s.branch}`])).toBe(step === 'commit' ? '' : head);
+  expect(s.created()).toBe(0);
+});
+
+test('encoded journal limit refuses escape expansion before any Git change and accepted maxima round trip', async () => {
+  const s = fixture();
+  const commitMessage = (message: string) => runOperatorWrite(randomUUID(), docSessionCommitOperation(s.sid, { ...s.input, message }, s.deps), s.env);
+  const objectsBefore = git(s.worktree, ['count-objects', '-v']);
+  const refused = await commitMessage('x' + '\u0001'.repeat(7999));
+  expect(refused.status).toBe(413); expect(body(refused).error.code).toBe('finalize_state_too_large');
+  expect(existsSync(join(s.directory, 'finalize.json'))).toBe(false);
+  expect(git(s.worktree, ['rev-parse', 'HEAD'])).toBe(s.base);
+  expect(git(s.worktree, ['count-objects', '-v'])).toBe(objectsBefore);
+  expect(git(s.remote, ['for-each-ref', `refs/heads/${s.branch}`])).toBe('');
+  const message = '界'.repeat(8000);
+  expect((await commitMessage(message)).status).toBe(200);
+  expect((readDocSessionFinalization(s.env, s.sid) as any).stage).toBe('complete');
+  expect(JSON.parse(readFileSync(join(s.directory, 'finalize.json'), 'utf8')).input.message).toBe(message);
+  expect((await commitMessage(message)).status).toBe(200);
+  const escaped = fixture();
+  const escapedMessage = 'x' + '\\'.repeat(7999);
+  const answer = await runOperatorWrite(randomUUID(), docSessionCommitOperation(escaped.sid, { ...escaped.input, message: escapedMessage }, escaped.deps), escaped.env);
+  expect(answer.status).toBe(200);
+  expect((readDocSessionFinalization(escaped.env, escaped.sid) as any).stage).toBe('complete');
+  expect(JSON.parse(readFileSync(join(escaped.directory, 'finalize.json'), 'utf8')).input.message).toBe(escapedMessage);
+});
+
+test('prepared scope refusal stays 422 with paths on the initial second check and on recovery', async () => {
+  const s = fixture(); let checks = 0;
+  const refusal = () => { throw new DocSessionScopeRefusal('generated_region', ['docs/guide.md']); };
+  const first = await s.commit({ validate_changes: async () => { if (++checks === 2) refusal(); } });
+  for (const answer of [first, await s.commit({ validate_changes: async () => refusal() })]) {
+    expect(answer.status).toBe(422); expect(body(answer).error.files).toEqual(['docs/guide.md']);
+    expect(body(answer).error.code).toBe('generated_region');
+  }
+  expect(git(s.worktree, ['rev-parse', 'HEAD'])).toBe(s.base);
+  expect(git(s.remote, ['for-each-ref', `refs/heads/${s.branch}`])).toBe('');
+  expect(s.created()).toBe(0);
 });
