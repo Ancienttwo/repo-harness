@@ -400,17 +400,20 @@ export function NavRail({
         {docSessions !== undefined && onNewSession !== undefined && docSessionStartState(docSessions.view).show && (
           <NewSessionButton collapsed={collapsed} onNewSession={() => { onCloseDrawer(); onNewSession(); }} t={t} />
         )}
-        <nav aria-label={t('nav.label')} className="workspace-nav -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1">
-          <ul><li><NavLink workspace="home" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
-          {GROUPS.map(group => (
-            <div key={group} className="flex flex-col">
-              <p id={`nav-group-${group}`} className={cn('type-caption px-2.5 pt-4 pb-1 text-kumo-subtle', collapsed && 'rail:sr-only')}>{t(`nav.group.${group}`)}</p>
-              {collapsed && <hr aria-hidden="true" className="mx-2 my-2 hidden border-kumo-line rail:block" />}
-              <ul aria-labelledby={`nav-group-${group}`} className="flex flex-col gap-0.5">{groupLinks(group)}</ul>
-            </div>
-          ))}
-          {docSessions !== undefined && <RecentSessions docSessions={docSessions} currentSession={currentSession} collapsed={collapsed} onOpen={open} t={t} />}
-          <ul className="mt-auto pt-4"><li><NavLink workspace="settings" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
+        <nav aria-label={t('nav.label')} className="workspace-nav -mx-1 flex min-h-0 flex-1 flex-col px-1">
+          {/* Settings stays outside the scroll area, so a long「最近」list never pushes it out of view. */}
+          <div className="-mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1">
+            <ul><li><NavLink workspace="home" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
+            {GROUPS.map(group => (
+              <div key={group} className="flex flex-col">
+                <p id={`nav-group-${group}`} className={cn('type-caption px-2.5 pt-4 pb-1 text-kumo-subtle', collapsed && 'rail:sr-only')}>{t(`nav.group.${group}`)}</p>
+                {collapsed && <hr aria-hidden="true" className="mx-2 my-2 hidden border-kumo-line rail:block" />}
+                <ul aria-labelledby={`nav-group-${group}`} className="flex flex-col gap-0.5">{groupLinks(group)}</ul>
+              </div>
+            ))}
+            {docSessions !== undefined && <RecentSessions docSessions={docSessions} currentSession={currentSession} collapsed={collapsed} onOpen={open} t={t} />}
+          </div>
+          <ul className="pt-4"><li><NavLink workspace="settings" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
         </nav>
         <div className={cn('flex flex-col gap-2 border-t border-kumo-hairline px-1 pt-3', collapsed && 'rail:items-center rail:px-0')} data-operator-status={status}>
           <div className={cn('flex min-w-0 items-start gap-2 text-xs text-kumo-subtle', collapsed && 'rail:justify-center')} title={collapsed ? t(`rail.status.${status}`) : undefined}>
