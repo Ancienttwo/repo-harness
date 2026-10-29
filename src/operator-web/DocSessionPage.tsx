@@ -146,6 +146,7 @@ function Discard({ sessionId, readLoss, writeDiscard, generation, onDiscarded, t
   const discard = useSessionWrite<DocSessionDiscardRequest, OperatorDocSessionDiscardV1>(
     useCallback(body => writeDiscard(sessionId, body), [writeDiscard, sessionId]));
   const answered = discard.state.kind === 'answered' ? discard.state.outcome : null;
+  const pushed = (loss?.state === 'ok' && loss.value.pushed) || (answered?.state === 'refused' && answered.refusal.code === 'branch_pushed');
   if (!open) return <Button variant="secondary-destructive" className="w-fit" onClick={() => setOpen(true)} data-discard-open>{t('docSession.discard')}</Button>;
   const confirm = async () => {
     if (loss?.state !== 'ok') return;
@@ -179,7 +180,7 @@ function Discard({ sessionId, readLoss, writeDiscard, generation, onDiscarded, t
         </>
       )}
       <div className="flex flex-wrap gap-2">
-        {loss?.state === 'ok' && !loss.value.pushed && (
+        {loss?.state === 'ok' && !pushed && (
           <Button variant="destructive" onClick={() => void confirm()} disabled={discard.state.kind === 'sending'} data-discard-confirm>{t('docSession.discard.confirm')}</Button>
         )}
         <Button variant="ghost" onClick={() => { setOpen(false); discard.reset(); }}>{t('docSession.discard.cancel')}</Button>
