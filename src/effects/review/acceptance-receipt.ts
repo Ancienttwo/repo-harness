@@ -615,7 +615,7 @@ function parseReceipt(text: string): AcceptanceReceipt {
   }
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(value.disposition))) fail('AcceptanceReceipt disposition is invalid');
   if (!['Claude', 'Codex'].includes(String(value.expected_reviewer))) fail('AcceptanceReceipt expected_reviewer is invalid');
-  if (!['Claude', 'Codex', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
+  if (!['Claude', 'Codex', 'Pi', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
   if (!['generic-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
   if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {

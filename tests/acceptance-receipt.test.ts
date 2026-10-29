@@ -94,6 +94,8 @@ test('generic review Receipt is launcher-independent and rejects every added bin
     writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,[field]:value }));
     await expect(verifyAcceptance({root, authority: authorityFor(root),authorityHome:home})).rejects.toThrow(`AcceptanceReceipt generic-review ${field} mismatch`);
   }
+  writeFileSync(acceptanceReceiptPath(root,home),JSON.stringify({ ...valid,actual_model:null }));
+  await expect(verifyAcceptance({root, authority:authorityFor(root),authorityHome:home})).rejects.toThrow('actual_model is invalid');
   writeFileSync(acceptanceReceiptPath(root,home),bytes[0]!);
   for (const source of ['claude-review','codex-review']) {
     await expect(recordAcceptance({ ...input,reviewResult,source })).rejects.toThrow('approved reviewer policy');

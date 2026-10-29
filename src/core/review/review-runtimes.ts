@@ -3,7 +3,7 @@
  * that its review session is isolated (G10). The review host and the
  * `agents.uses.review` setting both read this list.
  */
-export const REVIEW_RUNTIME_IDS = Object.freeze(['claude', 'codex'] as const);
+export const REVIEW_RUNTIME_IDS = Object.freeze(['claude', 'codex', 'pi'] as const);
 export type ReviewRuntimeId = typeof REVIEW_RUNTIME_IDS[number];
 
 export function isReviewRuntimeId(value: string): value is ReviewRuntimeId {

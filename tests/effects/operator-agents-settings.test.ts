@@ -87,6 +87,25 @@ async function settings(harness: Harness): Promise<ReturnType<typeof decodeAgent
 const sha256 = (path: string) => `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 
 describe('agent settings routes', () => {
+  test('Pi review fixture is admitted through the settings route and named in unsupported-runtime guidance', async () => {
+    const harness = await startHarness();
+    harness.cache = { status: 'ready', probe: { ...PROBE, entries: [...PROBE.entries,
+      { id: 'pi', group: 'default', installation: { kind: 'available', via: 'bundled', version: null } }] } };
+    const before = await settings(harness);
+    expect(before.runtimes.entries.find(entry => entry.id === 'pi')?.review_supported).toBe(true);
+    const response = await post(harness, { expected_revision: before.config.revision,
+      changes: [{ runtime: 'pi', enabled: true, uses: ['review'] }] });
+    expect(response.status).toBe(200);
+    const saved = await response.json();
+    expect((await settings(harness)).config.uses.review).toEqual(['pi']);
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents.uses.review).toEqual(['pi']);
+    const invalid = await post(harness, { expected_revision: saved.config_revision,
+      changes: [{ runtime: 'grok', enabled: true, uses: ['review'] }] });
+    expect(invalid.status).toBe(422);
+    const error = (await invalid.json()).error;
+    expect(error.message).toContain('pi'); expect(error.next_action).toContain('pi');
+  });
+
   test('GET reads the absent section and the probe cache without command paths', async () => {
     const harness = await startHarness();
     const value = await settings(harness);
