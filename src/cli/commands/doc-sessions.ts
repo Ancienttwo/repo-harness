@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { decodeDocSessionMessage } from '../../core/operator/doc-session-messages';
+import { docSessionMessageOperation } from '../../effects/operator/doc-session-messages';
+import { parseOperatorRequestId, runOperatorWrite } from '../../effects/operator/write-run';
 import { Command } from 'commander';
 
 import type { OperatorDocSessionDiffV1, OperatorDocSessionLossV1 } from '../../core/operator/doc-session-changes';
@@ -7,7 +11,7 @@ import { readDocSessionList, readDocSessionDetail } from '../../effects/operator
 import { DocSessionEventsError, readDocSessionEvents } from '../../effects/operator/doc-session-events';
 
 /**
- * `repo-harness operator doc-sessions`: the doc session reads of the operator
+ * `repo-harness operator doc-sessions`: the doc session operations of the operator
  * console (I7). Each subcommand runs the effect that the HTTP route runs, and
  * `--json` prints the route's body.
  */
@@ -56,7 +60,23 @@ function printLoss(loss: OperatorDocSessionLossV1): void {
 }
 
 export function buildDocSessionsCommand(): Command {
-  const sessions = new Command('doc-sessions').description('Read doc sessions of the operator console');
+  const sessions = new Command('doc-sessions').description('Read doc sessions and send follow-up messages');
+  sessions.command('message').description('Send an audited follow-up to a doc session')
+    .argument('<session-id>', 'Doc session id (32 hex)')
+    .requiredOption('--text <text>', 'Message text').requiredOption('--when <when>', 'after_turn or now')
+    .option('--request-id <uuid>', 'Reuse this id to read the saved outcome').option('--json', 'Output JSON')
+    .action(async (sessionId: string, options: ReadOptions & { text: string; when: string; requestId?: string }) => {
+      const requestId = options.requestId === undefined ? randomUUID() : parseOperatorRequestId(options.requestId);
+      let operation;
+      try {
+        if (requestId === null) throw new Error('invalid_argument');
+        operation = docSessionMessageOperation(process.env, sessionId, decodeDocSessionMessage({ text: options.text, when: options.when }));
+      } catch { refuse(options.json, 'invalid_argument', 2); return; }
+      const response = await runOperatorWrite(requestId!, operation, process.env);
+      const output = JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object });
+      if (response.status === 202) console.log(output);
+      else { console.error(output); process.exitCode = 2; }
+    });
   sessions.command('list').description('List doc sessions; unread compares with the supplied browser cursors')
     .option('--seen <json>', 'JSON object of session ids to last-read epoch.seq cursors')
     .option('--json', 'Output the HTTP body as JSON')

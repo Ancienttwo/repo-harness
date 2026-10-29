@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { writeSessionArtifact } from '../src/effects/terminal/task-session-io';
 import type { DocCitationV1 } from '../src/core/operator/doc-citation';
 import type { DocSessionEventV1 } from '../src/core/operator/doc-session-events';
 import { readExclusiveDirectoryLockOwner } from '../src/effects/locking/exclusive-directory-lock';
@@ -322,4 +323,88 @@ test('a host that exited holding agent.lock is a proven dead owner, and a missin
   reconcileDocSessionAgent(s.env, s.sid);
   expect(readDocSessionAgent(s.directory)).toMatchObject({ state: 'failed', credential: 'absent', events_error: 'events_unavailable' });
   expect(readFileSync(s.log, 'utf8')).toBe(s.torn);
+}, 60_000);
+
+
+// These cases exercise the real host process with OAR's zero-provider scripted runtime.
+// They verify message delivery, not native isolation or real-model D1 acceptance.
+test('message HTTP delivers queue and steer once, ignores old epochs, then CLI prompts the idle host', async () => {
+  const h = await harness();
+  const sid = (await h.create('fixture:hold the first turn')).body.session_id as string;
+  reapHost(h, sid);
+  await until(h, sid, agent => agent.state === 'running', 'running');
+  const path = `/api/v1/sessions/${sid}/messages`;
+  const request_id = randomUUID();
+  const queued = { request_id, text: 'Run the follow-up.', when: 'after_turn' };
+  const accepted = await h.post(path, queued);
+  expect(accepted).toEqual({ status: 202, body: { protocol: 1, kind: 'operator_docs_session_message', session_id: sid, landed: 'queued' } });
+  expect(await h.post(path, queued)).toEqual(accepted);
+  const mismatch = await h.post(path, { ...queued, text: 'Different input.' });
+  expect([mismatch.status, mismatch.body.error.code]).toEqual([409, 'request_mismatch']);
+  expect((await h.post(path, { text: 'Tighten this turn.', when: 'now' })).body.landed).toBe('steered');
+  const requests = join(h.sessionDir(sid), 'requests');
+  const oldId = randomUUID();
+  writeSessionArtifact(join(requests, `message-${oldId}.json`), { kind: 'message', epoch: 0, input_id: oldId, text: 'Obsolete epoch text.', when: 'now' });
+  expect((await h.post(`/api/v1/sessions/${sid}/stop`)).status).toBe(202);
+  await until(h, sid, agent => agent.state === 'idle', 'idle after queued turn');
+  const cli = Bun.spawn([process.execPath, join(import.meta.dir, '../src/cli/index.ts'), 'operator', 'doc-sessions', 'message', sid,
+    '--text', 'An idle follow-up.', '--when', 'now', '--request-id', randomUUID(), '--json'], { env: h.env, stdout: 'pipe', stderr: 'pipe' });
+  const [stdout, stderr, code] = await Promise.all([new Response(cli.stdout).text(), new Response(cli.stderr).text(), cli.exited]);
+  expect({ code, stderr }).toEqual({ code: 0, stderr: '' });
+  expect(JSON.parse(stdout)).toMatchObject({ status: 202, session_id: sid, landed: 'prompted' });
+  await until(h, sid, agent => agent.state === 'idle', 'idle after CLI');
+  const recorded = events(h, sid);
+  const userMessages = recorded.filter(event => event.type === 'message' && event.role === 'user');
+  expect(userMessages.map(event => (event as { text: string }).text)).toEqual(['fixture:hold the first turn', queued.text, 'Tighten this turn.', 'An idle follow-up.']);
+  expect(recorded.map(event => [event.epoch, event.seq])).toEqual(recorded.map((_, seq) => [1, seq]));
+  for (const file of readdirSync(requests)) expect(statSync(join(requests, file)).mode & 0o777).toBe(0o600);
+  expect(await requestDocSessionControl(h.env, sid, 'cancel')).toBe('accepted');
+  await until(h, sid, agent => agent.state === 'stopped', 'stopped');
+  const closed = await h.post(path, { text: 'Cannot deliver.', when: 'now' });
+  expect([closed.status, closed.body.error.code]).toEqual([409, 'session_closed']);
+}, 60_000);
+
+test('message HTTP validates a closed schema and browser authorization before creating host requests', async () => {
+  const h = await harness({ launch: 'none' });
+  const sid = (await h.create('Not launched.')).body.session_id as string;
+  const path = `/api/v1/sessions/${sid}/messages`;
+  for (const fields of [{ text: '', when: 'now' }, { text: 'x', when: 'later' }, { text: 'x', when: 'now', extra: true }, { text: 'x'.repeat(16_385), when: 'now' }]) {
+    expect((await h.post(path, fields)).status).toBe(400);
+  }
+  const response = await fetch(`${h.server.url}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: randomUUID(), text: 'x', when: 'now' }) });
+  expect(response.status).toBe(403);
+  expect(existsSync(join(h.sessionDir(sid), 'requests'))).toBe(false);
+}, 60_000);
+
+
+test('a lost message acknowledgement keeps intent unresolved and neither HTTP retry nor concurrent stop replays it', async () => {
+  const h = await harness({ launch: 'none' });
+  const sid = (await h.create('No listening host.')).body.session_id as string;
+  const directory = h.sessionDir(sid);
+  const at = new Date().toISOString();
+  writeSessionArtifact(join(directory, 'agent.json'), {
+    protocol: 1, kind: 'docs_session_agent', session_id: sid, epoch: 1, state: 'idle', failure: null, reason: null,
+    updated_at: at, started_at: at, actual_model: null, credential: null, control: null, events_error: null,
+  });
+  const path = `/api/v1/sessions/${sid}/messages`;
+  const input = { request_id: randomUUID(), text: 'Delivery is unknown.', when: 'now' };
+  const requests = join(directory, 'requests');
+  mkdirSync(requests, { mode: 0o700 });
+  const pending = h.post(path, input);
+  for (const deadline = Date.now() + 5_000; !existsSync(requests) || readdirSync(requests).length === 0;) {
+    if (Date.now() > deadline) throw new Error('message request was not published');
+    await Bun.sleep(10);
+  }
+  const concurrent = await h.post(`/api/v1/sessions/${sid}/stop`);
+  expect([concurrent.status, concurrent.body.error.code]).toEqual([503, 'busy']);
+  // Model an owner loss after the durable request, before an acknowledgement.
+  const agent = readDocSessionAgent(directory)!;
+  writeSessionArtifact(join(directory, 'agent.json'), { ...agent, state: 'failed', failure: 'runtime_error' }, false);
+  const unknown = await pending;
+  expect([unknown.status, unknown.body.error.code]).toEqual([409, 'reconcile_required']);
+  expect(await h.post(path, input)).toEqual(unknown);
+  expect(readdirSync(requests)).toHaveLength(1);
+  const audit = readFileSync(join(h.env.REPO_HARNESS_HOME!, 'operator', 'audit.jsonl'), 'utf8');
+  expect(audit).not.toContain(input.text);
+  expect(audit.split('\n').filter(line => line.includes(input.request_id)).map(line => JSON.parse(line).phase)).toEqual(['intent']);
 }, 60_000);

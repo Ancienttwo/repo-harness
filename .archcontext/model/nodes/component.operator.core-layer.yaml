@@ -31,6 +31,7 @@ source:
     - src/core/operator/doc-session-adapter.ts
     - src/core/operator/doc-session-events.ts
     - src/core/operator/doc-session-views.ts
+    - src/core/operator/doc-session-messages.ts
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
     - src/core/operator/execution-state.ts

@@ -8,6 +8,8 @@
 // cancel requests, applies the time bounds and removes the credential copy on
 // every exit path.
 
+import { decodeDocSessionMessage, type DocSessionMessageResult } from '../../core/operator/doc-session-messages';
+import { deliverDocSessionMessage } from './doc-session-messages';
 import { codexRuntime, type AvailableInstallation, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime, type ScriptedTurn } from '@botiverse/oar/testing';
 import { execFileSync } from 'node:child_process';
@@ -93,14 +95,24 @@ export async function scriptedDocsTurn(turn: ScriptedTurn): Promise<void> {
 /** Records with the host cursor: epoch 1 (one host per session), seq from 0. A busy log keeps the batch for the next flush. */
 class EventSink {
   private seq = 0;
+  private inputEvents: DocSessionEventBody[] | null = null;
   private pending: Parameters<typeof appendDocSessionEvents>[2][number][] = [];
   constructor(private readonly env: NodeJS.ProcessEnv, private readonly sessionId: string, private readonly epoch: number) {}
+  beginInput(): void { this.inputEvents = []; }
+  endInput(acceptedText: string | null): void {
+    const events = this.inputEvents ?? [];
+    this.inputEvents = null;
+    if (acceptedText !== null) this.push([{ type: 'message', role: 'user', text: acceptedText }]);
+    this.push(events);
+    this.flush();
+  }
   push(bodies: readonly DocSessionEventBody[]): void {
+    if (this.inputEvents !== null) { this.inputEvents.push(...bodies); return; }
     const at = new Date().toISOString();
     for (const body of bodies) this.pending.push({ ...body, epoch: this.epoch, seq: this.seq++, at } as Parameters<typeof appendDocSessionEvents>[2][number]);
   }
   flush(): void {
-    if (this.pending.length === 0) return;
+    if (this.inputEvents !== null || this.pending.length === 0) return;
     try { appendDocSessionEvents(this.env, this.sessionId, this.pending); this.pending = []; }
     catch (error) { if (!(error instanceof DocSessionEventsError && error.code === 'events_busy')) throw error; }
   }
@@ -155,11 +167,11 @@ function turnLimit(env: NodeJS.ProcessEnv): number {
   return env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE === '1' && Number.isSafeInteger(requested) && requested > 0 ? requested : DOC_SESSION_AGENT_LIMITS.turn_ms;
 }
 
-async function withDeadline<T>(promise: Promise<T>, deadline: number): Promise<T> {
+async function withDeadline<T>(promise: Promise<T>, deadline: number, reason = 'docs_host_start_timeout'): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new HostFailure('timeout', 'docs_host_start_timeout')), Math.max(0, deadline - Date.now()));
+      timer = setTimeout(() => reject(new HostFailure('timeout', reason)), Math.max(0, deadline - Date.now()));
     })]);
   } finally { clearTimeout(timer); }
 }
@@ -205,7 +217,12 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
   const sink = new EventSink(env, record.session_id, initial.epoch);
   const adapter = new DocSessionAdapter(record.worktree);
   let agent = initial;
-  const update = (change: Parameters<typeof nextAgentRecord>[1]) => { agent = nextAgentRecord(agent, change); writeDocSessionAgent(sessionDirectory, agent); };
+  let inputInFlight = false;
+  let inputState: Parameters<typeof nextAgentRecord>[1] | null = null;
+  const update = (change: Parameters<typeof nextAgentRecord>[1]) => {
+    if (inputInFlight) { inputState = { ...inputState, ...change }; return; }
+    agent = nextAgentRecord(agent, change); writeDocSessionAgent(sessionDirectory, agent);
+  };
   let opened: OpenedRuntime | undefined;
   let final: { state: 'stopped' | 'failed'; failure: DocSessionFailureCategory | null; reason: string | null } = { state: 'stopped', failure: null, reason: null };
   try {
@@ -244,7 +261,7 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     if (prompted.kind === 'rejected') throw new HostFailure('runtime_error', `docs_host_prompt_${prompted.code}`, true);
 
     const answered = new Set<string>();
-    const answer = (name: string, result: DocSessionControlResult) => { answered.add(name); writeSessionArtifact(join(requests, `${name}.ack.json`), { result }); };
+    const answer = (name: string, result: DocSessionControlResult | DocSessionMessageResult) => { writeSessionArtifact(join(requests, `${name}.ack.json`), { epoch: initial.epoch, result }); answered.add(name); };
     const turnMs = turnLimit(env);
     let stopping: 'cancel' | 'idle' | 'lifetime' | 'signal' | 'turn_timeout' | null = null;
     const signal = () => { stopping ??= 'signal'; };
@@ -252,9 +269,30 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     try {
       while (stopping === null && !exited) {
         await new Promise(resolve => setTimeout(resolve, 25));
-        for (const file of readdirSync(requests).filter(name => /^(stop|cancel)-[0-9a-f-]{36}\.json$/u.test(name)).sort()) {
+        for (const file of readdirSync(requests).filter(name => /^(stop|cancel|message)-[0-9a-f-]{36}\.json$/u.test(name)).sort()) {
+          if (exited || stopping !== null) break;
           const name = file.slice(0, -'.json'.length);
           if (answered.has(name)) continue;
+          const request = readSessionArtifact<Record<string, unknown>>(join(requests, file));
+          // Old requests and acknowledgements are never delivered to a later host epoch.
+          if (request.epoch !== initial.epoch) { answered.add(name); continue; }
+          if (name.startsWith('message-')) {
+            if (request.kind !== 'message' || request.input_id !== name.slice('message-'.length)) throw new Error('doc_session_message_identity_invalid');
+            const { kind: _kind, epoch: _epoch, input_id: inputId, ...fields } = request;
+            const input = decodeDocSessionMessage(fields);
+            let result: DocSessionMessageResult | undefined;
+            inputInFlight = true;
+            sink.beginInput();
+            try { result = await withDeadline(deliverDocSessionMessage(session, input, inputId as string), Date.now() + 8_000, 'docs_host_message_timeout'); }
+            finally {
+              inputInFlight = false;
+              sink.endInput(result === 'prompted' || result === 'queued' || result === 'steered' ? input.text : null);
+              if (inputState !== null) { update(inputState); inputState = null; }
+            }
+            answer(name, result);
+            continue;
+          }
+          if (Object.keys(request).length !== 2 || request.kind !== name.split('-')[0]) throw new Error('doc_session_control_invalid');
           // A cancel ends the agent whether or not the runtime accepts the interrupt: disposal ends the turn.
           if (name.startsWith('cancel-')) { await turns.abort('cancelled'); stopping = 'cancel'; answer(name, 'accepted'); break; }
           if (!adapter.turnOpen) { answer(name, 'no_active_turn'); continue; }

@@ -227,13 +227,17 @@ export async function requestDocSessionControl(env: NodeJS.ProcessEnv, sessionId
   if (kind === 'stop' && record.state !== 'running') return 'no_active_turn';
   const name = `${kind}-${randomUUID()}`;
   const requests = docSessionRequestsDirectory(directory);
-  writeSessionArtifact(join(requests, `${name}.json`), { kind });
+  writeSessionArtifact(join(requests, `${name}.json`), { kind, epoch: record.epoch });
   const deadline = Date.now() + CONTROL_ACK_MS;
   while (Date.now() < deadline) {
-    try { return readSessionArtifact<{ result: DocSessionControlResult }>(join(requests, `${name}.ack.json`)).result; }
+    try {
+      const ack = readSessionArtifact<{ epoch: number; result: DocSessionControlResult }>(join(requests, `${name}.ack.json`));
+      if (ack.epoch !== record.epoch || !['accepted', 'refused', 'no_active_turn', 'session_closed'].includes(ack.result)) throw new Error('doc_session_control_ack_invalid');
+      return ack.result;
+    }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     const current = readDocSessionAgent(directory);
-    if (current === null || isTerminalAgentState(current.state)) return 'session_closed';
+    if (current === null || current.epoch !== record.epoch || isTerminalAgentState(current.state)) return 'session_closed';
     await new Promise(resolve => setTimeout(resolve, 25));
   }
   return 'unanswered';

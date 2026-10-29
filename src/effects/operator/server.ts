@@ -1,3 +1,5 @@
+import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../core/operator/doc-session-messages';
+import { docSessionMessagesRoute } from './doc-session-messages';
 import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
 import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
 import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
@@ -178,6 +180,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   // The second write route: it verifies citations, creates the doc session's worktree in the managed root and starts its agent in the docs host boundary.
   Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
   // Aborts the running turn of a doc session's agent; the session stays.
+  Object.freeze({ id: 'sessions_messages', method: 'POST', pattern: OPERATOR_SESSION_MESSAGES_ROUTE.source, write: true }),
   Object.freeze({ id: 'sessions_stop', method: 'POST', pattern: OPERATOR_SESSION_STOP_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
@@ -1657,6 +1660,7 @@ export async function startOperatorServer(
         return cache?.state === 'ready' ? cache.reader : null;
       },
     }),
+    docSessionMessagesRoute(sessionEnv),
     docSessionStopRoute(sessionEnv),
     worktreeCleanupWriteRoute(options.env),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))

@@ -1,3 +1,4 @@
+import { deliverDocSessionMessage } from '../src/effects/operator/doc-session-messages';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -289,3 +290,19 @@ test('a rejected interrupt is not a stop: the cause resets, the next bound retri
   expect(adapter.map({ ...root, kind: 'turn_ended', outcome: { kind: 'aborted' } })[0]).toEqual({ type: 'failure', category: 'timeout' });
   expect(accepting.overdue(now + DOC_SESSION_ABORT_GRACE_MS + 1)).toBe(false);
 }, 30_000);
+
+
+test('explicit now with no steer support refuses without queueing on the real scripted session', async () => {
+  const worktree = tmpWorkspace('doc-session-message-wt'); roots.push(worktree);
+  const { session, events } = await scriptedSession(worktree);
+  try {
+    expect((await session.prompt('fixture:hold')).kind).toBe('accepted');
+    const withoutSteer = { prompt: session.prompt.bind(session), queue: session.queue.bind(session), status: session.status.bind(session) };
+    expect(await deliverDocSessionMessage(withoutSteer, { text: 'Do not queue this.', when: 'now' }, 'unsupported-input')).toBe('steer_unsupported');
+    expect((await session.abort()).kind).toBe('accepted');
+    await untilTurnEnds(events);
+    expect(session.status().value.kind).toBe('idle');
+    expect(events.filter(event => event.kind === 'turn_started')).toHaveLength(1);
+    expect(events.filter(event => event.kind === 'user_message').map(event => JSON.stringify(event)).join('')).not.toContain('Do not queue this.');
+  } finally { await session.dispose(); }
+});
