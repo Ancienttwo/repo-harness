@@ -875,7 +875,7 @@ describe('sequence and topology base maps', () => {
     await tab('topology');
     const canvas = document.querySelector('[data-view="topology"]')!;
     expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['4', '2']);
-    expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
+    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
     expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
     expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
     // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
@@ -884,9 +884,9 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
-    expect([box(CENTER).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet'), box(HOST).hasAttribute('data-quiet')]).toEqual(['muted', false, true, false]);
+    expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet'), box(HOST).hasAttribute('data-quiet')]).toEqual(['muted', false, true, false]);
 
-    await click(`.react-flow__node[data-id="${CENTER}"]`);
+    await click(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
     expect(inspector().querySelector('[data-node-size]')?.textContent).toBe('900 lines in 1 files');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
@@ -905,6 +905,23 @@ describe('sequence and topology base maps', () => {
     await settle();
     await tab('topology');
     expect(notes()).toContain('topology.empty:topology_undeclared');
+  });
+
+  test('a namespace that mounts gets routing handles for its edge, and a node deployed on two processes is one canvas node per process with one inspector', async () => {
+    const map = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.cache', 'mount')],
+      relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI), mapRelation('relation.i-mount', 'mounts', HOST, 'mount.cache')] });
+    expect(layoutTopology(map, runtimePlacement(map)).edges.map(edge => [edge.source, edge.target, edge.kind])).toContainEqual([HOST, 'mount.cache', 'mounts']);
+    await mount(workspace({ readMap: reader(map) }));
+    await tab('topology');
+    // In happy-dom React Flow draws no edge, so the handles that the namespace edge routes through stand for it.
+    expect([...document.querySelectorAll(`.react-flow__node[data-id="${HOST}"] .react-flow__handle`)].map(item => item.classList.contains('source') ? 'source' : 'target').sort()).toEqual(['source', 'target']);
+    const members = [...document.querySelectorAll('.react-flow__node-member')].map(item => item.getAttribute('data-id'));
+    expect(members.sort()).toEqual([`${CLI}/${CENTER}`, `${SERVER}/${CENTER}`]);
+    for (const process of [SERVER, CLI]) {
+      await click(`.react-flow__node[data-id="${process}/${CENTER}"]`);
+      expect([inspector().getAttribute('data-node-id'), document.querySelectorAll('.architecture-topology__member[data-selected]').length]).toEqual([CENTER, 2]);
+      expect(inspector().querySelector('[data-runtime]')).toBeNull();
+    }
   });
 });
 

@@ -49,6 +49,7 @@ const BoxNode = memo(function BoxNode({ data, selected }: NodeProps<Node<BoxData
 
 const NamespaceNode = memo(function NamespaceNode({ data, selected }: NodeProps<Node<BoxData, 'namespace'>>) {
   return <div className="architecture-map__group architecture-topology__namespace" data-kind="namespace" data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined}>
+    <Handles />
     <div className="architecture-map__group-title">
       <span className="architecture-map__title"><strong>{data.node.name}</strong><Mark mark={data.mark} /></span>
       <span className="architecture-map__meta">namespace</span>
@@ -63,6 +64,9 @@ const MemberNode = memo(function MemberNode({ data, selected }: NodeProps<Node<B
 });
 
 const NODE_TYPES = { box: BoxNode, namespace: NamespaceNode, member: MemberNode };
+
+/** A code node deployed on two processes shows in both boxes, so its canvas id names the process. Model ids hold no `/`. */
+const memberId = (process: string, node: string) => `${process}/${node}`;
 
 function Legend({ t }: { readonly t: OperatorTranslate }) {
   return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
@@ -86,6 +90,9 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
   const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const boxes = useMemo(() => new Map(layout.boxes.map(box => [box.node.id, box])), [layout]);
+  // Canvas id to model node id; selection and the inspector use the model id.
+  const modelIds = useMemo(() => new Map(layout.boxes.flatMap(box => [[box.node.id, box.node.id] as const,
+    ...box.members.map(member => [memberId(box.node.id, member.id), member.id] as const)])), [layout]);
   // The first view opens on the first top-level runtime box; the external systems are a pan or a Fit away.
   const firstView = useMemo(() => {
     const anchor = layout.boxes.find(box => box.parent === null && box.node.kind !== 'external-system')!;
@@ -112,7 +119,7 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
       draggable: false, connectable: false, selected: box.node.id === selectedId, ariaLabel: `${box.node.kind} ${box.node.name}`,
     };
     return [own, ...box.members.map((member, index): TopologyNode => ({
-      id: member.id, type: 'member', parentId: box.node.id,
+      id: memberId(box.node.id, member.id), type: 'member', parentId: box.node.id,
       position: { x: 12, y: TOPOLOGY_BOX_HEADER + index * TOPOLOGY_MEMBER }, width: TOPOLOGY_BOX_WIDTH - 24, height: TOPOLOGY_MEMBER - 4,
       data: { node: member, mark: view.marks.get(member.id) ?? null, quiet: view.available && !view.lit.has(member.id), detail: null },
       draggable: false, connectable: false, selected: member.id === selectedId, ariaLabel: `${member.kind} ${member.name}`,
@@ -134,9 +141,9 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
   // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
   const onNodesChange = useCallback((changes: NodeChange<TopologyNode>[]) => {
     const chosen = changes.find(change => change.type === 'select' && change.selected);
-    if (chosen && 'id' in chosen) setSelectedId(chosen.id);
+    if (chosen && 'id' in chosen) setSelectedId(modelIds.get(chosen.id)!);
     else if (changes.some(change => change.type === 'select')) setSelectedId(null);
-  }, []);
+  }, [modelIds]);
 
   const selectedBox = selectedId === null ? null : boxes.get(selectedId) ?? null;
   const where = selectedId === null || selectedBox !== null ? null : placement(selectedId);
