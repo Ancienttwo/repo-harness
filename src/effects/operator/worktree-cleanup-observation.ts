@@ -177,7 +177,14 @@ export function observeCleanupLoss(target: CleanupObservationTarget, options: Cl
     if (!Number.isFinite(options.deadline) || options.deadline <= Date.now()) fail('unavailable');
     const base = docSessionGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
     const runner: DocSessionGitRunner = {
-      text: (...args) => { if (Date.now() >= options.deadline) fail('unavailable'); return base.text(...args); },
+      text: (cwd, args, allowNoMatch = false) => {
+        if (Date.now() >= options.deadline) fail('unavailable');
+        const bytes = base.bytes(cwd, args, allowNoMatch ? [0, 1] : [0]);
+        let text: string;
+        try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { return fail('unsupported'); }
+        if (!Buffer.from(text, 'utf8').equals(bytes)) fail('unsupported');
+        return text;
+      },
       bytes: (...args) => { if (Date.now() >= options.deadline) fail('unavailable'); return base.bytes(...args); },
     };
     const first = once(target, options, runner), second = once(target, options, runner);

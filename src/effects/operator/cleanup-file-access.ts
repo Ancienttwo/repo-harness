@@ -58,7 +58,7 @@ export function cleanupDirectoryNames(fd: number, limit = 20_000): string[] {
   if (duplicate < 0) throw new Error('cleanup directory dup failed');
   const dir = api.fdopendir(duplicate);
   if (!dir) { closeSync(duplicate); throw new Error('cleanup directory open failed'); }
-  const names: string[] = [];
+  const names: string[] = [], seen = new Set<string>();
   try {
     api.rewinddir(dir);
     const errno = new DataView(toArrayBuffer(api.errno(), 0, 4));
@@ -73,11 +73,13 @@ export function cleanupDirectoryNames(fd: number, limit = 20_000): string[] {
       const bytes = new Uint8Array(toArrayBuffer(pointer, nameOffset, length - nameOffset));
       const end = bytes.indexOf(0); if (end < 0) throw new Error('cleanup dirent name invalid');
       let name: string;
-      try { name = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end)); }
+      try { name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, end)); }
       catch { throw new UnsupportedCleanupPath('cleanup filename is not UTF-8'); }
+      if (!Buffer.from(name, 'utf8').equals(Buffer.from(bytes.subarray(0, end)))) throw new UnsupportedCleanupPath('cleanup filename cannot round trip');
       if (name !== '.' && name !== '..') {
         if (names.length >= limit) throw new CleanupDirectoryTooLarge();
-        cName(name); names.push(name);
+        if (seen.has(name)) throw new UnsupportedCleanupPath('cleanup filename repeated');
+        cName(name); names.push(name); seen.add(name);
       }
     }
   } finally { api.closedir(dir); }

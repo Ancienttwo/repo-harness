@@ -144,3 +144,19 @@ test('directory replacement never redirects a file read outside the opened targe
     expect(swapped).toBe(true); expect(totalReads).toBeGreaterThan(0); expect(outsideReads).toBe(0);
   } finally { reader.mockRestore(); f.cleanup(); }
 });
+
+test('BOM-prefixed and plain names remain distinct in filesystem and Git evidence', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tree, 'hidden.txt'), 'plain\n');
+    writeFileSync(join(f.tree, '\ufeffhidden.txt'), 'BOM-name content\n');
+    const first = f.observe();
+    expect(first.files.filter(file => file.path.endsWith('hidden.txt')).map(file => file.path)).toEqual(['hidden.txt', '\ufeffhidden.txt']);
+    writeFileSync(join(f.tree, '\ufeffhidden.txt'), 'changed BOM-name content\n');
+    expect(cleanupContentsDigestInput(f.observe())).not.toBe(cleanupContentsDigestInput(first));
+    const added = run('git', ['add', '--', 'hidden.txt', '\ufeffhidden.txt'], f.tree); expect(added.status).toBe(0);
+    expect(f.observe().index.filter(entry => entry.path.endsWith('hidden.txt')).map(entry => entry.path).sort()).toEqual(['hidden.txt', '\ufeffhidden.txt']);
+    writeFileSync(join(f.tree, '.gitignore'), '*ignored-bom.txt\n'); writeFileSync(join(f.tree, '\ufeffignored-bom.txt'), 'ignored bytes\n');
+    expect(f.observe().ignored).toEqual(['\ufeffignored-bom.txt']);
+  } finally { f.cleanup(); }
+});
