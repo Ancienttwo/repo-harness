@@ -111,3 +111,6 @@ tasks/current.md
 !.codex/
 !.codex/agents/
 !.codex/agents/*.toml
+
+# CI affected-test selection artifact (scripts/select-ci-coverage.ts)
+/.ci-affected-tests.json
