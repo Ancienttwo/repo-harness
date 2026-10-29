@@ -1,4 +1,4 @@
-import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE } from '../../src/core/operator/doc-session-finalize-wire';
+import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE, OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalize-wire';
 import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../src/core/operator/doc-session-messages';
 import { OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../src/core/operator/doc-session-views';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
@@ -117,6 +117,7 @@ describe('operator structural write boundary', () => {
       'docs_tree',
       'docs_file',
       'session_list',
+      'session_finalization',
       'session_detail',
       'session_events',
       'session_diff',
@@ -159,6 +160,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
     expect(OPERATOR_ROUTES.filter(route => route.id.startsWith('docs_')).every(route => route.method === 'GET' && !route.write)).toBe(true);
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_list')).toEqual({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_finalization')).toEqual({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_detail')).toEqual({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_events')).toEqual({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_diff')).toEqual({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false });

@@ -5,7 +5,7 @@ import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSI
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
@@ -607,4 +607,31 @@ test('bounded finalization rejects unknown worker output and shares the message 
   const valid = { status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete' } };
   expect(decodeDocSessionFinalizeResponse(valid, 'discard')).toEqual(valid);
   expect(() => decodeDocSessionFinalizeResponse(valid, 'commit')).toThrow();
+});
+
+test('finalization GET and CLI expose the blocker and saved progress even after the worktree is gone', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const empty = await s.get(path);
+  expect(empty).toMatchObject({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: s.sid,
+    availability: { state: 'blocked', code: 'quiescence_unavailable' }, progress: null } });
+  const cli = s.cli('finalization', s.sid, '--json');
+  expect(cli.status).toBe(0);
+  expect(JSON.parse(cli.stdout as string)).toEqual(empty.body);
+  // A synthetic saved journal tests readback only. It is not proof that deletion ran.
+  const journal = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'finalize.json');
+  const contents = JSON.stringify({ protocol: 1, kind: 'discard', stage: 'complete', audit: null,
+    input: { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) }, private_note: s.worktree });
+  writeFileSync(journal, contents, { mode: 0o600 });
+  renameSync(s.worktree, `${s.worktree}-fixture-away`);
+  const done = await s.get(path);
+  expect(done).toMatchObject({ status: 200, body: { progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete' } } });
+  expectNoPrivatePath(s, done.text);
+  expect(done.text).not.toContain('private_note');
+  expect(readFileSync(journal, 'utf8')).toBe(contents);
+  expect((await fetch(`${s.url}${path}`, { method: 'HEAD' })).status).toBe(200);
+  expect((await s.get(`${path}?force=true`)).status).toBe(400);
+  expect((await s.get(`/api/v1/sessions/${'f'.repeat(32)}/finalization`)).status).toBe(404);
+  writeFileSync(journal, '{invalid');
+  expect((await s.get(path)).status).toBe(503);
 });

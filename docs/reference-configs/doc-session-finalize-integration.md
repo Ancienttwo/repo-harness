@@ -48,6 +48,23 @@ failure cannot manufacture a definite no-effect result. The private core lock,
 canonical digests, scope validation, step audits and partial publication journal
 remain the existing authorities.
 
+## Read availability and saved progress
+
+`GET /api/v1/sessions/<sid>/finalization` and
+`operator doc-sessions finalization <sid> --json` return:
+
+```json
+{"protocol":1,"kind":"operator_docs_session_finalization_state","session_id":"<sid>","availability":{"state":"blocked","code":"quiescence_unavailable"},"progress":null}
+```
+
+GET uses the existing bounded task-read process. It never starts or resumes a
+host, executes finalization or reconciles unknown provider results. `progress`
+is the existing safe journal projection when present. It has no saved input,
+private target URL or filesystem path. The read does not require the worktree
+to exist, so a saved discard outcome remains visible after removal. Saved
+progress reports the journal; it does not replace audit or provider proof.
+Malformed journals return503. Missing sessions return404. Query fields refuse.
+
 ## Required cleanup evidence
 
 The PRD write order requires no active turn plus locked HEAD/diff/loss checks.

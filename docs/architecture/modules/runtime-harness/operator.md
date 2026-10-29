@@ -516,5 +516,7 @@ Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配�
 子进程组合既有 finalization journal、GitHub transport、宿主路径策略和生成区域检查；不另建状态库。
 生产 `withQuiescedDocSession` 目前对活动轮次回 409 `turn_active`，其他可读终态回 503 `quiescence_unavailable`。
 它不发送 stop、不恢复宿主、不执行 Git、PR 或删除。锁消失、stopped 和 OAR dispose 返回都不是后代清空证明。
-未知子进程结果保持 409 `reconcile_required`，不能自动重放。详细合同见
+未知子进程结果保持 409 `reconcile_required`，不能自动重放。
+`GET /api/v1/sessions/<sid>/finalization` 在既有有界读进程中返回阻塞能力和安全的 journal 阶段；
+它不要求 worktree 仍存在，不启动宿主、不重试发布。CLI `finalization` 读取同一个投影。详细合同见
 [finalization integration](../../../reference-configs/doc-session-finalize-integration.md)。

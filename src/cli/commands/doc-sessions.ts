@@ -1,3 +1,4 @@
+import { readDocSessionFinalizationView } from '../../effects/operator/doc-session-finalization-view';
 import { boundedDocSessionFinalizeOperation } from '../../effects/operator/doc-session-finalize-routes';
 import { randomUUID } from 'node:crypto';
 import { decodeDocSessionMessage } from '../../core/operator/doc-session-messages';
@@ -84,6 +85,12 @@ export function buildDocSessionsCommand(): Command {
       else { console.error(output); process.exitCode = 2; }
     });
   }
+  sessions.command('finalization').description('Read finalization availability and saved progress')
+    .argument('<session-id>', 'Doc session id (32 hex)').option('--json', 'Output JSON')
+    .action((sessionId: string, options: ReadOptions) => {
+      if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
+      runView(options, () => readDocSessionFinalizationView(process.env, { session_id: sessionId }));
+    });
   sessions.command('message').description('Send an audited follow-up to a doc session')
     .argument('<session-id>', 'Doc session id (32 hex)')
     .requiredOption('--text <text>', 'Message text').requiredOption('--when <when>', 'after_turn or now')

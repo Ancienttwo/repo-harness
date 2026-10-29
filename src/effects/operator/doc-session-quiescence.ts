@@ -1,3 +1,4 @@
+import { DOC_SESSION_FINALIZE_BLOCKER } from '../../core/operator/doc-session-finalize-wire';
 import { docSessionEventsTail, sessionDirectory, DocSessionEventsError } from './doc-session-events';
 import { readDocSessionAgent } from './doc-session-agent';
 import { OperatorWriteRefusal } from './write-run';
@@ -21,5 +22,5 @@ export async function withQuiescedDocSession<T>(env: NodeJS.ProcessEnv, sid: str
     if (error instanceof DocSessionEventsError && error.code === 'session_not_found') throw new OperatorWriteRefusal(404, 'session_not_found', 'This doc session does not exist.', 'Choose a session from the list.');
     throw new OperatorWriteRefusal(503, 'session_state_unavailable', 'The session state cannot be verified.', 'Restore the session state before retrying with a new request_id.');
   }
-  throw new OperatorWriteRefusal(503, 'quiescence_unavailable', 'The runtime cannot prove that the host and all its descendants have stopped.', 'Wait for a runtime with verified session cleanup support. Do not repeat this action or remove the worktree manually.');
+  throw new OperatorWriteRefusal(503, DOC_SESSION_FINALIZE_BLOCKER, 'The runtime cannot prove that the host and all its descendants have stopped.', 'Wait for a runtime with verified session cleanup support. Do not repeat this action or remove the worktree manually.');
 }

@@ -1,3 +1,4 @@
+import { readDocSessionFinalizationView } from './doc-session-finalization-view';
 import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
 import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
 import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
@@ -66,6 +67,8 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
       } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
+      } else if (message.kind === 'doc_session_finalization' && isDocSessionReadRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionFinalizationView(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionDetail(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_events' && isDocSessionEventsRequest(message.request)) {
