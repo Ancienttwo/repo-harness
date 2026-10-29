@@ -3,16 +3,21 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
-import { API, type Project, type Snapshot } from 'typescript/unstable/async';
+import { API, type Checker, type Project, type Snapshot } from 'typescript/unstable/async';
 import {
+  NodeFlags,
   SyntaxKind,
+  isAssignmentOperator,
   isArrayBindingPattern,
+  isBinaryExpression,
   isCallExpression,
   isClassDeclaration,
   isEnumDeclaration,
   isExportDeclaration,
   isExternalModuleReference,
   isFunctionDeclaration,
+  isForInStatement,
+  isForOfStatement,
   isIdentifier,
   isImportDeclaration,
   isImportEqualsDeclaration,
@@ -25,12 +30,20 @@ import {
   isNewExpression,
   isObjectBindingPattern,
   isPropertyAccessExpression,
+  isPropertyAssignment,
+  isPrefixUnaryExpression,
+  isPostfixUnaryExpression,
   isRegularExpressionLiteral,
+  isShorthandPropertyAssignment,
   isStringLiteralLikeNode,
+  isStringLiteral,
   isTaggedTemplateExpression,
   isTypeAliasDeclaration,
   isVariableDeclaration,
+  isVariableStatement,
   type BindingName,
+  type CallExpression,
+  type Identifier,
   type Node,
   type SourceFile,
 } from 'typescript/unstable/ast';
@@ -48,18 +61,10 @@ export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {
     'agent-runtime effects read task inbox deliveries and the fleet board reads runtime effects; the model declares both relations',
 };
 
-// Cursor is an optional lazy host package. Pi must load the SDK selected on
-// PATH. Pin the entire audited source and exact load. Any edit revokes the
-// exception until the dependency path is reviewed. All other loads fail closed.
-const HOST_SDK_LOADS: Readonly<Record<string, { readonly sha256: string; readonly expression: string }>> = {
-  'src/effects/setup/agent-runtime-probe.ts': {
-    sha256: 'c6532c27e5ad1acb92945c84a808ab7a96d6fa79a4c20bb45bd68a4179dbf2d8',
-    expression: 'import(CURSOR_SDK_PACKAGE)',
-  },
-  'src/effects/setup/pi-capability-child.ts': {
-    sha256: '4cacacb96c44ba3e107ea624c0341351d7c11d6d1f517345b4f537d59d94acb9',
-    expression: "import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href)",
-  },
+// Loads the Pi SDK selected on PATH at runtime.
+const RUNTIME_SDK_LOADS: Readonly<Record<string, string>> = {
+  'src/effects/setup/pi-capability-child.ts':
+    "import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href)",
 };
 
 const CAPABILITY_SOURCE = 'src/core/capabilities/registry.ts';
@@ -171,6 +176,7 @@ export interface StateBoundaryCheckResult {
 
 interface ParsedSources {
   readonly sources: ReadonlyMap<string, SourceFile>;
+  readonly references: ReadonlyMap<SourceFile, ModuleReferences>;
   readonly violations: readonly StateBoundaryViolation[];
 }
 
@@ -285,7 +291,97 @@ interface ModuleReferences {
   readonly unresolvedLoads: readonly Node[];
 }
 
-function moduleReferences(source: SourceFile): ModuleReferences {
+function isAssignedIdentifier(identifier: Identifier): boolean {
+  let target: Node = identifier;
+  while (target.parent) {
+    const parent = target.parent;
+    if (isPropertyAssignment(parent)) {
+      if (parent.initializer !== target) return false;
+      target = parent;
+      continue;
+    }
+    if (isBinaryExpression(parent)) {
+      return parent.left === target && isAssignmentOperator(parent.operatorToken.kind);
+    }
+    if (isPrefixUnaryExpression(parent) || isPostfixUnaryExpression(parent)) {
+      return parent.operator === SyntaxKind.PlusPlusToken || parent.operator === SyntaxKind.MinusMinusToken;
+    }
+    if (isForInStatement(parent) || isForOfStatement(parent)) return parent.initializer === target;
+    switch (parent.kind) {
+      case SyntaxKind.ParenthesizedExpression:
+      case SyntaxKind.ArrayLiteralExpression:
+      case SyntaxKind.ObjectLiteralExpression:
+      case SyntaxKind.SpreadElement:
+      case SyntaxKind.SpreadAssignment:
+      case SyntaxKind.ShorthandPropertyAssignment:
+      case SyntaxKind.NonNullExpression:
+        target = parent;
+        continue;
+      default:
+        return false;
+    }
+  }
+  return false;
+}
+
+async function constImportSpecifiers(
+  source: SourceFile,
+  loads: readonly Node[],
+  checker: Checker,
+): Promise<ReadonlyMap<Node, string>> {
+  const imports = loads.filter((node): node is CallExpression => isCallExpression(node)
+    && node.expression.kind === SyntaxKind.ImportKeyword
+    && node.arguments.length === 1
+    && isIdentifier(node.arguments[0]!));
+  if (imports.length === 0) return new Map();
+  const candidates: { name: Identifier; specifier: string }[] = [];
+  for (const statement of source.statements) {
+    if (!isVariableStatement(statement) || (statement.declarationList.flags & NodeFlags.Const) === 0) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (isIdentifier(declaration.name) && declaration.initializer && isStringLiteral(declaration.initializer)) {
+        candidates.push({ name: declaration.name, specifier: declaration.initializer.text });
+      }
+    }
+  }
+  if (candidates.length === 0) return new Map();
+
+  const names = new Set(candidates.map(declaration => declaration.name.text));
+  const writes: Identifier[] = [];
+  visit(source, node => {
+    if (isIdentifier(node) && names.has(node.text) && isAssignedIdentifier(node)) writes.push(node);
+  });
+  const nodes = [
+    ...candidates.map(declaration => declaration.name),
+    ...imports.map(node => node.arguments[0]!),
+    ...writes,
+  ];
+  // The compiler binding distinguishes a file const from shadowing parameters and locals.
+  const symbols = await checker.getSymbolAtLocation(nodes);
+  await Promise.all(writes.map(async (node, index) => {
+    if (isShorthandPropertyAssignment(node.parent)) {
+      symbols[candidates.length + imports.length + index] = await checker.getShorthandAssignmentValueSymbol(node.parent);
+    }
+  }));
+  const values = new Map<number, string>();
+  candidates.forEach((declaration, index) => {
+    const symbol = symbols[index];
+    if (symbol?.declarations.length === 1) {
+      values.set(symbol.id, declaration.specifier);
+    }
+  });
+  for (const symbol of symbols.slice(candidates.length + imports.length)) {
+    if (symbol) values.delete(symbol.id);
+  }
+  const specifiers = new Map<Node, string>();
+  imports.forEach((node, index) => {
+    const symbol = symbols[candidates.length + index];
+    const specifier = symbol ? values.get(symbol.id) : undefined;
+    if (specifier !== undefined) specifiers.set(node, specifier);
+  });
+  return specifiers;
+}
+
+async function moduleReferences(source: SourceFile, checker: Checker): Promise<ModuleReferences> {
   const resolved: ModuleReference[] = [];
   const unresolvedLoads: Node[] = [];
   visit(source, (node) => {
@@ -311,7 +407,9 @@ function moduleReferences(source: SourceFile): ModuleReferences {
       unresolvedLoads.push(node);
     }
   });
-  return { resolved, unresolvedLoads };
+  const specifiers = await constImportSpecifiers(source, unresolvedLoads, checker);
+  for (const [node, specifier] of specifiers) resolved.push({ node, specifier });
+  return { resolved, unresolvedLoads: unresolvedLoads.filter(node => !specifiers.has(node)) };
 }
 
 function callName(node: Node): string | null {
@@ -342,6 +440,7 @@ function reverseLayerImport(repoRoot: string, source: SourceFile, specifier: str
 function checkCoreDependencies(
   repoRoot: string,
   source: SourceFile,
+  references: ModuleReferences,
   violations: StateBoundaryViolation[],
 ): void {
   const inspectModule = (node: Node, specifier: string): void => {
@@ -367,7 +466,6 @@ function checkCoreDependencies(
     }
   };
 
-  const references = moduleReferences(source);
   for (const reference of references.resolved) inspectModule(reference.node, reference.specifier);
   for (const node of references.unresolvedLoads) {
     violations.push(nodeViolation(
@@ -433,6 +531,7 @@ function resolvesToScriptsLayer(repoRoot: string, source: SourceFile, specifier:
 function checkSrcScriptImports(
   repoRoot: string,
   source: SourceFile,
+  references: ModuleReferences,
   violations: StateBoundaryViolation[],
 ): void {
   const report = (node: Node, specifier: string): void => {
@@ -446,30 +545,13 @@ function checkSrcScriptImports(
     ));
   };
 
-  visit(source, (node) => {
-    const specifier = importSpecifier(node);
-    if (specifier !== null) report(node, specifier);
-    if (isCallExpression(node)) {
-      const dynamicImport = node.expression.kind === SyntaxKind.ImportKeyword;
-      const requireCall = isIdentifier(node.expression) && node.expression.text === 'require';
-      if (dynamicImport || requireCall) {
-        const argument = node.arguments[0];
-        if (argument && isStringLiteralLikeNode(argument)) report(node, argument.text);
-      }
-    }
-    if (node.kind === SyntaxKind.ImportType) {
-      const argument = (node as { argument?: Node }).argument;
-      if (argument?.kind === SyntaxKind.LiteralType) {
-        const literal = (argument as { literal?: Node }).literal;
-        if (literal && isStringLiteralLikeNode(literal)) report(node, literal.text);
-      }
-    }
-  });
+  for (const { node, specifier } of references.resolved) report(node, specifier);
 }
 
 function checkEffectDependencies(
   repoRoot: string,
   source: SourceFile,
+  references: ModuleReferences,
   violations: StateBoundaryViolation[],
 ): void {
   const inspectModule = (node: Node, specifier: string): void => {
@@ -483,19 +565,16 @@ function checkEffectDependencies(
     ));
   };
 
-  const references = moduleReferences(source);
   for (const reference of references.resolved) inspectModule(reference.node, reference.specifier);
-  const hostSdkLoad = HOST_SDK_LOADS[relPath(repoRoot, source.fileName)];
-  const auditedSource = hostSdkLoad !== undefined
-    && createHash('sha256').update(source.text.replaceAll('\r\n', '\n')).digest('hex') === hostSdkLoad.sha256;
+  const runtimeSdkLoad = RUNTIME_SDK_LOADS[relPath(repoRoot, source.fileName)];
   for (const node of references.unresolvedLoads) {
-    if (auditedSource && node.getText(source) === hostSdkLoad.expression) continue;
+    if (runtimeSdkLoad !== undefined && node.getText(source) === runtimeSdkLoad) continue;
     violations.push(nodeViolation(
       repoRoot,
       source,
       node,
       'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED',
-      'effect dynamic module loads must use a literal or match a source-pinned host SDK load so reverse CLI dependencies can be verified',
+      'effect dynamic module loads must resolve to a literal or match the exact runtime SDK load so reverse CLI dependencies can be verified',
     ));
   }
 }
@@ -528,6 +607,7 @@ function edgeLocation(edge: DirectoryEdge): string {
 function checkIntraLayerCycles(
   repoRoot: string,
   sources: ReadonlyMap<string, SourceFile>,
+  references: ReadonlyMap<SourceFile, ModuleReferences>,
   allowances: Readonly<Record<string, string>>,
   violations: StateBoundaryViolation[],
 ): void {
@@ -543,7 +623,7 @@ function checkIntraLayerCycles(
   for (const [file, source] of [...sources].sort(([left], [right]) => left.localeCompare(right))) {
     const from = layerDirectoryOf(file, directories);
     if (!from) continue;
-    for (const { node, specifier } of moduleReferences(source).resolved) {
+    for (const { node, specifier } of references.get(source)!.resolved) {
       if (!specifier.startsWith('.')) continue;
       const to = layerDirectoryOf(relPath(repoRoot, resolve(dirname(source.fileName), specifier)), directories);
       if (!to || to === from || layerOf(to) !== layerOf(from)) continue;
@@ -812,6 +892,7 @@ async function parseSources(
   if (!existsSync(configPath)) {
     return {
       sources: new Map(),
+      references: new Map(),
       violations: [violation(
         'TYPESCRIPT_CONFIG_MISSING',
         'tsconfig.json',
@@ -882,8 +963,12 @@ async function parseSources(
       }
       return [relPath(repoRoot, absoluteFile), source] as const;
     }));
+    const sources = new Map(sourceEntries.filter((entry) => entry !== null));
+    const references = new Map(await Promise.all([...sources.values()].map(async source =>
+      [source, await moduleReferences(source, projectsByFile.get(resolve(source.fileName))!.checker)] as const)));
     return {
-      sources: new Map(sourceEntries.filter((entry) => entry !== null)),
+      sources,
+      references,
       violations,
     };
   } finally {
@@ -939,22 +1024,22 @@ export async function checkStateBoundaries(
     for (const file of coreSet) {
       const source = parsed.sources.get(file);
       if (!source) continue;
-      checkSrcScriptImports(repoRoot, source, violations);
-      checkCoreDependencies(repoRoot, source, violations);
+      checkSrcScriptImports(repoRoot, source, parsed.references.get(source)!, violations);
+      checkCoreDependencies(repoRoot, source, parsed.references.get(source)!, violations);
     }
     const effectsSet = new Set(effectsFiles.map((file) => relPath(repoRoot, file)));
     for (const file of effectsSet) {
       const source = parsed.sources.get(file);
       if (!source) continue;
-      checkSrcScriptImports(repoRoot, source, violations);
-      checkEffectDependencies(repoRoot, source, violations);
+      checkSrcScriptImports(repoRoot, source, parsed.references.get(source)!, violations);
+      checkEffectDependencies(repoRoot, source, parsed.references.get(source)!, violations);
     }
     const cliSet = new Set(cliFiles.map((file) => relPath(repoRoot, file)));
     for (const file of cliSet) {
       const source = parsed.sources.get(file);
-      if (source) checkSrcScriptImports(repoRoot, source, violations);
+      if (source) checkSrcScriptImports(repoRoot, source, parsed.references.get(source)!, violations);
     }
-    checkIntraLayerCycles(repoRoot, parsed.sources, intraLayerCycleAllowances, violations);
+    checkIntraLayerCycles(repoRoot, parsed.sources, parsed.references, intraLayerCycleAllowances, violations);
     checkCanonicalDeclarations(repoRoot, parsed.sources, violations);
     checkCapabilityScript(repoRoot, parsed.sources.get(CAPABILITY_SCRIPT), violations);
     checkStateSnapshotAdapter(repoRoot, parsed.sources.get(STATE_SNAPSHOT_ADAPTER), violations);

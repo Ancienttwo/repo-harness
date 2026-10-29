@@ -152,7 +152,7 @@ describe('state architecture boundary checker', () => {
         root,
         'src/core/state/dynamic-imports.ts',
         [
-          "const target = 'node:path';",
+          "let target = 'node:path';",
           'export async function loadForbiddenModules(): Promise<void> {',
           "  await import('node:fs');",
           "  await import('../../cli/hook/state-snapshot');",
@@ -175,8 +175,10 @@ describe('state architecture boundary checker', () => {
         'src/effects/state/imports-script.ts',
         [
           "import '../../../scripts/capability-resolver';",
+          "const script = '../../../scripts/capability-resolver';",
           "export async function load(): Promise<void> {",
           "  await import('../../../scripts/capability-resolver');",
+          '  await import(script);',
           '}',
           "export type ScriptType = import('../../../scripts/capability-resolver').CapabilitySourceError;",
           '',
@@ -184,7 +186,7 @@ describe('state architecture boundary checker', () => {
       );
     });
     expect(result.ok).toBe(false);
-    expect(messages(result, 'SRC_SCRIPT_IMPORT')).toHaveLength(3);
+    expect(messages(result, 'SRC_SCRIPT_IMPORT')).toHaveLength(4);
   });
 
   test('forbids effect modules from importing CLI adapters', async () => {
@@ -202,33 +204,97 @@ describe('state architecture boundary checker', () => {
     expect(messages(result, 'EFFECTS_REVERSE_IMPORT')).toHaveLength(2);
   });
 
-  test('accepts only the audited host SDK probe loads and rejects changed sources', async () => {
+  test('accepts the real host SDK probe loads without source hashes', async () => {
     const paths = ['src/effects/setup/agent-runtime-probe.ts', 'src/effects/setup/pi-capability-child.ts'];
     const { root, result } = await checkWith((root) => {
       for (const path of paths) write(root, path, readFileSync(join(ROOT, path), 'utf8'));
     });
     expect(result.ok).toBe(true);
-
-    // A changed constant must revoke the exception, even with the same import expression.
-    write(root, paths[0]!, readFileSync(join(ROOT, paths[0]!), 'utf8')
-      .replace("const CURSOR_SDK_PACKAGE = '@cursor/sdk'", "const CURSOR_SDK_PACKAGE = '../../cli/hook/state-snapshot'"));
-    // A changed computed target must also fail closed at the original Pi child path.
-    write(root, paths[1]!, readFileSync(join(ROOT, paths[1]!), 'utf8')
-      .replace("'dist/index.js'", "'../../cli/hook/state-snapshot.ts'"));
-    const changed = await checkStateBoundaries(root);
-    expect(changed.violations.filter(item => item.code === 'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED')
-      .map(item => item.file).sort()).toEqual(paths);
+    expect(result.violations).toEqual([]);
+    for (const path of paths) {
+      write(root, path, `${readFileSync(join(ROOT, path), 'utf8')}\n// Unrelated source edit.\n`);
+    }
+    expect((await checkStateBoundaries(root)).violations).toEqual([]);
   });
 
-  test('does not extend host SDK exceptions to other files or extra computed imports', async () => {
+  test('resolves the Cursor const through the normal reverse CLI rule', async () => {
+    const path = 'src/effects/setup/agent-runtime-probe.ts';
+    const { result } = await checkWith((root) => {
+      write(root, path, readFileSync(join(ROOT, path), 'utf8')
+        .replace("const CURSOR_SDK_PACKAGE = '@cursor/sdk'", "const CURSOR_SDK_PACKAGE = '../../cli/hook/state-snapshot'"));
+    });
+    expect(result.ok).toBe(false);
+    expect(result.violations.map(item => [item.code, item.file])).toEqual([
+      ['EFFECTS_REVERSE_IMPORT', path],
+    ]);
+    expect(messages(result, 'EFFECTS_REVERSE_IMPORT')).toEqual([
+      expect.stringContaining('../../cli/hook/state-snapshot'),
+    ]);
+  });
+
+  test('keeps mutable, reassigned, non-literal and shadowed import arguments unresolved', async () => {
+    const cases = [
+      "let target = '@cursor/sdk'; export const load = () => import(target);",
+      "const target = '@cursor/sdk'; target = 'other'; export const load = () => import(target);",
+      "const target = '@cursor/' + 'sdk'; export const load = () => import(target);",
+      "const target = '@cursor/sdk'; export const load = (target: string) => import(target);",
+      "const target = '@cursor/sdk'; export function load() { const target = 'other'; return import(target); }",
+      "export function load() { const target = '@cursor/sdk'; return import(target); }",
+      "const target = '@cursor/sdk'; export const load = () => import(target, {});",
+      "const target = '@cursor/sdk'; target += '/other'; export const load = () => import(target);",
+      "const target = '@cursor/sdk'; [target] = ['other']; export const load = () => import(target);",
+      "const target = '@cursor/sdk'; ({ target } = { target: 'other' }); export const load = () => import(target);",
+    ];
+    const { result } = await checkWith((root) => {
+      cases.forEach((source, index) => write(root, `src/effects/setup/computed-${index}.ts`, source));
+    });
+    expect(result.violations.map(item => [item.code, item.file])).toEqual(
+      cases.map((_, index) => ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', `src/effects/setup/computed-${index}.ts`]),
+    );
+  });
+
+  test('resolves top-level const imports in core and in directory cycles', async () => {
+    const { result } = await checkWith((root) => {
+      write(root, 'src/core/state/const-import.ts', "const target = 'node:path'; export const load = () => import(target);\n");
+      write(root, 'src/effects/alpha/a.ts', "const target = '../beta/b'; export const load = () => import(target);\n");
+      write(root, 'src/effects/beta/b.ts', "import '../alpha/a';\n");
+    });
+    expect(codes(result).sort()).toEqual(['CORE_FORBIDDEN_IMPORT', 'INTRA_LAYER_CYCLE']);
+  });
+
+  test('keeps a const import resolved when another scope writes its own binding', async () => {
+    const { result } = await checkWith((root) => {
+      write(root, 'src/effects/setup/const-import.ts', [
+        "const target = '@cursor/sdk';",
+        "function unrelated(target: string) { target = 'other'; return target; }",
+        'export const load = () => import(target);',
+      ].join('\n'));
+    });
+    expect(result.violations).toEqual([]);
+  });
+
+  test('rejects a changed Pi expression at the exception path', async () => {
+    const path = 'src/effects/setup/pi-capability-child.ts';
+    const { result } = await checkWith((root) => {
+      write(root, path, readFileSync(join(ROOT, path), 'utf8')
+        .replace("'dist/index.js'", "'../../cli/hook/state-snapshot.ts'"));
+    });
+    expect(result.violations.map(item => [item.code, item.file])).toEqual([
+      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', path],
+    ]);
+  });
+
+  test('does not extend the Pi exception to other files or extra computed imports', async () => {
     const { result } = await checkWith((root) => {
       const path = 'src/effects/setup/pi-capability-child.ts';
       const source = readFileSync(join(ROOT, path), 'utf8');
-      write(root, path, `${source}\nconst target = '../../cli/hook/state-snapshot'; await import(target);\n`);
+      write(root, path, `${source}\nlet target = '../../cli/hook/state-snapshot'; await import(target);\n`);
       write(root, 'src/effects/setup/copied-probe.ts', source);
-      write(root, 'src/effects/state/computed-cli.ts', "const target = '../../cli/hook/state-snapshot'; export const load = () => import(target);\n");
     });
-    expect(result.violations.filter(item => item.code === 'EFFECTS_DYNAMIC_IMPORT_UNRESOLVED')).toHaveLength(4);
+    expect(result.violations.map(item => [item.code, item.file])).toEqual([
+      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/setup/copied-probe.ts'],
+      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/setup/pi-capability-child.ts'],
+    ]);
   });
 
   test('reports an intra-layer directory cycle across import forms', async () => {
