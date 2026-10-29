@@ -70,7 +70,11 @@ async function session(): Promise<Session> {
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
-  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
+  const route = docSessionCreateRoute({
+    // These read fixtures need no host; doc-session-agent.test.ts covers the real launch.
+    launch_agent: () => 'starting',
+    env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin',
+  });
   const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route] });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
