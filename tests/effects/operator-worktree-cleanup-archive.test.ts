@@ -200,3 +200,14 @@ test('a root commit patch keeps its exact identity and restores into an empty re
     expect(readFileSync(join(restore, 'docs/guide.md'), 'utf8')).toBe('base\n');
   } finally { f.cleanup(); }
 });
+
+test('archive capture keeps BOM-prefixed and plain filenames as different artifacts', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tree, 'hidden.txt'), 'plain bytes\n'); writeFileSync(join(f.tree, '\ufeffhidden.txt'), 'BOM-name bytes\n');
+    const result = stageCleanupArchive(sid, f.target, f.plan(['hidden.txt', '\ufeffhidden.txt'], []), f.options());
+    expect(readFileSync(join(result.git_directory!, archivePath, 'hidden.txt'), 'utf8')).toBe('plain bytes\n');
+    expect(readFileSync(join(result.git_directory!, archivePath, '\ufeffhidden.txt'), 'utf8')).toBe('BOM-name bytes\n');
+    expect(result.artifacts.filter(file => file.path.endsWith('hidden.txt')).map(file => file.sha256)[0]).not.toBe(result.artifacts.filter(file => file.path.endsWith('hidden.txt')).map(file => file.sha256)[1]);
+  } finally { f.cleanup(); }
+});
