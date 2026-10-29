@@ -710,6 +710,32 @@ describe('exact cleanup and contract-worktree start sweep', () => {
     } finally { setControlledWorktreeProcesses([]); f.cleanup(); }
   }, 20000);
 
+  test.each(['ignored data', 'occupying process'])('the sweep keeps a checkout that gains %s after its green pre-check and before the in-lock check', change => {
+    const f = fixture(); try {
+      appendFileSync(join(f.root, '.git/info/exclude'), '.env\n');
+      const lock = join(f.root, '.git/repo-harness/coordination/locks/worktree-topology.lock');
+      const occupant = { pid: 4242, cwd: join(f.path, 'src') };
+      let observedInLock = false;
+      // The inventory is observed before the pre-check and again inside the barrier.
+      // The change happens at the first observation that holds the topology lock.
+      setControlledWorktreeProcesses(() => {
+        if (!existsSync(lock)) return [];
+        observedInLock = true;
+        if (change === 'ignored data') { writeFileSync(join(f.path, '.env'), 'private\n'); return []; }
+        return [occupant];
+      });
+      const report = sweepManagedWorktrees(f.root, f.root, f.env, { ghBin: f.failingGh });
+      expect(observedInLock).toBe(true);
+      expect(report).toContain('removed=0');
+      expect(report).toContain(`${f.path}: kept; ${change === 'ignored data' ? 'ignored_data' : 'process_in_use'}`);
+      if (change === 'ignored data') expect(readFileSync(join(f.path, '.env'), 'utf8')).toBe('private\n');
+      expect(existsSync(join(f.path, '.gitignore'))).toBe(true);
+      expect(f.git('worktree', 'list', '--porcelain')).toContain(f.path);
+      expect(f.git('branch', '--list', 'codex/demo')).toContain('codex/demo');
+      expect(worktreeTrashNames(join(f.root, '.git'), f.managed)).toEqual([]);
+    } finally { setControlledWorktreeProcesses([]); f.cleanup(); }
+  });
+
   test('W1 deadline expiry during trash deletion leaves data that the next sweep finishes', () => {
     const f = fixture(); try {
       let delayed = false;

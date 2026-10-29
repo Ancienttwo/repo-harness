@@ -343,6 +343,8 @@ interface SweepContext {
   readonly limits: Limits & { deadline: number };
   readonly trashDeadline: number;
   readonly options: WorktreeRemovalOptions;
+  /** A fresh process inventory; null means occupancy is unknown. */
+  readonly processes: (deadline: number) => WorktreeProcess[] | null;
 }
 export function protectsCwd(path: string, cwd: string): boolean {
   return cwd === path || cwd.startsWith(path + sep);
@@ -457,7 +459,9 @@ export function assertNoSubmodules(context: { readonly main: string; readonly li
 
 /**
  * Both the first attempt and recovery execute through the exact cleanup barrier.
- * `verify` runs first inside the barrier, before any trash receipt exists; a throw keeps everything.
+ * A first attempt runs the full shared predicate with a fresh process inventory
+ * inside the barrier, then the caller's `verify`, before any trash receipt
+ * exists; a throw keeps everything.
  */
 function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanup, pending?: WorktreeTrashReceipt, verify?: () => void): WorktreeTrashReceipt {
   let receipt = pending;
@@ -466,7 +470,12 @@ function commitSweepRemoval(context: SweepContext, expected: ExactWorktreeCleanu
   const snapshot = pending ? { ...expected, target_oid: git(context.main, ['rev-parse', `${expected.target_ref}^{commit}`], context.limits) } : expected;
   const identity = payloadExists && !binding ? { ...snapshot, worktree: '' } : snapshot;
   cleanupExactWorktree(context.main, identity, () => {
-    verify?.();
+    if (!pending) {
+      const inspection = inspectWorktree(context.main, expected.worktree, context.cwd, { env: context.env, deadline: context.limits.deadline,
+        processes: context.processes(Math.min(context.limits.deadline, Date.now() + 5_000)), ghBin: context.limits.ghBin });
+      if (inspection.judgment !== 'green') throw new WorktreeNotGreenError(inspection.reasons);
+      verify?.();
+    }
     if (receipt) assertTrashIsUnregistered(context, receipt.directory);
     // Refuse a whole-prune conflict before renaming any visible checkout.
     assertPruneScope(context, receipt);
@@ -623,7 +632,8 @@ export function inspectWorktree(root: string, path: string, callerCwd: string | 
   return result;
 }
 
-function createSweepContext(root: string, callerCwd: string, env: NodeJS.ProcessEnv, limits: SweepContext['limits'], trashDeadline: number, options: WorktreeRemovalOptions): SweepContext | null {
+function createSweepContext(root: string, callerCwd: string, env: NodeJS.ProcessEnv, limits: SweepContext['limits'], trashDeadline: number, options: WorktreeRemovalOptions,
+  processes: SweepContext['processes']): SweepContext | null {
   const primary = entries(root, limits)[0];
   if (!primary) return null;
   const main = checkoutPath(primary.path);
@@ -631,7 +641,7 @@ function createSweepContext(root: string, callerCwd: string, env: NodeJS.Process
   const managedRoot = managedWorktreeRoot(env);
   const managed = (path: string) => isManagedWorktreePath(path, managedRoot, basename(main));
   const common = resolveGitCommonDirectory(main, gitBinary(limits), timeout(limits));
-  return { main, cwd, env, common, managedRoot, managed, limits, trashDeadline, options };
+  return { main, cwd, env, common, managedRoot, managed, limits, trashDeadline, options, processes };
 }
 
 /** Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss. */
@@ -664,7 +674,7 @@ export class WorktreeNotGreenError extends Error {
   }
 }
 
-/** The one green removal path: the shared predicate, the merge proof, then the exact barrier. */
+/** The one green removal path: the shared predicate, the merge proof, then the exact barrier, which runs the predicate again. */
 function removeGreenWorktree(context: SweepContext, input: {
   readonly path: string; readonly branch: string; readonly head: string; readonly targetRef: string; readonly target: string;
   readonly processes: WorktreeProcess[] | null; readonly verify?: () => void;
@@ -679,7 +689,7 @@ function removeGreenWorktree(context: SweepContext, input: {
 export interface GreenWorktreeRemoval {
   /** Canonical checkout path of a registered linked worktree of this clone. */
   readonly path: string;
-  /** Runs inside the topology barrier before the trash receipt. A throw keeps the worktree. */
+  /** Runs inside the topology barrier after the shared predicate and before the trash receipt. A throw keeps the worktree. */
   readonly verify: () => void;
 }
 export type GreenWorktreeRemovalResult =
@@ -697,7 +707,7 @@ export function removeGreenWorktrees(root: string, callerCwd: string, env: NodeJ
   const limits = { deadline: options.deadline, gitBin: configuredGitBinary(env), ghBin: options.ghBin };
   let started = false;
   const context = createSweepContext(root, callerCwd, env, limits, Date.now() + Math.floor(Math.max(0, options.deadline - Date.now()) / 2),
-    { afterRemovalStep: () => { started = true; } });
+    { afterRemovalStep: () => { started = true; } }, options.processes);
   if (!context) throw new Error('worktree topology is empty');
   if (recoverSweepTrash(context, []).blocked) return { recovery_blocked: true, results: [] };
   const { targetRef, target } = mergeBackTarget(context.main, limits);
@@ -733,7 +743,7 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
   const notes: string[] = [];
   let removed = 0, pruned = 0, resumed = 0, deferred = 0;
   try {
-    const context = createSweepContext(root, callerCwd, env, limits, trashDeadline, options);
+    const context = createSweepContext(root, callerCwd, env, limits, trashDeadline, options, deadline => worktreeProcesses(deadline));
     if (!context) return null;
     const { main, cwd, common, managed } = context;
     const recovery = recoverSweepTrash(context, notes);

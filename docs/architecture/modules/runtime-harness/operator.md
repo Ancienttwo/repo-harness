@@ -194,8 +194,11 @@ builder. It refuses the whole request before any removal: an unknown id is 409
 changed digest is 409 `digest_changed`, and an unreadable inventory is 503
 `inventory_unavailable`. Each removal then goes through the sweep's own recovery,
 `inspectWorktree` and `commitSweepRemoval` (`removeGreenWorktrees`). Inside the
-topology barrier, before the trash receipt, the effect builds the row again with a
-fresh process scan; a changed row is skipped and kept. The local branch goes with
+topology barrier, before the trash receipt, `commitSweepRemoval` runs
+`inspectWorktree` again with a fresh process inventory for every first removal, the
+sweep's included; a checkout that is no longer green is kept. The effect then also
+builds the row again and requires it to equal the checked row; a changed row is
+skipped and kept. The local branch goes with
 the worktree; remote branches stay. HTTP runs the effect in a supervised child
 process (`runSetupProcess`, 20 s process-group deadline), so sync Git never blocks
 the serve event loop. A child timeout, crash or invalid output after the intent
