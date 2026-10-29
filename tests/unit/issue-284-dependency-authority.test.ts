@@ -840,6 +840,16 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${PROVIDER_REPO_ID}:${ISSUE_A}`);
     expect(accepted.authority_revision).not.toBe(absent.authority_revision);
 
+    // A pre-upgrade external_pass observation pins a protocol-3 record. The
+    // observation protocol did not change, so the pinned record decides: unavailable.
+    const { author_session_binding_sha256: _binding, author_actual_models: _models, model_relation: _relation, ...protocol3 } = acceptanceReceipt(subject);
+    const preUpgrade = recordAcceptanceObservation(subject, { ...protocol3, protocol: 3 } as unknown as AcceptanceReceipt);
+    expect(preUpgrade.disposition).toBe('external_pass');
+    expect(() => readAcceptanceReceiptRecord(subject.root, subject.home, preUpgrade.acceptance_receipt_sha256)).toThrow('AcceptanceReceipt kind/protocol is invalid');
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
+    expect(recordAcceptanceObservation(subject).observation_id).toBe(observation.observation_id);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+
     // The committed selector still names the old task, so it does not prove the moved target.
     const movedTarget = resolveDependencyAuthority(input(subject, 'module_accepted',
       retargeted(subject, { task: { ...subject.target.task, issue_id: '2999' } })));
