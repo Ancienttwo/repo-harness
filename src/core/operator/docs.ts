@@ -40,6 +40,8 @@ export interface DocsFileV1 {
   readonly repository_id: string;
   readonly ref: string;
   readonly commit: string;
+  /** The committer date of `commit`, read from its commit object, in UTC. */
+  readonly committed_at: string;
   readonly path: string;
   readonly size: number;
   readonly sha256: string;
@@ -110,11 +112,12 @@ export function decodeDocsTree(value: unknown): DocsTreeV1 {
 
 export function decodeDocsFile(value: unknown): DocsFileV1 {
   const d = decoder('docs file');
-  const v = d.obj(value, ['protocol', 'kind', 'repository_id', 'ref', 'commit', 'path', 'size', 'sha256', 'text', 'lines', 'worktree_differs'], 'file');
+  const v = d.obj(value, ['protocol', 'kind', 'repository_id', 'ref', 'commit', 'committed_at', 'path', 'size', 'sha256', 'text', 'lines', 'worktree_differs'], 'file');
   if (v.protocol !== 1 || v.kind !== OPERATOR_DOCS_FILE_KIND) d.fail('protocol');
   d.match(v.repository_id, REPOSITORY_ID, 'repository_id');
   d.match(v.ref, DOCS_REF, 'ref');
   d.match(v.commit, COMMIT, 'commit');
+  d.match(v.committed_at, ISO_TIME, 'committed_at');
   d.path(v.path);
   d.count(v.size, 'size');
   d.match(v.sha256, SHA256, 'sha256');
