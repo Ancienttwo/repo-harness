@@ -5,6 +5,7 @@ import {
   type AgentsSettingsRequestV1,
   type AgentsSettingsResultV1,
 } from '../../core/operator/agents-settings';
+import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfiguration } from './global-configuration';
 
@@ -18,6 +19,7 @@ export type AgentsConfigurationErrorCode =
   | 'runtime_unknown'
   | 'runtime_not_enabled'
   | 'use_not_supported'
+  | 'docs_isolation_unverified'
   | 'default_docs_invalid';
 
 export class AgentsConfigurationError extends Error {
@@ -51,6 +53,9 @@ function sectionOf(config: Record<string, unknown>): AgentsConfigV1 {
   }
 }
 
+const docsIsolationUnverified = (runtime: string) =>
+  new AgentsConfigurationError('docs_isolation_unverified', `Runtime ${runtime} has no verified docs isolation, so it cannot run doc sessions.`);
+
 const sorted = (ids: Iterable<string>): string[] => [...ids].sort();
 const sameList = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((id, index) => id === right[index]);
@@ -71,6 +76,10 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
     if (change.uses.includes('review') && !isReviewRuntimeId(change.runtime)) {
       throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; supported review runtimes: ${REVIEW_RUNTIME_IDS.join(', ')}.`);
     }
+    // A docs use already stored stays and can be removed; only a new docs use of an unverified runtime is refused.
+    if (change.uses.includes('docs') && !current.uses.docs.includes(change.runtime) && !isDocsHostRuntimeId(change.runtime)) {
+      throw docsIsolationUnverified(change.runtime);
+    }
     if (change.enabled) enabled.add(change.runtime);
     else enabled.delete(change.runtime);
     for (const [use, set] of [['docs', docs], ['review', review]] as const) {
@@ -79,6 +88,7 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
     }
   }
   const defaultDocs = request.default_docs_runtime === undefined ? current.default_docs : request.default_docs_runtime;
+  if (defaultDocs !== null && defaultDocs !== current.default_docs && !isDocsHostRuntimeId(defaultDocs)) throw docsIsolationUnverified(defaultDocs);
   if (defaultDocs !== null && !docs.has(defaultDocs)) {
     throw new AgentsConfigurationError('default_docs_invalid', 'The default docs runtime must be enabled for docs. Choose another default or clear it.');
   }

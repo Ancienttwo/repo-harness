@@ -1,8 +1,9 @@
 // Doc session creation (PRD G5 step 1, G8; issue #1021). It verifies every
 // citation against the docs view the console serves, then creates the
 // session's `docs/<slug>` worktree under the managed worktree root and the
-// session record. It starts no agent: the agent launch needs the user's
-// approval of its confirmation bypass first.
+// session record. The runtime must have verified docs isolation and the docs
+// use in the agent settings. It starts no agent: the agent launch needs the
+// user's approval of its confirmation bypass first.
 //
 // The route runs only through the shared write run (lock, idempotency,
 // audit). Production OPERATOR_ROUTES admits it after the local config write
@@ -12,14 +13,17 @@ import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { isAgentRuntimeId } from '../../core/operator/agents-settings';
 import { checkDocCitation, decodeDocCitation, docCitationBudget, type DocCitationV1 } from '../../core/operator/doc-citation';
+import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { JsonValue } from '../../core/evidence/types';
+import { AgentsConfigurationError, readAgentsConfiguration } from '../configuration/agents-configuration';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
 import { configuredGitBinary, gitExecFile, GitExecError, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { assertDocsHostPlatform, DOCS_HOST_MODEL_API } from '../review/docs-host-isolation';
+import { assertDocsHostPlatform } from '../review/docs-host-isolation';
 import { withWorktreeTopologyLockAsync } from '../state/coordination-worktree-topology';
 import { DocsReadError, normalizeDocsPath, type DocsReader } from './docs-reader';
 import type { OperatorWriteRoute } from './write-channel';
@@ -36,11 +40,10 @@ const BODY_KEYS = ['citations', 'instruction', 'kind', 'repository_id', 'runtime
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const SESSION_ID = /^[0-9a-f]{32}$/u;
 
-export type DocSessionRuntime = keyof typeof DOCS_HOST_MODEL_API;
-
 export interface DocSessionCreateInput {
   readonly kind: 'docs';
-  readonly runtime: DocSessionRuntime;
+  /** Any runtime id; creation refuses one without verified docs isolation or the docs use. */
+  readonly runtime: string;
   readonly repository_id: string;
   readonly citations: readonly DocCitationV1[];
   readonly instruction: string;
@@ -60,7 +63,7 @@ export function decodeDocSessionCreate(fields: Readonly<Record<string, unknown>>
   if (keys.length !== BODY_KEYS.length || keys.some((key, index) => key !== BODY_KEYS[index])) throw new Error('doc session keys');
   const { kind, runtime, repository_id, citations, instruction } = fields;
   if (kind !== 'docs') throw new Error('doc session kind');
-  if (typeof runtime !== 'string' || !Object.hasOwn(DOCS_HOST_MODEL_API, runtime)) throw new Error('doc session runtime');
+  if (!isAgentRuntimeId(runtime)) throw new Error('doc session runtime');
   if (typeof repository_id !== 'string' || !REPOSITORY_ID.test(repository_id)) throw new Error('doc session repository_id');
   if (!Array.isArray(citations) || citations.length < 1 || citations.length > DOC_SESSION_MAX_CITATIONS) throw new Error('doc session citations');
   const decoded = citations.map((value) => {
@@ -71,7 +74,7 @@ export function decodeDocSessionCreate(fields: Readonly<Record<string, unknown>>
   if (typeof instruction !== 'string' || !instruction.trim() || instruction.length > DOC_SESSION_MAX_INSTRUCTION || instruction.includes('\0')) {
     throw new Error('doc session instruction');
   }
-  return { kind, runtime: runtime as DocSessionRuntime, repository_id, citations: decoded, instruction };
+  return { kind, runtime, repository_id, citations: decoded, instruction };
 }
 
 const refuse = (status: number, code: string, message: string, nextAction: string) => new OperatorWriteRefusal(status, code, message, nextAction);
@@ -191,9 +194,26 @@ function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: J
   syncDirectoryDurably(directory);
 }
 
+/** The runtime has verified docs isolation and the docs use in the agent settings. */
+function assertDocsRuntime(runtime: string, env: NodeJS.ProcessEnv): void {
+  if (!isDocsHostRuntimeId(runtime)) {
+    throw refuse(422, 'docs_isolation_unverified', `Runtime ${runtime} has no verified docs isolation.`, 'Start the session with a runtime that has verified docs isolation.');
+  }
+  let docs: readonly string[];
+  try { docs = readAgentsConfiguration(env).agents.uses.docs; }
+  catch (error) {
+    if (!(error instanceof AgentsConfigurationError)) throw error;
+    throw refuse(503, 'config_invalid', 'The agent settings cannot be read.', 'Fix the agents section of ~/.repo-harness/config.json, then retry with a new request_id.');
+  }
+  if (!docs.includes(runtime)) {
+    throw refuse(422, 'runtime_not_enabled', `Runtime ${runtime} is not enabled for doc sessions.`, 'Turn on the docs use of this runtime in Settings, then retry with a new request_id.');
+  }
+}
+
 async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDependencies): Promise<OperatorWriteResponse> {
   try { assertDocsHostPlatform(deps.platform ?? process.platform); }
   catch { throw refuse(501, 'platform_unsupported', 'Doc sessions run only on macOS for now.', 'Use the docs view to read, or start the session on macOS.'); }
+  assertDocsRuntime(input.runtime, deps.env);
   let repos;
   try { repos = readRepoHarnessRegistryStrictSnapshot({ env: deps.env }).repos; }
   catch { throw refuse(503, 'registry_unavailable', 'The repository registry cannot be read.', 'Check the repository registry, then retry with a new request_id.'); }

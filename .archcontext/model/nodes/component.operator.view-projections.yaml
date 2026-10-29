@@ -11,6 +11,7 @@ responsibilities:
   - "Decode each public schema with exact field sets so the server and the web console share one contract."
   - "Parse closed request shapes for task and architecture routes before any process starts."
   - "Own the doc citation protocol: decode a citation of whole lines and find the cited lines at their place, at one unique new place, or report them stale."
+  - "Own the list of runtimes with verified docs isolation: the agent settings, doc session creation and the docs host boundary read only this list."
   - "Own the doc session event schema: redact message text and paths with the shared secret token rules, decode an event with exact fields that leave no place for raw tool arguments, commands, terminal output or environment values, and order events by the epoch.seq cursor."
   - "Validate bounded organization V2 payloads with exact field sets, repository and admitted-session identities, component consistency, SHA syntax and overlay-to-attention digest linkage. Snapshot builders compute content hashes; the decoder does not recompute them."
 source:

@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:297d189a5e630f8d52abb39e711af363389e830dcc5ba94a8ba5e67ec599c14f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:02f26827e74098a19212188adb0ded145dfe76791711a7debab9a32ce569f69d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -128,7 +128,7 @@ flowchart LR
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.primary-scripts` | Effective State Resolver (scripts) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.workflow-state.primary-scripts` | Effective State Resolver (scripts) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
