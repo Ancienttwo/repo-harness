@@ -52,8 +52,13 @@ async function session(prepare?: (repo: string) => void): Promise<Session> {
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
   writeFileSync(join(repo, 'docs', 'old.md'), 'old\n');
   writeFileSync(join(repo, '.gitignore'), '*.log\n');
-  prepare?.(repo);
-  commitAll(repo, 'docs');
+  if (prepare) {
+    prepare(repo);
+    git(['add', '.'], repo);
+    // Large unchanged-tree fixtures must not overflow the setup command's
+    // stdout buffer with Git's per-file commit summary.
+    git(['commit', '--quiet', '-m', 'docs'], repo);
+  } else commitAll(repo, 'docs');
   git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
   const home = tmpWorkspace('doc-session-reads-home');
   const worktrees = realpathSync(tmpWorkspace('doc-session-reads-worktrees'));
@@ -359,6 +364,23 @@ test('filter admission handles bounded path lists whose attribute replies exceed
     expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
     expect(readFileSync(marker).length).toBe(0);
   }
+});
+
+test('index admission preserves the name-list capacity for unchanged short paths', async () => {
+  // 75,000 mode records would exceed 512 KiB, while the existing name and
+  // hidden-entry lists fit. Avoid case aliases and Windows reserved names.
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789!#$%&()+,-;=@[]^_{}~';
+  const names: string[] = [];
+  for (const a of alphabet) for (const b of alphabet) for (const c of alphabet) {
+    const name = `${a}${b}${c}`;
+    if (names.length < 75_000 && !['aux', 'con', 'nul', 'prn'].includes(name)) names.push(name);
+  }
+  expect(names.length * 7).toBeGreaterThan(DOC_SESSION_PATCH_MAX_BYTES);
+  expect(names.length * 6).toBeLessThan(DOC_SESSION_PATCH_MAX_BYTES);
+  const s = await session(repo => {
+    for (const name of names) writeFileSync(join(repo, name), '');
+  });
+  expect(await diffOf(s)).toMatchObject({ status: 200, body: { files: [], patch: '' } });
 });
 
 test.each(['edit', 'add', 'mode'])('the loss digest binds ignored leaves when they %s inside an existing directory', async action => {

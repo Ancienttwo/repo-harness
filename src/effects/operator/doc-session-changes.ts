@@ -261,10 +261,11 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
   };
   // Read index metadata before a diff can inspect a populated submodule. Its
   // nested filters are invisible to the top-level attribute/config checks.
-  // List only modes here: full --stage rows would spend the bounded output
-  // budget on object ids and reject otherwise admissible large path lists.
-  const modes = pathsFrom(runner.text(worktree, ['ls-files', '--format=%(objectmode)', '-z']));
-  if (modes.includes('160000')) return fail('path_unsupported');
+  // Git derives objecttype from the index mode, without reading an object or
+  // entering the submodule. `blob\0` is shorter than mode records, so this
+  // stays within the existing name-list bound even for many short names.
+  const types = pathsFrom(runner.text(worktree, ['ls-files', '--format=%(objecttype)', '-z']));
+  if (types.includes('commit')) return fail('path_unsupported');
   // Raw diff can run clean/process filters even for a stat-only or racy entry,
   // so admit every candidate before comparing.
   const tracked = pathsFrom(runner.text(worktree, ['ls-files', '--cached', '-z']));
