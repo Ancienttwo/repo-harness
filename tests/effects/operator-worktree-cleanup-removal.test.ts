@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createCleanupPlan, cleanupPlanSelectionDigest, executeCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import { removeCleanupWorktree, reconcileCleanupWorktree, type CleanupRemovalInput, type CleanupRemovalOptions } from '../../src/effects/operator/worktree-cleanup-removal';
 import { stageCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
@@ -17,7 +16,7 @@ import type { WorktreeView } from '../../src/core/operator/worktrees';
 
 const sid = 'a'.repeat(32), repoId = `repo_${'b'.repeat(16)}`;
 function fixture(orphan = false, sharedParent = false) {
-  const parent = tmpWorkspace('cleanup-removal'), repo = join(parent, 'repo'), treeParent = sharedParent ? realpathSync(tmpdir()) : parent;
+  const parent = tmpWorkspace('cleanup-removal'), repo = join(parent, 'repo'), treeParent = sharedParent ? realpathSync('/tmp') : parent;
   const tree = join(treeParent, sharedParent ? `repo-wt-cleanup-fixture-${randomUUID()}` : 'repo-wt-feature'), remote = join(parent, 'remote.git');
   const home = join(parent, 'home'), staging = join(parent, 'staging');
   for (const path of [repo, home, staging]) mkdirSync(path, { mode: 0o700 });
@@ -166,6 +165,7 @@ test('explicit approval removes a locked worktree with a marker after archive an
 test('authorized receipt supports a direct child of the real shared sticky temporary root', async () => {
   const f = fixture(false, true);
   try {
+    expect(statSync(dirname(f.tree)).mode & 0o1000).toBe(0o1000);
     writeFileSync(join(f.tree, 'tracked.txt'), 'approved change\n'); const input = f.input();
     await removeCleanupWorktree(input, f.options());
     expect(existsSync(f.tree)).toBe(false); expect(reconcileCleanupWorktree(input, Date.now() + 20_000).state).toBe('completed');
