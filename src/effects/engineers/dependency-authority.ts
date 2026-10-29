@@ -396,17 +396,20 @@ function moduleAccepted(
   // The admission is current but its authority has recorded no acceptance yet.
   if (observation === null) return verdict('unsatisfied', admitted);
   if (observation.archive_projection_sha256 !== null) return UNAVAILABLE;
-  if (observation.disposition === 'user_waiver') {
+  if (PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition)) {
     try {
-      const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
-      // A local protected authority file, never a new provider read.
-      const stat = lstatSync(grantPath);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
       // The observation pins its receipt by digest; a later review replaces only the latest file.
+      // The record parser admits only the current Receipt protocol, so a pre-upgrade record is unavailable.
       const { receipt } = readAcceptanceReceiptRecord(read.repo.path, authorityHome, observation.acceptance_receipt_sha256);
-      const grant = readUserWaiverGrantFile(grantPath);
-      if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
-        admission: active.admission, grantSha256: active.grant_sha256, waiverGrant: grant }).ok) return UNAVAILABLE;
+      if (observation.disposition === 'user_waiver') {
+        const grantPath = userWaiverGrantPath(read.repo.path, authorityHome);
+        // A local protected authority file, never a new provider read.
+        const stat = lstatSync(grantPath);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return UNAVAILABLE;
+        const grant = readUserWaiverGrantFile(grantPath);
+        if (!validateAcceptanceReceiptAgainstPolicy({ receipt, repositoryRoot: realpathSync(read.repo.path),
+          admission: active.admission, grantSha256: active.grant_sha256, waiverGrant: grant }).ok) return UNAVAILABLE;
+      }
     } catch { return UNAVAILABLE; }
   }
 

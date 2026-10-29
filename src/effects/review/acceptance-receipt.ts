@@ -37,6 +37,7 @@ import {
   contractCarriesArchiveProjection,
   fail,
   isRecord,
+  modelRelation,
   renderAcceptanceProjection,
   sha256,
   stableJson,
@@ -86,9 +87,17 @@ export type {
   AcceptanceReviewResult,
   AcceptanceValidatorRuleId,
   AcceptanceVerificationObservationV1,
+  ModelRelation,
   ReviewSubject,
   UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+
+/** The bound author task session and the models its OAR host observed. */
+export interface AcceptanceAuthor {
+  binding_sha256: string;
+  /** Sorted unique models of the ended author turns; null is unknown. */
+  models: string[] | null;
+}
 
 
 function reviewResultPath(root: string, authorityHome: string): string {
@@ -532,7 +541,7 @@ export function validateAcceptanceReceiptAgainstPolicy(
   const no = (rule: AcceptanceValidatorRuleId, reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, rule, reason });
   const receipt = input.receipt;
   try {
-    if (receipt.protocol !== 3 || receipt.kind !== 'repo-harness-acceptance-receipt') {
+    if (receipt.protocol !== 4 || receipt.kind !== 'repo-harness-acceptance-receipt') {
       return no('receipt_protocol_kind', 'AcceptanceReceipt kind/protocol is invalid');
     }
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
@@ -601,7 +610,7 @@ function parseReceipt(text: string): AcceptanceReceipt {
   } catch (error) {
     fail(`AcceptanceReceipt is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 3 || value.kind !== 'repo-harness-acceptance-receipt') {
+  if (!isRecord(value) || value.protocol !== 4 || value.kind !== 'repo-harness-acceptance-receipt') {
     fail('AcceptanceReceipt kind/protocol is invalid');
   }
   const requiredStrings = [
@@ -767,7 +776,7 @@ function buildReceipt(
   now: () => Date,
 ): AcceptanceReceipt {
   return {
-    protocol: 3,
+    protocol: 4,
     kind: 'repo-harness-acceptance-receipt',
     repository_root: context.root,
     campaign_sha256: context.admission.campaign_sha256,
@@ -788,6 +797,7 @@ function buildReceipt(
     source,
     request_id: null, context_sha256: null, result_sha256: null,
     actual_harness: null, actual_role: null, actual_model: null,
+    author_session_binding_sha256: null, author_actual_models: null, model_relation: null,
     actor,
     summary,
     findings,
@@ -865,6 +875,8 @@ function assertRecordedReceiptPolicy(
 
 export async function recordAcceptance(args: {
   reviewResult?: AcceptanceReviewResult;
+  /** Null when no bound author task session exists for this review. */
+  author: AcceptanceAuthor | null;
   root: string;
   authorityHome: string;
   authority: ReviewAdmissionSource;
@@ -918,7 +930,9 @@ export async function recordAcceptance(args: {
   if (review.context_sha256 !== acceptanceReviewContextDigest(context) || review.subject_sha256 !== receipt.subject_sha256) fail('generic-review result context/subject is stale');
   Object.assign(receipt, { request_id: review.request_id, context_sha256: review.context_sha256,
     result_sha256: authorityFingerprint(stableJson(review)), actual_harness: review.actual_harness,
-    actual_role: review.actual_role, actual_model: review.actual_model });
+    actual_role: review.actual_role, actual_model: review.actual_model,
+    author_session_binding_sha256: args.author?.binding_sha256 ?? null, author_actual_models: args.author?.models ?? null,
+    model_relation: modelRelation(args.author?.models ?? null, review.actual_model) });
   if (review.verdict !== (args.disposition === 'external_pass' ? 'PASS' : 'FAIL') || review.summary !== args.summary
     || stableJson(review.findings) !== stableJson(args.findings)) fail('generic-review result verdict/findings mismatch');
   assertRecordedReceiptPolicy(context, receipt, null);
@@ -1185,6 +1199,8 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       reviewer: option(argv, '--reviewer')!,
       source: option(argv, '--source')!,
       actor: null,
+      // A supplied Result has no bound author task session.
+      author: null,
       summary: option(argv, '--summary')!,
       findings: validateFindings(JSON.parse(findingsRaw)),
       now: opts.now,
