@@ -327,7 +327,7 @@ The host installer, shared skill roots and catalog retain those responsibilities
 
 ## 4. 歷史決策記錄(append-only)
 
-### Flows on the map (2026-10-30, issue #1145)
+### Flows on the map (2026-10-29, issue #1145)
 
 - The map route serves `repo-harness.architecture-map.v6`. It adds `flows` and `flow_evidence` from the same `archctx export native` read, and `evidence` (one archctx status per step selector) to the `flows` violations part. The sequence base map reads them; the module route keeps its own flow copy for the module page.
 - A step joins its declared code and its proof by archctx's selector key (entrypoint id, source symbol, sink id), the key archctx uses for `impact` flow steps. The map has no second selector resolver.
