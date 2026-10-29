@@ -211,3 +211,15 @@ test('archive capture keeps BOM-prefixed and plain filenames as different artifa
     expect(result.artifacts.filter(file => file.path.endsWith('hidden.txt')).map(file => file.sha256)[0]).not.toBe(result.artifacts.filter(file => file.path.endsWith('hidden.txt')).map(file => file.sha256)[1]);
   } finally { f.cleanup(); }
 });
+
+test('private archive refuses a plan destination that differs from the owning repository key', () => {
+  const f = fixture();
+  try {
+    writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
+    const original = f.plan([], ['.env']);
+    const item = createCleanupPlan(sid, [{ observation: { worktree: original.worktree, loss: observeCleanupLoss(f.target, f.options()) },
+      advice: { ...original.advice, archive: { git: null, private: { directory: 'different-destination', paths: ['.env'] } } } }]).items[0]!;
+    expect(() => stageCleanupArchive(sid, f.target, item, f.options())).toThrow('changed');
+    expect(existsSync(join(f.home, 'archive'))).toBe(false);
+  } finally { f.cleanup(); }
+});

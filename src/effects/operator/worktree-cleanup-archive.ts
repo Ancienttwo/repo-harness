@@ -136,6 +136,7 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
     decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: sessionId, items: [item] });
     if (hex(cleanupPlanDigestInput(sessionId, item)) !== item.plan_sha256 || target.id !== item.worktree.id
       || item.advice.recommendation !== 'archive_then_delete' || item.worktree.repository_id === null) fail('changed');
+    if (item.advice.archive.private && item.advice.archive.private.directory !== item.worktree.repository_id) fail('changed');
     if (options.staging_root === target.worktree || options.staging_root.startsWith(target.worktree + '/')) fail('unsupported');
     const loss = observeCleanupLoss(target, options);
     if (cleanupLossSha256({ worktree: item.worktree, loss }) !== item.loss_sha256) fail('changed');
