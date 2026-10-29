@@ -18,6 +18,8 @@ import {
   type ExecutionResult,
   type ItemOwner,
 } from './repository-reads';
+import type { DocSessionCreateWriter, DocSessions } from './doc-sessions';
+import type { AgentsSettingsReader } from './settings';
 import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
@@ -282,6 +284,10 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, generation
   readonly worktrees: WorktreesView;
   readonly readCiRepairs: CiRepairsReader;
   readonly readExecution: ExecutionReader;
+  /** The doc session list; a start control shows only for a kind it lists. */
+  readonly docSessions?: DocSessions;
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly createDocSession?: DocSessionCreateWriter;
   readonly generation: number;
   readonly now: number;
   readonly onOpen: Open;

@@ -28,6 +28,7 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import { LogoMark } from './brand';
 import { failedSources, openPullRequests, repositoryById, type DevActivityView } from './dev-activity';
 import type { OperatorLocale, OperatorTranslate } from './i18n';
+import type { DocSessions } from './doc-sessions';
 import type { ThemePreference } from './theme';
 import { PageLink, StatusDot, type DotTone } from './ui';
 import { WORKSPACES, type NavGroup, type NavWorkspace, type Workspace, type WorkspaceLocation } from './workspace-location';
@@ -287,6 +288,8 @@ export interface NavRailProps {
   readonly drawerOpen: boolean;
   readonly onCloseDrawer: () => void;
   readonly activity: DevActivityView;
+  /** The doc session list behind「最近」; absent while the server serves no session. */
+  readonly docSessions?: DocSessions;
   readonly locale: OperatorLocale;
   readonly onLocale: (locale: OperatorLocale) => void;
   readonly theme: ThemePreference;

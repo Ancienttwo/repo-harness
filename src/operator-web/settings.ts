@@ -138,8 +138,8 @@ export function draftRequest(base: AgentsSettingsV1['config'], draft: AgentsDraf
     : { expected_revision: base.revision, changes };
 }
 
-/** Codes after which a resend with the same request_id is the documented recovery. */
-const RETRY_SAME_REQUEST = new Set(['busy', 'audit_unavailable', 'body_timeout']);
+/** Codes after which a resend with the same request_id is the documented recovery. Every write of the channel shares them. */
+export const RETRY_SAME_REQUEST: ReadonlySet<string> = new Set(['busy', 'audit_unavailable', 'body_timeout']);
 /** Codes after which the form must re-read the settings before another save. */
 const RELOAD_REQUIRED = new Set(['revision_conflict', 'reconcile_required']);
 

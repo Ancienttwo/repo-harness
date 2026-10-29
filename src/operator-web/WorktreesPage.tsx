@@ -6,12 +6,16 @@ import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './types';
 import { BoardState } from './Board';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
+import type { CleanupSessionCreateWriter } from './cleanup-session';
+import type { DocSessions } from './doc-sessions';
 import { ageWords } from './labels';
+import type { AgentsSettingsReader } from './settings';
 import { Age, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
   cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
   type SpaceTotal, type WorktreeCleanup, type WorktreesView,
 } from './worktrees';
+import type { WorkspaceLocation } from './workspace-location';
 
 type Judgment = WorktreeView['judgment'];
 
@@ -209,7 +213,14 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
  * Every worktree the collector found. Green rows start checked and one click
  * cleans the checked ones; yellow and red rows cannot be selected (5.1).
  */
-export function WorktreesPage({ view, cleanup, now, t }: { readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate }) {
+export function WorktreesPage({ view, cleanup, now, t }: {
+  readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate;
+  /** The doc session list; the cleanup session entry shows only when it lists `worktree_cleanup`. */
+  readonly docSessions?: DocSessions;
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly startCleanupSession?: CleanupSessionCreateWriter;
+  readonly onOpen?: (next: WorkspaceLocation) => void;
+}) {
   const digests = useRowDigests(cleanup.selectable);
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;

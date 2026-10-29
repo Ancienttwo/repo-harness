@@ -6,6 +6,8 @@ import { DocsMarkdown, type MermaidRenderer } from './DocsMarkdown';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { useDocsFile, useDocsTree, type DocsFileReader, type DocsReason, type DocsTreeReader } from './repository-reads';
+import type { DocSessionCreateWriter, DocSessions } from './doc-sessions';
+import type { AgentsSettingsReader } from './settings';
 import type { ThemeMode } from './theme';
 import { PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
@@ -22,6 +24,10 @@ export interface DocsPageProps {
   readonly now: number;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly renderMermaid?: MermaidRenderer;
+  /** The doc session list; citing and starting a session show only when it lists `docs`. */
+  readonly docSessions?: DocSessions;
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly createDocSession?: DocSessionCreateWriter;
   readonly t: OperatorTranslate;
 }
 
