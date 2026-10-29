@@ -47,8 +47,9 @@ import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of the doc session routes. The list route is the one
- * availability authority: a server without it answers 404 `not_found`, the
- * list read is `absent`, and every session control stays hidden.
+ * availability authority: a server without it answers 404 `not_found`, or 405
+ * `method_not_allowed` while only the create POST is mounted on the same path;
+ * the list read is then `absent`, and every session control stays hidden.
  */
 
 /** Codes the session reads send in their bare `{code}` body. */
@@ -72,7 +73,7 @@ async function answer<T>(response: Response, decode: (value: unknown) => T): Pro
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const code = bodyCode(body);
-    if (response.status === 404 && code === 'not_found') return { state: 'absent' };
+    if ((response.status === 404 && code === 'not_found') || (response.status === 405 && code === 'method_not_allowed')) return { state: 'absent' };
     return { state: 'unavailable', reason: code !== null && READ_CODES.includes(code) ? code as DocSessionReadReason : 'unreachable' };
   }
   try { return { state: 'ok', value: decode(body) }; } catch { return { state: 'unavailable', reason: 'unreadable' }; }

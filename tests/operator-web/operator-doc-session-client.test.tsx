@@ -123,7 +123,7 @@ function serve(answers: readonly (() => Response)[]) {
 const list = { protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs'], sessions: [], observed_at: AT };
 
 describe('doc session reads', () => {
-  test('the list read is the availability authority: a missing route is absent, any other failure is a reason', async () => {
+  test('the list read is the availability authority: a missing or POST-only route is absent, any other failure is a reason', async () => {
     const requests = serve([
       () => json(200, list),
       () => json(404, envelope('not_found')),
@@ -138,7 +138,7 @@ describe('doc session reads', () => {
       const read = await fetchDocSessions(new AbortController().signal);
       results.push(read.state === 'unavailable' ? read.reason : read.state);
     }
-    expect(results).toEqual(['ok', 'absent', 'unreachable', 'busy', 'unreadable', 'unreachable', 'unreachable']);
+    expect(results).toEqual(['ok', 'absent', 'absent', 'busy', 'unreadable', 'unreachable', 'unreachable']);
     expect(new Set(requests.map(request => `${request.method} ${request.url}`))).toEqual(new Set(['GET /api/v1/sessions']));
   });
 
