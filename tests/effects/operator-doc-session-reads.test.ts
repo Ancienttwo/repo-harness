@@ -1,3 +1,4 @@
+import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSION_LIST_MAX } from '../../src/core/operator/doc-session-views';
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -32,6 +33,7 @@ const hex = (text: string) => createHash('sha256').update(Buffer.from(text, 'utf
 
 interface Session {
   readonly sid: string;
+  readonly url: string;
   readonly base: string;
   readonly repo: string;
   readonly worktree: string;
@@ -46,7 +48,7 @@ interface Session {
  * the production route inventory, so the reads run in the
  * bounded task-read child as in `operator serve`.
  */
-async function session(): Promise<Session> {
+async function session(instruction = 'Tighten the intro.'): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
@@ -88,12 +90,12 @@ async function session(): Promise<Session> {
   const created = await fetch(`${server.url}/api/v1/sessions`, {
     method: 'POST',
     headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations: [citation], instruction: 'Tighten the intro.' }),
+    body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations: [citation], instruction }),
   });
   const body = await created.json() as Record<string, any>;
   expect(created.status).toBe(201);
   return {
-    sid: body.session_id, base, repo, worktree: join(worktrees, body.worktree), roots, env,
+    sid: body.session_id, url: server.url, base, repo, worktree: join(worktrees, body.worktree), roots, env,
     get: async (path) => {
       const response = await fetch(`${server.url}${path}`);
       const text = await response.text();
@@ -393,4 +395,124 @@ test('a symlink, a hidden index entry and more changes than the cap are refused,
   mkdirSync(join(s.worktree, 'docs', 'many'));
   for (let index = 0; index <= 1000; index += 1) writeFileSync(join(s.worktree, 'docs', 'many', `${index}.md`), `${index}\n`);
   expect(await diffOf(s)).toMatchObject({ status: 413, body: { code: 'too_large' } });
+});
+
+
+function agentRecord(s: Session, state: 'idle' | 'stopped' | 'running' = 'idle', epoch = 1): void {
+  writeFileSync(join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions', s.sid, 'agent.json'), JSON.stringify({
+    protocol: 1, kind: 'docs_session_agent', session_id: s.sid, epoch, state,
+    failure: null, reason: null, updated_at: '2099-01-01T00:00:00.000Z', actual_model: 'private-model',
+    credential: 'removed', control: '/private/control/location', events_error: null,
+  }), { mode: 0o600 });
+}
+
+test('production list and detail expose redacted metadata and CLI parity without private host state', async () => {
+  const token = `ghp_${'a9'.repeat(20)}`;
+  const s = await session(`Improve /private/source using ${token}.`);
+  agentRecord(s, 'stopped');
+  const list = await s.get('/api/v1/sessions');
+  expect(list.status).toBe(200);
+  expect(list.body.sessions).toHaveLength(1);
+  expect(list.body.sessions[0]).toMatchObject({ session_id: s.sid, state: 'stopped', last_cursor: null, unread: false, runtime: 'codex' });
+  expect(list.body.sessions[0].title).toContain('[private path]');
+  expect(list.body.sessions[0].title).toContain('ghp_[REDACTED]');
+  const detail = await s.get(`/api/v1/sessions/${s.sid}`);
+  expect(detail.status).toBe(200);
+  expect(detail.body).toMatchObject({ kind: 'operator_docs_session', session: list.body.sessions[0],
+    branch: `docs/${s.sid.slice(0, 12)}`, head_commit: s.base, base_commit: s.base, epoch: 1, turn: 'idle' });
+  for (const response of [list, detail]) {
+    expectNoPrivatePath(s, response.text);
+    for (const hidden of [token, '/private/source', '/private/control/location', 'private-model', 'credential', 'instruction', 'citations']) expect(response.text).not.toContain(hidden);
+  }
+  for (const [args, expected] of [[['list', '--json'], list.body], [['show', s.sid, '--json'], detail.body]] as const) {
+    const cli = s.cli(...args);
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stdout as string)).toEqual(expected);
+  }
+  const head = await fetch(`${s.url}/api/v1/sessions/${s.sid}`, { method: 'HEAD' });
+  expect(head.status).toBe(200);
+  expect(await head.text()).toBe('');
+  const foreign = await fetch(`${s.url}/api/v1/sessions`, { headers: { Origin: 'https://foreign.invalid' } });
+  expect(foreign.status).toBe(403);
+});
+
+test('unread uses supplied cursors across epochs and reads do not change persistent state', async () => {
+  const s = await session();
+  agentRecord(s, 'running', 2);
+  appendDocSessionEvents(s.env, s.sid, [
+    { epoch: 1, seq: 0, at: '2099-01-02T00:00:00.000Z', type: 'message', role: 'agent', text: 'First turn' },
+    { epoch: 2, seq: 0, at: '2099-01-03T00:00:00.000Z', type: 'turn', boundary: 'started' },
+  ]);
+  const eventsPath = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions', s.sid, 'events.jsonl');
+  const original = readFileSync(eventsPath, 'utf8');
+  const list = await s.get('/api/v1/sessions');
+  expect(list.body.sessions[0]).toMatchObject({ last_cursor: '2.0', unread: true, last_activity_at: '2099-01-03T00:00:00.000Z' });
+  for (const [seen, unread] of [['1.999', true], ['2.0', false]] as const) {
+    const query = encodeURIComponent(JSON.stringify({ [s.sid]: seen }));
+    expect((await s.get(`/api/v1/sessions?seen=${query}`)).body.sessions[0].unread).toBe(unread);
+    expect((await s.get(`/api/v1/sessions/${s.sid}?seen=${seen}`)).body.session.unread).toBe(unread);
+  }
+  expect((await s.get(`/api/v1/sessions/${s.sid}`)).body.turn).toBe('running');
+  const events = await s.get(`/api/v1/sessions/${s.sid}/events?after=1.0`);
+  expect(events.status).toBe(200);
+  expect(events.body).toMatchObject({ next_cursor: '2.0', activity: 'running', complete: true });
+  expect(events.body.events).toHaveLength(1);
+  const cli = s.cli('events', s.sid, '--after', '1.0', '--json');
+  expect(cli.status).toBe(0);
+  expect(JSON.parse(cli.stdout as string)).toEqual(events.body);
+  expect(readFileSync(eventsPath, 'utf8')).toBe(original);
+});
+
+test('closed read requests reject malformed queries before execution and report missing sessions', async () => {
+  const s = await session();
+  for (const path of ['/api/v1/sessions?seen=[]', '/api/v1/sessions?seen=bad', '/api/v1/sessions?seen={}&seen={}',
+    '/api/v1/sessions?limit=1', `/api/v1/sessions/${s.sid}?seen=1`, `/api/v1/sessions/${s.sid}?extra=x`,
+    `/api/v1/sessions/${s.sid}/events?after=1`, `/api/v1/sessions/${s.sid}/events?after=1.0&after=2.0`]) {
+    expect((await s.get(path)).status).toBe(400);
+  }
+  const missing = 'a'.repeat(32);
+  expect((await s.get(`/api/v1/sessions/${missing}`)).status).toBe(404);
+  expect((await s.get(`/api/v1/sessions/${missing}/events`)).status).toBe(404);
+  expect(s.cli('show', '../outside', '--json').status).toBe(2);
+  expect(s.cli('list', '--seen', '[]', '--json').status).toBe(2);
+  expect(s.cli('events', s.sid, '--after', '1', '--json').status).toBe(2);
+});
+
+test('session metadata readers fail closed for symlinks, corrupted host state and oversized records', async () => {
+  const s = await session();
+  const root = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions');
+  const file = join(root, s.sid, 'agent.json');
+  const outside = join(s.roots[0]!, 'private-agent.json');
+  writeFileSync(outside, JSON.stringify({ secret: 'do-not-serve' }));
+  symlinkSync(outside, file);
+  for (const route of ['/api/v1/sessions', `/api/v1/sessions/${s.sid}`]) {
+    const answer = await s.get(route);
+    expect(answer.status).toBe(503);
+    expect(answer.text).not.toContain('do-not-serve');
+  }
+  rmSync(file);
+  agentRecord(s);
+  const invalid = JSON.parse(readFileSync(file, 'utf8'));
+  invalid.state = '/private/state';
+  writeFileSync(file, JSON.stringify(invalid));
+  expect((await s.get('/api/v1/sessions')).status).toBe(503);
+  writeFileSync(file, 'x'.repeat(1024 * 1024 + 1));
+  expect((await s.get(`/api/v1/sessions/${s.sid}`)).status).toBe(413);
+});
+
+test('session list refuses overflow instead of returning a partial recent list', async () => {
+  const s = await session();
+  const root = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions');
+  for (let index = 0; index < DOC_SESSION_LIST_MAX; index += 1) mkdirSync(join(root, index.toString(16).padStart(32, '0')));
+  expect((await s.get('/api/v1/sessions')).status).toBe(413);
+});
+
+test('public decoders reject added fields, wrong identities and private paths', async () => {
+  const s = await session();
+  const list = (await s.get('/api/v1/sessions')).body;
+  const detail = (await s.get(`/api/v1/sessions/${s.sid}`)).body;
+  expect(() => decodeOperatorDocSessionList({ ...list, raw: 'private' }, { seen: {} })).toThrow();
+  expect(() => decodeOperatorDocSessionList({ ...list, sessions: [{ ...list.sessions[0], control: '/private/control' }] }, { seen: {} })).toThrow();
+  expect(() => decodeOperatorDocSessionDetail({ ...detail, worktree: '/private/repo' }, { session_id: s.sid, seen: null })).toThrow();
+  expect(() => decodeOperatorDocSessionDetail(detail, { session_id: 'f'.repeat(32), seen: null })).toThrow();
 });

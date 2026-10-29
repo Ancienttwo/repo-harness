@@ -1,3 +1,6 @@
+import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
+import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
+import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
 import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
 import { readOperatorAdmittedTaskActivity } from './admitted-task-activity';
 import { isTaskSessionsRequest } from '../../core/sessions/task-sessions';
@@ -61,6 +64,12 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
       } else if (message.kind === 'history' && isTaskHistoryRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
+      } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
+      } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionDetail(env ?? process.env,message.request)});
+      } else if (message.kind === 'doc_session_events' && isDocSessionEventsRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionEvents(env ?? process.env,message.request.session_id,message.request.after)});
       } else if (message.kind === 'doc_session_diff' && isDocSessionReadRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionDiff(env ?? process.env,message.request.session_id)});
       } else if (message.kind === 'doc_session_loss' && isDocSessionReadRequest(message.request)) {
@@ -68,7 +77,7 @@ function run(): void {
       } else throw new Error('invalid reader');
     } catch (error) {
       finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof SessionObservationError
-        || error instanceof OperatorTaskHistoryError || error instanceof DocSessionReadError ? error.code : 'unavailable'});
+        || error instanceof OperatorTaskHistoryError || error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
     }
   });
 }

@@ -1,3 +1,5 @@
+import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
+import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
 import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
@@ -49,7 +51,7 @@ import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
-import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
+import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, OPERATOR_SESSION_STOP_ROUTE, docSessionCreateRoute, docSessionStopRoute } from './doc-session';
 import { docsHostExecutable, reconcileDocSessionAgents, startDocSessionAgent, type DocSessionAgentState } from './doc-session-agent';
 
@@ -164,6 +166,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false }),
+  Object.freeze({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false }),
+  Object.freeze({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false }),
   // The doc session diff and discard loss list, with the digests that commit and discard (#1023) check.
   Object.freeze({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false }),
@@ -1525,7 +1530,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1776,15 +1781,37 @@ export async function startOperatorServer(
       return;
     }
 
+    const sessionDetail = OPERATOR_SESSION_DETAIL_ROUTE.exec(pathname);
+    if (pathname === OPERATOR_SESSION_LIST_PATH || sessionDetail !== null) {
+      const keys = [...url.searchParams.keys()];
+      if (keys.some(key => key !== 'seen') || keys.length > 1) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      const status = (code: string) => code === 'session_not_found' ? 404 : code === 'too_large' ? 413
+        : code === 'worktree_missing' || code === 'worktree_changed' ? 409 : code === 'timeout' ? 504 : 503;
+      if (sessionDetail !== null) {
+        const input = { session_id: sessionDetail[1]!, seen: url.searchParams.get('seen') };
+        if (!isDocSessionDetailRequest(input)) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+        handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, 'doc_session_detail', undefined, status);
+      } else {
+        let seen: unknown;
+        try { seen = JSON.parse(url.searchParams.get('seen') ?? '{}'); }
+        catch { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+        const input = { seen };
+        if (!isDocSessionListRequest(input)) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+        handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionList, DOC_SESSION_VIEW_FAILURES, 'doc_session_list', undefined, status);
+      }
+      return;
+    }
+
     const sessionEvents = sessionEventsRead ? OPERATOR_SESSION_EVENTS_ROUTE.exec(pathname) : null;
     if (sessionEvents !== null) {
       const keys = [...url.searchParams.keys()];
-      if (keys.some(key => key !== 'after') || keys.length > 1) { sendJson(response, 400, { code: 'invalid_cursor' }, headOnly); return; }
-      try { sendJson(response, 200, readDocSessionEvents(options.env ?? process.env, sessionEvents[1]!, url.searchParams.get('after')), headOnly); }
-      catch (error) {
-        const code = error instanceof DocSessionEventsError && (error.code === 'invalid_cursor' || error.code === 'session_not_found') ? error.code : 'events_unavailable';
-        sendJson(response, code === 'invalid_cursor' ? 400 : code === 'session_not_found' ? 404 : 503, { code }, headOnly);
+      const input = { session_id: sessionEvents[1]!, after: url.searchParams.get('after') };
+      if (keys.some(key => key !== 'after') || keys.length > 1 || !isDocSessionEventsRequest(input)) {
+        sendJson(response, 400, { code: 'invalid_cursor' }, headOnly); return;
       }
+      handleBoundedTaskRead(response, headOnly, input, (value, request) => decodeOperatorDocSessionEvents(value, request.session_id, request.after),
+        ['session_not_found', 'events_unavailable', 'invalid_cursor'], 'doc_session_events', undefined,
+        code => code === 'session_not_found' ? 404 : code === 'invalid_cursor' ? 400 : code === 'timeout' ? 504 : 503);
       return;
     }
 
