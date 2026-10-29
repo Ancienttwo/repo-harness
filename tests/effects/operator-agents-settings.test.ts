@@ -275,6 +275,21 @@ describe('agent runtime probe', () => {
       .toEqual(defaultRuntimes.list().map(runtime => runtime.id));
   });
 
+  test('missing Cursor SDK skips its lazy installation probe', async () => {
+    let called = false;
+    const probe = await probeAgentRuntimes({
+      runtimes: [],
+      host_dependencies: [{ id: 'cursor', package: '@cursor/sdk', installation: async () => {
+        called = true;
+        throw new Error('optional SDK must stay unloaded');
+      } }],
+      package_resolves: () => false,
+    });
+    expect(called).toBe(false);
+    expect(probe.entries).toEqual([{ id: 'cursor', group: 'host_dependency',
+      installation: { kind: 'dependency_missing', package: '@cursor/sdk' } }]);
+  });
+
   test('publishes no command path, redacts reasons and bounds every probe', async () => {
     const probe = await probeAgentRuntimes({
       runtimes: [

@@ -436,6 +436,19 @@ describe('Pi package and skill installation', () => {
     expect(hostSkillRoot(f.home, 'pi', {})).toBe(join(f.home, '.pi/agent/skills'));
   }));
 
+  test('setup probes the PATH Pi SDK instead of the bundled SDK', () => fixture(f => {
+    // Selected metadata differs from the bundled 1.4.0 SDK.
+    f.write(join(f.host, 'dist/index.js'), `export const VERSION = '1.3.9';
+export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
+    const checks = checkPiHost(f.env);
+    expect(checks.find(c => c.id === 'pi-cli-version')).toMatchObject({
+      status: 'fail', version: '1.3.9', detail: expect.stringContaining('PI_HOST_UNSUPPORTED_VERSION'),
+    });
+    expect(checks.find(c => c.id === 'pi-capability')).toMatchObject({
+      status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_UNSUPPORTED_VERSION' },
+    });
+  }));
+
   test('setup reports supported and unsupported versions, capability and package state', () => fixture(f => {
     expect(checkPiHost(f.env).map(c => [c.id, c.status])).toEqual([
       ['pi-path', 'ok'], ['pi-cli-version', 'ok'], ['pi-capability', 'ok'], ['pi-package', 'warn'],
