@@ -11,7 +11,10 @@ import {
   projectArchitectureMap,
   projectTestCoverage,
   withTestCoverage,
+  type ArchitectureFlowEvidenceV1,
+  type ArchitectureFlowSelectorV1,
   type ArchitectureImpactV1,
+  type ArchitectureMapFlowV1,
   type ArchitectureMapLayersInput,
   type ArchitectureMapNodeV1,
   type ArchitecturePullRequestsSource,
@@ -19,8 +22,8 @@ import {
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { architecturePullRequestsSource } from '../../src/core/dev-activity/architecture';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
-import { collectArchitectureMap, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
-import { decodeConstraintEvaluation } from '../../src/core/architecture/projection';
+import { collectArchitectureMap, flowProofSection, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
+import { decodeConstraintEvaluation, decodeFlowSelectorCheck } from '../../src/core/architecture/projection';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -162,6 +165,23 @@ describe('architecture map', () => {
   const PART = 'component.pipeline.store';
   const OTHER = 'capability.review.gate';
   const GONE = 'component.pipeline.gone';
+  const FLOW = 'flow.pipeline.ledger';
+  // Two selectors: the model declares the first; no node declares the second.
+  const WRITE: ArchitectureFlowSelectorV1 = { entrypoint: 'entrypoint.pipeline.write', source_symbol: 'write', sink: 'sink.pipeline.store' };
+  const DENY: ArchitectureFlowSelectorV1 = { entrypoint: 'entrypoint.review.deny', source_symbol: 'deny', sink: 'sink.review.reply' };
+  const flows: ArchitectureMapFlowV1[] = [
+    { id: 'flow.review.gate', capability: OTHER, name: 'Gate reviews', applicability: 'not-applicable', rationale: 'The gate makes no call.' },
+    {
+      id: FLOW, capability: CAP, name: 'Write a ledger row', applicability: 'required',
+      participants: [{ id: 'ledger', node: CAP }, { id: 'store', node: PART }, { id: 'gate', node: OTHER }],
+      steps: [{ id: 'store', from: 'ledger', to: 'store', label: 'Store the row', evidence: WRITE }],
+      outcomes: [
+        { id: 'stored', kind: 'success', label: 'Stored', steps: [{ id: 'ack', from: 'store', to: 'ledger', label: 'Acknowledge', evidence: WRITE }], terminal: { participant: 'ledger', label: 'Row kept' } },
+        { id: 'refused', kind: 'error', label: 'Refused', steps: [{ id: 'deny', from: 'gate', to: 'ledger', label: 'Deny the row', evidence: DENY }], terminal: { participant: 'ledger', label: 'Row dropped' } },
+      ],
+    },
+  ];
+  const flowEvidence: ArchitectureFlowEvidenceV1[] = [{ ...WRITE, node: CAP, source_path: 'src/ledger.ts', sink_path: 'src/store.ts', sink_symbol: 'put' }];
   const mapNode = (nodeId: string, kind: string, parent: string | null = null): ArchitectureMapNodeV1 =>
     ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary` });
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
@@ -217,7 +237,8 @@ describe('architecture map', () => {
     },
     violations: {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
-      flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }] },
+      flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }],
+        evidence: [{ ...WRITE, status: 'proven' }, { ...DENY, status: 'no-direct-call' }] },
       anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
       // Every fixture node is in `core`, so no pair can import against the order.
@@ -234,6 +255,7 @@ describe('architecture map', () => {
     layer_order: { state: 'ok', layers: ['cli', 'core'] } as const,
     nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
     relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
+    flows, flow_evidence: flowEvidence,
   };
   const pending: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_pending' };
   const projected = () => projectArchitectureMap({
@@ -341,6 +363,12 @@ describe('architecture map', () => {
       expect(map.commit).toBe(commit);
       expect(map.nodes.map(entry => [entry.id, entry.parent])).toEqual([[MODULE_ID, null], ['component.module.core', MODULE_ID]]);
       expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
+      // The flow and the code its step selector names come from the same export.
+      const read = { id: 'read', from: 'module', to: 'core', label: 'Read facts', evidence: { entrypoint: 'entrypoint.module.read', source_symbol: 'read', sink: 'sink.module.core' } };
+      expect(map.flows).toEqual([{ id: 'flow.module.primary', capability: MODULE_ID, name: 'Read module facts', applicability: 'required',
+        participants: [{ id: 'module', node: MODULE_ID }, { id: 'core', node: 'component.module.core' }], steps: [read],
+        outcomes: (['success', 'error'] as const).map(kind => ({ id: kind, kind, label: kind, steps: [read], terminal: { participant: 'module', label: kind } })) }]);
+      expect(map.flow_evidence).toEqual([{ ...read.evidence, node: MODULE_ID, source_path: 'src/module/read.ts', sink_path: 'src/module/core.ts', sink_symbol: 'project' }]);
       expect(map.sizes).toEqual({ state: 'ok', nodes: [{ id: MODULE_ID, files: 2, lines: 2 }] });
       expect(map.dependencies.state).toBe('unavailable');
       // The decisions come from the same `export native` as the model; the fixture declares no ordered layers.
@@ -368,6 +396,23 @@ describe('architecture map', () => {
       const dirtyPrs = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z',
         { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [] });
       expect(dirtyPrs.ok && dirtyPrs.snapshot.layers.pull_requests).toEqual({ state: 'unavailable', reason: 'model_worktree_dirty' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a declared step path that the public-path guard refuses is withheld, and the rest of the flow stays', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      const node = JSON.parse(readFileSync(join(root, MODULE_NODE), 'utf8'));
+      node.source.include = ['src/module/**', 'app/**'];
+      node.source.entrypoints[0].path = 'app/(group)/read.ts';
+      fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
+      fixtureWrite(root, 'app/(group)/read.ts', 'export const read = () => 1;\n');
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.flow_evidence).toEqual([{ entrypoint: 'entrypoint.module.read', source_symbol: 'read', sink: 'sink.module.core', node: MODULE_ID,
+        source_path: null, sink_path: 'src/module/core.ts', sink_symbol: 'project' }]);
+      expect(result.snapshot.flows.map(entry => entry.id)).toEqual(['flow.module.primary']);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -404,7 +449,8 @@ describe('architecture map', () => {
     expect(map.layers.changes).toEqual(layers.changes);
     // Decisions and flow proofs pass through sorted by id; layer direction keeps the collector's answer.
     expect(map.layers.decisions.items.map(item => item.id)).toEqual(['ADR-0001-ledger', 'ADR-0002-gate']);
-    expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 2 }, { id: OTHER, diagnostics: 1 }] });
+    expect(map.layers.violations.flows).toEqual({ state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 2 }, { id: OTHER, diagnostics: 1 }],
+      evidence: [{ ...WRITE, status: 'proven' }, { ...DENY, status: 'no-direct-call' }] });
     expect(map.layers.violations.layer_direction).toEqual({ state: 'ok', imports: 12, edges: [] });
     // archctx may report a stale anchor with no path; that is a valid debt item, not a broken map.
     const anchorOnly = projectArchitectureMap({ ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
@@ -577,7 +623,96 @@ describe('architecture map', () => {
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v2'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v3'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v4'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v5'; });
     refused(copy => { copy.layers.violations.layer_direction = { state: 'unavailable', reason: 'layer_direction_not_read' }; });
+  });
+
+  test('flows, their declared code and archctx\'s step proofs pass through by id and selector, and the decoder refuses a flow that names what the map lacks', () => {
+    const map = projected();
+    expect(map.flows.map(entry => entry.id)).toEqual([FLOW, 'flow.review.gate']);
+    expect(map.flows[0]).toEqual(flows[1]);
+    expect(map.flow_evidence).toEqual(flowEvidence);
+    const copy = JSON.parse(JSON.stringify(map));
+    expect(decodeArchitectureMap(copy)).toEqual(map);
+    const refused = (change: (value: typeof copy) => void) => {
+      const value = JSON.parse(JSON.stringify(copy));
+      change(value);
+      expect(() => decodeArchitectureMap(value)).toThrow('architecture_map_invalid');
+    };
+    refused(value => { delete value.flows; });
+    refused(value => { value.flows[0].participants[1].node = 'component.pipeline.ghost'; });
+    refused(value => { value.flows[0].participants.push(value.flows[0].participants[0]); });
+    refused(value => { value.flows[0].steps[0].to = 'ghost'; });
+    refused(value => { value.flows[0].outcomes[1].steps[0].from = 'ghost'; });
+    refused(value => { value.flows[0].outcomes[0].terminal.participant = 'ghost'; });
+    refused(value => { value.flows[0].outcomes[0].kind = 'partial'; });
+    refused(value => { value.flows[0].outcomes.push(value.flows[0].outcomes[0]); });
+    refused(value => { value.flows[0].steps.push(value.flows[0].steps[0]); });
+    refused(value => { value.flows[0].capability = PART; });
+    refused(value => { value.flows[1].id = FLOW; });
+    refused(value => { value.flows[1].participants = []; });
+    refused(value => { value.flows[0].steps[0].label = 'Write /Users/someone/ledger.db'; });
+    refused(value => { value.flows[0].steps[0].evidence.extra = 'x'; });
+    // Declared code: once per selector, for a selector a step names, from a node of the map, at a public path or null.
+    refused(value => { value.flow_evidence.push(value.flow_evidence[0]); });
+    refused(value => { value.flow_evidence[0].sink = 'sink.pipeline.other'; });
+    refused(value => { value.flow_evidence[0].node = 'capability.gone.node'; });
+    refused(value => { value.flow_evidence[0].source_path = '/Users/someone/repo/src/ledger.ts'; });
+    refused(value => { value.flow_evidence[0].sink_path = 'app/[slug]/page.tsx'; });
+    expect(decodeArchitectureMap({ ...copy, flow_evidence: [{ ...copy.flow_evidence[0], source_path: null, sink_path: null }] }).flow_evidence[0]?.source_path).toBeNull();
+    // archctx's status is an opaque token; each proof names a step selector once.
+    refused(value => { value.layers.violations.flows.evidence[0].status = 'Proven'; });
+    refused(value => { value.layers.violations.flows.evidence.push(value.layers.violations.flows.evidence[0]); });
+    refused(value => { value.layers.violations.flows.evidence[0].entrypoint = 'entrypoint.pipeline.other'; });
+    // A flow change names a flow of the map, and a step that today's change reaches is a step of that flow.
+    refused(value => { value.layers.changes.model[0].change = 'removed'; });
+    refused(value => { value.layers.changes.flow_steps.items[0].step = 'ghost'; });
+    refused(value => { value.layers.changes.flow_steps.items[0].outcome = 'stored'; });
+    expect(decodeArchitectureMap({ ...copy, layers: { ...copy.layers, changes: { ...copy.layers.changes,
+      flow_steps: { status: 'known', reason_codes: [], items: [{ flow: FLOW, step: 'deny', outcome: 'refused', reason_codes: [] }] } } } }).layers.changes.state).toBe('ok');
+  });
+
+  test('an impact answer that names a flow step the model lacks drops only that layer or that PR', () => {
+    const changes = layers.changes.state === 'ok' ? layers.changes : null;
+    const prs = layers.pull_requests.state === 'ok' ? layers.pull_requests : null;
+    const ghost = { status: 'known' as const, reason_codes: [], items: [{ flow: FLOW, step: 'ghost', outcome: null, reason_codes: [] }] };
+    const map = projectArchitectureMap({
+      ...input, sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' },
+      layers: { ...layers, changes: { ...changes!, flow_steps: ghost },
+        pull_requests: { ...prs!, pull_requests: prs!.pull_requests.map(pr => (pr.number === 7 ? { ...pr, impact: { state: 'ok', ...prImpact, flow_steps: ghost } } : pr)) } },
+    });
+    expect(map.layers.changes).toEqual({ state: 'unavailable', reason: 'archctx_failed' });
+    expect(map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.map(pr => pr.impact.state === 'unavailable' ? pr.impact.reason : 'ok'))
+      .toEqual(['archctx_failed', 'files_truncated', 'head_missing', 'archctx_error']);
+    expect(map.flows.length).toBe(2);
+  });
+
+  test('a flows check report keeps archctx\'s status for each selector a flow step names', () => {
+    const selector = (entrypointId: string, sourceSymbol: string, sinkId: string, status: string, flowSteps: { flowId: string; stepId: string }[]) => ({
+      nodeId: CAP, entrypointId, sourcePath: 'src/ledger.ts', sourceSymbol, sinkId, sinkPath: 'src/store.ts', sinkSymbol: 'put', status,
+      callSites: [], referenceSites: [], rejectedBuiltinCallSites: [], flowSteps,
+    });
+    const report = (fields: Record<string, unknown> = {}) => decodeFlowSelectorCheck({
+      schemaVersion: 'archcontext.flow-selector-check/v1', ok: false, codeGraph: { availability: 'ready', version: '1.6.2' },
+      summary: { selectors: 3, proven: 1, unproven: 2, usedUnproven: 1 },
+      selectors: [
+        selector(WRITE.entrypoint, WRITE.source_symbol, WRITE.sink, 'proven', [{ flowId: FLOW, stepId: 'store' }]),
+        selector(DENY.entrypoint, DENY.source_symbol, DENY.sink, 'no-direct-call', [{ flowId: FLOW, stepId: 'deny' }]),
+        selector('entrypoint.pipeline.read', 'read', 'sink.pipeline.store', 'only-references', []),
+      ],
+      capabilities: [{ capabilityId: CAP, p2Status: 'unprovable', diagnostics: [{ code: 'flow-step-unproven', flowId: FLOW, stepId: 'deny', detail: 'No direct call.' }] }],
+      ...fields,
+    });
+    const steps = new Set([WRITE, DENY].map(entry => `${entry.entrypoint}\0${entry.source_symbol}\0${entry.sink}`));
+    expect(flowProofSection(report(), new Set([CAP]), steps)).toEqual({
+      state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: CAP, diagnostics: 1 }],
+      evidence: [{ ...WRITE, status: 'proven' }, { ...DENY, status: 'no-direct-call' }],
+    });
+    const failed = { state: 'unavailable', reason: 'archctx_failed' } as const;
+    expect(flowProofSection(report(), new Set([OTHER]), steps)).toEqual(failed);
+    const twice = report();
+    expect(flowProofSection({ ...twice, selectors: [...twice.selectors, twice.selectors[0]!] }, new Set([CAP]), steps)).toEqual(failed);
+    expect(flowProofSection(report({ codeGraph: { availability: 'unavailable', version: '1.6.2' } }), new Set([CAP]), steps)).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
   });
 
   test('the layer-direction layer names map nodes in their own layers, and only imports up the layer order', () => {

@@ -6,7 +6,8 @@
 // last commit before local midnight to the map commit, `archctx debt`, `docs
 // anchors`, `flows check --no-sync` and `constraints check`, `archctx impact
 // --paths-from` for each open PR's changed files from the Dev Activity cache, and
-// the tests collector's cache. archctx owns ownership, impact, dependency, flow,
+// the tests collector's cache. The same export gives the model's flows and the
+// code each flow step selector names. archctx owns ownership, impact, dependency, flow,
 // decision, anchor, layer-order and layer-direction facts; this module only sums line counts along the model's `parent` chain and
 // checks the shape. The strict decoder serves the server before it sends and the
 // browser before it renders.
@@ -16,7 +17,7 @@ import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-reques
 import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
-export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v5' as const;
+export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v6' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
 /** Why a repository's map cannot be served. Each maps to one HTTP status in the route. */
@@ -80,6 +81,24 @@ export const ARCHITECTURE_LAYER_DIRECTION_REASONS = [
   ...ARCHITECTURE_VIOLATION_REASONS, 'model_layers_undeclared', 'layer_direction_undeclared', 'layer_endpoint_unclassified',
 ] as const;
 export type ArchitectureLayerDirectionReason = typeof ARCHITECTURE_LAYER_DIRECTION_REASONS[number];
+/**
+ * The archctx reads behind each violation part, as the map collector runs them.
+ * The console shows the same arguments as the command that lists a finding;
+ * archctx's answer names its own remedy.
+ */
+export const ARCHITECTURE_VIOLATION_READS = {
+  debt: ['debt', '--json'],
+  flows: ['flows', 'check', '--no-sync', '--json'],
+  anchors: ['docs', 'anchors', '--json'],
+  dependencies: ['deps', '--json'],
+  layer_direction: ['constraints', 'check', '--json'],
+} as const satisfies Record<keyof ArchitectureViolationsLayerV1, readonly string[]>;
+
+/** The shell command for one violation part's read. */
+export function architectureViolationCommand(part: keyof ArchitectureViolationsLayerV1): string {
+  return ['archctx', ...ARCHITECTURE_VIOLATION_READS[part]].join(' ');
+}
+
 /** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
 export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
 export type ArchitectureDebtKind = typeof ARCHITECTURE_DEBT_KINDS[number];
@@ -221,7 +240,12 @@ export function architectureImpact(report: RefImpactV1): ArchitectureImpactV1 {
 }
 
 export interface ArchitectureDebtItemV1 { readonly kind: ArchitectureDebtKind; readonly nodes: readonly string[]; readonly paths: readonly string[] }
-/** `archctx flows check --no-sync`: selector proof counts, and the capabilities whose P2 flow proof archctx calls unprovable. */
+
+/** The evidence of a flow step: archctx's selector key, an entrypoint symbol and a sink of one model node. */
+export interface ArchitectureFlowSelectorV1 { readonly entrypoint: string; readonly source_symbol: string; readonly sink: string }
+/** archctx's proof status for one selector that a flow step names, for example `proven` or `no-direct-call`. */
+export interface ArchitectureFlowProofV1 extends ArchitectureFlowSelectorV1 { readonly status: string }
+/** `archctx flows check --no-sync`: selector proof counts, each flow step selector's status, and the capabilities whose P2 flow proof archctx calls unprovable. */
 export interface ArchitectureFlowProofsV1 {
   readonly selectors: number;
   readonly proven: number;
@@ -229,6 +253,55 @@ export interface ArchitectureFlowProofsV1 {
   /** Unproven selectors that a required-flow step names. */
   readonly used_unproven: number;
   readonly unprovable: readonly { readonly id: string; readonly diagnostics: number }[];
+  /** The selectors that the map's flow steps name, by archctx's selector key. */
+  readonly evidence: readonly ArchitectureFlowProofV1[];
+}
+
+/** One message of a flow: participant ids, the model's label and the step's evidence selector. */
+export interface ArchitectureMapFlowStepV1 {
+  readonly id: string;
+  readonly from: string;
+  readonly to: string;
+  readonly label: string;
+  readonly evidence: ArchitectureFlowSelectorV1;
+}
+export interface ArchitectureMapFlowOutcomeV1 {
+  readonly id: string;
+  readonly kind: 'success' | 'error';
+  readonly label: string;
+  readonly steps: readonly ArchitectureMapFlowStepV1[];
+  readonly terminal: { readonly participant: string; readonly label: string };
+}
+/** One flow of the committed model (`archcontext.flow/v1`); free text is masked like model prose. */
+export type ArchitectureMapFlowV1 = { readonly id: string; readonly capability: string; readonly name: string } & (
+  | {
+    readonly applicability: 'required';
+    readonly participants: readonly { readonly id: string; readonly node: string }[];
+    readonly steps: readonly ArchitectureMapFlowStepV1[];
+    readonly outcomes: readonly ArchitectureMapFlowOutcomeV1[];
+  }
+  | { readonly applicability: 'not-applicable'; readonly rationale: string }
+);
+/**
+ * The code that one model node declares for a flow step selector in its
+ * `source.entrypoints`. A path is null when the public-path guard refuses it.
+ */
+export interface ArchitectureFlowEvidenceV1 extends ArchitectureFlowSelectorV1 {
+  readonly node: string;
+  readonly source_path: string | null;
+  readonly sink_path: string | null;
+  readonly sink_symbol: string;
+}
+
+/** archctx's selector key, as one string. */
+export function flowSelectorKey(selector: ArchitectureFlowSelectorV1): string {
+  return `${selector.entrypoint}\0${selector.source_symbol}\0${selector.sink}`;
+}
+
+/** Every step of a required flow, the outcome steps after the main steps; `outcome` is null for a main step. */
+export function flowSteps(flow: ArchitectureMapFlowV1): { readonly outcome: string | null; readonly step: ArchitectureMapFlowStepV1 }[] {
+  if (flow.applicability !== 'required') return [];
+  return [...flow.steps.map(step => ({ outcome: null, step })), ...flow.outcomes.flatMap(outcome => outcome.steps.map(step => ({ outcome: outcome.id, step })))];
 }
 export interface ArchitectureViolationsLayerV1 {
   /** `archctx debt`: unowned and contested paths, stale model anchors. */
@@ -306,6 +379,10 @@ export interface ArchitectureMapV1 {
   readonly collected_at: string;
   readonly nodes: readonly ArchitectureMapNodeV1[];
   readonly relations: readonly ArchitectureMapRelationV1[];
+  /** The model's flows from the same `archctx export native` read. */
+  readonly flows: readonly ArchitectureMapFlowV1[];
+  /** The declared code of each flow step selector that exactly one node declares. */
+  readonly flow_evidence: readonly ArchitectureFlowEvidenceV1[];
   readonly sizes: ArchitectureMapSizesV1;
   readonly dependencies: ArchitectureMapDependenciesV1;
   readonly layer_order: ArchitectureLayerOrderV1;
@@ -374,10 +451,23 @@ const changesWith = (path: Check): Check => either(section({ since: instant, bas
 const pullRequestImpactWith = (path: Check): Check => either(section(impactFields(path), ARCHITECTURE_PR_REASONS), refusal);
 const changes = changesWith(repoPath);
 const pullRequestImpact = pullRequestImpactWith(repoPath);
+const singleLine = prose(match(/^[^\r\n]{1,4096}$/u));
+const selectorFields = { entrypoint: localId, source_symbol: singleLine, sink: localId };
+const flowStep = object({ id: localId, from: localId, to: localId, label: prose(nonEmpty), evidence: object(selectorFields) });
+const flow = either(
+  object({
+    id, capability: id, name: prose(nonEmpty), applicability: one('required'),
+    participants: list(object({ id: localId, node: id })), steps: list(flowStep),
+    outcomes: list(object({ id: localId, kind: one('success', 'error'), label: prose(nonEmpty), steps: list(flowStep), terminal: object({ participant: localId, label: prose(nonEmpty) }) })),
+  }),
+  object({ id, capability: id, name: prose(nonEmpty), applicability: one('not-applicable'), rationale: prose(nonEmpty) }),
+);
+const flowEvidence = object({ ...selectorFields, node: id, source_path: nullable(repoPath), sink_path: nullable(repoPath), sink_symbol: singleLine });
 const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
   flows: either(section({
     selectors: count, proven: count, unproven: count, used_unproven: count, unprovable: list(object({ id, diagnostics: count })),
+    evidence: list(object({ ...selectorFields, status: match(ARCHCTX_TOKEN) })),
   }, ARCHITECTURE_VIOLATION_REASONS), refusal),
   anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
@@ -385,7 +475,6 @@ const violations = object({
     imports: count, edges: list(object({ source: id, target: id, source_layer: match(LAYER), target_layer: match(LAYER), imports: positive })),
   }, ARCHITECTURE_LAYER_DIRECTION_REASONS), refusal),
 });
-const singleLine = prose(match(/^[^\r\n]{1,4096}$/u));
 const decisions = object({
   state: one('ok'),
   items: list(object({
@@ -410,6 +499,8 @@ const map = object({
   collected_at: instant,
   nodes: list(node),
   relations: list(relation),
+  flows: list(flow),
+  flow_evidence: list(flowEvidence),
   sizes: section({ nodes: list(size) }, ARCHITECTURE_MAP_SIZE_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_MAP_DEPENDENCY_REASONS),
   layer_order: section({ layers: layerNames }, ARCHITECTURE_LAYER_ORDER_REASONS),
@@ -436,7 +527,46 @@ function reachesRoot(id: string, nodes: ReadonlyMap<string, ArchitectureMapNodeV
   return true;
 }
 
-interface MapIndex { readonly nodes: ReadonlySet<string>; readonly relations: ReadonlySet<string> }
+interface MapIndex {
+  readonly nodes: ReadonlySet<string>;
+  readonly relations: ReadonlySet<string>;
+  readonly flows: ReadonlySet<string>;
+  /** Each step of each required flow, by `stepKey`. */
+  readonly steps: ReadonlySet<string>;
+}
+
+const stepKey = (flowId: string, outcome: string | null, step: string): string => `${flowId}\0${outcome ?? ''}\0${step}`;
+
+function mapIndex(nodes: readonly ArchitectureMapNodeV1[], relations: readonly ArchitectureMapRelationV1[], flows: readonly ArchitectureMapFlowV1[]): MapIndex {
+  return {
+    nodes: new Set(nodes.map(entry => entry.id)),
+    relations: new Set(relations.map(entry => entry.id)),
+    flows: new Set(flows.map(entry => entry.id)),
+    steps: new Set(flows.flatMap(entry => flowSteps(entry).map(({ outcome, step }) => stepKey(entry.id, outcome, step.id)))),
+  };
+}
+
+/**
+ * Each required flow names nodes of the map; its steps and its outcome
+ * terminals name its own participants. Ids are unique where archctx keys by
+ * them. Each declared selector and each proof names a selector that a step
+ * names, once.
+ */
+function flowsValid(map: ArchitectureMapV1, nodes: ReadonlyMap<string, ArchitectureMapNodeV1>): boolean {
+  const selectors = new Set(map.flows.flatMap(entry => flowSteps(entry).map(({ step }) => flowSelectorKey(step.evidence))));
+  const named = (entries: readonly ArchitectureFlowSelectorV1[]) => unique(entries.map(flowSelectorKey)) && entries.every(entry => selectors.has(flowSelectorKey(entry)));
+  const { flows: proofs } = map.layers.violations;
+  return unique(map.flows.map(entry => entry.id)) && map.flows.every(entry => {
+    if (nodes.get(entry.capability)?.kind !== 'capability') return false;
+    if (entry.applicability !== 'required') return true;
+    const participants = new Set(entry.participants.map(participant => participant.id));
+    const stepsValid = (steps: readonly ArchitectureMapFlowStepV1[]) => unique(steps.map(step => step.id)) && steps.every(step => participants.has(step.from) && participants.has(step.to));
+    return participants.size === entry.participants.length && entry.participants.every(participant => nodes.has(participant.node))
+      && stepsValid(entry.steps) && unique(entry.outcomes.map(outcome => outcome.id))
+      && entry.outcomes.every(outcome => stepsValid(outcome.steps) && participants.has(outcome.terminal.participant));
+  }) && named(map.flow_evidence) && map.flow_evidence.every(entry => nodes.has(entry.node))
+    && (proofs.state !== 'ok' || named(proofs.evidence));
+}
 
 /**
  * archctx's own consistency, and every id it names is a node or relation of the
@@ -450,17 +580,18 @@ function impactValid(impact: ArchitectureImpactV1, index: MapIndex, owner: (id: 
     && unowned.length === impact.unowned_paths.length && unowned.every((path, position) => path === impact.unowned_paths[position])
     && unique(impact.nodes.map(entry => entry.id)) && impact.nodes.every(entry => owner(entry.id))
     && impact.dependents.every(entry => index.nodes.has(entry.id) && owner(entry.touched) && entry.relations.length > 0 && entry.relations.every(relation => index.relations.has(relation)))
-    && (steps.status === 'known' ? steps.reason_codes.length === 0 && steps.items !== null : steps.reason_codes.length > 0);
+    && (steps.status === 'known' ? steps.reason_codes.length === 0 && steps.items !== null : steps.reason_codes.length > 0)
+    && (steps.items ?? []).every(item => index.steps.has(stepKey(item.flow, item.outcome, item.step)));
 }
 
-/** Today's changes: an added or changed node or relation is in the map, a removed one is not. Flows are not on the map. */
+/** Today's changes: an added or changed node, relation or flow is in the map, a removed one is not. */
 function changesValid(value: unknown, index: MapIndex, path: Check = repoPath): boolean {
   if (!(path === repoPath ? changes : changesWith(path))(value)) return false;
   const layer = value as ArchitectureChangesLayerV1;
   if (layer.state !== 'ok') return true;
   const removed = new Set(layer.model.filter(entry => entry.kind === 'nodes' && entry.change === 'removed').map(entry => entry.id));
-  const present = (kind: 'nodes' | 'relations', has: ReadonlySet<string>) => layer.model.filter(entry => entry.kind === kind).every(entry => (entry.change === 'removed') !== has.has(entry.id));
-  return unique(layer.model.map(entry => `${entry.kind}\0${entry.id}`)) && present('nodes', index.nodes) && present('relations', index.relations)
+  const present = (kind: ArchitectureModelChangeV1['kind'], has: ReadonlySet<string>) => layer.model.filter(entry => entry.kind === kind).every(entry => (entry.change === 'removed') !== has.has(entry.id));
+  return unique(layer.model.map(entry => `${entry.kind}\0${entry.id}`)) && present('nodes', index.nodes) && present('relations', index.relations) && present('flows', index.flows)
     && impactValid(layer, index, nodeId => index.nodes.has(nodeId) || removed.has(nodeId));
 }
 
@@ -492,7 +623,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
   const result = value as ArchitectureMapV1;
   const nodes = new Map(result.nodes.map(entry => [entry.id, entry]));
   const relations = new Set(result.relations.map(entry => entry.id));
-  const index: MapIndex = { nodes: new Set(nodes.keys()), relations };
+  const index = mapIndex(result.nodes, result.relations, result.flows);
   const capability = (nodeId: string) => nodes.get(nodeId)?.kind === 'capability';
   // Each list names each node once, and only nodes of this map.
   const known = (entries: readonly string[], exists: (entry: string) => boolean = entry => nodes.has(entry)) => unique(entries) && entries.every(exists);
@@ -511,6 +642,7 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
     || (violations.anchors.state === 'ok' && !known(violations.anchors.nodes.map(entry => entry.id)))
     || (violations.dependencies.state === 'ok' && !importEdges(violations.dependencies.edges))
     || !layerDirectionValid(result, nodes)
+    || !flowsValid(result, nodes)
     || (pulls.state === 'ok' && (!unique(pulls.pull_requests.map(entry => String(entry.number))) || pulls.pull_requests.some(entry => !pullRequestImpactValid(entry.impact, index)
       || (entry.impact.state === 'ok' ? entry.head_sha === null : (entry.head_sha === null) !== (entry.impact.reason === 'head_missing')))))
     || (tests.state === 'ok' && (!known(tests.capabilities.map(entry => entry.id), capability)
@@ -575,6 +707,7 @@ const compare = (left: string, right: string): number => (left < right ? -1 : le
 const byId = <T extends { readonly id: string }>(entries: readonly T[]): T[] => [...entries].sort((a, b) => compare(a.id, b.id));
 const byEdge = <T extends { readonly source: string; readonly target: string }>(entries: readonly T[]): T[] =>
   [...entries].sort((a, b) => compare(a.source, b.source) || compare(a.target, b.target));
+const bySelector = <T extends ArchitectureFlowSelectorV1>(entries: readonly T[]): T[] => [...entries].sort((a, b) => compare(flowSelectorKey(a), flowSelectorKey(b)));
 
 /**
  * Adds each owned path's counts to its owner and every ancestor on the model's
@@ -675,13 +808,15 @@ export function projectArchitectureMap(input: {
   readonly collected_at: string;
   readonly nodes: readonly ArchitectureMapNodeV1[];
   readonly relations: readonly ArchitectureMapRelationV1[];
+  readonly flows: readonly ArchitectureMapFlowV1[];
+  readonly flow_evidence: readonly ArchitectureFlowEvidenceV1[];
   readonly sizes: ArchitectureMapSizeInput;
   readonly dependencies: ArchitectureMapDependencyInput;
   readonly layer_order: ArchitectureLayerOrderV1;
   readonly layers: ArchitectureMapLayersInput;
 }): ArchitectureMapV1 {
   const parents = new Map(input.nodes.map(entry => [entry.id, entry.parent]));
-  const index: MapIndex = { nodes: new Set(input.nodes.map(entry => entry.id)), relations: new Set(input.relations.map(entry => entry.id)) };
+  const index = mapIndex(input.nodes, input.relations, input.flows);
   let sizes: ArchitectureMapSizesV1 = input.sizes.state === 'ok' ? { state: 'ok', nodes: [] } : input.sizes;
   if (input.sizes.state === 'ok') {
     const { owners } = input.sizes;
@@ -704,6 +839,8 @@ export function projectArchitectureMap(input: {
     collected_at: input.collected_at,
     nodes: byId(input.nodes),
     relations: byId(input.relations),
+    flows: byId(input.flows),
+    flow_evidence: bySelector(input.flow_evidence),
     sizes,
     dependencies,
     layer_order: input.layer_order,
@@ -711,7 +848,8 @@ export function projectArchitectureMap(input: {
       changes: changesValid(input.layers.changes, index) ? input.layers.changes : impactGap(path => changesValid(input.layers.changes, index, path)),
       violations: {
         debt: violations.debt,
-        flows: violations.flows.state === 'ok' ? { ...violations.flows, unprovable: byId(violations.flows.unprovable) } : violations.flows,
+        flows: violations.flows.state === 'ok'
+          ? { ...violations.flows, unprovable: byId(violations.flows.unprovable), evidence: bySelector(violations.flows.evidence) } : violations.flows,
         anchors: violations.anchors.state === 'ok' ? { ...violations.anchors, nodes: byId(violations.anchors.nodes) } : violations.anchors,
         dependencies: violations.dependencies.state === 'ok' ? { state: 'ok', edges: byEdge(violations.dependencies.edges) } : violations.dependencies,
         layer_direction: violations.layer_direction.state === 'ok' ? { ...violations.layer_direction, edges: byEdge(violations.layer_direction.edges) } : violations.layer_direction,
