@@ -2,12 +2,11 @@
 // citation against the docs view the console serves, then creates the
 // session's `docs/<slug>` worktree under the managed worktree root and the
 // session record. The runtime must have verified docs isolation and the docs
-// use in the agent settings. It starts no agent: the agent launch needs the
-// user's approval of its confirmation bypass first.
+// use in the agent settings. Then it starts the session's agent in the docs
+// host boundary (owner decision D3, 2026-10-28; doc-session-agent.ts).
 //
-// The route runs only through the shared write run (lock, idempotency,
-// audit). Production OPERATOR_ROUTES admits it after the local config write
-// (#1017) opened; the agent launch still waits for its own approval.
+// The routes run only through the shared write run (lock, idempotency,
+// audit). `POST /api/v1/sessions/{sid}/stop` aborts the running turn.
 
 import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync } from 'node:fs';
@@ -24,6 +23,7 @@ import { configuredGitBinary, gitExecFile, GitExecError, withoutRepositorySelect
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { assertDocsHostPlatform } from '../review/docs-host-isolation';
+import { requestDocSessionControl, type DocSessionAgentState } from './doc-session-agent';
 import { withWorktreeTopologyLockAsync } from '../state/coordination-worktree-topology';
 import { DocsReadError, normalizeDocsPath, type DocsReader } from './docs-reader';
 import type { OperatorWriteRoute } from './write-channel';
@@ -31,6 +31,7 @@ import { prepareOperatorStateDir } from './write-audit';
 import { OperatorWriteRefusal, type OperatorWriteResponse } from './write-run';
 
 export const OPERATOR_SESSIONS_ROUTE = /^\/api\/v1\/sessions$/u;
+export const OPERATOR_SESSION_STOP_ROUTE = /^\/api\/v1\/sessions\/([0-9a-f]{32})\/stop$/u;
 export const DOC_SESSION_MAX_CITATIONS = 16;
 export const DOC_SESSION_MAX_INSTRUCTION = 8_000;
 /** Bounds the topology lock wait and the git calls of one creation. */
@@ -55,6 +56,8 @@ export interface DocSessionDependencies {
   readonly docs_reader: (repositoryId: string) => DocsReader | null;
   readonly new_session_id?: () => string;
   readonly platform?: NodeJS.Platform;
+  /** Starts the session's agent once its record exists; production runs the docs host (startDocSessionAgent). */
+  readonly launch_agent: (sessionId: string) => DocSessionAgentState;
 }
 
 /** Closed decoder. A citation may name only a servable `docs/**` path; the request names no location. */
@@ -252,10 +255,11 @@ async function createDocSession(input: DocSessionCreateInput, deps: DocSessionDe
     citations: verified.map(entry => ({ ...entry.citation, resolved: { ...entry.resolved }, relocated: entry.relocated })),
     instruction: input.instruction,
   });
+  const agent = deps.launch_agent(sessionId);
   return {
     status: 201,
     body: { protocol: 1, kind: 'operator_docs_session', session_id: sessionId, state: 'created', repository_id: repo.id, runtime: input.runtime,
-      branch, worktree: basename(canonical), base_commit: base, citations },
+      branch, worktree: basename(canonical), base_commit: base, citations, agent },
   };
 }
 
@@ -272,6 +276,41 @@ export function docSessionCreateRoute(deps: DocSessionDependencies): OperatorWri
         target: `docs_session_create:${input.repository_id}`,
         input: input as unknown as JsonValue,
         execute: () => createDocSession(input, deps),
+      };
+    },
+  };
+}
+
+/**
+ * `POST /api/v1/sessions/{sid}/stop`: the running turn ends as aborted and
+ * the session stays (PRD write API). The body holds only `request_id`.
+ */
+export function docSessionStopRoute(env: NodeJS.ProcessEnv): OperatorWriteRoute {
+  return {
+    id: 'sessions_stop',
+    path: OPERATOR_SESSION_STOP_ROUTE,
+    decode(fields, params) {
+      if (Object.keys(fields).length !== 0) throw new Error('doc session stop keys');
+      const sessionId = params[0]!;
+      return {
+        operation: 'docs_session_stop',
+        target: `docs_session:${sessionId}`,
+        input: { session_id: sessionId },
+        execute: async () => {
+          let result;
+          try { result = await requestDocSessionControl(env, sessionId, 'stop'); }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as Error).message === 'doc_session_directory_unsafe') {
+              throw refuse(404, 'session_not_found', 'This doc session does not exist.', 'Open the session list and choose a session.');
+            }
+            throw error;
+          }
+          if (result === 'accepted') return { status: 202, body: { protocol: 1, kind: 'operator_docs_session_stop', session_id: sessionId, result: 'aborting' } };
+          if (result === 'unanswered') throw refuse(503, 'agent_unanswered', 'The session agent did not answer the stop request.', 'Read the session events, then retry with a new request_id.');
+          throw result === 'no_active_turn'
+            ? refuse(409, 'no_active_turn', 'No turn is running in this session.', 'Send a message to start a turn.')
+            : refuse(409, 'session_closed', 'The session agent has ended.', 'Start a new doc session.');
+        },
       };
     },
   };

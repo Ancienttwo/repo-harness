@@ -111,14 +111,17 @@ jobs:
           test -x /usr/bin/sandbox-exec
           bun install --frozen-lockfile
           test ! -e dist/oar-review-host.js
+          test ! -e dist/oar-docs-host.js
           bun run build:oar-review-host
+          bun run build:oar-docs-host
           test -s dist/oar-review-host.js
+          test -s dist/oar-docs-host.js
           case "$MODE" in
             affected) set -- -t 'darwin: ' ;;
             daily) set -- ;;
             *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;
           esac
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts "$@" --timeout 60000 --max-concurrency 1
+          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts tests/doc-session-agent.test.ts "$@" --timeout 60000 --max-concurrency 1
 
   verify:
     name: Affected tests (shard ${{ matrix.shard }}/3)

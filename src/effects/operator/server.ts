@@ -48,7 +48,8 @@ import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { DocSessionEventsError, OPERATOR_SESSION_EVENTS_ROUTE, readDocSessionEvents } from './doc-session-events';
-import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
+import { OPERATOR_SESSIONS_ROUTE, OPERATOR_SESSION_STOP_ROUTE, docSessionCreateRoute, docSessionStopRoute } from './doc-session';
+import { docsHostExecutable, reconcileDocSessionAgents, startDocSessionAgent, type DocSessionAgentState } from './doc-session-agent';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -164,8 +165,10 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
-  // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
+  // The second write route: it verifies citations, creates the doc session's worktree in the managed root and starts its agent in the docs host boundary.
   Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
+  // Aborts the running turn of a doc session's agent; the session stays.
+  Object.freeze({ id: 'sessions_stop', method: 'POST', pattern: OPERATOR_SESSION_STOP_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -224,6 +227,8 @@ export interface OperatorServerOptions {
   readonly docs_collector?: boolean;
   /** The platform the docs session route checks. Production uses the host platform; only tests pass another. */
   readonly docs_session_platform?: NodeJS.Platform;
+  /** Starts a doc session's agent. Production runs the docs host bundle; only tests pass another. */
+  readonly docs_agent_launcher?: (sessionId: string) => DocSessionAgentState;
   /** Tests cache reader by repository id. GET serves only this cache; it never calls GitHub. */
   readonly read_tests?: (repositoryId: string) => TestsRepositoryCache;
   /** Start the in-process tests collector (operator serve). Ignored when a cache reader is injected. */
@@ -1621,17 +1626,22 @@ export async function startOperatorServer(
   // the production binding with the same id, so a test serves its own handler
   // behind the production inventory entry.
   const injectedWriteRoutes = options.write_routes ?? [];
+  const sessionEnv = options.env ?? process.env;
+  // A docs host that died while no server watched it gets its failure recorded now (D6).
+  reconcileDocSessionAgents(sessionEnv);
   const writeRoutes = [
     agentsSettingsWriteRoute(readAgentRuntimes, options.env),
     docSessionCreateRoute({
-      env: options.env ?? process.env,
+      env: sessionEnv,
       platform: options.docs_session_platform,
+      launch_agent: options.docs_agent_launcher ?? (sessionId => startDocSessionAgent(sessionEnv, sessionId, () => docsHostExecutable(sessionEnv))),
       // The same docs cache the docs GET routes serve; citations verify against it.
       docs_reader: repositoryId => {
         const cache = (options.read_docs ?? docs?.read)?.(repositoryId);
         return cache?.state === 'ready' ? cache.reader : null;
       },
     }),
+    docSessionStopRoute(sessionEnv),
     worktreeCleanupWriteRoute(options.env),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);

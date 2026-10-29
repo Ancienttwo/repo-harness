@@ -28,6 +28,7 @@ source:
     - src/core/operator/architecture.ts
     - src/core/operator/bot-access.ts
     - src/core/operator/doc-citation.ts
+    - src/core/operator/doc-session-adapter.ts
     - src/core/operator/doc-session-events.ts
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts

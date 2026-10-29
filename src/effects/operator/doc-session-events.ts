@@ -2,9 +2,9 @@
 // events to `<repoHarnessHome>/operator/sessions/<sid>/events.jsonl`, next to
 // the session record of #1021; the page reads them by an `epoch.seq` cursor.
 //
-// No host produces events yet: agent launch (G5) needs the user's approval of
-// its confirmation bypass first. Production OPERATOR_ROUTES has no events
-// route; tests admit it through their own route inventory.
+// The docs host (oar-docs-host.ts) produces the events; the server adds the
+// failure records of a host that died. Production OPERATOR_ROUTES has no
+// events route; tests admit it through their own route inventory.
 
 import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import {
   compareDocSessionCursor, decodeDocSessionEvent, decodeOperatorDocSessionEvents, docSessionActivity,
   DOC_SESSION_EVENTS_PAGE, formatDocSessionCursor, parseDocSessionCursor, redactDocSessionPath, storedDocSessionText,
-  type DocSessionCursor, type DocSessionEventInput, type DocSessionEventV1, type OperatorDocSessionEventsV1,
+  type DocSessionActivity, type DocSessionCursor, type DocSessionEventInput, type DocSessionEventV1, type OperatorDocSessionEventsV1,
 } from '../../core/operator/doc-session-events';
 import { syncDirectoryDurably } from '../atomic-append';
 import { ExclusiveLockContentionError, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -140,6 +140,7 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
   const data = Buffer.from(records.map(record => `${JSON.stringify(record)}\n`).join(''), 'utf8');
   const path = join(directory, EVENTS_FILE);
   try {
+    // A writer that died during an append leaves its lock; only a proven dead owner's lock is taken over.
     withExclusiveDirectoryLock(realpathSync(directory), 'events.lock', () => {
       let created = false;
       let fd: number;
@@ -169,11 +170,18 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
       } finally { closeSync(fd); }
       // A new directory entry survives a crash only after its parent is synced.
       if (created) syncDirectoryDurably(directory);
-    });
+    }, { reclaimStaleOwner: true });
   } catch (error) {
     if (error instanceof ExclusiveLockContentionError) fail('events_busy');
     throw error;
   }
+}
+
+/** The cursor of the last stored event and whether a turn is open, for the record that ends a dead host's session. */
+export function docSessionEventsTail(env: NodeJS.ProcessEnv, sessionId: string): { readonly last: DocSessionCursor | null; readonly activity: DocSessionActivity } {
+  const events = readStoredEvents(join(sessionDirectory(env, sessionId), EVENTS_FILE));
+  const last = events.at(-1);
+  return { last: last === undefined ? null : { epoch: last.epoch, seq: last.seq }, activity: docSessionActivity(events) };
 }
 
 /** One page of events after the cursor. Activity covers the whole log, not only the page. */

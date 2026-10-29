@@ -1,6 +1,6 @@
 import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { isAbsolute, join, posix } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
 import { isDocsHostRuntimeId, type DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { ModelApiEndpoint } from './docs-host-proxy';
@@ -55,6 +55,8 @@ export interface DocsHostAdmission {
   readonly control: string;
   /** Operator HOME: the model credential source and the root of denied credential reads. */
   readonly operatorHome: string;
+  /** Canonical repo-harness home. Reads are denied there, except in `control`: other sessions, the audit log and config stay closed. */
+  readonly stateHome: string;
   readonly node: string;
   readonly executable: string;
   /** Canonical Xcode or Command Line Tools root that `/usr/bin/git` dispatches to. */
@@ -158,15 +160,52 @@ export function assertDocsHostAdmission(admission: DocsHostAdmission, platform: 
   const docs = canonicalDirectory(join(worktree, 'docs'), 'docs_host_docs_unsafe');
   const control = ownerDirectory(admission.control, 'docs_host_control_unsafe');
   canonicalDirectory(admission.operatorHome, 'docs_host_operator_home_unsafe');
+  const stateHome = canonicalDirectory(admission.stateHome, 'docs_host_state_home_unsafe');
+  if (inside(stateHome, control)) throw new Error('docs_host_control_unsafe');
+  if (inside(worktree, stateHome)) throw new Error('docs_host_worktree_in_state_home');
   canonicalDirectory(admission.developerDirectory, 'docs_host_developer_directory_unsafe');
   if (inside(control, worktree) || inside(worktree, control) || inside(control, docs)) throw new Error('docs_host_control_overlaps_worktree');
   for (const path of [admission.node, admission.executable]) {
     if (typeof path !== 'string' || !isAbsolute(path) || /[\r\n\0"]/.test(path) || !lstatSync(realpathSync(path)).isFile()) throw new Error('docs_host_executable_unsafe');
     // A session must not be able to replace its own runtime.
-    if (inside(realpathSync(path), worktree) || inside(realpathSync(path), control)) throw new Error('docs_host_executable_unsafe');
+    if ([worktree, control, stateHome].some(root => inside(realpathSync(path), root))) throw new Error('docs_host_executable_unsafe');
   }
+  docsHostCodexRelease(admission.executable, admission.operatorHome);
   if (!Number.isSafeInteger(admission.proxyPort) || admission.proxyPort < 1 || admission.proxyPort > 65535) throw new Error('docs_host_proxy_port_invalid');
   assertDocsTreeFiles(docs);
+}
+
+/**
+ * The standalone codex install (`~/.codex/packages/standalone/releases/<release>/bin/codex`) sits inside the
+ * read-denied `~/.codex`. Its one release directory becomes readable and its two helpers may run; `auth.json`,
+ * sessions and config stay denied. Null for an install outside `~/.codex/packages`.
+ */
+export function docsHostCodexRelease(executable: string, operatorHome: string): { readonly directory: string; readonly helpers: readonly string[] } | null {
+  const packagesPath = join(operatorHome, '.codex', 'packages');
+  if (!existsSync(packagesPath)) return null;
+  const packages = realpathSync(packagesPath), vendor = realpathSync(executable);
+  if (!inside(vendor, packages)) return null;
+  const directory = dirname(dirname(vendor));
+  if (basename(dirname(vendor)) !== 'bin' || directory === packages || !inside(directory, packages) || /[\r\n\0"]/.test(directory)) {
+    throw new Error('docs_host_executable_unsafe');
+  }
+  const helpers = [join(directory, 'bin', 'codex-code-mode-host'), join(directory, 'codex-path', 'rg')]
+    .filter(path => lstatSync(path, { throwIfNoEntry: false })?.isFile());
+  return { directory, helpers };
+}
+
+/**
+ * The directories from `root` down to the parent of `path`, when `path` is inside `root`. Reads stay denied
+ * there; only their metadata opens, so the runtime can resolve the path of a directory it may read: codex
+ * canonicalizes CODEX_HOME, and it exits when a parent of the control directory cannot be resolved.
+ */
+function deniedAncestors(path: string, root: string): string[] {
+  if (path === root || !inside(path, root)) return [];
+  const out: string[] = [];
+  for (let entry = dirname(path); ; entry = dirname(entry)) {
+    out.unshift(entry);
+    if (entry === root) return out;
+  }
 }
 
 const lit = (path: string) => `(literal ${JSON.stringify(path)})`;
@@ -174,10 +213,11 @@ const sub = (path: string) => `(subpath ${JSON.stringify(path)})`;
 
 /**
  * Seatbelt owns enforcement. Writes open only for human-written docs and the
- * session scratch; credential reads, every network peer except the host proxy
- * port, keychain and desktop service lookups, AppleEvents and unlisted programs
- * are denied. Children inherit the profile. Last matching rule wins, so each
- * deny follows its allowance.
+ * session scratch; credential reads, repo-harness state outside the session's
+ * control directory (only the metadata of its parents opens), every network
+ * peer except the host proxy port, keychain and desktop service lookups,
+ * AppleEvents and unlisted programs are denied. Children inherit the profile.
+ * Last matching rule wins, so each deny follows its allowance.
  */
 export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Platform = process.platform): string {
   assertDocsHostAdmission(admission, platform);
@@ -185,8 +225,11 @@ export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Pl
   const scratch = join(admission.control, 'scratch');
   const privateAuth = join(scratch, '.codex-home', 'auth.json');
   const home = admission.operatorHome;
-  const programs = [...DOCS_HOST_SYSTEM_PROGRAMS, join(admission.developerDirectory, 'usr/bin/git'), realpathSync(admission.node), realpathSync(admission.executable)];
+  const release = docsHostCodexRelease(admission.executable, home);
+  const programs = [...DOCS_HOST_SYSTEM_PROGRAMS, join(admission.developerDirectory, 'usr/bin/git'), realpathSync(admission.node), realpathSync(admission.executable),
+    ...(release?.helpers ?? [])];
   const projection = docsHostProtectedProjection(admission.worktree);
+  const metadata = deniedAncestors(admission.control, admission.stateHome);
   return [
     '(version 1)',
     '(allow default)',
@@ -195,6 +238,10 @@ export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Pl
     `(deny file-write* (regex #"${FORBIDDEN_WRITE_DIRECTORIES}"))`,
     `(deny file-write* ${projection.map(lit).join(' ')})`,
     `(deny file-read* ${CREDENTIAL_SUBPATHS.map(path => sub(join(home, path))).join(' ')} ${CREDENTIAL_LITERALS.map(path => lit(join(home, path))).join(' ')})`,
+    `(deny file-read* ${sub(admission.stateHome)})`,
+    `(allow file-read* ${sub(admission.control)})`,
+    ...(release ? [`(allow file-read* ${sub(release.directory)})`] : []),
+    ...metadata.length ? [`(allow file-read-metadata ${metadata.map(lit).join(' ')})`] : [],
     `(deny file-read* (require-all (regex #"${CREDENTIAL_FILES}") (require-not ${lit(privateAuth)})))`,
     `(deny file-map-executable ${sub(docs)} ${sub(scratch)})`,
     '(deny process-exec)',
@@ -266,8 +313,9 @@ export function writeDocsHostPolicy(admission: DocsHostAdmission): string {
 }
 
 const PROBE = `const fs=require('node:fs'),net=require('node:net'),cp=require('node:child_process');
-const [gitFile,docs,credential,policy,port]=process.argv.slice(1);
+const [gitFile,docs,credential,policy,port,stateHome]=process.argv.slice(1);
 const denied=(fn)=>{try{fn();return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}};
+if(!denied(()=>fs.readdirSync(stateHome)))process.exit(17);
 if(!denied(()=>fs.closeSync(fs.openSync(gitFile,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW))))process.exit(10);
 if(!denied(()=>fs.closeSync(fs.openSync(policy,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW))))process.exit(11);
 if(!denied(()=>fs.readFileSync(credential)))process.exit(12);
@@ -279,16 +327,41 @@ const s=net.connect(Number(port)===9?7:9,'127.0.0.1');s.on('connect',()=>process
 
 /**
  * Zero-model proof before any session opens: a real sandboxed child and
- * grandchild must be denied the worktree .git, the profile, a credential, an
- * unlisted program and a loopback peer, and must still write docs/. Any other
- * outcome fails closed; there is no unconfined fallback.
+ * grandchild must be denied the worktree .git, the profile, a credential, the
+ * repo-harness state home, an unlisted program and a loopback peer, and must
+ * still write docs/. Any other outcome fails closed; there is no unconfined
+ * fallback.
  */
 export function proveDocsHostBoundary(admission: DocsHostAdmission, policyFile: string, scratch: DocsHostScratch): void {
   if (readFileSync(policyFile, 'utf8') !== docsHostPolicy(admission)) throw new Error('docs_host_profile_changed');
   const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, realpathSync(admission.node), '-e', PROBE,
-    join(admission.worktree, '.git'), join(admission.worktree, 'docs'), join(admission.operatorHome, '.codex', 'auth.json'), policyFile, String(admission.proxyPort)],
+    join(admission.worktree, '.git'), join(admission.worktree, 'docs'), join(admission.operatorHome, '.codex', 'auth.json'), policyFile, String(admission.proxyPort), admission.stateHome],
   { encoding: 'utf8', timeout: 10_000, env: docsHostEnvironment(scratch, admission.proxyPort), cwd: admission.worktree });
   if (result.status !== 0) throw new Error(`docs_host_boundary_unproven: ${result.error?.message ?? `exit ${result.status}`}`);
   // The owner can still open the profile, so the denial above came from Seatbelt, not file mode.
   closeSync(openSync(policyFile, constants.O_WRONLY | constants.O_NOFOLLOW));
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+/**
+ * The executable OAR starts as the runtime: `env -i` gives the vendor exactly
+ * the docs environment, never a copy of the host one, and `sandbox-exec`
+ * applies the admitted profile. OAR owns every vendor argument. An existing
+ * launcher must match exactly.
+ */
+export function writeDocsHostLauncher(admission: DocsHostAdmission, policyFile: string, env: Readonly<Record<string, string>>): string {
+  if (readFileSync(policyFile, 'utf8') !== docsHostPolicy(admission)) throw new Error('docs_host_profile_changed');
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const assignments = Object.entries(env).map(([name, value]) => {
+    if (!ENV_NAME.test(name) || /[\0\r\n]/u.test(value)) throw new Error('docs_host_launcher_env_invalid');
+    return quote(`${name}=${value}`);
+  });
+  const content = `#!/bin/sh\nexec /usr/bin/env -i ${assignments.join(' ')} /usr/bin/sandbox-exec -f ${quote(policyFile)} ${quote(realpathSync(admission.executable))} "$@"\n`;
+  const launcher = join(admission.control, 'runtime-launcher');
+  if (!existsSync(launcher)) writeFileSync(launcher, content, { flag: 'wx', mode: 0o700 });
+  const stat = lstatSync(launcher);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700
+    || readFileSync(launcher, 'utf8') !== content) throw new Error('docs_host_launcher_changed');
+  return launcher;
 }

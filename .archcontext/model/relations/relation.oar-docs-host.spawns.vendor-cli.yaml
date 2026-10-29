@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.oar-docs-host.spawns.vendor-cli"
+kind: "spawns"
+source: "process.oar-docs-host"
+target: "process.vendor-cli"
+intent: "Start the docs runtime through env -i and sandbox-exec under the admitted profile."

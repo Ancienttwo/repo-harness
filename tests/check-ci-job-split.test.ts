@@ -29,8 +29,10 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
   write('tests/home.test.ts', 'export {};');
   write('tests/native.test.ts', 'export {};');
   write('src/host.ts', 'export {};');
+  write('src/docs-host.ts', 'export {};');
   write('package.json', JSON.stringify({ scripts: {
     'build:oar-review-host': 'bun build src/host.ts --target=node --format=esm --packages=external',
+    'build:oar-docs-host': 'bun build src/docs-host.ts --target=node --format=esm --packages=external',
   } }));
 }
 
@@ -645,14 +647,17 @@ describe('single affected verification and daily fallback', () => {
       'test -x /usr/bin/sandbox-exec',
       'bun install --frozen-lockfile',
       'test ! -e dist/oar-review-host.js',
+      'test ! -e dist/oar-docs-host.js',
       'bun run build:oar-review-host',
+      'bun run build:oar-docs-host',
       'test -s dist/oar-review-host.js',
+      'test -s dist/oar-docs-host.js',
       'case "$MODE" in',
       "  affected) set -- -t 'darwin: ' ;;",
       '  daily) set -- ;;',
       '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
       'esac',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts "$@" --timeout 60000 --max-concurrency 1',
+      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts tests/doc-session-agent.test.ts "$@" --timeout 60000 --max-concurrency 1',
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
