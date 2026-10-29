@@ -18,9 +18,10 @@ function unavailable(code: PiHerdrIntegrationCode, detail: string): PiHerdrInteg
 }
 
 /**
- * Read the native Pi integration's status. Herdr owns the expected extension
- * version and integrity check. This is not OAR subprocess launch admission:
- * OAR separately checks its exact bundled Pi version when it opens a session.
+ * Read Herdr's native Pi status and version signal. Its `current` status checks
+ * file presence and the version marker, not extension integrity or loadability.
+ * This is not dispatch admission. OAR separately checks its exact bundled Pi
+ * version when it opens a subprocess session.
  */
 export function probePiHerdrIntegration(env: NodeJS.ProcessEnv = process.env): PiHerdrIntegration {
   let agentDir: string;
