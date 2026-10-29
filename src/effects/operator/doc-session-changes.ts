@@ -354,7 +354,7 @@ export function observeDocSessionLoss(runner: DocSessionGitRunner, record: DocSe
   const slug = record.branch.slice('docs/'.length);
   const pushed = runner.text(worktree, ['for-each-ref', '--format=%(refname)', 'refs/remotes/']).split('\n')
     .some(ref => new RegExp(`^refs/remotes/[^/]+/docs/${slug}$`, 'u').test(ref));
-  if (lossFiles({ changes, index }).length + leaves.length + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
+  if (lossFiles({ changes, index }).length + Math.max(ignored.length, leaves.length) + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
   const ignored_leaves = leaves.map(path => ({
     path, mode: worktreeFileMode(worktree, path),
     // Ignored loss binds the bytes removal deletes, without Git conversions.
