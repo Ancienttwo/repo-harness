@@ -19,6 +19,19 @@ const STATUS = 'repo-harness architecture-projection status --json';
 const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
 const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: add .ai/harness/state/ to .gitignore';
 const UNIGNORED_MESSAGE = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); add it to .gitignore.';
+const ARCHIMAP = 'docs/architecture/archimap.html';
+const ARCHIMAP_MARKER = '.ai/harness/state/agent-notice-archimap';
+const ARCHIMAP_HEADER = `[Archimap] ${ARCHIMAP} was not updated, but this branch changed the architecture model.`;
+const ARCHIMAP_FOOTER = 'Refresh the map with the repo-harness-archimap skill before the PR is ready.';
+const ARCHIMAP_MESSAGE = `Archimap: the architecture model changed on this branch; refresh ${ARCHIMAP}.`;
+/** Commits only the map and moves main to it, so the map exists but this branch has not changed it. */
+function adoptArchimap(root: string): void {
+  fixtureWrite(root, ARCHIMAP, '<!doctype html><title>Map</title>\n');
+  fixtureGit(root, ['add', ARCHIMAP]);
+  fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=t@t', 'commit', '-qm', 'map']);
+  fixtureGit(root, ['branch', '-f', 'main', 'HEAD']);
+}
+const touchRegistry = (root: string) => fixtureWrite(root, '.ai/context/capabilities.json', `${readFileSync(join(root, '.ai/context/capabilities.json'), 'utf8')}\n`);
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe('AgentNotice', () => {
@@ -388,5 +401,81 @@ describe('AgentNotice', () => {
     expect(disabled.content).toBeUndefined();
     expect(disabled.systemMessage).toBeUndefined();
     expect(disabled.diagnostics).toContain('refs/heads/absent');
+  });
+
+  test('archimap: a model change without a map refresh prints once per trigger set while archctx is inactive', () => {
+    const root = registryFixture();
+    adoptArchimap(root);
+    touchRegistry(root);
+    const options = { env: noticeEnv(root), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    const first = collectAgentNotice(root, ownership, options);
+    expect(first.diagnostics).toBeUndefined();
+    expect(first.content).toStartWith(`[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}\n`);
+    expect(first.content).toEndWith([ARCHIMAP_HEADER, '- .ai/context/capabilities.json', ARCHIMAP_FOOTER].join('\n'));
+    expect(first.systemMessage).toEndWith(`\n${ARCHIMAP_MESSAGE}`);
+    expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(true);
+    expect(collectAgentNotice(root, ownership, options)).toEqual({});
+    // A new trigger set prints again, bounded to three rows with an exact overflow count.
+    for (const name of ['a', 'b', 'c', 'd']) fixtureWrite(root, `.archcontext/model/nodes/${name}.yaml`, '{}\n');
+    const second = collectAgentNotice(root, ownership, options).content!;
+    expect(second).toEndWith([
+      ARCHIMAP_HEADER, '- .ai/context/capabilities.json', '- .archcontext/model/nodes/a.yaml', '- .archcontext/model/nodes/b.yaml',
+      '(+2 more architecture model paths)', ARCHIMAP_FOOTER,
+    ].join('\n'));
+    expect(second).not.toContain('[Architecture] inactive');
+    expect(collectAgentNotice(root, ownership, options).content ?? '').not.toContain('[Archimap]');
+  });
+
+  test('archimap: no notice without a map file or when the branch also changed the map', () => {
+    const root = registryFixture();
+    touchRegistry(root);
+    const options = { env: noticeEnv(root), run: noCheckpoint };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    const absent = collectAgentNotice(root, ownership, options);
+    expect(absent.content).not.toContain('[Archimap]');
+    expect(absent.systemMessage).not.toContain('Archimap');
+    // The untracked map is a change on this branch.
+    fixtureWrite(root, ARCHIMAP, '<!doctype html><title>Map</title>\n');
+    expect(collectAgentNotice(root, ownership, options)).toEqual({});
+    expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(false);
+  });
+
+  test('archimap: an active loop prints the map line beside the debt, and a disabled provider keeps it', () => {
+    const root = fixture();
+    adoptArchimap(root);
+    fixtureWrite(root, '.ai/context/capabilities.json', '{}\n');
+    const notice = collectAgentNotice(root, () => noticeOwnership(root), { env: noticeEnv(root) });
+    expect(notice.diagnostics).toBeUndefined();
+    expect(notice.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
+    expect(notice.content).toEndWith([ARCHIMAP_HEADER, '- .ai/context/capabilities.json', ARCHIMAP_FOOTER].join('\n'));
+    const disabled = registryFixture();
+    adoptArchimap(disabled);
+    touchRegistry(disabled);
+    fixtureWrite(disabled, 'home/.repo-harness/config.json', JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } }));
+    const quiet = collectAgentNotice(disabled, scoped => resolveCapabilityOwnership(disabled, undefined, scoped), { env: noticeEnv(disabled), run: noCheckpoint });
+    expect(quiet.content).not.toContain('[Architecture]');
+    expect(quiet.content).toEndWith(ARCHIMAP_FOOTER);
+    expect(quiet.systemMessage).toContain(ARCHIMAP_MESSAGE);
+  });
+
+  test('archimap: a failed shared diff is one diagnostic and keeps the setup line; no review base prints nothing', () => {
+    const root = registryFixture();
+    adoptArchimap(root);
+    touchRegistry(root);
+    const broken = () => ({ review_base: 'refs/heads/absent', capability_ids: [], capabilities: [], unowned_paths: ['packages/new-core/index.ts'] });
+    const failed = collectAgentNotice(root, broken, { env: noticeEnv(root), run: noCheckpoint });
+    expect(failed.content).toBe(`[Architecture] inactive: ${NO_MODEL}. Run: ${STATUS}`);
+    expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
+    // The archimap check alone reads the diff and reports its own failure.
+    const alone = collectAgentNotice(root, () => ({ ...broken(), unowned_paths: [] }), { env: noticeEnv(root), run: noCheckpoint });
+    expect(alone.content).toBeUndefined();
+    expect(alone.diagnostics).toContain('refs/heads/absent');
+    const unbased = collectAgentNotice(root, () => ({ ...broken(), review_base: null }), { env: noticeEnv(root), run: noCheckpoint });
+    expect(unbased).toEqual({});
+    expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(false);
+    // Without the map the unowned filter reads the same diff, so the shared failure is not repeated.
+    rmSync(join(root, ARCHIMAP));
+    expect(collectAgentNotice(root, broken, { env: noticeEnv(root), run: noCheckpoint }).diagnostics).toBe(failed.diagnostics);
   });
 });

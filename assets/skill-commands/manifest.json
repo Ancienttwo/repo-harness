@@ -107,7 +107,28 @@
       "component": "planning-integrations",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Canonical rule owner for PRD drafting, Sprint planning/execution, and native Goal-session preparation from repo-harness planning artifacts.",
+      "summary": "Canonical rule owner for PRD drafting and native Goal-session preparation from repo-harness planning artifacts. Backlog ordering, issue splitting and dispatch belong to repo-harness-issue-flow.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
+      "name": "repo-harness-issue-flow",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-issue-flow",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex",
+        "pi"
+      ],
+      "profiles": [
+        "full"
+      ],
+      "discoverability": "profile-facade",
+      "component": "planning-integrations",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Runs GitHub issue and PR driven development with agents. The orchestrator splits work by architecture module into issues with dependencies and boundaries, dispatches workers, and follows PRs and CI. A worker delivers one issue as one PR.",
       "retirementCandidate": null,
       "audience": "bot"
     },
@@ -150,6 +171,27 @@
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. The full profile installs it; agents load it explicitly.",
+      "retirementCandidate": null,
+      "audience": "worker"
+    },
+    {
+      "name": "repo-harness-archimap",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-archimap",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex",
+        "pi"
+      ],
+      "profiles": [
+        "full"
+      ],
+      "discoverability": "profile-facade",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Draws or refreshes the human-facing architecture map at docs/architecture/archimap.html from the architecture model and measured code facts.",
       "retirementCandidate": null,
       "audience": "worker"
     },
@@ -489,8 +531,10 @@
         "repo-harness-check",
         "repo-harness-test",
         "repo-harness-product",
+        "repo-harness-issue-flow",
         "repo-harness-ship",
         "repo-harness-architecture",
+        "repo-harness-archimap",
         "obsidian-memory",
         "windows-python-first"
       ]

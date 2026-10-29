@@ -10,7 +10,7 @@ Worker reference. Use only within the assigned architecture scope.
 3. When the scope maps to repo code or config, resolve the capability with:
    - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
 4. Update the model and human-owned prose for the changed responsibility. Generated regions, diagrams and the projection manifest belong to the archctx rolling writer (see "Rolling writer"). Do not apply or commit generated output in a feature PR.
-5. Use Markdown Mermaid as the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only to review layout and renderability before shipping the Markdown source.
+5. archctx-generated Markdown Mermaid is the model's generated diagram. This skill does not hand-write diagrams or standalone HTML; use the external `mermaid` skill only to review layout and renderability of the Markdown source. The human-facing HTML map `docs/architecture/archimap.html` belongs to the `repo-harness-archimap` skill, which refreshes it after a model change.
 6. Verify with:
    - `repo-harness architecture-debt --json --base <review-base>` (handle debt in scope)
    - `repo-harness architecture-projection anchors --json` (read-only; see "Drift signals")

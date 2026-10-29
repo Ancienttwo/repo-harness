@@ -328,7 +328,8 @@ cleanup helpers remain for existing contract lifecycle callers.
 
 Use [repo-harness](SKILL.md) for scope and worker ownership,
 [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for requested
-planning, and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md)
+PRD or Goal work, [repo-harness-issue-flow](assets/skills/repo-harness-issue-flow/SKILL.md)
+for issue backlog splitting and dispatch, and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md)
 for scope and recorded verification.
 
 ### Refactor recommendations
@@ -531,7 +532,8 @@ control context loading. They do not add a host permission boundary.
 | --- | --- | --- |
 | `repo-harness` | Bot | Route explicit harness actions |
 | `repo-harness-check` | Bot | Plan scoped work, review plans, assess recorded checks |
-| `repo-harness-product` | Bot | Requested PRD, Sprint or Goal preparation |
+| `repo-harness-product` | Bot | Requested PRD drafting or Goal preparation |
+| `repo-harness-issue-flow` | Bot | Issue and PR driven multi-agent development: split by module, dispatch workers, follow PRs and CI |
 | `repo-harness-ship` | Bot | Explicit publication and cleanup decisions |
 | `obsidian-memory` | Bot | Explicit memory recall or persistence |
 | `repo-harness-cross-review` | Bot | Generic review; direct advisory runtime retired |
@@ -539,6 +541,7 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-setup` | Worker | Assigned install, migration, repair or scaffold |
 | `repo-harness-test` | Worker | Source tests and real fixtures |
 | `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
+| `repo-harness-archimap` | Worker | Draw or refresh the human-facing architecture map `docs/architecture/archimap.html` |
 | `windows-python-first` | Worker | Native Windows file, text and shell work through Python |
 
 Planning is merged into `repo-harness-check`. No separate planning alias remains.
