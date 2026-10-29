@@ -15,6 +15,7 @@ import {
   ListIcon,
   MoonIcon,
   PlugsConnectedIcon,
+  PlusIcon,
   PuzzlePieceIcon,
   RobotIcon,
   SidebarSimpleIcon,
@@ -28,7 +29,7 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import { LogoMark } from './brand';
 import { failedSources, openPullRequests, repositoryById, type DevActivityView } from './dev-activity';
 import type { OperatorLocale, OperatorTranslate } from './i18n';
-import type { DocSessions } from './doc-sessions';
+import { docSessionStartState, isSessionUnread, type DocSessions } from './doc-sessions';
 import type { ThemePreference } from './theme';
 import { PageLink, StatusDot, type DotTone } from './ui';
 import { WORKSPACES, type NavGroup, type NavWorkspace, type Workspace, type WorkspaceLocation } from './workspace-location';
@@ -60,6 +61,7 @@ const THEME_ICON: Readonly<Record<ThemePreference, ReactNode>> = {
 export const OPERATOR_RAIL_STORAGE_KEY = 'repo-harness:operator-rail';
 export const OPERATOR_RECENT_REPOSITORIES_STORAGE_KEY = 'repo-harness:operator-recent-repositories';
 const RECENT_LIMIT = 5;
+const RECENT_SESSIONS_LIMIT = 8;
 
 type RailScope = 'architecture' | 'pages';
 
@@ -266,6 +268,48 @@ function NavLink({ workspace, current, collapsed, attention, onOpen, t }: {
   );
 }
 
+/** 「新会话」 opens Home with the composer focused. It exists only where the server can start a doc session. */
+function NewSessionButton({ collapsed, onNewSession, t }: { readonly collapsed: boolean; readonly onNewSession: () => void; readonly t: OperatorTranslate }) {
+  return (
+    <button type="button" onClick={onNewSession} data-new-session title={collapsed ? t('session.new') : undefined}
+      className={cn('flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm text-kumo-default hover:bg-kumo-tint',
+        collapsed && 'rail:mx-auto rail:size-10 rail:justify-center rail:px-0')}>
+      <PlusIcon size={16} />
+      <span className={cn('min-w-0 flex-1 truncate text-left', collapsed && 'rail:sr-only')}>{t('session.new')}</span>
+    </button>
+  );
+}
+
+/** 「最近」: doc sessions in the order the server lists them, one truncated line each, with an unread dot. */
+function RecentSessions({ docSessions, currentSession, collapsed, onOpen, t }: {
+  readonly docSessions: DocSessions; readonly currentSession: string | null; readonly collapsed: boolean;
+  readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
+}) {
+  const { view } = docSessions;
+  if (view.kind !== 'ready') return null;
+  return (
+    <div className={cn('flex flex-col', collapsed && 'rail:hidden')} data-recent-sessions>
+      <p id="nav-group-recent" className="type-caption px-2.5 pt-4 pb-1 text-kumo-subtle">{t('session.recent')}</p>
+      <ul aria-labelledby="nav-group-recent" className="flex flex-col gap-0.5">
+          {view.list.sessions.slice(0, RECENT_SESSIONS_LIMIT).map(session => {
+            const active = currentSession === session.session_id;
+            const unread = !active && isSessionUnread(session);
+            return (
+              <li key={session.session_id}>
+                <PageLink to={{ workspace: 'session', module: null, item: session.session_id }} onOpen={onOpen} data-recent-session={session.session_id} title={session.title}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn('flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm', active ? 'bg-kumo-tint font-medium text-kumo-strong' : 'text-kumo-default hover:bg-kumo-tint')}>
+                  <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                  {unread && <><StatusDot tone="accent" /><span className="sr-only" data-unread>{t('session.unread')}</span></>}
+                </PageLink>
+              </li>
+            );
+          })}
+      </ul>
+    </div>
+  );
+}
+
 type OperatorStatus = 'loading' | 'ready' | 'refreshFailed' | 'unreachable';
 
 const STATUS_TONE: Readonly<Record<OperatorStatus, DotTone>> = { loading: 'unknown', ready: 'ok', refreshFailed: 'warn', unreachable: 'danger' };
@@ -288,8 +332,11 @@ export interface NavRailProps {
   readonly drawerOpen: boolean;
   readonly onCloseDrawer: () => void;
   readonly activity: DevActivityView;
-  /** The doc session list behind「最近」; absent while the server serves no session. */
+  /** The doc session list behind「新会话」 and「最近」; both are hidden while the server serves no session. */
   readonly docSessions?: DocSessions;
+  /** The open doc session, highlighted in「最近」. */
+  readonly currentSession?: string | null;
+  readonly onNewSession?: () => void;
   readonly locale: OperatorLocale;
   readonly onLocale: (locale: OperatorLocale) => void;
   readonly theme: ThemePreference;
@@ -299,7 +346,7 @@ export interface NavRailProps {
 
 export function NavRail({
   current, attention, onOpen, repositorySwitch, collapsed, onToggleCollapsed, drawerOpen, onCloseDrawer,
-  activity, locale, onLocale, theme, onTheme, t,
+  activity, docSessions, currentSession = null, onNewSession, locale, onLocale, theme, onTheme, t,
 }: NavRailProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -350,6 +397,9 @@ export function NavRail({
         {/* A pick routes like a nav link, so it closes the drawer too. */}
         <RepositorySwitch model={{ ...repositorySwitch, onSelect: id => { onCloseDrawer(); repositorySwitch.onSelect(id); } }}
           collapsed={collapsed} locale={locale} t={t} onManage={() => open(REPOSITORIES)} />
+        {docSessions !== undefined && onNewSession !== undefined && docSessionStartState(docSessions.view).show && (
+          <NewSessionButton collapsed={collapsed} onNewSession={() => { onCloseDrawer(); onNewSession(); }} t={t} />
+        )}
         <nav aria-label={t('nav.label')} className="workspace-nav -mx-1 flex min-h-0 flex-1 flex-col overflow-y-auto px-1">
           <ul><li><NavLink workspace="home" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
           {GROUPS.map(group => (
@@ -359,6 +409,7 @@ export function NavRail({
               <ul aria-labelledby={`nav-group-${group}`} className="flex flex-col gap-0.5">{groupLinks(group)}</ul>
             </div>
           ))}
+          {docSessions !== undefined && <RecentSessions docSessions={docSessions} currentSession={currentSession} collapsed={collapsed} onOpen={open} t={t} />}
           <ul className="mt-auto pt-4"><li><NavLink workspace="settings" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
         </nav>
         <div className={cn('flex flex-col gap-2 border-t border-kumo-hairline px-1 pt-3', collapsed && 'rail:items-center rail:px-0')} data-operator-status={status}>

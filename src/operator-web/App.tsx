@@ -17,6 +17,8 @@ import {
   type DocSessionCommitWriter, type DocSessionCreateWriter, type DocSessionDetailReader, type DocSessionDiffReader, type DocSessionDiscardWriter,
   type DocSessionEventsReader, type DocSessionLossReader, type DocSessionMessageWriter, type DocSessionsReader, type DocSessionStopWriter,
 } from './doc-sessions';
+import { EMPTY_DOC_DRAFT, type DocDraft } from './doc-draft';
+import type { DocSessionStart } from './DocSessionComposer';
 import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
@@ -405,6 +407,18 @@ export function OperatorApp({
     window.history.pushState(null, '', window.location.pathname + window.location.search + workspaceHash(next));
     setPlace(next);
   }, []);
+  // One draft for the Home composer and the Docs page, so a citation added on one shows in the other.
+  const [docDraft, setDocDraft] = useState<DocDraft>(EMPTY_DOC_DRAFT);
+  const [composerFocus, setComposerFocus] = useState(false);
+  const composerFocused = useCallback(() => setComposerFocus(false), []);
+  const newSession = useCallback(() => {
+    openPlace({ workspace: 'home', module: null, item: null });
+    setComposerFocus(true);
+  }, [openPlace]);
+  const docStart: DocSessionStart = {
+    docSessions, readAgentsSettings, createDocSession: writeDocSessionCreate, draft: docDraft, onDraft: setDocDraft,
+    focusRequested: composerFocus, onFocusHandled: composerFocused,
+  };
   const switchRepository = (id: string) => {
     if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
@@ -546,7 +560,7 @@ export function OperatorApp({
     >
       <NavRail current={workspace} attention={attention} onOpen={openPlace} repositorySwitch={repositorySwitch}
         collapsed={railCollapsed} onToggleCollapsed={toggleRail} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer}
-        activity={devActivity} docSessions={docSessions} locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
+        activity={devActivity} docSessions={docSessions} currentSession={workspace === 'session' ? place.item : null} onNewSession={newSession} locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="operator-header sticky top-0 z-10 flex items-center gap-3 border-b border-kumo-line bg-kumo-canvas/95 px-4 py-2 backdrop-blur rail:px-6">
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
@@ -564,7 +578,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution}
-            docSessions={docSessions} readAgentsSettings={readAgentsSettings} createDocSession={writeDocSessionCreate} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+            start={docStart} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
@@ -578,8 +592,7 @@ export function OperatorApp({
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
           {workspace === 'docs' && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <DocsPage repositoryId={activeRepository?.repository_id ?? null} path={place.item} readTree={readDocsTree} readFile={readDocsFile}
-              docSessions={docSessions} readAgentsSettings={readAgentsSettings} createDocSession={writeDocSessionCreate}
-              generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
+              start={docStart} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
           {workspace === 'session' && place.item !== null && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <DocSessionPage sessionId={place.item} docSessions={docSessions} readDetail={readDocSession} readEvents={readDocSessionEvents}
