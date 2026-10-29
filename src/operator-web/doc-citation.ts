@@ -32,19 +32,19 @@ export function citationLabel(citation: Pick<DocCitationV1, 'path' | 'start_line
 const lineOf = (element: Element): number => Number(element.getAttribute('data-line'));
 
 /**
- * Whether the selected part of `block` holds any of its text. A range that
+ * Whether the selected part of `block` holds any of its content. A range that
  * ends at the first offset of the next block, as a triple click does, does
- * not select that block. A block without text, such as a diagram, counts once
- * the range reaches it.
+ * not select that block. A block without text, such as a diagram, counts when
+ * the range covers one of its children.
  */
 function selects(range: Range, block: Element): boolean {
   if (!range.intersectsNode(block)) return false;
-  if ((block.textContent ?? '') === '') return true;
   const part = block.ownerDocument.createRange();
   part.selectNodeContents(block);
   if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
   if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
-  return part.toString() !== '';
+  if (part.collapsed) return false;
+  return (block.textContent ?? '') === '' || part.toString() !== '';
 }
 
 /**
