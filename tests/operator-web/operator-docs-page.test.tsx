@@ -229,7 +229,10 @@ describe('docs page', () => {
     answerFor = serveDocs;
     await mount('#docs/docs/reference/settings.yaml');
     const lines = Array.from(document.querySelectorAll('[data-docs-source] li'));
-    expect(lines.map(line => line.getAttribute('data-line'))).toEqual(['1', '2', '3', '4']);
+    expect(lines.map(line => line.getAttribute('data-line'))).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
     expect(lines[2]?.textContent).toBe('  host: 127.0.0.1');
+    // Blank lines, one alone and two in a row, stay rows of their own.
+    expect([4, 7, 8].map(index => lines[index]?.textContent)).toEqual(['', '', '']);
+    expect(lines[9]?.textContent).toBe('notify: off');
   });
 });

@@ -112,7 +112,8 @@
   .docs-figure__note { @apply self-stretch text-sm text-kumo-subtle; }
   .docs-image { @apply inline-flex items-center gap-1 rounded bg-kumo-recessed px-1.5 text-sm text-kumo-subtle; }
   .docs-source { @apply m-0 list-none p-0 font-mono text-[13px] leading-5; }
-  .docs-source li { @apply relative whitespace-pre-wrap; overflow-wrap: anywhere; }
+  /* A blank source line has no text; the minimum height keeps its row and its number. */
+  .docs-source li { @apply relative min-h-5 whitespace-pre-wrap; overflow-wrap: anywhere; }
   .docs-source li::before { content: attr(data-line); @apply absolute w-7 text-right text-[11px] text-kumo-subtle select-none; left: -2.25rem; opacity: .7; }
   @media (min-width: 40rem) { .docs-source li::before { left: -2.75rem; width: 2.25rem; } }
 

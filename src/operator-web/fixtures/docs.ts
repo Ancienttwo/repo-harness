@@ -60,6 +60,12 @@ const CONFIG = `# Example operator settings
 serve:
   host: 127.0.0.1
   port: 4318
+
+collect:
+  interval: 60
+
+
+notify: off
 `;
 
 /** Every file the tree lists, with the worktree state the reader reports for it. */
