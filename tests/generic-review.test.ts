@@ -2,7 +2,7 @@ import { readReviewAdmissionSource } from '../src/effects/admission/admission-so
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
-import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync, readdirSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { join } from 'path';
@@ -25,6 +25,14 @@ import { recordPrePromptInboxAccepted } from '../src/effects/review/pre-prompt-i
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+function expectNoStoredPiProbe(directory: string): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) expectNoStoredPiProbe(path);
+    else if (entry.isFile()) expect(readFileSync(path, 'utf8'), path).not.toContain('sk-PROBE-LITERAL');
+  }
+}
 
 function resolveNode24(): string {
   const executable = Bun.which('node', { PATH: process.env.PATH ?? '' });
@@ -361,6 +369,296 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
     expect(Object.keys(options).sort()).toEqual(['appendSystemPrompt','cwd','effort','model']);
   }
 });
+
+test('Pi isolation fixture links native configuration without storing credential copies', async () => {
+  const { mkdirSync, chmodSync, symlinkSync, readlinkSync, readdirSync, unlinkSync } = await import('node:fs');
+  const { preparePiAgentDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-home'); roots.push(root);
+  const source = join(root, 'home'), output = join(root, 'output'), agent = join(source, '.pi/agent');
+  mkdirSync(agent, { recursive: true }); mkdirSync(output);
+  for (const name of ['sessions', 'extensions', 'skills']) mkdirSync(join(agent, name));
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high',
+    packages: ['fixture-package'], extensions: ['fixture-extension'], httpProxy: 'http://fixture.invalid', defaultProjectTrust: 'always' }));
+  writeFileSync(join(agent, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
+  writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+  const directory = preparePiAgentDirectory(output, source);
+  expect(lstatSync(directory).mode & 0o777).toBe(0o700);
+  expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
+  expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
+  expect(readlinkSync(join(directory, 'models.json'))).toBe(join(agent, 'models.json'));
+  expect(readlinkSync(join(directory, 'auth.json'))).toBe(join(agent, 'auth.json'));
+  expect(lstatSync(join(directory, 'settings.json')).isSymbolicLink()).toBe(false);
+  expect(lstatSync(join(directory, 'settings.json')).mode & 0o777).toBe(0o600);
+  expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
+  expectNoStoredPiProbe(output);
+  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  const projectedSettings = readFileSync(join(directory, 'settings.json'), 'utf8');
+  const nativeSettings = JSON.parse(readFileSync(join(agent, 'settings.json'), 'utf8'));
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, packages: ['other-package'], httpProxy: 'http://other.invalid' }));
+  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  expect(readFileSync(join(directory, 'settings.json'), 'utf8')).toBe(projectedSettings);
+  writeFileSync(join(directory, 'settings.json'), projectedSettings + ' ');
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  writeFileSync(join(directory, 'settings.json'), projectedSettings);
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, defaultModel: 'changed-model' }));
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  writeFileSync(join(agent, 'settings.json'), JSON.stringify(nativeSettings));
+  unlinkSync(join(directory, 'models.json'));
+  symlinkSync(join(agent, 'settings.json'), join(directory, 'models.json'));
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('models_changed');
+  chmodSync(directory, 0o755);
+  expect(() => preparePiAgentDirectory(output, source)).toThrow('directory_unsafe');
+  const otherOutput = join(root, 'other'); mkdirSync(otherOutput); symlinkSync(agent, join(otherOutput, '.pi-agent'));
+  expect(() => preparePiAgentDirectory(otherOutput, source)).toThrow('directory_unsafe');
+});
+
+test('Pi review source fixture uses custom agent directories and rejects relative overrides', async () => {
+  const { mkdirSync, readlinkSync } = await import('node:fs');
+  const { preparePiAgentDirectory, removePiCredentialReferences } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-custom-source'); roots.push(root);
+  const home = join(root, 'home'), native = join(home, '.pi/agent'); mkdirSync(native, { recursive: true });
+  for (const name of ['models.json', 'auth.json']) writeFileSync(join(native, name), '{"fixture":"default-source"}');
+  const sources = [
+    { configured: join(root, 'custom-agent'), directory: join(root, 'custom-agent') },
+    { configured: '~/custom-agent', directory: join(home, 'custom-agent') },
+    { configured: '~', directory: home },
+  ];
+  for (const [index, source] of sources.entries()) {
+    mkdirSync(source.directory, { recursive: true });
+    writeFileSync(join(source.directory, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
+    writeFileSync(join(source.directory, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+    const output = join(root, `output-${index}`); mkdirSync(output);
+    const directory = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
+    for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
+    expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({});
+    expectNoStoredPiProbe(output);
+    expect(removePiCredentialReferences(output).status).toBe('removed');
+    expect(readdirSync(directory)).toEqual([]);
+  }
+  const output = join(root, 'relative-output'); mkdirSync(output);
+  expect(() => preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: 'relative-agent' })).toThrow('PI_CODING_AGENT_DIR must be an absolute path or use ~/');
+});
+
+test('Pi credential cleanup fixture removes links and empty auth without following directory links', async () => {
+  const { mkdirSync, symlinkSync, unlinkSync } = await import('node:fs');
+  const { preparePiAgentDirectory, removePiCredentialReferences } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-cleanup'); roots.push(root);
+  const home = join(root, 'home'), source = join(home, '.pi/agent'); mkdirSync(source, { recursive: true });
+  for (const hasCredentials of [false, true]) {
+    const output = join(root, hasCredentials ? 'linked' : 'empty'); mkdirSync(output);
+    if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":"sk-PROBE-LITERAL"}');
+    const directory = preparePiAgentDirectory(output, home);
+    expectNoStoredPiProbe(output);
+    expect(removePiCredentialReferences(output).status).toBe('removed');
+    expect(readdirSync(directory)).toEqual([]);
+    expect(removePiCredentialReferences(output).status).toBe('absent');
+  }
+  const output = join(root, 'refused'); mkdirSync(output);
+  const directory = preparePiAgentDirectory(output, home);
+  unlinkSync(join(directory, 'models.json')); mkdirSync(join(directory, 'models.json'));
+  expect(removePiCredentialReferences(output).status).toBe('cleanup_pending');
+  expect(readdirSync(directory)).toEqual(['models.json']);
+  const escape = join(root, 'escape'); mkdirSync(escape); symlinkSync(source, join(escape, '.pi-agent'));
+  expect(removePiCredentialReferences(escape).status).toBe('cleanup_pending');
+  for (const name of ['models.json', 'settings.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":"sk-PROBE-LITERAL"}');
+});
+
+darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and paired denials', async () => {
+  const { mkdirSync, chmodSync } = await import('node:fs');
+  const { pathToFileURL, fileURLToPath } = await import('node:url');
+  const { preparePiAgentDirectory, reviewIsolationPolicy, prepareReviewLauncher, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
+  const root = tmpWorkspace('pi-isolation'); roots.push(root);
+  const home = join(root, 'home'), source = join(root, 'source'), owner = join(root, 'owner'), output = join(root, 'output');
+  for (const path of [home, source, owner, output]) mkdirSync(path);
+  const agent = join(home, '.pi/agent'); mkdirSync(agent, { recursive: true });
+  const credential = join(agent, 'auth.json');
+  writeFileSync(credential, JSON.stringify({ openai: { type: 'api_key', key: 'fixture-key-no-provider-call' } }));
+  writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
+  writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
+  mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
+  const directory = preparePiAgentDirectory(output, home);
+  expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
+  const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json'), join(directory, 'settings.json'), join(agent, 'settings.json')];
+  for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
+  const initial = targets.map(path => readFileSync(path, 'utf8'));
+  const paths = { subject: source, primary: source, ownerRecord: owner, journal: owner, gitCommonDir: source, output, piAgentDirectory: directory };
+  const profile = join(owner, 'isolation.sb'); writeFileSync(profile, reviewIsolationPolicy(paths), { mode: 0o600 });
+  const node = resolveNode24(), fixture = join(root, 'fixture-pi.cjs'), capture = join(output, 'argv.jsonl');
+  const piCli = realpathSync(join(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent')), '..', 'cli.js'));
+  const probe = `()=>{const fs=require('node:fs');const denied=${JSON.stringify(targets)}.map(path=>{try{fs.writeFileSync(path,'CHANGED');return false}catch(e){return ['EPERM','EACCES'].includes(e.code)}});let signal=false;try{process.kill(${process.pid},'SIGCONT')}catch(e){signal=e.code==='EPERM'};return {denied,signal};}`;
+  writeFileSync(fixture, `#!${node}\nconst fs=require('node:fs'),cp=require('node:child_process');
+const argv=process.argv.slice(2);
+const check=${probe};
+const descendant=JSON.parse(cp.execFileSync(process.execPath,['-e',${JSON.stringify(`console.log(JSON.stringify((${probe})()))`)}],{encoding:'utf8'}));
+fs.appendFileSync(${JSON.stringify(capture)},JSON.stringify({fixture:true,argv,env:{PI_CODING_AGENT_DIR:process.env.PI_CODING_AGENT_DIR,OAR_PI_AGENT_DIR:process.env.OAR_PI_AGENT_DIR,OAR_PI_RPC_DIRECTORY:process.env.OAR_PI_RPC_DIRECTORY},own:check(),descendant})+'\\n');
+const child=cp.spawn(process.execPath,[${JSON.stringify(piCli)},...argv],{stdio:argv.includes('--version')?'inherit':['inherit','inherit','inherit',3]});child.on('exit',code=>process.exit(code??1));
+`); chmodSync(fixture, 0o700);
+  const launcher = prepareReviewLauncher(owner, profile, fixture);
+  const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
+  const worker = join(root, 'open.mjs');
+  writeFileSync(worker, `import assert from 'node:assert/strict';import {existsSync,readFileSync} from 'node:fs';
+import {reviewRuntime,OarReviewHost,openReviewHost} from ${JSON.stringify(entry)};
+import {SessionManager} from ${JSON.stringify(import.meta.resolve('@earendil-works/pi-coding-agent'))};
+const runtime=reviewRuntime('pi',${JSON.stringify(launcher)});
+const session=await runtime.session({kind:'available',via:'bundled'},{cwd:${JSON.stringify(output)},env:{PI_CODING_AGENT_DIR:${JSON.stringify(directory)},OAR_PI_AGENT_DIR:${JSON.stringify(directory)}}});
+const host=new OarReviewHost(session,()=>{});const id=host.sessionId;
+try{assert.ok(id);assert.equal(host.model('pi'),'openai/gpt-4o');const records=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse);const run=records.find(r=>r.argv.includes('--mode'));assert.ok(existsSync(run.env.OAR_PI_RPC_DIRECTORY+'/ready'));}finally{await host.dispose();}
+const output=${JSON.stringify(output)},agentDir=${JSON.stringify(directory)};
+const captured=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse).find(r=>r.argv.includes('--session-dir'));
+const native=SessionManager.create(output,captured.argv[captured.argv.indexOf('--session-dir')+1]);
+native.appendMessage({role:'user',content:'[fixture transcript; no provider run]',timestamp:Date.now()});
+const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,resume:native.getSessionId(),env:{PI_CODING_AGENT_DIR:agentDir,OAR_PI_AGENT_DIR:agentDir}},requestDirectory:${JSON.stringify(owner)},output,controlDirectory:${JSON.stringify(owner)},timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile: profile })}};
+for(let i=0;i<2;i++){const resumed=i===0?await openReviewHost(spec,()=>{}):new OarReviewHost(await runtime.session(spec.installation,spec.options),()=>{});try{assert.equal(resumed.sessionId,native.getSessionId());assert.equal(resumed.model('pi'),'openai/gpt-4o');}finally{await resumed.dispose();}}
+console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:true,resumed:true}));
+`);
+  const result = spawnSync(node, [worker], { encoding: 'utf8', timeout: 30000,
+    env: { PATH: process.env.PATH, HOME: home, TMPDIR: reviewHostTemporaryDirectory(output) } });
+  expect(result.status, result.stderr).toBe(0);
+  const observed = JSON.parse(result.stdout);
+  expect(observed.extension_ready).toBe(true); expect(observed.model).toBe('openai/gpt-4o'); expect(observed.session_id).toBeTruthy(); expect(observed.resumed).toBe(true);
+  const captures = readFileSync(capture, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const run = captures.find(row => row.argv.includes('--mode'));
+  for (const flag of ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-mcp', '--no-approve', '--offline']) expect(run.argv).toContain(flag);
+  expect(run.argv[run.argv.indexOf('--mode') + 1]).toBe('rpc'); expect(run.argv).toContain('-e');
+  expect(run.env.PI_CODING_AGENT_DIR).toBe(directory); expect(run.env.OAR_PI_AGENT_DIR).toBe(directory);
+  for (const row of captures) for (const evidence of [row.own, row.descendant]) { expect(evidence.denied).toEqual(targets.map(() => true)); expect(evidence.signal).toBe(true); }
+  expect(targets.map(path => readFileSync(path, 'utf8'))).toEqual(initial);
+}, 60000);
+
+test('Pi review options use native configuration and require an actual model', async () => {
+  const { isReviewRuntimeId } = await import('../src/core/review/review-runtimes');
+  const { validateDomainReview } = await import('../src/core/review/acceptance-receipt');
+  const { decodeAgentsConfig } = await import('../src/core/operator/agents-settings');
+  expect(isReviewRuntimeId('pi')).toBe(true);
+  expect(decodeAgentsConfig({ enabled: ['pi'], uses: { docs: [], review: ['pi'] }, default_docs: null }).uses.review).toEqual(['pi']);
+  expect(() => reviewSessionOptions('pi', '/fixture')).toThrow('agent_directory_required');
+  const options = reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent');
+  expect(options.env).toEqual({ PI_CODING_AGENT_DIR: '/fixture/.pi-agent', OAR_PI_AGENT_DIR: '/fixture/.pi-agent' });
+  expect(options.model).toBeUndefined(); expect(options.effort).toBeUndefined();
+  const identity = { request_id: 'fixture', context_sha256: 'sha256:' + 'a'.repeat(64), subject_sha256: 'sha256:' + 'b'.repeat(64),
+    actual_harness: 'pi' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-provider/fixture-actual' };
+  const result = { ...identity, verdict: 'PASS' as const, summary: '[fixture opinion]', findings: [] };
+  expect(validateReviewOutput(result, identity).actual_model).toBe(identity.actual_model);
+  expect(validateDomainReview(result).actual_model).toBe(identity.actual_model);
+  for (const actual_harness of ['claude', 'codex', 'pi'] as const) {
+    expect(() => validateDomainReview({ ...result, actual_harness, actual_model: null })).toThrow();
+    expect(() => validateReviewOutput({ ...result, actual_harness, actual_model: null }, { ...identity, actual_harness })).toThrow('actual_model_mismatch');
+  }
+});
+
+test('Pi execution fixture projects and validates its native resume identity', async () => {
+  const { projectTaskExecutionView, decodeTaskExecutionView } = await import('../src/core/operator/execution-state');
+  const view = projectTaskExecutionView({ protocol: 1, kind: 'operator_task_execution', observed_at: '2026-10-28T00:00:00.000Z',
+    executions: [{ state: 'verified', task: 'fixture-pi', role: 'deep-reasoner', issue_id: '1100', branch: 'fixture-pi',
+      agent: 'pi', runtime: 'terminal', native_session_id: 'fixture-native-id', herdr_pane: null }] }, 'fixture-repo', null);
+  expect(decodeTaskExecutionView(view)).toEqual(view);
+  expect(view.tasks[0]!.follow_up.resume).toEqual({ host: 'pi', command: 'pi --session fixture-native-id' });
+  const first = view.tasks[0]!;
+  const invalid = { ...view, tasks: [{ ...first, follow_up: { ...first.follow_up,
+    resume: { host: 'pi', command: 'pi --session fixture-native-id; touch forbidden' } } }] };
+  expect(() => decodeTaskExecutionView(invalid)).toThrow('resume command');
+});
+
+for (const example of [
+  { verdict: 'PASS' as const },
+  { verdict: 'FAIL' as const },
+]) darwinTest(`Pi review fixture records ${example.verdict} with native model identity`, async () => {
+  const { mkdirSync, rmdirSync } = await import('node:fs');
+  const { bindNativeTaskSession } = await import('../src/effects/terminal/native-task-session');
+  const { verifyAcceptance } = await import('../src/effects/review/acceptance-receipt');
+  const f = packetRoundFixture();
+  const source = join(f.options.endpoint.home, '.pi/agent'); mkdirSync(source, { recursive: true });
+  const models = '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}';
+  const auth = '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}';
+  const settings = '{"defaultProvider":"fixture-provider","defaultModel":"fixture-actual"}';
+  writeFileSync(join(source, 'models.json'), models); writeFileSync(join(source, 'auth.json'), auth);
+  writeFileSync(join(source, 'settings.json'), settings);
+  let binding: Awaited<ReturnType<typeof startOfflineTaskAgent>>, request: TaskRequest;
+  let actualModel: string | null = 'fixture-provider/fixture-actual', verdict = example.verdict, sent = 0;
+  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
+    dispose: async () => {}, close: async () => ({ status: 'closed', pids: [] }), cancel: async () => ({ status: 'closed', pids: [] }),
+    installation: async () => ({ kind: 'available', via: 'bundled' }),
+    start: async (repo, spec, _command, _ready, _guard, authority) => {
+      if (!authority) throw new Error('fixture_task_authority_missing');
+      if (!binding) {
+        binding = await startOfflineTaskAgent(repo, spec, authority);
+        writeSessionArtifact(join(f.dir, 'ready.json'), { pid: binding.provider.pid, session_id: 'fixture-pi-native-id', fixture: false });
+      }
+      return binding;
+    },
+    send: async (repo, task, role, ref) => {
+      const round = ++sent;
+      request = { protocol: 2, task, role, round, request_id: `fixture-pi-request-${round}`, context_sha256: 'sha256:' + 'a'.repeat(64),
+        context_ref: ref, source_ref: ref, result_ref: join(repo, 'fixture-result.json'),
+        result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
+      writeSessionArtifact(join(f.dir, `observed-${round}.json`), { request_id: request.request_id, kind: 'ended', outcome: 'completed', actual_model: actualModel });
+      return request;
+    },
+    collect: async () => {
+      const domain = JSON.parse(readFileSync(f.packetPath(request.round), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      return { request_id: request.request_id, context_sha256: request.context_sha256,
+        value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
+          verdict, summary: '[fixture opinion; no provider call]', findings: verdict === 'PASS' ? [] : [finding] } };
+    } };
+  const result = await runReviewRound({ ...f.options, harness: 'pi' }, effects);
+  expect(result.status).toBe(example.verdict === 'PASS' ? 'accepted' : 'rejected');
+  expect(result.receipt.reviewer).toBe('Pi'); expect(result.receipt.actual_harness).toBe('pi');
+  expect(result.receipt.actual_model).toBe(actualModel); expect(result.output.actual_model).toBe(actualModel);
+  expect(Object.hasOwn(result.receipt, 'cross_model')).toBe(false);
+  const input = { repo_root: f.options.reviewerRepo, binding: binding!, ready_path: join(f.dir, 'ready.json') };
+  const native = bindNativeTaskSession(input);
+  expect(native.host).toBe('pi'); expect(native.native_session_id).toBe('fixture-pi-native-id');
+  expect(bindNativeTaskSession(input)).toEqual(native);
+  expect(() => bindNativeTaskSession({ ...input, binding: { ...binding!, max_requests: 2 } })).toThrow('binding_changed');
+  if (example.verdict === 'PASS') expect((await verifyAcceptance({ root: f.root, authority: f.authority, authorityHome: f.home })).actual_model).toBe(actualModel);
+  const host = readSessionArtifact<{ output: string }>(join(f.dir, 'host.json'));
+  const directory = join(host.output, '.pi-agent');
+  expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
+  expectNoStoredPiProbe(host.output);
+  const cancel = example.verdict === 'FAIL';
+  if (cancel) {
+    const priorReceipt = readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8');
+    writeFileSync(join(f.root, 'feature.txt'), 'candidate\n\n'); f.refresh();
+    actualModel = null; verdict = 'PASS';
+    await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
+    expect(readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8')).toBe(priorReceipt);
+    expect(existsSync(join(f.dir, 'accepted-2.json'))).toBe(false);
+    expect(readdirSync(directory)).toEqual([]);
+    mkdirSync(join(directory, 'models.json'));
+    await expect(closeReview(f.root, f.authority, cancel, f.home, effects)).rejects.toThrow('cleanup_pending: review_pi_credential_cleanup_failed');
+    expect(existsSync(join(f.dir, 'closed.json'))).toBe(false);
+    expect(readdirSync(directory)).toEqual(['models.json']);
+    rmdirSync(join(directory, 'models.json'));
+  }
+  expect((await closeReview(f.root, f.authority, cancel, f.home, effects)).status).toBe('closed');
+  expect(readdirSync(directory)).toEqual([]);
+  expectNoStoredPiProbe(host.output);
+  expect(readFileSync(join(source, 'models.json'), 'utf8')).toBe(models);
+  expect(readFileSync(join(source, 'auth.json'), 'utf8')).toBe(auth);
+  expect(readFileSync(join(source, 'settings.json'), 'utf8')).toBe(settings);
+}, 60000);
+
+test('Pi review requires explicit selection and cannot be a missing-provider fallback', async () => {
+  const f = packetRoundFixture();
+  const { harness: _harness, ...options } = f.options;
+  const calls: string[] = [];
+  await expect(runReviewRound(options, { ...f.effects, owner: () => 'pi',
+    installation: async kind => { calls.push(kind); return kind === 'claude' ? { kind: 'not_found' } : { kind: 'available', via: 'bundled' }; },
+  })).rejects.toThrow('review_provider_executable_missing_or_unsupported');
+  expect(calls).toEqual(['claude']);
+  expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
+});
+
+darwinTest('Pi credential cleanup fixture removes partial references after a failed start', async () => {
+  const f = packetRoundFixture();
+  await expect(runReviewRound({ ...f.options, harness: 'pi' }, { ...f.effects,
+    installation: async () => ({ kind: 'available', via: 'bundled' }), piExecutable: () => '/usr/bin/true',
+    start: async () => { throw new Error('fixture_start_failure'); },
+  })).rejects.toThrow('fixture_start_failure');
+  const host = readSessionArtifact<{ output: string }>(join(f.dir, 'host.json'));
+  expect(readdirSync(join(host.output, '.pi-agent'))).toEqual([]);
+  expectNoStoredPiProbe(host.output);
+});
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
@@ -561,7 +859,7 @@ writeFileSync(join(output,'serving'),'1');
 let partialChecks=0;
 for(const end=Date.now()+8000;!existsSync(observed)&&thrown===undefined&&Date.now()<end;await sleep(10)){
   const acked=existsSync(ack);
-  if(!existsSync(started)){assert.equal(acked,false);if(existsSync(join(output,'request-1.json')))partialChecks++}
+  if(!existsSync(started)){assert.equal(acked,false);if(existsSync(join(output,'request-1.json'))){partialChecks++;if(!existsSync(join(output,'partial-observed')))writeFileSync(join(output,'partial-observed'),'1')}}
 }
 assert.equal(thrown,undefined);assert.ok(partialChecks>0);assert.equal(JSON.parse(readFileSync(observed,'utf8')).outcome,'completed');
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));await served;assert.equal(thrown,undefined);
@@ -577,7 +875,10 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
     // Same order as sendTaskRequest: request first, then context and started.
     writeSessionArtifact(join(output, 'request-1.json'), request);
-    await new Promise(resolve => setTimeout(resolve, 200));
+    for (let waited = 0; !existsSync(join(output, 'partial-observed')); waited += 10) {
+      if (waited > 10000) throw new Error('host fixture never observed the partial request');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
     writeFileSync(request.context_ref, content);
     writeSessionArtifact(join(output, 'started-1.json'), { request_id: requestId, provider: { pid, identity: 'fixture-host' } });
   });

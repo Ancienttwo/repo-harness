@@ -362,7 +362,7 @@ export function NavRail({
             <span className={cn('min-w-0', collapsed && 'rail:sr-only')}>
               <span className="block truncate">{t(`rail.status.${status}`)}</span>
               {/* Protocol vocabulary: never translated. The full boundary lives on the System page. It wraps rather than truncates, so the exception stays visible. */}
-              <span className="block">{host && <><span className="font-mono">{host}</span> · </>}read-only except Settings</span>
+              <span className="block">{host && <><span className="font-mono">{host}</span> · </>}read-only except Settings and Worktrees</span>
             </span>
           </div>
           <div className={cn('flex items-center gap-2', collapsed && 'rail:flex-col')}>

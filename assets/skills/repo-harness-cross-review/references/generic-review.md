@@ -30,7 +30,8 @@ repo-harness review close --repository-id <repository-id> --issue-id <issue-id> 
 ```
 
 Default selection uses an existing typed task binding for the parent pane and chooses
-its opposite. Unknown identity requires `--harness claude|codex`. Explicit
+its opposite. Unknown identity requires `--harness claude|codex|pi`. Pi is selected
+only by explicit `--harness pi`. Explicit
 selection never falls back; only a missing opposite executable before start
 allows a reported fallback to a separate owner-harness reviewer. No launch or
 request is replayed after an ambiguous outcome.

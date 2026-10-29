@@ -155,6 +155,8 @@ test('follow-up gives each host its own resume command and refuses an id that is
   const base = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: null, branch: null, runtime: 'terminal' as const, herdr_pane: null };
   expect(buildTaskFollowUp({ ...base, agent: 'claude', native_session_id: '5f0c1e2a-0000-4000-8000-000000000001' }).resume)
     .toEqual({ host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' });
+  expect(buildTaskFollowUp({ ...base, agent: 'pi', native_session_id: 'fixture-native-id' }).resume)
+    .toEqual({ host: 'pi', command: 'pi --session fixture-native-id' });
   expect(buildTaskFollowUp({ ...base, agent: 'codex', native_session_id: 'thread; rm -rf ~' }))
     .toEqual({ task_id: 'a'.repeat(64), resume: null, herdr_pane: null });
 });

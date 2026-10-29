@@ -1,5 +1,6 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import { createHash } from 'crypto';
+import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
 
@@ -41,12 +42,12 @@ export type AcceptanceReceipt = {
   reviewed_paths: string[];
   disposition: AcceptanceDisposition;
   expected_reviewer: 'Claude' | 'Codex';
-  reviewer: 'Claude' | 'Codex' | 'User';
+  reviewer: 'Claude' | 'Codex' | 'Pi' | 'User';
   source: 'generic-review' | 'user-waiver';
   request_id: string | null;
   context_sha256: string | null;
   result_sha256: string | null;
-  actual_harness: 'claude' | 'codex' | null;
+  actual_harness: ReviewRuntimeId | null;
   actual_role: string | null;
   actual_model: string | null;
   actor: string | null;
@@ -65,7 +66,7 @@ export interface AcceptanceReviewResult {
   request_id: string;
   context_sha256: string;
   subject_sha256: string;
-  actual_harness: 'claude' | 'codex';
+  actual_harness: ReviewRuntimeId;
   actual_role: string;
   actual_model: string;
   verdict: 'PASS' | 'FAIL';
@@ -81,7 +82,7 @@ export function validateDomainReview(value: unknown): AcceptanceReviewResult {
   if (!isRecord(value) || Object.keys(value).sort().join(',') !== ['request_id','context_sha256','subject_sha256','actual_harness','actual_role','actual_model','verdict','summary','findings'].sort().join(',')) fail('generic-review result schema is invalid');
   if (typeof value.request_id !== 'string' || !value.request_id.trim()
     || !/^sha256:[0-9a-f]{64}$/.test(String(value.context_sha256)) || !/^sha256:[0-9a-f]{64}$/.test(String(value.subject_sha256))
-    || !['claude','codex'].includes(String(value.actual_harness)) || value.actual_role !== GENERIC_REVIEW_ROLE
+    || typeof value.actual_harness !== 'string' || !isReviewRuntimeId(value.actual_harness) || value.actual_role !== GENERIC_REVIEW_ROLE
     || typeof value.actual_model !== 'string' || !value.actual_model.trim()
     || !['PASS','FAIL'].includes(String(value.verdict)) || typeof value.summary !== 'string' || !value.summary.trim()) fail('generic-review result identity/verdict is invalid');
   return { ...value, findings: validateFindings(value.findings) } as unknown as AcceptanceReviewResult;
@@ -501,7 +502,7 @@ export function validateDisposition(
     // independent harness may differ under explicit selection/preflight fallback.
     // Its identity is joined to the owner-held domain Result, never an alias.
     const expectedSource = acceptancePolicySource();
-    if (!['Claude', 'Codex'].includes(reviewer) || source !== expectedSource || actor !== null) {
+    if (!['Claude', 'Codex', 'Pi'].includes(reviewer) || source !== expectedSource || actor !== null) {
       fail('external_pass reviewer/source must match the approved reviewer policy');
     }
     if (findings.some((finding) => finding.severity === 'P0' || finding.severity === 'P1')) {
@@ -516,7 +517,7 @@ export function validateDisposition(
     }
     return;
   }
-  if (!['Claude', 'Codex'].includes(reviewer) || source !== acceptancePolicySource()) {
+  if (!['Claude', 'Codex', 'Pi'].includes(reviewer) || source !== acceptancePolicySource()) {
     fail('reject reviewer/source must match the approved reviewer policy');
   }
   if (findings.length === 0) fail('reject requires at least one finding');

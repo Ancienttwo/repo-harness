@@ -1,10 +1,11 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/operator/agents-settings';
+import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost } from '../settings';
 
 const REVISION = `sha256:${'4'.repeat(64)}`;
 
 const entry = (id: string, group: 'default' | 'community' | 'host_dependency', installation: Record<string, unknown>) => ({
-  id, group, installation, review_supported: id === 'claude' || id === 'codex', docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
 /** The probe of one machine: the 7 OAR defaults, Mister Morph, and the two runtimes that need optional packages. */

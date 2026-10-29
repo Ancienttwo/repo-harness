@@ -6,7 +6,7 @@ import {
   type AgentsSettingsResultV1,
 } from '../../core/operator/agents-settings';
 import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
-import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfiguration } from './global-configuration';
 
 /** The operator target lock precedes the shared global runtime transaction lock. */
@@ -74,7 +74,7 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
       throw new AgentsConfigurationError('runtime_not_enabled', `Runtime ${change.runtime} must be enabled to have a use.`);
     }
     if (change.uses.includes('review') && !isReviewRuntimeId(change.runtime)) {
-      throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; only claude and codex can.`);
+      throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; supported review runtimes: ${REVIEW_RUNTIME_IDS.join(', ')}.`);
     }
     // A docs use already stored stays and can be removed; only a new docs use of an unverified runtime is refused.
     if (change.uses.includes('docs') && !current.uses.docs.includes(change.runtime) && !isDocsHostRuntimeId(change.runtime)) {
