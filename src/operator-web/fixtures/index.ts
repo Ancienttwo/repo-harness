@@ -22,7 +22,9 @@ import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
 import type { BotAccessRead } from '../bots';
 import { busyBotAccess, degradedBotAccess } from './bots';
 import { decodeTestsSnapshot } from '../../core/operator/tests';
-import type { CiRepairsRead, ExecutionRead, TestsRead } from '../repository-reads';
+import { docsAnswer, type CiRepairsRead, type ExecutionRead, type TestsRead } from '../repository-reads';
+import { decodeDocsFile, decodeDocsTree } from '../../core/operator/docs';
+import { docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from './docs';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
@@ -57,6 +59,9 @@ function notify(now: number, healthy: boolean): NotifyStatusV1 {
     observed_at: new Date(now - 30_000).toISOString(),
   };
 }
+
+/** A wire answer goes through the browser's own response handling and decoder. */
+const answer = ({ status, body }: DocsWireAnswer) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 const unavailable = (what: string) => () => Promise.reject(new Error(`fixture ${what} unavailable`));
 
@@ -132,5 +137,9 @@ export function fixtureProps(name: string): OperatorAppProps {
     readAgentsSettings: agentsSettings.read,
     writeAgentsSettings: agentsSettings.write,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),
+    // busy: a tree with a dirty file, a diagram and a refused symlink; empty: no collection yet; degraded: the reader is down.
+    readDocsTree: repositoryId => docsAnswer(answer(fixture === 'busy' ? docsTreeAnswer(repositoryId, now) : fixture === 'empty' ? docsPendingAnswer
+      : { status: 503, body: { error: { code: 'docs_reader_unavailable', message: 'The docs reader is unavailable.', next_action: 'Retry after the next collection.' } } }), decodeDocsTree),
+    readDocsFile: (repositoryId, path) => docsAnswer(answer(docsFileAnswer(repositoryId, path)), decodeDocsFile),
   };
 }
