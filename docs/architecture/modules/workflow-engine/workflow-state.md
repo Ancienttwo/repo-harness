@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:485eee1d2b65a938a881ad9bca612d7c95bacbcc3ea79e6259edef9f75641b91" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:297d189a5e630f8d52abb39e711af363389e830dcc5ba94a8ba5e67ec599c14f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -18,8 +18,13 @@ flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_capability_workflow_engine_workflow_state_c0df5f05["Workflow State"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
+  p1_component_workflow_state_continuation_ledger_effects_763fc01a["Continuation Ledger (effects)"]:::component
   p1_component_workflow_state_coordination_plane_01b22a1b["Provider Board Observations and Historical Worktree Safety"]:::component
+  p1_component_workflow_state_coordination_plane_core_3d2e2fd5["Provider Board Observations and Historical Worktree Safety (core)"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
+  p1_component_workflow_state_primary_cli_1f36a09d["Effective State Resolver (cli)"]:::component
+  p1_component_workflow_state_primary_effects_8c542428["Effective State Resolver (effects)"]:::component
+  p1_component_workflow_state_primary_scripts_401176d3["Effective State Resolver (scripts)"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock and write them durably"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
   p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Project provider boards and retain explicit historical task parsing and exact worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
@@ -34,8 +39,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6ea088f6412b8f6c461bd01b5c1cd71b8093678e4035ca005061a5553402838b`).
-- Semantic nodes: `5`; declared relations: `8`.
+- Proof: `proven` (`sha256:d41c590886236cd47e5a774b106a35f716d6b23fdb68ab9db8b0ce001609a578`).
+- Semantic nodes: `10`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
@@ -82,6 +87,7 @@ flowchart LR
 - `calls` ← `component.hook-adapters.session-lifecycle` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
 - `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state read-only for the state MCP tools
+- `depends-on` ← `component.operator.console-collectors` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
 - `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
 - `reads` ← `component.task-fleet.primary` — Read provider issue and admitted session board observations without Sprint or lease authority
@@ -91,27 +97,42 @@ flowchart LR
 - `component.workflow-state.continuation-ledger`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Serialize attempt ledger appends under a directory lock and write them durably
   - `calls` → `component.workflow-state.primary` — Project the continuation envelope from read-only Effective State
+- `component.workflow-state.continuation-ledger-effects`:
+  - 無。
 - `component.workflow-state.coordination-plane`:
   - `calls` → `component.workflow-state.continuation-ledger` — Append claim attempt receipts and read owner ledgers as progress evidence
   - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks, read the worktree topology, and write coordination records durably
   - `calls` → `capability.runtime-harness.external-source-intake` — Read immutable provider issue observations and complete refresh receipts
   - `calls` → `component.workflow-state.primary` — Read artifacts and owner Effective State through the shared resolver
   - `reads` → `capability.runtime-harness.task-agent-host` — Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune
+- `component.workflow-state.coordination-plane-core`:
+  - 無。
 - `component.workflow-state.primary`:
   - `calls` → `capability.workflow-engine.contract-assets` — Match changed paths to capability ids through the pure capability registry
   - `calls` → `capability.workflow-engine.execution-primitives` — Take the state lock and commit the version owner under the Git common dir
+- `component.workflow-state.primary-cli`:
+  - 無。
+- `component.workflow-state.primary-effects`:
+  - 無。
+- `component.workflow-state.primary-scripts`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.workflow-state.continuation-ledger` | Continuation Ledger | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.primary` | Effective State Resolver | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `200–500` 行 | 未宣告 |
+| `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.primary-scripts` | Effective State Resolver (scripts) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:6ea088f6412b8f6c461bd01b5c1cd71b8093678e4035ca005061a5553402838b`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:d41c590886236cd47e5a774b106a35f716d6b23fdb68ab9db8b0ce001609a578`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

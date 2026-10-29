@@ -1,9 +1,9 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:56da1035adf6da2756a9a8dc21816975b108abeece3ea50f7e61a771c3ce89c2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:34956986c76c312a0dce4aaad35e643116f683a7365d1b371ad7167ccbf54121" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
-> **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/decision-trail.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
+> **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -17,6 +17,9 @@ Appends and folds the per-worktree harness evidence event log, stores write-once
 flowchart LR
   p1_capability_runtime_harness_evidence_ledger_2fe63ef5["Evidence Ledger"]:::component
   p1_component_evidence_ledger_primary_1ca47146["Evidence Event Store"]:::component
+  p1_component_evidence_ledger_primary_core_90537d7c["Evidence Event Store (core)"]:::component
+  p1_component_evidence_ledger_primary_scripts_c1f867de["Evidence Event Store (scripts)"]:::component
+  p1_component_evidence_ledger_scripts_layer_18a83ed8["Evidence Ledger (scripts)"]:::component
   p1_capability_runtime_harness_evidence_ledger_2fe63ef5 -->|"Append fold and checkpoint evidence events through one writer path"| p1_component_evidence_ledger_primary_1ca47146
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -24,8 +27,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:92ba58a09b2b6f5fff50a2c6bd18218f56070accb5083e9d8b248bafbaa29385`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:31681952cab84b381e9bb12641338111d8a5745d4c568335445386bdd5a7d3ad`).
+- Semantic nodes: `5`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -42,8 +45,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/evidence/**`、`src/effects/evidence/**`、`scripts/evidence-gc.ts`、`scripts/recovery-view-cli.ts`、`scripts/decision-trail.ts`、`scripts/prepare-handoff.sh`、`scripts/prepare-codex-handoff.sh`、`scripts/codex-handoff-resume.sh`
+- 規模量級:`20–50` 個文件 / `2000–5000` 行
+- 匹配前綴:`src/core/evidence/**`、`src/effects/evidence/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -70,16 +73,25 @@ flowchart LR
 
 - `component.evidence-ledger.primary`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory and read the virtual tree
+- `component.evidence-ledger.primary-core`:
+  - 無。
+- `component.evidence-ledger.primary-scripts`:
+  - 無。
+- `component.evidence-ledger.scripts-layer`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.evidence-ledger.primary` | Evidence Event Store | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.evidence-ledger.primary` | Evidence Event Store | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.evidence-ledger.primary-core` | Evidence Event Store (core) | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.evidence-ledger.primary-scripts` | Evidence Event Store (scripts) | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.evidence-ledger.scripts-layer` | Evidence Ledger (scripts) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:92ba58a09b2b6f5fff50a2c6bd18218f56070accb5083e9d8b248bafbaa29385`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:31681952cab84b381e9bb12641338111d8a5745d4c568335445386bdd5a7d3ad`); selectors `4/4`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
