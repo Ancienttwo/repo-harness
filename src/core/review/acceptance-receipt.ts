@@ -24,8 +24,10 @@ export type AcceptanceFinding = {
   message: string;
 };
 
+export type ModelRelation = 'different-family' | 'same-family' | 'unknown';
+
 export type AcceptanceReceipt = {
-  protocol: 3;
+  protocol: 4;
   kind: 'repo-harness-acceptance-receipt';
   repository_root: string;
   campaign_sha256: string;
@@ -50,12 +52,47 @@ export type AcceptanceReceipt = {
   actual_harness: ReviewRuntimeId | null;
   actual_role: string | null;
   actual_model: string | null;
+  /** Canonical digest of the bound author task binding; null without one. */
+  author_session_binding_sha256: string | null;
+  /** Sorted unique OAR models of the author's ended turns; null is unknown. */
+  author_actual_models: string[] | null;
+  /** Record-time verdict of `modelRelation`; null only for `user_waiver`. */
+  model_relation: ModelRelation | null;
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
   waiver_grant_sha256: string | null;
   issued_at: string;
 };
+
+/** Closed model-family table: the single family authority. A routing provider
+ * prefix (`magpie/`, `cursor/`) is a gateway label, so only the last `/`
+ * segment is matched. An unmatched model has no family. */
+const MODEL_FAMILY_PREFIXES: readonly (readonly [string, string])[] = [
+  ['claude-', 'anthropic'], ['opus', 'anthropic'], ['sonnet', 'anthropic'], ['haiku', 'anthropic'],
+  ['gpt-', 'openai'], ['o3', 'openai'], ['o4', 'openai'],
+  ['deepseek-', 'deepseek'],
+  ['gemini-', 'google'],
+  ['grok-', 'xai'],
+  ['kimi-', 'moonshot'],
+  ['qwen', 'alibaba'],
+];
+
+export function modelFamily(model: string): string | null {
+  const name = model.slice(model.lastIndexOf('/') + 1).toLowerCase();
+  return MODEL_FAMILY_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null;
+}
+
+/** One known shared family denies a cross-model claim. Only a complete set of
+ * known author families that all differ from a known reviewer family grants it. */
+export function modelRelation(authorModels: readonly string[] | null, reviewerModel: string | null): ModelRelation {
+  if (!authorModels?.length || reviewerModel === null) return 'unknown';
+  const reviewer = modelFamily(reviewerModel);
+  if (reviewer === null) return 'unknown';
+  const authors = authorModels.map(modelFamily);
+  if (authors.includes(reviewer)) return 'same-family';
+  return authors.every(family => family !== null) ? 'different-family' : 'unknown';
+}
 
 /** Closed review-domain role approved by the product contract, not runtime fleet configuration.
  * This is its single validity definition; fleet owns model/effort for this named role.
@@ -68,7 +105,8 @@ export interface AcceptanceReviewResult {
   subject_sha256: string;
   actual_harness: ReviewRuntimeId;
   actual_role: string;
-  actual_model: string;
+  /** Null when the host did not observe the reviewer model. */
+  actual_model: string | null;
   verdict: 'PASS' | 'FAIL';
   summary: string;
   findings: AcceptanceFinding[];
@@ -83,13 +121,18 @@ export function validateDomainReview(value: unknown): AcceptanceReviewResult {
   if (typeof value.request_id !== 'string' || !value.request_id.trim()
     || !/^sha256:[0-9a-f]{64}$/.test(String(value.context_sha256)) || !/^sha256:[0-9a-f]{64}$/.test(String(value.subject_sha256))
     || typeof value.actual_harness !== 'string' || !isReviewRuntimeId(value.actual_harness) || value.actual_role !== GENERIC_REVIEW_ROLE
-    || typeof value.actual_model !== 'string' || !value.actual_model.trim()
+    || !optionalModel(value.actual_model)
     || !['PASS','FAIL'].includes(String(value.verdict)) || typeof value.summary !== 'string' || !value.summary.trim()) fail('generic-review result identity/verdict is invalid');
   return { ...value, findings: validateFindings(value.findings) } as unknown as AcceptanceReviewResult;
 }
 
+function optionalModel(value: unknown): value is string | null {
+  return value === null || typeof value === 'string' && value.trim() !== '';
+}
+
 export function assertReviewFields(receipt: AcceptanceReceipt): void {
-  const fields = ['request_id','context_sha256','result_sha256','actual_harness','actual_role','actual_model'] as const;
+  const fields = ['request_id','context_sha256','result_sha256','actual_harness','actual_role','actual_model',
+    'author_session_binding_sha256','author_actual_models','model_relation'] as const;
   if (receipt.disposition === 'user_waiver') {
     if (fields.some(field => receipt[field] !== null)) fail('AcceptanceReceipt user waiver has review binding');
     return;
@@ -99,7 +142,22 @@ export function assertReviewFields(receipt: AcceptanceReceipt): void {
   if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.result_sha256))) fail('AcceptanceReceipt generic-review result_sha256 is invalid');
   if (receipt.actual_harness !== receipt.reviewer.toLowerCase()) fail('AcceptanceReceipt generic-review actual_harness mismatch');
   if (receipt.actual_role !== GENERIC_REVIEW_ROLE) fail('AcceptanceReceipt generic-review actual_role mismatch');
-  if (typeof receipt.actual_model !== 'string' || !receipt.actual_model.trim()) fail('AcceptanceReceipt generic-review actual_model is invalid');
+  if (!optionalModel(receipt.actual_model)) fail('AcceptanceReceipt generic-review actual_model is invalid');
+  assertModelRelationFields(receipt);
+}
+
+function assertModelRelationFields(receipt: AcceptanceReceipt): void {
+  const binding = receipt.author_session_binding_sha256, models = receipt.author_actual_models;
+  if (binding !== null && !/^sha256:[0-9a-f]{64}$/.test(String(binding))) fail('AcceptanceReceipt author_session_binding_sha256 is invalid');
+  if (models !== null && (!Array.isArray(models) || models.length === 0
+    || models.some((model, index) => typeof model !== 'string' || !model.trim() || index > 0 && models[index - 1]! >= model))) {
+    fail('AcceptanceReceipt author_actual_models must be sorted unique model strings');
+  }
+  if (models !== null && binding === null) fail('AcceptanceReceipt author_actual_models requires an author session binding');
+  if (!['different-family', 'same-family', 'unknown'].includes(String(receipt.model_relation))) fail('AcceptanceReceipt model_relation is invalid');
+  if ((models === null || receipt.actual_model === null) && receipt.model_relation !== 'unknown') {
+    fail('AcceptanceReceipt model_relation must be unknown without both models');
+  }
 }
 
 /** Already-authorized upstream waiver action. References and actor strings are
@@ -594,12 +652,13 @@ export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
   'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
   'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
   'issued_at', 'request_id', 'context_sha256', 'result_sha256', 'actual_harness', 'actual_role', 'actual_model',
+  'author_session_binding_sha256', 'author_actual_models', 'model_relation',
 ];
 
 /** Human-readable projection only; archived source text grants no receipt validity. */
 export function renderAcceptanceProjection(receipt: Pick<AcceptanceReceipt,
   'disposition' | 'reviewer' | 'actor' | 'subject_sha256' | 'subject_scope' | 'target_revision'
-  | 'verification_evidence_sha256' | 'issued_at' | 'summary' | 'findings'> & { source: string }): string {
+  | 'verification_evidence_sha256' | 'issued_at' | 'summary' | 'findings' | 'model_relation'> & { source: string }): string {
   return [
     '## Acceptance Receipt Projection',
     '',
@@ -611,6 +670,7 @@ export function renderAcceptanceProjection(receipt: Pick<AcceptanceReceipt,
     `> **Reviewed Subject Scope**: ${receipt.subject_scope}`,
     `> **Reviewed Target Revision**: ${receipt.target_revision}`,
     `> **Verification Evidence SHA256**: ${receipt.verification_evidence_sha256}`,
+    `> **Model Relation**: ${receipt.model_relation ?? 'not-applicable'}`,
     `> **Issued At**: ${receipt.issued_at}`,
     '',
     `- Summary: ${receipt.summary}`,

@@ -92,34 +92,41 @@ const waitCapture=predicate=>new Promise(resolve=>{waits.push({predicate,resolve
 const assertFold=session=>{const folded=statusOf(session.records(),session.id);assert.deepEqual(folded,session.status());const captured=snapshot();assert.equal(captured.seq,folded.seq);assert.equal(captured.status,folded.value.kind);assert.deepEqual(captured.phase,folded.value.kind==='running'?folded.value.phase:null);if(folded.value.kind==='running'){assert.equal(captured.since_seq,folded.value.sinceSeq);assert.equal(captured.last_event_at,folded.value.lastEventAt)}};
 let release,started;
 const gate=new Promise(resolve=>release=resolve),toolStarted=new Promise(resolve=>started=resolve);
-const session=await scriptedRuntime({turn:async({think,tool})=>{think('private-reasoning');await tool('Read','private-tool-input',async()=>{started();await gate;return 'private-tool-output'})}}).session({kind:'available',via:'bundled'},{cwd:dir});
+const session=await scriptedRuntime({model:'fixture-provider/gpt-fixture',turn:async({think,tool})=>{think('private-reasoning');await tool('Read','private-tool-input',async()=>{started();await gate;return 'private-tool-output'})}}).session({kind:'available',via:'bundled'},{cwd:dir});
 try{
  const capturedTool=waitCapture(capture=>capture.phase?.tool==='Read');
- const pending=promptWithOarObservation(session,request,host,'private-prompt',{timeoutMs:10000},save);
- assert.equal(read().last_event_at,null);assert.equal(read().outcome,null);
+ const pending=promptWithOarObservation(session,'codex',request,host,'private-prompt',{timeoutMs:10000},save);
+ assert.equal(read().last_event_at,null);assert.equal(read().outcome,null);assert.equal(read().actual_model,null);
  await toolStarted;await capturedTool;
  assert.equal(read().status,'running');assert.equal(read().phase.tool,'Read');assert.equal(read().input_id,request.request_id);
- assert.equal(read().control,'accepted');assert.equal(readFileSync(path,'utf8').includes('private-'),false);
+ assert.equal(read().control,'accepted');assert.equal(read().actual_model,null);assert.equal(readFileSync(path,'utf8').includes('private-'),false);
  assert.equal(Object.hasOwn(snapshot(),'records'),false);assertFold(session);
  const nativePrompt=session.records().find(record=>record.kind==='request'&&record.body.kind==='prompt');
  assert.equal(nativePrompt.body.inputId,request.request_id);
  release();const run=await pending;assert.equal(run.outcome.kind,'completed');assertFold(session);assert.equal(read().outcome,'completed');
+ // The host sets the actual model once, at turn end, through the shared rule.
+ assert.equal(read().actual_model,'fixture-provider/gpt-fixture');assert.equal(read().actual_model,session.model().value);
  assert(readFileSync(path).length<=OAR_OBSERVATION_MAX_BYTES);assert.equal(readFileSync(path,'utf8').includes('private-'),false);
  const firstCapture=readFileSync(path,'utf8');
  const next={request_id:'22222222-2222-4222-8222-222222222222',round:2};let checkedInitial=false;
- await promptWithOarObservation(session,next,host,'second-input',{timeoutMs:1000},capture=>{save(capture);if(!checkedInitial){checkedInitial=true;assert.equal(session.status().value.lastTurnOutcome.kind,'completed');assert.equal(readOarObservation(path,next,host).outcome,null);assert.equal(capture.control,null)}});
- assert.equal(checkedInitial,true);writeFileSync(path,firstCapture);
+ await promptWithOarObservation(session,'codex',next,host,'second-input',{timeoutMs:1000},capture=>{save(capture);if(!checkedInitial){checkedInitial=true;assert.equal(session.status().value.lastTurnOutcome.kind,'completed');assert.equal(readOarObservation(path,next,host).outcome,null);assert.equal(capture.control,null)}});
+ assert.equal(checkedInitial,true);
+ // Claude init metadata is not the actual gateway model: the shared rule writes null.
+ const third={request_id:'33333333-3333-4333-8333-333333333333',round:3};await promptWithOarObservation(session,'claude',third,host,'third-input',{timeoutMs:1000},save);
+ assert.equal(readOarObservation(path,third,host).outcome,'completed');assert.equal(readOarObservation(path,third,host).actual_model,null);
+ writeFileSync(path,firstCapture);
  const valid=readFileSync(path,'utf8');
  for(const changed of [{...request,request_id:'other'},{...request,round:2}])assert.throws(()=>readOarObservation(path,changed,host),/IDENTITY_MISMATCH/);
  assert.throws(()=>readOarObservation(path,request,{...host,identity:'reused-pid'}),/IDENTITY_MISMATCH/);
- // Each mutation violates the closed v2 schema. No native log is accepted.
+ // Each mutation violates the closed v3 schema. No native log is accepted.
  for(const mutate of [capture=>capture.seq=-2,capture=>capture.seq=1.5,capture=>capture.last_event_at=-1,
    capture=>capture.input_id='other-input',capture=>capture.protocol='repo-harness.oar-observation.v1',
    capture=>capture.records=session.records(),capture=>capture.failure='private-error-prose',
    capture=>{capture.outcome='failed';capture.failure='private-error-prose'},
    capture=>{capture.control='rejected';capture.rejection='private-rejection-prose'},
    capture=>{capture.status='running';capture.phase={tool:'Read',callId:'id',native:'private'};capture.since_seq=0},
-   capture=>capture.session_id='x'.repeat(1025),capture=>capture.host.extra='private']){
+   capture=>capture.session_id='x'.repeat(1025),capture=>capture.host.extra='private',
+   capture=>capture.protocol='repo-harness.oar-observation.v2',capture=>capture.actual_model='',capture=>delete capture.actual_model]){
    writeFileSync(path,valid);const invalid=snapshot();mutate(invalid);save(invalid);assert.throws(read,/INVALID/);
  }
  writeFileSync(path,'{}');assert.throws(read,/INVALID/);
@@ -129,10 +136,10 @@ try{
 }finally{await session.dispose()}
 const failed=await scriptedRuntime({turn:()=>{throw new Error('private-error-prose')}}).session({kind:'available',via:'bundled'},{cwd:dir});
 try{
- const run=await promptWithOarObservation(failed,request,host,'private-failure',{timeoutMs:1000},save);
+ const run=await promptWithOarObservation(failed,'codex',request,host,'private-failure',{timeoutMs:1000},save);
  assert.equal(run.outcome.kind,'failed');assert.equal(read().outcome,'failed');assert.equal(read().failure,run.outcome.failure);
  assert.equal(readFileSync(path,'utf8').includes('private-'),false);assertFold(failed);
- const rejected=await promptWithOarObservation(failed,request,host,'',{timeoutMs:1000},save);
+ const rejected=await promptWithOarObservation(failed,'codex',request,host,'',{timeoutMs:1000},save);
  assert.equal(rejected.kind,'rejected');assert.equal(read().control,'rejected');assert.equal(read().rejection,rejected.code);
  assert.equal(read().outcome,null);assert.equal(read().failure,null);assertFold(failed);
 }finally{await failed.dispose()}
@@ -143,7 +150,7 @@ const streamGate=new Promise(resolve=>finish=resolve),streamReady=new Promise(re
 const stream=await scriptedRuntime({turn:async({say})=>{send=say;say('private-first');streamStarted();await streamGate}}).session({kind:'available',via:'bundled'},{cwd:dir});
 try{
  writes=[];const first=waitCapture(capture=>capture.phase==='responding');
- const pending=promptWithOarObservation(stream,request,host,'private-stream',{timeoutMs:10000},save);
+ const pending=promptWithOarObservation(stream,'codex',request,host,'private-stream',{timeoutMs:10000},save);
  await streamReady;await first;assertFold(stream);const before=read();
  const silentWrites=writes.length;await delay(OAR_OBSERVATION_REFRESH_MS+50);assert.equal(writes.length,silentWrites);assert.deepEqual(read(),before);
  const fresh=waitCapture(capture=>capture.seq>before.seq);
@@ -159,7 +166,7 @@ const stopped=await scriptedRuntime({turn:async({signal})=>{await new Promise(re
 let refusedWrites=0;
 try{
  // Failure occurs in the trailing timer, outside the SDK callback stack.
- await assert.rejects(promptWithOarObservation(stopped,request,host,'capture-failure',{timeoutMs:10000},()=>{if(++refusedWrites>1)throw new Error('capture-write-refused')}),/capture-write-refused/);
+ await assert.rejects(promptWithOarObservation(stopped,'codex',request,host,'capture-failure',{timeoutMs:10000},()=>{if(++refusedWrites>1)throw new Error('capture-write-refused')}),/capture-write-refused/);
  assert.equal(stopped.records().some(record=>record.kind==='request'&&record.body.kind==='dispose'),true);
 }finally{await stopped.dispose()}
 // Disposal failure must not replace the capture error; both stay visible.
@@ -167,7 +174,7 @@ const inner=await scriptedRuntime({turn:async({signal})=>{await new Promise(reso
 const refusing=new Proxy(inner,{get(target,key){if(key==='dispose')return async()=>{await target.dispose();throw new Error('dispose-refused')};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value}});
 let secondWrites=0;
 try{
- await assert.rejects(promptWithOarObservation(refusing,request,host,'capture-failure',{timeoutMs:10000},()=>{if(++secondWrites>1)throw new Error('capture-write-refused')}),error=>error instanceof AggregateError&&error.errors[0].message==='capture-write-refused'&&error.errors[1].message==='dispose-refused');
+ await assert.rejects(promptWithOarObservation(refusing,'codex',request,host,'capture-failure',{timeoutMs:10000},()=>{if(++secondWrites>1)throw new Error('capture-write-refused')}),error=>error instanceof AggregateError&&error.errors[0].message==='capture-write-refused'&&error.errors[1].message==='dispose-refused');
 }finally{await inner.dispose().catch(()=>{})}
 console.log(JSON.stringify({passed:true}));
 `);

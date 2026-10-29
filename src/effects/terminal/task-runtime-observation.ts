@@ -3,7 +3,7 @@ import { reduceStatus, promptAndWait, type PromptRunOptions } from '@botiverse/o
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 
-export const OAR_OBSERVATION_PROTOCOL = 'repo-harness.oar-observation.v2';
+export const OAR_OBSERVATION_PROTOCOL = 'repo-harness.oar-observation.v3';
 export const OAR_OBSERVATION_MAX_BYTES = 16 * 1024;
 export const OAR_OBSERVATION_REFRESH_MS = 1000;
 const failureClasses: Record<FailureClass, true> = {
@@ -31,9 +31,17 @@ export interface OarObservationSnapshot extends RequestIdentity {
   failure: FailureClass | null;
   control: 'accepted' | 'rejected' | null;
   rejection: RejectionCode | null;
+  /** Set by the host when the turn ends, by `oarActualModel`. */
+  actual_model: string | null;
 }
 export type OarObservationSink = (snapshot: OarObservationSnapshot) => void;
 export function oarObservationFile(round: number): string { return `oar-observation-${round}.json`; }
+
+/** The one actual-model rule for every OAR host turn, reviewer or task agent.
+ * Claude system/init is requested/init metadata, not the actual gateway model. */
+export function oarActualModel(kind: string, session: Pick<Session, 'model'>): string | null {
+  return kind === 'claude' ? null : session.model().value;
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('OAR_OBSERVATION_INVALID');
@@ -47,12 +55,13 @@ function sequence(value: unknown): value is number { return Number.isSafeInteger
 function timestamp(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
 function validateSnapshot(value: unknown): asserts value is OarObservationSnapshot {
   const snapshot = object(value), host = object(snapshot.host);
-  keys(snapshot, ['protocol', 'host', 'request_id', 'round', 'session_id', 'input_id', 'seq', 'status', 'phase', 'since_seq', 'last_event_at', 'outcome', 'failure', 'control', 'rejection']);
+  keys(snapshot, ['protocol', 'host', 'request_id', 'round', 'session_id', 'input_id', 'seq', 'status', 'phase', 'since_seq', 'last_event_at', 'outcome', 'failure', 'control', 'rejection', 'actual_model']);
   keys(host, ['pid', 'identity']);
   if (snapshot.protocol !== OAR_OBSERVATION_PROTOCOL || !text(snapshot.session_id) || !text(snapshot.request_id)
     || snapshot.input_id !== snapshot.request_id || !Number.isSafeInteger(snapshot.round) || (snapshot.round as number) < 1
     || !Number.isSafeInteger(host.pid) || (host.pid as number) < 1 || !text(host.identity) || !sequence(snapshot.seq)
-    || snapshot.last_event_at !== null && !timestamp(snapshot.last_event_at)) throw new Error('OAR_OBSERVATION_INVALID');
+    || snapshot.last_event_at !== null && !timestamp(snapshot.last_event_at)
+    || snapshot.actual_model !== null && !text(snapshot.actual_model)) throw new Error('OAR_OBSERVATION_INVALID');
   if (snapshot.status === 'idle') {
     if (snapshot.phase !== null || snapshot.since_seq !== null) throw new Error('OAR_OBSERVATION_INVALID');
   } else if (snapshot.status === 'running') {
@@ -81,7 +90,7 @@ export function oarObservationView(snapshot: OarObservationSnapshot) {
 }
 
 /** Fold once in the owned host. Never copy the Session log into a capture. */
-export async function promptWithOarObservation(session: Session, request: RequestIdentity, host: HostIdentity,
+export async function promptWithOarObservation(session: Session, kind: string, request: RequestIdentity, host: HostIdentity,
   input: string, options: PromptRunOptions, save: OarObservationSink) {
   const initial = session.status();
   let state = initial.value;
@@ -90,7 +99,7 @@ export async function promptWithOarObservation(session: Session, request: Reques
     status: state.kind, phase: state.kind === 'running' ? state.phase : null,
     since_seq: state.kind === 'running' ? state.sinceSeq : null,
     last_event_at: state.kind === 'running' ? state.lastEventAt : null,
-    outcome: null, failure: null, control: null, rejection: null };
+    outcome: null, failure: null, control: null, rejection: null, actual_model: null };
   let promptId: string | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   let captureFailed = false, captureError: unknown, disposal: Promise<void> | undefined;
   let lastPublishedAt = 0;
@@ -144,6 +153,7 @@ export async function promptWithOarObservation(session: Session, request: Reques
     snapshot.rejection = run.kind === 'rejected' ? run.code : null;
     snapshot.outcome = run.kind === 'rejected' ? null : run.outcome.kind;
     snapshot.failure = run.kind !== 'rejected' && run.outcome.kind === 'failed' ? run.outcome.failure : null;
+    snapshot.actual_model = oarActualModel(kind, session);
     return run;
   } finally {
     stop();
