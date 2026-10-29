@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { containsSecret } from '../../core/security/secret-patterns';
-import { docSessionLossDigestInput, type DocSessionLossInput } from '../../core/operator/doc-session-changes';
+import { cleanupContentsDigestInput, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
   cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan,
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupPlan, type CleanupPlanItem,
@@ -9,19 +9,19 @@ import {
 import { selectionDigestInput, worktreeDigestRow } from '../../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../../core/operator/worktrees';
 
-/** Server-only observation. Use the existing loss observer and worktree classifier. */
+/** Server-only observation. Use observeCleanupLoss and the existing worktree classifier. */
 export interface CleanupObservation {
   readonly worktree: WorktreeView;
   /** Null means incomplete evidence, including an unsupported orphan or path. */
-  readonly loss: DocSessionLossInput | null;
+  readonly loss: CleanupLossEvidence | null;
 }
 const sha256 = (input: string) => createHash('sha256').update(input).digest('hex');
 
-/** Reuse the content/index/ignored/commit fingerprint authority from session discard. */
+/** Bind complete raw contents, directory incarnation, index and all unpublished commits. */
 export function cleanupLossSha256(observed: CleanupObservation): string | null {
   return observed.loss === null ? null : sha256(canonicalize({ version: 1,
     selection: selectionDigestInput([worktreeDigestRow(observed.worktree)]),
-    loss: docSessionLossDigestInput(observed.loss),
+    loss: cleanupContentsDigestInput(observed.loss),
   }));
 }
 
@@ -31,8 +31,7 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
     advice = decodeCleanupAdvice(advice);
     const loss = observation.loss;
     if (loss !== null) {
-      const available = new Set([...loss.changes, ...loss.index].filter(file => file.new_mode !== null).map(file => file.path));
-      for (const file of loss.ignored_leaves) available.add(file.path);
+      const available = new Set([...loss.files.filter(file => file.kind !== 'directory' && file.path !== '.git'), ...loss.index].map(file => file.path));
       const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])];
       if (new Set(selected).size !== selected.length || selected.some(path => !available.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
       if (loss.commits.length && advice.recommendation !== 'keep' && !advice.archive.git?.include_commits) throw new Error('worktree_cleanup_commits_need_archive');
@@ -40,7 +39,7 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
     const item: Omit<CleanupPlanItem, 'plan_sha256'> = {
       worktree: observation.worktree, advice,
       loss: loss === null ? null : {
-        files: [...new Set([...loss.changes, ...loss.index].map(change => change.path))].sort(),
+        files: [...loss.changed_paths],
         ignored: [...loss.ignored].sort(), commits: [...loss.commits],
       },
       loss_sha256: cleanupLossSha256(observation),
