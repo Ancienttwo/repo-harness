@@ -7,6 +7,7 @@ import {
   type AgentRuntimesCacheV1,
   type AgentsSettingsV1,
 } from '../../core/operator/agents-settings';
+import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import {
   AgentsConfigurationError,
@@ -30,6 +31,7 @@ export const AGENTS_CONFIGURATION_FAILURES: Readonly<Record<AgentsConfigurationE
   runtime_unknown: { status: 422, next_action: 'Choose a runtime from the runtime list.' },
   runtime_not_enabled: { status: 422, next_action: 'Enable the runtime, or remove its uses.' },
   use_not_supported: { status: 422, next_action: `Use ${REVIEW_RUNTIME_IDS.join(', ')} for review.` },
+  docs_isolation_unverified: { status: 422, next_action: 'Give the docs use only to a runtime with verified docs isolation.' },
   default_docs_invalid: { status: 422, next_action: 'Choose a docs runtime as the default, or clear the default.' },
 });
 
@@ -49,6 +51,7 @@ export function readAgentsSettings(readRuntimes: () => AgentRuntimesCacheV1, env
       entries: (probe?.entries ?? []).map(entry => ({
         ...entry,
         review_supported: isReviewRuntimeId(entry.id),
+        docs_supported: isDocsHostRuntimeId(entry.id),
         capabilities: AGENT_RUNTIME_CAPABILITIES,
       })),
     },

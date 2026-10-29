@@ -13,7 +13,7 @@ responsibilities:
   - Run slow reads in supervised worker processes and start background collectors once per server.
   - Serve the Bot access, CLI inventory, notify status, docs, tests and task execution GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
   - Own the operator serve and runtime capture CLI entry and the Herdr observation transport.
-  - Own the doc session creation operation: verify each citation against one commit of the served docs view, then create the session's docs/<slug> branch and worktree under the managed worktree root and its session record; the production sessions_create route runs it after the local config write (#1017) opened, and it starts no agent.
+  - Own the doc session creation operation: refuse a runtime without verified docs isolation or without the docs use, verify each citation against one commit of the served docs view, then create the session's docs/<slug> branch and worktree under the managed worktree root and its session record; the production sessions_create route runs it after the local config write (#1017) opened, and it starts no agent.
   - Own the doc session event log: append redacted, schema-checked events to the session's events.jsonl under a per-session lock, each one moving the epoch.seq cursor forward, and serve the cursor read only when the route inventory declares it; production declares no route for it.
 source:
   include:

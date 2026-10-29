@@ -71,8 +71,10 @@ export interface AgentRuntimeCapabilitiesV1 {
 
 export const AGENT_RUNTIME_CAPABILITIES: AgentRuntimeCapabilitiesV1 = Object.freeze({ stop: 'available', steer: 'session', withdraw: 'session' });
 
+/** `docs_supported`: the runtime's docs isolation is verified, so it may get the docs use. */
 export interface AgentRuntimeSettingsEntryV1 extends AgentRuntimeProbeEntryV1 {
   readonly review_supported: boolean;
+  readonly docs_supported: boolean;
   readonly capabilities: AgentRuntimeCapabilitiesV1;
 }
 
@@ -136,8 +138,12 @@ function text(value: unknown, code: string): string {
   return typeof value === 'string' ? value : invalid(code);
 }
 
+export function isAgentRuntimeId(value: unknown): value is string {
+  return typeof value === 'string' && RUNTIME_ID.test(value);
+}
+
 function runtimeId(value: unknown, code: string): string {
-  return typeof value === 'string' && RUNTIME_ID.test(value) ? value : invalid(code);
+  return isAgentRuntimeId(value) ? value : invalid(code);
 }
 
 /** A sorted list of distinct runtime ids. Sorted order keeps the config bytes, and so the revision, stable. */
@@ -150,8 +156,9 @@ function runtimeIds(value: unknown, code: string): readonly string[] {
 
 /**
  * The stored `agents` section. Every runtime in `uses` is enabled, and the
- * default docs runtime is one of the docs runtimes. The review list is checked
- * where it is written, against the review host's list.
+ * default docs runtime is one of the docs runtimes. The review and docs lists
+ * are checked where they are written, against the review host's and the docs
+ * host's lists.
  */
 export function decodeAgentsConfig(value: unknown): AgentsConfigV1 {
   const code = 'agents_config_invalid';
@@ -227,11 +234,12 @@ export function decodeAgentsSettings(value: unknown): AgentsSettingsV1 {
   if (runtimes.collected_at !== null && typeof runtimes.collected_at !== 'string') invalid(code);
   if (!Array.isArray(runtimes.entries)) invalid(code);
   const entries = runtimes.entries.map((entry) => {
-    const decoded = decodeProbeEntry(entry, ['review_supported', 'capabilities']);
-    if (typeof decoded.review_supported !== 'boolean') invalid(code);
+    const decoded = decodeProbeEntry(entry, ['review_supported', 'docs_supported', 'capabilities']);
+    if (typeof decoded.review_supported !== 'boolean' || typeof decoded.docs_supported !== 'boolean') invalid(code);
     const capabilities = object(decoded.capabilities, ['stop', 'steer', 'withdraw'], [], code);
     if (capabilities.stop !== 'available' || capabilities.steer !== 'session' || capabilities.withdraw !== 'session') invalid(code);
-    return { id: decoded.id, group: decoded.group, installation: decoded.installation, review_supported: decoded.review_supported, capabilities: AGENT_RUNTIME_CAPABILITIES };
+    return { id: decoded.id, group: decoded.group, installation: decoded.installation, review_supported: decoded.review_supported,
+      docs_supported: decoded.docs_supported, capabilities: AGENT_RUNTIME_CAPABILITIES };
   });
   distinctIds(entries, code);
   return {
