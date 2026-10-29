@@ -5,7 +5,7 @@ name: Operator HTTP Reader
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Returns public JSON observations and typed failures; its seven write routes change the agents section of the global configuration, create doc sessions, send follow-ups, stop a doc session's turn, admit commit/discard with a required quiescence check, and remove green worktrees.
+summary: Returns public JSON observations and typed failures; its seven write routes change the agents section of the global configuration, create doc or read-only cleanup sessions, send follow-ups, stop a doc session's turn, admit commit/discard with a required quiescence check, and remove green worktrees.
 responsibilities:
   - Accept GET and HEAD from a loopback Host and same-origin callers; accept POST only with this service's Origin and Sec-Fetch-Site same-origin, and only on a declared write route; refuse every other method with 405.
   - Route each path through the frozen OPERATOR_ROUTES list; production declares seven write routes, settings_agents_write, which changes only the agents section of ~/.repo-harness/config.json, sessions_create, sessions_messages, sessions_commit, sessions_discard, sessions_stop, and worktrees_cleanup, which removes green worktrees; the server refuses to start unless each write handler and each inventory entry with method POST and write true match.
@@ -20,6 +20,7 @@ responsibilities:
   - Compose doc session commit and discard through the same audited session target lock and a bounded child with private stdin; reuse the existing finalization journal, GitHub adapters and host scope policy. The production quiescence adapter refuses before mutations until the runtime supplies verified complete cleanup. Unknown child outcomes remain unresolved and cannot replay. Serve finalization availability and the safe journal projection through the bounded read process even after worktree removal.
   - Own the doc session event log: append redacted, schema-checked events to the session's events.jsonl under a per-session lock, each one moving the epoch.seq cursor forward, take over the lock of a writer that is proven dead, and serve the production cursor read through the bounded task-read process.
   - Serve the public doc session list and detail from persisted session, host and redacted event records through the bounded task-read process; expose only safe metadata, branch, worktree directory name and HEAD, and compare browser-provided read cursors without persisting browser state.
+  - Create worktree_cleanup sessions from bounded server-resolved worktree IDs, persist complete observation evidence privately, and reuse the same agent lifecycle with a repository-read-only policy. Decode agent advice against the saved observations, bind per-item fingerprints with the existing cleanup core, and serve a bounded plan preview with execution disabled. Never route investigation advice to a deletion actuator.
 source:
   include:
     - src/effects/operator/**

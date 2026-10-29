@@ -1,3 +1,4 @@
+import { cleanupSessionCreateOperation } from './worktree-cleanup-session';
 // Doc session creation (PRD G5 step 1, G8; issue #1021). It verifies every
 // citation against the docs view the console serves, then creates the
 // session's `docs/<slug>` worktree under the managed worktree root and the
@@ -180,7 +181,7 @@ function worktreeExists(): OperatorWriteRefusal {
 }
 
 /** `<repoHarnessHome>/operator/sessions/<sid>/session.json`, created once with mode 0600. */
-function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: JsonValue): void {
+export function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: JsonValue): void {
   const operator = prepareOperatorStateDir(env);
   const sessions = join(operator, 'sessions');
   try {
@@ -198,7 +199,7 @@ function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: J
 }
 
 /** The runtime has verified docs isolation and the docs use in the agent settings. */
-function assertDocsRuntime(runtime: string, env: NodeJS.ProcessEnv): void {
+export function assertDocsRuntime(runtime: string, env: NodeJS.ProcessEnv): void {
   if (!isDocsHostRuntimeId(runtime)) {
     throw refuse(422, 'docs_isolation_unverified', `Runtime ${runtime} has no verified docs isolation.`, 'Start the session with a runtime that has verified docs isolation.');
   }
@@ -269,6 +270,7 @@ export function docSessionCreateRoute(deps: DocSessionDependencies): OperatorWri
     id: 'sessions_create',
     path: OPERATOR_SESSIONS_ROUTE,
     decode(fields) {
+      if (fields.kind === 'worktree_cleanup') return cleanupSessionCreateOperation(fields, deps);
       const input = decodeDocSessionCreate(fields);
       return {
         operation: 'docs_session_create',

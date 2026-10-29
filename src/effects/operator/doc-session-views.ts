@@ -1,3 +1,4 @@
+import { decodeCleanupSessionRecord } from '../../core/operator/worktree-cleanup-session';
 import { closeSync, constants, fstatSync, lstatSync, openSync, opendirSync, readSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { decodeDocSessionRecord, type DocSessionRecordV1 } from '../../core/operator/doc-session-record';
@@ -77,7 +78,7 @@ export function readDocSessionList(env: NodeJS.ProcessEnv, request: DocSessionLi
   const root = join(operatorStateDir(env), 'sessions');
   try { if (!lstatSync(root).isDirectory()) return fail('unavailable'); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return decodeOperatorDocSessionList({ protocol: 1, kind: 'operator_docs_sessions', sessions: [] }, request);
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return decodeOperatorDocSessionList({ protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs', 'worktree_cleanup'], sessions: [] }, request);
     throw error;
   }
   const directory = opendirSync(root);
@@ -100,9 +101,15 @@ export function readDocSessionList(env: NodeJS.ProcessEnv, request: DocSessionLi
     }
   } finally { directory.closeSync(); }
   const names = repositoryNames(env);
-  const sessions = ids.map(sid => metadata(env, sid, names, request.seen[sid] ?? null).summary);
+  const docIds = ids.filter(sid => {
+    const record = readJson(join(sessionDirectory(env, sid), 'session.json')) as { kind?: unknown };
+    if (record?.kind !== 'worktree_cleanup') return true;
+    if (decodeCleanupSessionRecord(record).session_id !== sid) return fail('unavailable');
+    return false;
+  });
+  const sessions = docIds.map(sid => metadata(env, sid, names, request.seen[sid] ?? null).summary);
   sessions.sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at) || a.session_id.localeCompare(b.session_id));
-  return decodeOperatorDocSessionList({ protocol: 1, kind: 'operator_docs_sessions', sessions }, request);
+  return decodeOperatorDocSessionList({ protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs', 'worktree_cleanup'], sessions }, request);
 }
 
 export function readDocSessionDetail(env: NodeJS.ProcessEnv, request: DocSessionDetailRequest): OperatorDocSessionDetail {

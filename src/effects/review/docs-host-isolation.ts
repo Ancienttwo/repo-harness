@@ -61,6 +61,8 @@ const DESKTOP_SERVICES = [
 
 /** Operator input. A session request cannot supply or change it. */
 export interface DocsHostAdmission {
+  /** Server-selected session type. Cleanup narrows writes to private scratch only. */
+  readonly purpose: 'docs' | 'worktree_cleanup';
   readonly runtime: DocsHostRuntimeId;
   /** Canonical linked worktree root. */
   readonly worktree: string;
@@ -171,9 +173,13 @@ export function assertDocsHostAdmission(admission: DocsHostAdmission, platform: 
   assertDocsHostPlatform(platform);
   if (!isDocsHostRuntimeId(admission.runtime)) throw new Error('docs_host_runtime_unverified');
   const worktree = canonicalDirectory(admission.worktree, 'docs_host_worktree_unsafe');
-  const dotGit = lstatSync(join(worktree, '.git'), { throwIfNoEntry: false });
-  if (!dotGit?.isFile()) throw new Error('docs_host_linked_worktree_required');
-  const docs = canonicalDirectory(join(worktree, 'docs'), 'docs_host_docs_unsafe');
+  if (!['docs', 'worktree_cleanup'].includes(admission.purpose)) throw new Error('docs_host_purpose_invalid');
+  if (admission.purpose === 'docs') {
+    const dotGit = lstatSync(join(worktree, '.git'), { throwIfNoEntry: false });
+    if (!dotGit?.isFile()) throw new Error('docs_host_linked_worktree_required');
+    canonicalDirectory(join(worktree, 'docs'), 'docs_host_docs_unsafe');
+  }
+  const docs = join(worktree, 'docs');
   const control = ownerDirectory(admission.control, 'docs_host_control_unsafe');
   canonicalDirectory(admission.operatorHome, 'docs_host_operator_home_unsafe');
   const stateHome = canonicalDirectory(admission.stateHome, 'docs_host_state_home_unsafe');
@@ -190,7 +196,7 @@ export function assertDocsHostAdmission(admission: DocsHostAdmission, platform: 
   }
   docsHostCodexRelease(admission.executable, admission.operatorHome);
   if (!Number.isSafeInteger(admission.proxyPort) || admission.proxyPort < 1 || admission.proxyPort > 65535) throw new Error('docs_host_proxy_port_invalid');
-  assertDocsTreeFiles(docs);
+  if (admission.purpose === 'docs') assertDocsTreeFiles(docs);
 }
 
 /**
@@ -231,15 +237,15 @@ export function docsHostPolicy(admission: DocsHostAdmission, platform: NodeJS.Pl
   const release = docsHostCodexRelease(admission.executable, home);
   const programs = [...DOCS_HOST_SYSTEM_PROGRAMS, join(admission.developerDirectory, 'usr/bin/git'), realpathSync(admission.node), realpathSync(admission.executable),
     ...(release?.helpers ?? [])];
-  const projection = docsHostProtectedProjection(admission.worktree);
+  const projection = admission.purpose === 'docs' ? docsHostProtectedProjection(admission.worktree) : [];
   const controlRoot = dirname(admission.control);
   return [
     '(version 1)',
     '(allow default)',
-    `(deny file-write* (require-all (require-not ${sub(docs)}) (require-not ${sub(scratch)}) (require-not ${lit('/dev/null')})))`,
+    `(deny file-write* (require-all ${admission.purpose === 'docs' ? `(require-not ${sub(docs)}) ` : ''}(require-not ${sub(scratch)}) (require-not ${lit('/dev/null')})))`,
     `(deny file-write* (regex #"${FORBIDDEN_WRITE_FILES}"))`,
     `(deny file-write* (regex #"${FORBIDDEN_WRITE_DIRECTORIES}"))`,
-    `(deny file-write* ${projection.map(lit).join(' ')})`,
+    ...(admission.purpose === 'docs' ? [`(deny file-write* ${projection.map(lit).join(' ')})`] : []),
     `(deny file-read* ${CREDENTIAL_SUBPATHS.map(path => sub(join(home, path))).join(' ')} ${CREDENTIAL_LITERALS.map(path => lit(join(home, path))).join(' ')})`,
     `(deny file-read* ${sub(admission.stateHome)})`,
     // Other sessions' control directories: neither their content nor the list of them. The root's own metadata
@@ -319,17 +325,17 @@ export function writeDocsHostPolicy(admission: DocsHostAdmission, epoch = 1): st
 }
 
 const PROBE = `const fs=require('node:fs'),net=require('node:net'),cp=require('node:child_process');
-const [gitFile,docs,credential,policy,port,stateHome,controlRoot]=process.argv.slice(1);
+const [gitFile,docs,credential,policy,port,stateHome,controlRoot,purpose]=process.argv.slice(1);
 const denied=(fn)=>{try{fn();return false}catch(e){return e.code==='EPERM'||e.code==='EACCES'}};
 if(!denied(()=>fs.readdirSync(stateHome)))process.exit(17);
 if(!denied(()=>fs.readdirSync(controlRoot)))process.exit(18);
-if(!denied(()=>fs.closeSync(fs.openSync(gitFile,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW))))process.exit(10);
+if(purpose==='docs'&&!denied(()=>fs.closeSync(fs.openSync(gitFile,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW))))process.exit(10);
 if(!denied(()=>fs.closeSync(fs.openSync(policy,fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW))))process.exit(11);
 if(!denied(()=>fs.readFileSync(credential)))process.exit(12);
 if(cp.spawnSync('/usr/bin/curl',['--version']).error?.code!=='EPERM')process.exit(13);
-const child=cp.spawnSync(process.execPath,['-e',"const fs=require('node:fs');try{fs.closeSync(fs.openSync(process.argv[1],fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW));process.exit(1)}catch(e){process.exit(e.code==='EPERM'?0:1)}",gitFile]);
+const child=purpose==='worktree_cleanup'?cp.spawnSync(process.execPath,['-e',"const fs=require('node:fs');const p=process.argv[1]+'/.cleanup-child-probe-'+process.pid;try{fs.writeFileSync(p,'probe',{flag:'wx'});fs.unlinkSync(p);process.exit(1)}catch(e){process.exit(e.code==='EPERM'||e.code==='EACCES'?0:2)}",docs]):cp.spawnSync(process.execPath,['-e',"const fs=require('node:fs');try{fs.closeSync(fs.openSync(process.argv[1],fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW));process.exit(1)}catch(e){process.exit(e.code==='EPERM'?0:1)}",gitFile]);
 if(child.status!==0)process.exit(14);
-const path=docs+'/.docs-host-probe-'+process.pid;fs.writeFileSync(path,'probe',{flag:'wx'});fs.unlinkSync(path);
+const path=docs+'/.docs-host-probe-'+process.pid;const write=()=>{fs.writeFileSync(path,'probe',{flag:'wx'});fs.unlinkSync(path)};if(purpose==='worktree_cleanup'){if(!denied(write))process.exit(19)}else write();
 const s=net.connect(Number(port)===9?7:9,'127.0.0.1');s.on('connect',()=>process.exit(15));s.on('error',e=>process.exit(e.code==='EPERM'?0:16));`;
 
 /**
@@ -342,7 +348,7 @@ const s=net.connect(Number(port)===9?7:9,'127.0.0.1');s.on('connect',()=>process
 export function proveDocsHostBoundary(admission: DocsHostAdmission, policyFile: string, scratch: DocsHostScratch): void {
   if (readFileSync(policyFile, 'utf8') !== docsHostPolicy(admission)) throw new Error('docs_host_profile_changed');
   const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, realpathSync(admission.node), '-e', PROBE,
-    join(admission.worktree, '.git'), join(admission.worktree, 'docs'), join(admission.operatorHome, '.codex', 'auth.json'), policyFile, String(admission.proxyPort), admission.stateHome, dirname(admission.control)],
+    join(admission.worktree, '.git'), admission.purpose === 'docs' ? join(admission.worktree, 'docs') : admission.worktree, join(admission.operatorHome, '.codex', 'auth.json'), policyFile, String(admission.proxyPort), admission.stateHome, dirname(admission.control), admission.purpose],
   { encoding: 'utf8', timeout: 10_000, env: docsHostEnvironment(scratch, admission.proxyPort), cwd: admission.worktree });
   if (result.status !== 0) throw new Error(`docs_host_boundary_unproven: ${result.error?.message ?? `exit ${result.status}`}`);
   // The owner can still open the profile, so the denial above came from Seatbelt, not file mode.

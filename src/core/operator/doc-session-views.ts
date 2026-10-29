@@ -24,6 +24,7 @@ export interface DocSessionEventsRequest { readonly session_id: string; readonly
 export interface OperatorDocSessionList {
   readonly protocol: 1;
   readonly kind: 'operator_docs_sessions';
+  readonly kinds: readonly ['docs', 'worktree_cleanup'];
   readonly sessions: readonly DocSessionSummary[];
 }
 export interface OperatorDocSessionDetail {
@@ -79,11 +80,11 @@ function summary(v: unknown, seen: string | null): DocSessionSummary {
 }
 
 export function decodeOperatorDocSessionList(v: unknown, request: DocSessionListRequest): OperatorDocSessionList {
-  if (!isDocSessionListRequest(request) || !object(v) || !keys(v, ['protocol', 'kind', 'sessions']) || v.protocol !== 1
-    || v.kind !== 'operator_docs_sessions' || !Array.isArray(v.sessions) || v.sessions.length > DOC_SESSION_LIST_MAX) throw new Error('doc session list');
+  if (!isDocSessionListRequest(request) || !object(v) || !keys(v, ['protocol', 'kind', 'kinds', 'sessions']) || v.protocol !== 1
+    || v.kind !== 'operator_docs_sessions' || JSON.stringify(v.kinds) !== '["docs","worktree_cleanup"]' || !Array.isArray(v.sessions) || v.sessions.length > DOC_SESSION_LIST_MAX) throw new Error('doc session list');
   const sessions = v.sessions.map(item => summary(item, object(item) && typeof item.session_id === 'string' ? request.seen[item.session_id] ?? null : null));
   if (new Set(sessions.map(item => item.session_id)).size !== sessions.length) throw new Error('duplicate session');
-  return { protocol: 1, kind: 'operator_docs_sessions', sessions };
+  return { protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs', 'worktree_cleanup'], sessions };
 }
 
 export function decodeOperatorDocSessionDetail(v: unknown, request: DocSessionDetailRequest): OperatorDocSessionDetail {
