@@ -327,6 +327,12 @@ The host installer, shared skill roots and catalog retain those responsibilities
 
 ## 4. 歷史決策記錄(append-only)
 
+### Sequence and topology base maps (2026-10-29, issue #1145)
+
+- The architecture page switches between four views: the module map, the sequence map, the topology map and the module list. The layered view is the module map: it bands nodes by `model.layers` and the violations layer draws the layer-direction edges, so there is no separate layered canvas.
+- Both new maps read the same map route. A participant or a code node runs in the process that its nearest self-or-ancestor `deployed-on` relation names; with none, or with two, the console states "process unknown" and the reason. The topology map draws a model relation between the boxes of its two ends and counts the relations that start at a node with no process.
+- The sequence layout is positioned columns and rows on React Flow; dagre cannot keep message order. The topology layout is a dagre compound graph with namespaces as clusters.
+
 ### Flows on the map (2026-10-29, issue #1145)
 
 - The map route serves `repo-harness.architecture-map.v6`. It adds `flows` and `flow_evidence` from the same `archctx export native` read, and `evidence` (one archctx status per step selector) to the `flows` violations part. The sequence base map reads them; the module route keeps its own flow copy for the module page.

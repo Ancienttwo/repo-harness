@@ -246,6 +246,44 @@
   .architecture-map__box[data-tone="success"], .architecture-map__group[data-tone="success"] { @apply border-kumo-success; }
   .architecture-map__box[data-quiet]:not([data-selected]), .architecture-map__group[data-quiet]:not([data-selected]) { opacity: .4; }
   .architecture-map__swatch--undeclared { border-top-style: dashed; border-color: var(--text-color-kumo-danger); }
+  .architecture-map__swatch--box { @apply h-3 rounded-sm border bg-kumo-recessed; border-color: var(--rh-diagram-line); }
+  .architecture-map__swatch--success { @apply h-3 rounded-sm border-0 bg-kumo-success-tint; }
+  .architecture-map__swatch--danger { @apply h-3 rounded-sm border-0 bg-kumo-danger-tint; }
+  .architecture-map__command { @apply mt-1; }
+  .architecture-map__command > code { @apply whitespace-normal break-all font-mono; }
+  .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
+  .architecture-sequence__box { @apply h-full w-full rounded-xl border bg-kumo-recessed px-3 pt-1.5 text-xs font-medium text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }
+  .architecture-sequence__box[data-placement="unknown"] { @apply border-dashed; }
+  .architecture-sequence__box > span { @apply block truncate; }
+  .architecture-sequence__fragment { @apply h-full w-full rounded-lg px-2 pt-1 text-xs text-kumo-default; }
+  .architecture-sequence__fragment[data-kind="success"] { @apply bg-kumo-success-tint; }
+  .architecture-sequence__fragment[data-kind="error"] { @apply bg-kumo-danger-tint; }
+  .architecture-sequence__fragment .mono-value { @apply font-semibold text-kumo-strong; }
+  .architecture-sequence__lifeline { @apply h-full w-full border-l border-dashed; border-color: var(--text-color-kumo-subtle); opacity: .5; }
+  .architecture-sequence__header { @apply bg-kumo-base; }
+  .architecture-sequence__message { @apply relative flex h-full w-full cursor-pointer flex-col justify-end text-xs text-kumo-default; }
+  .architecture-sequence__label { @apply line-clamp-2 min-w-0 px-2 pb-0.5 text-center text-[11px] leading-[14px]; }
+  .architecture-sequence__label .architecture-map__mark { @apply ml-1; }
+  .architecture-sequence__arrow { @apply relative block h-0 w-full border-t; border-color: var(--text-color-kumo-subtle); }
+  .architecture-sequence__arrow::after { content: ""; @apply absolute -top-[5px] h-0 w-0 border-y-[5px] border-y-transparent; }
+  .architecture-sequence__message[data-direction="right"] .architecture-sequence__arrow::after { right: 0; border-left: 7px solid var(--text-color-kumo-subtle); }
+  .architecture-sequence__message[data-direction="left"] .architecture-sequence__arrow::after { left: 0; border-right: 7px solid var(--text-color-kumo-subtle); }
+  .architecture-sequence__message[data-direction="self"] .architecture-sequence__label { @apply text-left; }
+  .architecture-sequence__message[data-direction="self"] .architecture-sequence__arrow { @apply h-3 rounded-r-md border border-l-0; }
+  .architecture-sequence__message[data-tone="change"] .architecture-sequence__label { color: var(--rh-accent); }
+  .architecture-sequence__message[data-tone="danger"] .architecture-sequence__arrow { @apply border-kumo-danger; }
+  .architecture-sequence__message[data-selected] .architecture-sequence__label { @apply font-bold; color: var(--rh-accent); }
+  .architecture-sequence__message[data-selected] .architecture-sequence__arrow { border-top-width: 2px; border-color: var(--rh-accent); }
+  .architecture-sequence__message[data-selected][data-direction="right"] .architecture-sequence__arrow::after { border-left-color: var(--rh-accent); }
+  .architecture-sequence__message[data-selected][data-direction="left"] .architecture-sequence__arrow::after { border-right-color: var(--rh-accent); }
+  .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] leading-[12px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-topology__namespace { @apply bg-transparent; }
+  .architecture-topology__box[data-kind="process"] { @apply bg-kumo-recessed; }
+  .architecture-topology__box[data-kind="external-system"] { @apply border-dashed bg-kumo-base; }
+  .architecture-topology__box[data-kind="mount"] { @apply bg-kumo-base; }
+  .architecture-topology__member { @apply min-h-0 py-0; }
+  .architecture-topology__member strong { @apply text-xs; }
   @media (max-width: 47.5rem) { .architecture-map__legend { display: none; } }
 }
 
@@ -260,3 +298,4 @@
 .architecture-map .react-flow__edge-textbg { fill: var(--rh-diagram-bg); }
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
+.architecture-map[data-view="topology"] .architecture-map__edge .react-flow__edge-path { stroke-opacity: .55; }
