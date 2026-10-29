@@ -9,12 +9,11 @@ import {
   decodeOperatorDocSessionDiscard,
   decodeOperatorDocSessionMessage,
   decodeOperatorDocSessionStop,
-  type OperatorDocSessionsV1,
 } from '../../src/core/operator/doc-session-api';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss } from '../../src/core/operator/doc-session-changes';
 import { decodeOperatorDocSessionEvents } from '../../src/core/operator/doc-session-events';
 import { DocSessionPage, type DocSessionPageProps } from '../../src/operator-web/DocSessionPage';
-import { OPERATOR_SESSION_SEEN_STORAGE_KEY, sessionReadAnswer, sessionWriteAnswer, type DocSessions } from '../../src/operator-web/doc-sessions';
+import { OPERATOR_SESSION_SEEN_STORAGE_KEY, sessionReadAnswer, sessionWriteAnswer } from '../../src/operator-web/doc-sessions';
 import { translate, type OperatorLocale } from '../../src/operator-web/i18n';
 
 mock.module('mermaid', () => ({ default: { initialize: () => {}, render: async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' }) } }));
@@ -50,6 +49,7 @@ const HEAD = 'c'.repeat(40);
 const LOSS_HEAD = 'd'.repeat(40);
 const DIFF_SHA = '1'.repeat(64);
 const NEW_DIFF_SHA = '2'.repeat(64);
+const RETRY_HEAD = 'e'.repeat(40);
 const LOSS_SHA = '3'.repeat(64);
 const PR_URL = 'https://github.com/Ancienttwo/repo-harness/pull/1201';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -97,9 +97,9 @@ const PATCH = [
   '',
 ].join('\n');
 
-function diff(sha = DIFF_SHA): Answer {
+function diff(sha = DIFF_SHA, head = HEAD): Answer {
   return ok({
-    protocol: 1, kind: 'operator_docs_session_diff', session_id: SID, base_commit: BASE, head_commit: HEAD, turn: 'idle',
+    protocol: 1, kind: 'operator_docs_session_diff', session_id: SID, base_commit: BASE, head_commit: head, turn: 'idle',
     files: [
       { path: 'docs/guide.md', status: 'modified', tracked: true, binary: false },
       { path: 'docs/img.png', status: 'added', tracked: false, binary: true },
@@ -156,7 +156,7 @@ function serve(server: Server) {
   const sent: Record<'message' | 'stop' | 'commit' | 'discard', Record<string, unknown>[]> = { message: [], stop: [], commit: [], discard: [] };
   const pick = (list: readonly Answer[] | undefined, index: number): Answer => list![Math.min(index, list!.length - 1)]!;
   const record = server.events ?? RECORD;
-  const props: Omit<DocSessionPageProps, 'docSessions' | 't'> = {
+  const props: Omit<DocSessionPageProps, 't'> = {
     sessionId: SID,
     readDetail: id => sessionReadAnswer(json(pick(server.detail ?? [detail()], reads.detail++)), value => decodeOperatorDocSessionDetail(value, id)),
     readDiff: id => sessionReadAnswer(json(pick(server.diff ?? [diff()], reads.diff++)), value => decodeOperatorDocSessionDiff(value, { session_id: id })),
@@ -174,18 +174,13 @@ function serve(server: Server) {
   return { props, reads, sent };
 }
 
-const LISTED: DocSessions = {
-  view: { kind: 'ready', refreshFailed: false, list: { protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs'], sessions: [], observed_at: AT } satisfies OperatorDocSessionsV1 },
-  reload: () => {},
-};
-
 async function mount(server: Server, locale: OperatorLocale = 'en') {
   const harness = serve(server);
   const container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
   const t: DocSessionPageProps['t'] = (key, params) => translate(locale, key, params);
-  await act(async () => root?.render(<DocSessionPage {...harness.props} docSessions={LISTED} t={t} />));
+  await act(async () => root?.render(<DocSessionPage {...harness.props} t={t} />));
   await settle();
   const $ = <E extends Element = HTMLElement>(selector: string) => container.querySelector<E>(selector);
   const all = (selector: string) => Array.from(container.querySelectorAll<HTMLElement>(selector));
@@ -374,10 +369,14 @@ describe('doc session page', () => {
     expect(page.sent.commit.map(withoutId)).toEqual([0, 1].map(() => ({ expected_head: HEAD, expected_diff_sha256: DIFF_SHA, message: 'Tighten the reading column' })));
   });
 
-  test('4-DSES-F2: a delivery that stopped at the Draft PR keeps its step view on load, and retry resends the same request', async () => {
+  test('4-DSES-F2: a delivery that stopped at the Draft PR keeps its step view on load, and each retry sends the head of a fresh diff read', async () => {
     const page = await mount({
       detail: [detail({ delivery: delivery(['done', 'done', 'failed'], false) })],
-      commit: [ok({ protocol: 1, kind: 'operator_docs_session_commit', session_id: SID, delivery: delivery(['done', 'done', 'done'], true) })],
+      diff: [diff(), diff(NEW_DIFF_SHA, RETRY_HEAD)],
+      commit: [
+        ok({ protocol: 1, kind: 'operator_docs_session_commit', session_id: SID, delivery: delivery(['done', 'done', 'failed'], false) }),
+        ok({ protocol: 1, kind: 'operator_docs_session_commit', session_id: SID, delivery: delivery(['done', 'done', 'done'], true) }),
+      ],
     }, 'zh');
     expect(page.all('[data-step]').map(step => step.getAttribute('data-step-state'))).toEqual(['done', 'done', 'failed']);
     expect(page.$('[data-delivery-stopped]')?.textContent).toBe('停在「开 Draft PR」这一步。');
@@ -385,6 +384,11 @@ describe('doc session page', () => {
     expect([retry.getAttribute('data-commit-submit'), retry.textContent, retry.disabled]).toEqual(['resume', '从这一步重试', false]);
     await click(retry);
     expect(withoutId(page.sent.commit[0])).toEqual({ expected_head: HEAD, expected_diff_sha256: DIFF_SHA, message: 'Tighten the reading column' });
+    // The partial answer stops at the same step; the page read the diff again, so the next retry names the current head.
+    expect(page.$('[data-delivery-stopped]')).not.toBeNull();
+    expect(page.reads.diff).toBe(2);
+    await click(page.$('[data-commit-submit]'));
+    expect(withoutId(page.sent.commit[1])).toEqual({ expected_head: RETRY_HEAD, expected_diff_sha256: NEW_DIFF_SHA, message: 'Tighten the reading column' });
     expect(page.$('[data-delivery-stopped]')).toBeNull();
     expect(page.$(`a[href="${PR_URL}"]`)).not.toBeNull();
   });

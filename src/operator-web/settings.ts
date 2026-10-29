@@ -40,6 +40,12 @@ export async function fetchAgentsSettings(signal: AbortSignal): Promise<AgentsSe
   try { return { state: 'ok', settings: decodeAgentsSettings(body) }; } catch { return { state: 'unavailable', reason: 'settings_invalid' }; }
 }
 
+/** The runtimes enabled with the docs use, and the default docs agent when it is one of them. */
+export function docsRuntimes(config: AgentsSettingsV1['config']): { readonly ids: readonly string[]; readonly defaultDocs: string | null } {
+  const ids = config.uses.docs.filter(id => config.enabled.includes(id));
+  return { ids, defaultDocs: config.default_docs !== null && ids.includes(config.default_docs) ? config.default_docs : null };
+}
+
 export type AgentsSettingsPost = AgentsSettingsRequestV1 & { readonly request_id: string };
 
 /**

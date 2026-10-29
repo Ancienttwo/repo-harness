@@ -43,7 +43,7 @@ describe('doc session wire decoders', () => {
     expect(decodeOperatorDocSessions(list).sessions[0]!.session_id).toBe(SID);
     expect(decodeOperatorDocSessions({ ...list, kinds: [], sessions: [] }).kinds).toEqual([]);
     expect(decodeOperatorDocSessionCreated(created).citations).toEqual([citation]);
-    for (const agent of ['starting', 'running', 'idle', 'stopped', 'failed']) expect(decodeOperatorDocSessionCreated({ ...created, agent }).agent).toBe(agent);
+    for (const agent of ['starting', 'running', 'idle', 'stopped', 'failed'] as const) expect(decodeOperatorDocSessionCreated({ ...created, agent }).agent).toBe(agent);
     expect(decodeOperatorDocSessionDetail(detail, SID).steer).toBe('supported');
     expect(decodeOperatorDocSessionDetail({ ...detail, outcome: 'pr_open', delivery: DONE }, SID).delivery?.pull_request?.number).toBe(12);
     expect(decodeOperatorDocSessionMessage({ protocol: 1, kind: 'operator_docs_session_message', session_id: SID, landed: 'steered' }, SID).landed).toBe('steered');

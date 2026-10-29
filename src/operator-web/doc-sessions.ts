@@ -42,6 +42,7 @@ import {
 } from '../core/operator/doc-session-events';
 import type { LocalizedApiError } from './fleet-api';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
+import type { DotTone } from './ui';
 import { RETRY_SAME_REQUEST } from './settings';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -332,6 +333,16 @@ const AGENT_STATUS: Readonly<Record<DocSessionAgentState, DocSessionStatus>> = {
 
 export function docSessionStatus(agent: DocSessionAgentState, outcome: DocSessionOutcome | null): DocSessionStatus {
   return outcome ?? AGENT_STATUS[agent];
+}
+
+export const DOC_SESSION_STATUS_TONE: Readonly<Record<DocSessionStatus, DotTone>> = {
+  running: 'active', awaiting_review: 'accent', pr_open: 'ok', discarded: 'neutral', cleaned: 'neutral', failed: 'danger',
+};
+
+/** The runtime's display name; an id with no translation shows as the id. */
+export function docSessionRuntimeName(runtime: string, t: OperatorTranslate): string {
+  const key = `setup.host.${runtime}`;
+  return isOperatorMessageKey(key) ? t(key) : runtime;
 }
 
 /** The newest cursor this browser showed for each session. */

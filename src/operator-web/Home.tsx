@@ -20,8 +20,8 @@ import {
 } from './repository-reads';
 import type { DocSessionSummaryV1 } from '../core/operator/doc-session-api';
 import { DocSessionComposer, type DocSessionStart } from './DocSessionComposer';
-import { docSessionReadText, docSessionStartState, docSessionStatus, listFailure, type DocSessionStatus } from './doc-sessions';
-import { ExternalLink, PageLink, StatusDot, type DotTone } from './ui';
+import { DOC_SESSION_STATUS_TONE, docSessionReadText, docSessionRuntimeName, docSessionStartState, docSessionStatus, listFailure, type DocSessionStatus } from './doc-sessions';
+import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
 
@@ -142,7 +142,6 @@ type ContinueEntry =
 
 /** Sessions that still wait for work or a decision; a session with a Draft PR or a closed one has nothing left to continue here. */
 const CONTINUE_STATUSES: ReadonlySet<DocSessionStatus> = new Set(['running', 'awaiting_review', 'failed']);
-const SESSION_TONE: Readonly<Partial<Record<DocSessionStatus, DotTone>>> = { running: 'active', awaiting_review: 'accent', failed: 'danger' };
 
 function SessionRow({ session, snapshot, now, onOpen, t }: {
   readonly session: DocSessionSummaryV1; readonly snapshot: DevActivitySnapshotV2; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
@@ -151,7 +150,7 @@ function SessionRow({ session, snapshot, now, onOpen, t }: {
   return (
     <li className={ROW} data-continue-session={session.session_id}>
       <div className="flex min-w-0 flex-1 items-start gap-3">
-        <StatusDot tone={SESSION_TONE[status] ?? 'neutral'} className="mt-1.5" />
+        <StatusDot tone={DOC_SESSION_STATUS_TONE[status]} className="mt-1.5" />
         <div className="min-w-0">
           <PageLink to={sessionPlace(session.session_id)} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{session.title}</PageLink>
           <p className="type-caption truncate text-kumo-subtle">{t('docSession.title')} · {repositoryLabel(snapshot.repositories, session.repository_id)}</p>
@@ -159,7 +158,7 @@ function SessionRow({ session, snapshot, now, onOpen, t }: {
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 pl-5 rail:pl-0">
         <span className="w-20 text-xs text-kumo-subtle" data-session-status={status}>{t(`docSession.status.${status}`)}</span>
-        <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-default"><StatusDot tone="active" /><span className="truncate">{session.runtime}</span></span>
+        <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-default"><StatusDot tone={DOC_SESSION_STATUS_TONE[status]} /><span className="truncate">{docSessionRuntimeName(session.runtime, t)}</span></span>
         <span className="w-24 text-xs tabular-nums text-kumo-subtle">{ageWords(session.last_activity_at, now, t)}</span>
       </div>
     </li>

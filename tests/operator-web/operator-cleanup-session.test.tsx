@@ -14,7 +14,7 @@ import {
 import { decodeWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { agentsSettingsFixture } from '../../src/operator-web/fixtures/settings';
 import { CleanupSessionPage } from '../../src/operator-web/CleanupSessionPage';
-import type { CleanupSessionCreateWriter } from '../../src/operator-web/cleanup-session';
+import { cleanupSessionRequest, type CleanupSessionCreateWriter } from '../../src/operator-web/cleanup-session';
 import type { DocSessions, DocSessionWrite, RequestId } from '../../src/operator-web/doc-sessions';
 import { fixtureProps } from '../../src/operator-web/fixtures';
 import { CLEANUP_SESSION } from '../../src/operator-web/fixtures/doc-sessions';
@@ -107,10 +107,10 @@ async function mountPage(plan: OperatorCleanupPlanV1, answers: readonly Answer[]
   const requests: (CleanupSessionRequestV1 & RequestId)[] = [];
   let reloads = 0;
   const container = await render(
-    <CleanupSessionPage sessionId={CLEANUP_SESSION} docSessions={docSessions} readEvents={fixtureProps('busy').readDocSessionEvents!}
+    <CleanupSessionPage sessionId={CLEANUP_SESSION} readEvents={fixtureProps('busy').readDocSessionEvents!}
       readPlan={async () => ({ state: 'ok', value: plan })}
       writeCleanup={async (body) => { requests.push(body); return answers[requests.length - 1] ?? { state: 'unreachable' }; }}
-      worktrees={view} reloadWorktrees={() => { reloads += 1; }} generation={0} now={now} onOpen={() => {}} t={t} />,
+      worktrees={view} reloadWorktrees={() => { reloads += 1; }} generation={0} t={t} />,
   );
   return { container, requests, reloads: () => reloads };
 }
@@ -259,6 +259,29 @@ describe('worktree cleanup session page', () => {
     expect(document.querySelector('[data-archive-state]')).toBeNull();
   });
 
+  test('the plan and the live collector must agree: a plan-yellow item that the rows mark red is not selectable and is never sent', async () => {
+    const plan = await busyPlan();
+    const judged = (judgment: 'red' | 'green'): WorktreesSnapshot => {
+      const change = (row: WorktreesSnapshot['unassigned'][number]) => row.id === DOCS ? { ...row, judgment, reasons: judgment === 'red' ? ['dirty' as const] : [] } : row;
+      return { ...snapshot, repositories: snapshot.repositories.map(repository => ({ ...repository, worktrees: repository.worktrees.map(change) })), unassigned: snapshot.unassigned.map(change) };
+    };
+    const turnedRed = judged('red');
+
+    // The builder refuses an item the live rows do not judge as the plan did, in both directions.
+    await expect(cleanupSessionRequest(plan, [DOCS], turnedRed)).rejects.toThrow();
+    await expect(cleanupSessionRequest(plan, [DOCS], judged('green'))).rejects.toThrow();
+    await expect(cleanupSessionRequest(plan, [DOCS], snapshot)).resolves.toMatchObject({ ids: [DOCS] });
+
+    const { requests } = await mountPage(plan, [{ state: 'ok', result: resultBody(NO_ARCHIVE, GREEN.map(id => [id, 'removed', null] as const)) }], { kind: 'ready', snapshot: turnedRed, refreshFailed: false });
+    expect([checkbox(DOCS).disabled, checkbox(DOCS).checked]).toEqual([true, false]);
+    await click(checkbox(DOCS));
+    await approve();
+    expect(requests.length).toBe(1);
+    expect(requests[0]!.ids).toEqual([...GREEN].sort());
+    expect(requests[0]!.ids).not.toContain(DOCS);
+    expect(requests[0]!.approvals).toEqual([]);
+  });
+
   test('the button is off at zero and above the id limit', async () => {
     const plan = await busyPlan();
     const { requests } = await mountPage(plan);
@@ -315,9 +338,9 @@ describe('worktree cleanup session page', () => {
   test('the approval is off while the collector rows are unavailable', async () => {
     const plan = await busyPlan();
     const mounted = await render(
-      <CleanupSessionPage sessionId={CLEANUP_SESSION} docSessions={docSessions} readEvents={fixtureProps('busy').readDocSessionEvents!}
+      <CleanupSessionPage sessionId={CLEANUP_SESSION} readEvents={fixtureProps('busy').readDocSessionEvents!}
         readPlan={async () => ({ state: 'ok', value: plan })} writeCleanup={async () => ({ state: 'unreachable' })}
-        worktrees={{ kind: 'unreachable' }} reloadWorktrees={() => {}} generation={0} now={now} onOpen={() => {}} t={t} />,
+        worktrees={{ kind: 'unreachable' }} reloadWorktrees={() => {}} generation={0} t={t} />,
     );
     expect(mounted.querySelector('[data-worktrees-unavailable]')).toBeTruthy();
     expect(button().disabled).toBe(true);

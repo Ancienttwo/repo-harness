@@ -206,6 +206,7 @@ const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(
 // The markdown renderer and Mermaid load only with the docs page.
 const DocsPage = lazy(() => import('./DocsPage').then(module => ({ default: module.DocsPage })));
 // The session pages load only when a session opens.
+const HOME_PLACE: WorkspaceLocation = { workspace: 'home', module: null, item: null };
 const DocSessionPage = lazy(() => import('./DocSessionPage').then(module => ({ default: module.DocSessionPage })));
 const CleanupSessionPage = lazy(() => import('./CleanupSessionPage').then(module => ({ default: module.CleanupSessionPage })));
 
@@ -372,11 +373,20 @@ export function OperatorApp({
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
   // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
   // The cleanup session binds its approval to the same rows.
-  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration,
-    workspace === 'worktrees' || workspace === 'board' || workspace === 'home' || workspace === 'cleanup');
-  const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   // One list read decides on every page whether session controls exist at all.
   const docSessions = useDocSessions(readDocSessions, refreshGeneration);
+  // A session route opens a page only on a server that lists sessions; an absent list sends it Home, and no read starts before the list answers.
+  const sessionRoute = workspace === 'session' || workspace === 'cleanup';
+  const sessionsAbsent = docSessions.view.kind === 'absent';
+  const sessionsLoading = docSessions.view.kind === 'loading';
+  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration,
+    workspace === 'worktrees' || workspace === 'board' || workspace === 'home' || (workspace === 'cleanup' && !sessionsAbsent && !sessionsLoading));
+  const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
+  useEffect(() => {
+    if (!sessionRoute || !sessionsAbsent) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + workspaceHash(HOME_PLACE));
+    setPlace(HOME_PLACE);
+  }, [sessionRoute, sessionsAbsent]);
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
     ? { ...filters, repositoryId: null } : filters;
@@ -594,14 +604,15 @@ export function OperatorApp({
             <DocsPage repositoryId={activeRepository?.repository_id ?? null} path={place.item} readTree={readDocsTree} readFile={readDocsFile}
               start={docStart} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
-          {workspace === 'session' && place.item !== null && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-            <DocSessionPage sessionId={place.item} docSessions={docSessions} readDetail={readDocSession} readEvents={readDocSessionEvents}
+          {sessionRoute && sessionsLoading && <p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}
+          {workspace === 'session' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+            <DocSessionPage sessionId={place.item} readDetail={readDocSession} readEvents={readDocSessionEvents}
               readDiff={readDocSessionDiff} readLoss={readDocSessionLoss} writeMessage={writeDocSessionMessage} writeStop={writeDocSessionStop}
               writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
-          {workspace === 'cleanup' && place.item !== null && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-            <CleanupSessionPage sessionId={place.item} docSessions={docSessions} readEvents={readDocSessionEvents} readPlan={readCleanupPlan}
-              writeCleanup={writeCleanupSession} worktrees={worktrees} reloadWorktrees={reloadWorktrees} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />
+          {workspace === 'cleanup' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+            <CleanupSessionPage sessionId={place.item} readEvents={readDocSessionEvents} readPlan={readCleanupPlan}
+              writeCleanup={writeCleanupSession} worktrees={worktrees} reloadWorktrees={reloadWorktrees} generation={refreshGeneration} t={t} />
           </Suspense>}
           {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace

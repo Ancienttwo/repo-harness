@@ -18,7 +18,7 @@ import { stableSnapshot } from '../../src/operator-web/fixture';
 import { fixtureProps } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { DOCS_COMMIT, docsFileAnswer } from '../../src/operator-web/fixtures/docs';
-import { PR_SESSION, REVIEW_SESSION, RUNNING_SESSION } from '../../src/operator-web/fixtures/doc-sessions';
+import { CLEANUP_SESSION, PR_SESSION, REVIEW_SESSION, RUNNING_SESSION } from '../../src/operator-web/fixtures/doc-sessions';
 import { agentsSettingsFixture } from '../../src/operator-web/fixtures/settings';
 import { translate } from '../../src/operator-web/i18n';
 import type { AgentsSettingsRead } from '../../src/operator-web/settings';
@@ -411,6 +411,31 @@ describe('a server without doc sessions', () => {
     expect($('[data-docs-cite]')).toBeNull();
     expect($('[data-doc-composer]')).toBeNull();
     expect($('[data-new-session]')).toBeNull();
+  });
+
+  test('1-SHELL-N1 #session/<id> and #cleanup/<id> with an absent list show Home and send no session read', async () => {
+    const reads: string[] = [];
+    const never = (name: string) => () => { reads.push(name); return new Promise<never>(() => {}); };
+    const watched: Partial<OperatorAppProps> = {
+      readDocSession: never('detail'), readDocSessionEvents: never('events'), readDocSessionDiff: never('diff'), readDocSessionLoss: never('loss'), readCleanupPlan: never('plan'),
+    };
+    for (const route of [`#session/${RUNNING_SESSION}`, `#cleanup/${CLEANUP_SESSION}`]) {
+      await mount(route, props('degraded', watched));
+      expect($('main')?.getAttribute('data-workspace')).toBe('home');
+      expect($('[data-home]')).not.toBeNull();
+      expect($('[data-doc-session-page]')).toBeNull();
+      expect($('[data-cleanup-session-page]')).toBeNull();
+      expect(hash()).toBe('#home');
+      expect(reads).toEqual([]);
+      await act(async () => root?.unmount());
+      root = null;
+      document.body.innerHTML = '';
+    }
+
+    // While the list is still loading, the session reads wait for its answer.
+    await mount(`#session/${RUNNING_SESSION}`, props('busy', { ...watched, readDocSessions: () => new Promise<never>(() => {}) }));
+    expect($('[data-doc-session-page]')).toBeNull();
+    expect(reads).toEqual([]);
   });
 
   test('UX-operator-console-uiux-N1 the start surfaces send only docs-session requests and hold no control for a coding session', async () => {

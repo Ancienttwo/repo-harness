@@ -53,8 +53,10 @@ export function postCleanupSession(body: CleanupSessionRequestV1 & RequestId): P
 /**
  * The request for the checked plan items. Green ids carry no approval; a
  * yellow id carries the loss and plan digests the user saw; a red id has no
- * delete entry and is refused here. `expected_digest` binds the current
- * collector rows of the same ids, as the green cleanup does.
+ * delete entry and is refused here. The live collector row must exist and
+ * carry the judgment the plan gave; a row that turned red or changed otherwise
+ * is refused, so the plan never overrides the collector. `expected_digest`
+ * binds the current collector rows of the same ids, as the green cleanup does.
  */
 export async function cleanupSessionRequest(plan: OperatorCleanupPlanV1, ids: readonly string[], snapshot: WorktreesSnapshot): Promise<CleanupSessionRequestV1> {
   const planSha = plan.plan_sha256;
@@ -68,7 +70,9 @@ export async function cleanupSessionRequest(plan: OperatorCleanupPlanV1, ids: re
     const item = items.get(id);
     if (item === undefined) throw new Error(`cleanup item ${id} is not in the plan`);
     if (item.judgment === 'red') throw new Error(`cleanup item ${id} is red`);
-    if (!rows.has(id)) throw new Error(`cleanup item ${id} is not in the worktree list`);
+    const row = rows.get(id);
+    if (row === undefined) throw new Error(`cleanup item ${id} is not in the worktree list`);
+    if (row.judgment === 'red' || row.judgment !== item.judgment) throw new Error(`cleanup item ${id} is ${row.judgment} in the worktree list, not ${item.judgment}`);
     if (item.judgment === 'yellow') approvals.push({ id, loss_sha256: item.loss_sha256, plan_sha256: planSha });
   }
   return { session_id: plan.session_id, ids: selected, expected_digest: await selectionDigest(selected.map(id => rows.get(id)!)), approvals };

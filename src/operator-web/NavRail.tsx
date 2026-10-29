@@ -286,7 +286,7 @@ function RecentSessions({ docSessions, currentSession, collapsed, onOpen, t }: {
   readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
   const { view } = docSessions;
-  if (view.kind !== 'ready') return null;
+  if (view.kind !== 'ready' || view.list.sessions.length === 0) return null;
   return (
     <div className={cn('flex flex-col', collapsed && 'rail:hidden')} data-recent-sessions>
       <p id="nav-group-recent" className="type-caption px-2.5 pt-4 pb-1 text-kumo-subtle">{t('session.recent')}</p>

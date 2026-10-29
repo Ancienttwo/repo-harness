@@ -10,7 +10,7 @@ import type { CleanupSessionCreateWriter } from './cleanup-session';
 import { docSessionReadText, localizeDocSessionRefusal, startableKinds, useSessionWrite, type DocSessions } from './doc-sessions';
 import { ageWords } from './labels';
 import type { AgentsSettingsV1 } from '../core/operator/agents-settings';
-import type { AgentsSettingsRead, AgentsSettingsReader } from './settings';
+import { docsRuntimes, type AgentsSettingsRead, type AgentsSettingsReader } from './settings';
 import { Age, CommandLine, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
   allWorktrees, cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
@@ -168,8 +168,8 @@ function WorktreeGroup({ group, title, status, worktrees, rowCleanup, now, t }: 
 
 /** The runtime a cleanup session starts with: the default docs agent, or the one runtime enabled for docs. Null when the choice is open. */
 function cleanupRuntime({ config }: AgentsSettingsV1): string | null {
-  const docs = config.uses.docs.filter(id => config.enabled.includes(id));
-  return config.default_docs !== null && docs.includes(config.default_docs) ? config.default_docs : docs.length === 1 ? docs[0]! : null;
+  const { ids, defaultDocs } = docsRuntimes(config);
+  return defaultDocs ?? (ids.length === 1 ? ids[0]! : null);
 }
 
 /**

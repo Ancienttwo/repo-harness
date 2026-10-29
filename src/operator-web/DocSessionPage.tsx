@@ -4,7 +4,9 @@ import type { DocSessionCitationView, OperatorDocSessionDetailV1, OperatorDocSes
 import type { DocSessionEventV1 } from '../core/operator/doc-session-events';
 import { Conversation } from './Conversation';
 import {
+  DOC_SESSION_STATUS_TONE,
   docSessionReadText,
+  docSessionRuntimeName,
   docSessionStatus,
   markSessionSeen,
   useDocSessionDetail,
@@ -22,22 +24,18 @@ import {
   type DocSessionMessageWriter,
   type DocSessionRead,
   type DocSessionReadReason,
-  type DocSessions,
-  type DocSessionStatus,
   type DocSessionStopWriter,
 } from './doc-sessions';
-import { isOperatorMessageKey, relativeAge, type OperatorTranslate } from './i18n';
+import { relativeAge, type OperatorTranslate } from './i18n';
 import { CommitControl, FollowUp, SessionWriteResult } from './SessionControls';
 import { SessionDiff, type SessionDiffMode } from './SessionDiff';
 import type { ThemeMode } from './theme';
-import { StatusDot, type DotTone } from './ui';
+import { StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 
 export interface DocSessionPageProps {
   /** The 32-hex id from `#session/<id>`. */
   readonly sessionId: string;
-  /** The one list read; `absent` means this server serves no doc session. */
-  readonly docSessions: DocSessions;
   readonly readDetail: DocSessionDetailReader;
   readonly readEvents: DocSessionEventsReader;
   readonly readDiff: DocSessionDiffReader;
@@ -93,9 +91,6 @@ function staleText(value: { readonly observed_at: string } | null, now: number, 
   return age === null ? undefined : t('docSession.stale', { age: t(age.key, { count: age.count }) });
 }
 
-const STATUS_TONE: Readonly<Record<DocSessionStatus, DotTone>> = {
-  running: 'active', awaiting_review: 'accent', pr_open: 'ok', discarded: 'neutral', cleaned: 'neutral', failed: 'danger',
-};
 
 function Fact({ label, children }: { readonly label: string; readonly children: string }) {
   return (
@@ -108,15 +103,14 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 
 function SessionFacts({ detail, t }: { readonly detail: OperatorDocSessionDetailV1; readonly t: OperatorTranslate }) {
   const status = docSessionStatus(detail.agent, detail.outcome);
-  const runtime = `setup.host.${detail.runtime}`;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
       <span className="inline-flex items-center gap-1.5 text-sm font-medium text-kumo-strong" data-session-status={status}>
-        <StatusDot tone={STATUS_TONE[status]} pulse={status === 'running'} />{t(`docSession.status.${status}`)}
+        <StatusDot tone={DOC_SESSION_STATUS_TONE[status]} pulse={status === 'running'} />{t(`docSession.status.${status}`)}
       </span>
       <dl className="flex flex-wrap gap-x-5 gap-y-1">
         <Fact label={t('docSession.fact.repository')}>{detail.repository_id}</Fact>
-        <Fact label={t('docSession.agent')}>{isOperatorMessageKey(runtime) ? t(runtime) : detail.runtime}</Fact>
+        <Fact label={t('docSession.agent')}>{docSessionRuntimeName(detail.runtime, t)}</Fact>
         <Fact label={t('docSession.fact.branch')}>{detail.branch}</Fact>
         <Fact label={t('docSession.fact.worktree')}>{detail.worktree}</Fact>
       </dl>
@@ -195,7 +189,7 @@ const VIEWS: readonly SessionDiffMode[] = ['diff', 'reading'];
 
 /** One session's page state; keyed by session id, so nothing carries over to another session. */
 function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, writeMessage, writeStop, writeCommit, writeDiscard, generation, mode, now, onOpen, t }:
-  Omit<DocSessionPageProps, 'docSessions'>) {
+  DocSessionPageProps) {
   const { read: detailRead, reload: reloadDetail } = useDocSessionDetail(readDetail, sessionId, generation);
   const { read: diffRead, reload: reloadDiff } = useSessionRead('doc-session-diff', readDiff, sessionId, generation);
   const events = useDocSessionEvents(readEvents, sessionId);
@@ -213,6 +207,8 @@ function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, wr
     activity.current = events.activity;
   }, [events.activity, reloadDetail, reloadDiff]);
   const diffChanged = useCallback(() => { setReviewed(null); reloadDiff(); }, [reloadDiff]);
+  // A delivery that stopped part way is retried from the current head, so the diff is read again with the detail (`4-DSES-F2`).
+  const delivered = useCallback(() => { reloadDetail(); reloadDiff(); }, [reloadDetail, reloadDiff]);
   const status = detail === null ? null : docSessionStatus(detail.agent, detail.outcome);
   return (
     <div className="flex min-w-0 flex-col gap-5" data-doc-session-page={sessionId}>
@@ -239,7 +235,7 @@ function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, wr
           {detail !== null && (detail.outcome === null || detail.delivery !== null) && (
             <CommitControl sessionId={sessionId} title={detail.title} awaitingReview={status === 'awaiting_review'} diff={diff}
               reviewed={diff !== null && reviewed === diff.diff_sha256} delivery={detail.delivery} writeCommit={writeCommit}
-              onDiffChanged={diffChanged} onDelivered={reloadDetail} t={t} />
+              onDiffChanged={diffChanged} onDelivered={delivered} t={t} />
           )}
           {detail !== null && detail.outcome === null && (
             <Discard sessionId={sessionId} readLoss={readLoss} writeDiscard={writeDiscard} generation={generation} onDiscarded={reloadDetail} t={t} />
@@ -255,14 +251,6 @@ function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, wr
 }
 
 /** One doc session (4-DSES): the changes with commit and discard on the left, the record and follow-up on the right. */
-export function DocSessionPage({ docSessions, ...props }: DocSessionPageProps) {
-  if (docSessions.view.kind === 'absent') {
-    return (
-      <div className="flex min-w-0 flex-col gap-5" data-doc-session-page="absent">
-        <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{props.t('docSession.title')}</h1></header>
-        <p role="status" className="text-sm text-kumo-subtle">{props.t('docSession.absent')}</p>
-      </div>
-    );
-  }
+export function DocSessionPage(props: DocSessionPageProps) {
   return <SessionView key={props.sessionId} {...props} />;
 }

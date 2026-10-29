@@ -2,12 +2,13 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Banner, Button, Loader } from '@cloudflare/kumo';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS } from '../core/operator/worktree-cleanup';
-import type {
-  CleanupArchiveV1,
-  CleanupPlanItemV1,
-  CleanupSessionItemV1,
-  CleanupSessionRequestV1,
-  OperatorCleanupPlanV1,
+import {
+  CLEANUP_ARCHIVE_STEPS,
+  type CleanupArchiveV1,
+  type CleanupPlanItemV1,
+  type CleanupSessionItemV1,
+  type CleanupSessionRequestV1,
+  type OperatorCleanupPlanV1,
 } from '../core/operator/worktree-cleanup-plan';
 import type { WorktreesSnapshot, WorktreeView } from '../core/operator/worktrees';
 import { cleanupSessionRequest, useCleanupPlan, type CleanupPlanReader, type CleanupSessionWriter } from './cleanup-session';
@@ -17,19 +18,15 @@ import {
   useDocSessionEvents,
   useSessionWrite,
   type DocSessionEventsReader,
-  type DocSessions,
 } from './doc-sessions';
 import { isOperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ExternalLink, StatusDot } from './ui';
-import type { WorkspaceLocation } from './workspace-location';
 import { DiskBar, JUDGMENT_TONE, OUTCOME_TONE } from './WorktreesPage';
 import { allWorktrees, formatBytes, spaceTotal, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
 
 export interface CleanupSessionPageProps {
   /** The 32-hex id from `#cleanup/<id>`. */
   readonly sessionId: string;
-  /** The one list read; `absent` means this server serves no session. */
-  readonly docSessions: DocSessions;
   readonly readEvents: DocSessionEventsReader;
   readonly readPlan: CleanupPlanReader;
   readonly writeCleanup: CleanupSessionWriter;
@@ -37,8 +34,6 @@ export interface CleanupSessionPageProps {
   readonly worktrees: WorktreesView;
   readonly reloadWorktrees: () => void;
   readonly generation: number;
-  readonly now: number;
-  readonly onOpen: (next: WorkspaceLocation) => void;
   readonly t: OperatorTranslate;
 }
 
@@ -170,10 +165,8 @@ function DiskCompare({ all, selected, t }: { readonly all: readonly WorktreeView
   );
 }
 
-const ARCHIVE_STEPS = ['commit', 'push', 'pull_request'] as const;
-
 function ExecutionSteps({ archiving, t }: { readonly archiving: boolean; readonly t: OperatorTranslate }) {
-  const steps = [...(archiving ? ARCHIVE_STEPS : []), 'remove'] as const;
+  const steps = [...(archiving ? CLEANUP_ARCHIVE_STEPS : []), 'remove'] as const;
   return (
     <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-kumo-default" data-steps={steps.join(',')}>
       {steps.map((step, index) => (
@@ -222,7 +215,8 @@ function PlanReview({ plan, snapshot, writeCleanup, reloadPlan, reloadWorktrees,
     const outcome = ran.items.get(id);
     return outcome !== undefined && (outcome.outcome === 'removed' || ran.plan === planKey) ? outcome : undefined;
   };
-  const selectable = (item: CleanupPlanItemV1) => item.judgment !== 'red' && rows.has(item.id) && outcomeOf(item.id)?.outcome !== 'removed';
+  // The plan and the collector judge the same worktree; an item is selectable only where they agree, and red never.
+  const selectable = (item: CleanupPlanItemV1) => item.judgment !== 'red' && rows.get(item.id)?.judgment === item.judgment && outcomeOf(item.id)?.outcome !== 'removed';
   const isChecked = (item: CleanupPlanItemV1) => selectable(item) && (checkedBy.get(item.id) ?? item.judgment === 'green');
   const selected = plan.items.filter(isChecked);
   const selectedRows = selected.map(item => rows.get(item.id)!);
@@ -315,16 +309,14 @@ function ResultSummary({ result, onRetry, t }: {
 }
 
 /** One worktree cleanup session (5-WTC): the record while the agent investigates, then the plan to review and approve. */
-export function CleanupSessionPage({ sessionId, docSessions, readEvents, readPlan, writeCleanup, worktrees, reloadWorktrees, generation, t }: CleanupSessionPageProps) {
-  const listed = docSessions.view.kind !== 'absent';
-  const { view: plan, reload: reloadPlan } = useCleanupPlan(readPlan, listed ? sessionId : null, generation);
-  const events = useDocSessionEvents(readEvents, listed ? sessionId : null);
+export function CleanupSessionPage({ sessionId, readEvents, readPlan, writeCleanup, worktrees, reloadWorktrees, generation, t }: CleanupSessionPageProps) {
+  const { view: plan, reload: reloadPlan } = useCleanupPlan(readPlan, sessionId, generation);
+  const events = useDocSessionEvents(readEvents, sessionId);
   const header = (
     <header className="border-b border-kumo-hairline pb-4">
       <h1 className="text-xl font-semibold text-kumo-strong">{t('cleanupSession.title')}</h1>
     </header>
   );
-  if (!listed) return <div className="flex min-w-0 flex-col gap-5" data-cleanup-session-page="absent">{header}<p role="status" className="text-sm text-kumo-subtle">{t('docSession.absent')}</p></div>;
   const ready = plan.kind === 'ready' ? plan.plan : null;
   return (
     <div className="flex min-w-0 flex-col gap-5" data-cleanup-session-page={sessionId}>

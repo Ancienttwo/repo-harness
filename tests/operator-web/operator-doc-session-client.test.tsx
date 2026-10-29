@@ -688,14 +688,15 @@ describe('session pages in the app', () => {
     expect(JSON.parse(localStorage.getItem(OPERATOR_SESSION_SEEN_STORAGE_KEY)!)[RUNNING_SESSION]).toBe('2.2');
   });
 
-  test('#cleanup/<id> shows its record; a server without session routes shows no session at all', async () => {
+  test('#cleanup/<id> shows its record; a server without session routes sends the session route Home', async () => {
     await mount(`#cleanup/${CLEANUP_SESSION}`, props('busy'));
     expect(document.querySelector('[data-cleanup-session-page]')?.getAttribute('data-cleanup-session-page')).toBe(CLEANUP_SESSION);
     expect(document.querySelector('[data-tool-fold]')?.getAttribute('data-tool-fold')).toBe('2');
     await act(async () => root?.unmount());
     root = null;
     await mount(`#session/${RUNNING_SESSION}`, props('degraded'));
-    expect(document.querySelector('[data-doc-session-page]')?.getAttribute('data-doc-session-page')).toBe('absent');
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');
+    expect(document.querySelector('[data-doc-session-page]')).toBeNull();
     expect(document.querySelector('[data-conversation]')).toBeNull();
   });
 });

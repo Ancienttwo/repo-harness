@@ -10,7 +10,7 @@ import {
   type DocSessionCreateRequest, type DocSessionCreateWriter, type DocSessions,
 } from './doc-sessions';
 import type { OperatorTranslate } from './i18n';
-import type { AgentsSettingsReader } from './settings';
+import { docsRuntimes, type AgentsSettingsReader } from './settings';
 import { PageLink } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
 import type { WorkspaceLocation } from './workspace-location';
@@ -47,9 +47,7 @@ function useDocsRuntimes(read: AgentsSettingsReader): DocsRuntimes {
       setState(current => current.kind === 'ready' ? current : { kind: 'unavailable' });
       return false;
     }
-    const { config } = result.settings;
-    const ids = config.uses.docs.filter(id => config.enabled.includes(id));
-    setState({ kind: 'ready', ids, defaultDocs: config.default_docs !== null && ids.includes(config.default_docs) ? config.default_docs : null });
+    setState({ kind: 'ready', ...docsRuntimes(result.settings.config) });
     return true;
   }, [read]);
   useObservationRefresh(observe, 'doc-composer-runtimes');
