@@ -34,9 +34,10 @@ Make one child issue for each pair of module and observable outcome.
   them goes first and the other depends on it.
 - **Contract first.** For a cross-module change, the issue that owns the
   contract (wire format, API, schema, type, route) goes first. Producers
-  and consumers depend on it. A consumer may start early against a stable
-  contract only when its issue says so and its PR stays draft until the
-  producer merges.
+  and consumers depend on it. A consumer may start early only when its
+  issue says so. It then stacks on the producer's PR branch and stays
+  draft until the producer merges (see `board.md`). Early start is what
+  lets three workers run at once on a chain of dependent modules.
 - **Reviewable size.** One PR, about 10 implementation files or fewer. A
   larger issue becomes a parent issue with its own children, or one issue
   with numbered PRs (PR-1a, PR-1b) that the issue names in advance.

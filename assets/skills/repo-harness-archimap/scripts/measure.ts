@@ -9,6 +9,7 @@
 // in the map HTML, or from a JSON file. Shape:
 //   { "modules": [ { "id", "label"?, "include": [glob], "exclude"?: [glob], "nodes"?: [nodeId] } ] }
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
+// Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file (exports/module/main/src/index), and the edge goes to the module owning that file; when no file resolves, the module owning most source files under the package directory is used, else the import is counted under `unownedWorkspace`.
 // Limits: tsconfig path aliases are not resolved; only tracked files (git ls-files) are scanned.
 
 import { execFileSync } from "node:child_process";
@@ -122,8 +123,7 @@ function countLoc(buf: Buffer): number | null {
   return loc;
 }
 
-function resolveRelative(from: string, spec: string, tracked: Set<string>): string | null {
-  const base = path.posix.join(path.posix.dirname(from), spec);
+function resolveBase(base: string, tracked: Set<string>): string | null {
   const ext = path.posix.extname(base);
   const candidates = [
     base,
@@ -134,13 +134,45 @@ function resolveRelative(from: string, spec: string, tracked: Set<string>): stri
   return candidates.find((c) => tracked.has(c)) ?? null;
 }
 
-function workspacePackages(root: string, files: string[]): Map<string, string> {
-  const packages = new Map<string, string>();
+function resolveRelative(from: string, spec: string, tracked: Set<string>): string | null {
+  return resolveBase(path.posix.join(path.posix.dirname(from), spec), tracked);
+}
+
+// Entry-point candidates of a workspace package, in resolution order. Only string-valued fields count.
+function entryCandidates(pkg: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const add = (v: unknown) => {
+    if (typeof v === "string" && v !== "") out.push(v);
+  };
+  const exp = pkg.exports;
+  if (typeof exp === "string") add(exp);
+  else if (typeof exp === "object" && exp !== null) {
+    const dot = (exp as Record<string, unknown>)["."];
+    if (typeof dot === "string") add(dot);
+    else if (typeof dot === "object" && dot !== null) {
+      for (const key of ["import", "default", "bun", "types"]) add((dot as Record<string, unknown>)[key]);
+    }
+  }
+  add(pkg.module);
+  add(pkg.main);
+  return out;
+}
+
+interface WorkspacePackage {
+  dir: string;
+  entries: string[];
+}
+
+function workspacePackages(root: string, files: string[]): Map<string, WorkspacePackage> {
+  const packages = new Map<string, WorkspacePackage>();
   for (const file of files) {
     if (path.posix.basename(file) !== "package.json" || file.split("/").includes("node_modules")) continue;
+    const dir = path.posix.dirname(file);
+    // The root package has no directory prefix to attribute files by.
+    if (dir === ".") continue;
     try {
-      const name = JSON.parse(readFileSync(path.join(root, file), "utf8")).name;
-      if (typeof name === "string" && name !== "") packages.set(name, file);
+      const pkg = JSON.parse(readFileSync(path.join(root, file), "utf8"));
+      if (typeof pkg.name === "string" && pkg.name !== "") packages.set(pkg.name, { dir, entries: entryCandidates(pkg) });
     } catch {
       // A tracked package.json that does not parse cannot name a workspace package.
     }
@@ -193,6 +225,40 @@ function main(): void {
   const packages = workspacePackages(root, files);
   const packageNames = [...packages.keys()].sort((a, b) => b.length - a.length);
   const unassigned: { path: string; loc: number }[] = [];
+  const unownedWorkspace: string[] = [];
+
+  // Module owning the most source files under a package directory (ties: declared order).
+  const dominantOwner = new Map<string, number>();
+  const ownerUnder = (dir: string): number => {
+    const cached = dominantOwner.get(dir);
+    if (cached !== undefined) return cached;
+    const counts = new Array<number>(modules.length).fill(0);
+    for (const f of universe) {
+      const o = owner.get(f) ?? -1;
+      if (o >= 0 && f.startsWith(`${dir}/`) && path.posix.extname(f) in LOADERS) counts[o]!++;
+    }
+    let best = -1;
+    counts.forEach((c, i) => {
+      if (c > 0 && (best < 0 || c > counts[best]!)) best = i;
+    });
+    dominantOwner.set(dir, best);
+    return best;
+  };
+  const entryFile = new Map<string, string | null>();
+  const resolveEntry = (name: string, pkg: WorkspacePackage): string | null => {
+    if (entryFile.has(name)) return entryFile.get(name)!;
+    const bases = [
+      ...pkg.entries.map((e) => path.posix.join(pkg.dir, e)),
+      ...["src/index", "index"].map((e) => path.posix.join(pkg.dir, e)),
+    ];
+    let found: string | null = null;
+    for (const b of bases) {
+      found = resolveBase(b, tracked);
+      if (found !== null) break;
+    }
+    entryFile.set(name, found);
+    return found;
+  };
 
   for (const file of universe) {
     const idx = owner.get(file) ?? -1;
@@ -234,7 +300,19 @@ function main(): void {
         targetOwner = owner.get(target);
       } else {
         const name = packageNames.find((n) => spec === n || spec.startsWith(`${n}/`));
-        if (name !== undefined) targetOwner = owner.get(packages.get(name)!);
+        if (name !== undefined) {
+          const pkg = packages.get(name)!;
+          const target =
+            spec === name ? resolveEntry(name, pkg) : resolveBase(path.posix.join(pkg.dir, spec.slice(name.length + 1)), tracked);
+          if (target !== null) targetOwner = owner.get(target);
+          else {
+            targetOwner = ownerUnder(pkg.dir);
+            if (targetOwner < 0) {
+              unownedWorkspace.push(`${file} -> ${spec}`);
+              continue;
+            }
+          }
+        }
       }
       if (targetOwner === undefined || targetOwner < 0) continue;
       if (targetOwner === idx) rows[idx]!.self++;
@@ -258,7 +336,8 @@ function main(): void {
       .sort((a, b) => moduleOrder.get(a.from)! - moduleOrder.get(b.from)! || moduleOrder.get(a.to)! - moduleOrder.get(b.to)!),
     unresolved: { count: unresolved.length, examples: unresolved.slice(0, EXAMPLE_LIMIT) },
     unparsed: { count: unparsed.length, examples: unparsed.slice(0, EXAMPLE_LIMIT) },
-    overlaps: overlaps.sort(byPath).slice(0, LIST_LIMIT),
+    unownedWorkspace: { count: unownedWorkspace.length, examples: unownedWorkspace.slice(0, EXAMPLE_LIMIT) },
+    overlaps: { total: overlaps.length, examples: overlaps.sort(byPath).slice(0, LIST_LIMIT) },
     unassigned: {
       count: unassigned.length,
       loc: unassigned.reduce((sum, f) => sum + f.loc, 0),

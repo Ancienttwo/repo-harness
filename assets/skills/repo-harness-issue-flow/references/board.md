@@ -56,14 +56,27 @@ Integrator seat (coordinator) merges in the parent's order.
   each with its own scope. Each slot is claimed separately: an issue claim
   comment with `Slot: PR-1b`. Without named slots, one issue is one writer.
 - **PR dependencies** are lines `Depends on #<PR>` in the PR body.
-- **Base every PR on main when its dependency has another owner.** Do not
-  stack a PR on another owner's branch. Their rebase or sync rewrites your
-  base. Stack branches only inside one owner's own PRs.
-- **Consumer before producer.** A consumer PR may start against a stable
-  contract only when its issue allows it. It stays draft until the
-  producer merges. Then the coordinator posts `unblocked` on the consumer
-  PR, and its head owner syncs with main (merge, no force push) and runs
-  the affected checks.
+- **Pushed history is append-only.** A head owner never rewrites a branch
+  that someone may have built on. It syncs main with a merge commit, and
+  it does not force-push. A rewrite that cannot be avoided needs a
+  `handoff` or `decision` comment first, on every PR that depends on it.
+  This rule is what makes stacking safe.
+- **Early start stacks on the producer.** When an issue allows early start
+  and the consumer needs the producer's unmerged code to compile, the
+  consumer branches from the producer's PR head, and its PR's base is the
+  producer's branch. The consumer's CI then stays green, and its diff
+  shows only its own work. Without that need, base the PR on main.
+- **Producer merges.** The coordinator posts `unblocked` on the consumer
+  PR. Its head owner retargets the PR to main (`gh pr edit <n> --base
+  main`), merges main into its branch (no force push), runs the affected
+  checks and posts `integration status`. A squash merge of the producer
+  leaves its commits in the consumer branch; the merge of main resolves
+  them as already applied.
+- **Producer rewrote anyway.** Replay only your own commits onto the new
+  producer head (`git rebase --onto <new-head> <old-head>`), push with
+  `--force-with-lease` on your own branch only, and post `integration
+  status` with old and new heads. Tell the coordinator, because the
+  producer broke the append-only rule.
 - **Contract change after start.** When a producer must change a contract
   that a consumer already uses, the producer posts a `boundary question` on
   its own issue. The coordinator decides and posts a `scope change` on

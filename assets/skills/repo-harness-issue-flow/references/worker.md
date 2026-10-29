@@ -15,8 +15,10 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
    issue or slot, stop and tell the coordinator. Do not start duplicate
    work. Silence or an old timestamp does not release a claim.
 3. Check the dependencies. Each `Depends on #N` must be merged, unless the
-   issue says that you may build against a stable contract early. In that
-   case your PR stays draft until the dependency merges.
+   issue allows early start. With early start, branch from the producer's
+   PR head when your code needs its unmerged changes to compile, set your
+   PR's base to the producer's branch, and keep the PR draft until the
+   producer merges (`board.md`, Topology).
 4. Read the files that the issue names, and the module entry in the
    architecture map when the issue cites one. Confirm that they exist at
    the current main. If the issue's "current state" no longer matches main,
@@ -32,6 +34,9 @@ or task ID) in all later comments. Then create the worktree:
 git fetch origin main
 git worktree add -b <type>/<issue>-<slug> /tmp/<repo>-wt-<issue>-<slug> origin/main
 ```
+
+For an early start on a producer PR, use `origin/<producer-branch>` as the
+start point instead of `origin/main`.
 
 ## 3. Implement inside the boundary
 
@@ -124,9 +129,11 @@ You are the head owner. Only you push to this branch.
   P3 or a finding that you dispute, reply with your reason and leave the
   disposition to the coordinator.
 - **Main moved.** When the coordinator posts `unblocked` or asks for a
-  sync, merge the current main into your branch (no force push), run the
-  affected checks and post `integration status` with the new head, the
-  delta and CI.
+  sync, retarget a stacked PR to main, merge the current main into your
+  branch (no force push), run the affected checks and post `integration
+  status` with the new head, the delta and CI.
+- **Never rewrite pushed history.** Other PRs may be stacked on yours.
+  Fix review findings with new commits.
 - **Someone else must push.** When a repair or integration must come from
   another agent, post a `handoff` that names the next head owner and the
   exact head SHA. Then stop pushing.

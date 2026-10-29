@@ -53,7 +53,8 @@ a { color: #1E40AF; } a:hover { color: #1E3A8A; }
 
 /* Edges */
 svg.edges { left: 0; top: 0; overflow: visible; pointer-events: none; }
-.edges path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+/* Direct children only: marker paths inside <defs> keep their own fill. */
+.edges > path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .e-call { stroke: #6B7079; stroke-width: 2; }
 .e-import { stroke: #2B2F36; stroke-width: 3; }
 .e-remote { stroke: #9A3412; stroke-width: 2; }

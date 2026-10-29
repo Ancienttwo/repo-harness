@@ -44,8 +44,9 @@ model's own docs. The archimap is the one hand-composed HTML view.
    refresh, read the meta block of the current map and run
    `git diff <meta.base>..HEAD --stat -- .archcontext/model .ai/context`
    to find what moved.
-2. **Group into map modules.** The overview holds 8 to 20 modules. A
-   larger model is grouped by domain or layer. Each map module lists the
+2. **Group into map modules.** The overview holds at most 20 modules. A
+   small model gets one module per node. A larger model is grouped by
+   domain or layer. Each map module lists the
    model node IDs it covers (`nodes`) and the path globs it owns
    (`include`, `exclude`). The grouping is part of the map. It is stored
    in the meta block, so that a refresh reuses it. Change it only on
@@ -63,7 +64,9 @@ model's own docs. The archimap is the one hand-composed HTML view.
    before you draw. Look at `unassigned.largest`: a large unassigned file
    is usually a missing module. `unparsed` and `unresolved` list files and
    imports that the counts miss. Name them in the matrix caption when they
-   are not zero. The script reads TS and JS imports. For
+   are not zero. The counts are value imports: a model relation that the
+   code satisfies with type-only imports shows no count. Draw it as a
+   thin edge and say so in the caption, rather than drop it. The script reads TS and JS imports. For
    other languages, count module edges with the code graph tool (for
    example `codegraph_explore`) and record the method in the legend.
    Bun is required. Without Bun, report that the measurement could not
