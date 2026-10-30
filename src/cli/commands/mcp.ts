@@ -81,12 +81,30 @@ async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
   }
 }
 
+interface GithubIssueComment {
+  author?: { login?: unknown } | null;
+  body?: unknown;
+  url?: unknown;
+}
+
+interface RawGithubIssue {
+  number?: unknown;
+  title?: unknown;
+  body?: unknown;
+  state?: unknown;
+  url?: unknown;
+  assignees?: unknown;
+  comments?: unknown;
+}
+
 interface GithubIssueFields {
   number: number;
   title: string;
   body: string;
   state: string;
   url: string;
+  assignees: string[];
+  comments: Array<{ author: string; body: string; url: string }>;
 }
 
 function goalUnavailable(issueNumber: string, reason: string): never {
@@ -104,7 +122,7 @@ function parseIssueNumber(value: string): number {
 function readGithubIssue(repoRoot: string, issueNumber: number): GithubIssueFields {
   let stdout = '';
   try {
-    stdout = execFileSync('gh', ['issue', 'view', String(issueNumber), '--json', 'number,title,body,state,url'], {
+    stdout = execFileSync('gh', ['issue', 'view', String(issueNumber), '--json', 'number,title,body,state,url,assignees,comments'], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -125,14 +143,51 @@ function readGithubIssue(repoRoot: string, issueNumber: number): GithubIssueFiel
   } catch {
     goalUnavailable(String(issueNumber), 'invalid gh output');
   }
-  const issue = parsed as Partial<GithubIssueFields>;
+  const issue = parsed as RawGithubIssue;
   if (typeof issue.number !== 'number' || !Number.isInteger(issue.number) || issue.number <= 0
     || typeof issue.title !== 'string' || typeof issue.body !== 'string'
     || typeof issue.state !== 'string' || typeof issue.url !== 'string') {
     goalUnavailable(String(issueNumber), 'invalid gh output');
   }
   if (issue.state !== 'OPEN') goalUnavailable(String(issueNumber), `state ${issue.state}`);
-  return issue as GithubIssueFields;
+
+  const assignees = Array.isArray(issue.assignees)
+    ? issue.assignees
+      .map((entry) => (entry && typeof entry === 'object' && typeof (entry as { login?: unknown }).login === 'string' ? (entry as { login: string }).login : ''))
+      .filter((login) => login.length > 0)
+    : [];
+  const comments = Array.isArray(issue.comments)
+    ? issue.comments
+      .map((entry) => {
+        const comment = entry as GithubIssueComment;
+        const login = comment?.author && typeof comment.author === 'object' && typeof comment.author.login === 'string' ? comment.author.login : '';
+        return {
+          author: login || 'unknown',
+          body: typeof comment?.body === 'string' ? comment.body : '',
+          url: typeof comment?.url === 'string' ? comment.url : '',
+        };
+      })
+      .filter((comment) => comment.body.length > 0 && comment.url.length > 0)
+    : [];
+
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body,
+    state: issue.state,
+    url: issue.url,
+    assignees,
+    comments,
+  };
+}
+
+function activeClaim(issue: GithubIssueFields): string {
+  const claims = issue.comments.filter((comment) => /^repo-harness issue claim\b/mu.test(comment.body));
+  const latest = claims.at(-1);
+  const status = latest?.body.match(/^Status:\s*(.+)$/imu)?.[1]?.replace(/[\*_`]/gu, '').trim().toLowerCase();
+  if (latest && status === 'active') return `${latest.author} (${latest.url})`;
+  const assigneeList = issue.assignees.length > 0 ? issue.assignees.join(', ') : 'none';
+  return `no active claim; assignees: ${assigneeList} (${issue.url})`;
 }
 
 function flattenMarkdown(text: string): string {
@@ -175,7 +230,7 @@ function prepareGoalPrompt(repoRoot: string, issueInput: string): string {
     `Goal: ${flattenMarkdown(issue.title)}`,
     `Issue: ${issue.url}`,
     `PR: ${linkedPullRequest(issue.body)}`,
-    'Claim: no owner is recorded in the issue fields; re-read the issue claim before execution',
+    `Claim: ${activeClaim(issue)}`,
     'Authority: the current GitHub issue and PR',
     `Planning references: issue #${issue.number} body`,
     `Scope: ${scope}`,

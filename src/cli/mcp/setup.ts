@@ -422,7 +422,7 @@ Use it in Codex when continuing a ChatGPT-generated handoff:
 
 \`\`\`text
 Use repo-harness-chatgpt-bridge.
-Execute .ai/harness/handoff/task-goal.md.
+Use the printed Goal prompt, or write .ai/harness/handoff/task-goal.md with write_task_goal.
 \`\`\`
 
 The Skill tells Codex to read the GitHub issue and any referenced PRDs, run focused checks, and report evidence. It does not authorize ChatGPT to edit source code or run shell commands through MCP.

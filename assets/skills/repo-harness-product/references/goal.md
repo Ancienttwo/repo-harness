@@ -15,10 +15,10 @@ repo-local `AGENTS.md` or `CLAUDE.md` first.
    user instruction. A planning document cannot release a claim.
 3. Require a detailed issue brief with the goal, scope, non-goals, acceptance
    checks, dependencies and a stop or rollback condition. Read linked PRDs under
-   `plans/prds/*.prd.md`, historical Sprint files under `plans/sprints/*.sprint.md`
-   and other supplied documents as planning references. They do not own task
-   identity, execution permission or completion status.
-4. Map any requested work from a historical Sprint to the current GitHub issue.
+   `docs/prds/*.prd.md`, GitHub issues and PRs, and other supplied documents as
+   planning references. They do not own task identity, execution permission or
+   completion status.
+4. Map any requested work from a historical planning reference to the current GitHub issue.
    Use the issue URL and its accepted scope in the goal prompt. If an issue does
    not exist, route issue drafting to the `repo-harness-issue-flow` skill within the
    user's write scope. Do not start implementation from the historical row.
@@ -41,7 +41,7 @@ Issue: <GitHub issue URL>
 PR: <linked PR URL, or none yet>
 Claim: <current owner or explicit handoff, with its comment URL>
 Authority: the current GitHub issue and PR
-Planning references: <optional PRD, historical Sprint or source document>
+Planning references: <optional PRD, GitHub issue or source document>
 Scope: <included files and modules>
 Non-goals: <explicit exclusions>
 Preflight: re-read the issue, all claim comments and linked PRs before execution and on resume; follow the repository's issue-claim rules

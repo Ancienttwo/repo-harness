@@ -593,6 +593,30 @@ function writeMarkdownArtifact(
   });
 }
 
+// Canonical anti-extras clause injected into every runner-reachable surface (this
+// task-goal path, the native child context,
+// and subagent start context). Keep the first sentence byte-identical across all
+// sources; a parity test asserts they never drift apart.
+const EXECUTION_BOUNDARY = [
+  'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
+  '',
+  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
+  '',
+  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
+  '',
+  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
+].join('\n');
+
+function withExecutionBoundary(body: string): string {
+  const firstSentence = EXECUTION_BOUNDARY.split('\n', 1)[0]!;
+  if (body.includes(firstSentence)) return body;
+  const heading = '## Execution boundary';
+  const headingAt = body.indexOf(heading);
+  if (headingAt < 0) return body;
+  const insertAt = headingAt + heading.length;
+  return `${body.slice(0, insertAt)}\n\n${EXECUTION_BOUNDARY}${body.slice(insertAt)}`;
+}
+
 function validateGoal(body: string): string[] {
   return [
     '# Task Goal',
@@ -1058,7 +1082,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       case 'write_task_goal': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const body = String(args.body ?? '');
+        const body = withExecutionBoundary(String(args.body ?? ''));
         const missing = validateGoal(body);
         if (body.trim().length < 120 || missing.length > 0) {
           audit(ctx, name, 'blocked', args, '.ai/harness/handoff/task-goal.md', `missing required goal sections: ${missing.join(', ')}`);

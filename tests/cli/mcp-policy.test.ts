@@ -166,7 +166,7 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('executor profile keeps reader and planner writes out of its regression surface', async () => {
+  test('executor profile keeps reader tools out and uses the narrowed write scope', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-profile-regression-'));
     try {
       mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
@@ -195,14 +195,16 @@ describe('mcp policy and paths', () => {
       expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', executor, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'read')).toMatchObject({ ok: true });
-      expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'write')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'tasks/reviews/x.md', executor, 'write')).toMatchObject({ ok: false });
       const executorWrite = await jsonTool(tmp, executor, 'write_prd', {
         title: 'Executor Write',
         slug: 'executor-write',
         body: '# Executor Write\n',
       });
-      expect(executorWrite.error.code).toBe('POLICY_DENIED');
+      expect(executorWrite.status).toBe('written');
+      expect(executorWrite.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-executor-write\.prd\.md$/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

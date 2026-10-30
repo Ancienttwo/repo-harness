@@ -147,7 +147,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       discoveryRoots: opts.discoveryRoots,
       capabilities: capabilities({ workflowExecutor: true }),
       readGlobs: withWorkspacePrefixGlobs(['docs/prds/**', 'tasks/lessons.md', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
-      writeGlobs: withWorkspacePrefixGlobs(['.ai/harness/checks/**', '.ai/harness/handoff/**']),
+      writeGlobs: withWorkspacePrefixGlobs(['docs/prds/**', 'tasks/lessons.md', '.ai/harness/checks/**', '.ai/harness/handoff/**']),
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,

@@ -30,7 +30,21 @@ function withGhStub<T>(fn: (env: NodeJS.ProcessEnv) => T): T {
   }
 }
 
-const ISSUE = {
+interface StubComment {
+  author: { login: string };
+  body: string;
+  url: string;
+}
+
+const ISSUE: {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  body: string;
+  assignees: Array<{ login: string }>;
+  comments: StubComment[];
+} = {
   number: 123,
   title: 'Issue goal fixture',
   state: 'OPEN',
@@ -55,6 +69,8 @@ const ISSUE = {
     '',
     'Verified completion or a named blocker.',
   ].join('\n'),
+  assignees: [{ login: 'alice' }, { login: 'bob' }],
+  comments: [],
 };
 
 function issueEnv(issue = ISSUE, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -113,6 +129,7 @@ describe('mcp command', () => {
         expect(result.stdout).toContain('Goal: Issue goal fixture');
         expect(result.stdout).toContain('Issue: https://github.com/example/repo/issues/123');
         expect(result.stdout).toContain('PR: none yet');
+        expect(result.stdout).toContain('Claim: no active claim; assignees: alice, bob (https://github.com/example/repo/issues/123)');
         expect(result.stdout).toContain('Authority: the current GitHub issue and PR');
         expect(result.stdout).toContain('Scope: Only docs/prds and tasks/lessons.md.');
         expect(result.stdout).toContain('Non-goals: No migrations.');
@@ -120,6 +137,44 @@ describe('mcp command', () => {
         expect(result.stdout).toContain('Stop condition: Verified completion or a named blocker.');
         expect(result.stdout).toContain('Delegation: use only existing authorization');
         expect(result.stdout).toContain('Reporting: use the user\'s language');
+      });
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('prepare-goal reports the latest active claim and treats a release as no claim', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-claim-'));
+    const comment = (login: string, status: string, id: number) => ({
+      author: { login },
+      body: `repo-harness issue claim\n\nStatus: ${status}\nAgent: test`,
+      url: `https://github.com/example/repo/issues/123#issuecomment-${id}`,
+    });
+    try {
+      withGhStub((env) => {
+        const active = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123'], {
+          ...env,
+          ...issueEnv({
+            ...ISSUE,
+            comments: [
+              comment('carol', 'released', 1),
+              comment('dave', 'active', 2),
+              { author: { login: 'erin' }, body: 'unrelated review note', url: 'https://github.com/example/repo/issues/123#issuecomment-3' },
+            ],
+          }),
+        });
+        expect(active.status).toBe(0);
+        expect(active.stdout).toContain('Claim: dave (https://github.com/example/repo/issues/123#issuecomment-2)');
+
+        const released = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123'], {
+          ...env,
+          ...issueEnv({
+            ...ISSUE,
+            comments: [comment('dave', 'active', 2), comment('dave', 'released', 4)],
+          }),
+        });
+        expect(released.status).toBe(0);
+        expect(released.stdout).toContain('Claim: no active claim; assignees: alice, bob (https://github.com/example/repo/issues/123)');
       });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
@@ -142,9 +197,17 @@ describe('mcp command', () => {
         expect(failed.status).toBe(2);
         expect(failed.stderr.trim()).toBe('prepare-goal: issue 123 is unavailable: gh: authentication required');
 
-        const missingFlag = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123', '--prd', 'docs/prds/example.prd.md'], env);
-        expect(missingFlag.status).not.toBe(0);
-        expect(missingFlag.stderr).toContain("unknown option '--prd'");
+        for (const [flag, value] of [
+          ['--prd', 'docs/prds/example.prd.md'],
+          ['--sprint', 'plans/sprints/example.sprint.md'],
+          ['--reference-repo', '/tmp/reference-repo'],
+          ['--extra-instructions', 'extra'],
+          ['--expected-sha256', 'a'.repeat(64)],
+        ]) {
+          const removed = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123', flag, value], env);
+          expect(removed.status).not.toBe(0);
+          expect(removed.stderr).toContain(`unknown option '${flag}'`);
+        }
       });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
