@@ -55,8 +55,8 @@ A Bot works in one of two modes. Both modes merge through the same executor,
 
 | Mode | Dispatch | Acceptance | Merge |
 |---|---|---|---|
-| Local Herdr | MCP `orchestrator` profile Herdr tools, or a Herdr pane | The executor role produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | MCP `merge_pull_request` (same executor; the audit line carries the OAuth-derived attribution) |
-| Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` and a checkout of the repository. It runs `repo-harness publication merge` |
+| Local Herdr | MCP `orchestrator` profile Herdr tools, or a Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | MCP `merge_pull_request` (same executor; the audit line carries the OAuth-derived attribution) |
+| Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` (the token needs Administration read permission) and a checkout of the repository. It runs `repo-harness publication merge` |
 
 - A Bot record does not grant merge permission. This covers `review admit`
   grants and `acceptance record` comments. The executor merges only when
@@ -65,8 +65,10 @@ A Bot works in one of two modes. Both modes merge through the same executor,
 - The executor needs default-branch protection with strict required checks
   and enforce_admins. Without them it refuses with
   `base_protection_insufficient`.
-- The Bot owner manages the GitHub token permissions. repo-harness does not
-  grant or check them beyond the executor preconditions.
+- The Bot owner manages the GitHub token permissions. In cloud-only mode the
+  token needs Administration read permission, so that the executor can read
+  branch protection. Without it the executor refuses with
+  `base_protection_insufficient`.
 - Exit codes and the handling of each: the
   [issue-flow orchestrator guide](../assets/skills/repo-harness-issue-flow/references/orchestrator.md).
 

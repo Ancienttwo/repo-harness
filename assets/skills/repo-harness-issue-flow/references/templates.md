@@ -237,11 +237,14 @@ Merge result (integrator, after `repo-harness publication merge`):
 repo-harness integration status
 Re: <PR URL>
 To: <owner | head owner #<p>>
-Merge: exit <0|3|4|5|6> <merged | acceptance_merge_off | refused | merge_outcome_unknown | provider_rejected>
-Merge SHA: <merge_commit_sha>, parent <parent_sha>   <!-- exit 0 only -->
-Revert: <revert command from the output>              <!-- exit 0 only -->
+Merge: exit <0|3|4|5|6> <merged | acceptance_merge_off | <error> | merge_outcome_unknown | provider_rejected>
+Merge SHA: <merge_commit_sha>, parent <parent_sha>
+Revert: <revert command from the output>
 Detail: <exit 3: "PR ready, owner merges" | exit 4: the blockers | exit 5, 6: the error as it is>
 ```
+
+Write `Merge SHA` and `Revert` only for exit 0. For exit 4, `<error>` is the
+error code in the executor JSON.
 
 ## Dispatch packet
 

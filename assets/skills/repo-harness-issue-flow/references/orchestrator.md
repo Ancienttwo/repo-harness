@@ -179,8 +179,9 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 `merge_pull_request` (profile `orchestrator`) calls the same executor.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs strict
-required checks and enforce_admins. If it does not, the executor refuses
-with `base_protection_insufficient`.
+required checks and enforce_admins, and no merge queue (classic protection
+or rulesets). If it does not, the executor refuses with
+`base_protection_insufficient`.
 
 Act on the exit code. Post every result as `integration status` on the PR.
 
@@ -188,7 +189,7 @@ Act on the exit code. Post every result as `integration status` on the PR.
 |---|---|---|
 | 0 | Merged | Post the merge SHA, the parent SHA and the revert command. Post `unblocked` on each dependent PR |
 | 3 | Switch is off (`acceptance_merge_off`) | Post `To: owner`: the PR is ready, the owner merges. Do not merge another way |
-| 4 | Refused before any merge request | Hand the PR to its head owner with the `blockers`. For `base_protection_insufficient`, hand it to the owner |
+| 4 | Refused before any merge request | For `base_protection_insufficient`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
 
@@ -200,7 +201,8 @@ Act on the exit code. Post every result as `integration status` on the PR.
   multi-PR issue use `Refs #N`. Before merge, check
   `gh pr view <n> --json closingIssuesReferences`. An edited body can keep
   an old closing link. The executor also checks the closing references and
-  refuses with `closing_references_mismatch`.
+  refuses with `closing_references_mismatch`, also for a closing keyword
+  that targets a pull-request URL.
 
 ## 10. Close out
 
