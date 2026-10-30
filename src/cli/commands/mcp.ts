@@ -1,13 +1,12 @@
 import { runMcpUninstall, type McpUninstallOptions } from '../mcp/uninstall';
 import { Command } from 'commander';
-import { isAbsolute, relative } from 'path';
-import { createMcpToolContext } from '../mcp/server';
+import { execFileSync } from 'child_process';
 import { startMcpHttp } from '../mcp/transports/http';
 import { startMcpStdio } from '../mcp/transports/stdio';
-import { callMcpTool } from '../mcp/tools';
 import { cleanupManagedCodingWorkspace, listManagedCodingWorkspaces } from '../mcp/coding-workspaces';
 import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
+import { resolveMcpRepoRoot } from '../mcp/repo';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 import {
   runMcpDoctor,
@@ -58,11 +57,7 @@ interface McpInstallSkillOptions {
 
 interface McpPrepareGoalOptions {
   repo?: string;
-  prd: string;
-  sprint: string;
-  referenceRepo?: string;
-  extraInstructions?: string;
-  expectedSha256?: string;
+  issue: string;
 }
 
 function parsePort(value: string): number {
@@ -86,38 +81,166 @@ async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
   }
 }
 
-async function prepareCodexGoalFromSprint(rawOpts: McpPrepareGoalOptions): Promise<string[]> {
-  const ctx = createMcpToolContext({ repo: rawOpts.repo ?? '.', profile: 'planner' });
-  const prdPath = toRepoRelativeInput(ctx.repoRoot, rawOpts.prd);
-  const sprintPath = toRepoRelativeInput(ctx.repoRoot, rawOpts.sprint);
-  const result = await callMcpTool(ctx, 'prepare_task_goal_from_sprint', {
-    prd_path: prdPath,
-    sprint_path: sprintPath,
-    goal_prd_path: rawOpts.prd,
-    goal_sprint_path: rawOpts.sprint,
-    reference_repo: rawOpts.referenceRepo,
-    extra_instructions: rawOpts.extraInstructions,
-    // Absent means create-only; the key is sent only when the caller supplied
-    // one, so an omitted flag never reads as an empty revision precondition.
-    ...(rawOpts.expectedSha256 === undefined ? {} : { expected_sha256: rawOpts.expectedSha256 }),
-  });
-  const payload = JSON.parse(result.content[0]?.text ?? '{}');
-  if (payload.error) {
-    throw new Error(`${payload.error.code}: ${payload.error.message}`);
-  }
-  return [
-    `[repo-harness mcp] task goal: ${payload.path}`,
-    '[repo-harness mcp] Task execution prompt:',
-    '',
-    String(payload.prompt ?? '').trimEnd(),
-  ];
+interface GithubIssueComment {
+  author?: { login?: unknown } | null;
+  body?: unknown;
+  url?: unknown;
 }
 
-function toRepoRelativeInput(repoRoot: string, path: string): string {
-  if (!isAbsolute(path)) return path;
-  const relativePath = relative(repoRoot, path).split('\\').join('/');
-  if (relativePath === '' || relativePath.startsWith('../') || relativePath === '..') return path;
-  return relativePath;
+interface RawGithubIssue {
+  number?: unknown;
+  title?: unknown;
+  body?: unknown;
+  state?: unknown;
+  url?: unknown;
+  assignees?: unknown;
+  comments?: unknown;
+}
+
+interface GithubIssueFields {
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  url: string;
+  assignees: string[];
+  comments: Array<{ author: string; body: string; url: string }>;
+}
+
+function goalUnavailable(issueNumber: string, reason: string): never {
+  throw new Error(`prepare-goal: issue ${issueNumber} is unavailable: ${reason}`);
+}
+
+function parseIssueNumber(value: string): number {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`prepare-goal: --issue requires a positive integer: ${value}`);
+  }
+  return number;
+}
+
+function readGithubIssue(repoRoot: string, issueNumber: number): GithubIssueFields {
+  let stdout = '';
+  try {
+    stdout = execFileSync('gh', ['issue', 'view', String(issueNumber), '--json', 'number,title,body,state,url,assignees,comments'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  } catch (error) {
+    const detail = error as NodeJS.ErrnoException & { stderr?: Buffer | string; killed?: boolean };
+    if (detail.code === 'ENOENT') goalUnavailable(String(issueNumber), 'gh is required');
+    if (detail.killed) goalUnavailable(String(issueNumber), 'gh timed out');
+    const stderr = detail.stderr ? String(detail.stderr).trim() : '';
+    goalUnavailable(String(issueNumber), stderr.split(/\r?\n/u)[0] || detail.message || 'gh issue view failed');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    goalUnavailable(String(issueNumber), 'invalid gh output');
+  }
+  const issue = parsed as RawGithubIssue;
+  if (typeof issue.number !== 'number' || !Number.isInteger(issue.number) || issue.number <= 0
+    || typeof issue.title !== 'string' || typeof issue.body !== 'string'
+    || typeof issue.state !== 'string' || typeof issue.url !== 'string') {
+    goalUnavailable(String(issueNumber), 'invalid gh output');
+  }
+  if (issue.state !== 'OPEN') goalUnavailable(String(issueNumber), `state ${issue.state}`);
+
+  const assignees = Array.isArray(issue.assignees)
+    ? issue.assignees
+      .map((entry) => (entry && typeof entry === 'object' && typeof (entry as { login?: unknown }).login === 'string' ? (entry as { login: string }).login : ''))
+      .filter((login) => login.length > 0)
+    : [];
+  const comments = Array.isArray(issue.comments)
+    ? issue.comments
+      .map((entry) => {
+        const comment = entry as GithubIssueComment;
+        const login = comment?.author && typeof comment.author === 'object' && typeof comment.author.login === 'string' ? comment.author.login : '';
+        return {
+          author: login || 'unknown',
+          body: typeof comment?.body === 'string' ? comment.body : '',
+          url: typeof comment?.url === 'string' ? comment.url : '',
+        };
+      })
+      .filter((comment) => comment.body.length > 0 && comment.url.length > 0)
+    : [];
+
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body,
+    state: issue.state,
+    url: issue.url,
+    assignees,
+    comments,
+  };
+}
+
+function activeClaim(issue: GithubIssueFields): string {
+  const claims = issue.comments.filter((comment) => /^repo-harness issue claim\b/mu.test(comment.body));
+  const latest = claims.at(-1);
+  const status = latest?.body.match(/^Status:\s*(.+)$/imu)?.[1]?.replace(/[\*_`]/gu, '').trim().toLowerCase();
+  if (latest && status === 'active') return `${latest.author} (${latest.url})`;
+  const assigneeList = issue.assignees.length > 0 ? issue.assignees.join(', ') : 'none';
+  return `no active claim; assignees: ${assigneeList} (${issue.url})`;
+}
+
+function flattenMarkdown(text: string): string {
+  return text.replace(/^\s*[-*]\s+/gmu, '').replace(/\s+/gu, ' ').trim();
+}
+
+function issueSection(body: string, headings: readonly string[]): string | undefined {
+  const matches = [...body.matchAll(/^##\s+(.+?)\s*$/gmu)];
+  for (let index = 0; index < matches.length; index += 1) {
+    if (!headings.includes(matches[index][1]!.trim().toLowerCase())) continue;
+    const start = (matches[index].index ?? 0) + matches[index][0].length;
+    const end = index + 1 < matches.length ? matches[index + 1]!.index ?? body.length : body.length;
+    const text = flattenMarkdown(body.slice(start, end));
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function firstBodyParagraph(body: string): string | undefined {
+  return body.split(/\n\s*\n/u)
+    .map((paragraph) => flattenMarkdown(paragraph))
+    .find((paragraph) => paragraph.length > 0 && !paragraph.startsWith('#'));
+}
+
+function linkedPullRequest(body: string): string {
+  return body.match(/https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/u)?.[0] ?? 'none yet';
+}
+
+function prepareGoalPrompt(repoRoot: string, issueInput: string): string {
+  const issue = readGithubIssue(repoRoot, parseIssueNumber(issueInput));
+  const scope = issueSection(issue.body, ['scope', '范围', '要做的', 'changes', 'what to do', 'implementation'])
+    ?? firstBodyParagraph(issue.body)
+    ?? 'the issue body';
+  const nonGoals = issueSection(issue.body, ['non-goals', 'non goals', 'out of scope', '非目标', '不做']);
+  const acceptance = issueSection(issue.body, ['acceptance', 'acceptance checks', 'acceptance criteria', '验收', '验收标准']);
+  const stop = issueSection(issue.body, ['stop condition', 'stop', '停止条件']);
+
+  return [
+    '/goal',
+    `Goal: ${flattenMarkdown(issue.title)}`,
+    `Issue: ${issue.url}`,
+    `PR: ${linkedPullRequest(issue.body)}`,
+    `Claim: ${activeClaim(issue)}`,
+    'Authority: the current GitHub issue and PR',
+    `Planning references: issue #${issue.number} body`,
+    `Scope: ${scope}`,
+    `Non-goals: ${nonGoals ?? 'none stated in the issue'}`,
+    "Preflight: re-read the issue, all claim comments and linked PRs before execution and on resume; follow the repository's issue-claim rules",
+    `Acceptance checks: ${acceptance ?? 'the acceptance checks in the issue body'}`,
+    `Stop condition: ${stop ?? 'verified completion, or evidence of a blocker or ownership conflict'}`,
+    'Delegation: use only existing authorization; max 3 Codex subagents, depth 1, independent workstreams and separate write ownership',
+    "Reporting: use the user's language unless repo-local instructions require otherwise; record the revision, changed files, checks and remaining blockers in the issue or PR",
+  ].join('\n');
 }
 
 export function buildMcpCommand(): Command {
@@ -334,18 +457,16 @@ export function buildMcpCommand(): Command {
 
   mcp
     .command('prepare-goal')
-    .description('Prepare .ai/harness/handoff/task-goal.md and print a task execution prompt from a PRD and checklist Sprint')
-    .option('--repo <path>', 'Repository root to configure', '.')
-    .requiredOption('--prd <path>', 'PRD path to read')
-    .requiredOption('--sprint <path>', 'Checklist Sprint path to execute')
-    .option('--reference-repo <path>', 'Read-only reference repo path to include in the Goal')
-    .option('--extra-instructions <text>', 'Additional bounded execution instruction for Codex')
-    .option('--expected-sha256 <hex>', 'Current sha256 of .ai/harness/handoff/task-goal.md; required to regenerate an existing goal, omit to create')
+    .description('Print a Goal prompt from an OPEN GitHub issue')
+    .option('--repo <path>', 'Repository root to run gh in', '.')
+    .requiredOption('--issue <number>', 'GitHub issue number to read')
     .action((rawOpts: McpPrepareGoalOptions) => {
-      void runMcpAction(async () => {
-        const lines = await prepareCodexGoalFromSprint(rawOpts);
-        console.log(lines.join('\n'));
-      });
+      try {
+        console.log(prepareGoalPrompt(resolveMcpRepoRoot(rawOpts.repo ?? '.'), rawOpts.issue));
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(2);
+      }
     });
 
   mcp

@@ -17,21 +17,21 @@ async function jsonTool(repoRoot: string, policy: ReturnType<typeof getMcpPolicy
 
 describe('mcp policy and paths', () => {
   test('matches repo-harness workflow globs without matching sibling paths', () => {
-    expect(globMatches('plans/**', 'plans/prds/example.prd.md')).toBe(true);
-    expect(globMatches('plans/plan-*.md', 'plans/plan-test.md')).toBe(true);
-    expect(globMatches('plans/plan-*.md', 'plans/archive/plan-test.md')).toBe(false);
+    expect(globMatches('docs/prds/**', 'docs/prds/example.prd.md')).toBe(true);
+    expect(globMatches('tasks/lessons.md', 'tasks/lessons.md')).toBe(true);
+    expect(globMatches('tasks/lessons.md', 'tasks/notes/example.md')).toBe(false);
     expect(globMatches('*.pem', 'secret.pem')).toBe(true);
     expect(globMatches('*.pem', 'nested/secret.pem')).toBe(false);
   });
 
   test('normalizes relative paths and rejects traversal or absolute input', () => {
-    expect(normalizeMcpRelativePath('./plans/prds/test.md')).toMatchObject({
+    expect(normalizeMcpRelativePath('./docs/prds/test.md')).toMatchObject({
       ok: true,
-      relativePath: 'plans/prds/test.md',
+      relativePath: 'docs/prds/test.md',
     });
-    expect(normalizeMcpRelativePath('plans\\prds\\test.md')).toMatchObject({
+    expect(normalizeMcpRelativePath('docs\\prds\\test.md')).toMatchObject({
       ok: true,
-      relativePath: 'plans/prds/test.md',
+      relativePath: 'docs/prds/test.md',
     });
     expect(normalizeMcpRelativePath('../outside').ok).toBe(false);
     expect(normalizeMcpRelativePath('/tmp/outside').ok).toBe(false);
@@ -40,9 +40,9 @@ describe('mcp policy and paths', () => {
   test('planner profile permits workflow reads and blocks denied or source writes', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-policy-'));
     try {
-      mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
+      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
       mkdirSync(join(tmp, 'src'), { recursive: true });
-      writeFileSync(join(tmp, 'plans/prds/test.prd.md'), '# Test\n');
+      writeFileSync(join(tmp, 'docs/prds/test.prd.md'), '# Test\n');
       writeFileSync(join(tmp, '.env'), 'TOKEN=secret\n');
       mkdirSync(join(tmp, 'tasks/secrets'), { recursive: true });
       writeFileSync(join(tmp, 'tasks/secrets/token.txt'), 'TOKEN=secret\n');
@@ -50,10 +50,11 @@ describe('mcp policy and paths', () => {
       writeFileSync(join(tmp, '.ai/harness/nested/private.key'), 'SECRET=secret\n');
 
       const policy = getMcpPolicy('planner');
-      expect(resolveMcpPath(tmp, 'plans/prds/test.prd.md', policy, 'read')).toMatchObject({
+      expect(resolveMcpPath(tmp, 'docs/prds/test.prd.md', policy, 'read')).toMatchObject({
         ok: true,
-        relativePath: 'plans/prds/test.prd.md',
+        relativePath: 'docs/prds/test.prd.md',
       });
+      expect(resolveMcpPath(tmp, 'tasks/lessons.md', policy, 'write')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, '.env', policy, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'src/index.ts', policy, 'read')).toMatchObject({
         ok: false,
@@ -61,10 +62,14 @@ describe('mcp policy and paths', () => {
         reason: 'path is not allowed for read: src/index.ts',
       });
       expect(resolveMcpPath(tmp, 'src/index.ts', policy, 'write')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, 'plans/prds/new.prd.md', policy, 'write')).toMatchObject({
+      expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', policy, 'write')).toMatchObject({
         ok: true,
-        relativePath: 'plans/prds/new.prd.md',
+        relativePath: 'docs/prds/new.prd.md',
       });
+      expect(resolveMcpPath(tmp, 'tasks/notes/x.md', policy, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'tasks/notes/x.md', policy, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'tasks/reviews/x.md', policy, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'tasks/contracts/x.md', policy, 'read')).toMatchObject({ ok: false });
 
       const executor = getMcpPolicy('executor');
       expect(executor.allowAbsoluteRead).toBe(false);
@@ -81,9 +86,9 @@ describe('mcp policy and paths', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-'));
     const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-outside-'));
     try {
-      mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
+      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
       writeFileSync(join(tmp, '.env'), 'TOKEN=secret\n');
-      writeFileSync(join(tmp, 'plans/prds/readme.md'), '# readable\n');
+      writeFileSync(join(tmp, 'docs/prds/readme.md'), '# readable\n');
       writeFileSync(join(outside, 'note.md'), '# outside\n');
 
       const normal = getMcpPolicy('planner');
@@ -94,11 +99,11 @@ describe('mcp policy and paths', () => {
       expect(scoped.readGlobs).not.toContain('**');
       expect(scoped.execution.fixedWorkflowCheck).toBe(true);
       expect(resolveMcpPath(tmp, join(tmp, '.env'), scoped, 'read')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, 'plans/prds/readme.md', scoped, 'read')).toMatchObject({
+      expect(resolveMcpPath(tmp, 'docs/prds/readme.md', scoped, 'read')).toMatchObject({
         ok: true,
-        relativePath: 'plans/prds/readme.md',
+        relativePath: 'docs/prds/readme.md',
       });
-      expect(resolveMcpPath(tmp, join(tmp, 'plans/prds/new.md'), scoped, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, join(tmp, 'docs/prds/new.md'), scoped, 'write')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, join(outside, 'note.md'), scoped, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -114,12 +119,21 @@ describe('mcp policy and paths', () => {
       const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [tmp] });
       expect(policy.capabilities.workspaceReader).toBe(true);
       expect(policy.capabilities.workflowPlanner).toBe(true);
-      expect(policy.writeGlobs).toContain('plans/prds/**');
+      expect(policy.writeGlobs).toContain('docs/prds/**');
+      expect(policy.writeGlobs).toContain('tasks/lessons.md');
+      expect(policy.readGlobs).toContain('docs/prds/**');
+      expect(policy.readGlobs).toContain('tasks/lessons.md');
+      expect(policy.readGlobs.some((glob) => glob.includes('tasks/notes'))).toBe(false);
+      expect(policy.readGlobs.some((glob) => glob.includes('tasks/reviews'))).toBe(false);
+      expect(policy.readGlobs.some((glob) => glob.includes('tasks/contracts'))).toBe(false);
+      expect(policy.readGlobs.some((glob) => glob.includes('plans/'))).toBe(false);
       expect(policy.allowAbsoluteRead).toBe(false);
       expect(resolveMcpPath(tmp, '.env', policy, 'read')).toMatchObject({ ok: false });
       const tools = buildMcpToolDefinitions(policy).map((tool) => tool.name);
       expect(tools).toContain('write_prd');
-      expect(tools).toContain('prepare_task_goal_from_sprint');
+      for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
+        expect(tools).not.toContain(removed);
+      }
       expect(tools).toContain('reader_status');
       expect(tools).toContain('list_allowed_roots');
       expect(tools).toContain('open_workspace');
@@ -138,12 +152,12 @@ describe('mcp policy and paths', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-symlink-'));
     const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-outside-'));
     try {
-      mkdirSync(join(tmp, 'plans'), { recursive: true });
+      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
       writeFileSync(join(outside, 'secret.md'), '# outside\n');
-      symlinkSync(join(outside, 'secret.md'), join(tmp, 'plans', 'linked.md'));
+      symlinkSync(join(outside, 'secret.md'), join(tmp, 'docs/prds', 'linked.md'));
 
       const policy = getMcpPolicy('planner');
-      const decision = resolveMcpPath(tmp, 'plans/linked.md', policy, 'read');
+      const decision = resolveMcpPath(tmp, 'docs/prds/linked.md', policy, 'read');
       expect(decision.ok).toBe(false);
       expect(decision.reason).toContain('escapes repository root');
     } finally {
@@ -152,13 +166,15 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('executor profile keeps reader and planner writes out of its regression surface', async () => {
+  test('executor profile keeps reader tools out and uses the narrowed write scope', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-profile-regression-'));
     try {
-      mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
+      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
+      mkdirSync(join(tmp, 'tasks'), { recursive: true });
       mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(tmp, '.ai/harness/checks'), { recursive: true });
-      writeFileSync(join(tmp, 'plans/prds/existing.prd.md'), '# Existing\n');
+      writeFileSync(join(tmp, 'docs/prds/existing.prd.md'), '# Existing\n');
+      writeFileSync(join(tmp, 'tasks/lessons.md'), '# Lessons\n');
       writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
 
       const executor = getMcpPolicy('executor');
@@ -177,13 +193,18 @@ describe('mcp policy and paths', () => {
       expect(executorTools).not.toContain('search_text');
       expect(executorTools).not.toContain('run_agent_goal');
       expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: true });
-      expect(resolveMcpPath(tmp, 'plans/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', executor, 'read')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'read')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'write')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'tasks/reviews/x.md', executor, 'write')).toMatchObject({ ok: false });
       const executorWrite = await jsonTool(tmp, executor, 'write_prd', {
         title: 'Executor Write',
         slug: 'executor-write',
         body: '# Executor Write\n',
       });
-      expect(executorWrite.error.code).toBe('POLICY_DENIED');
+      expect(executorWrite.status).toBe('written');
+      expect(executorWrite.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-executor-write\.prd\.md$/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -192,9 +213,9 @@ describe('mcp policy and paths', () => {
   test('orchestrator profile exposes exactly the Herdr dispatch tools and the merge executor', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
     try {
-      mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
+      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
       mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
-      writeFileSync(join(tmp, 'plans/prds/existing.prd.md'), '# Existing\n');
+      writeFileSync(join(tmp, 'docs/prds/existing.prd.md'), '# Existing\n');
       writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
 
       const orchestrator = getMcpPolicy('orchestrator', { enableReader: true });
@@ -217,13 +238,13 @@ describe('mcp policy and paths', () => {
 
       const deniedTools = ['write_prd', 'read_workflow_file', 'harness_status', 'exec_command', 'open_workspace', 'read_text', 'publication_readiness'];
       for (const name of deniedTools) {
-        const denied = await jsonTool(tmp, orchestrator, name, { path: 'plans/prds/existing.prd.md' });
+        const denied = await jsonTool(tmp, orchestrator, name, { path: 'docs/prds/existing.prd.md' });
         expect(denied.error.code).toBe('TOOL_NOT_AVAILABLE');
       }
       const auditRows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
       expect(auditRows.map((row) => [row.tool, row.status])).toEqual(deniedTools.map((name) => [name, 'blocked']));
       expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, 'plans/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -239,10 +260,12 @@ describe('mcp policy and paths', () => {
       workspaceCoder: true,
     });
     expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(25);
+    expect(definitions).toHaveLength(20);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
-    expect(definitions.map((tool) => tool.name)).toContain('prepare_task_goal_from_sprint');
+    for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
+      expect(definitions.map((tool) => tool.name)).not.toContain(removed);
+    }
     expect(definitions.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       'publication_readiness',
     ]));
@@ -289,7 +312,7 @@ describe('mcp redaction and audit', () => {
         timestamp: '2026-06-17T00:00:00.000Z',
         tool: 'write_prd',
         status: 'failed',
-        targetPath: 'plans/prds/test.prd.md',
+        targetPath: 'docs/prds/test.prd.md',
         inputHash,
         error: 'Authorization: Bearer token-value',
       });
@@ -356,7 +379,7 @@ describe('mcp redaction and audit', () => {
         timestamp: '2026-06-17T00:00:00.000Z',
         tool: 'read_workflow_file',
         status: 'ok',
-        inputHash: hashMcpInput({ path: 'plans/test.md' }),
+        inputHash: hashMcpInput({ path: 'docs/prds/test.md' }),
       })).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

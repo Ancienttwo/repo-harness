@@ -2,6 +2,24 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- Remove the MCP and ChatGPT bridge plan and sprint tools:
+  `write_sprint`, `write_checklist_sprint`, `write_plan`, `list_sprints` and
+  `prepare_task_goal_from_sprint`. The old names now return the MCP
+  unknown-tool error. `repo-harness mcp prepare-goal` accepts only
+  `--issue <n>`, reads that OPEN GitHub issue, and prints a Goal prompt.
+  `--prd`, `--sprint`, `--reference-repo`, `--extra-instructions` and
+  `--expected-sha256` are removed. (#1181)
+- `write_prd`, `write_prd_from_idea` and `list_prds` use `docs/prds/`.
+- The MCP and ChatGPT browser allowlists allow `tasks/lessons.md` and
+  `docs/prds/**` only. `plans/**`, `tasks/**`, `tasks/notes/**`,
+  `tasks/reviews/**` and `tasks/contracts/**` are no longer readable or
+  writable through those surfaces. Existing PRD files are not moved here.
+  (#1181, #1184)
+
 ## [0.24.3] - 2026-10-26
 
 This patch fixes `repo-harness update` from 0.24.1. In 0.24.2 that update

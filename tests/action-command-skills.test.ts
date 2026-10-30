@@ -382,8 +382,9 @@ describe("repo-harness action command skills", () => {
 
     expect(goal).toContain("/goal");
     expect(goal).toContain("Codex or Claude");
-    expect(goal).toContain("plans/prds/*.prd.md");
-    expect(goal).toContain("plans/sprints/*.sprint.md");
+    expect(goal).toContain("docs/prds/*.prd.md");
+    expect(goal).toContain("GitHub issues and PRs");
+    expect(goal).not.toContain("plans/sprints/*.sprint.md");
     expect(goal).toContain("Read the current GitHub issue");
     expect(goal).toContain("assignees, all comments");
     expect(goal).toContain("linked PRs");

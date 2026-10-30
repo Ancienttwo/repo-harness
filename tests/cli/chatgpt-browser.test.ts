@@ -71,9 +71,8 @@ async function runBrowserOutputRace(repoRoot: string, relativePath: string): Pro
 async function withRepo<T>(fn: (repoRoot: string) => T | Promise<T>): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-browser-'));
   try {
-    mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-    mkdirSync(join(repoRoot, 'docs'), { recursive: true });
-    writeFileSync(join(repoRoot, 'plans/sprints/example.sprint.md'), '# Sprint\n\n- [ ] Task\n');
+    mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
+    writeFileSync(join(repoRoot, 'docs/prds/example.prd.md'), '# PRD\n\nAcceptance checks.\n');
     writeFileSync(join(repoRoot, 'docs/example.md'), '# Docs\n');
     writeFileSync(join(repoRoot, '.env'), 'SECRET=value\n');
     return await fn(repoRoot);
@@ -85,7 +84,7 @@ async function withRepo<T>(fn: (repoRoot: string) => T | Promise<T>): Promise<T>
 async function withAsyncRepo<T>(fn: (repoRoot: string) => Promise<T>): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-browser-'));
   try {
-    mkdirSync(join(repoRoot, 'docs'), { recursive: true });
+    mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
     writeFileSync(join(repoRoot, 'docs/example.md'), '# Docs\n');
     return await fn(repoRoot);
   } finally {
@@ -626,7 +625,7 @@ describe('chatgpt browser command', () => {
         '--prompt',
         'Review this sprint.',
         '--file',
-        'plans/sprints/example.sprint.md',
+        'docs/prds/example.prd.md',
         '--follow-up',
         'Challenge the recommendation.',
         '--model',
@@ -640,7 +639,7 @@ describe('chatgpt browser command', () => {
       const payload = JSON.parse(result.stdout);
       expect(payload.status).toBe('dry_run');
       expect(payload.sessionId).toMatch(/^chgpt_\d{8}_\d{6}_review-sprint$/);
-      expect(payload.dryRun.files[0].path).toBe('plans/sprints/example.sprint.md');
+      expect(payload.dryRun.files[0].path).toBe('docs/prds/example.prd.md');
 
       const metaPath = join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json');
       expect(existsSync(metaPath)).toBe(true);
@@ -706,7 +705,7 @@ describe('chatgpt browser command', () => {
       const outside = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-browser-outside-'));
       try {
         writeFileSync(join(outside, 'secret.md'), '# outside\n');
-        symlinkSync(join(outside, 'secret.md'), join(repoRoot, 'plans/sprints/linked.md'));
+        symlinkSync(join(outside, 'secret.md'), join(repoRoot, 'docs/prds/linked.md'));
         const result = await runChatgpt([
           'browser-consult',
           '--repo',
@@ -715,7 +714,7 @@ describe('chatgpt browser command', () => {
           '--prompt',
           'Read this.',
           '--file',
-          'plans/sprints/linked.md',
+          'docs/prds/linked.md',
         ]);
         expect(result.status).toBe(2);
         expect(result.stderr).toContain('escapes repository root');
@@ -756,8 +755,8 @@ describe('chatgpt browser command', () => {
       expect(absolute.status).toBe(2);
       expect(absolute.stderr).toContain('absolute write output paths require --allow-absolute-output');
 
-      mkdirSync(join(repoRoot, 'tasks/reviews'), { recursive: true });
-      writeFileSync(join(repoRoot, 'tasks/reviews/existing.md'), 'old\n');
+      mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
+      writeFileSync(join(repoRoot, 'docs/prds/existing.md'), 'old\n');
       const noOverwrite = await runChatgpt([
         'browser-consult',
         '--repo',
@@ -766,11 +765,11 @@ describe('chatgpt browser command', () => {
         '--prompt',
         'Reply OK.',
         '--write-output',
-        'tasks/reviews/existing.md',
+        'docs/prds/existing.md',
       ]);
       expect(noOverwrite.status).toBe(2);
       expect(noOverwrite.stderr).toContain('write output already exists');
-      expect(readFileSync(join(repoRoot, 'tasks/reviews/existing.md'), 'utf-8')).toBe('old\n');
+      expect(readFileSync(join(repoRoot, 'docs/prds/existing.md'), 'utf-8')).toBe('old\n');
     });
   }, 30_000);
 
@@ -873,7 +872,7 @@ describe('chatgpt browser command', () => {
   test('allows exactly one concurrent no-overwrite publisher to claim an output path', async () => {
     await withAsyncRepo(async (repoRoot) => {
       for (let round = 0; round < 3; round += 1) {
-        const outputPath = `tasks/reviews/concurrent-${round}.md`;
+        const outputPath = `docs/prds/concurrent-${round}.md`;
         const records = await runBrowserOutputRace(repoRoot, outputPath);
         const successes = records.filter((record) => record.ok);
         const failures = records.filter((record) => !record.ok);

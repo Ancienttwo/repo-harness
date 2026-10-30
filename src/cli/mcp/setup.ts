@@ -49,7 +49,6 @@ const REQUIRED_CODEX_TOOLS = [
   'read_workflow_file',
   'latest_handoff',
   'latest_checks',
-  'prepare_task_goal_from_sprint',
   'write_task_goal',
   'run_workflow_check',
 ];
@@ -380,12 +379,11 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 2. Call \`discover_harness_repos\` to list registered adopted repos, or pass \`query\`/\`name\`/\`repo_path\` for repo-like user text such as \`my-app/\`; then pass the selected exact \`repo_path\` when targeting a specific project. Registered repo aliases are resolved through the same authorized discovery surface, not by widening filesystem access.
 3. For registered repo document/code reading, capture the \`repo_id\` from \`discover_harness_repos\`, then use \`get_repo_capabilities\`, \`repo_manifest\`, \`list_tree\`, \`stat_file\`, \`read_file\`, \`read_files\`, and \`search_text\`.
 4. For registered repo writes, first check \`get_repo_capabilities.write_tools\`; mutation tools execute only for a repo registered with \`accessMode: "read_write"\`.
-5. Ask ChatGPT to turn the idea into a PRD with \`write_prd_from_idea\`.
-6. Ask ChatGPT to turn the PRD into a checklist Sprint with \`write_checklist_sprint\`.
-7. Ask ChatGPT to prepare a Task Goal with \`prepare_task_goal_from_sprint\`.
-8. Send the generated task prompt to an explicitly addressed task-owned Herdr agent.
-9. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
-10. To regenerate an artifact that already exists, read it first: call \`read_workflow_file\` on the target path and pass the \`sha256\` it returns as \`expected_sha256\` on the write call. Omit \`expected_sha256\` only when creating a new artifact.
+5. Ask ChatGPT to turn the idea into a PRD with \`write_prd_from_idea\`. PRDs are written under \`docs/prds/\`.
+6. Prepare a Goal prompt from the current GitHub issue with \`repo-harness mcp prepare-goal --repo . --issue <n>\`.
+7. Send the Goal prompt to an explicitly addressed task-owned Herdr agent.
+8. Let Codex execute the issue scope, run checks, and report the result.
+9. To regenerate a PRD that already exists, read it first: call \`read_workflow_file\` on the target path and pass the \`sha256\` it returns as \`expected_sha256\` on the write call. Omit \`expected_sha256\` only when creating a new artifact.
 
 Planner remains a workflow sidecar rather than a remote coding agent. Only the
 separate, explicitly granted coding profile provides direct coding and shell.
@@ -424,10 +422,10 @@ Use it in Codex when continuing a ChatGPT-generated handoff:
 
 \`\`\`text
 Use repo-harness-chatgpt-bridge.
-Execute .ai/harness/handoff/task-goal.md.
+Use the printed Goal prompt, or write .ai/harness/handoff/task-goal.md with write_task_goal.
 \`\`\`
 
-The Skill tells Codex to read the PRD and checklist Sprint, preserve stage gates, run focused checks, and stage each completed phase. It does not authorize ChatGPT to edit source code or run shell commands through MCP.
+The Skill tells Codex to read the GitHub issue and any referenced PRDs, run focused checks, and report evidence. It does not authorize ChatGPT to edit source code or run shell commands through MCP.
 
 ## Tool Chain
 
@@ -435,29 +433,27 @@ Expected planning chain:
 
 \`\`\`text
 idea
-  -> write_prd_from_idea
-  -> write_checklist_sprint
-  -> prepare_task_goal_from_sprint
+  -> write_prd_from_idea (docs/prds/)
+  -> repo-harness mcp prepare-goal --issue <n>
   -> task-owned Herdr agent execution
 \`\`\`
 
-\`write_plan\`, \`prepare_task_goal_from_sprint\`, and \`write_task_goal\` write
-fixed paths, so every regeneration after the first targets an existing file.
-Read before writing:
+\`write_task_goal\` writes a fixed path, so every regeneration after the first
+targets an existing file. Read before writing:
 
 \`\`\`text
-read_workflow_file(path)          -> { sha256, content }
-write_plan(..., expected_sha256)  -> { sha256, previousSha256 }
+read_workflow_file(path)               -> { sha256, content }
+write_task_goal(..., expected_sha256)  -> { sha256, previousSha256 }
 \`\`\`
 
 Without \`expected_sha256\` the write is create-only and returns
 \`WOULD_OVERWRITE\`; with a stale one it returns \`REVISION_CONFLICT\` and leaves
 the file unchanged. Read it again and retry with the current \`sha256\`.
 
-Local fallback for the last handoff step:
+Prepare the Goal prompt from the current GitHub issue:
 
 \`\`\`bash
-repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md --reference-repo <optional-readonly-reference>
+repo-harness mcp prepare-goal --repo . --issue <n>
 \`\`\`
 
 ## Test Prompt
@@ -540,31 +536,25 @@ supported path off it.
 ## PRD Prompt
 
 \`\`\`text
-Use repo-harness discover_harness_repos first, pass query/name/repo_path when the user gives repo-like text such as "my-app/", choose the exact target repo_path, inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
+Use repo-harness discover_harness_repos first, pass query/name/repo_path when the user gives repo-like text such as "my-app/", choose the exact target repo_path, inspect docs/spec.md, tasks/lessons.md, latest handoff, and existing PRDs under docs/prds/ in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
 \`\`\`
 
-## Checklist Sprint Prompt
+## Goal Prompt
 
 \`\`\`text
-Use repo-harness to read the target repo PRD by repo_path. Convert it into an ordered checklist Sprint with write_checklist_sprint using the same repo_path. Every task card must include a stage gate that requires Codex to stage the completed phase before continuing.
-\`\`\`
-
-## Task Goal Prompt
-
-\`\`\`text
-Use repo-harness prepare_task_goal_from_sprint with repo_path, the PRD path, and the checklist Sprint path. The goal is written to the fixed path .ai/harness/handoff/task-goal.md, so if it already exists, first call read_workflow_file on that path and pass its sha256 as expected_sha256. Return the task execution prompt. Do not run Codex remotely.
+Use repo-harness mcp prepare-goal --repo . --issue <n> to print a Goal prompt from the current OPEN GitHub issue. Read the issue title, body, URL and state. If the issue is unavailable or not OPEN, stop and report the exact error. Do not run Codex remotely.
 \`\`\`
 
 Equivalent local CLI:
 
 \`\`\`bash
-repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md --reference-repo <optional-readonly-reference>
+repo-harness mcp prepare-goal --repo . --issue <n>
 \`\`\`
 
 ## Codex Executor Prompt
 
 \`\`\`text
-Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal from .ai/harness/handoff/task-goal.md.
+Use repo-harness-chatgpt-bridge. Execute the Goal prompt prepared for the current OPEN GitHub issue.
 \`\`\`
 
 ## Troubleshooting
@@ -573,10 +563,9 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal 
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
 - If tools are missing, restart \`repo-harness mcp serve\` and rescan tools.
 - Run \`repo-harness mcp doctor --repo . --live\` to verify config, local server, tunnel, OAuth, initialize, and exact \`tools/list\` schema without printing credentials.
-- If workflow artifact writes fail, verify the target path is a PRD, sprint, plan, or approved handoff file.
+- If workflow artifact writes fail, verify the target path is a PRD under \`docs/prds/\` or an approved handoff file.
 - If a workflow artifact write returns \`WOULD_OVERWRITE\` or \`REVISION_CONFLICT\`, call \`read_workflow_file\` on the target and retry with its \`sha256\` as \`expected_sha256\`. If it returns \`RETIRED_PARAMETER\`, drop the \`overwrite\` field: it was removed in 0.16.1 and replaced by \`expected_sha256\`.
 - If general repo writes fail, call \`get_repo_capabilities\`; write tools require a repo registered with \`accessMode: "read_write"\`.
-- If ChatGPT generated prose instead of checklist Sprint task cards, ask it to use write_checklist_sprint.
 - If Codex cannot see the server, run \`repo-harness mcp setup codex --repo . --scope project\`.
 
 ## Security Notes
@@ -591,7 +580,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated task goal 
 - Legacy workspace reader mode keeps deny globs for \`.env\`, private keys, SSH keys, credentials, secrets, \`.git\`, and dependency/build output. The general repo API uses \`.ignore\` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
 - Coding profile is fail-closed without explicit \`read_write\` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
-- MCP does not run Codex or Claude. It prepares \`.ai/harness/handoff/task-goal.md\`; the task owner directs its explicitly addressed Herdr agent through the herdr skill.
+- MCP does not run Codex or Claude. It prints a Goal prompt from a GitHub issue; the task owner directs its explicitly addressed Herdr agent through the herdr skill.
 - Keep \`_ref/\` read-only when used as a comparison source.
 - Do not put tunnel tokens, OAuth tokens, passphrases, or ChatGPT/Codex credentials in git.
 
@@ -902,7 +891,6 @@ enabled_tools = [
   "read_workflow_file",
   "latest_handoff",
   "latest_checks",
-  "prepare_task_goal_from_sprint",
   "write_task_goal",
   "run_workflow_check"
 ]

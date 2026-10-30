@@ -1,6 +1,6 @@
 ---
 name: repo-harness-chatgpt-bridge
-description: Use when setting up or operating the repo-harness ChatGPT MCP Connector, bridging ChatGPT planning artifacts into Codex execution through repo-harness PRDs, sprints, checks, and handoffs.
+description: Use when setting up or operating the repo-harness ChatGPT MCP Connector, bridging ChatGPT planning artifacts into Codex execution through repo-harness PRDs, checks, and issue-based goals.
 ---
 
 # repo-harness-chatgpt-bridge
@@ -9,22 +9,22 @@ You are operating inside a repo-harness adopted repository.
 
 ## When To Use
 
-Use this Skill when the user asks to set up, operate, inspect, or continue the repo-harness ChatGPT MCP Connector, or when a ChatGPT-generated repo-harness PRD/Sprint/Goal handoff needs to be consumed by Codex.
+Use this Skill when the user asks to set up, operate, inspect, or continue the repo-harness ChatGPT MCP Connector, or when a ChatGPT-generated repo-harness PRD or issue-based Goal handoff needs to be consumed by Codex.
 
 This Skill has four modes:
 
 1. Setup mode: configure local MCP server files, ChatGPT guide, or Codex MCP config.
-2. Planning handoff mode: preserve the chain idea -> PRD -> checklist Sprint -> Task Goal.
-3. Execution mode: local Codex reads `.ai/harness/handoff/task-goal.md` and executes the referenced checklist Sprint.
-4. Direct coding mode: an explicitly enabled `coding` profile opens a granted repo workspace, retains the 24 workflow/status tools, and adds five guarded coding/process tools without invoking Codex.
+2. Planning handoff mode: preserve the chain idea -> PRD -> issue-based Goal.
+3. Execution mode: local Codex executes the prepared Goal prompt against the current GitHub issue.
+4. Direct coding mode: an explicitly enabled `coding` profile opens a granted repo workspace, retains the workflow/status tools, and adds five guarded coding/process tools without invoking Codex.
 
 ## First Reads
 
 Before acting, read the repo-local source of truth that matches the mode:
 
 - Setup: `docs/repo-harness-chatgpt-mcp-setup.md`, `.repo-harness/mcp.local.json` if present, and `repo-harness mcp doctor --repo .`.
-- Planning handoff: `docs/spec.md`, `tasks/current.md`, existing `plans/prds/`, existing `plans/sprints/`, and latest `.ai/harness/handoff/`.
-- Execution: `.ai/harness/handoff/task-goal.md`, the referenced PRD, the referenced Sprint, `tasks/current.md`, and `.ai/harness/handoff/resume.md` when present.
+- Planning handoff: `docs/spec.md`, `tasks/lessons.md`, existing `docs/prds/`, and latest `.ai/harness/handoff/`.
+- Execution: the prepared Goal prompt, the current GitHub issue, any referenced PRD under `docs/prds/`, `tasks/lessons.md`, and `.ai/harness/handoff/resume.md` when present.
 
 Do not rely on chat history when these files exist.
 
@@ -32,63 +32,28 @@ Do not rely on chat history when these files exist.
 
 1. Treat ChatGPT as planner/reviewer and Codex as executor.
 2. Prefer `repo-harness mcp` CLI commands over manual file edits when preparing setup or handoff artifacts.
-3. In planner mode, keep ChatGPT write access limited to PRD, checklist Sprint, plan, notes, and approved handoff artifacts. Direct source writes require the separate coding profile.
-4. Preserve checklist Sprint task cards and stage gates; do not collapse them into prose.
-5. Stage each completed execution phase before moving to the next Sprint task card.
+3. In planner mode, keep ChatGPT write access limited to PRDs under `docs/prds/`, `tasks/lessons.md`, and approved handoff artifacts. Direct source writes require the separate coding profile.
+4. Treat the GitHub issue as task authority. A PRD or other planning document does not widen execution scope.
+5. Prepare Goal prompts from an OPEN GitHub issue; do not invent task identity from local files.
 6. Report exact commands run, files changed, checks passed, and any remaining blocker.
 
 ## Required Planning Chain
 
 For execution-ready planning, keep the chain explicit:
 
-1. idea -> PRD: use `write_prd_from_idea`.
-2. PRD -> checklist Sprint: use `write_checklist_sprint`.
-3. Sprint -> Goal: use `prepare_task_goal_from_sprint` or local `repo-harness mcp prepare-goal`.
-4. Codex execution: send the task execution prompt to the explicitly addressed Herdr agent from `.ai/harness/handoff/task-goal.md`.
+1. idea -> PRD: use `write_prd_from_idea`; the PRD is written under `docs/prds/`.
+2. Issue -> Goal: run `repo-harness mcp prepare-goal --repo . --issue <n>` against an OPEN GitHub issue.
+3. Codex execution: send the printed Goal prompt to the explicitly addressed Herdr agent. The issue owns task identity, scope and completion.
 
-The local CLI equivalent is:
+The local CLI is:
 
 ```bash
-repo-harness mcp prepare-goal --repo . --prd <prd-path> --sprint <sprint-path> --reference-repo <optional-reference-repo>
+repo-harness mcp prepare-goal --repo . --issue <n>
 ```
 
-The generated task execution prompt should preserve this shape when absolute paths are useful:
-
-```text
-Read: <prd-path>
-Open or use a worktree and complete: <sprint-path>
-After each completed phase, stage the result before continuing.
-Use the user's language for status reports unless repo-local instructions require otherwise.
-Reference repo: <optional-reference-repo>
-```
-
-## Sprint Format
-
-When ChatGPT writes a sprint for Codex execution, use checklist task cards rather than prose-only plans. Each execution phase should include `[ ]` checklist items for concrete steps, acceptance criteria, verification commands or evidence, and a staging gate that tells Codex to stage the completed phase before continuing:
-
-```markdown
-## Task Card N: <phase name>
-
-status: pending
-
-Tasks:
-
-- [ ] <step>
-
-Acceptance criteria:
-
-- [ ] <observable outcome>
-
-Verification:
-
-- [ ] `<command or evidence surface>`
-
-Stage gate:
-
-- [ ] Stage all files for this completed phase before starting the next task card.
-```
-
-Codex updates checklist status as work completes and stops at staging gates long enough to verify `git status --short` shows the intended staged files.
+The command prints the Goal Prompt shape from the repo-harness-product goal
+reference. It reads the issue title, body, URL and state. An unavailable or
+non-OPEN issue exits 2 and names the reason. Use the user's language for status reports unless repo-local instructions require otherwise.
 
 ## Safety Boundaries
 
@@ -101,9 +66,9 @@ Never do these through planner, executor, or orchestrator MCP profiles:
 - Do not implement or run a default remote `codex exec` runner.
 - Do not modify `_ref/`, `_ops/`, `.env*`, `.git/`, package lockfiles, or source paths through planner-profile MCP tools.
 
-MCP prepares `.ai/harness/handoff/task-goal.md`; the task owner directs its explicitly addressed Herdr agent.
+MCP prints a Goal prompt from an OPEN GitHub issue; the task owner directs its explicitly addressed Herdr agent.
 
-Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile retains the 24 workflow/status tools and adds exactly five direct coding tools: `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`, for 29 tools total. It is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
+Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile retains the workflow/status tools and adds exactly five direct coding tools: `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`. It is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
 
 ## Setup Commands
 
@@ -138,16 +103,15 @@ repo-harness mcp serve --repo . --transport stdio --profile executor
 
 ## Execution Checklist
 
-When consuming `.ai/harness/handoff/task-goal.md`:
+When consuming a prepared Goal prompt:
 
-1. Verify the PRD and Sprint paths exist.
-2. Confirm the Sprint is checklist-shaped and has stage gates.
+1. Verify the GitHub issue is OPEN and still owns the requested scope.
+2. Read the issue title, body, acceptance checks and any referenced PRD under `docs/prds/`.
 3. Open or use the requested worktree.
-4. Complete one Sprint task card at a time.
-5. Run that task card's focused checks.
-6. Update the checklist and stage the completed phase.
-7. Continue only after `git status --short` shows the intended staged files.
-8. At closeout, run repo-required checks or document why the Sprint narrowed the check surface.
+4. Execute the issue scope only.
+5. Run the acceptance checks and focused tests.
+6. Leave the issue or PR with the revision, changed files, command results and remaining blockers.
+7. At closeout, run repo-required checks or document why the issue narrowed the check surface.
 
 ## Troubleshooting
 
@@ -157,4 +121,4 @@ When consuming `.ai/harness/handoff/task-goal.md`:
 - Coding is disabled: verify user-scoped v3 config, a live `read_write` grant, and current OAuth authorization revision.
 - Coding process sessions are pipe-only under Bun; stdin, polling, Ctrl-C/SIGINT, and process-tree cleanup remain supported.
 - Codex cannot see the MCP server: rerun `repo-harness mcp setup codex --repo . --scope project`.
-- Sprint is prose-only: regenerate with `write_checklist_sprint` before execution.
+- `prepare-goal` exits 2: read the message. The issue number, `gh` availability, or the issue state blocks Goal preparation.

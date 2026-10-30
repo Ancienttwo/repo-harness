@@ -339,4 +339,19 @@ describe("repo-harness-chatgpt canonical package: reconciliation-complete proxy"
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
+
+  test("bridge and delegate references use issue-based goals and the narrowed path allowlists", () => {
+    const bridge = readFileSync(join(PACKAGE_ROOT, "references", "bridge.md"), "utf-8");
+    expect(bridge).toContain("prepare-goal --repo . --issue <n>");
+    expect(bridge).toContain("docs/prds/");
+    expect(bridge).toContain("tasks/lessons.md");
+    for (const retiredTool of ["write_sprint", "write_checklist_sprint", "write_plan", "list_sprints", "prepare_task_goal_from_sprint"]) {
+      expect(bridge).not.toContain(retiredTool);
+    }
+
+    const delegate = readFileSync(join(PACKAGE_ROOT, "references", "delegate.md"), "utf-8");
+    expect(delegate).toContain("`docs/**`, `tasks/lessons.md`");
+    expect(delegate).not.toContain("`plans/**`");
+    expect(delegate).not.toContain("`tasks/**`");
+  });
 });
