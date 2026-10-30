@@ -21,7 +21,7 @@ import type { DocSessionFailureCategory } from '../../core/operator/doc-session-
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { repoHarnessHome } from '../repo-harness-home';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import { DOCS_HOST_MODEL_API, docsHostDeveloperDirectory, docsHostEnvironment, prepareDocsHostScratch, proveDocsHostBoundary, writeDocsHostLauncher, writeDocsHostPolicy, type DocsHostAdmission } from '../review/docs-host-isolation';
+import { DOCS_HOST_MODEL_API, docsHostCodexModel, docsHostDeveloperDirectory, docsHostEnvironment, prepareDocsHostScratch, proveDocsHostBoundary, writeDocsHostLauncher, writeDocsHostPolicy, type DocsHostAdmission } from '../review/docs-host-isolation';
 import { startModelApiProxy, type ModelApiProxy } from '../review/docs-host-proxy';
 import { prepareCodexHome } from '../review/review-isolation';
 import {
@@ -52,6 +52,11 @@ export const DOCS_HOST_INSTRUCTIONS = [
   'Do not commit, push or open a pull request: the user reviews the diff in the operator console and commits it there.',
   'The network is closed except for the model API.',
 ].join('\n');
+
+/** The docs session opens with the source Codex default model only when the source config names one. */
+export function docsHostSessionOptions(worktree: string, env: Record<string, string>, model: string | undefined): SessionOptions {
+  return { cwd: worktree, env, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS, ...(model === undefined ? {} : { model }) };
+}
 
 /** The first prompt: the instruction and each cited passage, read from the worktree at the session base. */
 function composePrompt(record: SessionRecord): string {
@@ -134,7 +139,7 @@ async function openCodex(record: SessionRecord, control: string, env: NodeJS.Pro
     if (isolated.kind !== 'available' || isolated.via !== 'executable' || isolated.command !== launcher) throw new HostFailure('boundary_denied', 'docs_host_isolated_installation_unverified');
     // Seatbelt is the boundary; codex's own sandbox cannot nest inside it (OAR's default `danger-full-access`).
     delete process.env.OAR_CODEX_SANDBOX;
-    const options: SessionOptions = { cwd: record.worktree, env: docsEnv, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS };
+    const options = docsHostSessionOptions(record.worktree, docsEnv, docsHostCodexModel(admission.operatorHome));
     const session = await runtime.session(isolated as AvailableInstallation, options);
     const opened = proxy;
     return { session, close: () => opened.close() };

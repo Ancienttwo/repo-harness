@@ -1,4 +1,4 @@
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
@@ -210,6 +210,36 @@ export function docsHostCodexRelease(executable: string, operatorHome: string): 
   const helpers = [join(directory, 'bin', 'codex-code-mode-host'), join(directory, 'codex-path', 'rg')]
     .filter(path => lstatSync(path, { throwIfNoEntry: false })?.isFile());
   return { directory, helpers };
+}
+
+/**
+ * The user's configured Codex model: the top-level `model` key of the source
+ * home's `config.toml`. The isolated CODEX_HOME copies only the credential, so
+ * the host passes this value instead of letting OAR fall back to its own
+ * default. Absent, unreadable or non-string configuration means no override.
+ */
+export function docsHostCodexModel(operatorHome: string): string | undefined {
+  try {
+    const path = join(operatorHome, '.codex', 'config.toml');
+    const stat = statSync(path, { throwIfNoEntry: false });
+    if (!stat?.isFile() || stat.size > 1024 * 1024) return undefined;
+    return parseCodexConfigModel(readFileSync(path, 'utf8'));
+  } catch { return undefined; }
+}
+
+/** The top-level `model` value of a Codex `config.toml`; a table's model is not the default. */
+export function parseCodexConfigModel(config: string): string | undefined {
+  for (const line of config.split(/\r?\n/u)) {
+    const entry = line.trim();
+    // TOML root keys precede the first table header; a profile's model is not the default.
+    if (entry.startsWith('[')) return undefined;
+    const match = /^model\s*=\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|([^\s#]+))\s*(?:#.*)?$/u.exec(entry);
+    if (match === null) continue;
+    const quoted = match[1] ?? match[2], value = quoted ?? match[3]!;
+    if (quoted === undefined && /^["'[{]/u.test(value)) return undefined;
+    return value !== '' && !/[\u0000-\u001f\u007f]/u.test(value) ? value : undefined;
+  }
+  return undefined;
 }
 
 const lit = (path: string) => `(literal ${JSON.stringify(path)})`;

@@ -7,9 +7,10 @@ import { dirname, join } from 'node:path';
 import { darwinTest } from './helpers/darwin-test';
 import { tmpWorkspace } from './helpers/repo-fixture';
 import {
-  assertDocsHostPlatform, isDocsHostWritablePath, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy, prepareDocsHostScratch,
-  proveDocsHostBoundary, writeDocsHostLauncher, writeDocsHostPolicy, type DocsHostAdmission,
+  assertDocsHostPlatform, isDocsHostWritablePath, docsHostCodexModel, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy,
+  parseCodexConfigModel, prepareDocsHostScratch, proveDocsHostBoundary, writeDocsHostLauncher, writeDocsHostPolicy, type DocsHostAdmission,
 } from '../src/effects/review/docs-host-isolation';
+import { DOCS_HOST_INSTRUCTIONS, docsHostSessionOptions } from '../src/effects/operator/oar-docs-host';
 import { admitClientHello, startModelApiProxy, type ModelApiProxy } from '../src/effects/review/docs-host-proxy';
 
 const roots: string[] = [];
@@ -554,3 +555,39 @@ darwinTest('the shared writable-path predicate agrees with the actual Seatbelt f
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual(paths.map(isDocsHostWritablePath));
 }, 60_000);
+
+test('the docs host reads only the top-level Codex config model, quoted or unquoted', () => {
+  expect(parseCodexConfigModel('model = "gpt-6.1-terra"\n')).toBe('gpt-6.1-terra');
+  expect(parseCodexConfigModel("model = 'gpt-6.1-terra'\n")).toBe('gpt-6.1-terra');
+  expect(parseCodexConfigModel('model = gpt-6.1-terra\n')).toBe('gpt-6.1-terra');
+  expect(parseCodexConfigModel('# no model here\napproval_policy = "never"\n')).toBeUndefined();
+  expect(parseCodexConfigModel('model = ""\n')).toBeUndefined();
+  // A profile's model is not the user's default model.
+  expect(parseCodexConfigModel('[profiles.default]\nmodel = "gpt-6.1-terra"\n')).toBeUndefined();
+  expect(parseCodexConfigModel('model = ["gpt-6.1-terra"]\n')).toBeUndefined();
+  expect(parseCodexConfigModel('model = "unterminated\n')).toBeUndefined();
+});
+
+test('the docs host takes the configured model from the source Codex home only', () => {
+  const root = tmpWorkspace('docs-host-model'); roots.push(root);
+  const home = join(root, 'home');
+  expect(docsHostCodexModel(home)).toBeUndefined();
+  write(join(home, '.codex', 'config.toml'), 'model = "gpt-6.1-terra"\n');
+  expect(docsHostCodexModel(home)).toBe('gpt-6.1-terra');
+  rmSync(join(home, '.codex', 'config.toml'));
+  expect(docsHostCodexModel(home)).toBeUndefined();
+  write(join(home, '.codex', 'config.toml'), 'model = "gpt-6.1-terra"\n');
+  // The isolated home has no config; its absence must not remove the source model.
+  expect(docsHostCodexModel(join(home, 'isolated'))).toBeUndefined();
+});
+
+test('docs host session options include the configured model only when present', () => {
+  const worktree = '/fixture/worktree';
+  const env = { CODEX_HOME: '/fixture/.codex-home' };
+  expect(docsHostSessionOptions(worktree, env, 'gpt-6.1-terra')).toEqual({
+    cwd: worktree, env, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS, model: 'gpt-6.1-terra',
+  });
+  const unconfigured = docsHostSessionOptions(worktree, env, undefined);
+  expect(unconfigured).toEqual({ cwd: worktree, env, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS });
+  expect(Object.hasOwn(unconfigured, 'model')).toBe(false);
+});
