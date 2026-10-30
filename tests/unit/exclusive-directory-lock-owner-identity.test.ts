@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -138,3 +138,26 @@ describe('exclusive directory lock owner identity', () => {
     expect(readProcessStartTime(exited.pid)).toBeNull();
   });
 });
+
+
+test('reading the owner during real concurrent releases returns an owner or null without an ENOENT failure', async () => {
+  const root = temporaryRoot();
+  const module = join(import.meta.dir, '../../src/effects/locking/exclusive-directory-lock.ts');
+  const code = `import { acquireExclusiveDirectoryLock } from ${JSON.stringify(module)};
+    for (let i = 0; i < 200; i++) { const lock = acquireExclusiveDirectoryLock(process.argv[1], 'agent.lock'); lock.release(); }`;
+  const child = Bun.spawn([process.execPath, '-e', code, root], { stdout: 'ignore', stderr: 'pipe' });
+  const failures: string[] = [];
+  try {
+    for (let i = 0; i < 20_000; i++) {
+      try { readExclusiveDirectoryLockOwner(root, 'agent.lock'); }
+      catch (error) { failures.push(String(error)); }
+    }
+    expect(await child.exited).toBe(0);
+    expect(await new Response(child.stderr).text()).toBe('');
+    expect(failures).toEqual([]);
+    expect(readExclusiveDirectoryLockOwner(root, 'agent.lock')).toBeNull();
+    // The race handling must not hide unsafe-path errors.
+    symlinkSync(root, join(root, 'agent.lock'));
+    expect(() => readExclusiveDirectoryLockOwner(root, 'agent.lock')).toThrow('unsafe lock path');
+  } finally { child.kill(); await child.exited; }
+}, 60_000);
