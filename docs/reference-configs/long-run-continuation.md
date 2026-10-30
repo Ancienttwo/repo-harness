@@ -26,7 +26,7 @@ Rules that make the tick safe to repeat:
 
 | Route | Meaning | Host action |
 |---|---|---|
-| `continue` | A fresh handoff names the exact next step; `reason` carries `next_action:<step>` and `unit_ref` is the state revision | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next step |
+| `continue` | A fresh handoff names the exact next step; `reason` carries `next_action:<step>` and `unit_ref` is a stable hash of that next action, so projection-only edits do not reset the stall group | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next step |
 | `halt` | A blocker, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
 | `idle` | No next action is available | Stop the loop |
 
