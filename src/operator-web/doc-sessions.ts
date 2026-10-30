@@ -2,26 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DocCitationV1 } from '../core/operator/doc-citation';
 import {
   decodeDocSessionRefusal,
-  decodeOperatorDocSessionCommit,
   decodeOperatorDocSessionCreated,
-  decodeOperatorDocSessionDetail,
-  decodeOperatorDocSessionDiscard,
   decodeOperatorDocSessionMessage,
-  decodeOperatorDocSessions,
   decodeOperatorDocSessionStop,
-  type DocSessionAgentState,
+  docSessionFinalizeRefusal,
   type DocSessionMessageWhen,
-  type DocSessionOutcome,
   type DocSessionRefusalV1,
-  type DocSessionSummaryV1,
-  type OperatorDocSessionCommitV1,
   type OperatorDocSessionCreatedV1,
-  type OperatorDocSessionDetailV1,
-  type OperatorDocSessionDiscardV1,
   type OperatorDocSessionMessageV1,
-  type OperatorDocSessionsV1,
   type OperatorDocSessionStopV1,
-  type SessionKind,
 } from '../core/operator/doc-session-api';
 import {
   decodeOperatorDocSessionDiff,
@@ -40,6 +29,24 @@ import {
   type DocSessionEventV1,
   type OperatorDocSessionEventsV1,
 } from '../core/operator/doc-session-events';
+import { decodeDocSessionFinalizationView, type DocSessionFinalizationView } from '../core/operator/doc-session-finalization-view';
+import {
+  decodeDocSessionCommit,
+  decodeDocSessionDiscard,
+  type DocSessionCommitInput,
+  type DocSessionDiscardInput,
+} from '../core/operator/doc-session-finalize';
+import {
+  decodeOperatorDocSessionDetail,
+  decodeOperatorDocSessionList,
+  DOC_SESSION_LIST_MAX,
+  OPERATOR_SESSION_LIST_PATH,
+  type DocSessionDetailRequest,
+  type DocSessionListRequest,
+  type DocSessionViewState,
+  type OperatorDocSessionDetail,
+  type OperatorDocSessionList,
+} from '../core/operator/doc-session-views';
 import type { LocalizedApiError } from './fleet-api';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import type { DotTone } from './ui';
@@ -59,7 +66,7 @@ const READ_CODES: readonly string[] = [...DOC_SESSION_READ_FAILURES, 'invalid_cu
 export type DocSessionReadReason = DocSessionReadFailure | 'invalid_cursor' | 'events_unavailable' | 'unreadable' | 'unreachable';
 export const DOC_SESSION_READ_REASONS: readonly DocSessionReadReason[] = [...READ_CODES as DocSessionReadReason[], 'unreadable', 'unreachable'];
 export type DocSessionRead<T> = { readonly state: 'ok'; readonly value: T } | { readonly state: 'unavailable'; readonly reason: DocSessionReadReason };
-export type DocSessionsRead = DocSessionRead<OperatorDocSessionsV1> | { readonly state: 'absent' };
+export type DocSessionsRead = DocSessionRead<OperatorDocSessionList> | { readonly state: 'absent' };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -86,8 +93,9 @@ export async function sessionReadAnswer<T>(response: Response, decode: (value: u
   return read.state === 'absent' ? { state: 'unavailable', reason: 'unreachable' } : read;
 }
 
-export function docSessionsAnswer(response: Response): Promise<DocSessionsRead> {
-  return answer(response, decodeOperatorDocSessions);
+/** The list answer, decoded against the request that was sent: the server's `unread` must follow from its `seen`. */
+export function docSessionsAnswer(response: Response, request: DocSessionListRequest): Promise<DocSessionsRead> {
+  return answer(response, value => decodeOperatorDocSessionList(value, request));
 }
 
 async function getJson(url: string, signal: AbortSignal): Promise<Response | null> {
@@ -104,23 +112,26 @@ export async function readSession<T>(url: string, decode: (value: unknown) => T,
   return response === null ? { state: 'unavailable', reason: 'unreachable' } : sessionReadAnswer(response, decode);
 }
 
-const SESSIONS_PATH = '/api/v1/sessions';
-export const sessionPath = (sessionId: string, tail = ''): string => `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}${tail}`;
+export const sessionPath = (sessionId: string, tail = ''): string => `${OPERATOR_SESSION_LIST_PATH}/${encodeURIComponent(sessionId)}${tail}`;
 
-export type DocSessionsReader = (signal: AbortSignal) => Promise<DocSessionsRead>;
+export type DocSessionsReader = (request: DocSessionListRequest, signal: AbortSignal) => Promise<DocSessionsRead>;
 export type DocSessionReader<T> = (sessionId: string, signal: AbortSignal) => Promise<DocSessionRead<T>>;
-export type DocSessionDetailReader = DocSessionReader<OperatorDocSessionDetailV1>;
+export type DocSessionDetailReader = (request: DocSessionDetailRequest, signal: AbortSignal) => Promise<DocSessionRead<OperatorDocSessionDetail>>;
 export type DocSessionDiffReader = DocSessionReader<OperatorDocSessionDiffV1>;
 export type DocSessionLossReader = DocSessionReader<OperatorDocSessionLossV1>;
+export type DocSessionFinalizationReader = DocSessionReader<DocSessionFinalizationView>;
 export type DocSessionEventsReader = (sessionId: string, after: string | null, signal: AbortSignal) => Promise<DocSessionRead<OperatorDocSessionEventsV1>>;
 
-export async function fetchDocSessions(signal: AbortSignal): Promise<DocSessionsRead> {
-  const response = await getJson(SESSIONS_PATH, signal);
-  return response === null ? { state: 'unavailable', reason: 'unreachable' } : docSessionsAnswer(response);
+/** `GET /api/v1/sessions?seen=<JSON object>`: the server marks each session unread against the cursor this browser showed. */
+export async function fetchDocSessions(request: DocSessionListRequest, signal: AbortSignal): Promise<DocSessionsRead> {
+  const response = await getJson(`${OPERATOR_SESSION_LIST_PATH}?${new URLSearchParams({ seen: JSON.stringify(request.seen) })}`, signal);
+  return response === null ? { state: 'unavailable', reason: 'unreachable' } : docSessionsAnswer(response, request);
 }
 
-export function fetchDocSessionDetail(sessionId: string, signal: AbortSignal): Promise<DocSessionRead<OperatorDocSessionDetailV1>> {
-  return readSession(sessionPath(sessionId), value => decodeOperatorDocSessionDetail(value, sessionId), signal);
+/** `GET /api/v1/sessions/<sid>`, with `?seen=<cursor>` once this browser showed the session. */
+export function fetchDocSessionDetail(request: DocSessionDetailRequest, signal: AbortSignal): Promise<DocSessionRead<OperatorDocSessionDetail>> {
+  const query = request.seen === null ? '' : `?${new URLSearchParams({ seen: request.seen })}`;
+  return readSession(sessionPath(request.session_id, query), value => decodeOperatorDocSessionDetail(value, request), signal);
 }
 
 export function fetchDocSessionEvents(sessionId: string, after: string | null, signal: AbortSignal): Promise<DocSessionRead<OperatorDocSessionEventsV1>> {
@@ -134,6 +145,22 @@ export function fetchDocSessionDiff(sessionId: string, signal: AbortSignal): Pro
 
 export function fetchDocSessionLoss(sessionId: string, signal: AbortSignal): Promise<DocSessionRead<OperatorDocSessionLossV1>> {
   return readSession(sessionPath(sessionId, '/loss'), value => decodeOperatorDocSessionLoss(value, { session_id: sessionId }), signal);
+}
+
+/** The only source of delivery progress and of the Draft PR link. */
+export function fetchDocSessionFinalization(sessionId: string, signal: AbortSignal): Promise<DocSessionRead<DocSessionFinalizationView>> {
+  return readSession(sessionPath(sessionId, '/finalization'), value => decodeDocSessionFinalizationView(value, { session_id: sessionId }), signal);
+}
+
+export type DocSessionCommitStage = 'prepared' | 'committed' | 'pushed' | 'creating_pr' | 'pr_failed' | 'complete';
+export type DocSessionDiscardStage = 'removing' | 'removed' | 'complete';
+/** The saved journal progress; `decodeDocSessionFinalizationView` admitted exactly these shapes. */
+export type DocSessionProgress =
+  | { readonly operation: 'commit'; readonly stage: DocSessionCommitStage; readonly commit: string; readonly pushed: boolean; readonly pr: { readonly number: number; readonly url: string } | null }
+  | { readonly operation: 'discard'; readonly stage: DocSessionDiscardStage };
+
+export function docSessionProgress(view: DocSessionFinalizationView): DocSessionProgress | null {
+  return view.progress as unknown as DocSessionProgress | null;
 }
 
 export interface RequestId { readonly request_id: string }
@@ -158,19 +185,39 @@ export async function sessionWriteAnswer<T>(response: Response, decode: (value: 
   return refusal === null ? { state: 'unreachable' } : { state: 'refused', status: response.status, refusal };
 }
 
+/**
+ * A commit or discard answer. A 2xx body is not page state: the page reads the
+ * progress from `/finalization` after every answer. A refusal or a 503 outcome
+ * names the code and next step.
+ */
+export async function finalizeWriteAnswer(response: Response): Promise<DocSessionWrite<null>> {
+  const payload: unknown = await response.json().catch(() => null);
+  if (response.ok) return { state: 'ok', result: null };
+  const refusal = docSessionFinalizeRefusal(payload);
+  return refusal === null ? { state: 'unreachable' } : { state: 'refused', status: response.status, refusal };
+}
+
 /** The write token travels in the HttpOnly cookie the page response set; the browser adds Origin and Sec-Fetch-Site. */
-export async function postSession<T>(url: string, body: RequestId, decode: (value: unknown) => T): Promise<DocSessionWrite<T>> {
-  let response: Response;
+async function post(url: string, body: RequestId): Promise<Response | null> {
   try {
-    response = await fetch(url, {
+    return await fetch(url, {
       method: 'POST', cache: 'no-store', credentials: 'same-origin',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   } catch {
-    return { state: 'unreachable' };
+    return null;
   }
-  return sessionWriteAnswer(response, decode);
+}
+
+export async function postSession<T>(url: string, body: RequestId, decode: (value: unknown) => T): Promise<DocSessionWrite<T>> {
+  const response = await post(url, body);
+  return response === null ? { state: 'unreachable' } : sessionWriteAnswer(response, decode);
+}
+
+async function postFinalize(url: string, body: RequestId): Promise<DocSessionWrite<null>> {
+  const response = await post(url, body);
+  return response === null ? { state: 'unreachable' } : finalizeWriteAnswer(response);
 }
 
 export interface DocSessionCreateRequest {
@@ -181,17 +228,15 @@ export interface DocSessionCreateRequest {
   readonly instruction: string;
 }
 export interface DocSessionMessageRequest { readonly text: string; readonly when: DocSessionMessageWhen }
-export interface DocSessionCommitRequest { readonly expected_head: string; readonly expected_diff_sha256: string; readonly message: string }
-export interface DocSessionDiscardRequest { readonly expected_head: string; readonly expected_loss_sha256: string }
 
 export type DocSessionCreateWriter = (body: DocSessionCreateRequest & RequestId) => Promise<DocSessionWrite<OperatorDocSessionCreatedV1>>;
 export type DocSessionMessageWriter = (sessionId: string, body: DocSessionMessageRequest & RequestId) => Promise<DocSessionWrite<OperatorDocSessionMessageV1>>;
 export type DocSessionStopWriter = (sessionId: string, body: RequestId) => Promise<DocSessionWrite<OperatorDocSessionStopV1>>;
-export type DocSessionCommitWriter = (sessionId: string, body: DocSessionCommitRequest & RequestId) => Promise<DocSessionWrite<OperatorDocSessionCommitV1>>;
-export type DocSessionDiscardWriter = (sessionId: string, body: DocSessionDiscardRequest & RequestId) => Promise<DocSessionWrite<OperatorDocSessionDiscardV1>>;
+export type DocSessionCommitWriter = (sessionId: string, body: DocSessionCommitInput & RequestId) => Promise<DocSessionWrite<null>>;
+export type DocSessionDiscardWriter = (sessionId: string, body: DocSessionDiscardInput & RequestId) => Promise<DocSessionWrite<null>>;
 
 export function postDocSessionCreate(body: DocSessionCreateRequest & RequestId): Promise<DocSessionWrite<OperatorDocSessionCreatedV1>> {
-  return postSession(SESSIONS_PATH, body, decodeOperatorDocSessionCreated);
+  return postSession(OPERATOR_SESSION_LIST_PATH, body, decodeOperatorDocSessionCreated);
 }
 
 export function postDocSessionMessage(sessionId: string, body: DocSessionMessageRequest & RequestId): Promise<DocSessionWrite<OperatorDocSessionMessageV1>> {
@@ -202,12 +247,12 @@ export function postDocSessionStop(sessionId: string, body: RequestId): Promise<
   return postSession(sessionPath(sessionId, '/stop'), body, value => decodeOperatorDocSessionStop(value, sessionId));
 }
 
-export function postDocSessionCommit(sessionId: string, body: DocSessionCommitRequest & RequestId): Promise<DocSessionWrite<OperatorDocSessionCommitV1>> {
-  return postSession(sessionPath(sessionId, '/commit'), body, value => decodeOperatorDocSessionCommit(value, sessionId));
+export function postDocSessionCommit(sessionId: string, body: DocSessionCommitInput & RequestId): Promise<DocSessionWrite<null>> {
+  return postFinalize(sessionPath(sessionId, '/commit'), body);
 }
 
-export function postDocSessionDiscard(sessionId: string, body: DocSessionDiscardRequest & RequestId): Promise<DocSessionWrite<OperatorDocSessionDiscardV1>> {
-  return postSession(sessionPath(sessionId, '/discard'), body, value => decodeOperatorDocSessionDiscard(value, sessionId));
+export function postDocSessionDiscard(sessionId: string, body: DocSessionDiscardInput & RequestId): Promise<DocSessionWrite<null>> {
+  return postFinalize(sessionPath(sessionId, '/discard'), body);
 }
 
 /** After these outcomes a resend of the same body keeps its request_id, as the settings form does. */
@@ -261,7 +306,7 @@ export type DocSessionsView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'absent' }
   | { readonly kind: 'unavailable'; readonly reason: DocSessionReadReason }
-  | { readonly kind: 'ready'; readonly list: OperatorDocSessionsV1; readonly refreshFailed: boolean };
+  | { readonly kind: 'ready'; readonly list: OperatorDocSessionList; readonly refreshFailed: boolean };
 
 export interface DocSessions {
   readonly view: DocSessionsView;
@@ -271,10 +316,12 @@ export interface DocSessions {
 export function useDocSessions(read: DocSessionsReader, generation: number): DocSessions {
   const [view, setView] = useState<DocSessionsView>({ kind: 'loading' });
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    const result = await read(signal);
+    const result = await read(docSessionListRequest(), signal);
     if (signal.aborted) return false;
-    if (result.state === 'ok') setView({ kind: 'ready', list: result.value, refreshFailed: false });
-    else if (result.state === 'absent') setView({ kind: 'absent' });
+    if (result.state === 'ok') {
+      keepSeenFor(result.value.sessions.map(session => session.session_id));
+      setView({ kind: 'ready', list: result.value, refreshFailed: false });
+    } else if (result.state === 'absent') setView({ kind: 'absent' });
     else setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unavailable', reason: result.reason });
     return result.state !== 'unavailable' || result.reason !== 'unreachable';
   }, [read]);
@@ -282,10 +329,8 @@ export function useDocSessions(read: DocSessionsReader, generation: number): Doc
   return { view, reload };
 }
 
-/** The session kinds this server can start; none while the list is absent or unread. */
-export function startableKinds(view: DocSessionsView): readonly SessionKind[] {
-  return view.kind === 'ready' ? view.list.kinds : [];
-}
+/** The list route answered, so this server serves sessions. */
+export const docSessionsLive = (view: DocSessionsView): boolean => view.kind === 'ready';
 
 /**
  * Why a list read failed, when the failure shows that the session routes exist. `unreachable` is no answer
@@ -296,12 +341,12 @@ export function listFailure(view: DocSessionsView): DocSessionReadReason | null 
 }
 
 /**
- * Whether the doc session start controls show. They exist for a server that lists the `docs` kind. While the
- * list cannot be read for a typed reason, the composer stays and says why: that read cannot say which kinds can start.
+ * Whether the doc session start controls show: on a server whose list answers. While the list cannot be
+ * read for a typed reason, the composer stays and says why, and starts nothing.
  */
 export function docSessionStartState(view: DocSessionsView): { readonly show: boolean; readonly failure: DocSessionReadReason | null } {
   const failure = listFailure(view);
-  return { show: failure !== null || startableKinds(view).includes('docs'), failure };
+  return { show: failure !== null || docSessionsLive(view), failure };
 }
 
 /** One read of one session, re-read every 30 s and on `reload`; null until it settles. */
@@ -320,23 +365,29 @@ export function useSessionRead<T>(name: string, read: DocSessionReader<T>, sessi
   return { read: state !== null && state.id === sessionId ? state.read : null, reload };
 }
 
+/** The detail read sends the cursor this browser last showed and decodes against it. */
 export function useDocSessionDetail(read: DocSessionDetailReader, sessionId: string | null, generation: number) {
-  return useSessionRead('doc-session-detail', read, sessionId, generation);
+  const bySession = useCallback((id: string, signal: AbortSignal) => read(docSessionDetailRequest(id), signal), [read]);
+  return useSessionRead('doc-session-detail', bySession, sessionId, generation);
 }
 
-/** The visible session status: the outcome first, then the docs host lifecycle. The only place it is derived. */
-export const DOC_SESSION_STATUSES = ['running', 'awaiting_review', 'pr_open', 'discarded', 'cleaned', 'failed'] as const;
+/**
+ * The visible session status, and the only place it is derived: finalization progress first, then the
+ * docs host state. A commit or discard that has not completed leaves the status to the host state.
+ */
+export const DOC_SESSION_STATUSES = ['running', 'awaiting_review', 'pr_open', 'discarded', 'failed'] as const;
 export type DocSessionStatus = typeof DOC_SESSION_STATUSES[number];
-const AGENT_STATUS: Readonly<Record<DocSessionAgentState, DocSessionStatus>> = {
-  starting: 'running', running: 'running', idle: 'awaiting_review', stopped: 'awaiting_review', failed: 'failed',
+const STATE_STATUS: Readonly<Record<DocSessionViewState, DocSessionStatus>> = {
+  created: 'running', starting: 'running', running: 'running', idle: 'awaiting_review', stopped: 'awaiting_review', failed: 'failed',
 };
 
-export function docSessionStatus(agent: DocSessionAgentState, outcome: DocSessionOutcome | null): DocSessionStatus {
-  return outcome ?? AGENT_STATUS[agent];
+export function docSessionStatus(state: DocSessionViewState, progress: DocSessionProgress | null): DocSessionStatus {
+  if (progress?.stage === 'complete') return progress.operation === 'commit' ? 'pr_open' : 'discarded';
+  return STATE_STATUS[state];
 }
 
 export const DOC_SESSION_STATUS_TONE: Readonly<Record<DocSessionStatus, DotTone>> = {
-  running: 'active', awaiting_review: 'accent', pr_open: 'ok', discarded: 'neutral', cleaned: 'neutral', failed: 'danger',
+  running: 'active', awaiting_review: 'accent', pr_open: 'ok', discarded: 'neutral', failed: 'danger',
 };
 
 /** The runtime's display name; an id with no translation shows as the id. */
@@ -345,37 +396,95 @@ export function docSessionRuntimeName(runtime: string, t: OperatorTranslate): st
   return isOperatorMessageKey(key) ? t(key) : runtime;
 }
 
-/** The newest cursor this browser showed for each session. */
+/** The newest cursor this browser showed for each session. The server computes `unread` from it and never stores it. */
 export const OPERATOR_SESSION_SEEN_STORAGE_KEY = 'repo-harness:operator-session-seen';
+const SID = /^[0-9a-f]{32}$/u;
 
 function readSeen(): Record<string, string> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(OPERATOR_SESSION_SEEN_STORAGE_KEY) ?? '{}');
     if (!isObject(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && parseDocSessionCursor(entry[1]) !== null));
+    return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] =>
+      SID.test(entry[0]) && typeof entry[1] === 'string' && parseDocSessionCursor(entry[1]) !== null));
   } catch {
     return {};
   }
 }
 
-const newer = (cursor: string, than: string | undefined): boolean => {
-  const next = parseDocSessionCursor(cursor);
-  const seen = than === undefined ? null : parseDocSessionCursor(than);
-  return next !== null && (seen === null || compareDocSessionCursor(next, seen) > 0);
-};
+function writeSeen(seen: Readonly<Record<string, string>>): void {
+  try { localStorage.setItem(OPERATOR_SESSION_SEEN_STORAGE_KEY, JSON.stringify(seen)); } catch { /* Browser storage is an optional UI preference. */ }
+}
+
+/** The list request: every stored cursor, within the server's bound. */
+export function docSessionListRequest(): DocSessionListRequest {
+  return { seen: Object.fromEntries(Object.entries(readSeen()).slice(0, DOC_SESSION_LIST_MAX)) };
+}
+
+export function docSessionDetailRequest(sessionId: string): DocSessionDetailRequest {
+  return { session_id: sessionId, seen: readSeen()[sessionId] ?? null };
+}
+
+/** Drops cursors of sessions the server no longer lists, so the request stays within its bound. */
+function keepSeenFor(ids: readonly string[]): void {
+  const seen = readSeen();
+  const listed = new Set(ids);
+  if (Object.keys(seen).every(id => listed.has(id))) return;
+  writeSeen(Object.fromEntries(Object.entries(seen).filter(([id]) => listed.has(id))));
+}
 
 /** Records that the page showed the session through `cursor`. The seen cursor only moves forward. */
 export function markSessionSeen(sessionId: string, cursor: string): void {
-  try {
-    const seen = readSeen();
-    if (!newer(cursor, seen[sessionId])) return;
-    localStorage.setItem(OPERATOR_SESSION_SEEN_STORAGE_KEY, JSON.stringify({ ...seen, [sessionId]: cursor }));
-  } catch { /* Browser storage is an optional UI preference. */ }
+  const next = parseDocSessionCursor(cursor);
+  if (next === null) return;
+  const seen = readSeen();
+  const before = seen[sessionId] === undefined ? null : parseDocSessionCursor(seen[sessionId]!);
+  if (before !== null && compareDocSessionCursor(next, before) <= 0) return;
+  writeSeen({ ...seen, [sessionId]: cursor });
 }
 
-/** A session has unread events when its newest event is after the last one this browser showed. */
-export function isSessionUnread(summary: Pick<DocSessionSummaryV1, 'session_id' | 'last_event'>): boolean {
-  return summary.last_event !== null && newer(summary.last_event, readSeen()[summary.session_id]);
+/**
+ * The first commit and the first discard request of each session. Once the
+ * server saved a finalization, a retry must send that request unchanged, so
+ * the browser keeps it until the progress reads `complete`. A reload without it
+ * cannot resume: the page never builds a new body for a resume.
+ */
+export const OPERATOR_SESSION_FINALIZE_STORAGE_KEY = 'repo-harness:operator-session-finalize';
+export type DocSessionFinalizeOperation = 'commit' | 'discard';
+
+function readFinalize(): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY) ?? '{}');
+    return isObject(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+export function storedFinalizeRequest(sessionId: string, operation: 'commit'): DocSessionCommitInput | null;
+export function storedFinalizeRequest(sessionId: string, operation: 'discard'): DocSessionDiscardInput | null;
+export function storedFinalizeRequest(sessionId: string, operation: DocSessionFinalizeOperation): DocSessionCommitInput | DocSessionDiscardInput | null {
+  const entry = readFinalize()[sessionId];
+  const body = isObject(entry) ? entry[operation] : undefined;
+  if (!isObject(body)) return null;
+  // The server's own closed decoders: a stored body that fails them is no request.
+  try { return operation === 'commit' ? decodeDocSessionCommit(body) : decodeDocSessionDiscard(body); } catch { return null; }
+}
+
+/** Keeps the request before it is sent. A browser that cannot store it still sends it; a reload then cannot resume. */
+export function storeFinalizeRequest(sessionId: string, operation: 'commit', body: DocSessionCommitInput): void;
+export function storeFinalizeRequest(sessionId: string, operation: 'discard', body: DocSessionDiscardInput): void;
+export function storeFinalizeRequest(sessionId: string, operation: DocSessionFinalizeOperation, body: DocSessionCommitInput | DocSessionDiscardInput): void {
+  const all = readFinalize();
+  const entry = isObject(all[sessionId]) ? all[sessionId] as Record<string, unknown> : {};
+  try { localStorage.setItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY, JSON.stringify({ ...all, [sessionId]: { ...entry, [operation]: body } })); }
+  catch { /* See above. */ }
+}
+
+export function forgetFinalizeRequests(sessionId: string): void {
+  const all = readFinalize();
+  if (!Object.hasOwn(all, sessionId)) return;
+  const { [sessionId]: _, ...rest } = all;
+  try { localStorage.setItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY, JSON.stringify(rest)); } catch { /* Nothing more to keep. */ }
 }
 
 /** Refusal copy is keyed by code; a code this bundle does not know shows the server's own sentence. */

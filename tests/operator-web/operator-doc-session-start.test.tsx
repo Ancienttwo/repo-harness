@@ -20,6 +20,9 @@ import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { DOCS_COMMIT, docsFileAnswer } from '../../src/operator-web/fixtures/docs';
 import { CLEANUP_SESSION, PR_SESSION, REVIEW_SESSION, RUNNING_SESSION } from '../../src/operator-web/fixtures/doc-sessions';
 import { agentsSettingsFixture } from '../../src/operator-web/fixtures/settings';
+// The app loads these pages lazily; loading them here keeps that import off the settle window.
+import '../../src/operator-web/DocsPage';
+import '../../src/operator-web/DocSessionPage';
 import { translate } from '../../src/operator-web/i18n';
 import type { AgentsSettingsRead } from '../../src/operator-web/settings';
 
@@ -115,7 +118,7 @@ async function citeBlock(line: number): Promise<void> {
 const fileOf = (path: string): DocsFileV1 => docsFileAnswer('repo', path).body as DocsFileV1;
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 const refusal = (code: string, extra: Partial<DocSessionRefusalV1> = {}): DocSessionWrite<never> =>
-  ({ state: 'refused', status: 409, refusal: { code, message: `${code} server text`, next_action: `${code} server action`, paths: [], ...extra } });
+  ({ state: 'refused', status: 409, refusal: { code, message: `${code} server text`, next_action: `${code} server action`, files: [], ...extra } });
 
 /** A create writer that records each request and answers with `answer`, or with the fixture's own session. */
 function recording(inner: DocSessionCreateWriter, answer?: (call: number) => DocSessionWrite<never>) {
@@ -167,18 +170,20 @@ describe('starting a doc session from Home', () => {
     expect($<HTMLTextAreaElement>('[data-composer-input]')!.value).toBe('');
   });
 
-  test('4-HOME-P1 Continue lists the doc sessions that still need you next to the tasks', async () => {
+  test('4-HOME-P1 Continue lists the doc sessions next to the tasks, with the status of each listed state', async () => {
     await mount('#home', props('busy'));
     const more = $('section[aria-labelledby="home-continue"] button[aria-expanded="false"]');
     if (more) await click(more);
     const rows = $$('[data-continue-session]');
-    expect(rows.map(row => row.getAttribute('data-continue-session')).sort()).toEqual([RUNNING_SESSION, REVIEW_SESSION].sort());
+    // The list summary carries no finalization outcome, so Home cannot tell a delivered session from one waiting for review.
+    expect(rows.map(row => row.getAttribute('data-continue-session')).sort()).toEqual([RUNNING_SESSION, REVIEW_SESSION, PR_SESSION].sort());
     const review = $(`[data-continue-session="${REVIEW_SESSION}"]`)!;
     expect(review.querySelector('[data-session-status]')?.textContent).toBe(t('docSession.status.awaiting_review'));
     expect(review.querySelector('a')?.getAttribute('href')).toBe(`#session/${REVIEW_SESSION}`);
     expect(review.textContent).toContain('Explain citation line numbers');
-    // A session with a Draft PR has nothing left to continue here.
-    expect($(`[data-continue-session="${PR_SESSION}"]`)).toBeNull();
+    expect($(`[data-continue-session="${RUNNING_SESSION}"] [data-session-status]`)?.textContent).toBe(t('docSession.status.running'));
+    // A stopped agent still leaves its diff to commit or discard.
+    expect($(`[data-continue-session="${PR_SESSION}"] [data-session-status]`)?.textContent).toBe(t('docSession.status.awaiting_review'));
     expect($$('[data-continue-item]').length).toBeGreaterThan(0);
   });
 
@@ -405,8 +410,8 @@ describe('a server without doc sessions', () => {
     await act(async () => root?.unmount());
     root = null;
     document.body.innerHTML = '';
-    const listsNoDocs = async (): Promise<DocSessionsRead> => ({ state: 'ok', value: { protocol: 1, kind: 'operator_docs_sessions', kinds: ['worktree_cleanup'], sessions: [], observed_at: new Date().toISOString() } });
-    await mount(`#docs/${CONSOLE}`, props('busy', { readDocSessions: listsNoDocs }));
+    const absent = async (): Promise<DocSessionsRead> => ({ state: 'unavailable', reason: 'unreachable' });
+    await mount(`#docs/${CONSOLE}`, props('busy', { readDocSessions: absent }));
     await selectBlock(5);
     expect($('[data-docs-cite]')).toBeNull();
     expect($('[data-doc-composer]')).toBeNull();
@@ -417,7 +422,8 @@ describe('a server without doc sessions', () => {
     const reads: string[] = [];
     const never = (name: string) => () => { reads.push(name); return new Promise<never>(() => {}); };
     const watched: Partial<OperatorAppProps> = {
-      readDocSession: never('detail'), readDocSessionEvents: never('events'), readDocSessionDiff: never('diff'), readDocSessionLoss: never('loss'), readCleanupPlan: never('plan'),
+      readDocSession: never('detail'), readDocSessionEvents: never('events'), readDocSessionDiff: never('diff'), readDocSessionLoss: never('loss'),
+      readDocSessionFinalization: never('finalization'), readCleanupPlan: never('plan'),
     };
     for (const route of [`#session/${RUNNING_SESSION}`, `#cleanup/${CLEANUP_SESSION}`]) {
       await mount(route, props('degraded', watched));

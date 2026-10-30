@@ -7,12 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { checkDocCitation, docCitationBudget } from '../../src/core/operator/doc-citation';
-import {
-  DOC_CITATION_MAX_LINES,
-  DOC_SESSION_AGENT_STATES,
-  DOC_SESSION_OUTCOMES,
-  DOC_SESSION_WRITE_REFUSALS,
-} from '../../src/core/operator/doc-session-api';
+import { DOC_CITATION_MAX_LINES, DOC_SESSION_WRITE_REFUSALS, type CleanupPlanPreview } from '../../src/core/operator/doc-session-api';
 import { DOC_SESSION_READ_FAILURES } from '../../src/core/operator/doc-session-changes';
 import {
   DOC_SESSION_FAILURE_CATEGORIES,
@@ -20,47 +15,57 @@ import {
   type DocSessionEventV1,
   type OperatorDocSessionEventsV1,
 } from '../../src/core/operator/doc-session-events';
+import type { DocSessionViewState } from '../../src/core/operator/doc-session-views';
 import { docsLines, OPERATOR_DOCS_FILE_KIND, type DocsFileV1 } from '../../src/core/operator/docs';
-import { WORKTREE_CLEANUP_MAX_IDS, WORKTREE_CLEANUP_SKIP_REASONS } from '../../src/core/operator/worktree-cleanup';
-import { CLEANUP_PLAN_ADVICE, CLEANUP_SESSION_SKIP_REASONS, type OperatorCleanupPlanV1 } from '../../src/core/operator/worktree-cleanup-plan';
-import { WORKTREE_REASONS, decodeWorktrees } from '../../src/core/operator/worktrees';
+import { WORKTREE_CLEANUP_SKIP_REASONS } from '../../src/core/operator/worktree-cleanup';
+import { WORKTREE_REASONS } from '../../src/core/operator/worktrees';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
-import { cleanupPlanDelay, cleanupPlanStep, cleanupSessionRequest, type CleanupPlanView } from '../../src/operator-web/cleanup-session';
+import { cleanupPlanDelay, cleanupPlanStep, type CleanupPlanView } from '../../src/operator-web/cleanup-session';
 import { Conversation } from '../../src/operator-web/Conversation';
 import { buildCitation, citationLabel, selectionLineRange } from '../../src/operator-web/doc-citation';
 import {
   DOC_SESSION_READ_REASONS,
+  DOC_SESSION_STATUSES,
+  docSessionDetailRequest,
   docSessionEventsStep,
+  docSessionListRequest,
   docSessionStatus,
+  fetchDocSessionDetail,
   fetchDocSessionDiff,
   fetchDocSessionEvents,
+  fetchDocSessionFinalization,
   fetchDocSessions,
-  isSessionUnread,
   keepsRequestId,
   markSessionSeen,
   mergeDocSessionEvents,
   NO_DOC_SESSION_EVENTS,
   OPERATOR_SESSION_SEEN_STORAGE_KEY,
   postDocSessionCommit,
+  postDocSessionDiscard,
   startPoll,
   useDocSessionEvents,
+  useDocSessions,
   useSessionWrite,
   type DocSessionEventsReader,
   type DocSessionEventsView,
+  type DocSessionProgress,
   type DocSessionRead,
+  type DocSessionsReader,
   type DocSessionWrite,
   type PollTimer,
   type RequestId,
   type SessionWrite,
 } from '../../src/operator-web/doc-sessions';
 import { DocsPage } from '../../src/operator-web/DocsPage';
+// The app loads the session pages lazily; loading them here keeps that import off the settle window.
+import '../../src/operator-web/CleanupSessionPage';
+import '../../src/operator-web/DocSessionPage';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { fixtureProps } from '../../src/operator-web/fixtures';
 import { busyDevActivity, HARNESS_ID } from '../../src/operator-web/fixtures/dev-activity';
 import { CLEANUP_SESSION, PR_SESSION, REVIEW_SESSION, RUNNING_SESSION } from '../../src/operator-web/fixtures/doc-sessions';
-import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { isOperatorMessageKey, translate } from '../../src/operator-web/i18n';
 import { docsAnswer } from '../../src/operator-web/repository-reads';
 import { decodeDocsFile, decodeDocsTree } from '../../src/core/operator/docs';
@@ -120,7 +125,13 @@ function serve(answers: readonly (() => Response)[]) {
   return requests;
 }
 
-const list = { protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs'], sessions: [], observed_at: AT };
+const list = { protocol: 1, kind: 'operator_docs_sessions', sessions: [] };
+const OTHER = 'cd'.repeat(16);
+const summary = (fields: Record<string, unknown> = {}) => ({
+  session_id: SID, title: 'Tighten the column', repository_id: 'repo_a5b76eee64af71c3', repository_name: 'repo-harness', runtime: 'codex',
+  state: 'idle', created_at: AT, last_activity_at: AT, last_cursor: '1.4', unread: true, ...fields,
+});
+const NO_SEEN = { seen: {} };
 
 describe('doc session reads', () => {
   test('the list read is the availability authority: a missing or POST-only route is absent, any other failure is a reason', async () => {
@@ -129,17 +140,66 @@ describe('doc session reads', () => {
       () => json(404, envelope('not_found')),
       () => json(405, envelope('method_not_allowed')),
       () => json(503, { code: 'busy' }),
-      () => json(200, { ...list, kinds: ['coding'] }),
+      () => json(200, { ...list, kinds: ['docs', 'worktree_cleanup'] }),
       () => new Response('<html>proxy</html>', { status: 502 }),
       () => { throw new TypeError('connection refused'); },
     ]);
     const results: string[] = [];
     for (let index = 0; index < 7; index++) {
-      const read = await fetchDocSessions(new AbortController().signal);
+      const read = await fetchDocSessions(NO_SEEN, new AbortController().signal);
       results.push(read.state === 'unavailable' ? read.reason : read.state);
     }
     expect(results).toEqual(['ok', 'absent', 'absent', 'busy', 'unreadable', 'unreachable', 'unreachable']);
-    expect(new Set(requests.map(request => `${request.method} ${request.url}`))).toEqual(new Set(['GET /api/v1/sessions']));
+    expect(new Set(requests.map(request => `${request.method} ${request.url}`))).toEqual(new Set([`GET /api/v1/sessions?seen=${encodeURIComponent('{}')}`]));
+  });
+
+  test('list and detail requests carry seen, and each answer decodes against the request it answers', async () => {
+    markSessionSeen(SID, '1.2');
+    const request = docSessionListRequest();
+    expect(request).toEqual({ seen: { [SID]: '1.2' } });
+    expect(docSessionDetailRequest(SID)).toEqual({ session_id: SID, seen: '1.2' });
+    expect(docSessionDetailRequest(OTHER)).toEqual({ session_id: OTHER, seen: null });
+    const detail = (fields: Record<string, unknown>) => ({
+      protocol: 1, kind: 'operator_docs_session', session: summary(fields), branch: `docs/${SID.slice(0, 12)}`, worktree: 'repo-harness-wt-docs-abababababab',
+      head_commit: '1f'.repeat(20), base_commit: '1f'.repeat(20), epoch: 1, turn: 'idle',
+    });
+    const requests = serve([
+      // 1.4 is after the seen 1.2, so the server must say unread; an answer that disagrees with the sent seen is refused.
+      () => json(200, { ...list, sessions: [summary()] }),
+      () => json(200, { ...list, sessions: [summary({ unread: false })] }),
+      () => json(200, detail({ last_cursor: '1.2', unread: false })),
+      () => json(200, detail({ last_cursor: '1.2', unread: true })),
+    ]);
+    const first = await fetchDocSessions(request, new AbortController().signal);
+    const second = await fetchDocSessions(request, new AbortController().signal);
+    const third = await fetchDocSessionDetail(docSessionDetailRequest(SID), new AbortController().signal);
+    const fourth = await fetchDocSessionDetail(docSessionDetailRequest(SID), new AbortController().signal);
+    expect(requests.map(sent => decodeURIComponent(sent.url))).toEqual([
+      `/api/v1/sessions?seen={"${SID}":"1.2"}`, `/api/v1/sessions?seen={"${SID}":"1.2"}`,
+      `/api/v1/sessions/${SID}?seen=1.2`, `/api/v1/sessions/${SID}?seen=1.2`,
+    ]);
+    expect([first.state === 'ok' && first.value.sessions[0]!.unread, second]).toEqual([true, { state: 'unavailable', reason: 'unreadable' }]);
+    expect([third.state === 'ok' && third.value.session.unread, fourth]).toEqual([false, { state: 'unavailable', reason: 'unreadable' }]);
+    // A session this browser never showed sends no seen cursor.
+    const unseen = serve([() => json(404, { code: 'session_not_found' })]);
+    await fetchDocSessionDetail(docSessionDetailRequest(OTHER), new AbortController().signal);
+    expect(unseen[0]!.url).toBe(`/api/v1/sessions/${OTHER}`);
+  });
+
+  test('the list hook builds seen from storage and drops cursors of sessions the server no longer lists', async () => {
+    markSessionSeen(SID, '1.4');
+    markSessionSeen(OTHER, '2.0');
+    const sent: unknown[] = [];
+    // One reader for every render, as the app passes it.
+    const read: DocSessionsReader = async (request) => { sent.push(request); return { state: 'ok', value: { protocol: 1, kind: 'operator_docs_sessions', sessions: [] } }; };
+    function Harness() {
+      useDocSessions(read, 0);
+      return null;
+    }
+    serve([]);
+    await render(<Harness />);
+    expect(sent[0]).toEqual({ seen: { [SID]: '1.4', [OTHER]: '2.0' } });
+    expect(JSON.parse(localStorage.getItem(OPERATOR_SESSION_SEEN_STORAGE_KEY)!)).toEqual({});
   });
 
   test('session reads accept the bare {code} body; a missing route on them is not absent', async () => {
@@ -183,30 +243,52 @@ describe('doc session reads', () => {
 
 describe('doc session writes', () => {
   const body = { request_id: crypto.randomUUID(), expected_head: '1f'.repeat(20), expected_diff_sha256: '9e'.repeat(32), message: 'docs: tighten' };
-  const delivery = { steps: [{ step: 'commit', state: 'done' }, { step: 'push', state: 'done' }, { step: 'pull_request', state: 'failed' }], commit: '1f'.repeat(20), pull_request: null };
+  const outcome = (stage: string, extra: Record<string, unknown> = {}) => ({
+    protocol: 1, kind: 'operator_docs_session_finalize', operation: 'commit', stage, commit: '1f'.repeat(20), pushed: stage !== 'committed', pr: null, ...extra,
+  });
 
-  test('map every answer to one result; path refusals keep their files', async () => {
+  test('map every commit answer to one result; scope refusals keep their files; a 503 outcome names its error; a success body is not page state', async () => {
     const requests = serve([
-      () => json(200, { protocol: 1, kind: 'operator_docs_session_commit', session_id: SID, delivery }),
-      () => json(422, envelope('path_outside_scope', { paths: ['src/cli/index.ts', 'docs/../x'] })),
-      () => json(422, envelope('generated_region', { paths: ['docs/architecture/generated.md'] })),
+      () => json(200, outcome('complete', { pr: { number: 12, url: 'https://github.com/acme/docs/pull/12' } })),
+      () => json(422, envelope('path_outside_scope', { files: ['src/cli/index.ts', 'docs/../x'] })),
+      () => json(422, envelope('generated_region', { files: ['docs/architecture/generated.md'] })),
       () => json(503, envelope('busy')),
-      () => json(200, { protocol: 1, kind: 'operator_docs_session_commit', session_id: SID }),
+      () => json(503, outcome('pr_failed', { error: { code: 'pr_create_failed', message: 'pr_create_failed', next_action: 'Retry the same session action with a new request_id and unchanged fields.' } })),
+      // The progress comes from the finalization read, so the page does not decode a 2xx body at all.
+      () => json(200, { anything: true }),
       () => new Response('<html>proxy</html>', { status: 502 }),
       () => { throw new TypeError('connection refused'); },
     ]);
     const outcomes: DocSessionWrite<unknown>[] = [];
-    for (let index = 0; index < 7; index++) outcomes.push(await postDocSessionCommit(SID, body));
-    expect(outcomes.map(outcome => outcome.state === 'refused' ? `${outcome.status}:${outcome.refusal.code}:${outcome.refusal.paths.join(',')}` : outcome.state)).toEqual([
+    for (let index = 0; index < 8; index++) outcomes.push(await postDocSessionCommit(SID, body));
+    expect(outcomes.map(result => result.state === 'refused' ? `${result.status}:${result.refusal.code}:${result.refusal.files.join(',')}` : result.state)).toEqual([
       // A path outside the repository is not a typed refusal, so the answer counts as none.
-      'ok', 'unreachable', '422:generated_region:docs/architecture/generated.md', '503:busy:', 'unreadable', 'unreachable', 'unreachable',
+      'ok', 'unreachable', '422:generated_region:docs/architecture/generated.md', '503:busy:', '503:pr_create_failed:', 'ok', 'unreachable', 'unreachable',
     ]);
+    expect(outcomes[4]!.state === 'refused' && outcomes[4]!.refusal.next_action).toBe('Retry the same session action with a new request_id and unchanged fields.');
     const sent = requests[0]!;
     expect([sent.method, sent.url, sent.init?.credentials, JSON.parse(String(sent.init?.body))]).toEqual(['POST', `/api/v1/sessions/${SID}/commit`, 'same-origin', body]);
+    const discard = serve([() => json(503, { ...outcome('removing'), operation: 'discard', error: { code: 'discard_reconcile_required', message: 'm', next_action: 'n' } })]);
+    const discarded = await postDocSessionDiscard(SID, { request_id: body.request_id, expected_head: '1f'.repeat(20), expected_loss_sha256: '9e'.repeat(32) });
+    expect([discard[0]!.url, discarded.state === 'refused' && discarded.refusal.code]).toEqual([`/api/v1/sessions/${SID}/discard`, 'discard_reconcile_required']);
+  });
+
+  test('the finalization read decodes against its session', async () => {
+    const view = (progress: unknown, sessionId = SID) => ({ protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: sessionId, progress });
+    const requests = serve([
+      () => json(200, view(null)),
+      () => json(200, view({ ...outcome('pushed'), pr: null })),
+      () => json(200, view(null, OTHER)),
+      () => json(503, { code: 'events_unavailable' }),
+    ]);
+    const reads: DocSessionRead<unknown>[] = [];
+    for (let index = 0; index < 4; index++) reads.push(await fetchDocSessionFinalization(SID, new AbortController().signal));
+    expect(requests[0]!.url).toBe(`/api/v1/sessions/${SID}/finalization`);
+    expect(reads.map(read => read.state === 'ok' ? 'ok' : read.reason)).toEqual(['ok', 'ok', 'unreadable', 'events_unavailable']);
   });
 
   test('a resend keeps its request_id only after no typed answer or a retryable refusal, as the settings form does', async () => {
-    const refusal = (code: string): DocSessionWrite<string> => ({ state: 'refused', status: 409, refusal: { code, message: 'm', next_action: 'n', paths: [] } });
+    const refusal = (code: string): DocSessionWrite<string> => ({ state: 'refused', status: 409, refusal: { code, message: 'm', next_action: 'n', files: [] } });
     expect([{ state: 'unreachable' }, { state: 'unreadable' }, refusal('busy'), refusal('audit_unavailable'), refusal('body_timeout'), refusal('diff_changed'), { state: 'ok', result: 'x' }]
       .map(outcome => keepsRequestId(outcome as DocSessionWrite<string>))).toEqual([true, true, true, true, true, false, false]);
 
@@ -358,37 +440,45 @@ describe('doc session event polling', () => {
   });
 });
 
-describe('doc session status and unread', () => {
-  test('the visible status is the outcome first, then the host lifecycle', () => {
-    const table = Object.fromEntries(DOC_SESSION_AGENT_STATES.map(agent => [agent, docSessionStatus(agent, null)]));
-    expect(table).toEqual({ starting: 'running', running: 'running', idle: 'awaiting_review', stopped: 'awaiting_review', failed: 'failed' });
-    for (const outcome of DOC_SESSION_OUTCOMES) for (const agent of DOC_SESSION_AGENT_STATES) expect(docSessionStatus(agent, outcome)).toBe(outcome);
+describe('doc session status and seen cursors', () => {
+  test('the visible status is a completed finalization first, then the docs host state', () => {
+    const states: readonly DocSessionViewState[] = ['created', 'starting', 'running', 'idle', 'stopped', 'failed'];
+    expect(Object.fromEntries(states.map(state => [state, docSessionStatus(state, null)]))).toEqual({
+      created: 'running', starting: 'running', running: 'running', idle: 'awaiting_review', stopped: 'awaiting_review', failed: 'failed',
+    });
+    const commit = (stage: 'pushed' | 'pr_failed' | 'complete'): DocSessionProgress => ({
+      operation: 'commit', stage, commit: '1f'.repeat(20), pushed: true, pr: stage === 'complete' ? { number: 12, url: 'https://github.com/acme/docs/pull/12' } : null,
+    });
+    for (const state of states) {
+      expect(docSessionStatus(state, commit('complete'))).toBe('pr_open');
+      expect(docSessionStatus(state, { operation: 'discard', stage: 'complete' })).toBe('discarded');
+      // An unfinished delivery or discard leaves the status to the host.
+      expect(docSessionStatus(state, commit('pr_failed'))).toBe(docSessionStatus(state, null));
+      expect(docSessionStatus(state, { operation: 'discard', stage: 'removed' })).toBe(docSessionStatus(state, null));
+    }
     expect(translate('zh', 'docSession.status.awaiting_review')).toBe('等你审阅');
     expect(translate('zh', 'docSession.status.pr_open')).toBe('已开 Draft PR');
   });
 
-  test('a session is unread until this browser showed its newest event; the seen cursor only moves forward', () => {
-    const row = { session_id: SID, last_event: '2.0' };
-    expect(isSessionUnread({ ...row, last_event: null })).toBe(false);
-    expect(isSessionUnread(row)).toBe(true);
+  test('the seen cursor only moves forward and keeps only session ids', () => {
     markSessionSeen(SID, '1.9');
-    expect(isSessionUnread(row)).toBe(true);
     markSessionSeen(SID, '2.0');
-    expect(isSessionUnread(row)).toBe(false);
     markSessionSeen(SID, '1.0');
+    markSessionSeen(SID, 'not-a-cursor');
     expect(JSON.parse(localStorage.getItem(OPERATOR_SESSION_SEEN_STORAGE_KEY)!)).toEqual({ [SID]: '2.0' });
-    expect(isSessionUnread({ ...row, last_event: '2.1' })).toBe(true);
+    localStorage.setItem(OPERATOR_SESSION_SEEN_STORAGE_KEY, JSON.stringify({ [SID]: '2.0', '../x': '1.0', [OTHER]: '01.2' }));
+    expect(docSessionListRequest()).toEqual({ seen: { [SID]: '2.0' } });
   });
 
-  test('the page works without storage', () => {
+  test('the page works without storage: every session reads as never shown', () => {
     const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
     Object.assign(globalThis, { localStorage: broken });
     expect(() => markSessionSeen(SID, '1.0')).not.toThrow();
-    expect(isSessionUnread({ session_id: SID, last_event: '1.0' })).toBe(true);
-    expect(isSessionUnread({ session_id: SID, last_event: null })).toBe(false);
+    expect(docSessionListRequest()).toEqual({ seen: {} });
+    expect(docSessionDetailRequest(SID)).toEqual({ session_id: SID, seen: null });
     Object.assign(globalThis, { localStorage: window.localStorage });
     window.localStorage.setItem(OPERATOR_SESSION_SEEN_STORAGE_KEY, '{not json');
-    expect(isSessionUnread({ session_id: SID, last_event: '1.0' })).toBe(true);
+    expect(docSessionListRequest()).toEqual({ seen: {} });
   });
 });
 
@@ -555,45 +645,20 @@ describe('session routes', () => {
 });
 
 describe('cleanup session', () => {
-  const now = Date.now();
-  const worktrees = decodeWorktrees(busyWorktrees(now));
-  async function busyPlan(): Promise<OperatorCleanupPlanV1> {
+  async function busyPreview(): Promise<CleanupPlanPreview> {
     const read = await fixtureProps('busy').readCleanupPlan!(CLEANUP_SESSION, new AbortController().signal);
     if (read.state !== 'ok') throw new Error(`plan ${read.state}`);
     return read.value;
   }
 
-  test('the approval request carries green ids bare, yellow ids with both digests, and never a red id', async () => {
-    const plan = await busyPlan();
-    const of = (judgment: string) => plan.items.filter(item => item.judgment === judgment).map(item => item.id);
-    const [green, yellow, red] = [of('green'), of('yellow'), of('red')];
-    expect([green.length, yellow.length, red.length]).toEqual([2, 2, 1]);
-    const request = await cleanupSessionRequest(plan, [yellow[0]!, ...green, green[0]!], worktrees);
-    expect(request.ids).toEqual([...new Set([yellow[0]!, ...green])].sort());
-    expect(request.approvals).toEqual([{ id: yellow[0]!, loss_sha256: plan.items.find(item => item.id === yellow[0])!.loss_sha256, plan_sha256: plan.plan_sha256! }]);
-    expect(request.session_id).toBe(CLEANUP_SESSION);
-    // The digest is the green cleanup's selection digest over the current rows of the same ids.
-    const { selectionDigest, allWorktrees } = await import('../../src/operator-web/worktrees');
-    expect(request.expected_digest).toBe(await selectionDigest(allWorktrees(worktrees).filter(row => request.ids.includes(row.id))));
-    await expect(cleanupSessionRequest(plan, [green[0]!, red[0]!], worktrees)).rejects.toThrow('red');
-    await expect(cleanupSessionRequest(plan, [], worktrees)).rejects.toThrow();
-    await expect(cleanupSessionRequest(plan, [`wt_${'ff'.repeat(32)}`], worktrees)).rejects.toThrow('not in the plan');
-    await expect(cleanupSessionRequest({ ...plan, state: 'investigating', plan_sha256: null }, green, worktrees)).rejects.toThrow();
-    const many = { ...plan, items: Array.from({ length: WORKTREE_CLEANUP_MAX_IDS + 1 }, (_, index) => ({ ...plan.items[0]!, id: `wt_${index.toString(16).padStart(64, '0')}` })) };
-    await expect(cleanupSessionRequest(many, many.items.map(item => item.id), worktrees)).rejects.toThrow('size');
-    const result = await fixtureProps('busy').writeCleanupSession!({ ...request, request_id: crypto.randomUUID() });
-    expect(result.state === 'ok' && [result.result.archive.state, result.result.items.map(item => item.outcome)]).toEqual(['done', ['removed', 'removed', 'removed']]);
-  });
-
-  test('the plan polls each 1 s while the agent or the cleanup works, and keeps the last plan when a refresh fails', async () => {
-    const plan = await busyPlan();
-    expect(cleanupPlanDelay(plan)).toBe(30_000);
-    expect(cleanupPlanDelay({ ...plan, agent: 'running' })).toBe(1_000);
-    expect(cleanupPlanDelay({ ...plan, agent: 'starting' })).toBe(1_000);
-    expect(cleanupPlanDelay({ ...plan, state: 'executing' })).toBe(1_000);
-    expect(cleanupPlanDelay({ ...plan, state: 'investigating', plan_sha256: null })).toBe(1_000);
+  test('the plan polls each 1 s while the agent investigates, and keeps the last preview when a refresh fails', async () => {
+    const preview = await busyPreview();
+    expect(cleanupPlanDelay(preview)).toBe(30_000);
+    expect(cleanupPlanDelay({ ...preview, agent: 'running' })).toBe(1_000);
+    expect(cleanupPlanDelay({ ...preview, agent: 'starting' })).toBe(1_000);
+    expect(cleanupPlanDelay({ ...preview, state: 'investigating', plan: null })).toBe(1_000);
     const shown: { view: CleanupPlanView } = { view: { kind: 'loading' } };
-    const answers: DocSessionRead<OperatorCleanupPlanV1>[] = [{ state: 'ok', value: { ...plan, agent: 'running' } }, { state: 'unavailable', reason: 'timeout' }];
+    const answers: DocSessionRead<CleanupPlanPreview>[] = [{ state: 'ok', value: { ...preview, agent: 'running' } }, { state: 'unavailable', reason: 'timeout' }];
     const { waits, timer, fire } = manualTimer();
     startPoll(cleanupPlanStep(async () => answers.shift()!, CLEANUP_SESSION, change => { shown.view = change(shown.view); }), { timer });
     await flush();
@@ -607,11 +672,10 @@ describe('cleanup session', () => {
 describe('fixtures', () => {
   const signal = () => new AbortController().signal;
 
-  test('busy lists three sessions and both kinds; its records page through to the end through the real decoders', async () => {
+  test('busy lists three sessions; its records page through to the end through the real decoders', async () => {
     const props = fixtureProps('busy');
-    const list = await props.readDocSessions!(signal());
-    expect(list.state === 'ok' && [list.value.kinds, list.value.sessions.map(row => docSessionStatus(row.agent, row.outcome))])
-      .toEqual([['docs', 'worktree_cleanup'], ['running', 'awaiting_review', 'pr_open']]);
+    const list = await props.readDocSessions!(NO_SEEN, signal());
+    expect(list.state === 'ok' && list.value.sessions.map(row => [row.state, row.unread])).toEqual([['running', true], ['idle', true], ['stopped', true]]);
     const views: DocSessionEventsView[] = [];
     const { timer } = manualTimer();
     const poll = startPoll(docSessionEventsStep(props.readDocSessionEvents!, RUNNING_SESSION, view => views.push(view)), { timer });
@@ -619,40 +683,53 @@ describe('fixtures', () => {
     poll.stop();
     const record = views.at(-1)!;
     expect([record.failure, record.activity, record.events.length, new Set(record.events.map(item => item.epoch))]).toEqual([null, 'running', 13, new Set([1, 2])]);
-    expect(list.state === 'ok' && list.value.sessions[0]!.last_event).toBe(record.cursor);
+    expect(list.state === 'ok' && list.value.sessions[0]!.last_cursor).toBe(record.cursor);
+    // The fixture computes unread from the seen it was sent, as the server does.
+    const seen = await props.readDocSessions!({ seen: { [RUNNING_SESSION]: record.cursor! } }, signal());
+    expect(seen.state === 'ok' && seen.value.sessions.map(row => row.unread)).toEqual([false, true, true]);
     for (const sessionId of [RUNNING_SESSION, REVIEW_SESSION, PR_SESSION]) {
-      for (const read of [props.readDocSession!, props.readDocSessionDiff!, props.readDocSessionLoss!]) expect((await read(sessionId, signal())).state).toBe('ok');
+      expect((await props.readDocSession!({ session_id: sessionId, seen: null }, signal())).state).toBe('ok');
+      for (const read of [props.readDocSessionDiff!, props.readDocSessionLoss!, props.readDocSessionFinalization!]) expect((await read(sessionId, signal())).state).toBe('ok');
     }
-    const detail = await props.readDocSession!(PR_SESSION, signal());
-    expect(detail.state === 'ok' && detail.value.delivery?.pull_request?.url).toBe('https://github.com/Ancienttwo/repo-harness/pull/1188');
+    const finalization = await props.readDocSessionFinalization!(PR_SESSION, signal());
+    expect(finalization.state === 'ok' && finalization.value.progress).toMatchObject({ stage: 'complete', pr: { url: 'https://github.com/Ancienttwo/repo-harness/pull/1188' } });
+    const review = await props.readDocSessionFinalization!(REVIEW_SESSION, signal());
+    expect(review.state === 'ok' && review.value.progress).toBeNull();
   });
 
-  test('busy writers answer like the server, and a created session joins the list', async () => {
+  test('busy writers answer like the server, a created session joins the list, and the finalization read reports the writes', async () => {
     const props = fixtureProps('busy');
     const id = () => crypto.randomUUID();
     const file = docsFile('docs/design/console.md', 'one\ntwo\n');
     const created = await props.writeDocSessionCreate!({ request_id: id(), kind: 'docs', runtime: 'codex', repository_id: HARNESS_ID,
       citations: [await buildCitation(file, 1, 2)], instruction: 'Shorten the column note.' });
     if (created.state !== 'ok') throw new Error(created.state);
-    const list = await props.readDocSessions!(signal());
+    expect(created.result.citations).toEqual([{ path: 'docs/design/console.md', start_line: 1, end_line: 2, relocated: false }]);
+    const list = await props.readDocSessions!(NO_SEEN, signal());
     expect(list.state === 'ok' && list.value.sessions[0]!.session_id).toBe(created.result.session_id);
+    expect((await props.readDocSession!({ session_id: created.result.session_id, seen: null }, signal())).state).toBe('ok');
     const message = await props.writeDocSessionMessage!(RUNNING_SESSION, { request_id: id(), text: 'Also the title.', when: 'after_turn' });
     const stop = await props.writeDocSessionStop!(RUNNING_SESSION, { request_id: id() });
     const commit = await props.writeDocSessionCommit!(REVIEW_SESSION, { request_id: id(), expected_head: '1f'.repeat(20), expected_diff_sha256: '9e'.repeat(32), message: 'docs: explain citations' });
     const discard = await props.writeDocSessionDiscard!(RUNNING_SESSION, { request_id: id(), expected_head: '1f'.repeat(20), expected_loss_sha256: '9e'.repeat(32) });
     const cleanup = await props.writeCleanupSessionCreate!({ request_id: id(), kind: 'worktree_cleanup', runtime: 'codex' });
     expect([
-      message.state === 'ok' && message.result.landed, stop.state === 'ok' && stop.result.result,
-      commit.state === 'ok' && commit.result.delivery.steps.every(step => step.state === 'done'), discard.state === 'ok' && discard.result.outcome,
+      message.state === 'ok' && message.result.landed, stop.state === 'ok' && stop.result.result, commit.state, discard.state,
       cleanup.state === 'ok' && cleanup.result.session_id,
-    ]).toEqual(['queued', 'aborting', true, 'discarded', CLEANUP_SESSION]);
+    ]).toEqual(['queued', 'aborting', 'ok', 'ok', CLEANUP_SESSION]);
+    const progress = async (sessionId: string) => {
+      const read = await props.readDocSessionFinalization!(sessionId, signal());
+      return read.state === 'ok' ? read.value.progress : read.reason;
+    };
+    expect(await progress(REVIEW_SESSION)).toMatchObject({ operation: 'commit', stage: 'complete' });
+    expect(await progress(RUNNING_SESSION)).toMatchObject({ operation: 'discard', stage: 'complete' });
   });
 
-  test('empty lists no session with both kinds; degraded has no session route, so the list is absent', async () => {
-    const empty = await fixtureProps('empty').readDocSessions!(signal());
-    expect(empty.state === 'ok' && [empty.value.kinds, empty.value.sessions]).toEqual([['docs', 'worktree_cleanup'], []]);
+  test('empty lists no session; degraded has no session route, so the list is absent', async () => {
+    const empty = await fixtureProps('empty').readDocSessions!(NO_SEEN, signal());
+    expect(empty.state === 'ok' && empty.value.sessions).toEqual([]);
     const degraded = fixtureProps('degraded');
-    expect(await degraded.readDocSessions!(signal())).toEqual({ state: 'absent' });
+    expect(await degraded.readDocSessions!(NO_SEEN, signal())).toEqual({ state: 'absent' });
     expect(await degraded.readDocSessionEvents!(RUNNING_SESSION, null, signal())).toEqual({ state: 'unavailable', reason: 'unreachable' });
   });
 
@@ -678,14 +755,24 @@ describe('session pages in the app', () => {
     await settle();
   }
 
-  test('#session/<id> shows the session title and its record, and marks it seen', async () => {
+  test('#session/<id> shows the session title and its record, and marks it seen; a page not opened from create has no citation pills', async () => {
     await mount(`#session/${RUNNING_SESSION}`, props('busy'));
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('session');
     expect(document.querySelector('[data-doc-session-page] h1')?.textContent).toBe('Tighten the reading column');
     expect(document.querySelectorAll('[data-conversation] [data-message]').length).toBe(4);
     expect(document.querySelector('[data-turn="2"]')?.getAttribute('data-turn-state')).toBe('running');
-    expect(document.querySelector('[data-citation]')?.textContent).toContain('docs/design/console.md:L3–L5');
+    // No read returns a session's citations; only the create answer names them.
+    expect(document.querySelector('[data-citation]')).toBeNull();
     expect(JSON.parse(localStorage.getItem(OPERATOR_SESSION_SEEN_STORAGE_KEY)!)[RUNNING_SESSION]).toBe('2.2');
+  });
+
+  test('a delivered session shows the Draft PR from its finalization read', async () => {
+    await mount(`#session/${PR_SESSION}`, props('busy'));
+    expect(document.querySelector('[data-session-status]')?.getAttribute('data-session-status')).toBe('pr_open');
+    expect(document.querySelector('[data-delivery]')?.getAttribute('data-finalize-stage')).toBe('complete');
+    expect(document.querySelector('a[href="https://github.com/Ancienttwo/repo-harness/pull/1188"]')?.textContent).toBe('Draft PR #1188');
+    expect(document.querySelector('[data-commit-submit]')).toBeNull();
+    expect(document.querySelector('[data-discard-open]')).toBeNull();
   });
 
   test('#cleanup/<id> shows its record; a server without session routes sends the session route Home', async () => {
@@ -704,12 +791,15 @@ describe('session pages in the app', () => {
 describe('copy', () => {
   test('every session code, verb, status and failure category has en and zh copy', () => {
     const keys = [
-      ...['running', 'awaiting_review', 'pr_open', 'discarded', 'cleaned', 'failed'].map(status => `docSession.status.${status}`),
+      ...DOC_SESSION_STATUSES.map(status => `docSession.status.${status}`),
       ...[...DOC_SESSION_WRITE_REFUSALS, ...DOC_SESSION_READ_FAILURES, ...DOC_SESSION_READ_REASONS].flatMap(code => [`docSession.error.${code}.message`, `docSession.error.${code}.action`]),
       ...DOC_SESSION_TOOL_CATEGORIES.map(category => `docSession.tool.${category}`),
       ...DOC_SESSION_FAILURE_CATEGORIES.map(category => `docSession.failure.${category}`),
-      ...CLEANUP_PLAN_ADVICE.map(advice => `cleanupSession.advice.${advice}`),
-      ...[...WORKTREE_REASONS, ...WORKTREE_CLEANUP_SKIP_REASONS, ...CLEANUP_SESSION_SKIP_REASONS].map(reason => `worktrees.reason.${reason}`),
+      ...['prepared', 'committed', 'pushed', 'creating_pr', 'pr_failed', 'complete', 'discard_removing', 'discard_removed', 'discard_complete']
+        .map(stage => `docSession.finalize.stage.${stage}`),
+      ...['delete', 'archive_then_delete', 'keep'].map(advice => `cleanupSession.advice.${advice}`),
+      ...['message', 'action'].map(part => `cleanupSession.execution.cleanup_execution_unavailable.${part}`),
+      ...[...WORKTREE_REASONS, ...WORKTREE_CLEANUP_SKIP_REASONS].map(reason => `worktrees.reason.${reason}`),
     ];
     expect(keys.filter(key => !isOperatorMessageKey(key))).toEqual([]);
     expect(['读', '搜', '改', '运行', '网页', '其他']).toEqual(DOC_SESSION_TOOL_CATEGORIES.map(category => translate('zh', `docSession.tool.${category}`)));

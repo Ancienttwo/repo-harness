@@ -18,9 +18,9 @@ import {
   type ExecutionResult,
   type ItemOwner,
 } from './repository-reads';
-import type { DocSessionSummaryV1 } from '../core/operator/doc-session-api';
+import type { DocSessionSummary } from '../core/operator/doc-session-views';
 import { DocSessionComposer, type DocSessionStart } from './DocSessionComposer';
-import { DOC_SESSION_STATUS_TONE, docSessionReadText, docSessionRuntimeName, docSessionStartState, docSessionStatus, listFailure, type DocSessionStatus } from './doc-sessions';
+import { DOC_SESSION_STATUS_TONE, docSessionReadText, docSessionRuntimeName, docSessionStartState, docSessionStatus, listFailure } from './doc-sessions';
 import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
@@ -138,22 +138,20 @@ function ContinueRow({ item, snapshot, executions, now, onOpen, t }: {
 
 type ContinueEntry =
   | { readonly kind: 'task'; readonly item: DevActivityItem; readonly at: number }
-  | { readonly kind: 'session'; readonly session: DocSessionSummaryV1; readonly at: number };
+  | { readonly kind: 'session'; readonly session: DocSessionSummary; readonly at: number };
 
-/** Sessions that still wait for work or a decision; a session with a Draft PR or a closed one has nothing left to continue here. */
-const CONTINUE_STATUSES: ReadonlySet<DocSessionStatus> = new Set(['running', 'awaiting_review', 'failed']);
-
-function SessionRow({ session, snapshot, now, onOpen, t }: {
-  readonly session: DocSessionSummaryV1; readonly snapshot: DevActivitySnapshotV2; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
+/** The list summary carries no finalization progress, so a row shows the docs host state only. */
+function SessionRow({ session, now, onOpen, t }: {
+  readonly session: DocSessionSummary; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
 }) {
-  const status = docSessionStatus(session.agent, session.outcome);
+  const status = docSessionStatus(session.state, null);
   return (
     <li className={ROW} data-continue-session={session.session_id}>
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <StatusDot tone={DOC_SESSION_STATUS_TONE[status]} className="mt-1.5" />
         <div className="min-w-0">
           <PageLink to={sessionPlace(session.session_id)} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{session.title}</PageLink>
-          <p className="type-caption truncate text-kumo-subtle">{t('docSession.title')} · {repositoryLabel(snapshot.repositories, session.repository_id)}</p>
+          <p className="type-caption truncate text-kumo-subtle">{t('docSession.title')} · {session.repository_name}</p>
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 pl-5 rail:pl-0">
@@ -342,8 +340,7 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, start, gen
     .filter(item => item.hidden === null && (item.column === 'building' || item.column === 'verifying') && !subjects.has(item.id))
     .sort((left, right) => time(right.pull_request?.updated_at) - time(left.pull_request?.updated_at) || (left.id < right.id ? -1 : 1));
   const sessionList = start?.docSessions.view;
-  const sessions = sessionList?.kind === 'ready'
-    ? sessionList.list.sessions.filter(session => CONTINUE_STATUSES.has(docSessionStatus(session.agent, session.outcome))) : [];
+  const sessions = sessionList?.kind === 'ready' ? sessionList.list.sessions : [];
   // Tasks and doc sessions share one list, newest activity first.
   const continuing: readonly ContinueEntry[] = [
     ...tasks.map((item): ContinueEntry => ({ kind: 'task', item, at: time(item.pull_request?.updated_at) })),
@@ -379,7 +376,7 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, start, gen
         {continuing.length === 0 ? (sessionsFailure === null ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('board.empty.title')}</p> : null) : (
           <ul>{(continueExpanded ? continuing : continuing.slice(0, CONTINUE_PREVIEW)).map(entry => entry.kind === 'task'
             ? <ContinueRow key={entry.item.id} item={entry.item} snapshot={ready} executions={executions} now={now} onOpen={onOpen} t={t} />
-            : <SessionRow key={entry.session.session_id} session={entry.session} snapshot={ready} now={now} onOpen={onOpen} t={t} />)}</ul>
+            : <SessionRow key={entry.session.session_id} session={entry.session} now={now} onOpen={onOpen} t={t} />)}</ul>
         )}
         {continuing.length > CONTINUE_PREVIEW && <FoldButton expanded={continueExpanded} hidden={continuing.length - CONTINUE_PREVIEW} onToggle={() => setContinueExpanded(value => !value)} t={t} />}
       </ListGroup>

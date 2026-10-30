@@ -917,7 +917,7 @@ describe('worktree cleanup (5.1)', () => {
         expect([box.disabled, box.checked]).toEqual([!green, green]);
       }
       const expected: [string, string][] = [
-        ['not_approved', 'A selected worktree is not green and has no valid approval. Nothing was removed.'],
+        ['not_approved', 'A selected worktree is not green. Nothing was removed.'],
         ['in_use', 'A selected worktree is in use. Nothing was removed.'],
         ['inventory_unavailable', 'The worktree inventory cannot be read. Nothing was removed.'],
         ['busy', 'Another worktree cleanup is running. Nothing was removed.'],

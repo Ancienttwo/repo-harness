@@ -2,24 +2,24 @@ import { useCallback, useState } from 'react';
 import { Banner, Button, cn } from '@cloudflare/kumo';
 import {
   DOC_SESSION_COMMIT_MESSAGE_MAX,
-  DOC_SESSION_MESSAGE_MAX,
+  DOC_SESSION_MESSAGE_MAX_BYTES,
   DOC_SESSION_MESSAGE_WHEN,
-  type DocSessionDeliveryV1,
   type DocSessionMessageWhen,
-  type DocSessionStepState,
-  type OperatorDocSessionCommitV1,
-  type OperatorDocSessionDetailV1,
   type OperatorDocSessionMessageV1,
   type OperatorDocSessionStopV1,
 } from '../core/operator/doc-session-api';
 import type { OperatorDocSessionDiffV1 } from '../core/operator/doc-session-changes';
+import type { DocSessionCommitInput } from '../core/operator/doc-session-finalize';
+import type { OperatorDocSessionDetail } from '../core/operator/doc-session-views';
 import {
   localizeDocSessionRefusal,
+  storedFinalizeRequest,
+  storeFinalizeRequest,
   useSessionWrite,
-  type DocSessionCommitRequest,
   type DocSessionCommitWriter,
   type DocSessionMessageRequest,
   type DocSessionMessageWriter,
+  type DocSessionProgress,
   type DocSessionStopWriter,
   type DocSessionWrite,
   type RequestId,
@@ -39,9 +39,9 @@ export function SessionWriteResult({ outcome, t }: { readonly outcome: DocSessio
       description={<>
         {!text.localized && <span className="block text-xs">{t('docSession.serverText')}</span>}
         <span className="block">{text.next_action}</span>
-        {refusal.paths.length > 0 && (
-          <ul className="mt-1 flex flex-col gap-0.5" data-refusal-paths>
-            {refusal.paths.map(path => <li key={path}><code className="font-mono text-xs [overflow-wrap:anywhere]">{path}</code></li>)}
+        {refusal.files.length > 0 && (
+          <ul className="mt-1 flex flex-col gap-0.5" data-refusal-files>
+            {refusal.files.map(path => <li key={path}><code className="font-mono text-xs [overflow-wrap:anywhere]">{path}</code></li>)}
           </ul>
         )}
         {/* A pushed branch is never deleted from the page; the server names the command. */}
@@ -50,22 +50,33 @@ export function SessionWriteResult({ outcome, t }: { readonly outcome: DocSessio
   );
 }
 
-/** A follow-up message to the doc session's agent (`4-DSES-P2`), and「停止」while a turn runs. */
-export function FollowUp({ sessionId, detail, writeMessage, writeStop, onSent, t }: {
-  readonly sessionId: string; readonly detail: OperatorDocSessionDetailV1;
+const messageBytes = (text: string): number => new TextEncoder().encode(text).length;
+
+/**
+ * A follow-up message to the doc session's agent (`4-DSES-P2`), and「停止」while a turn runs.
+ * Whether the runtime takes a message into the running turn is known only from the server's
+ * `steer_unsupported` answer; the page keeps that answer per session.
+ */
+export function FollowUp({ sessionId, detail, progress, steerUnsupported, onSteerUnsupported, writeMessage, writeStop, onSent, t }: {
+  readonly sessionId: string; readonly detail: OperatorDocSessionDetail; readonly progress: DocSessionProgress | null;
+  readonly steerUnsupported: boolean; readonly onSteerUnsupported: () => void;
   readonly writeMessage: DocSessionMessageWriter; readonly writeStop: DocSessionStopWriter;
   readonly onSent: () => void; readonly t: OperatorTranslate;
 }) {
   const [text, setText] = useState('');
-  const [when, setWhen] = useState<DocSessionMessageWhen>('after_turn');
+  const [chosen, setWhen] = useState<DocSessionMessageWhen>('after_turn');
   const message = useSessionWrite<DocSessionMessageRequest, OperatorDocSessionMessageV1>(
     useCallback(body => writeMessage(sessionId, body), [writeMessage, sessionId]));
   const stop = useSessionWrite<object, OperatorDocSessionStopV1>(useCallback((body: RequestId) => writeStop(sessionId, body), [writeStop, sessionId]));
-  const closed = detail.outcome !== null || detail.agent === 'stopped' || detail.agent === 'failed';
-  const steerUnsupported = detail.steer === 'unsupported';
+  const { state } = detail.session;
+  // A started commit or discard ends the conversation as surely as a stopped agent.
+  const closed = state === 'stopped' || state === 'failed' || progress !== null;
+  const when = steerUnsupported ? 'after_turn' : chosen;
+  const tooLong = messageBytes(text) > DOC_SESSION_MESSAGE_MAX_BYTES;
   const sending = message.state.kind === 'sending';
   const send = async () => {
     const outcome = await message.submit({ text, when });
+    if (outcome?.state === 'refused' && outcome.refusal.code === 'steer_unsupported') onSteerUnsupported();
     if (outcome?.state === 'ok') { setText(''); onSent(); }
   };
   const halt = async () => {
@@ -78,7 +89,7 @@ export function FollowUp({ sessionId, detail, writeMessage, writeStop, onSent, t
     <section className="flex flex-col gap-2" data-follow-up aria-label={t('docSession.composer.label')}>
       {closed && <p className="text-sm text-kumo-subtle" data-follow-up-closed>{t('docSession.error.session_closed.message')}</p>}
       <div className="flex flex-col rounded-xl border border-kumo-line bg-kumo-control">
-        <textarea value={text} onChange={event => setText(event.target.value)} disabled={closed} maxLength={DOC_SESSION_MESSAGE_MAX} rows={3}
+        <textarea value={text} onChange={event => setText(event.target.value)} disabled={closed} rows={3}
           aria-label={t('docSession.composer.label')} placeholder={t('docSession.composer.placeholder')}
           className="min-h-20 resize-y rounded-t-xl bg-transparent px-4 py-3 text-sm text-kumo-default outline-none placeholder:text-kumo-subtle disabled:cursor-not-allowed" />
         <div className="flex flex-wrap items-center gap-2 border-t border-kumo-hairline px-3 py-2">
@@ -97,14 +108,15 @@ export function FollowUp({ sessionId, detail, writeMessage, writeStop, onSent, t
             })}
           </div>
           <span className="flex-1" />
-          {detail.agent === 'running' && (
+          {state === 'running' && (
             <Button variant="secondary" size="sm" onClick={() => void halt()} disabled={stop.state.kind === 'sending'} data-stop>{t('docSession.composer.stop')}</Button>
           )}
-          <Button variant="primary" size="sm" onClick={() => void send()} disabled={closed || sending || text.trim() === ''} data-send>
+          <Button variant="primary" size="sm" onClick={() => void send()} disabled={closed || sending || text.trim() === '' || tooLong} data-send>
             {t(sending ? 'docSession.composer.sending' : 'docSession.composer.send')}
           </Button>
         </div>
       </div>
+      {tooLong && <p className="type-caption text-kumo-warning" data-message-too-long>{t('docSession.composer.tooLong', { max: DOC_SESSION_MESSAGE_MAX_BYTES })}</p>}
       {steerUnsupported && !closed && <p className="type-caption text-kumo-subtle" data-steer-unsupported>{t('docSession.composer.steerUnsupported')}</p>}
       {sent?.state === 'ok' && <p role="status" className="text-sm text-kumo-subtle" data-landed={sent.result.landed}>{t(`docSession.landed.${sent.result.landed}`)}</p>}
       {sent !== null && <SessionWriteResult outcome={sent} t={t} />}
@@ -114,65 +126,85 @@ export function FollowUp({ sessionId, detail, writeMessage, writeStop, onSent, t
   );
 }
 
-const STEP_TONE: Readonly<Record<DocSessionStepState, DotTone>> = { done: 'ok', failed: 'danger', pending: 'unknown' };
+type StepState = 'done' | 'pending' | 'failed';
+const STEP_TONE: Readonly<Record<StepState, DotTone>> = { done: 'ok', failed: 'danger', pending: 'unknown' };
+type CommitProgress = Extract<DocSessionProgress, { readonly operation: 'commit' }>;
 
-function DeliverySteps({ delivery, t }: { readonly delivery: DocSessionDeliveryV1; readonly t: OperatorTranslate }) {
-  const failed = delivery.steps.find(step => step.state === 'failed');
+/** The three delivery steps, read from the saved journal progress. */
+function CommitSteps({ progress, t }: { readonly progress: CommitProgress; readonly t: OperatorTranslate }) {
+  const steps: readonly (readonly ['commit' | 'push' | 'pull_request', StepState])[] = [
+    ['commit', progress.stage === 'prepared' ? 'pending' : 'done'],
+    ['push', progress.pushed ? 'done' : 'pending'],
+    ['pull_request', progress.pr !== null ? 'done' : progress.stage === 'pr_failed' ? 'failed' : 'pending'],
+  ];
   return (
-    <div className="flex flex-col gap-2" data-delivery>
+    <div className="flex flex-col gap-2" data-delivery data-finalize-stage={progress.stage}>
       <ol className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        {delivery.steps.map(step => (
-          <li key={step.step} className="flex items-center gap-1.5" data-step={step.step} data-step-state={step.state}>
-            <StatusDot tone={STEP_TONE[step.state]} />
-            <span className="text-kumo-default">{t(`docSession.step.${step.step}`)}</span>
-            <span className="text-xs text-kumo-subtle">{t(`docSession.step.state.${step.state}`)}</span>
+        {steps.map(([step, state]) => (
+          <li key={step} className="flex items-center gap-1.5" data-step={step} data-step-state={state}>
+            <StatusDot tone={STEP_TONE[state]} />
+            <span className="text-kumo-default">{t(`docSession.step.${step}`)}</span>
+            <span className="text-xs text-kumo-subtle">{t(`docSession.step.state.${state}`)}</span>
           </li>
         ))}
       </ol>
-      {failed !== undefined && <p className="text-sm text-kumo-danger" data-delivery-stopped={failed.step}>{t('docSession.commit.stopped', { step: t(`docSession.step.${failed.step}`) })}</p>}
-      {delivery.pull_request !== null && (
-        <ExternalLink href={delivery.pull_request.url} className="w-fit text-sm">{t('docSession.commit.pullRequest', { number: delivery.pull_request.number })}</ExternalLink>
+      {progress.stage !== 'complete' && <p className="text-sm text-kumo-default" data-delivery-stopped={progress.stage}>{t(`docSession.finalize.stage.${progress.stage}`)}</p>}
+      {progress.pr !== null && (
+        <ExternalLink href={progress.pr.url} className="w-fit text-sm">{t('docSession.commit.pullRequest', { number: progress.pr.number })}</ExternalLink>
       )}
     </div>
   );
 }
 
+/** A resume needs the first request; without it the page says so and builds no new body. */
+export function OriginalMissing({ answered, t }: { readonly answered: DocSessionWrite<unknown> | null; readonly t: OperatorTranslate }) {
+  const action = answered?.state === 'refused' ? localizeDocSessionRefusal(answered.refusal, t).next_action : t('docSession.finalize.originalMissing.action');
+  return <Banner variant="alert" data-original-missing title={t('docSession.finalize.originalMissing.message')} description={action} />;
+}
+
 /**
- * Commit, push and open a Draft PR (`4-DSES-P1`, C19). The request binds the
- * diff the user read: its head and digest. A delivery that stopped at a step
- * resumes through the same request; the server skips the steps already done.
+ * Commit, push and open a Draft PR (`4-DSES-P1`, C19). The first request
+ * binds the diff the user read: its head and digest. The browser keeps that
+ * request; once the server saved it, each retry sends it unchanged with a new
+ * request_id, and the server resumes at the step that did not finish. The
+ * progress shown is the `/finalization` read, never the write answer.
  */
-export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed, delivery, writeCommit, onDiffChanged, onDelivered, t }: {
+export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed, progress, writeCommit, onDiffChanged, onAnswered, t }: {
   readonly sessionId: string; readonly title: string; readonly awaitingReview: boolean;
   /** The current diff read; null while it is not loaded. */
   readonly diff: OperatorDocSessionDiffV1 | null;
   /** The user saw the diff view of this diff digest. */
   readonly reviewed: boolean;
-  /** The delivery the session detail last reported. */
-  readonly delivery: DocSessionDeliveryV1 | null;
-  readonly writeCommit: DocSessionCommitWriter; readonly onDiffChanged: () => void; readonly onDelivered: () => void; readonly t: OperatorTranslate;
+  /** The commit progress of the last `/finalization` read. */
+  readonly progress: CommitProgress | null;
+  readonly writeCommit: DocSessionCommitWriter; readonly onDiffChanged: () => void; readonly onAnswered: () => void; readonly t: OperatorTranslate;
 }) {
   const [message, setMessage] = useState<string | null>(null);
-  const commit = useSessionWrite<DocSessionCommitRequest, OperatorDocSessionCommitV1>(
-    useCallback(body => writeCommit(sessionId, body), [writeCommit, sessionId]));
+  const commit = useSessionWrite<DocSessionCommitInput, null>(useCallback(body => writeCommit(sessionId, body), [writeCommit, sessionId]));
   const text = message ?? title;
   const answered = commit.state.kind === 'answered' ? commit.state.outcome : null;
-  const shown = answered?.state === 'ok' ? answered.result.delivery : delivery;
-  const done = shown !== null && shown.steps.every(step => step.state === 'done');
-  const resume = shown !== null && shown.steps.some(step => step.state === 'failed');
-  const ready = awaitingReview && diff !== null && diff.files.length > 0 && reviewed && text.trim() !== '';
   const sending = commit.state.kind === 'sending';
-  const submit = async () => {
-    if (diff === null) return;
-    const outcome = await commit.submit({ expected_head: diff.head_commit, expected_diff_sha256: diff.diff_sha256, message: text });
-    if (outcome?.state === 'refused' && outcome.refusal.code === 'diff_changed') onDiffChanged();
-    if (outcome?.state === 'ok') onDelivered();
+  const resume = progress !== null && progress.stage !== 'complete';
+  const stored = resume ? storedFinalizeRequest(sessionId, 'commit') : null;
+  const send = async (body: DocSessionCommitInput) => {
+    const outcome = await commit.submit(body);
+    if (outcome === null) return;
+    // A diff_changed refusal saved nothing; only the diff needs a new read.
+    if (outcome.state === 'refused' && outcome.refusal.code === 'diff_changed') onDiffChanged();
+    else onAnswered();
   };
+  const first = async () => {
+    if (diff === null) return;
+    const body: DocSessionCommitInput = { expected_head: diff.head_commit, expected_diff_sha256: diff.diff_sha256, message: text };
+    storeFinalizeRequest(sessionId, 'commit', body);
+    await send(body);
+  };
+  const ready = awaitingReview && diff !== null && diff.files.length > 0 && reviewed && text.trim() !== '';
   const hint = !awaitingReview ? 'docSession.commit.notReady' : diff !== null && !reviewed ? 'docSession.commit.needsReview' : null;
   return (
     <section className="flex flex-col gap-3" data-commit aria-label={t('docSession.commit.submit')}>
-      {shown !== null && <DeliverySteps delivery={shown} t={t} />}
-      {!done && (
+      {progress !== null && <CommitSteps progress={progress} t={t} />}
+      {progress === null && (
         <>
           <label className="flex flex-col gap-1 text-sm">
             <span className="type-caption text-kumo-subtle">{t('docSession.commit.message')}</span>
@@ -180,13 +212,19 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
               className="h-9 rounded-md border border-kumo-line bg-kumo-base px-3 text-sm text-kumo-default outline-none focus-visible:ring-2 focus-visible:ring-kumo-brand" />
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <Button variant="primary" onClick={() => void submit()} disabled={!ready || sending} loading={sending} data-commit-submit={resume ? 'resume' : 'commit'}>
-              {t(resume ? 'docSession.commit.retry' : sending ? 'docSession.commit.sending' : 'docSession.commit.submit')}
+            <Button variant="primary" onClick={() => void first()} disabled={!ready || sending} loading={sending} data-commit-submit="commit">
+              {t(sending ? 'docSession.commit.sending' : 'docSession.commit.submit')}
             </Button>
             {hint !== null && <span className="text-sm text-kumo-subtle" data-commit-hint>{t(hint)}</span>}
           </div>
         </>
       )}
+      {resume && stored !== null && (
+        <Button variant="primary" className="w-fit" onClick={() => void send(stored)} disabled={sending} loading={sending} data-commit-submit="resume">
+          {t('docSession.commit.retry')}
+        </Button>
+      )}
+      {resume && stored === null && <OriginalMissing answered={answered} t={t} />}
       {answered !== null && <SessionWriteResult outcome={answered} t={t} />}
     </section>
   );

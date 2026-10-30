@@ -29,7 +29,7 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import { LogoMark } from './brand';
 import { failedSources, openPullRequests, repositoryById, type DevActivityView } from './dev-activity';
 import type { OperatorLocale, OperatorTranslate } from './i18n';
-import { docSessionStartState, isSessionUnread, type DocSessions } from './doc-sessions';
+import { docSessionStartState, type DocSessions } from './doc-sessions';
 import type { ThemePreference } from './theme';
 import { PageLink, StatusDot, type DotTone } from './ui';
 import { WORKSPACES, type NavGroup, type NavWorkspace, type Workspace, type WorkspaceLocation } from './workspace-location';
@@ -293,7 +293,7 @@ function RecentSessions({ docSessions, currentSession, collapsed, onOpen, t }: {
       <ul aria-labelledby="nav-group-recent" className="flex flex-col gap-0.5">
           {view.list.sessions.slice(0, RECENT_SESSIONS_LIMIT).map(session => {
             const active = currentSession === session.session_id;
-            const unread = !active && isSessionUnread(session);
+            const unread = !active && session.unread;
             return (
               <li key={session.session_id}>
                 <PageLink to={{ workspace: 'session', module: null, item: session.session_id }} onOpen={onOpen} data-recent-session={session.session_id} title={session.title}

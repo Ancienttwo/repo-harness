@@ -7,15 +7,14 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
+import type { DocSessionCitationView } from '../core/operator/doc-session-api';
+import { fetchCleanupPlan, postCleanupSessionCreate, type CleanupPlanReader, type CleanupSessionCreateWriter } from './cleanup-session';
 import {
-  fetchCleanupPlan, postCleanupSession, postCleanupSessionCreate,
-  type CleanupPlanReader, type CleanupSessionCreateWriter, type CleanupSessionWriter,
-} from './cleanup-session';
-import {
-  fetchDocSessionDetail, fetchDocSessionDiff, fetchDocSessionEvents, fetchDocSessionLoss, fetchDocSessions,
+  fetchDocSessionDetail, fetchDocSessionDiff, fetchDocSessionEvents, fetchDocSessionFinalization, fetchDocSessionLoss, fetchDocSessions,
   postDocSessionCommit, postDocSessionCreate, postDocSessionDiscard, postDocSessionMessage, postDocSessionStop, useDocSessions,
   type DocSessionCommitWriter, type DocSessionCreateWriter, type DocSessionDetailReader, type DocSessionDiffReader, type DocSessionDiscardWriter,
-  type DocSessionEventsReader, type DocSessionLossReader, type DocSessionMessageWriter, type DocSessionsReader, type DocSessionStopWriter,
+  type DocSessionEventsReader, type DocSessionFinalizationReader, type DocSessionLossReader, type DocSessionMessageWriter, type DocSessionsReader,
+  type DocSessionStopWriter,
 } from './doc-sessions';
 import { EMPTY_DOC_DRAFT, type DocDraft } from './doc-draft';
 import type { DocSessionStart } from './DocSessionComposer';
@@ -154,23 +153,23 @@ export interface OperatorAppProps {
   /** The docs page's tree and file reads; the browser default is the same-origin docs routes. */
   readonly readDocsTree?: DocsTreeReader;
   readonly readDocsFile?: DocsFileReader;
-  /** The doc session list: the one authority on whether sessions are served and which kinds can start. */
+  /** The doc session list: the one authority on whether sessions are served. */
   readonly readDocSessions?: DocSessionsReader;
-  /** One doc session's detail, record, diff and loss reads. */
+  /** One doc session's detail, record, diff, loss and finalization reads. */
   readonly readDocSession?: DocSessionDetailReader;
   readonly readDocSessionEvents?: DocSessionEventsReader;
   readonly readDocSessionDiff?: DocSessionDiffReader;
   readonly readDocSessionLoss?: DocSessionLossReader;
+  readonly readDocSessionFinalization?: DocSessionFinalizationReader;
   /** The doc session writes: start from citations, follow-up message, stop, commit with Draft PR, discard. */
   readonly writeDocSessionCreate?: DocSessionCreateWriter;
   readonly writeDocSessionMessage?: DocSessionMessageWriter;
   readonly writeDocSessionStop?: DocSessionStopWriter;
   readonly writeDocSessionCommit?: DocSessionCommitWriter;
   readonly writeDocSessionDiscard?: DocSessionDiscardWriter;
-  /** The worktree cleanup session: its plan read, its start from the Worktree page, and the approved cleanup. */
+  /** The worktree cleanup session: its plan read and its start from the Worktree page. */
   readonly readCleanupPlan?: CleanupPlanReader;
   readonly writeCleanupSessionCreate?: CleanupSessionCreateWriter;
-  readonly writeCleanupSession?: CleanupSessionWriter;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -319,6 +318,7 @@ export function OperatorApp({
   readDocSessionEvents = fetchDocSessionEvents,
   readDocSessionDiff = fetchDocSessionDiff,
   readDocSessionLoss = fetchDocSessionLoss,
+  readDocSessionFinalization = fetchDocSessionFinalization,
   writeDocSessionCreate = postDocSessionCreate,
   writeDocSessionMessage = postDocSessionMessage,
   writeDocSessionStop = postDocSessionStop,
@@ -326,7 +326,6 @@ export function OperatorApp({
   writeDocSessionDiscard = postDocSessionDiscard,
   readCleanupPlan = fetchCleanupPlan,
   writeCleanupSessionCreate = postCleanupSessionCreate,
-  writeCleanupSession = postCleanupSession,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -371,16 +370,14 @@ export function OperatorApp({
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
-  // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
-  // The cleanup session binds its approval to the same rows.
   // One list read decides on every page whether session controls exist at all.
   const docSessions = useDocSessions(readDocSessions, refreshGeneration);
   // A session route opens a page only on a server that lists sessions; an absent list sends it Home, and no read starts before the list answers.
   const sessionRoute = workspace === 'session' || workspace === 'cleanup';
   const sessionsAbsent = docSessions.view.kind === 'absent';
   const sessionsLoading = docSessions.view.kind === 'loading';
-  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration,
-    workspace === 'worktrees' || workspace === 'board' || workspace === 'home' || (workspace === 'cleanup' && !sessionsAbsent && !sessionsLoading));
+  // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
+  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   useEffect(() => {
     if (!sessionRoute || !sessionsAbsent) return;
@@ -425,8 +422,16 @@ export function OperatorApp({
     openPlace({ workspace: 'home', module: null, item: null });
     setComposerFocus(true);
   }, [openPlace]);
+  // The create answer is the only source of a session's verified citations; the page that opens right after it shows them.
+  const [createdCitations, setCreatedCitations] = useState<Readonly<Record<string, readonly DocSessionCitationView[]>>>({});
+  const sessionCreated = useCallback((created: { readonly session_id: string; readonly citations: readonly DocSessionCitationView[] }) => {
+    setCreatedCitations(current => ({ ...current, [created.session_id]: created.citations }));
+  }, []);
+  // A `steer_unsupported` answer disables「插入本轮」for that session while the console stays open.
+  const [noSteer, setNoSteer] = useState<ReadonlySet<string>>(() => new Set());
+  const steerRefused = useCallback((sessionId: string) => setNoSteer(current => new Set(current).add(sessionId)), []);
   const docStart: DocSessionStart = {
-    docSessions, readAgentsSettings, createDocSession: writeDocSessionCreate, draft: docDraft, onDraft: setDocDraft,
+    docSessions, readAgentsSettings, createDocSession: writeDocSessionCreate, onCreated: sessionCreated, draft: docDraft, onDraft: setDocDraft,
     focusRequested: composerFocus, onFocusHandled: composerFocused,
   };
   const switchRepository = (id: string) => {
@@ -607,12 +612,13 @@ export function OperatorApp({
           {sessionRoute && sessionsLoading && <p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}
           {workspace === 'session' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <DocSessionPage sessionId={place.item} readDetail={readDocSession} readEvents={readDocSessionEvents}
-              readDiff={readDocSessionDiff} readLoss={readDocSessionLoss} writeMessage={writeDocSessionMessage} writeStop={writeDocSessionStop}
-              writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
+              readDiff={readDocSessionDiff} readLoss={readDocSessionLoss} readFinalization={readDocSessionFinalization}
+              writeMessage={writeDocSessionMessage} writeStop={writeDocSessionStop} writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard}
+              citations={createdCitations[place.item] ?? null} steerUnsupported={noSteer.has(place.item)} onSteerUnsupported={() => steerRefused(place.item!)}
+              generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
           {workspace === 'cleanup' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-            <CleanupSessionPage sessionId={place.item} readEvents={readDocSessionEvents} readPlan={readCleanupPlan}
-              writeCleanup={writeCleanupSession} worktrees={worktrees} reloadWorktrees={reloadWorktrees} generation={refreshGeneration} t={t} />
+            <CleanupSessionPage sessionId={place.item} readEvents={readDocSessionEvents} readPlan={readCleanupPlan} generation={refreshGeneration} t={t} />
           </Suspense>}
           {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace

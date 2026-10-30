@@ -11,7 +11,7 @@ import { useDocsFile, useDocsTree, type DocsFileReader, type DocsReason, type Do
 import { buildCitation, selectionLineRange } from './doc-citation';
 import { draftFull, withCitation } from './doc-draft';
 import { DocSessionComposer, type DocSessionStart } from './DocSessionComposer';
-import { docSessionStartState, startableKinds } from './doc-sessions';
+import { docSessionStartState, docSessionsLive } from './doc-sessions';
 import type { ThemeMode } from './theme';
 import { PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
@@ -261,7 +261,7 @@ function Reader({ repositoryId, path, commit, readFile, generation, mode, onOpen
       </>
     );
   }
-  const citing = start !== undefined && startableKinds(start.docSessions.view).includes('docs') ? start : null;
+  const citing = start !== undefined && docSessionsLive(start.docSessions.view) ? start : null;
   return <FileView file={read.value} mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t}
     onCite={citing === null ? undefined : citation => citing.onDraft(current => withCitation(current, repositoryId, citation))}
     draftFullFor={citing !== null && draftFull(citing.draft, repositoryId)} />;

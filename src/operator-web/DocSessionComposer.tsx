@@ -25,6 +25,8 @@ export interface DocSessionStart {
   readonly docSessions: DocSessions;
   readonly readAgentsSettings: AgentsSettingsReader;
   readonly createDocSession: DocSessionCreateWriter;
+  /** The create answer, before the new session opens; it alone names the verified citations. */
+  readonly onCreated: (created: OperatorDocSessionCreatedV1) => void;
   readonly draft: DocDraft;
   readonly onDraft: Dispatch<SetStateAction<DocDraft>>;
   /** 「新会话」 asked for the composer; it takes focus once and then calls `onFocusHandled`. */
@@ -63,7 +65,7 @@ export function DocSessionComposer({ start, currentRepositoryId, onOpen, openDoc
   readonly openDocsOnCite: boolean;
   readonly t: OperatorTranslate;
 }) {
-  const { docSessions, readAgentsSettings, createDocSession, draft, onDraft, focusRequested, onFocusHandled } = start;
+  const { docSessions, readAgentsSettings, createDocSession, onCreated, draft, onDraft, focusRequested, onFocusHandled } = start;
   const { failure } = docSessionStartState(docSessions.view);
   const runtimes = useDocsRuntimes(readAgentsSettings);
   const write = useSessionWrite<DocSessionCreateRequest, OperatorDocSessionCreatedV1>(createDocSession);
@@ -94,6 +96,7 @@ export function DocSessionComposer({ start, currentRepositoryId, onOpen, openDoc
     if (!ready || draft.repositoryId === null || runtime === null) return;
     const outcome = await write.submit({ kind: 'docs', repository_id: draft.repositoryId, runtime, citations: draft.citations, instruction: draft.instruction });
     if (outcome?.state !== 'ok') return;
+    onCreated(outcome.result);
     onDraft(EMPTY_DOC_DRAFT);
     docSessions.reload();
     onOpen({ workspace: 'session', module: null, item: outcome.result.session_id });

@@ -7,7 +7,7 @@ import type { OperatorApiErrorV1 } from './types';
 import { BoardState } from './Board';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import type { CleanupSessionCreateWriter } from './cleanup-session';
-import { docSessionReadText, localizeDocSessionRefusal, startableKinds, useSessionWrite, type DocSessions } from './doc-sessions';
+import { docSessionReadText, docSessionsLive, localizeDocSessionRefusal, useSessionWrite, type DocSessions } from './doc-sessions';
 import { ageWords } from './labels';
 import type { AgentsSettingsV1 } from '../core/operator/agents-settings';
 import { docsRuntimes, type AgentsSettingsRead, type AgentsSettingsReader } from './settings';
@@ -233,7 +233,7 @@ function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { readonl
     : { message: error.message, next_action: error.next_action, localized: false };
 }
 
-export const OUTCOME_TONE: Readonly<Record<WorktreeCleanupItem['outcome'], DotTone>> = { removed: 'ok', skipped: 'warn', failed: 'danger' };
+const OUTCOME_TONE: Readonly<Record<WorktreeCleanupItem['outcome'], DotTone>> = { removed: 'ok', skipped: 'warn', failed: 'danger' };
 
 function ResultList({ result, t }: { readonly result: WorktreeCleanupResult; readonly t: OperatorTranslate }) {
   const counts = (['removed', 'skipped', 'failed'] as const).map(outcome => [outcome, result.items.filter(item => item.outcome === outcome).length] as const).filter(([, count]) => count > 0);
@@ -277,7 +277,10 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
  */
 export function WorktreesPage({ view, cleanup, now, t, docSessions, readAgentsSettings, startCleanupSession, onOpen }: {
   readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate;
-  /** The doc session list; the cleanup session entry shows only when it lists `worktree_cleanup`. */
+  /**
+   * The doc session list; the cleanup session entry shows while it answers. No field names the kinds a
+   * server starts, so a server that does not accept `worktree_cleanup` says so in its create refusal.
+   */
   readonly docSessions?: DocSessions;
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly startCleanupSession?: CleanupSessionCreateWriter;
@@ -296,7 +299,7 @@ export function WorktreesPage({ view, cleanup, now, t, docSessions, readAgentsSe
   const overLimit = cleanup.selected.length > WORKTREE_CLEANUP_MAX_IDS;
   // A yellow row is the only thing a session can decide; without one there is nothing to ask the agent.
   const offerSession = docSessions !== undefined && readAgentsSettings !== undefined && startCleanupSession !== undefined && onOpen !== undefined
-    && startableKinds(docSessions.view).includes('worktree_cleanup') && allWorktrees(snapshot).some(tree => tree.judgment === 'yellow');
+    && docSessionsLive(docSessions.view) && allWorktrees(snapshot).some(tree => tree.judgment === 'yellow');
   const selectable = new Set(cleanup.selectable.map(tree => tree.id));
   const checked = new Set(cleanup.selected.map(tree => tree.id));
   const rowCleanup = (tree: WorktreeView): RowCleanup => ({

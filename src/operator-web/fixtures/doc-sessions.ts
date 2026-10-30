@@ -4,13 +4,11 @@
 // the page applies. Paths are repository-relative; nothing names a host path,
 // a command or a secret.
 import {
-  decodeOperatorDocSessionCommit,
+  decodeCleanupPlanPreview,
+  decodeOperatorCleanupSessionCreated,
   decodeOperatorDocSessionCreated,
-  decodeOperatorDocSessionDetail,
-  decodeOperatorDocSessionDiscard,
   decodeOperatorDocSessionMessage,
   decodeOperatorDocSessionStop,
-  type DocSessionSummaryV1,
 } from '../../core/operator/doc-session-api';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss } from '../../core/operator/doc-session-changes';
 import {
@@ -21,10 +19,12 @@ import {
   parseDocSessionCursor,
   type DocSessionEventV1,
 } from '../../core/operator/doc-session-events';
-import { decodeOperatorCleanupPlan, decodeOperatorCleanupSessionCreated, decodeOperatorCleanupSessionResult } from '../../core/operator/worktree-cleanup-plan';
+import { decodeDocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
+import { decodeOperatorDocSessionDetail, docSessionUnread, type DocSessionSummary } from '../../core/operator/doc-session-views';
+import type { CleanupAdvice, CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
 import type { WorktreesSnapshot } from '../../core/operator/worktrees';
 import type { OperatorAppProps } from '../App';
-import { docSessionsAnswer, sessionReadAnswer, sessionWriteAnswer, type DocSessionsRead } from '../doc-sessions';
+import { docSessionsAnswer, finalizeWriteAnswer, sessionReadAnswer, sessionWriteAnswer, type DocSessionProgress } from '../doc-sessions';
 import { allWorktrees } from '../worktrees';
 import { DOCS_COMMIT } from './docs';
 import { HARNESS_ID } from './dev-activity';
@@ -50,8 +50,8 @@ export const PR_SESSION = 'c52d8e1f'.repeat(4);
 export const CLEANUP_SESSION = 'd94a07b3'.repeat(4);
 const BASE_COMMIT = DOCS_COMMIT;
 const PR_COMMIT = '7a1c3e5f9b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a';
-const PLAN_SHA = '3c7e1a9f5b2d8e4c6a0f9b3d7e1c5a8f2b6d0e4a9c3f7b1e5d8a2c6f0b4e9d3a';
 const PULL = (number: number) => ({ number, url: `https://github.com/Ancienttwo/repo-harness/pull/${number}` });
+const REPOSITORY_NAME = 'repo-harness';
 
 type EventBody = DocSessionEventV1 extends infer E ? E extends DocSessionEventV1 ? Omit<E, 'protocol' | 'epoch' | 'seq' | 'at'> : never : never;
 
@@ -104,24 +104,30 @@ function sessionEvents(now: number): Readonly<Record<string, readonly DocSession
       [12 * MINUTE, turn('started')],
       [12 * MINUTE, tool('command', [])],
       [11 * MINUTE, tool('read', ['docs/archive'])],
-      [10 * MINUTE, said('agent', 'I read 13 worktrees. Two are green, two need your call, and the rest stay.')],
+      [10 * MINUTE, said('agent', 'I read the worktrees. Two are green, two need your call, and one stays.')],
       [10 * MINUTE, turn('ended')],
     ]]),
   };
 }
 
-const cursorOf = (events: readonly DocSessionEventV1[]) => events.length === 0 ? null : formatDocSessionCursor(events.at(-1)!);
+const cursorOf = (events: readonly DocSessionEventV1[] | undefined) => events === undefined || events.length === 0 ? null : formatDocSessionCursor(events.at(-1)!);
 
-function summary(now: number, events: Readonly<Record<string, readonly DocSessionEventV1[]>>): DocSessionSummaryV1[] {
+/** A summary without its `unread`, which the list route computes from each request's `seen`. */
+type Row = Omit<DocSessionSummary, 'unread'>;
+
+function rows(now: number, events: Readonly<Record<string, readonly DocSessionEventV1[]>>): Row[] {
+  const row = (session_id: string, title: string, runtime: string, state: Row['state'], ago: number, created: number): Row => ({
+    session_id, title, repository_id: HARNESS_ID, repository_name: REPOSITORY_NAME, runtime, state,
+    created_at: at(now, created), last_activity_at: at(now, ago), last_cursor: cursorOf(events[session_id]),
+  });
   return [
-    { session_id: RUNNING_SESSION, title: 'Tighten the reading column', repository_id: HARNESS_ID, runtime: 'codex', agent: 'running', outcome: null,
-      last_activity_at: at(now, 20_000), last_event: cursorOf(events[RUNNING_SESSION]!) },
-    { session_id: REVIEW_SESSION, title: 'Explain citation line numbers', repository_id: HARNESS_ID, runtime: 'claude', agent: 'idle', outcome: null,
-      last_activity_at: at(now, 47 * MINUTE), last_event: cursorOf(events[REVIEW_SESSION]!) },
-    { session_id: PR_SESSION, title: 'Fix the changelog link', repository_id: HARNESS_ID, runtime: 'codex', agent: 'stopped', outcome: 'pr_open',
-      last_activity_at: at(now, 4 * 60 * MINUTE), last_event: cursorOf(events[PR_SESSION]!) },
+    row(RUNNING_SESSION, 'Tighten the reading column', 'codex', 'running', 20_000, 9 * MINUTE),
+    row(REVIEW_SESSION, 'Explain citation line numbers', 'claude', 'idle', 47 * MINUTE, 50 * MINUTE),
+    row(PR_SESSION, 'Fix the changelog link', 'codex', 'stopped', 4 * 60 * MINUTE, 5 * 60 * MINUTE),
   ];
 }
+
+const summary = (row: Row, seen: string | null): DocSessionSummary => ({ ...row, unread: docSessionUnread(row.last_cursor, seen) });
 
 const PAGE = 5;
 
@@ -177,135 +183,130 @@ function loss(now: number, sessionId: string, turnState: 'running' | 'idle', pus
   });
 }
 
-const DONE_DELIVERY = (number: number) => ({
-  steps: [{ step: 'commit', state: 'done' }, { step: 'push', state: 'done' }, { step: 'pull_request', state: 'done' }],
-  commit: PR_COMMIT, pull_request: PULL(number),
-});
+const delivered = (number: number): DocSessionProgress => ({ operation: 'commit', stage: 'complete', commit: PR_COMMIT, pushed: true, pr: PULL(number) });
+const finalizeBody = (progress: DocSessionProgress) => ({ protocol: 1, kind: 'operator_docs_session_finalize', ...progress });
 
-function detail(now: number, row: DocSessionSummaryV1): SessionWireAnswer {
-  const { last_event: _, ...fields } = row;
+function detail(row: Row, seen: string | null, events: readonly DocSessionEventV1[] | undefined, headCommit: string): SessionWireAnswer {
   return ok({
-    protocol: 1, kind: 'operator_docs_session_detail', ...fields,
-    branch: `docs/${row.title.toLowerCase().replaceAll(' ', '-')}`, worktree: `repo-harness-wt-docs-${row.session_id.slice(0, 8)}`, base_commit: BASE_COMMIT,
-    steer: row.runtime === 'codex' ? 'supported' : 'unsupported',
-    citations: [{ path: 'docs/design/console.md', start_line: 3, end_line: 5, relocated: row.session_id === REVIEW_SESSION }],
-    delivery: row.outcome === 'pr_open' ? DONE_DELIVERY(1188) : null,
-    observed_at: at(now, 10_000),
+    protocol: 1, kind: 'operator_docs_session', session: summary(row, seen),
+    branch: `docs/${row.session_id.slice(0, 12)}`, worktree: `repo-harness-wt-docs-${row.session_id.slice(0, 12)}`,
+    head_commit: headCommit, base_commit: BASE_COMMIT, epoch: events === undefined ? null : events.at(-1)!.epoch,
+    turn: row.state === 'running' ? 'running' : 'idle',
   });
 }
 
 /** Every doc session and cleanup session route the page reads and writes, for one fixture. */
 export function docSessionFixture(now: number, fixture: DocSessionFixtureName, worktrees: WorktreesSnapshot): Partial<OperatorAppProps> {
-  const events = fixture === 'busy' ? { ...sessionEvents(now) } : {};
-  const sessions = fixture === 'busy' ? summary(now, events) : [];
-  const rows = new Map(allWorktrees(worktrees).map(row => [row.id, row]));
+  const events: Record<string, readonly DocSessionEventV1[]> = fixture === 'busy' ? { ...sessionEvents(now) } : {};
+  const sessions = fixture === 'busy' ? rows(now, events) : [];
+  const progress = new Map<string, DocSessionProgress>(fixture === 'busy' ? [[PR_SESSION, delivered(1188)]] : []);
   const live = fixture !== 'degraded';
   const find = (sessionId: string) => sessions.find(row => row.session_id === sessionId);
   const route = (answer: () => SessionWireAnswer): Response => json(live ? answer() : NO_ROUTE);
   const write = (answer: () => SessionWireAnswer) => Promise.resolve(route(answer));
-  const update = (sessionId: string, change: Partial<DocSessionSummaryV1>) => {
+  const touch = (sessionId: string, change: Partial<Row>) => {
     const index = sessions.findIndex(row => row.session_id === sessionId);
     if (index >= 0) sessions[index] = { ...sessions[index]!, ...change, last_activity_at: new Date().toISOString() };
   };
+  const headOf = (sessionId: string) => progress.get(sessionId)?.operation === 'commit' ? PR_COMMIT : BASE_COMMIT;
   let created = 0;
   return {
-    readDocSessions: (): Promise<DocSessionsRead> => docSessionsAnswer(route(() => ok({
-      protocol: 1, kind: 'operator_docs_sessions', kinds: ['docs', 'worktree_cleanup'], sessions: [...sessions], observed_at: new Date().toISOString(),
-    }))),
-    readDocSession: sessionId => sessionReadAnswer(route(() => {
-      const row = find(sessionId);
-      return row === undefined ? NOT_FOUND : detail(now, row);
-    }), value => decodeOperatorDocSessionDetail(value, sessionId)),
+    readDocSessions: request => docSessionsAnswer(route(() => ok({
+      protocol: 1, kind: 'operator_docs_sessions', sessions: sessions.map(row => summary(row, request.seen[row.session_id] ?? null)),
+    })), request),
+    readDocSession: request => sessionReadAnswer(route(() => {
+      const row = find(request.session_id);
+      return row === undefined ? NOT_FOUND : detail(row, request.seen, events[row.session_id], headOf(row.session_id));
+    }), value => decodeOperatorDocSessionDetail(value, request)),
     readDocSessionEvents: (sessionId, after) => sessionReadAnswer(route(() => {
       const list = events[sessionId];
       return list === undefined && find(sessionId) === undefined ? NOT_FOUND : eventsPage(sessionId, after, list ?? []);
     }), value => decodeOperatorDocSessionEvents(value, sessionId, after)),
     readDocSessionDiff: sessionId => sessionReadAnswer(route(() => {
       const row = find(sessionId);
-      return row === undefined ? NOT_FOUND : diff(now, sessionId, row.agent === 'running' ? 'running' : 'idle', row.outcome === 'pr_open');
+      return row === undefined ? NOT_FOUND : diff(now, sessionId, row.state === 'running' ? 'running' : 'idle', headOf(sessionId) === PR_COMMIT);
     }), value => decodeOperatorDocSessionDiff(value, { session_id: sessionId })),
     readDocSessionLoss: sessionId => sessionReadAnswer(route(() => {
       const row = find(sessionId);
-      return row === undefined ? NOT_FOUND : loss(now, sessionId, row.agent === 'running' ? 'running' : 'idle', row.outcome === 'pr_open');
+      return row === undefined ? NOT_FOUND : loss(now, sessionId, row.state === 'running' ? 'running' : 'idle', headOf(sessionId) === PR_COMMIT);
     }), value => decodeOperatorDocSessionLoss(value, { session_id: sessionId })),
+    readDocSessionFinalization: sessionId => sessionReadAnswer(route(() => {
+      if (find(sessionId) === undefined) return NOT_FOUND;
+      const saved = progress.get(sessionId);
+      return ok({ protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: sessionId, progress: saved === undefined ? null : finalizeBody(saved) });
+    }), value => decodeDocSessionFinalizationView(value, { session_id: sessionId })),
     // A new session starts in the list and shows an empty record until its host writes one.
     writeDocSessionCreate: body => write(() => {
       created += 1;
       const sessionId = `e${String(created).padStart(7, '0')}`.repeat(4);
-      sessions.unshift({ session_id: sessionId, title: body.instruction.split('\n')[0]!.slice(0, 120), repository_id: body.repository_id, runtime: body.runtime,
-        agent: 'starting', outcome: null, last_activity_at: new Date().toISOString(), last_event: null });
+      sessions.unshift({ session_id: sessionId, title: body.instruction.split('\n')[0]!.slice(0, 120), repository_id: body.repository_id,
+        repository_name: REPOSITORY_NAME, runtime: body.runtime, state: 'starting', created_at: new Date().toISOString(),
+        last_activity_at: new Date().toISOString(), last_cursor: null });
       return { status: 201, body: {
         protocol: 1, kind: 'operator_docs_session', session_id: sessionId, state: 'created', repository_id: body.repository_id, runtime: body.runtime,
-        branch: `docs/session-${created}`, worktree: `repo-harness-wt-docs-session-${created}`, base_commit: BASE_COMMIT,
+        branch: `docs/${sessionId.slice(0, 12)}`, worktree: `repo-harness-wt-docs-${sessionId.slice(0, 12)}`, base_commit: BASE_COMMIT,
         citations: body.citations.map(citation => ({ path: citation.path, start_line: citation.start_line, end_line: citation.end_line, relocated: false })),
         agent: 'starting',
       } };
     }).then(response => sessionWriteAnswer(response, decodeOperatorDocSessionCreated)),
-    writeDocSessionMessage: (sessionId, body) => write(() => ok({
+    writeDocSessionMessage: (sessionId, body) => write(() => ({ status: 202, body: {
       protocol: 1, kind: 'operator_docs_session_message', session_id: sessionId,
-      landed: find(sessionId)?.agent !== 'running' ? 'prompted' : body.when === 'now' ? 'steered' : 'queued',
-    })).then(response => sessionWriteAnswer(response, value => decodeOperatorDocSessionMessage(value, sessionId))),
-    writeDocSessionStop: sessionId => write(() => ok({ protocol: 1, kind: 'operator_docs_session_stop', session_id: sessionId, result: 'aborting' }))
+      landed: find(sessionId)?.state !== 'running' ? 'prompted' : body.when === 'now' ? 'steered' : 'queued',
+    } })).then(response => sessionWriteAnswer(response, value => decodeOperatorDocSessionMessage(value, sessionId))),
+    writeDocSessionStop: sessionId => write(() => ({ status: 202, body: { protocol: 1, kind: 'operator_docs_session_stop', session_id: sessionId, result: 'aborting' } }))
       .then(response => sessionWriteAnswer(response, value => decodeOperatorDocSessionStop(value, sessionId))),
+    // The commit route answers the outcome; the page reads it back from /finalization.
     writeDocSessionCommit: sessionId => write(() => {
-      update(sessionId, { agent: 'stopped', outcome: 'pr_open' });
-      return ok({ protocol: 1, kind: 'operator_docs_session_commit', session_id: sessionId, delivery: DONE_DELIVERY(1201) });
-    }).then(response => sessionWriteAnswer(response, value => decodeOperatorDocSessionCommit(value, sessionId))),
+      const done = delivered(1201);
+      progress.set(sessionId, done);
+      touch(sessionId, { state: 'stopped' });
+      return ok(finalizeBody(done));
+    }).then(finalizeWriteAnswer),
     writeDocSessionDiscard: sessionId => write(() => {
-      update(sessionId, { agent: 'stopped', outcome: 'discarded' });
-      return ok({ protocol: 1, kind: 'operator_docs_session_discard', session_id: sessionId, outcome: 'discarded' });
-    }).then(response => sessionWriteAnswer(response, value => decodeOperatorDocSessionDiscard(value, sessionId))),
-    readCleanupPlan: sessionId => sessionReadAnswer(route(() => sessionId === CLEANUP_SESSION && fixture === 'busy' ? ok(cleanupPlan(now, worktrees)) : NOT_FOUND),
-      value => decodeOperatorCleanupPlan(value, sessionId)),
+      const done: DocSessionProgress = { operation: 'discard', stage: 'complete' };
+      progress.set(sessionId, done);
+      touch(sessionId, { state: 'stopped' });
+      return ok(finalizeBody(done));
+    }).then(finalizeWriteAnswer),
+    readCleanupPlan: sessionId => sessionReadAnswer(route(() => sessionId === CLEANUP_SESSION && fixture === 'busy' ? ok(cleanupPreview(now, worktrees)) : NOT_FOUND),
+      value => decodeCleanupPlanPreview(value, { session_id: sessionId })),
     writeCleanupSessionCreate: () => write(() => ({ status: 201, body: { protocol: 1, kind: 'operator_worktree_cleanup_session_created', session_id: CLEANUP_SESSION } }))
       .then(response => sessionWriteAnswer(response, decodeOperatorCleanupSessionCreated)),
-    // Archives every approved yellow item to one Draft PR, then removes every requested item.
-    writeCleanupSession: body => write(() => ok({
-      protocol: 1, kind: 'operator_worktree_cleanup_session', session_id: body.session_id,
-      archive: body.approvals.length > 0 ? { state: 'done', failed_step: null, pull_request: PULL(1210) } : { state: 'not_needed', failed_step: null, pull_request: null },
-      items: body.ids.map(id => {
-        const row = rows.get(id)!;
-        return { id, repository_id: row.repository_id, directory: row.directory, outcome: 'removed', reason: null };
-      }),
-    })).then(response => sessionWriteAnswer(response, value => decodeOperatorCleanupSessionResult(value, body.session_id))),
   };
 }
 
-/** The plan lists only items whose loss was counted; an unknown count has no place in it. */
-const known = (count: number | null): number => {
-  if (count === null) throw new Error('cleanup plan fixture item has an unknown loss count');
-  return count;
-};
-const LOSS_SHA = (seed: string) => seed.repeat(64).slice(0, 64);
+const digest = (seed: string) => seed.repeat(64).slice(0, 64);
+const NO_ARCHIVE: CleanupAdvice['archive'] = { git: null, private: null };
 
-/** Two green items, a yellow one to archive and one to delete, and a red one with no delete entry. */
-function cleanupPlan(now: number, worktrees: WorktreesSnapshot): unknown {
+/**
+ * Two green items, a yellow one to archive and one to delete, and a red one.
+ * The server observes no loss for a red item, so it has none.
+ */
+function cleanupPreview(now: number, worktrees: WorktreesSnapshot): unknown {
   const byDirectory = new Map(allWorktrees(worktrees).map(row => [row.directory, row]));
-  const item = (directory: string, fields: Record<string, unknown>) => {
-    const row = byDirectory.get(directory)!;
-    return {
-      id: row.id, repository_id: row.repository_id, directory, branch: row.branch, judgment: row.judgment,
-      advice: null, reason: null, evidence: [], archive: null,
-      loss: { unpushed_commits: known(row.unpushed_commits), dirty_files: known(row.dirty_files), ignored_entries: known(row.ignored_entries) },
-      loss_sha256: LOSS_SHA(row.id.slice(3, 5)), ...fields,
-    };
-  };
+  const item = (directory: string, advice: CleanupAdvice, loss: CleanupPlanItem['loss'], seed: string): CleanupPlanItem => ({
+    worktree: byDirectory.get(directory)!, advice, loss, loss_sha256: loss === null ? null : digest(seed), plan_sha256: digest(`${seed}f`),
+  });
+  const nothing = { files: [], ignored: [], commits: [] };
   return {
-    protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: CLEANUP_SESSION, runtime: 'codex', agent: 'idle', state: 'ready', plan_sha256: PLAN_SHA,
-    items: [
-      item('feat-kanban-status', { evidence: ['PR #606 merged into main'] }),
-      item('operator-site-wt-footer', {}),
-      item('repo-harness-wt-oar', {
-        advice: 'archive_then_delete', reason: 'PR #602 was closed without a merge; its notes under docs/ are worth keeping.',
-        evidence: ['PR #602 closed, not merged', 'docs/notes/oar-0-45.md is only on this branch'],
-        archive: { branch: 'docs/archive-oar-0-45', private_directory: null },
-      }),
-      item('repo-harness-wt-docs-cleanup', {
-        advice: 'delete', reason: 'Its branch is in main; only the lock keeps it.',
-        evidence: ['docs/feynman is an ancestor of main', 'task run closed'],
-      }),
-      item('repo-harness-wt-kanban-redesign', {}),
-    ],
+    protocol: 1, kind: 'operator_worktree_cleanup_preview', session_id: CLEANUP_SESSION, runtime: 'codex', state: 'ready', agent: 'idle',
     observed_at: at(now, 30_000),
+    plan: { protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: CLEANUP_SESSION, items: [
+      item('feat-kanban-status', { recommendation: 'delete', reason: 'Its PR merged into main.', evidence: ['PR #606 merged into main'], archive: NO_ARCHIVE }, nothing, '1'),
+      item('operator-site-wt-footer', { recommendation: 'delete', reason: 'Its branch is absorbed into main.', evidence: ['fix/footer is absorbed into main'], archive: NO_ARCHIVE }, nothing, '2'),
+      item('repo-harness-wt-oar', {
+        recommendation: 'archive_then_delete', reason: 'PR #602 was closed without a merge; its notes under docs/ are worth keeping.',
+        evidence: ['PR #602 closed, not merged', 'docs/notes/oar-0-45.md is only on this branch'],
+        archive: { git: { directory: 'docs/archive/2026-10-30-oar-0-45', branch: 'docs/archive-oar-0-45', paths: ['docs/notes/oar-0-45.md'], include_commits: true }, private: null },
+      }, { files: ['docs/notes/oar-0-45.md'], ignored: ['node_modules/'], commits: [PR_COMMIT] }, '3'),
+      item('repo-harness-wt-docs-cleanup', {
+        recommendation: 'delete', reason: 'Its branch is in main; only the lock keeps it.',
+        evidence: ['docs/feynman is an ancestor of main', 'task run closed'], archive: NO_ARCHIVE,
+      }, nothing, '4'),
+      item('repo-harness-wt-kanban-redesign', {
+        recommendation: 'keep', reason: 'Two processes still use it and it has unpushed commits.', evidence: ['2 processes in the worktree'], archive: NO_ARCHIVE,
+      }, null, '5'),
+    ] },
+    execution: { enabled: false, code: 'cleanup_execution_unavailable' },
   };
 }
