@@ -485,10 +485,13 @@ export function storeFinalizeRequest(sessionId: string, operation: DocSessionFin
  * `commitLocked` and `discardLocked` ahead of `saveState`, and the `turn_active`
  * and `busy` checks ahead of both). Only on the first send of a body do they
  * prove nothing was saved: once a request may be saved, the same checks also
- * answer a retry.
+ * answer a retry. The commit scope codes stay out even on a first send: the
+ * server re-checks the scope after it saved the journal and can answer the same
+ * `generated_region` or `path_outside_scope` from a request it keeps, so only a
+ * `/finalization` read may release those.
  */
 const UNSAVED_REFUSALS: Readonly<Record<DocSessionFinalizeOperation, ReadonlySet<string>>> = {
-  commit: new Set(['diff_changed', 'head_history_unsupported', 'no_changes', 'path_outside_scope', 'generated_region', 'branch_pushed', 'turn_active', 'busy']),
+  commit: new Set(['diff_changed', 'head_history_unsupported', 'no_changes', 'branch_pushed', 'turn_active', 'busy']),
   discard: new Set(['loss_changed', 'turn_active', 'branch_pushed', 'worktree_in_use', 'busy']),
 };
 

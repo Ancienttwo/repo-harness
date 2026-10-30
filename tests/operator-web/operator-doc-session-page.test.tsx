@@ -415,6 +415,27 @@ describe('doc session page', () => {
     expect(page.sent.commit.map(withoutId)).toEqual([FIRST_COMMIT, FIRST_COMMIT]);
   });
 
+  test('4-DSES-F1: a scope refusal that may follow a saved first request keeps it while no finalization read proves otherwise', async () => {
+    // The server re-checks the scope after it saved the journal, so a first-send
+    // generated_region answer alone proves nothing about persistence; the
+    // /finalization read would decide, and here it fails.
+    const page = await mount({
+      finalization: [finalization(), UNANSWERED],
+      commit: [refused(422, 'generated_region', { files: ['docs/architecture/generated.md'] })],
+    }, 'zh');
+    await click(page.$('[data-commit-submit]'));
+    expect(Array.from(page.$('[data-write-result="generated_region"]')!.querySelectorAll('[data-refusal-files] code'), code => code.textContent))
+      .toEqual(['docs/architecture/generated.md']);
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
+    const input = page.$<HTMLInputElement>('[data-commit-message]')!;
+    expect([input.disabled, input.value]).toEqual([true, FIRST_COMMIT.message]);
+    await type(input, 'A different message');
+    expect(input.value).toBe(FIRST_COMMIT.message);
+    await click(page.$('[data-commit-submit]'));
+    expect(withoutId(page.sent.commit[1])).toEqual(FIRST_COMMIT);
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
+  });
+
   test('4-DSES-F2: a delivery that stopped at the Draft PR keeps its step view on load; each retry resends the stored first request unchanged with a new request_id', async () => {
     // The first commit was sent before a reload: the server saved it and the browser kept it.
     storeFinalizeRequest(SID, 'commit', FIRST_COMMIT);
