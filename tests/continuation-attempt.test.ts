@@ -264,6 +264,21 @@ describe('no-progress circuit breaker', () => {
     });
   }, 30_000);
 
+  test('a resume-only projection change keeps the stall', () => {
+    withLedgerRepo((cwd) => {
+      const initial = envelopeFrom(cwd);
+      recordStalled(cwd, initial.progress_token);
+      recordStalled(cwd, initial.progress_token);
+      expect(envelopeFrom(cwd).route).toBe('halt');
+
+      write(cwd, '.ai/harness/handoff/resume.md', '# resume changed\n');
+      const halted = envelopeFrom(cwd);
+      expect(halted.route).toBe('halt');
+      expect(halted.reason).toBe('no_progress');
+      expect(halted.unit_ref).toBe(initial.unit_ref);
+    });
+  }, 30_000);
+
   test('a token-moving receipt never counts toward the stall', () => {
     withLedgerRepo((cwd) => {
       const envelope = envelopeFrom(cwd);

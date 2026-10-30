@@ -125,6 +125,18 @@ describe('continuation envelope routes', () => {
     }, 30_000);
   }
 
+  test('a resume-only change keeps the continue unit_ref stable', () => {
+    withRepo(cwd => {
+      writeHandoff(cwd, 'implement resolver');
+      const first = envelopeFrom(cwd);
+      write(cwd, '.ai/harness/handoff/resume.md', '# resume changed\n');
+      const second = envelopeFrom(cwd);
+      expect(second.route).toBe('continue');
+      expect(second.unit_ref).toBe(first.unit_ref);
+      expect(second.progress_token).toBe(first.progress_token);
+    });
+  }, 30_000);
+
   test('the output never references a plan or sprint path', () => {
     withRepo(cwd => {
       writeHandoff(cwd);

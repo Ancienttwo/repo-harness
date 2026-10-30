@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import type {
   ContinuationEnvelopeV2,
@@ -7,6 +8,11 @@ import type {
 
 /** Existing command the envelope points at; never re-implemented here. */
 const CONTINUE_COMMAND = 'repo-harness state resolve --json';
+
+/** Stable execution-unit identity: the next action, not projection text. */
+function continueUnitRef(nextAction: string): string {
+  return `sha256:${createHash('sha256').update(nextAction).digest('hex')}`;
+}
 
 /** Routes that hand the caller work to do, and so can be circuit-broken. */
 const ACTIONABLE_ROUTES: ReadonlySet<ContinuationRoute> = new Set<ContinuationRoute>([
@@ -53,7 +59,7 @@ function projectRoutedEnvelope(
   if (state.next_action !== null) {
     return envelope(
       'continue',
-      state.state_revision,
+      continueUnitRef(state.next_action),
       CONTINUE_COMMAND,
       `next_action:${state.next_action}`,
     );
