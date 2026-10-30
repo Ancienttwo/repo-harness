@@ -109,6 +109,14 @@ normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
 
+# The branch recorded by start. Cleanup must use it because start derives the
+# prefix from --type (default feat/) instead of worktree_strategy.branch_prefix.
+read_metadata_branch() {
+  local metadata_file="$1"
+  [[ -f "$metadata_file" ]] || return 1
+  sed -n 's/^  "branch": "\([^"]*\)",$/\1/p' "$metadata_file" | head -1
+}
+
 derive_issue_slug() {
   local issue_number="$1"
   local title="$2"
@@ -520,8 +528,9 @@ cleanup_worktree() {
   local target_worktree current_root branch_prefix branch_name worktree_path metadata_file
   local worktree_status repair_needed=0 merge_mode=""
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
-  branch_name="${branch_prefix}${slug}"
   metadata_file=".ai/harness/worktrees/${slug}.json"
+  branch_name="$(read_metadata_branch "$metadata_file" || true)"
+  [[ -n "$branch_name" ]] || branch_name="${branch_prefix}${slug}"
   target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
   [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
 

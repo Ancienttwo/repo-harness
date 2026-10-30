@@ -159,6 +159,7 @@ describe("contract-worktree helper integration", () => {
         branch: `feat/${slug}`,
       });
       expect(metadata).not.toHaveProperty("plan");
+      expect(run("git", ["branch", "--show-current"], worktreePath).stdout.trim()).toBe(`feat/${slug}`);
 
       const residual = start([
         "--issue", "123",
@@ -265,6 +266,38 @@ describe("contract-worktree helper integration", () => {
       expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
       expect(existsSync(worktreePath)).toBe(false);
       expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("contract-worktree cleanup resolves a feat branch from start metadata", () => {
+    const cwd = tmpWorkspace("helper-contract-cleanup-feat");
+    const worktreePath = `${cwd}-wt-feat`;
+    const slug = "123-feat-cleanup";
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init cleanup feat");
+      expect(run("git", ["worktree", "add", worktreePath, "-b", `feat/${slug}`], cwd).status).toBe(0);
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`),
+        `{\n  "slug": "${slug}",\n  "branch": "feat/${slug}",\n  "worktree": "${worktreePath}"\n}\n`);
+
+      const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", slug, "--dry-run"], cwd);
+      expect(dryRun.status, dryRun.stderr).toBe(0);
+      expect(dryRun.stdout).toContain(`would delete branch: feat/${slug}`);
+      expect(existsSync(worktreePath)).toBe(true);
+
+      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", slug], cwd);
+      expect(cleanup.status, cleanup.stderr).toBe(0);
+      expect(cleanup.stdout).toContain(`Deleted branch: feat/${slug}`);
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(run("git", ["show-ref", "--verify", "--quiet", `refs/heads/feat/${slug}`], cwd).status).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`))).toBe(false);
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
