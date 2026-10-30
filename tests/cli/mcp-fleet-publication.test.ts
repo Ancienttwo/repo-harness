@@ -12,7 +12,7 @@ import {
   buildFleetToolDefinitions,
   callFleetTool,
 } from '../../src/cli/mcp/fleet-tools';
-import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { buildMcpToolDefinitions, callMcpTool, visibleMcpToolDefinitions } from '../../src/cli/mcp/tools';
 import { setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import {
   BASE,
@@ -158,6 +158,24 @@ describe('merge_pull_request MCP tool', () => {
     expect(gh.calls()).toEqual([]);
     expect(buildMcpServerInstructions({ taskDispatchEnabled: true, publicationMergeEnabled: true })).toContain('merge_pull_request');
     expect(buildMcpServerInstructions({ taskDispatchEnabled: true })).not.toContain('merge_pull_request');
+  }));
+
+  test('a recorded grant that predates publicationMerge hides the merge tool and refuses the call', () => withMergeFixture(async ({ granted, gh }) => {
+    const policy = getMcpPolicy('orchestrator', { allowedRoots: [granted] });
+    const stale = { repoRoot: granted, policy, publicationMergeConsented: false };
+    // The ungranted surface stays hidden while every unrelated dispatch tool keeps working.
+    const names = visibleMcpToolDefinitions(stale).map((tool) => tool.name);
+    expect(names).toEqual(buildMcpToolDefinitions(policy).map((tool) => tool.name).filter((name) => name !== 'merge_pull_request'));
+    expect(names).not.toBeEmpty();
+    const refused = parseResult(await callMcpTool(stale, 'merge_pull_request', mergeArgs));
+    expect(refused.error.code).toBe('TOOL_NOT_AVAILABLE');
+    expect(refused.error.message).toContain('setup');
+    // The refusal precedes every provider call, so the fake gh sees nothing.
+    expect(gh.calls()).toEqual([]);
+    expect(auditRows(granted).at(-1)).toMatchObject({ tool: 'merge_pull_request', status: 'blocked' });
+    // Recording the grant restores the exact policy surface.
+    const consented = { repoRoot: granted, policy, publicationMergeConsented: true };
+    expect(visibleMcpToolDefinitions(consented).map((tool) => tool.name)).toContain('merge_pull_request');
   }));
 
   test('merges through the CLI executor and audits the OAuth actor, PR, head and outcome', () => withMergeFixture(async ({ granted, gh }) => {

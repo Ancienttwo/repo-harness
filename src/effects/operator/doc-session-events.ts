@@ -2,9 +2,8 @@
 // events to `<repoHarnessHome>/operator/sessions/<sid>/events.jsonl`, next to
 // the session record of #1021; the page reads them by an `epoch.seq` cursor.
 //
-// No host produces events yet: agent launch (G5) needs the user's approval of
-// its confirmation bypass first. Production OPERATOR_ROUTES has no events
-// route; tests admit it through their own route inventory.
+// Production reads run in the bounded task-read process, through the same
+// decoder and cursor reader as the CLI. The G5 producer is a separate slice.
 
 import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,7 +11,7 @@ import { join } from 'node:path';
 import {
   compareDocSessionCursor, decodeDocSessionEvent, decodeOperatorDocSessionEvents, docSessionActivity,
   DOC_SESSION_EVENTS_PAGE, formatDocSessionCursor, parseDocSessionCursor, redactDocSessionPath, storedDocSessionText,
-  type DocSessionCursor, type DocSessionEventInput, type DocSessionEventV1, type OperatorDocSessionEventsV1,
+  type DocSessionActivity, type DocSessionCursor, type DocSessionEventInput, type DocSessionEventV1, type OperatorDocSessionEventsV1,
 } from '../../core/operator/doc-session-events';
 import { syncDirectoryDurably } from '../atomic-append';
 import { ExclusiveLockContentionError, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
@@ -174,6 +173,13 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
     if (error instanceof ExclusiveLockContentionError) fail('events_busy');
     throw error;
   }
+}
+
+/** The cursor of the last stored event and whether a turn is open, for the record that ends a dead host's session. */
+export function docSessionEventsTail(env: NodeJS.ProcessEnv, sessionId: string): { readonly last: DocSessionCursor | null; readonly last_at: string | null; readonly activity: DocSessionActivity } {
+  const events = readStoredEvents(join(sessionDirectory(env, sessionId), EVENTS_FILE));
+  const last = events.at(-1);
+  return { last: last === undefined ? null : { epoch: last.epoch, seq: last.seq }, last_at: last?.at ?? null, activity: docSessionActivity(events) };
 }
 
 /** One page of events after the cursor. Activity covers the whole log, not only the page. */

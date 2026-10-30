@@ -32,7 +32,7 @@ import { authorizationProfile, mcpSupportedScopes } from '../policy';
 import { readRegisteredRepoHarnessRepos, repoHarnessAuthorizationRevision } from '../../../effects/repo-registry';
 import { resolveMcpRepoRoot } from '../repo';
 import { McpSessionStore } from '../session-store';
-import { buildMcpToolDefinitions } from '../tools';
+import { visibleMcpToolDefinitions } from '../tools';
 import type { McpPolicy } from '../types';
 import { repoHarnessPackageVersion } from '../version';
 
@@ -714,8 +714,10 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     codingRuntimes?.cleanupExpired();
   }, Math.min(sessionTtlMs, 60_000));
   cleanupTimer.unref?.();
+  // The hash covers the surface a client can actually list, so a stale grant
+  // cannot report a schema that includes the hidden merge tool.
   const healthSchemaHash = createHash('sha256')
-    .update(JSON.stringify(buildMcpToolDefinitions(healthContext.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
+    .update(JSON.stringify(visibleMcpToolDefinitions(healthContext)))
     .digest('hex');
   const app = express();
 

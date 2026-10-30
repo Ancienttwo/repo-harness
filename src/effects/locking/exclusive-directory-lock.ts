@@ -322,46 +322,47 @@ export function readExclusiveDirectoryLockOwner(
 ): ExclusiveDirectoryLockOwner | null {
   const location = prepareLockLocation(canonicalRoot, relativeLockPath);
   assertLockAncestors(location);
-  let directoryIdentity: FileIdentity;
   try {
     const directory = lstatSync(location.lockPath);
     if (!directory.isDirectory()) {
       throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
     }
-    directoryIdentity = fileIdentity(directory);
+    const directoryIdentity = fileIdentity(directory);
+    const entries = readdirSync(location.lockPath);
+    if (entries.length !== 1) return null;
+    const entry = entries[0]!;
+    const owner = ownerTokenFromFileName(entry);
+    if (owner === null) return null;
+    const ownerPath = join(location.lockPath, entry);
+    const observedOwner = lstatSync(ownerPath);
+    if (!observedOwner.isFile()) return null;
+    const ownerIdentity = fileIdentity(observedOwner);
+    let parsed: Record<string, unknown>;
+    try {
+      const value: unknown = JSON.parse(readFileSync(ownerPath, 'utf-8'));
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      parsed = value as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    const startTime = recordedStartTime(parsed);
+    if (parsed.pid !== owner.pid || parsed.token !== owner.token) return null;
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
+    const currentOwner = lstatSync(ownerPath);
+    if (!currentDirectory.isDirectory()
+      || !sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)
+      || !currentOwner.isFile()
+      || !sameFileIdentity(fileIdentity(currentOwner), ownerIdentity)
+      || readdirSync(location.lockPath).length !== 1
+      || readdirSync(location.lockPath)[0] !== entry) return null;
+    return { lockPath: location.lockPath, pid: owner.pid, startTime, token: owner.token };
   } catch (error) {
+    // Release can remove the directory or owner between any two observations.
+    // This is no observed owner, not evidence that another owner is dead.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
-  const entries = readdirSync(location.lockPath);
-  if (entries.length !== 1) return null;
-  const entry = entries[0]!;
-  const owner = ownerTokenFromFileName(entry);
-  if (owner === null) return null;
-  const ownerPath = join(location.lockPath, entry);
-  const observedOwner = lstatSync(ownerPath);
-  if (!observedOwner.isFile()) return null;
-  const ownerIdentity = fileIdentity(observedOwner);
-  let parsed: Record<string, unknown>;
-  try {
-    const value: unknown = JSON.parse(readFileSync(ownerPath, 'utf-8'));
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    parsed = value as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-  const startTime = recordedStartTime(parsed);
-  if (parsed.pid !== owner.pid || parsed.token !== owner.token) return null;
-  assertLockAncestors(location);
-  const currentDirectory = lstatSync(location.lockPath);
-  const currentOwner = lstatSync(ownerPath);
-  if (!currentDirectory.isDirectory()
-    || !sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)
-    || !currentOwner.isFile()
-    || !sameFileIdentity(fileIdentity(currentOwner), ownerIdentity)
-    || readdirSync(location.lockPath).length !== 1
-    || readdirSync(location.lockPath)[0] !== entry) return null;
-  return { lockPath: location.lockPath, pid: owner.pid, startTime, token: owner.token };
 }
 
 function reclaimStaleLockDirectory(
