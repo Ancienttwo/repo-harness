@@ -31,6 +31,7 @@ import { sensitiveAllowedRootReason } from './policy';
 import { authorizationProfile, getMcpPolicy, isMcpProfileName, mcpSupportedScopes, parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions, type CodingToolDefinition } from './coding-tools';
 import { buildHerdrToolDefinitions } from './herdr-tools';
+import { buildPublicationMergeToolDefinitions } from './fleet-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
 import { readCanonicalChatgptReference } from '../chatgpt-skill/source';
@@ -709,6 +710,7 @@ function setupChatgptLocked(opts: {
       workflowExecutor: profilePolicy.capabilities.workflowExecutor,
       workspaceCoder: profilePolicy.capabilities.workspaceCoder,
       taskDispatch: profilePolicy.capabilities.taskDispatch,
+      publicationMerge: profilePolicy.capabilities.publicationMerge,
     },
     permissions: {
       ...existingConfig?.permissions,
@@ -1074,6 +1076,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
         workflowExecutor: localConfig?.capabilities?.workflowExecutor === true,
         workspaceCoder: localConfig?.capabilities?.workspaceCoder === true,
         taskDispatch: localConfig?.capabilities?.taskDispatch === true,
+        publicationMerge: localConfig?.capabilities?.publicationMerge === true,
       },
       authorizationRevision: repoHarnessAuthorizationRevision(),
     },
@@ -1344,9 +1347,11 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const toolsPayload = jsonFromMcpResponse(await toolsResponse.text());
       const tools = (toolsPayload?.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? [];
       toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
-      const expectedSpecialTools: readonly CodingToolDefinition[] | null = capabilities?.workspaceCoder
+      const expectedSpecialTools: readonly Pick<CodingToolDefinition, 'name' | 'inputSchema' | 'annotations'>[] | null = capabilities?.workspaceCoder
         ? buildCodingToolDefinitions()
-        : capabilities?.taskDispatch ? buildHerdrToolDefinitions() : null;
+        : capabilities?.taskDispatch
+          ? [...buildHerdrToolDefinitions(), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
+          : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
       const specialSchemaMatches = expectedSpecialTools === null || JSON.stringify(tools

@@ -208,7 +208,10 @@ function consentDescription(policy: McpPolicy, repoNames: string[]): string {
     return `This Connector can open and edit these explicitly granted repositories: ${repos}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. ${tokenLifetime}`;
   }
   if (policy.capabilities.taskDispatch) {
-    return `This Connector can list, prompt and read the Claude and Codex agent panes in local Herdr that work in these explicitly granted repositories: ${repos}. A prompt makes that agent act with the authority of your local OS user, which is not limited to these repositories. ${tokenLifetime}`;
+    const merge = policy.capabilities.publicationMerge
+      ? ' It can also squash-merge a same-repository pull request into the default branch of these repositories when the repository policy at the PR base enables acceptance merge and every merge gate passes.'
+      : '';
+    return `This Connector can list, prompt and read the Claude and Codex agent panes in local Herdr that work in these explicitly granted repositories: ${repos}. A prompt makes that agent act with the authority of your local OS user, which is not limited to these repositories.${merge} ${tokenLifetime}`;
   }
   return 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.';
 }

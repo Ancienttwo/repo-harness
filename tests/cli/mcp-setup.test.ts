@@ -520,7 +520,7 @@ describe('mcp setup', () => {
       expect(config).toMatchObject({
         version: 3,
         profile: 'coding',
-        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true, taskDispatch: false },
+        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true, taskDispatch: false, publicationMerge: false },
         coding: { environmentAllowlist: [] },
       });
       expect(config.coding.enabled).toBeUndefined();
@@ -564,7 +564,7 @@ describe('mcp setup', () => {
         version: 3,
         profile: 'orchestrator',
         authorizationRevision: 1,
-        capabilities: { workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false, taskDispatch: true },
+        capabilities: { workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false, taskDispatch: true, publicationMerge: true },
       });
       const ctx = createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' });
       expect(ctx.policy.capabilities.taskDispatch).toBe(true);

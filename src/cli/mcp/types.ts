@@ -11,6 +11,7 @@ export interface McpPolicy {
     workflowExecutor: boolean;
     workspaceCoder: boolean;
     taskDispatch: boolean;
+    publicationMerge: boolean;
   };
   readGlobs: string[];
   writeGlobs: string[];
@@ -60,4 +61,10 @@ export interface McpAuditEntry {
   signal?: string;
   totalOutputBytes?: number;
   droppedOutputBytes?: number;
+  pr_number?: number;
+  head_sha?: string;
+  base_sha?: string;
+  /** Result code of a publication merge: `merged` or the executor error code. */
+  outcome?: string;
+  merge_commit_sha?: string;
 }

@@ -4,7 +4,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, describe, expect, test } from 'bun:test';
 
-import { executePublicationMerge } from '../../src/effects/publication/merge-executor';
+import {
+  executePublicationMerge,
+  type PublicationMergeFailure,
+  type PublicationMergeResult,
+} from '../../src/effects/publication/merge-executor';
 import {
   BASE,
   HEAD,
@@ -37,6 +41,11 @@ function mergeInProcess(scenario: PublicationMergeScenario) {
     },
   });
   return { result, calls, mutations: calls.filter(isMergeMutation) };
+}
+
+function failureOf(result: PublicationMergeResult): PublicationMergeFailure {
+  if (result.exit_code === 0) throw new Error(`expected a refusal, got a merge: ${JSON.stringify(result.document)}`);
+  return result.document;
 }
 
 let cliRun = 0;
@@ -110,21 +119,21 @@ describe('publication merge refusals send no mergePullRequest', () => {
   ] as const)('readiness blocker %s is passed through unchanged', (code, overrides) => {
     const { result, mutations } = mergeInProcess(passingScenario(overrides));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'merge_readiness_blocked' });
-    expect(result.exit_code === 0 ? [] : result.document.blockers?.map((blocker) => blocker.code)).toContain(code);
+    expect(failureOf(result).blockers?.map((blocker) => blocker.code)).toContain(code);
     expect(mutations).toHaveLength(0);
   });
 
   test('a body that only refers to a linked issue is a closing reference mismatch', () => {
     const { result, mutations } = mergeInProcess(passingScenario({ body: 'Refs #12', closing: [`${REPOSITORY}#12`] }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'closing_references_mismatch' });
-    expect(result.document.message).toContain(`GitHub links [${REPOSITORY}#12]`);
+    expect(failureOf(result).message).toContain(`GitHub links [${REPOSITORY}#12]`);
     expect(mutations).toHaveLength(0);
   });
 
   test('a title closing keyword without a provider link is a closing reference mismatch', () => {
     const { result, mutations } = mergeInProcess(passingScenario({ title: 'Ship it, fixes #9', body: '', closing: [] }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'closing_references_mismatch' });
-    expect(result.document.message).toContain(`commit message closes [${REPOSITORY}#9]`);
+    expect(failureOf(result).message).toContain(`commit message closes [${REPOSITORY}#9]`);
     expect(mutations).toHaveLength(0);
   });
 

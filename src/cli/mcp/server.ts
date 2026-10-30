@@ -242,6 +242,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
         readerEnabled: ctx.policy.capabilities.workspaceReader,
         codingEnabled: ctx.policy.capabilities.workspaceCoder,
         taskDispatchEnabled: ctx.policy.capabilities.taskDispatch,
+        publicationMergeEnabled: ctx.policy.capabilities.publicationMerge,
       }),
     },
   );
