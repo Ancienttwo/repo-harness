@@ -126,16 +126,16 @@ describe('setup snapshot projection', () => {
     });
     expect(snapshot.hosts[0]).toMatchObject({ host: 'claude', adapter_check: 'ok', cli_version: null });
     expect(snapshot.skills).toEqual([
-      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null } },
-      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null } },
+      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null, dsh: null } },
+      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null, dsh: null } },
     ]);
     expect(snapshot.hooks.flatMap(event => event.routes.map(route => `${event.event}.${route.route_id}`)))
       .toEqual(ROUTES.map(route => `${route.event}.${route.routeId}`));
     expect(snapshot.hooks.map(event => event.event)).not.toContain('SubagentStop');
     expect(snapshot.hooks.find(event => event.event === 'Stop')?.routes[0]?.hosts).toEqual([...SETUP_HOSTS]);
     expect(snapshot.fleet).toEqual([
-      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed', pi: null } },
-      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed', pi: null } },
+      { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium', hosts: { claude: 'installed', codex: 'installed', pi: null, dsh: null } },
+      { name: 'gatekeeper', description: null, model: 'opus', effort: null, hosts: { claude: 'missing', codex: 'installed', pi: null, dsh: null } },
     ]);
   });
 

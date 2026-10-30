@@ -101,6 +101,12 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
       : { host, reported: true, adapter_check: null, detected: check.status !== 'na', adapter: null, cli_version: input.cli_versions.pi ?? null,
         package_check: checks.get('doctor.pi-package')?.status ?? null };
   }
+  if (host === 'dsh') {
+    const check = checks.get('doctor.dsh-plugin');
+    return check === undefined
+      ? { host, reported: false, adapter_check: null, detected: null, adapter: null, cli_version: null }
+      : { host, reported: true, adapter_check: check.status, detected: check.status !== 'na', adapter: null, cli_version: null };
+  }
   const check = checks.get(`status.adapter.${host}`);
   const entry = input.adapters.find(adapter => adapter.id === host);
   if (check === undefined || entry === undefined) {
@@ -132,7 +138,7 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
 function skills(input: SetupProjectionInput): SetupSkill[] {
   const byName = new Map<string, { -readonly [H in SetupHost]: SetupSkill['hosts'][H] }>();
   for (const row of input.skill_rows ?? []) {
-    const hosts = byName.get(row.name) ?? { claude: null, codex: null, pi: null };
+    const hosts = byName.get(row.name) ?? { claude: null, codex: null, pi: null, dsh: null };
     hosts[row.host] = { state: row.state, ok: row.ok };
     byName.set(row.name, hosts);
   }
@@ -186,7 +192,7 @@ function fleet(input: SetupProjectionInput): SetupFleetRole[] {
       description: packageText(role.description),
       model: packageText(role.model),
       effort: packageText(role.effort),
-      hosts: { claude: state('claude'), codex: state('codex'), pi: null },
+      hosts: { claude: state('claude'), codex: state('codex'), pi: null, dsh: null },
     });
   }
   return roles;

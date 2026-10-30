@@ -25,12 +25,16 @@ const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
   const prev = process.env.HOME;
+  const prevDsh = process.env.DSH_HOME;
   process.env.HOME = tmp;
+  delete process.env.DSH_HOME;
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevDsh === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevDsh;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -859,4 +863,33 @@ describe('legacy workflow-state diagnostic', () => {
       });
     }));
   }, DOCTOR_CHECK_TIMEOUT_MS);
+});
+
+describe('DSH host detection', () => {
+  test('dsh-plugin reports na, warn and ok from profile declarations', () => withTempHome(home => {
+    const dshHome = path.join(home, '.dsh');
+    const profile = path.join(dshHome, 'profiles', 'desktop');
+    const check = () => runDoctor().checks.find(candidate => candidate.id === 'dsh-plugin')!;
+    expect(check().status).toBe('na');
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(path.join(profile, 'package.json'), '{}\n');
+    expect(check().status).toBe('warn');
+    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
+    expect(check().status).toBe('ok');
+  }));
+
+  test('dsh skill rows read the shared agents root', () => withTempHome(home => {
+    const profile = path.join(home, '.dsh', 'profiles', 'desktop');
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
+    const think = path.join(home, '.agents', 'skills', 'think');
+    fs.mkdirSync(think, { recursive: true });
+    fs.writeFileSync(path.join(think, 'SKILL.md'), '# think\n');
+
+    const rows = (checkSkillProjection('both').skills ?? []).filter(row => row.host === 'dsh');
+
+    expect(rows.map(row => row.name)).toEqual(['think', 'hunt', 'check', 'health', 'mermaid']);
+    expect(rows.find(row => row.name === 'think')).toMatchObject({ state: 'ok copy', ok: true });
+    expect(rows.find(row => row.name === 'hunt')).toMatchObject({ state: 'missing', ok: false });
+  }));
 });

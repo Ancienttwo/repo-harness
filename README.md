@@ -105,7 +105,10 @@ the first agent step, and records Stop at the turn boundary. It disables
 itself in a repository without `.ai/harness/workflow-contract.json`. MCP
 writes, `pwsh`, `!` user commands and writes from other plugins stay outside
 this boundary. DSH already reads `AGENTS.md` and `~/.agents/skills`; the
-plugin does not change those paths.
+plugin does not change those paths. `repo-harness doctor` and
+`repo-harness setup check` report whether a DSH profile declares the bundle,
+and list the external skills in the shared agents root. repo-harness does not
+write the DSH profile.
 
 On Windows, keep Git for Windows on the install/update `PATH`. That explicit
 ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and

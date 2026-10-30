@@ -1,6 +1,6 @@
 # DeepSeek Harness 宿主接入方案
 
-状态：用户已批准 S1 + S2，允许隔离实测并授权 push/PR（不合并）。
+状态：用户已批准 S1 + S2。S1、S2 已实现并验证；未合并。
 日期：2026-10-30，Asia/Taipei。
 源码基线：`1d5c06156`。
 目标宿主：DSH `0.2.1-rc.5`，Cordis `~4.0.5`。
@@ -107,7 +107,7 @@ bun dist/hook-entry.js   HOOK_HOST=dsh   单个 JSON 对象
 
 ### S2：只读识别（第二个 PR）
 
-`SETUP_HOSTS`、`SKILL_SURFACE_HOSTS`、setup/doctor 检查增加 `dsh`。技能状态从共享 `~/.agents/skills` 读取，不新建投影根。operator setup 投影多一列。不新增写路径。
+`SETUP_HOSTS`、`SKILL_SURFACE_HOSTS`、setup/doctor 检查增加 `dsh`。新增 `dsh-plugin` doctor 检查，读取 `<DSH_HOME>/profiles/*` 的依赖、bundle 选择和 patch。技能状态从共享 `~/.agents/skills` 读取外部技能，不新建投影根。operator setup 多一列，i18n 增加 DSH 文案。技能目录版本升到 3，旧 manifest 明确拒收。不新增写路径。
 
 ### 不计划
 

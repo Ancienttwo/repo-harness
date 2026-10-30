@@ -63,6 +63,8 @@ The first `agent/pre-step` runs `SessionStart` and inserts its budgeted context 
 
 `write`, `edit` and `bash` map to the typed guards. A missing `dist/hook-entry.js`, a missing Bun, an invalid response, a timeout or a child crash denies the call with a `DSH_HOOK_*` code. A hook that requests `updated_input` is denied with `DSH_HOOK_UPDATED_INPUT_UNSUPPORTED`. MCP writes, `pwsh`, user `!` commands, writes from other plugins and any path that bypasses `tools/pre-execute` stay outside this boundary. This is not an OS sandbox.
 
+`repo-harness doctor` reports `dsh-plugin` from `<DSH_HOME>/profiles/*`. A profile dependency, bundle selection or patch that names repo-harness is `ok`; an absent DSH home is `na`. Setup projects that check as the DSH host row. DSH skill rows are the external skills in the shared `~/.agents/skills` root. repo-harness does not project its own facades into a DSH root yet.
+
 `tests/dsh-plugin.test.ts` mounts the plugin in a real Cordis app with the real tools pipeline and runs the real `dist/hook-entry.js` against an opted-in repository. The agent and transport fixtures are labeled; the test does not claim a full DSH desktop acceptance.
 
 ## MCP Write Safety
