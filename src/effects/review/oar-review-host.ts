@@ -12,7 +12,7 @@ import type { ProcessProof, TaskRequest } from '../terminal/task-session';
 import type { AvailableInstallation } from '@botiverse/oar';
 import { dirname } from 'node:path';
 import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
-import { promptWithOarObservation, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
+import { promptWithOarObservation, oarActualModel, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
 
 /** OAR owns RPC arguments and its explicit extension. Disable all ambient Pi resources. */
 export function piReviewRuntime(command: string): Runtime {
@@ -41,13 +41,14 @@ export class OarReviewHost {
   constructor(private readonly session: Session, print: (view: unknown) => void) {
     this.unsubscribe = session.events(print, { cursor: { sessionId: session.id, afterSeq: -1 } });
   }
-  async prompt(input: string, request: Pick<TaskRequest, 'request_id' | 'round'> & { host: ProcessProof }, save: OarObservationSink, timeoutMs = 30_000) {
+  /** `kind` is the runtime kind; it selects the shared actual-model rule. */
+  async prompt(kind: string, input: string, request: Pick<TaskRequest, 'request_id' | 'round'> & { host: ProcessProof }, save: OarObservationSink, timeoutMs = 30_000) {
     if (this.disposed) throw new Error('OAR_REVIEW_HOST_DISPOSED');
     if (this.round >= 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
     this.round++;
     // Reviewer authors the Result file. This returned text is observation,
     // never a TaskResult, Receipt, or an application-extracted JSON payload.
-    return promptWithOarObservation(this.session, request, request.host, input, { timeoutMs }, save);
+    return promptWithOarObservation(this.session, kind, request, request.host, input, { timeoutMs }, save);
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
@@ -56,9 +57,7 @@ export class OarReviewHost {
   }
   get sessionId(): string { return this.session.id; }
   model(kind: string): string | null {
-    // Claude system/init is requested/init metadata, not actual gateway model.
-    if (kind === 'claude') return null;
-    return this.session.model().value;
+    return oarActualModel(kind, this.session);
   }
 }
 
@@ -109,7 +108,7 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
   // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
   // writes result_ref; the host never interprets/publishes root-turn text.
-  const run = await host.prompt(`TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
+  const run = await host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
     snapshot => {
       writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
       recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
@@ -212,7 +211,7 @@ async function main(): Promise<void> {
     writeSessionArtifact(readyFile, { pid: process.pid, session_id: host.sessionId, fixture: spec.mode === 'scripted' });
     console.log('OAR_HOST_READY');
     if (spec.mode === 'scripted') {
-      for (const [index, input] of spec.inputs.entries()) await host.prompt(input, { request_id: randomUUID(), round: index + 1, host: { pid: process.pid, identity: processIdentity(process.pid) } },
+      for (const [index, input] of spec.inputs.entries()) await host.prompt('fixture', input, { request_id: randomUUID(), round: index + 1, host: { pid: process.pid, identity: processIdentity(process.pid) } },
         snapshot => writeSessionArtifact(join(dirname(spec.readyFile), oarObservationFile(index + 1)), snapshot, false));
       console.log('OAR_HOST_ROUNDS_DONE_FIXTURE');
       while (!existsSync(closeRequest) && !closing) await new Promise(resolve => setTimeout(resolve, 25));

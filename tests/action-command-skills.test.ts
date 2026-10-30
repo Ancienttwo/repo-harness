@@ -37,8 +37,10 @@ const TARGET_FACADE_KIND_PACKAGES = [
   "repo-harness-setup",
   "repo-harness-check",
   "repo-harness-product",
+  "repo-harness-issue-flow",
   "repo-harness-ship",
   "repo-harness-architecture",
+  "repo-harness-archimap",
   // Post-cutover addition: a repo-owned facade sourced from
   // assets/skills/obsidian-memory, projected to both hosts by every profile.
   "obsidian-memory",
@@ -240,8 +242,10 @@ describe("repo-harness action command skills", () => {
     expect(architecture).toContain("repo-harness architecture-projection check --json");
     expect(architecture).not.toContain("archive-architecture-request");
     expect(architecture).toContain("mermaid");
-    expect(architecture).toContain("only architecture diagram artifact");
-    expect(architecture).toContain("Do not generate standalone HTML");
+    expect(architecture).toContain("archctx-generated Markdown Mermaid");
+    expect(architecture).toContain("does not hand-write diagrams or standalone HTML");
+    expect(architecture).toContain("repo-harness-archimap");
+    expect(architecture).toContain("docs/architecture/archimap.html");
     expect(architecture).not.toContain("optional human-readable HTML");
     expect(architecture).toContain("Does not run `repo-harness init`");
     expect(architecture).toContain("architecture updates are explicit");
@@ -345,15 +349,32 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("repo-harness run check-task-workflow");
   });
 
-  test("product backlog planning preserves issue authority and source intent", () => {
-    const sprint = readReference("repo-harness-product", "sprint.md");
+  test("product routes backlog ordering, issue splitting and dispatch to repo-harness-issue-flow", () => {
+    const product = readSkillPackage("repo-harness-product");
+    const goal = readReference("repo-harness-product", "goal.md");
 
-    expect(sprint).toContain("The GitHub issue and PR");
-    expect(sprint).toContain("Link each issue to its source requirement");
-    expect(sprint).toContain("Keep product intent fixed when deriving work from an approved PRD");
-    expect(sprint).toContain("Use test commands or observable");
-    expect(sprint).toContain("Do not mint task IDs, contracts, offers or leases");
-    expect(sprint).toContain("This route plans work. It does not dispatch a worker or start a task");
+    expect(existsSync(join(SKILLS_ROOT, "repo-harness-product", "references", "sprint.md"))).toBe(false);
+    expect(product).not.toContain("references/sprint.md");
+    expect(product).toContain("`repo-harness-issue-flow` skill");
+    expect(goal).toContain("`repo-harness-issue-flow` skill");
+    expect(goal).not.toContain("backlog mode");
+  });
+
+  test("issue-flow routes integrator merges through publication merge and handles each exit code", () => {
+    const skill = readSkillPackage("repo-harness-issue-flow");
+    const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
+    const board = readReference("repo-harness-issue-flow", "board.md");
+    const templates = readReference("repo-harness-issue-flow", "templates.md");
+
+    for (const text of [skill, orchestrator, board]) expect(text).toContain("repo-harness publication merge");
+    expect(skill).toContain("claude --agent orchestrator");
+    expect(skill).toContain("publication.acceptance_merge");
+    for (const code of ["acceptance_merge_off", "base_protection_insufficient", "merge_outcome_unknown", "provider_rejected"]) {
+      expect(orchestrator).toContain(code);
+    }
+    expect(orchestrator).toMatch(/\| 0 \|[\s\S]*\| 3 \|[\s\S]*\| 4 \|[\s\S]*\| 5 \|[\s\S]*\| 6 \|/);
+    expect(templates).toContain("Merge SHA:");
+    for (const text of [skill, orchestrator, board, templates]) expect(text).not.toContain("gh pr merge");
   });
 
   test("product Goal mode binds native continuation to the current issue and claim", () => {
@@ -385,7 +406,7 @@ describe("repo-harness action command skills", () => {
     expect(router).toContain("Deferred work stays in GitHub issues");
     expect(router).not.toContain("tasks/todos.md");
 
-    for (const mode of ["prd", "sprint", "goal"]) {
+    for (const mode of ["prd", "goal"]) {
       const reference = readReference("repo-harness-product", `${mode}.md`);
       expect(reference).toContain("GitHub issue");
       expect(reference).not.toMatch(/capture-plan|contract worktree|through a task contract|the contract governs/);

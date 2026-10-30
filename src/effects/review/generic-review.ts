@@ -17,12 +17,13 @@ import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '.
 import { taskRepository } from '../git/task-repository';
 import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
   taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
-  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
+  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, validateTaskEngineerProfile, taskBindingSha256, type TaskEngineerProfile, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
 import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences } from './review-isolation';
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
-  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceReceipt } from './acceptance-receipt';
+  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceAuthor, type AcceptanceReceipt } from './acceptance-receipt';
+import { oarObservationFile, readOarObservation } from '../terminal/task-runtime-observation';
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
@@ -69,21 +70,55 @@ function fingerprint(root: string): string {
   return authorityFingerprint(gitExecFileSync(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
     + gitExecFileSync(['diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--binary'], { cwd: root, encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 }));
 }
+/** Task bindings whose own Herdr pane is the review caller's pane. */
+function paneBindings(repo: string, endpoint: HerdrEndpoint, pane: string): { dir: string; binding: TaskPaneBinding }[] {
+  const base = join(taskRepository(repo).primary_root, '.ai/harness/runs/task-agents');
+  if (!existsSync(base)) return [];
+  const bound: { dir: string; binding: TaskPaneBinding }[] = [];
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !existsSync(join(base, entry.name, 'binding.json'))) continue;
+    const saved = readSessionArtifact<TaskPaneBinding>(join(base, entry.name, 'binding.json'));
+    if (saved.runtime !== 'herdr' || saved.pane_id !== pane || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
+      || !isReviewRuntimeId(saved.harness_kind)) continue;
+    bound.push(readTaskAgent(repo, saved.task, saved.role));
+  }
+  return bound;
+}
 // Owner inference consumes existing typed task bindings only. Interactive
 // parents without a binding require an explicit --harness; never guess from TUI.
 function boundOwner(repo: string, endpoint: HerdrEndpoint, pane: string): Harness | null {
-  const base = join(taskRepository(repo).primary_root, '.ai/harness/runs/task-agents');
-  if (!existsSync(base)) return null;
   const kinds = new Set<Harness>();
-  for (const entry of readdirSync(base, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !existsSync(join(base, entry.name, 'binding.json'))) continue;
-    const saved = readSessionArtifact<import('../terminal/task-session').TaskPaneBinding>(join(base, entry.name, 'binding.json'));
-    if (saved.runtime !== 'herdr' || saved.pane_id !== pane || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
-      || !isReviewRuntimeId(saved.harness_kind)) continue;
-    const { binding } = readTaskAgent(repo, saved.task, saved.role);
-    assertTaskBinding(binding); kinds.add(binding.harness_kind as Harness);
-  }
+  for (const { binding } of paneBindings(repo, endpoint, pane)) { assertTaskBinding(binding); kinds.add(binding.harness_kind as Harness); }
   return kinds.size === 1 ? [...kinds][0]! : null;
+}
+/** An author turn without valid v3 evidence for its request is unknown; it never blocks the verdict. */
+function authorTurn(path: string, request: TaskRequest, provider: ProcessProof) {
+  try { return readOarObservation(path, request, provider); }
+  catch (error) {
+    if (/^OAR_OBSERVATION_(?:INVALID|LIMIT|IDENTITY_MISMATCH)$/.test((error as Error).message)) return null;
+    throw error;
+  }
+}
+/** The single author task session bound to the caller pane for this campaign
+ * and reviewed root, and the models its OAR host observed at turn end. Every
+ * ended turn counts; a missing, running or model-less turn makes the set unknown. */
+function boundAuthor(repo: string, session: ReviewSession): AcceptanceAuthor | null {
+  if (session.endpoint === null || session.parent_pane === null) return null;
+  const bound = paneBindings(repo, session.endpoint, session.parent_pane);
+  if (bound.length !== 1) return null;
+  const { dir, binding } = bound[0]!;
+  const identity = binding.task_admission?.identity;
+  if (!identity || identity.campaign_sha256 !== session.campaign_sha256 || identity.execution_root !== session.owner_root) return null;
+  const models = new Set<string>();
+  let known = true;
+  for (let round = 1; round <= binding.max_requests && existsSync(join(dir, `request-${round}.json`)); round++) {
+    const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
+    const turn = authorTurn(join(dir, oarObservationFile(round)), request, binding.provider);
+    if (turn?.control === 'rejected') continue;
+    if (turn?.status !== 'idle' || turn.outcome === null || turn.actual_model === null) { known = false; break; }
+    models.add(turn.actual_model);
+  }
+  return { binding_sha256: taskBindingSha256(binding), models: known && models.size ? [...models].sort() : null };
 }
 async function waitHostFile(path: string, timeout = 60_000): Promise<void> {
   const deadline = Date.now() + timeout;
@@ -92,11 +127,10 @@ async function waitHostFile(path: string, timeout = 60_000): Promise<void> {
     await Bun.sleep(25);
   }
 }
-function completedModel(session: ReviewSession, request: TaskRequest): string {
+/** Null is an unobserved reviewer model; it grants no cross-model claim. */
+function completedModel(session: ReviewSession, request: TaskRequest): string | null {
   const observation = readSessionArtifact<HostRoundObservation>(join(session.control_directory, `observed-${request.round}.json`));
   if (observation.request_id !== request.request_id || observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('review_host_turn_unverified');
-  // Init-only Claude projection cannot certify the actual gateway backend.
-  if (session.actual_harness === 'claude' || !observation.actual_model) throw new Error('review_actual_model_unverified');
   return observation.actual_model;
 }
 const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
@@ -137,7 +171,7 @@ export async function probeReviewInstallation(kind: Harness, executable?: string
 }
 const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApplicationHost, launched: terminalHostLaunched, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
   cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
-  owner: boundOwner, model: completedModel, bindNative: bindNativeTaskSession,
+  owner: boundOwner, author: boundAuthor, model: completedModel, bindNative: bindNativeTaskSession,
   installation: probeReviewInstallation,
   piExecutable,
   ready: waitHostFile,
@@ -420,7 +454,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? osAccountHome(), authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,
-      summary: output.summary, findings, reviewResult });
+      summary: output.summary, findings, reviewResult, author: client.author(root, session) });
     writeSessionArtifact(join(dir, `accepted-${round}.json`), { output, receipt });
     const projection = join(dir, 'acceptance.review.md');
     if (!existsSync(projection)) writeFileSync(projection, '# Acceptance Review\n\n', { flag: 'wx', mode: 0o600 });

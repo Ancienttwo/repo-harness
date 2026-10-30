@@ -23,14 +23,15 @@ export type HookEvent =
   | 'SubagentStart'
   | 'Stop';
 
-export type RouteHost = 'claude' | 'codex' | 'pi';
+export type RouteHost = 'claude' | 'codex' | 'pi' | 'dsh';
 
 /**
  * Hosts that read a JSON hook adapter file written by the installer
- * (`~/.claude/settings.json`, `~/.codex/hooks.json`). Pi has no adapter file:
- * the repo-harness Pi extension calls the hook runtime directly.
+ * (`~/.claude/settings.json`, `~/.codex/hooks.json`). Pi and DSH have no
+ * adapter file: their repo-harness package entry calls the hook runtime
+ * directly.
  */
-export type AdapterHost = Exclude<RouteHost, 'pi'>;
+export type AdapterHost = 'claude' | 'codex';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
@@ -102,7 +103,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PreToolUse' as const,
     routeId: 'bash' as const,
     matcher: 'Bash',
-    hosts: ['claude', 'pi'] as const,
+    hosts: ['claude', 'pi', 'dsh'] as const,
     handler: 'bash-mutation-guard',
     // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
     minimalProfile: true as const,
@@ -112,7 +113,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     routeId: 'inbox' as const,
     // Preserve the installed tuple and adapter order.
     handler: 'agent-notice',
-    hosts: ['claude', 'codex', 'pi'] as const,
+    hosts: ['claude', 'codex', 'pi', 'dsh'] as const,
     minimalProfile: true as const,
   }),
   Object.freeze({

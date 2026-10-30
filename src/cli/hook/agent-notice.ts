@@ -7,13 +7,15 @@ import type { CapabilityOwnership } from '../../core/state/types';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
-import { loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
+import { loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 const STATE_DIR = '.ai/harness/state/';
 const MARKER = `${STATE_DIR}agent-notice`;
 const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
+const ARCHIMAP_MARKER = `${STATE_DIR}agent-notice-archimap`;
+const ARCHIMAP_FILE = 'docs/architecture/archimap.html';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
@@ -23,6 +25,7 @@ const INACTIVE_CODES: ReadonlySet<string> = new Set([
   'AC_MODEL_ADOPTION_REQUIRED', 'AC_CODE_FACTS_UNAVAILABLE', 'AC_CODE_FACTS_NOT_READY', 'RH_ARCHCTX_PACKAGE_MISSING',
 ]);
 const REGISTRY_FILE = '.ai/context/capabilities.json';
+const modelPath = (path: string) => path.startsWith('.archcontext/model/') || path === REGISTRY_FILE;
 const singleLine = (text: string) => text.replace(/[\r\n\t]+/g, ' ');
 const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, bytes).toString('utf8').replace(/\uFFFD$/u, '');
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -52,19 +55,24 @@ interface Observation {
   readonly debt: { readonly branch: string; readonly ids: readonly string[]; readonly block: NoticeBlock } | null;
   /** The unowned-path filter failed in a setup state. Only stderr gets it. */
   readonly unmeasured?: unknown;
+  readonly archimap?: { readonly paths: readonly string[]; readonly block: NoticeBlock } | null;
+  readonly archimapError?: unknown;
 }
 
-/** Up to three rows and an exact overflow count. The overflow line is never cut. */
-function boundedBlock(header: string, rows: readonly string[], total: number, overflow: (count: number) => string): string {
+type ChangedPaths = () => ReadonlySet<string>;
+
+/** Up to three rows and an exact overflow count. The overflow line and the footer are never cut. */
+function boundedBlock(header: string, rows: readonly string[], total: number, overflow: (count: number) => string, footer?: string): string {
+  const tail = footer === undefined ? [] : [footer];
   const lines: string[] = [];
   for (const row of rows.slice(0, 3)) {
     const remainder = total - lines.length - 1;
-    const candidate = [header, ...lines, row, ...(remainder > 0 ? [overflow(remainder)] : [])].join('\n');
+    const candidate = [header, ...lines, row, ...(remainder > 0 ? [overflow(remainder)] : []), ...tail].join('\n');
     if (Buffer.byteLength(candidate, 'utf8') > MAX_BYTES) break;
     lines.push(row);
   }
   const more = total - lines.length;
-  const content = [header, ...lines, ...(more > 0 ? [overflow(more)] : [])].join('\n');
+  const content = [header, ...lines, ...(more > 0 ? [overflow(more)] : []), ...tail].join('\n');
   // An upstream identifier can exceed the entire budget. Keep the command intact.
   if (Buffer.byteLength(content, 'utf8') > MAX_BYTES) throw new Error('architecture notice identity exceeds the output budget');
   return content;
@@ -107,10 +115,46 @@ function unownedBlock(paths: readonly string[]): NoticeBlock | null {
  * unowned list can hold paths that main changed. As in checkpoint, only the
  * paths that differ from the review-base merge-base are this branch's changes.
  */
-function changedUnownedPaths(repoRoot: string, owned: CapabilityOwnership | null, options: ArchctxProviderOptions): string[] {
-  if (!owned?.review_base || owned.unowned_paths.length === 0) return [];
-  const changed = changedSinceReviewBase(repoRoot, owned.review_base, options);
+function changedUnownedPaths(owned: CapabilityOwnership | null, changedPaths: ChangedPaths | null): string[] {
+  if (!changedPaths || !owned || owned.unowned_paths.length === 0) return [];
+  const changed = changedPaths();
   return owned.unowned_paths.filter(path => changed.has(path)).sort();
+}
+
+/** One git diff per review base per hook run for the unowned filter and the archimap check. Each reader of a base gets the same failure. */
+function memoChanged(repoRoot: string, options: ArchctxProviderOptions): (reviewBase: string) => ChangedPaths {
+  const results = new Map<string, { readonly set: ReadonlySet<string> } | { readonly error: unknown }>();
+  return reviewBase => () => {
+    let result = results.get(reviewBase);
+    if (!result) {
+      try { result = { set: changedSinceReviewBase(repoRoot, reviewBase, options) }; }
+      catch (error) { result = { error }; }
+      results.set(reviewBase, result);
+    }
+    if ('error' in result) throw result.error;
+    return result.set;
+  };
+}
+
+/** The map file marks adoption. Staleness needs only git and the review base, so an archctx setup state or failure does not hide it. */
+function archimapPaths(repoRoot: string, reviewBase: () => string | null, changedFor: (reviewBase: string) => ChangedPaths): string[] {
+  if (!existsSync(join(repoRoot, ARCHIMAP_FILE))) return [];
+  const base = reviewBase();
+  if (!base) return [];
+  const changed = changedFor(base)();
+  if (changed.has(ARCHIMAP_FILE)) return [];
+  return [...changed].filter(modelPath).sort();
+}
+
+function archimapBlock(paths: readonly string[]): NoticeBlock {
+  return {
+    content: boundedBlock(
+      `[Archimap] ${ARCHIMAP_FILE} was not updated, but this branch changed the architecture model.`,
+      paths.slice(0, 3).map(path => `- ${singleLine(path)}`), paths.length, count => `(+${count} more architecture model paths)`,
+      'Refresh the map with the repo-harness-archimap skill before the PR is ready.',
+    ),
+    systemMessage: `Archimap: the architecture model changed on this branch; refresh ${ARCHIMAP_FILE}.`,
+  };
 }
 
 function unignoredBlock(): NoticeBlock {
@@ -172,10 +216,28 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
   try { if (source === 'registry' && registryAbsent(repoRoot)) return null; }
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
   const now = options.nowMs ?? Date.now;
-  let owned: CapabilityOwnership | null;
+  let owned: CapabilityOwnership | null = null;
+  let ownershipError: unknown;
   // Ownership and checkpoint each get one bounded call. SessionStart reuses ownership.
   try { owned = ownership({ ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) }); }
-  catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
+  catch (error) { ownershipError = error; }
+  const failed = ownershipError !== undefined;
+  const changedFor = memoChanged(repoRoot, options);
+  // An ownership answer carries its review base. Without one (an archctx
+  // failure, or no answer on a clean tree), read the same policy base from Git.
+  const mapBase = () => !failed && owned ? owned.review_base : resolveReviewBase(repoRoot);
+  let archimap: Observation['archimap'] = null;
+  let archimapError: unknown;
+  try {
+    const paths = archimapPaths(repoRoot, mapBase, changedFor);
+    archimap = paths.length > 0 ? { paths, block: archimapBlock(paths) } : null;
+  } catch (error) { archimapError = error; }
+  const changed = owned?.review_base ? changedFor(owned.review_base) : null;
+  const rest = failed ? { status: statusOf(ownershipError), unowned: null, debt: null } : observeDebt(repoRoot, source, owned, changed, options);
+  return { ...rest, archimap, ...(archimapError === undefined ? {} : { archimapError }) };
+}
+
+function observeDebt(repoRoot: string, source: ReturnType<typeof capabilitySource>, owned: CapabilityOwnership | null, changed: ChangedPaths | null, options: ArchctxProviderOptions): Observation {
   let unowned: Observation['unowned'] = null;
   try {
     const status = readiness(repoRoot, options.env);
@@ -183,7 +245,7 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
     // Only the registry is its own unowned-path authority. Under archcontext,
     // archctx counts a path as unowned only inside declared source roots, so
     // the broader resolver list would give the same fact a second meaning.
-    try { paths = source === 'registry' ? changedUnownedPaths(repoRoot, owned, options) : []; }
+    try { paths = source === 'registry' ? changedUnownedPaths(owned, changed) : []; }
     catch (error) {
       // A setup state runs no checkpoint, so a filter failure must not replace
       // it with a failure line. The paths stay unmeasured for this hook.
@@ -254,6 +316,13 @@ function debtNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observ
   return [unowned?.block, debt?.block].filter((block): block is NoticeBlock => block !== undefined);
 }
 
+/** Its own marker, so the map reminder never consumes or repeats the debt notice. */
+function archimapNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observation: Observation): NoticeBlock[] {
+  const { archimap } = observation;
+  if (!archimap) return [];
+  return claim(repoRoot, ARCHIMAP_MARKER, digest([currentBranch(repoRoot, env), archimap.paths]), env) ? [archimap.block] : [];
+}
+
 /**
  * Shared by all host delivery points. The status and debt markers fail independently.
  * Without an ignored marker path nothing is deduplicated, so only SessionStart,
@@ -273,8 +342,15 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
   } catch (error) { problems.push(errorText(error)); }
   try { blocks.push(...debtNotice(repoRoot, options.env, observation)); }
   catch (error) { problems.push(errorText(error)); }
+  // A failure that the status or unowned filter already reported (the shared
+  // diff, or the same unavailable review subject) is not repeated.
+  const { archimapError } = observation;
+  const reported = observation.status.kind === 'failure' ? observation.status.error : observation.unmeasured;
+  if (archimapError !== undefined && (reported === undefined || errorText(archimapError) !== errorText(reported))) problems.push(errorText(archimapError));
+  try { blocks.push(...archimapNotice(repoRoot, options.env, observation)); }
+  catch (error) { problems.push(errorText(error)); }
   if (point === 'session-start') {
-    try { if (![STATUS_MARKER, MARKER].every(path => ignored(repoRoot, path, options.env))) blocks.push(unignoredBlock()); }
+    try { if (![STATUS_MARKER, MARKER, ARCHIMAP_MARKER].every(path => ignored(repoRoot, path, options.env))) blocks.push(unignoredBlock()); }
     catch (error) { problems.push(errorText(error)); }
   }
   return {

@@ -2,6 +2,10 @@ import { Command } from 'commander';
 
 import type { OperatorDocSessionDiffV1, OperatorDocSessionLossV1 } from '../../core/operator/doc-session-changes';
 import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from '../../effects/operator/doc-session-changes';
+import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
+import { readDocSessionList, readDocSessionDetail } from '../../effects/operator/doc-session-views';
+import { DocSessionEventsError, readDocSessionEvents } from '../../effects/operator/doc-session-events';
+import { OperatorTaskReadError, readBoundedDocSessionFinalization } from '../../effects/operator/server';
 
 /**
  * `repo-harness operator doc-sessions`: the doc session reads of the operator
@@ -12,6 +16,15 @@ import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from '../
 const SESSION_ID = /^[0-9a-f]{32}$/u;
 
 interface ReadOptions { readonly json?: boolean }
+interface ViewOptions extends ReadOptions { readonly seen?: string; readonly after?: string }
+
+function runView(options: ReadOptions, read: () => unknown): void {
+  try { console.log(JSON.stringify(read())); }
+  catch (error) {
+    const known = error instanceof DocSessionReadError || error instanceof DocSessionEventsError;
+    refuse(options.json, known ? error.code : 'unavailable', known ? 2 : 1);
+  }
+}
 
 function refuse(json: boolean | undefined, code: string, exitCode: number): void {
   console.error(json ? JSON.stringify({ error: { code } }) : `repo-harness operator doc-sessions: ${code}`);
@@ -45,6 +58,39 @@ function printLoss(loss: OperatorDocSessionLossV1): void {
 
 export function buildDocSessionsCommand(): Command {
   const sessions = new Command('doc-sessions').description('Read doc sessions of the operator console');
+  sessions.command('finalization').description('Read saved finalization journal progress')
+    .argument('<session-id>', 'Doc session id (32 hex)').option('--json', 'Output the HTTP body as JSON')
+    .action(async (sessionId: string, options: ReadOptions) => {
+      if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
+      try { console.log(JSON.stringify(await readBoundedDocSessionFinalization(process.env, sessionId))); }
+      catch (error) { refuse(options.json, error instanceof OperatorTaskReadError ? error.code : 'unavailable', error instanceof OperatorTaskReadError ? 2 : 1); }
+    });
+  sessions.command('list').description('List doc sessions; unread compares with the supplied browser cursors')
+    .option('--seen <json>', 'JSON object of session ids to last-read epoch.seq cursors')
+    .option('--json', 'Output the HTTP body as JSON')
+    .action((options: ViewOptions) => {
+      let seen: unknown;
+      try { seen = JSON.parse(options.seen ?? '{}'); } catch { refuse(options.json, 'invalid_argument', 2); return; }
+      const request = { seen };
+      if (!isDocSessionListRequest(request)) { refuse(options.json, 'invalid_argument', 2); return; }
+      runView(options, () => readDocSessionList(process.env, request));
+    });
+  sessions.command('show').description('Read session status, branch, worktree directory name and HEAD')
+    .argument('<session-id>', 'Doc session id (32 hex)').option('--seen <cursor>', 'Last-read epoch.seq cursor')
+    .option('--json', 'Output the HTTP body as JSON')
+    .action((sessionId: string, options: ViewOptions) => {
+      const request = { session_id: sessionId, seen: options.seen ?? null };
+      if (!isDocSessionDetailRequest(request)) { refuse(options.json, 'invalid_argument', 2); return; }
+      runView(options, () => readDocSessionDetail(process.env, request));
+    });
+  sessions.command('events').description('Read one page of redacted session events')
+    .argument('<session-id>', 'Doc session id (32 hex)').option('--after <cursor>', 'Read after this epoch.seq cursor')
+    .option('--json', 'Output the HTTP body as JSON')
+    .action((sessionId: string, options: ViewOptions) => {
+      const request = { session_id: sessionId, after: options.after ?? null };
+      if (!isDocSessionEventsRequest(request)) { refuse(options.json, 'invalid_argument', 2); return; }
+      runView(options, () => readDocSessionEvents(process.env, sessionId, request.after));
+    });
   sessions
     .command('diff')
     .description('Print the session worktree against its base, with the diff_sha256 that a commit checks')

@@ -27,6 +27,7 @@ export interface McpLocalConfig {
     workflowExecutor?: boolean;
     workspaceCoder?: boolean;
     taskDispatch?: boolean;
+    publicationMerge?: boolean;
     /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
     reader?: boolean;
   };

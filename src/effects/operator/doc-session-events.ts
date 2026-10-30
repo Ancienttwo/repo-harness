@@ -3,8 +3,8 @@
 // the session record of #1021; the page reads them by an `epoch.seq` cursor.
 //
 // The docs host (oar-docs-host.ts) produces the events; the server adds the
-// failure records of a host that died. Production OPERATOR_ROUTES has no
-// events route; tests admit it through their own route inventory.
+// failure records of a host that died. Production reads run in the bounded
+// task-read process, through the same decoder and cursor reader as the CLI.
 
 import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
@@ -180,10 +180,10 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
 }
 
 /** The cursor of the last stored event and whether a turn is open, for the record that ends a dead host's session. */
-export function docSessionEventsTail(env: NodeJS.ProcessEnv, sessionId: string): { readonly last: DocSessionCursor | null; readonly activity: DocSessionActivity } {
+export function docSessionEventsTail(env: NodeJS.ProcessEnv, sessionId: string): { readonly last: DocSessionCursor | null; readonly last_at: string | null; readonly activity: DocSessionActivity } {
   const events = readStoredEvents(join(sessionDirectory(env, sessionId), EVENTS_FILE));
   const last = events.at(-1);
-  return { last: last === undefined ? null : { epoch: last.epoch, seq: last.seq }, activity: docSessionActivity(events) };
+  return { last: last === undefined ? null : { epoch: last.epoch, seq: last.seq }, last_at: last?.at ?? null, activity: docSessionActivity(events) };
 }
 
 /** One page of events after the cursor. Activity covers the whole log, not only the page. */

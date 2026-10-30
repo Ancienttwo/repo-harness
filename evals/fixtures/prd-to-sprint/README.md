@@ -1,3 +1,3 @@
-# PRD To Sprint Fixture
+# PRD Fixture
 
-Minimal harness-shaped repository for evaluating `repo-harness-product`'s sprint mode (from-prd).
+Minimal harness-shaped repository for evaluating `repo-harness-issue-flow` (issues from a PRD) and `repo-harness-product` Goal mode.

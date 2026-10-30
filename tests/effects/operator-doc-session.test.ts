@@ -10,13 +10,11 @@ import { GIT_KILL_GRACE_MS, gitExecFile, GitExecError } from '../../src/effects/
 import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
-import { OPERATOR_ROUTES, startOperatorServer, type OperatorRouteV1 } from '../../src/effects/operator/server';
+import { OPERATOR_ROUTES, startOperatorServer } from '../../src/effects/operator/server';
 import { withWorktreeTopologyLockAsync } from '../../src/effects/state/coordination-worktree-topology';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
-/** The inventory entry that binds the session events read in tests; production OPERATOR_ROUTES has none. */
-const SESSION_EVENTS_INVENTORY: OperatorRouteV1 = { id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false };
 const GUIDE = '# Guide\n\nThe operator reads docs.\nIt never writes main.\n\n## Next\n\nMore text.\n';
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -56,8 +54,6 @@ interface HarnessOptions {
   readonly session_id?: () => string;
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
-  /** Serve only the production GET inventory, without the test session events entry. */
-  readonly production_reads?: boolean;
   /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
   readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
   /** The runtimes with the docs use in the agent settings; codex by default. */
@@ -104,7 +100,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
   });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, route_inventory: [...OPERATOR_ROUTES, ...(options.production_reads ? [] : [SESSION_EVENTS_INVENTORY])], write_routes: [route] });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route] });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
@@ -784,14 +780,14 @@ test('the events read refuses a bad cursor, an unknown session and a corrupt log
   expect(() => appendDocSessionEvents(h.env, sid, [message(1, 1, 'x')])).toThrow();
 });
 
-test('production routes keep no session events read, so operator serve does not answer it', async () => {
-  expect(OPERATOR_ROUTES.some(route => route.id === 'session_events' || route.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source)).toBe(false);
-  const h = await harness({ production_reads: true });
+test('production routes admit the redacted session events read', async () => {
+  expect(OPERATOR_ROUTES.some(route => route.id === 'session_events' && route.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source)).toBe(true);
+  const h = await harness();
   const sid = await createdSession(h);
-  appendDocSessionEvents(h.env, sid, [message(1, 0, 'hidden')]);
+  appendDocSessionEvents(h.env, sid, [message(1, 0, 'visible')]);
   const answer = await readEvents(h, sid);
-  expect(answer.status).toBe(404);
-  expect(answer.text).not.toContain('hidden');
+  expect(answer.status).toBe(200);
+  expect(answer.body.events[0].text).toBe('visible');
 });
 
 test('the production inventory binds POST /api/v1/sessions to the server-built route over the injected docs cache', async () => {

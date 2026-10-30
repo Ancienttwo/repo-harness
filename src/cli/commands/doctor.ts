@@ -11,9 +11,11 @@ import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledPr
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/setup/types';
+import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
+import { probePiHerdrIntegration } from '../../effects/setup/pi-herdr-integration';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -55,7 +57,7 @@ export interface DoctorCheckResult {
 
 /** One per-skill judgment of the skill projection check. Paths stay in the CLI text only. */
 export interface SkillProjectionRow {
-  host: SkillProjection['host'];
+  host: SkillProjection['host'] | 'dsh';
   name: string;
   state: SkillProjectionState;
   /** No problem for this skill: an ok state and no install ledger drift. */
@@ -132,7 +134,7 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   const resolutionError = executable ? null : piExecutableIssue(env);
   const checks: DoctorCheckResult[] = [{ id: 'pi-path', describe: 'Pi on PATH', status: resolutionError ? 'fail' : executable ? 'ok' : 'na', detail: resolutionError ?? executable ?? 'pi not found on PATH' }];
   if (!executable) {
-    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
+    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package', 'pi-herdr-integration']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
     return checks;
   }
   try {
@@ -169,6 +171,9 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   } catch (error) {
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
   }
+  const integration = probePiHerdrIntegration(env);
+  checks.push({ id: 'pi-herdr-integration', describe: 'Herdr native Pi integration',
+    status: integration.state === 'current' ? 'ok' : 'fail', detail: integration.detail });
   return checks;
 }
 
@@ -568,6 +573,20 @@ function skillProjectionState(projection: SkillProjection, contract: Parameters<
   return staged ? 'unowned real directory' : 'ok copy';
 }
 
+/**
+ * Shared agents root state for DSH. The skills CLI owns these trees, so there
+ * is no repo-harness source to hash; presence and link target are the facts.
+ */
+function sharedSkillState(destination: string): SkillProjectionState {
+  let stat: fs.Stats;
+  try { stat = fs.lstatSync(destination); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return fs.existsSync(destination) ? 'ok link' : 'dangling link';
+  return stat.isDirectory() ? 'ok copy' : 'invalid path type';
+}
+
 /** One per-skill judgment. The public row omits every path; the CLI line adds them. */
 interface SkillProjectionJudgment {
   readonly row: SkillProjectionRow;
@@ -629,7 +648,15 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
         ledgerDrift,
       });
     }
-    let warning = judgments.some(judgment => !judgment.row.ok);
+    const dshRows: SkillProjectionRow[] = [];
+    const dshHome = env.DSH_HOME?.trim() || path.join(home, '.dsh');
+    if (target === 'both' && fs.existsSync(path.join(dshHome, 'profiles'))) {
+      for (const name of catalog.catalog.expectedProjections.externalSkillsByProfile[profile]) {
+        const state = sharedSkillState(path.join(stagedSkillRoot(home), name));
+        dshRows.push({ host: 'dsh', name, state, ok: state.startsWith('ok ') });
+      }
+    }
+    let warning = judgments.some(judgment => !judgment.row.ok) || dshRows.some(row => !row.ok);
     const details = judgments.map(judgment => formatSkillProjectionJudgment(judgment, profile));
     if (installed) {
       const drift = installedProfileStatus(installed, env).drift;
@@ -639,7 +666,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       warning = true;
       details.push('install ledger: missing; run: repo-harness install --profile ' + profile);
     }
-    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: judgments.map(judgment => judgment.row) };
+    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: [...judgments.map(judgment => judgment.row), ...dshRows] };
   } catch (error) {
     return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
   }
@@ -701,6 +728,46 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   };
 }
 
+/**
+ * Read-only DSH profile check. DSH owns its plugin installation, so this check
+ * reports whether a profile declares the repo-harness bundle. It never writes
+ * a profile or runs the DSH package manager.
+ */
+function checkDshPlugin(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
+  const id = 'dsh-plugin';
+  const describe = 'DSH profile declares the repo-harness plugin';
+  const configuredHome = env.DSH_HOME?.trim();
+  const home = configuredHome ? path.resolve(configuredHome) : path.join(env.HOME ?? env.USERPROFILE ?? os.homedir(), '.dsh');
+  const profilesDir = path.join(home, 'profiles');
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(profilesDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { id, describe, status: 'na', detail: `no DSH profiles at ${profilesDir}; DSH is not installed for this account` };
+    }
+    return { id, describe, status: 'warn', detail: `cannot read ${profilesDir}: ${(error as Error).message}` };
+  }
+  const profiles = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+  if (profiles.length === 0) return { id, describe, status: 'warn', detail: `no DSH profile under ${profilesDir}` };
+  const declared: string[] = [];
+  for (const profile of profiles) {
+    const dir = path.join(profilesDir, profile);
+    let manifest: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown>; dsh?: { profile?: { bundles?: unknown } } } = {};
+    try { manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')); } catch { /* reported by the decision below */ }
+    const dependencies = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
+    const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : [];
+    let patch = '';
+    try { patch = fs.readFileSync(path.join(dir, 'cordis.patch.yml'), 'utf8'); } catch { /* absent patch is normal */ }
+    if (PACKAGE_NAME in dependencies || bundles.includes(PACKAGE_NAME) || patch.includes(PACKAGE_NAME)) declared.push(profile);
+  }
+  if (declared.length === 0) {
+    return { id, describe, status: 'warn',
+      detail: `profiles ${profiles.join(', ')} do not declare repo-harness; run: dsh plugin add link:${PACKAGE_ROOT}` };
+  }
+  return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${declared.join(', ')}` };
+}
+
 export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   const codegraphProbe = probeCodegraph(cwd);
@@ -710,6 +777,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
   checks.push(checkSkillProjection(target));
   checks.push(checkCodexCliVersion());
   if (target === 'both') checks.push(...checkPiHost());
+  if (target === 'both') checks.push(checkDshPlugin());
   checks.push(checkCliUpdate(target));
   for (const target of ALL_TARGETS) {
     if (target.supportsLocation('global')) {

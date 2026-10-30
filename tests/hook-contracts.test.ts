@@ -25,7 +25,7 @@ describe("Hook contracts", () => {
 
   test("the installed inbox tuple resolves to the notice handler", () => {
     const route = ROUTES.find(route => route.event === 'UserPromptSubmit' && route.routeId === 'inbox');
-    expect(route).toMatchObject({ hosts: ['claude', 'codex', 'pi'], handler: 'agent-notice' });
+    expect(route).toMatchObject({ hosts: ['claude', 'codex', 'pi', 'dsh'], handler: 'agent-notice' });
     if (!route) throw new Error('inbox adapter tuple is missing');
     expect(getHandlerForRoute(route).id).toBe('agent-notice');
   });

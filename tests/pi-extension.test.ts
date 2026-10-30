@@ -13,7 +13,7 @@ import { registerPiHooks } from '../src/pi/extension';
 import {
   PiHookBridge, piHookEnvironment, PI_HOOK_INPUT_BYTES, PI_HOOK_OUTPUT_BYTES, type PiHookRequest,
 } from '../src/pi/hook-bridge';
-import type { PiHookOutput } from '../src/cli/hook/hook-protocol';
+import type { BridgeHookOutput } from '../src/cli/hook/hook-protocol';
 import { commitAll, initGitRepo, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
 import { writeNoticeRegistry } from './helpers/agent-notice';
 
@@ -23,8 +23,8 @@ afterAll(() => rmSync(buildRoot, { recursive: true, force: true }));
 
 class ObservedBridge extends PiHookBridge {
   readonly requests: PiHookRequest[] = [];
-  readonly outputs: PiHookOutput[] = [];
-  override async call(request: PiHookRequest): Promise<PiHookOutput> {
+  readonly outputs: BridgeHookOutput[] = [];
+  override async call(request: PiHookRequest): Promise<BridgeHookOutput> {
     this.requests.push(request);
     const output = await super.call(request);
     this.outputs.push(output);
@@ -605,7 +605,7 @@ describe('Pi hook child boundary', () => {
     return entry;
   }
   const request: PiHookRequest = { event: 'PreToolUse', routeId: 'edit', cwd: buildRoot, payload: {} };
-  const wire: PiHookOutput = { protocol: 1, event: 'PreToolUse', route_id: 'edit', exit_code: 0, reason: 'ok',
+  const wire: BridgeHookOutput = { protocol: 1, event: 'PreToolUse', route_id: 'edit', exit_code: 0, reason: 'ok',
     decision: 'none', additional_context: null, system_message: null, diagnostics: '' };
 
   test('identity and target environment is removed; hook configuration remains', async () => {

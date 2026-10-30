@@ -75,7 +75,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
-- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts
+- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts, plus the Claude-only `orchestrator`
 
 Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
@@ -712,7 +712,8 @@ bun add -g @colbymchenry/codegraph@1.6.2 && codegraph sync . && codegraph status
 `check-agent-tooling.sh`. The single authored source is
 `package:agents/fleet`; it ships inside the npm package and never requires a
 network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
-`deep-worker`, `gatekeeper`, `root-cause-prover`, and `harness-evaluator`.
+`deep-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`, and
+`orchestrator`.
 
 ### Two targets, one source
 
@@ -720,6 +721,14 @@ network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
   is installed byte-for-byte.
 - Codex: `~/.codex/agents/<agent>.toml` — generated deterministically from the
   same packaged `.md`; there is no second authored copy for Codex.
+- `orchestrator` is projected to Claude only (`CLAUDE_ONLY_AGENTS` in
+  `src/effects/terminal/task-role-profiles.ts`). The installer writes no
+  `~/.codex/agents/orchestrator.toml`, and the checker does not expect one.
+  Start it as a long-lived session with `claude --agent orchestrator`. It is
+  the coordinator and integrator seat of `repo-harness-issue-flow`
+  (`opus/xhigh`, read-only tools plus `gh` and `herdr agent prompt`). It has no
+  Codex target because a Codex fleet TOML runs in a read-only sandbox without
+  network access, which cannot run `gh`.
 
 ### `.md` -> `.toml` mapping
 
@@ -743,6 +752,7 @@ the family row above, and are the only model/effort remaps in the generator:
 `gatekeeper` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning;
 `root-cause-prover` (`opus`/`xhigh`) targets `gpt-6-astra` at `high` reasoning;
 `harness-evaluator` (`opus`/`high`) targets `gpt-6-astra` at `medium` reasoning.
+`orchestrator` has no Codex target.
 
 `fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
 receive `sandbox_mode = "workspace-write"`; every other role receives
@@ -990,19 +1000,22 @@ generation.
 
 ### Uninstall
 
-There is no uninstall command. Removing the fleet means deleting the twelve
+There is no uninstall command. Removing the fleet means deleting the fifteen
 managed files by hand:
 
 ```text
 ~/.claude/agents/explorer.md
 ~/.claude/agents/deep-reasoner.md
 ~/.claude/agents/fast-worker.md
+~/.claude/agents/deep-worker.md
 ~/.claude/agents/gatekeeper.md
 ~/.claude/agents/root-cause-prover.md
 ~/.claude/agents/harness-evaluator.md
+~/.claude/agents/orchestrator.md
 ~/.codex/agents/explorer.toml
 ~/.codex/agents/deep-reasoner.toml
 ~/.codex/agents/fast-worker.toml
+~/.codex/agents/deep-worker.toml
 ~/.codex/agents/gatekeeper.toml
 ~/.codex/agents/root-cause-prover.toml
 ~/.codex/agents/harness-evaluator.toml

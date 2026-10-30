@@ -128,7 +128,7 @@ const installedProfile = readInstalledProfile();
 
 // Provider-native source tuples project deterministically to Codex-native labels.
 // Validation remains fail-closed; reasoning effort is carried through unchanged.
-const { MANAGED_AGENTS, WRITABLE_AGENTS, EFFORT_LEVELS, AGENT_TARGET_OVERRIDES,
+const { MANAGED_AGENTS, WRITABLE_AGENTS, CLAUDE_ONLY_AGENTS, EFFORT_LEVELS, AGENT_TARGET_OVERRIDES,
   parseRoleNameScalar, parseFrontmatter, validateFrontmatter } = require(
   path.join(SOURCE_DIR, "../../src/effects/terminal/task-role-profiles.ts"),
 );
@@ -267,7 +267,7 @@ for (const agent of MANAGED_AGENTS) {
   const source = readSource(agent);
   if (!source.ok) {
     results.push({ host: "claude", file: `${agent}.md`, status: "source-missing" });
-    results.push({ host: "codex", file: `${agent}.toml`, status: "source-missing" });
+    if (!CLAUDE_ONLY_AGENTS.has(agent)) results.push({ host: "codex", file: `${agent}.toml`, status: "source-missing" });
     continue;
   }
 
@@ -275,10 +275,14 @@ for (const agent of MANAGED_AGENTS) {
   const validation = validateFrontmatter(parsed, agent);
   if (!validation.ok) {
     results.push({ host: "claude", file: `${agent}.md`, status: "source-invalid" });
-    results.push({ host: "codex", file: `${agent}.toml`, status: "source-invalid" });
+    if (!CLAUDE_ONLY_AGENTS.has(agent)) results.push({ host: "codex", file: `${agent}.toml`, status: "source-invalid" });
     continue;
   }
 
+  if (CLAUDE_ONLY_AGENTS.has(agent)) {
+    prepared.push({ agent, source: source.text, parsed, mapped: null });
+    continue;
+  }
   const target = AGENT_TARGET_OVERRIDES[agent];
   if (!target) {
     results.push({ host: "codex", file: `${agent}.toml`, status: "invalid-target" });
@@ -294,16 +298,18 @@ if (prepared.length !== MANAGED_AGENTS.length) {
 }
 
 const targets = prepared.flatMap(({ agent, source, parsed, mapped }) => {
+  const claudeTarget = {
+    agent,
+    host: "claude",
+    file: `${agent}.md`,
+    path: path.join(CLAUDE_TARGET_DIR, `${agent}.md`),
+    content: source,
+  };
+  if (CLAUDE_ONLY_AGENTS.has(agent)) return [claudeTarget];
   const tomlContent = generateToml(agent, parsed, mapped);
   Bun.TOML.parse(tomlContent);
   return [
-    {
-      agent,
-      host: "claude",
-      file: `${agent}.md`,
-      path: path.join(CLAUDE_TARGET_DIR, `${agent}.md`),
-      content: source,
-    },
+    claudeTarget,
     {
       agent,
       host: "codex",

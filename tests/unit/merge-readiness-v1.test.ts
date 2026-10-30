@@ -5,6 +5,8 @@ import {
   type ProviderMergeReadinessFactsV1,
   type PullRequestMergeReadinessInput,
 } from '../../src/core/publication/merge-readiness';
+import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
+import { parsePublicationPolicy, publicationPolicyChanged } from '../../src/core/publication/acceptance-merge-policy';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -168,4 +170,81 @@ test('retired rollback facts do not supply the new boundary', () => {
   const { rollback_boundary: _boundary, ...facts } = input.provider!;
   const provider = { ...facts, rollback_tags: 'ready' } as unknown as ProviderMergeReadinessFactsV1;
   expect(projectPullRequestMergeReadiness({ ...input, provider }).blockers.map(b => b.code)).toEqual(['provider_data_incomplete']);
+});
+
+describe('closing reference check', () => {
+  const repository = 'example/repo-harness';
+  const linked = (references: string[], has_next_page = false) => ({
+    has_next_page,
+    references: references.map((reference) => {
+      const [repo, number] = reference.split('#');
+      return { repository: repo!, number: Number(number) };
+    }),
+  });
+
+  test('parses every closing keyword, case-insensitive, with an optional colon and a qualified repository', () => {
+    const text = [
+      'close #1', 'Closes #2', 'CLOSED: #3', 'fix #4', 'Fixes #5', 'fixed:#6', 'resolve #7', 'Resolves #8', 'resolved Other/Repo#9',
+      'fixes https://github.com/example/repo-harness/issues/10', 'Refs #11', 'prefix #12', 'closed-loop #13',
+    ].join('\n');
+    expect(parseClosingReferences(repository, text)).toEqual({ references: [
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 10].map((n) => `${repository}#${n}`),
+      'other/repo#9',
+    ].sort(), unsupported: [] });
+  });
+
+  test('a closing keyword before a pull request URL is an unsupported target, with or without a fragment', () => {
+    const pull = 'https://github.com/o/r/pull/9#issuecomment-123';
+    expect(parseClosingReferences(repository, `Fixes ${pull}\ncloses http://www.github.com/o/r/pull/10`))
+      .toEqual({ references: [], unsupported: [pull, 'http://www.github.com/o/r/pull/10'].sort() });
+    expect(checkClosingReferences({ repository, commit_headline: 'Ship (#42)', commit_body: `Fixes ${pull}`, linked: linked([]) }))
+      .toMatchObject({ ok: false, code: 'closing_references_mismatch', message_only: [], linked_only: [], unsupported: [pull] });
+  });
+
+  test('accepts equal repository-qualified sets from the headline and body', () => {
+    expect(checkClosingReferences({ repository, commit_headline: 'Ship (#42)', commit_body: 'Fixes #7\nResolves Example/Repo-Harness#8',
+      linked: linked([`${repository}#7`, `${repository}#8`]) })).toEqual({ ok: true, references: [`${repository}#7`, `${repository}#8`] });
+  });
+
+  test('reports both differences on a mismatch', () => {
+    expect(checkClosingReferences({ repository, commit_headline: 'Ship, fixes #9 (#42)', commit_body: 'Refs #12',
+      linked: linked([`${repository}#12`]) })).toMatchObject({
+      ok: false, code: 'closing_references_mismatch', message_only: [`${repository}#9`], linked_only: [`${repository}#12`],
+    });
+  });
+
+  test('an unobserved page of closing links fails closed', () => {
+    expect(checkClosingReferences({ repository, commit_headline: 'Ship', commit_body: '', linked: linked([], true) }))
+      .toMatchObject({ ok: false, code: 'closing_references_incomplete' });
+  });
+});
+
+describe('acceptance merge policy switch', () => {
+  const file = (value: unknown) => ({ status: 'present' as const, text: JSON.stringify(value) });
+
+  test('a missing file, object or field is off', () => {
+    for (const policy of [{ status: 'missing' as const }, file({}), file({ publication: {} })]) {
+      expect(parsePublicationPolicy(policy)).toMatchObject({ ok: true, acceptance_merge: 'off' });
+    }
+    expect(parsePublicationPolicy(file({ publication: { acceptance_merge: 'on' } }))).toMatchObject({ ok: true, acceptance_merge: 'on' });
+  });
+
+  test('any other value or shape is invalid', () => {
+    for (const policy of [
+      { status: 'present' as const, text: '{' }, file([]), file({ publication: null }), file({ publication: 'on' }),
+      file({ publication: { acceptance_merge: 'yes' } }), file({ publication: { acceptance_merge: true } }),
+      file({ publication: { acceptance_merge: 'on', extra: 1 } }),
+    ]) {
+      expect(parsePublicationPolicy(policy).ok).toBe(false);
+    }
+  });
+
+  test('only a change to the publication subtree counts as a policy change', () => {
+    const base = parsePublicationPolicy(file({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on' } }));
+    if (!base.ok) throw new Error('fixture policy must parse');
+    expect(publicationPolicyChanged(base, { status: 'present', text: '{"publication":{"acceptance_merge":"on"},"merge_gate":{"enabled":false}}' })).toBe(false);
+    for (const head of [file({ publication: { acceptance_merge: 'off' } }), file({}), { status: 'missing' as const }, { status: 'present' as const, text: '{' }]) {
+      expect(publicationPolicyChanged(base, head)).toBe(true);
+    }
+  });
 });

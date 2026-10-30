@@ -1,0 +1,7 @@
+# repo-harness bundle patch for DeepSeek Harness.
+#
+# Insert the guard row over the empty profile root. A profile that wants a
+# different placement overrides this row by id in its own cordis.patch.yml.
+- insert:
+    - id: repo-harness
+      name: 'repo-harness/dist/dsh-plugin.js'

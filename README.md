@@ -95,6 +95,21 @@ Pi covers session context, agent notices, edit/write, bash and Stop hooks.
 It has no fleet roles or subagent hooks. PowerShell, `!`/`!!` user shell,
 other extensions' file writes and third-party MCP writes are outside this coverage.
 
+DSH (DeepSeek Harness) is a package host. repo-harness ships a Cordis plugin
+and a bundle patch; DSH manages the installation. Load the plugin with
+`dsh plugin add link:<repo-harness package directory>`, or with
+`dsh plugin add repo-harness@<version>` after release. The plugin needs Bun on
+`PATH`; it starts this package's `dist/hook-entry.js`. It maps native `write`,
+`edit` and `bash` calls to the typed guards, delivers session context through
+the first agent step, and records Stop at the turn boundary. It disables
+itself in a repository without `.ai/harness/workflow-contract.json`. MCP
+writes, `pwsh`, `!` user commands and writes from other plugins stay outside
+this boundary. DSH already reads `AGENTS.md` and `~/.agents/skills`; the
+plugin does not change those paths. `repo-harness doctor` and
+`repo-harness setup check` report whether a DSH profile declares the bundle,
+and list the external skills in the shared agents root. repo-harness does not
+write the DSH profile.
+
 On Windows, keep Git for Windows on the install/update `PATH`. That explicit
 ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
 the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's
@@ -328,7 +343,8 @@ cleanup helpers remain for existing contract lifecycle callers.
 
 Use [repo-harness](SKILL.md) for scope and worker ownership,
 [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for requested
-planning, and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md)
+PRD or Goal work, [repo-harness-issue-flow](assets/skills/repo-harness-issue-flow/SKILL.md)
+for issue backlog splitting and dispatch, and [repo-harness-check](assets/skill-commands/repo-harness-check/SKILL.md)
 for scope and recorded verification.
 
 ### Refactor recommendations
@@ -384,6 +400,10 @@ repo-harness review close --repository-id <repository-id> --issue-id <issue-id> 
 In the Claude desktop app without Herdr, add `--launch app-terminal` and omit `--herdr-endpoint`. The first call prints the fixed host command. Claude runs it once in an app Terminal tab, then repeats the round. OAR, Seatbelt and the Receipt stay the same.
 
 A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the addressed Herdr session for at most three repair rounds. Default selection uses the owner’s opposite harness; `--harness` explicitly selects Claude or Codex. Only a missing executable before start allows a reported fallback. File Results pass domain binding/finding checks and the generic-review Receipt writer/verifier before close. Terminal history is observation. Claude uses an exact result-file allowlist plus mutation fingerprints; production OS write isolation and complete large-packet ingestion remain unverified.
+
+### Bot merge
+
+A local Herdr Bot merges through the MCP `merge_pull_request` tool of the `orchestrator` profile. A cloud-only Bot runs `repo-harness publication merge` in a sandbox that has repo-harness, a working `gh auth` and a checkout. Both use the same executor. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](docs/control-bot-boundary.md#bot-modes-and-merge).
 
 ## Hooks
 
@@ -531,7 +551,8 @@ control context loading. They do not add a host permission boundary.
 | --- | --- | --- |
 | `repo-harness` | Bot | Route explicit harness actions |
 | `repo-harness-check` | Bot | Plan scoped work, review plans, assess recorded checks |
-| `repo-harness-product` | Bot | Requested PRD, Sprint or Goal preparation |
+| `repo-harness-product` | Bot | Requested PRD drafting or Goal preparation |
+| `repo-harness-issue-flow` | Bot | Issue and PR driven multi-agent development: split by module, dispatch workers, follow PRs and CI |
 | `repo-harness-ship` | Bot | Explicit publication and cleanup decisions |
 | `obsidian-memory` | Bot | Explicit memory recall or persistence |
 | `repo-harness-cross-review` | Bot | Generic review; direct advisory runtime retired |
@@ -539,6 +560,7 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-setup` | Worker | Assigned install, migration, repair or scaffold |
 | `repo-harness-test` | Worker | Source tests and real fixtures |
 | `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
+| `repo-harness-archimap` | Worker | Draw or refresh the human-facing architecture map `docs/architecture/archimap.html` |
 | `windows-python-first` | Worker | Native Windows file, text and shell work through Python |
 
 Planning is merged into `repo-harness-check`. No separate planning alias remains.

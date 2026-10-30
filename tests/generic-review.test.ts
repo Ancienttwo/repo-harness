@@ -23,6 +23,7 @@ import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
 import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
 import { recordPrePromptInboxAccepted } from '../src/effects/review/pre-prompt-inbox-consumer';
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
+import type { ReviewHostSpec } from '../src/effects/review/oar-review-host';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -525,7 +526,7 @@ console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:
   expect(targets.map(path => readFileSync(path, 'utf8'))).toEqual(initial);
 }, 60000);
 
-test('Pi review options use native configuration and require an actual model', async () => {
+test('Pi review options use native configuration; an unobserved model is null for every runtime', async () => {
   const { isReviewRuntimeId } = await import('../src/core/review/review-runtimes');
   const { validateDomainReview } = await import('../src/core/review/acceptance-receipt');
   const { decodeAgentsConfig } = await import('../src/core/operator/agents-settings');
@@ -541,8 +542,11 @@ test('Pi review options use native configuration and require an actual model', a
   expect(validateReviewOutput(result, identity).actual_model).toBe(identity.actual_model);
   expect(validateDomainReview(result).actual_model).toBe(identity.actual_model);
   for (const actual_harness of ['claude', 'codex', 'pi'] as const) {
-    expect(() => validateDomainReview({ ...result, actual_harness, actual_model: null })).toThrow();
+    expect(validateDomainReview({ ...result, actual_harness, actual_model: null }).actual_model).toBeNull();
+    expect(validateReviewOutput({ ...result, actual_harness, actual_model: null }, { ...identity, actual_harness, actual_model: null }).actual_model).toBeNull();
     expect(() => validateReviewOutput({ ...result, actual_harness, actual_model: null }, { ...identity, actual_harness })).toThrow('actual_model_mismatch');
+    expect(() => validateDomainReview({ ...result, actual_harness, actual_model: '' })).toThrow();
+    expect(() => validateReviewOutput({ ...result, actual_harness, actual_model: '' }, { ...identity, actual_harness, actual_model: '' })).toThrow('review_actual_model_unverified');
   }
 });
 
@@ -605,6 +609,7 @@ for (const example of [
   expect(result.receipt.reviewer).toBe('Pi'); expect(result.receipt.actual_harness).toBe('pi');
   expect(result.receipt.actual_model).toBe(actualModel); expect(result.output.actual_model).toBe(actualModel);
   expect(Object.hasOwn(result.receipt, 'cross_model')).toBe(false);
+  expect(result.receipt.model_relation).toBe('unknown');
   const input = { repo_root: f.options.reviewerRepo, binding: binding!, ready_path: join(f.dir, 'ready.json') };
   const native = bindNativeTaskSession(input);
   expect(native.host).toBe('pi'); expect(native.native_session_id).toBe('fixture-pi-native-id');
@@ -619,7 +624,8 @@ for (const example of [
   if (cancel) {
     const priorReceipt = readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8');
     writeFileSync(join(f.root, 'feature.txt'), 'candidate\n\n'); f.refresh();
-    actualModel = null; verdict = 'PASS';
+    // A null model is valid, so a malformed empty model keeps this failure path.
+    actualModel = ''; verdict = 'PASS';
     await expect(runReviewRound({ ...f.options, harness: 'pi' }, effects)).rejects.toThrow('review_actual_model_unverified');
     expect(readFileSync(acceptanceReceiptPath(f.root, f.home), 'utf8')).toBe(priorReceipt);
     expect(existsSync(join(f.dir, 'accepted-2.json'))).toBe(false);
@@ -648,6 +654,202 @@ test('Pi review requires explicit selection and cannot be a missing-provider fal
   expect(calls).toEqual(['claude']);
   expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
 });
+
+type SeamHarness = 'claude' | 'codex' | 'pi';
+type ScriptedTurn = NonNullable<Parameters<typeof import('@botiverse/oar/testing').scriptedRuntime>[0]>['turn'];
+/** Zero-model host seam: a scripted OAR Session behind the real OarReviewHost.
+ * A null model is a runtime that never reported one; OAR's fold stays null. */
+async function scriptedSeamHost(kind: SeamHarness, model: string | null, cwd: string, turn?: ScriptedTurn) {
+  const { OarReviewHost } = await import('../src/effects/review/oar-review-host');
+  const { scriptedRuntime } = await import('@botiverse/oar/testing');
+  const session = await scriptedRuntime({ id: kind, ...(model === null ? {} : { model }),
+    turn: turn ?? (async ({ say }) => { say('[fixture observation; no provider call]'); }) }).session({ kind: 'available', via: 'bundled' }, { cwd });
+  const observed = model === null ? new Proxy(session, { get(target, key) {
+    if (key === 'model') return () => ({ ...target.model(), value: null });
+    const value = Reflect.get(target, key, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } }) : session;
+  return new OarReviewHost(observed, () => {});
+}
+
+const AUTHOR_ROLE = 'implementer';
+const AUTHOR_PANE = `fixture-${AUTHOR_ROLE}`;
+/** A bound author task session. Every turn runs through the host seam, which writes its observation file. */
+async function authorSession(f: ReturnType<typeof packetRoundFixture>, kind: SeamHarness, models: (string | null)[],
+  options: { root?: string; task?: string; authority?: ReviewRoundAuthority } = {}) {
+  const spec = { task: options.task ?? 'fixture-author', role: AUTHOR_ROLE, harness_kind: kind, endpoint: f.options.endpoint,
+    parent_pane: 'fixture-coordinator', args: [], max_requests: 3 };
+  const repo = options.root ?? f.root;
+  const binding = await startOfflineTaskAgent(repo, spec, { source: options.authority ?? f.authority, claim: f.options.taskClaim });
+  const dir = taskSessionDirectory(repo, spec.task, spec.role);
+  const turn = async (round: number, model: string | null, script?: ScriptedTurn) => {
+    const request_id = randomUUID();
+    writeSessionArtifact(join(dir, `request-${round}.json`), { protocol: 2, task: spec.task, role: spec.role, round, request_id });
+    const host = await scriptedSeamHost(kind, model, dir, script);
+    let published!: () => void;
+    const running = new Promise<void>(resolve => { published = resolve; });
+    const pending = host.prompt(kind, '[fixture author turn]', { request_id, round, host: binding.provider }, snapshot => {
+      writeSessionArtifact(join(dir, oarObservationFile(round)), snapshot, false);
+      if (snapshot.status === 'running') published();
+    }).finally(() => host.dispose());
+    return { pending, running };
+  };
+  for (const [index, model] of models.entries()) await (await turn(index + 1, model)).pending;
+  return { binding, dir, turn };
+}
+type ReviewRoundAuthority = ReturnType<typeof packetRoundFixture>['authority'];
+
+/** One review round whose reviewer observation is written by runHostFileRequest. */
+async function seamReview(f: ReturnType<typeof packetRoundFixture>, harness: SeamHarness, reviewerModel: string | null, parentPane = f.options.parentPane) {
+  const { mkdirSync } = await import('node:fs');
+  const { runHostFileRequest } = await import('../src/effects/review/oar-review-host');
+  const hostDir = join(f.home, `seam-host-${harness}`); mkdirSync(hostDir);
+  if (harness === 'codex') {
+    mkdirSync(join(f.options.endpoint.home, '.codex'), { recursive: true });
+    const exp = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url');
+    writeFileSync(join(f.options.endpoint.home, '.codex/auth.json'), JSON.stringify({ tokens: { access_token: `fixture.${exp}.fixture` } }), { mode: 0o600 });
+  }
+  const host = await scriptedSeamHost(harness, reviewerModel, hostDir);
+  let binding: TaskPaneBinding | undefined, request: TaskRequest;
+  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
+    installation: async (_kind, executable) => harness === 'pi' ? { kind: 'available', via: 'bundled' }
+      : { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' },
+    start: async (repo, spec, _command, _ready, _guard, authority) => {
+      if (!authority) throw new Error('fixture_task_authority_missing');
+      binding = await startOfflineTaskAgent(repo, spec, authority);
+      writeSessionArtifact(join(f.dir, 'ready.json'), { pid: binding.provider.pid, session_id: host.sessionId, fixture: false });
+      return binding;
+    },
+    send: async (_repo, task, role) => {
+      const content = '[fixture review request]';
+      request = { protocol: 2, task, role, round: 1, request_id: randomUUID(), context_ref: join(hostDir, 'context-1.txt'), source_ref: 'fixture',
+        result_ref: join(hostDir, 'result-1.json'), context_sha256: 'sha256:' + createHash('sha256').update(content).digest('hex'),
+        result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
+      writeFileSync(request.context_ref, content);
+      writeFileSync(join(hostDir, 'started-1.json'), JSON.stringify({ request_id: request.request_id, provider: { pid: process.pid, identity: 'fixture-host' } }));
+      await runHostFileRequest(host, { kind: harness, requestDirectory: hostDir, output: hostDir, controlDirectory: f.dir, timeoutMs: 5000 } as unknown as ReviewHostSpec, request);
+      return request;
+    },
+    collect: async () => {
+      const domain = JSON.parse(readFileSync(f.packetPath(1), 'utf8').match(/^DOMAIN IDENTITY: (.*)$/m)![1]!);
+      return { request_id: request.request_id, context_sha256: request.context_sha256,
+        value: { request_id: request.request_id, context_sha256: domain.context_sha256, subject_sha256: domain.subject_sha256,
+          verdict: 'PASS', summary: '[fixture opinion; no provider call]', findings: [] } };
+    } };
+  try {
+    const result = await runReviewRound({ ...f.options, parentPane, harness }, effects);
+    // The Receipt model is the host-written observation, never a value this test supplied.
+    expect(result.receipt.actual_model).toBe(readSessionArtifact<{ actual_model: string | null }>(join(f.dir, 'observed-1.json')).actual_model);
+    return result;
+  } finally { await host.dispose(); }
+}
+
+for (const harness of ['claude', 'codex', 'pi'] as const) darwinTest(`a null ${harness} reviewer model records a Receipt with an unknown model relation`, async () => {
+  const { verifyAcceptance } = await import('../src/effects/review/acceptance-receipt');
+  const f = packetRoundFixture();
+  // Claude: the shared rule writes null for any init model. Codex and Pi: the runtime reported no model.
+  const result = await seamReview(f, harness, harness === 'claude' ? 'anthropic/claude-fixture' : null);
+  expect(result.status).toBe('accepted');
+  expect(result.receipt).toMatchObject({ protocol: 4, actual_harness: harness, actual_model: null,
+    author_session_binding_sha256: null, author_actual_models: null, model_relation: 'unknown' });
+  expect(result.output.actual_model).toBeNull();
+  expect(await verifyAcceptance({ root: f.root, authority: f.authority, authorityHome: f.home })).toEqual(result.receipt);
+  expect(readFileSync(result.projection, 'utf8')).toContain('> **Model Relation**: unknown');
+}, 60_000);
+
+for (const example of [
+  { author: 'codex' as const, models: ['gpt-6.1-sol', 'gpt-6-astra'], reviewer: 'magpie/anthropic/claude-opus-5-5', relation: 'different-family' as const },
+  { author: 'pi' as const, models: ['magpie/anthropic/claude-opus-5-5'], reviewer: 'cursor/claude-sonnet-5', relation: 'same-family' as const },
+  // A model outside the closed family table cannot prove a difference.
+  { author: 'pi' as const, models: ['fixture/unlisted-model'], reviewer: 'magpie/anthropic/claude-opus-5-5', relation: 'unknown' as const },
+]) darwinTest(`bound author turn models ${example.models.join(', ')} against reviewer ${example.reviewer} give ${example.relation}`, async () => {
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session');
+  const f = packetRoundFixture();
+  const author = await authorSession(f, example.author, example.models);
+  const result = await seamReview(f, 'pi', example.reviewer, AUTHOR_PANE);
+  expect(result.receipt.actual_model).toBe(example.reviewer);
+  expect(result.receipt.author_session_binding_sha256).toBe(taskBindingSha256(author.binding));
+  expect(result.receipt.author_actual_models).toEqual([...example.models].sort());
+  expect(result.receipt.model_relation).toBe(example.relation);
+}, 90_000);
+
+const UNKNOWN_AUTHOR_REVIEWER = 'magpie/anthropic/claude-opus-5-5';
+const authorFields = (receipt: AcceptanceReceiptFields) => [receipt.author_session_binding_sha256, receipt.author_actual_models, receipt.model_relation];
+type AcceptanceReceiptFields = Pick<Awaited<ReturnType<typeof seamReview>>['receipt'], 'author_session_binding_sha256' | 'author_actual_models' | 'model_relation'>;
+
+darwinTest('author identity is unknown without a binding on the caller pane', async () => {
+  const f = packetRoundFixture();
+  const author = await authorSession(f, 'codex', ['gpt-6.1-sol']);
+  expect(author.binding.pane_id).toBe(AUTHOR_PANE);
+  expect(f.options.parentPane).not.toBe(AUTHOR_PANE);
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER)).receipt)).toEqual([null, null, 'unknown']);
+}, 90_000);
+
+darwinTest('author identity is unknown with two bindings on the caller pane', async () => {
+  const f = packetRoundFixture();
+  const first = await authorSession(f, 'codex', ['gpt-6.1-sol']);
+  const second = await authorSession(f, 'codex', ['gpt-6.1-sol'], { task: 'fixture-second-author' });
+  expect([first.binding.pane_id, second.binding.pane_id]).toEqual([AUTHOR_PANE, AUTHOR_PANE]);
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
+}, 90_000);
+
+darwinTest('author identity is unknown when the only binding works in another execution root', async () => {
+  const f = packetRoundFixture();
+  const other = join(f.home, 'other-root');
+  execFileSync('git', ['-C', f.root, 'worktree', 'add', '-qb', 'other-author-root', other]);
+  const author = await authorSession(f, 'codex', ['gpt-6.1-sol'], { root: realpathSync(other) });
+  expect([author.binding.pane_id, author.binding.task_admission?.identity.campaign_sha256]).toEqual([AUTHOR_PANE, f.admissionFixture.admission.campaign_sha256]);
+  expect(author.binding.execution_root).toBe(realpathSync(other));
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
+}, 90_000);
+
+darwinTest('author identity is unknown when the only binding belongs to another campaign', async () => {
+  const f = packetRoundFixture();
+  const admission = f.admissionFixture.admission;
+  const other = seedReviewAdmissionFixture(f.root, f.home, { reviewer: admission.policy.reviewer, userWaiver: 'forbidden', actor: admission.actor_id,
+    allowedPaths: [...admission.allowed_paths], oracles: [...admission.oracles], plan: JSON.parse(JSON.stringify(admission.verification_plan)), campaignId: 'other-campaign' });
+  const author = await authorSession(f, 'codex', ['gpt-6.1-sol'], { authority: { ...f.authority, ...other.source } });
+  expect([author.binding.pane_id, author.binding.execution_root]).toEqual([AUTHOR_PANE, realpathSync(f.root)]);
+  expect(author.binding.task_admission?.identity.campaign_sha256).toBe(other.admission.campaign_sha256);
+  expect(other.admission.campaign_sha256).not.toBe(f.admissionFixture.admission.campaign_sha256);
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
+}, 90_000);
+
+darwinTest('author models are unknown when one Claude turn has no observed model', async () => {
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session');
+  const f = packetRoundFixture();
+  const author = await authorSession(f, 'claude', ['anthropic/claude-opus-5-5']);
+  // The shared rule: the Claude host writes null for any init model.
+  expect(readSessionArtifact<OarObservationSnapshot>(join(author.dir, oarObservationFile(1))).actual_model).toBeNull();
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([taskBindingSha256(author.binding), null, 'unknown']);
+}, 90_000);
+
+darwinTest('author models are unknown when one author turn has a protocol-2 observation', async () => {
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session');
+  const f = packetRoundFixture();
+  const author = await authorSession(f, 'codex', ['gpt-6.1-sol', 'gpt-6.1-sol']);
+  // An observation written before the v3 upgrade has no actual_model field.
+  const path = join(author.dir, oarObservationFile(2));
+  const { actual_model: _model, ...legacy } = readSessionArtifact<OarObservationSnapshot>(path);
+  writeFileSync(path, JSON.stringify({ ...legacy, protocol: 'repo-harness.oar-observation.v2' }));
+  expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([taskBindingSha256(author.binding), null, 'unknown']);
+}, 90_000);
+
+darwinTest('author models are unknown while one author turn is running', async () => {
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session');
+  const f = packetRoundFixture();
+  const author = await authorSession(f, 'codex', ['gpt-6.1-sol']);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const turn = await author.turn(2, 'gpt-6.1-sol', async ({ tool }) => { await tool('Read', 'fixture', async () => { await gate; return 'fixture'; }); });
+  try {
+    // The host published a running observation for this turn.
+    await turn.running;
+    expect(readSessionArtifact<OarObservationSnapshot>(join(author.dir, oarObservationFile(2))).status).toBe('running');
+    expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([taskBindingSha256(author.binding), null, 'unknown']);
+  } finally { release(); await turn.pending; }
+  expect(readSessionArtifact<OarObservationSnapshot>(join(author.dir, oarObservationFile(2))).actual_model).toBe('gpt-6.1-sol');
+}, 90_000);
 
 darwinTest('Pi credential cleanup fixture removes partial references after a failed start', async () => {
   const f = packetRoundFixture();
@@ -811,9 +1013,9 @@ darwinTest('OAR scripted host: Node Session budget, default sandbox knob and dis
   const result = await runOarNodeFixture('oar-scripted-node', `
 let calls=0;const events=[];process.env.OAR_CODEX_SANDBOX='workspace-write';
 const host=await openScriptedReviewHost({cwd:output},v=>events.push(v),async({say})=>{assert.equal(process.env.OAR_CODEX_SANDBOX,undefined);calls++;say('RECOMMENDATION: fixture observation only — confidence: HIGH')},isolation);
-try{const id=host.sessionId;for(const [index,input] of ['one','two','three'].entries()){assert.equal((await host.prompt(input,{request_id:'11111111-1111-4111-8111-'+String(index+1).padStart(12,'0'),round:index+1,host:{pid:process.pid,identity:'fixture-host'}},()=>{})).kind,'ended');assert.equal(host.sessionId,id)}
-assert.equal(calls,3);assert.ok(events.length>0);await assert.rejects(host.prompt('fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);
-await host.dispose();await assert.rejects(host.prompt('after-dispose',{request_id:'after-dispose',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
+try{const id=host.sessionId;for(const [index,input] of ['one','two','three'].entries()){assert.equal((await host.prompt('codex',input,{request_id:'11111111-1111-4111-8111-'+String(index+1).padStart(12,'0'),round:index+1,host:{pid:process.pid,identity:'fixture-host'}},()=>{})).kind,'ended');assert.equal(host.sessionId,id)}
+assert.equal(calls,3);assert.ok(events.length>0);await assert.rejects(host.prompt('codex','fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);
+await host.dispose();await assert.rejects(host.prompt('codex','after-dispose',{request_id:'after-dispose',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
 assert.equal(reviewRuntime('claude').id,'claude');assert.equal(reviewRuntime('codex').id,'codex');assert.throws(()=>reviewRuntime('grok'),/UNSUPPORTED/);assert.throws(()=>assertOarHostNode('22.22.0'),/NODE_24_REQUIRED/);
 console.log(JSON.stringify({calls,passed:true}));}finally{await host.dispose()}`);
   expect(result.calls).toBe(3); expect(result.passed).toBe(true);
@@ -823,8 +1025,8 @@ darwinTest('OAR file delivery: Node reviewer writes Results, recommendation text
   const result = await runOarNodeFixture('oar-file-node', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:1000,isolation};let calls=0;
 const host=await openScriptedReviewHost(spec.options,()=>{},async({input,say})=>{calls++;const request=JSON.parse(input.split('\n')[0].slice('TASK REQUEST: '.length));say('RECOMMENDATION: fixture file communication — confidence: HIGH');writeFileSync(request.result_ref,JSON.stringify({request_id:request.request_id,context_sha256:request.context_sha256,value:{fixture:true,verdict:'FAIL',summary:'[fixture opinion] revise'}}))},isolation);
-try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'11111111-1111-4111-8111-'+String(round).padStart(12,'0'),context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};writeFileSync(request.context_ref,content);writeFileSync(join(output,'started-'+round+'.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));const observed=await runHostFileRequest(host,spec,request);const capture=JSON.parse(readFileSync(join(output,'oar-observation-'+round+'.json'),'utf8'));assert.equal(capture.request_id,request.request_id);assert.equal(capture.session_id,id);assert.equal(capture.host.pid,process.pid);assert.equal(capture.input_id,request.request_id);assert.equal(Object.hasOwn(capture,'records'),false);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
-assert.equal(calls,3);await assert.rejects(host.prompt('fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
+try{const id=host.sessionId;for(let round=1;round<=3;round++){const content='Domain-shaped fixture '+round;const request={protocol:2,task:'fixture',role:'deep-reasoner',round,request_id:'11111111-1111-4111-8111-'+String(round).padStart(12,'0'),context_ref:join(output,'context-'+round+'.txt'),source_ref:'fixture',result_ref:join(output,'result-'+round+'.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};writeFileSync(request.context_ref,content);writeFileSync(join(output,'started-'+round+'.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));const observed=await runHostFileRequest(host,spec,request);const capture=JSON.parse(readFileSync(join(output,'oar-observation-'+round+'.json'),'utf8'));assert.equal(capture.request_id,request.request_id);assert.equal(capture.session_id,id);assert.equal(capture.host.pid,process.pid);assert.equal(capture.input_id,request.request_id);assert.equal(Object.hasOwn(capture,'records'),false);assert.equal(observed.kind,'ended');assert.equal(observed.actual_model,'fixture-oar');assert.equal(capture.protocol,'repo-harness.oar-observation.v3');assert.equal(capture.actual_model,observed.actual_model);assert.equal(host.sessionId,id);assert.equal(JSON.parse(readFileSync(request.result_ref,'utf8')).value.summary,'[fixture opinion] revise')}
+assert.equal(calls,3);await assert.rejects(host.prompt('codex','fourth',{request_id:'fourth',round:4,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/BUDGET_EXHAUSTED/);assert.equal(host.model('claude'),null);console.log(JSON.stringify({calls,passed:true,model:host.model('claude')}));}finally{await host.dispose()}`);
   expect(result.calls).toBe(3); expect(result.model).toBeNull();
 });
 
@@ -842,7 +1044,7 @@ while(!existsSync(join(output,'turn-started')))await new Promise(resolve=>setTim
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));
 await served;await close();
 assert.equal(JSON.parse(readFileSync(join(output,'observed-1.json'),'utf8')).outcome,'aborted');assert.equal(existsSync(request.result_ref),false);
-await assert.rejects(host.prompt('after-cancel',{request_id:'after-cancel',round:2,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
+await assert.rejects(host.prompt('codex','after-cancel',{request_id:'after-cancel',round:2,host:{pid:process.pid,identity:'fixture-host'}},()=>{}),/HOST_DISPOSED/);
 console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close()}`);
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
@@ -1073,7 +1275,7 @@ darwinTest('a round records acceptance only after its accepted inbox delivery is
       const request = readSessionArtifact<TaskRequest>(join(taskDir, `request-${round}.json`));
       const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id: request.request_id, round,
         host: { pid: binding!.provider.pid, identity: binding!.provider.identity }, session_id: nativeSessionId, input_id: request.request_id,
-        seq: 2, status: 'idle', phase: null, since_seq: null, last_event_at: null, outcome: null, failure: null, control: 'accepted', rejection: null };
+        seq: 2, status: 'idle', phase: null, since_seq: null, last_event_at: null, outcome: null, failure: null, control: 'accepted', rejection: null, actual_model: null };
       writeFileSync(join(taskDir, oarObservationFile(round)), JSON.stringify(observation));
       recordPrePromptInboxAccepted({ request, requestDirectory: taskDir, native_session_id: nativeSessionId, host: 'claude',
         consumed_at: Date.now(), observation });

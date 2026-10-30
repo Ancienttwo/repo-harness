@@ -48,7 +48,7 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
   {
     dir: "repo-harness-product",
     frontmatterName: "repo-harness-product",
-    references: ["prd.md", "sprint.md", "goal.md"],
+    references: ["prd.md", "goal.md"],
   },
   {
     // Post-cutover addition: the testing router, sourced at its final

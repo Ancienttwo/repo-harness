@@ -189,7 +189,7 @@ describe('mcp policy and paths', () => {
     }
   });
 
-  test('orchestrator profile exposes exactly the Herdr dispatch tools and nothing else', async () => {
+  test('orchestrator profile exposes exactly the Herdr dispatch tools and the merge executor', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
     try {
       mkdirSync(join(tmp, 'plans/prds'), { recursive: true });
@@ -204,9 +204,10 @@ describe('mcp policy and paths', () => {
         workflowExecutor: false,
         workspaceCoder: false,
         taskDispatch: true,
+        publicationMerge: true,
       });
       expect(orchestrator.execution).toEqual({ fixedWorkflowCheck: false, codingShell: false });
-      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent'];
+      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'merge_pull_request'];
       expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
       expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
       for (const profile of ['planner', 'executor', 'coding'] as const) {

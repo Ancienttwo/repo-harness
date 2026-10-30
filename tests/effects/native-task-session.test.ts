@@ -2,37 +2,40 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
+import type { NativeTaskSessionBinding } from '../../src/effects/terminal/native-task-session';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-async function fixture() {
+// Protocol fixtures only: the offline Herdr transport and ready file do not
+// prove a native provider start/resume or a real Herdr pane.
+async function fixture(host: NativeTaskSessionBinding['host'] = 'codex') {
   const root = tmpWorkspace('native-task-session'); roots.push(root); initGitRepo(root);
   run('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
   const home = tmpWorkspace('native-task-session-authority'); roots.push(home);
-  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654' });
+  const bound = await bindTaskRuntimeFixture(root, { authorityHome: home, repositoryId: '123456', issueId: '987654', harness_kind: host });
   const ready = join(root, 'controlled-ready.json');
   const publish = (session_id: string, pid = bound.binding.provider.pid, fixture = false) => writeFileSync(ready, JSON.stringify({ pid, session_id, fixture }));
   publish('native-provider-thread');
   const input = { repo_root: root, binding: bound.binding, ready_path: ready };
   return { root, bound, publish, input };
 }
-test('controlled native identity binds the exact public-lifecycle session and cannot be reassigned', async () => {
-  const f = await fixture();
+test.each(['claude', 'codex', 'pi'] as const)('%s controlled native identity binds the exact public-lifecycle session and cannot be reassigned', async host => {
+  const f = await fixture(host);
   expect(existsSync(join(f.bound.dir, 'native-session.json'))).toBe(false);
   expect(existsSync(join(f.bound.dir, 'inbox-1.json'))).toBe(false);
   const first = bindNativeTaskSession(f.input);
   const path = join(f.bound.dir, 'native-session.json'), bytes = readFileSync(path, 'utf8');
-  expect(first).toMatchObject({ host: 'codex', native_session_id: 'native-provider-thread', task: f.bound.binding.task, role: f.bound.binding.role });
+  expect(first).toMatchObject({ host, native_session_id: 'native-provider-thread', task: f.bound.binding.task, role: f.bound.binding.role });
   expect(first.session_binding_sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
   expect(bindNativeTaskSession(f.input)).toEqual(first); expect(readFileSync(path, 'utf8')).toBe(bytes);
   f.publish('different-native-thread');
   expect(() => bindNativeTaskSession(f.input)).toThrow('native_task_session_identity_changed');
   expect(readFileSync(path, 'utf8')).toBe(bytes);
 });
-test('foreign process, scripted identity, changed binding and closed session cannot supply native attribution', async () => {
-  const f = await fixture();
+test.each(['claude', 'codex', 'pi'] as const)('%s foreign process, scripted identity, changed binding and closed session cannot supply native attribution', async host => {
+  const f = await fixture(host);
   f.publish('native-provider-thread', f.bound.binding.provider.pid + 1);
   expect(() => bindNativeTaskSession(f.input)).toThrow('native_task_session_host_mismatch');
   f.publish('native-provider-thread', f.bound.binding.provider.pid, true);
@@ -56,8 +59,8 @@ function requestFor(f: Awaited<ReturnType<typeof fixture>>, bindingDigest: strin
     context_ref: join(f.root, 'context-1.txt'), source_ref: join(f.root, 'source.txt'), context_sha256: `sha256:${'a'.repeat(64)}`,
     result_ref: join(f.root, 'result-1.json'), result_contract: { required_fields: ['request_id','context_sha256','value'], atomic_write: 'temp_rename' } };
 }
-async function inboxFixture() {
-  const f = await fixture(), native = bindNativeTaskSession(f.input);
+async function inboxFixture(host: NativeTaskSessionBinding['host'] = 'codex') {
+  const f = await fixture(host), native = bindNativeTaskSession(f.input);
   const event = buildTaskMessageEvent({ message_id: randomUUID(), task_id: f.bound.binding.task,
     task_identity: { repository_id: f.bound.admission.identity.repository_id, issue_id: f.bound.admission.identity.issue_id, campaign_id: f.bound.admission.identity.campaign_id },
     admission_sha256: f.bound.admission.approval.admission_sha256, scope: 'claim', target_claim: f.bound.source.authority.claim,
@@ -66,8 +69,8 @@ async function inboxFixture() {
   sendTaskMessage({ repo_root: f.root, source: f.bound.source, event });
   return { ...f, native, event, request: requestFor(f, native.session_binding_sha256) };
 }
-test('reservation and unknown send stay pending; exact accepted host proof commits once without replay', async () => {
-  const f = await inboxFixture();
+test.each(['claude', 'codex', 'pi'] as const)('%s reservation and unknown send stay pending; exact accepted host proof commits once without replay', async host => {
+  const f = await inboxFixture(host);
   const receiptInput = { repo_root: f.root, execution_worktree: f.bound.binding.execution_root, source: f.bound.source, task_id: f.request.task,
     recipient: { kind: 'claim' as const, claim: f.bound.source.authority.claim }, message_id: f.event.message_id };
   expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
@@ -84,7 +87,7 @@ test('reservation and unknown send stay pending; exact accepted host proof commi
   expect(preparePrePromptInbox({ source: f.bound.source, request: f.request })).toEqual(first);
   expect(readFileSync(first.path, 'utf8')).toBe(bytes);
   const consumed_at = Date.now();
-  const consume = { request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host: 'codex' as const };
+  const consume = { request: f.request, requestDirectory: f.bound.dir, native_session_id: f.native.native_session_id, host };
   const text = consumePrePromptInbox(consume);
   expect(text).toContain(f.event.body);expect(text).toContain('untrusted');
   expect(readTaskMessageDelivery(receiptInput).receipt).toBeNull();
@@ -93,7 +96,7 @@ test('reservation and unknown send stay pending; exact accepted host proof commi
   writeFileSync(join(f.bound.dir,'started-1.json'),JSON.stringify({request_id:f.request.request_id,provider:f.bound.binding.provider}));
   const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:f.request.request_id, round:1,
     host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:f.native.native_session_id,input_id:f.request.request_id,
-    seq:1,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:null,rejection:null };
+    seq:1,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:null,rejection:null,actual_model:null };
   recordPrePromptInboxAccepted({...consume,consumed_at,observation});
   expect(commitPrePromptInbox({source:f.bound.source,request:f.request})).toEqual({status:'pending'});
   observation.control='accepted';observation.seq=2;
@@ -108,6 +111,7 @@ test('reservation and unknown send stay pending; exact accepted host proof commi
   expect(readTaskMessageDelivery(receiptInput).receipt).toEqual(receipt);
   expect(() => consumePrePromptInbox({...consume,request:{...f.request,request_id:randomUUID()}})).toThrow();
   expect(() => consumePrePromptInbox({...consume,native_session_id:'foreign-native'})).toThrow();
+  expect(() => consumePrePromptInbox({...consume,host:host === 'pi' ? 'codex' : 'pi'})).toThrow('pre_prompt_inbox_native_mismatch');
   expect(() => consumePrePromptInbox({...consume,now:Date.now()+60_001})).toThrow();
   expect(() => commitPrePromptInbox({source:f.bound.source,request:{...f.request,request_id:randomUUID()}})).toThrow();
   f.bound.revoke();
@@ -129,7 +133,7 @@ function publishAccepted(f: Awaited<ReturnType<typeof fixture>>, request: TaskRe
   writeFileSync(join(f.bound.dir,`started-${request.round}.json`),JSON.stringify({request_id:request.request_id,provider:f.bound.binding.provider}));
   const observation: OarObservationSnapshot = { protocol: OAR_OBSERVATION_PROTOCOL, request_id:request.request_id, round:request.round,
     host:{pid:f.bound.binding.provider.pid,identity:f.bound.binding.provider.identity},session_id:nativeSessionId,input_id:request.request_id,
-    seq:2,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:'accepted',rejection:null };
+    seq:2,status:'idle',phase:null,since_seq:null,last_event_at:null,outcome:null,failure:null,control:'accepted',rejection:null,actual_model:null };
   writeFileSync(join(f.bound.dir,oarObservationFile(request.round)),JSON.stringify(observation));
   recordPrePromptInboxAccepted({ request,requestDirectory:f.bound.dir,native_session_id:nativeSessionId,host:'codex',consumed_at:Date.now(),observation });
 }

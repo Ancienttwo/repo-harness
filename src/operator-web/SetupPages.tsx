@@ -39,6 +39,7 @@ const HOST_ICON: Readonly<Record<SetupHost, ReactNode>> = {
   claude: <ChatCircleDotsIcon size={16} aria-hidden="true" />,
   codex: <TerminalWindowIcon size={16} aria-hidden="true" />,
   pi: <TerminalWindowIcon size={16} aria-hidden="true" />,
+  dsh: <TerminalWindowIcon size={16} aria-hidden="true" />,
 };
 
 const CHECK_TONE: Readonly<Record<SetupCheckStatus, DotTone>> = { ok: 'ok', warn: 'warn', fail: 'danger', needs_agent: 'warn', na: 'neutral' };
@@ -207,6 +208,7 @@ function sentenceText(facts: SetupHostFacts, t: OperatorTranslate): string {
   const sentence = hostSentence(facts);
   switch (sentence.kind) {
     case 'package': return t(`setup.host.piPackage.${sentence.status}`);
+    case 'plugin': return t(`setup.host.dshCheck.${sentence.status}`);
     case 'not_reported': return t('setup.host.notReported', { host: hostName(facts.host, t) });
     case 'not_detected': return t('setup.host.notDetected');
     case 'not_inspected': return t('setup.host.notInspected');

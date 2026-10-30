@@ -80,7 +80,7 @@ function computeExpectedProjections(packages: unknown[]): unknown {
 
 function catalogValue(packages: unknown[], overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    version: 2,
+    version: 3,
     surface: "test-surface",
     source: "assets/skill-commands",
     router: "repo-harness",
@@ -137,7 +137,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue([]))).toEqual(["CATALOG_NOT_OBJECT"]);
   });
 
-  test("UNSUPPORTED_VERSION: version is not 2", () => {
+  test("UNSUPPORTED_VERSION: version is not 3", () => {
     expect(codes(validateSkillSurfaceCatalogValue({ ...VALID_BASE, version: 1 }))).toEqual(["UNSUPPORTED_VERSION"]);
   });
 
@@ -372,11 +372,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 14 repo-owned entries plus the 9 external skills (23 packages)", () => {
+  test("covers all 16 repo-owned entries plus the 9 external skills (25 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(23);
+    expect(resolution.catalog.packages.length).toBe(25);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(14);
+    expect(repoOwned.length).toBe(16);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -457,8 +457,8 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       "repo-harness-check", "obsidian-memory", "windows-python-first",
     ]);
     expect(facadesForProfile(catalog, "full")).toEqual([
-      "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-ship",
-      "repo-harness-architecture", "obsidian-memory", "windows-python-first",
+      "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-issue-flow", "repo-harness-ship",
+      "repo-harness-architecture", "repo-harness-archimap", "obsidian-memory", "windows-python-first",
     ]);
   });
 
@@ -478,11 +478,12 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [], dsh: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
+      dsh: [],
     });
   });
 
@@ -492,6 +493,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
+      dsh: [],
     });
   });
 
@@ -568,7 +570,8 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
       "repo-harness", "repo-harness-check", "repo-harness-test", "repo-harness-product",
-      "repo-harness-ship", "repo-harness-architecture", "obsidian-memory", "windows-python-first",
+      "repo-harness-issue-flow", "repo-harness-ship", "repo-harness-architecture", "repo-harness-archimap",
+      "obsidian-memory", "windows-python-first",
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "repo-harness-herdr-portal", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
@@ -587,6 +590,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(expectations.planningSkillNames).toEqual(["think", "hunt", "check", "health", "mermaid"]);
     expect(expectations.planningCapabilityPaths).toEqual([
       "assets/skills/repo-harness-product/SKILL.md",
+      "assets/skills/repo-harness-issue-flow/SKILL.md",
     ]);
     expect(expectations.crossModel).toEqual(["repo-harness-cross-review", "repo-harness-herdr-portal"]);
   });
@@ -664,12 +668,12 @@ test("audience source selection returns disjoint complete load groups and reject
   expect(worker.status).toBe(0);
   const lines = (body: string) => body.trim().split("\n");
   expect(lines(bot.stdout).map((line) => line.split("\t")[0])).toEqual([
-    "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
+    "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-issue-flow", "repo-harness-ship",
     "obsidian-memory", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-chatgpt",
     "repo-harness-strategy",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([
-    "repo-harness-setup", "repo-harness-test", "repo-harness-architecture", "windows-python-first",
+    "repo-harness-setup", "repo-harness-test", "repo-harness-architecture", "repo-harness-archimap", "windows-python-first",
   ]);
   for (const line of [...lines(bot.stdout), ...lines(worker.stdout)]) {
     expect(existsSync(join(ROOT, line.split("\t")[1], "SKILL.md"))).toBe(true);

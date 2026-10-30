@@ -23,6 +23,7 @@ import {
   mcpStorageDir,
   mcpTokenPath,
   readMcpDoctorClientRecord,
+  type McpLocalConfig,
   readMcpLocalConfigFile,
   readMcpOAuthPassphrase,
   writeMcpDoctorClientRecord,
@@ -31,6 +32,7 @@ import { sensitiveAllowedRootReason } from './policy';
 import { authorizationProfile, getMcpPolicy, isMcpProfileName, mcpSupportedScopes, parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions, type CodingToolDefinition } from './coding-tools';
 import { buildHerdrToolDefinitions } from './herdr-tools';
+import { buildPublicationMergeToolDefinitions } from './fleet-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
 import { readCanonicalChatgptReference } from '../chatgpt-skill/source';
@@ -709,6 +711,7 @@ function setupChatgptLocked(opts: {
       workflowExecutor: profilePolicy.capabilities.workflowExecutor,
       workspaceCoder: profilePolicy.capabilities.workspaceCoder,
       taskDispatch: profilePolicy.capabilities.taskDispatch,
+      publicationMerge: profilePolicy.capabilities.publicationMerge,
     },
     permissions: {
       ...existingConfig?.permissions,
@@ -728,7 +731,8 @@ function setupChatgptLocked(opts: {
     ...grantReadWrite.map((grantRoot) => ({ repoRoot: grantRoot, source: 'manual' as const, accessMode: 'read_write' as const })),
   ];
   const registryBatch = applyRepoHarnessRegistryBatch(registryEntries, {
-    bumpAuthorizationRevision: profileAuthorizationChanged,
+    // A grant made before its profile gained a capability is re-consented: the bump makes every old token stale.
+    bumpAuthorizationRevision: profileAuthorizationChanged || capabilityGrantStale(existingConfig),
     recordChanges: recordMcpRegistryChanges,
     beforeCommit: (authorizationRevision) => {
       writePrivateFileAtomicIfChanged(configPath, `${JSON.stringify({ ...config, authorizationRevision }, null, 2)}\n`, changed);
@@ -1007,6 +1011,21 @@ export function runMcpPrintGuide(opts: { repo?: string; endpoint?: string; write
   };
 }
 
+/** Capabilities that setup projects from the profile policy into the local config. */
+const GRANTED_CAPABILITIES = ['workflowPlanner', 'workflowExecutor', 'workspaceCoder', 'taskDispatch', 'publicationMerge'] as const;
+
+/**
+ * True when an authorization-scoped config records fewer or other capabilities
+ * than its profile policy now grants, so its tokens were consented to a
+ * smaller surface.
+ */
+export function capabilityGrantStale(config: McpLocalConfig | null | undefined): boolean {
+  const profile = config?.profile;
+  if (config?.version !== 3 || profile === undefined || !isMcpProfileName(profile) || authorizationProfile(profile) === null) return false;
+  const granted = getMcpPolicy(profile).capabilities;
+  return GRANTED_CAPABILITIES.some((name) => (config.capabilities?.[name] === true) !== granted[name]);
+}
+
 export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   assertNoLegacyRepoScopeMcpConfig(repoRoot);
@@ -1074,7 +1093,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
         workflowExecutor: localConfig?.capabilities?.workflowExecutor === true,
         workspaceCoder: localConfig?.capabilities?.workspaceCoder === true,
         taskDispatch: localConfig?.capabilities?.taskDispatch === true,
+        publicationMerge: localConfig?.capabilities?.publicationMerge === true,
       },
+      capabilityGrant: authorizationProfile(localConfig?.profile) === null ? 'not_scoped' : capabilityGrantStale(localConfig) ? 'stale' : 'current',
       authorizationRevision: repoHarnessAuthorizationRevision(),
     },
     codex: {
@@ -1121,6 +1142,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       `[repo-harness mcp] Package version: ${report.mcp.packageVersion}`,
       `[repo-harness mcp] Config: ${displayMcpSetupPath(mcpLocalConfigPath())} (version: ${report.mcp.configVersion ?? 'missing'})`,
       `[repo-harness mcp] Reader capability: ${report.mcp.capabilities.workspaceReader ? `enabled (${report.mcp.permissions.registeredRepoCount} registered repos, ${report.mcp.permissions.allowedRootCount} explicit roots)` : 'disabled'}`,
+      ...(report.mcp.capabilityGrant === 'stale'
+        ? [`[repo-harness mcp] Capability grant: stale; the ${localConfig?.profile} profile now grants more than this config recorded. Rerun repo-harness mcp setup chatgpt --profile ${localConfig?.profile} and re-authorize the connector`]
+        : []),
       ...(report.mcp.permissions.allowedRoots.length > 0 ? [`[repo-harness mcp] Allowed roots: ${report.mcp.permissions.allowedRoots.map((entry) => `${entry.readable ? 'ok' : 'bad'}:${entry.path}`).join(', ')}`] : []),
       ...(report.mcp.permissions.unsafeAllowedRoots.length > 0 ? [`[repo-harness mcp] Unsafe allowed roots: ${report.mcp.permissions.unsafeAllowedRoots.join(', ')}`] : []),
       ...(report.mcp.permissions.legacyFullDiskReadDetected ? ['[repo-harness mcp] Legacy full-disk read: detected; rerun setup with --enable-reader --allow-root <path>'] : []),
@@ -1344,9 +1368,11 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const toolsPayload = jsonFromMcpResponse(await toolsResponse.text());
       const tools = (toolsPayload?.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? [];
       toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
-      const expectedSpecialTools: readonly CodingToolDefinition[] | null = capabilities?.workspaceCoder
+      const expectedSpecialTools: readonly Pick<CodingToolDefinition, 'name' | 'inputSchema' | 'annotations'>[] | null = capabilities?.workspaceCoder
         ? buildCodingToolDefinitions()
-        : capabilities?.taskDispatch ? buildHerdrToolDefinitions() : null;
+        : capabilities?.taskDispatch
+          ? [...buildHerdrToolDefinitions(), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
+          : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
       const specialSchemaMatches = expectedSpecialTools === null || JSON.stringify(tools

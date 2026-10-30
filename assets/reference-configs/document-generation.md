@@ -34,5 +34,5 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - Keep complete workstream TODOs in `tasks/workstreams/<domain>/<capability>/`; contract blocks should link to them instead of becoming task logs.
 - Keep onboarding docs split by reader: agents read active source artifacts first; humans review the Human Review Card, diff, latest trace, and rollback first.
 - `.archcontext/model/` owns architecture boundaries. Agents change the model, semantic decisions and human-written sections. The archctx rolling writer publishes generated regions and diagrams. Do not apply and commit generated output in feature PRs.
-- Treat Markdown Mermaid as the only architecture diagram artifact; do not generate standalone HTML.
+- archctx-generated Markdown Mermaid is the model's generated diagram; do not hand-write diagrams or standalone HTML. The `repo-harness-archimap` skill owns the human-facing map `docs/architecture/archimap.html`.
 - Treat `mermaid` as an external authoring/review skill at `~/.codex/skills/mermaid`; do not copy or inline its assets into generated repos.

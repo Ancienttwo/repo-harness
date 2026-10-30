@@ -2,7 +2,7 @@
 
 The host chooses when to wake, which native agents to dispatch, and how to schedule them. repo-harness supplies the upstream admission and closeout contract: authorized scope, isolated ownership, durable workflow authority, and acceptance of the exact subject. Scheduling belongs to the host; repo-harness ships no scheduler as part of this contract. Follow [Long-Run Continuation](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/long-run-continuation.md) for the tick and recovery protocol. The package does not ship that file, so this link points to the source repository.
 
-These requirements apply to Claude Code, Codex and Pi. The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
+These requirements apply to Claude Code, Codex, Pi and DeepSeek Harness (DSH). The tables distinguish what a host must do from what the current repository actually enforces. A host must not infer enforcement from a policy field, an injected sentence, a tool annotation, or a successful exit code.
 
 ## Enforcement Levels
 
@@ -37,6 +37,7 @@ The grades describe repository boundaries. The delegation rows use evidence from
 | Claude Code | Use the host's native subagent surface. The shared route registry attaches `PreToolUse` edit and subagent routes; the `Task`/`Agent` handler appends a return contract to the prompt (`src/cli/hook/route-registry.ts:76`, `src/cli/hook/route-registry.ts:84`, `src/cli/hook/return-channel.ts:36`). | **E** for installed typed-hook behavior and invoked CLI/MCP gates only. Appended instructions do not make writer ownership, fresh context, or spawn depth mechanically enforced. The Codex-only `SubagentStart.context` route does not run here. |
 | Codex | Use native `spawn_agent` with the installed role and a self-contained task packet. The registry selects the Codex-only `SubagentStart.context` route; the handler emits the child scope context (`src/cli/hook/route-registry.ts:100`, `src/cli/hook/subagent-context.ts:428`). | **E** for the installed route's handling. SubagentStart records the native role observation and refuses no spawn. Fresh-context and depth requirements remain **G**; scope text is guidance, not a filesystem lock. |
 | Pi | Load `src/pi/extension.ts` through the package's `pi.extensions` entry. Map native edit, write and bash calls, including codemode nested calls, to the typed guards. Pi has no built-in subagent route. | **E** within the extension's `tool_call` path. A failed capability probe blocks these tools in an opted-in repository. Other write paths remain outside this boundary. |
+| DSH | Load the package's Cordis plugin (`dist/dsh-plugin.js`) through `dsh plugin add`. Map native write, edit and bash calls, and PTC calls that use the same tools pipeline, to the typed guards. DSH has no subagent route here. | **E** within `tools/pre-execute`. A missing hook entry, a missing Bun, a timeout or an invalid response denies the call. Other write paths remain outside this boundary. |
 
 Install and trust the user-level hook adapters before relying on their routes. Read the active contract for scope; use the receipt-backed gate for acceptance and the journal-backed helper for closeout. Native process/session state is an observation, not permission to change workflow authority.
 
@@ -53,6 +54,18 @@ The bridge starts this package's `dist/hook-entry.js` with Bun. It removes inher
 Pi's `powershell` tool on Windows is out of scope and is not mapped to the Bash guard. The extension also does not cover `!`/`!!` user shell commands, writes from other extensions, or third-party MCP writes. Bash coverage is the existing literal-write tripwire; unparsed shell commands can bypass it. This is not an OS sandbox. Later Pi extensions can mutate tool arguments; this integration does not establish a final gate after all extensions. If a hook returns `permission.updatedInput`, the extension blocks with `PI_HOST_UPDATED_INPUT_UNSUPPORTED`. Input mutation remains an open problem.
 
 The resolver is a private SDK file. An upstream public export is still needed. When Pi exports it, replace the private import and remove that path in one change. `tests/pi-extension.test.ts` uses the real SDK, real tools and a scripted provider fixture. It proves the covered boundary without making a real-provider acceptance claim.
+
+### DSH hook boundary
+
+`src/dsh/plugin.ts` is a Cordis plugin. `cordis.patch.yml` inserts one row that names `repo-harness/dist/dsh-plugin.js`. DSH owns installation and profile configuration; repo-harness does not write `~/.dsh`. The plugin requires the `tools` service and registers `tools/pre-execute`, `agent/pre-step` and `agent/turn-stopping`.
+
+The first `agent/pre-step` runs `SessionStart` and inserts its budgeted context as one durable user message. Later turns request the inbox notice once. A repository without `.ai/harness/workflow-contract.json` becomes `inactive` and makes no further hook calls. `agent/turn-stopping` runs Stop and never steers the turn. Tool calls bind to `exec.callId`; each turn gets a new run ID.
+
+`write`, `edit` and `bash` map to the typed guards. A missing `dist/hook-entry.js`, a missing Bun, an invalid response, a timeout or a child crash denies the call with a `DSH_HOOK_*` code. A hook that requests `updated_input` is denied with `DSH_HOOK_UPDATED_INPUT_UNSUPPORTED`. MCP writes, `pwsh`, user `!` commands, writes from other plugins and any path that bypasses `tools/pre-execute` stay outside this boundary. This is not an OS sandbox.
+
+`repo-harness doctor` reports `dsh-plugin` from `<DSH_HOME>/profiles/*`. A profile dependency, bundle selection or patch that names repo-harness is `ok`; an absent DSH home is `na`. Setup projects that check as the DSH host row. DSH skill rows are the external skills in the shared `~/.agents/skills` root. repo-harness does not project its own facades into a DSH root yet.
+
+`tests/dsh-plugin.test.ts` mounts the plugin in a real Cordis app with the real tools pipeline and runs the real `dist/hook-entry.js` against an opted-in repository. The agent and transport fixtures are labeled; the test does not claim a full DSH desktop acceptance.
 
 ## MCP Write Safety
 
