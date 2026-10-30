@@ -656,6 +656,7 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     const shim=join(fixture,'shim');mkdirSync(shim);
     const marker=join(fixture,'fail-next');
     writeFileSync(join(shim,'herdr'),`#!/bin/sh\ncase "$*" in *"worktree open"*) if [ -f ${quote(marker)} ]; then rm ${quote(marker)}; echo injected-register-failure >&2; exit 1; fi ;; esac\nexec ${quote(herdr)} "$@"\n`);chmodSync(join(shim,'herdr'),0o755);
+    writeFileSync(join(shim,'gh'),`#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({number:123,title:'Recover fixture',state:'OPEN',url:'https://github.com/example/repo/issues/123'})}'\n`);chmodSync(join(shim,'gh'),0o755);
     process.env.PATH=shim+':'+savedPath;
     writeFileSync(marker,'fail');
     await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
@@ -675,13 +676,11 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     expect(call(['workspace','list']).workspaces.length).toBe(baseline);
     const history=join(fixture,'.ai/harness/runs/task-workspaces');
     expect(readdirSync(history).some(key=>existsSync(join(history,key,'history')))).toBe(true);
-    copyHelpers(fixture); mkdirSync(join(fixture,'plans'));
-    const plan=join(fixture,'plans/plan-20260930-0000-recover-bash.md');
-    writeFileSync(plan,'# Recover fixture\n> **Status**: Approved\n');
+    copyHelpers(fixture);
     const endpointFile=join(fixture,'endpoint.json');writeFileSync(endpointFile,JSON.stringify({endpoint,parent_pane:parent}));
     const target=join(fixture,'bash-checkout');
     const helperEnv={...env,PATH:shim+':'+env.PATH,REPO_HARNESS_TARGET_REPO_ROOT:fixture};
-    const args=[join(fixture,'scripts/contract-worktree.sh'),'start','--plan',plan,'--path',target,'--no-plan-to-todo','--herdr-endpoint',endpointFile];
+    const args=[join(fixture,'scripts/contract-worktree.sh'),'start','--issue','123','--path',target,'--herdr-endpoint',endpointFile];
     writeFileSync(marker,'fail');
     const failed=spawnSync('bash',args,{cwd:fixture,env:helperEnv,encoding:'utf8',timeout:15000});
     expect(failed.status).toBe(1);expect(existsSync(target)).toBe(true);
@@ -689,7 +688,7 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     if(retried.status!==0)throw new Error(retried.stderr+retried.stdout);
     const space=call(['workspace','list']).workspaces.find((item:any)=>item.worktree?.checkout_path===target);
     expect(space.worktree.repo_key).toBe(realpathSync(join(fixture,'.git')));
-    expect(existsSync(join(target,'.ai/harness/worktrees/recover-bash.json'))).toBe(true);
+    expect(existsSync(join(target,'.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
     expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
     expect(call(['workspace','list']).workspaces.length).toBe(baseline);
     expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);

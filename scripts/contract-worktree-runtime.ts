@@ -37,7 +37,14 @@ function markActiveWorktree(worktree: string): void {
   }
 }
 try {
-  if (action === 'assert-unused-path' || action === 'check-start-path') {
+  if (action === 'issue-fields') {
+    const issue = JSON.parse(value('--json')) as { number?: unknown; title?: unknown; state?: unknown; url?: unknown };
+    if (typeof issue.number !== 'number' || !Number.isInteger(issue.number) || issue.number <= 0
+      || typeof issue.title !== 'string' || typeof issue.state !== 'string' || typeof issue.url !== 'string') {
+      throw new Error('invalid issue JSON');
+    }
+    process.stdout.write([issue.number, issue.title, issue.state, issue.url].join('\0') + '\0');
+  } else if (action === 'assert-unused-path' || action === 'check-start-path') {
     if (action === 'check-start-path') {
       // Start is the only creator of managed worktrees, so it also retires
       // merged ones before it reads the topology. Each destructive step takes
