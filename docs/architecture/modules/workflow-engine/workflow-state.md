@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:02f26827e74098a19212188adb0ded145dfe76791711a7debab9a32ce569f69d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c6f29b9adf69cb48d58e99392d6da5512241ae378d2d9e25f754de3f49a8e965" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -123,7 +123,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |

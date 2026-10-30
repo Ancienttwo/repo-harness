@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c13c5c6fd407dcaa6eacb184913195bbe46e2f91504ac297afe296c933aba654" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b1c7906249a8c82657d21879a12156aec931fb84cd1ba5915666e1ac740ed680" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
@@ -45,7 +45,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `2000–5000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -91,8 +91,8 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.publication.primary` | PR Readiness and Integration Evidence | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.publication.primary-cli` | PR Readiness and Integration Evidence (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.publication.primary` | PR Readiness and Integration Evidence | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.publication.primary-cli` | PR Readiness and Integration Evidence (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.publication.primary-effects` | PR Readiness and Integration Evidence (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.publication.provider-feedback` | Provider Feedback | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.provider-feedback-core` | Provider Feedback (core) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
