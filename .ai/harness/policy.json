@@ -342,7 +342,8 @@
         "deep-worker",
         "gatekeeper",
         "root-cause-prover",
-        "harness-evaluator"
+        "harness-evaluator",
+        "orchestrator"
       ],
       "claude_target": "~/.claude/agents",
       "codex_target": "~/.codex/agents",

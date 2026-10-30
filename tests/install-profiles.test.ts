@@ -1090,6 +1090,10 @@ describe('install profiles', () => {
     const recordedPaths = recorded.ownership_manifest.map(({ path }) => path);
     expect(recordedPaths).toContain(pristine);
     expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
+    // The Claude-only orchestrator is owned on the Claude side and has no Codex projection.
+    expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'orchestrator.md'));
+    expect(recordedPaths).not.toContain(join(home, '.codex', 'agents', 'orchestrator.toml'));
+    expect(existsSync(join(home, '.codex', 'agents', 'orchestrator.toml'))).toBe(false);
     expect(recordedPaths).not.toContain(custom);
     expect(installedProfileStatus(recorded, env).drift.status).toBe('consistent');
 

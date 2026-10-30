@@ -24,7 +24,9 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator", "orchestrator"];
+// The orchestrator is Claude-only: no Codex TOML is generated or expected for it.
+const CODEX_AGENTS = MANAGED_AGENTS.filter((agent) => agent !== "orchestrator");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
 
@@ -1107,6 +1109,7 @@ describe("check-agent-tooling", () => {
         "gatekeeper",
         "root-cause-prover",
         "harness-evaluator",
+        "orchestrator",
       ]);
       expect(res.stderr).toContain("Agent fleet readiness is partial");
       expect(res.stderr.toLowerCase()).toContain("fleet");
@@ -1125,6 +1128,8 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
         copyFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
+      }
+      for (const agent of CODEX_AGENTS) {
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
       writeFakeSkillsCli(envRoot.fakeBin);
@@ -1148,7 +1153,9 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.hosts.claude.status).toBe("present");
       expect(report.tools.agent_fleet.hosts.claude.installed_agents).toEqual(MANAGED_AGENTS);
       expect(report.tools.agent_fleet.hosts.codex.status).toBe("present");
-      expect(report.tools.agent_fleet.hosts.codex.installed_agents).toEqual(MANAGED_AGENTS);
+      expect(report.tools.agent_fleet.hosts.codex.installed_agents).toEqual(CODEX_AGENTS);
+      expect(report.tools.agent_fleet.hosts.codex.missing_agents).toEqual([]);
+      expect(report.tools.agent_fleet.hosts.codex.agents.map((entry: { name: string }) => entry.name)).not.toContain("orchestrator");
       expect(report.tools.agent_fleet.source).toBe("package:agents/fleet");
       expect(report.tools.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
       expect(report.tools.agent_fleet.native_role_routing.status).toBe("unverified");
@@ -1178,7 +1185,7 @@ describe("check-agent-tooling", () => {
           join(envRoot.home, ".codex", "config.toml"),
           "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n",
         );
-        for (const agent of MANAGED_AGENTS) {
+        for (const agent of CODEX_AGENTS) {
           copyFileSync(
             join(ROOT, ".codex", "agents", `${agent}.toml`),
             join(envRoot.home, ".codex", "agents", `${agent}.toml`),
@@ -1268,7 +1275,7 @@ describe("check-agent-tooling", () => {
         join(envRoot.home, ".codex", "config.toml"),
         "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n",
       );
-      for (const agent of MANAGED_AGENTS) {
+      for (const agent of CODEX_AGENTS) {
         copyFileSync(
           join(ROOT, ".codex", "agents", `${agent}.toml`),
           join(envRoot.home, ".codex", "agents", `${agent}.toml`),
@@ -1363,7 +1370,7 @@ describe("check-agent-tooling", () => {
     try {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
-      for (const agent of MANAGED_AGENTS) {
+      for (const agent of CODEX_AGENTS) {
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
       const delegationRoot = join(envRoot.root, ".ai", "harness", "delegation");
@@ -1433,7 +1440,7 @@ describe("check-agent-tooling", () => {
     try {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
-      for (const agent of MANAGED_AGENTS) {
+      for (const agent of CODEX_AGENTS) {
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
       const delegationRoot = join(envRoot.root, ".ai", "harness", "delegation");
@@ -1480,7 +1487,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
         writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
-        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+        if (CODEX_AGENTS.includes(agent)) writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
       writeFakeSkillsCli(envRoot.fakeBin);
@@ -1511,6 +1518,7 @@ describe("check-agent-tooling", () => {
         "gatekeeper",
         "root-cause-prover",
         "harness-evaluator",
+        "orchestrator",
       ]);
       expect(claude.source_missing_agents).toEqual([]);
       expect(claude.user_managed_agents).toEqual([]);
@@ -1541,7 +1549,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
         writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
-        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+        if (CODEX_AGENTS.includes(agent)) writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
       writeAgentFleetReceipt(envRoot.home, [
@@ -1583,6 +1591,7 @@ describe("check-agent-tooling", () => {
         "deep-worker",
         "root-cause-prover",
         "harness-evaluator",
+        "orchestrator",
       ]);
       expect(claude.source_missing_agents).toEqual([]);
       expect(claude.update_reason).toContain("deep-reasoner, gatekeeper");
@@ -1621,7 +1630,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
         writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
-        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+        if (CODEX_AGENTS.includes(agent)) writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
       // The receipt records the hash of the previously accepted bytes, not the
@@ -1673,7 +1682,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
         writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
-        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+        if (CODEX_AGENTS.includes(agent)) writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
       // The hash entry matches the current file exactly, but the receipt's

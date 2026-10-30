@@ -76,6 +76,13 @@ describe("Bootstrap Script Contracts", () => {
     }
 
     expect(existsSync(join(ROOT, "agents/fleet/explore.md"))).toBe(false);
+    // The orchestrator runs only as a Claude long-lived session: no Codex projection is committed.
+    expect(existsSync(join(ROOT, ".codex/agents/orchestrator.toml"))).toBe(false);
+    const orchestrator = read("agents/fleet/orchestrator.md");
+    expect(orchestrator).toContain("claude --agent orchestrator");
+    expect(orchestrator).toContain("Opus at xhigh effort");
+    expect(orchestrator).toContain("repo-harness publication merge");
+    expect(orchestrator).toContain("DISPATCH: <issue> → <seat/agent>");
     const rootCause = read("agents/fleet/root-cause-prover.md");
     for (const field of ["root_cause", "repro", "regression_guard"]) {
       expect(rootCause).toContain(field);
