@@ -2732,6 +2732,7 @@
     "package.json",
     "install.sh",
     "install.ps1",
+    "cordis.patch.yml",
     "agents/",
     "assets/",
     "interfaces/",
@@ -2739,6 +2740,7 @@
     "scripts/",
     "src/",
     "docs/",
+    "dist/dsh-plugin.js",
     "dist/hook-entry.js",
     "dist/oar-review-host.js",
     "dist/operator-ui/"

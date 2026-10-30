@@ -105,6 +105,7 @@ export function hostCommand(checks: readonly SetupCheck[], host: SetupHost): Set
 
 export type HostSentence =
   | { readonly kind: 'package'; readonly status: NonNullable<Extract<SetupHostFacts, { host: 'pi' }>['package_check']> }
+  | { readonly kind: 'plugin'; readonly status: NonNullable<SetupHostFacts['adapter_check']> }
   | { readonly kind: 'not_reported' }
   | { readonly kind: 'not_detected' }
   | { readonly kind: 'not_inspected' }
@@ -116,6 +117,9 @@ export function hostSentence(host: SetupHostFacts): HostSentence {
   if (!host.reported) return { kind: 'not_reported' };
   if (host.detected === false) return { kind: 'not_detected' };
   if (host.host === 'pi' && host.package_check !== null) return { kind: 'package', status: host.package_check };
+  if (host.host === 'dsh') {
+    return host.adapter_check === null ? { kind: 'not_inspected' } : { kind: 'plugin', status: host.adapter_check };
+  }
   const adapter = host.adapter;
   if (adapter === null) return { kind: 'not_inspected' };
   if (!adapter.configured) return { kind: 'not_configured', managed: adapter.managed_entries, expected: adapter.expected_entries };

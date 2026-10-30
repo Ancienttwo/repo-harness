@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "surface": "repo-harness-cli-hooks-command-facades",
   "source": "assets/skill-commands",
   "router": "repo-harness",
@@ -553,7 +553,8 @@
       "minimal": {
         "claude": [],
         "codex": [],
-        "pi": []
+        "pi": [],
+        "dsh": []
       },
       "full": {
         "claude": [
@@ -565,7 +566,8 @@
         ],
         "pi": [
           "repo-harness-cross-review"
-        ]
+        ],
+        "dsh": []
       }
     }
   },

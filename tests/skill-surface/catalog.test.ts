@@ -80,7 +80,7 @@ function computeExpectedProjections(packages: unknown[]): unknown {
 
 function catalogValue(packages: unknown[], overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    version: 2,
+    version: 3,
     surface: "test-surface",
     source: "assets/skill-commands",
     router: "repo-harness",
@@ -137,7 +137,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue([]))).toEqual(["CATALOG_NOT_OBJECT"]);
   });
 
-  test("UNSUPPORTED_VERSION: version is not 2", () => {
+  test("UNSUPPORTED_VERSION: version is not 3", () => {
     expect(codes(validateSkillSurfaceCatalogValue({ ...VALID_BASE, version: 1 }))).toEqual(["UNSUPPORTED_VERSION"]);
   });
 
@@ -478,11 +478,12 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [] });
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [], dsh: [] });
     expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
+      dsh: [],
     });
   });
 
@@ -492,6 +493,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
+      dsh: [],
     });
   });
 

@@ -95,6 +95,21 @@ Pi covers session context, agent notices, edit/write, bash and Stop hooks.
 It has no fleet roles or subagent hooks. PowerShell, `!`/`!!` user shell,
 other extensions' file writes and third-party MCP writes are outside this coverage.
 
+DSH (DeepSeek Harness) is a package host. repo-harness ships a Cordis plugin
+and a bundle patch; DSH manages the installation. Load the plugin with
+`dsh plugin add link:<repo-harness package directory>`, or with
+`dsh plugin add repo-harness@<version>` after release. The plugin needs Bun on
+`PATH`; it starts this package's `dist/hook-entry.js`. It maps native `write`,
+`edit` and `bash` calls to the typed guards, delivers session context through
+the first agent step, and records Stop at the turn boundary. It disables
+itself in a repository without `.ai/harness/workflow-contract.json`. MCP
+writes, `pwsh`, `!` user commands and writes from other plugins stay outside
+this boundary. DSH already reads `AGENTS.md` and `~/.agents/skills`; the
+plugin does not change those paths. `repo-harness doctor` and
+`repo-harness setup check` report whether a DSH profile declares the bundle,
+and list the external skills in the shared agents root. repo-harness does not
+write the DSH profile.
+
 On Windows, keep Git for Windows on the install/update `PATH`. That explicit
 ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
 the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's

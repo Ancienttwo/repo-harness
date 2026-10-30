@@ -118,6 +118,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
     if (reported && (detected === null || (h.host !== 'pi' && adapterCheck === null))) fail('reported host facts');
     if (detected === false && adapter !== null) fail('undetected host adapter');
     if (h.host === 'pi' && (adapter !== null || adapterCheck !== null)) fail('pi has no adapter file');
+    if (h.host === 'dsh' && adapter !== null) fail('dsh has no adapter file');
     if (h.host === 'pi') {
       const packageCheck = nullable(h.package_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'package_check'));
       if (!reported && packageCheck !== null) fail('unreported host carries package facts');
@@ -200,6 +201,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
     nullable(r.effort, x => packageScalar(x, 'role effort'));
     perHost(r.hosts, x => nullable(x, y => oneOf(y, ['installed', 'missing'], 'role host')), 'role hosts');
     if ((r.hosts as Record<string, unknown>).pi !== null) fail('pi has no fleet roles');
+    if ((r.hosts as Record<string, unknown>).dsh !== null) fail('dsh has no fleet roles');
   }
 
   if (!hasData && ((v.checks as unknown[]).length || (v.skills as unknown[]).length
