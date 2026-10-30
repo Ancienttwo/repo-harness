@@ -1,3 +1,4 @@
+import type { DocSessionAgentRecord } from '../../core/operator/doc-session-agent-record';
 // The docs host (PRD G5; issue #1021; owner decision D3, 2026-10-28). One
 // Node >= 24 process per doc session. It is trusted and runs unsandboxed; only
 // the OAR runtime it opens, and that runtime's children, run inside the docs
@@ -28,7 +29,7 @@ import { startModelApiProxy, type ModelApiProxy } from '../review/docs-host-prox
 import { prepareCodexHome } from '../review/review-isolation';
 import {
   DOC_SESSION_AGENT_LIMITS, DOC_SESSION_AGENT_LOCK, DOC_SESSION_CREDENTIAL_WINDOW_MS, docSessionRequestsDirectory, errorCode,
-  nextAgentRecord, readDocSessionAgent, removeDocSessionCredential, writeDocSessionAgent, type DocSessionAgentRecord, type DocSessionControlResult,
+  nextAgentRecord, readDocSessionAgent, removeDocSessionCredential, writeDocSessionAgent, type DocSessionControlResult,
 } from './doc-session-agent';
 import { appendDocSessionEvents, DocSessionEventsError } from './doc-session-events';
 

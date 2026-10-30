@@ -2,9 +2,8 @@
 // events to `<repoHarnessHome>/operator/sessions/<sid>/events.jsonl`, next to
 // the session record of #1021; the page reads them by an `epoch.seq` cursor.
 //
-// The docs host (oar-docs-host.ts) produces the events; the server adds the
-// failure records of a host that died. Production reads run in the bounded
-// task-read process, through the same decoder and cursor reader as the CLI.
+// Production reads run in the bounded task-read process, through the same
+// decoder and cursor reader as the CLI. The G5 producer is a separate slice.
 
 import { closeSync, constants, fstatSync, fsyncSync, ftruncateSync, lstatSync, openSync, readSync, realpathSync, writeSync } from 'node:fs';
 import { join } from 'node:path';

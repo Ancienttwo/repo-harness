@@ -15,6 +15,7 @@ import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import { piAgentDir } from '../../src/effects/pi-agent-dir';
 import { piExecutable } from '../../src/effects/pi-executable';
 import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
+import { probePiHerdrIntegration } from '../../src/effects/setup/pi-herdr-integration';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -77,7 +78,11 @@ default: process.exit(99);
   mkdirSync(bin, { recursive: true });
   symlinkSync(process.execPath, join(bin, 'bun'));
   symlinkSync(join(host, 'pi'), join(bin, 'pi'));
-  write(join(bin, 'herdr'), `#!${process.execPath}\nconsole.log('---\\nname: herdr\\n---\\nHERDR_ENV\\n\\n## Learn the current CLI\\n\\nUse herdr --help.');\n`);
+  write(join(bin, 'herdr'), `#!${process.execPath}
+if (process.argv.slice(2).join(' ') === 'integration status') console.log('pi: current (v9) (' + process.env.PI_CODING_AGENT_DIR + '/extensions/herdr-agent-state.ts)');
+else if (process.argv[2] === '--skill') console.log('---\\nname: herdr\\n---\\nHERDR_ENV\\n\\n## Learn the current CLI\\n\\nUse herdr --help.');
+else process.exit(99);
+`);
   chmodSync(join(bin, 'herdr'), 0o755);
   write(join(home, '.bun/bin/repo-harness'), '#!/bin/sh\nexit 0\n');
   chmodSync(join(home, '.bun/bin/repo-harness'), 0o755);
@@ -451,7 +456,7 @@ export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
 
   test('setup reports supported and unsupported versions, capability and package state', () => fixture(f => {
     expect(checkPiHost(f.env).map(c => [c.id, c.status])).toEqual([
-      ['pi-path', 'ok'], ['pi-cli-version', 'ok'], ['pi-capability', 'ok'], ['pi-package', 'warn'],
+      ['pi-path', 'ok'], ['pi-cli-version', 'ok'], ['pi-capability', 'ok'], ['pi-package', 'warn'], ['pi-herdr-integration', 'ok'],
     ]);
     expect(checkPiHost({ ...f.env, PI_FIXTURE_VERSION: '1.3.9' }).find(c => c.id === 'pi-cli-version')).toMatchObject({ status: 'fail', detail: expect.stringContaining('PI_HOST_UNSUPPORTED_VERSION') });
     expect(checkPiHost({ ...f.env, PI_FIXTURE_VERSION: '2.0.0' }).find(c => c.id === 'pi-cli-version')?.status).toBe('ok');
@@ -466,5 +471,85 @@ export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
     f.write(join(empty, 'dist/core/tools/path-utils.js'), 'export function resolveToCwd(path) { return path; }');
     expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'ok', capability: { state: 'ready' } });
     expect(checkPiHost({ ...f.env, PATH: '' }).every(c => c.status === 'na')).toBe(true);
+  }));
+});
+
+// Protocol fixtures from Herdr v0.9.5 integration_status, not live pane evidence.
+function writeHerdrStatus(f: ReturnType<typeof createFixture>, output: string, exitCode = 0): void {
+  f.write(join(f.root, 'bin/herdr'), `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+appendFileSync(process.env.PI_FIXTURE_ROOT + '/herdr-argv.jsonl', JSON.stringify({
+  args: process.argv.slice(2), agentDir: process.env.PI_CODING_AGENT_DIR,
+}) + '\\n');
+if (process.argv.slice(2).join(' ') !== 'integration status') process.exit(99);
+process.stdout.write(${JSON.stringify(output)});
+process.exit(${exitCode});
+`);
+}
+
+describe('Pi Herdr integration diagnostics', () => {
+  for (const [state, code] of [
+    ['not installed', 'PI_HERDR_INTEGRATION_MISSING'],
+    ['outdated (v8 < v9)', 'PI_HERDR_INTEGRATION_OUTDATED'],
+    ['outdated (legacy < v9)', 'PI_HERDR_INTEGRATION_OUTDATED'],
+    ['needs repair (v9)', 'PI_HERDR_INTEGRATION_NEEDS_REPAIR'],
+  ]) {
+    test(`doctor fails only the integration check for ${state}`, () => fixture(f => {
+      writeHerdrStatus(f, `claude: current (v1) (/fixture/claude)\npi: ${state} (/fixture/pi)\ncodex: current (v1) (/fixture/codex)\n`);
+      const before = readFileSync(join(f.env.PI_CODING_AGENT_DIR, 'settings.json'), 'utf8');
+      const checks = checkPiHost(f.env);
+      const integration = checks.find(c => c.id === 'pi-herdr-integration')!;
+      expect(integration.status).toBe('fail');
+      expect(integration.detail).toContain(code!);
+      expect(integration.detail).toContain('explicit user step: herdr integration install pi');
+      expect(checks.find(c => c.id === 'pi-cli-version')?.status).toBe('ok');
+      expect(checks.find(c => c.id === 'pi-capability')?.status).toBe('ok');
+      expect(readFileSync(join(f.env.PI_CODING_AGENT_DIR, 'settings.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(f.root, 'herdr-argv.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))).toEqual([
+        { args: ['integration', 'status'], agentDir: f.env.PI_CODING_AGENT_DIR },
+      ]);
+      expect(f.argv().every(args => args[0] === 'list')).toBe(true);
+    }));
+  }
+
+  test('Herdr owns the current extension version; native agent directory is separate from OAR', () => fixture(f => {
+    writeHerdrStatus(f, 'pi: current (v42) (/fixture/native pi (custom)/extensions/herdr-agent-state.ts)\r\n');
+    const result = probePiHerdrIntegration({ ...f.env, PI_CODING_AGENT_DIR: '~/native pi (custom)', OAR_PI_AGENT_DIR: join(f.root, 'oar') });
+    expect(result.state).toBe('current');
+    expect(JSON.parse(readFileSync(join(f.root, 'herdr-argv.jsonl'), 'utf8'))).toEqual({
+      args: ['integration', 'status'], agentDir: join(f.home, 'native pi (custom)'),
+    });
+    expect(existsSync(join(f.home, 'native pi (custom)'))).toBe(false);
+    expect(existsSync(join(f.root, 'oar'))).toBe(false);
+  }));
+
+  for (const output of [
+    '', 'codex: current (v9) (/fixture/codex)\n', 'pi: current\n',
+    'pi: current (v9) (/fixture/pi) trailing garbage\n',
+    'pi: future-state (v9) (/fixture/pi)\n',
+    'pi: current (v9) (/fixture/pi)\npi: not installed (/fixture/pi)\n',
+  ]) {
+    test(`rejects missing or malformed Pi status ${JSON.stringify(output)}`, () => fixture(f => {
+      writeHerdrStatus(f, output);
+      expect(probePiHerdrIntegration(f.env)).toMatchObject({ state: 'unavailable', code: 'PI_HERDR_INTEGRATION_INVALID_OUTPUT' });
+    }));
+  }
+
+  test('a failed Herdr command cannot pass with a current row on stdout', () => fixture(f => {
+    writeHerdrStatus(f, 'pi: current (v9) (/fixture/pi)\n', 42);
+    expect(probePiHerdrIntegration(f.env)).toMatchObject({ state: 'unavailable', code: 'PI_HERDR_INTEGRATION_PROBE_FAILED', detail: expect.stringContaining('(42)') });
+  }));
+
+  test('missing Herdr and invalid native directory report a probe failure', () => fixture(f => {
+    unlinkSync(join(f.root, 'bin/herdr'));
+    expect(probePiHerdrIntegration({ ...f.env, PATH: join(f.root, 'bin') })).toMatchObject({ state: 'unavailable', code: 'PI_HERDR_INTEGRATION_PROBE_FAILED' });
+    expect(probePiHerdrIntegration({ ...f.env, PI_CODING_AGENT_DIR: 'relative/path' })).toMatchObject({ state: 'unavailable', code: 'PI_HERDR_INTEGRATION_PROBE_FAILED' });
+  }));
+
+  test('absent Pi leaves the integration diagnostic n/a and does not call Herdr', () => fixture(f => {
+    writeHerdrStatus(f, 'pi: not installed (/fixture/pi)\n');
+    unlinkSync(join(f.root, 'bin/pi'));
+    expect(checkPiHost({ ...f.env, PATH: join(f.root, 'bin') }).find(c => c.id === 'pi-herdr-integration')).toMatchObject({ status: 'na' });
+    expect(existsSync(join(f.root, 'herdr-argv.jsonl'))).toBe(false);
   }));
 });

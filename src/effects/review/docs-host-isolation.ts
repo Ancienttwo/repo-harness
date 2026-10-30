@@ -2,6 +2,7 @@ import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readF
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
+import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
 import { isDocsHostRuntimeId, type DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { ModelApiEndpoint } from './docs-host-proxy';
 
@@ -34,8 +35,20 @@ export const DOCS_HOST_SYSTEM_PROGRAMS: readonly string[] = [
 const CREDENTIAL_SUBPATHS = ['.codex', '.claude', '.config/gh', '.config/git', '.ssh', '.aws', '.gnupg', '.docker', '.kube', '.azure', '.config/gcloud', 'Library/Keychains'];
 const CREDENTIAL_LITERALS = ['.claude.json', '.netrc', '.git-credentials', '.npmrc', '.repo-harness/mcp.tokens.json'];
 const CREDENTIAL_FILES = '/(auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json|mcp\\.tokens\\.json|\\.env(rc|\\.[^/]+)?)$';
-const FORBIDDEN_WRITE_FILES = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json|\\.env(rc|\\.[^/]+)?|\\.git)$';
-const FORBIDDEN_WRITE_DIRECTORIES = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins|\\.?commands|\\.?prompts|\\.git)(/|$)';
+const FORBIDDEN_WRITE_FILES = String.raw`/(CLAUDE\.md|AGENTS\.md|settings[^/]*\.json|\.claude\.json|config\.toml|auth\.json|\.?credentials\.json|secrets\.json|token\.json|\.env(rc|\.[^/]+)?|\.git)$`;
+const FORBIDDEN_WRITE_DIRECTORIES = String.raw`/(\.?hooks|\.?agents|\.?skills|\.?rules|\.?plugins|\.?commands|\.?prompts|\.git)(/|$)`;
+// Keep one regex source for the API predicate and the Seatbelt string literal.
+const forbiddenWriteFiles = new RegExp(FORBIDDEN_WRITE_FILES, 'u');
+const forbiddenWriteDirectories = new RegExp(FORBIDDEN_WRITE_DIRECTORIES, 'u');
+
+/** Lexical host write scope. Callers must also apply docsHostProtectedProjection
+ * and the architecture generated-region authority to the resolved worktree. */
+export function isDocsHostWritablePath(path: string): boolean {
+  if (!isRepositoryRelativePath(path) || !path.startsWith('docs/')) return false;
+  const rooted = `/${path}`;
+  return !forbiddenWriteFiles.test(rooted) && !forbiddenWriteDirectories.test(rooted);
+}
+
 const KEYCHAIN_SERVICES = ['com.apple.SecurityServer', 'com.apple.securityd', 'com.apple.securityd.xpc'];
 const DESKTOP_SERVICES = [
   'com.apple.coreservices.launchservicesd', 'com.apple.lsd.mapdb', 'com.apple.lsd.modifydb',

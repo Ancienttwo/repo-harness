@@ -9,6 +9,7 @@ import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from '../
 import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
 import { readDocSessionList, readDocSessionDetail } from '../../effects/operator/doc-session-views';
 import { DocSessionEventsError, readDocSessionEvents } from '../../effects/operator/doc-session-events';
+import { OperatorTaskReadError, readBoundedDocSessionFinalization } from '../../effects/operator/server';
 
 /**
  * `repo-harness operator doc-sessions`: the doc session operations of the operator
@@ -76,6 +77,13 @@ export function buildDocSessionsCommand(): Command {
       const output = JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object });
       if (response.status === 202) console.log(output);
       else { console.error(output); process.exitCode = 2; }
+    });
+  sessions.command('finalization').description('Read saved finalization journal progress')
+    .argument('<session-id>', 'Doc session id (32 hex)').option('--json', 'Output the HTTP body as JSON')
+    .action(async (sessionId: string, options: ReadOptions) => {
+      if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
+      try { console.log(JSON.stringify(await readBoundedDocSessionFinalization(process.env, sessionId))); }
+      catch (error) { refuse(options.json, error instanceof OperatorTaskReadError ? error.code : 'unavailable', error instanceof OperatorTaskReadError ? 2 : 1); }
     });
   sessions.command('list').description('List doc sessions; unread compares with the supplied browser cursors')
     .option('--seen <json>', 'JSON object of session ids to last-read epoch.seq cursors')

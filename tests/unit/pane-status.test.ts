@@ -22,6 +22,12 @@ describe('pane decision contract', () => {
     expect(() => paneStatusRequest({ ...state, tail: 'é'.repeat(9000) })).toThrow();
     expect(() => paneStatusRequest({ ...state, tail_lines: 121 })).toThrow();
   });
+  test.each(['claude', 'codex', 'pi'] as const)('request preserves the admitted host %s', agent => {
+    expect(paneStatusRequest({ ...state, agent }).state).toEqual({ ...state, agent });
+  });
+  test('request rejects unknown hosts', () => {
+    expect(() => paneStatusRequest({ ...state, agent: 'unknown-host' } as unknown as typeof state)).toThrow('Invalid pane state.');
+  });
   test('decoder projects only the three typed answers and usage', () => {
     expect(decodeClefAnswer({ ...clefResult(), private: 'must not be copied' })).toEqual({
       status: 'ok', choice: 'quota', confidence: 0.9,

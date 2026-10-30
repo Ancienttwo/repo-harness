@@ -1,3 +1,4 @@
+import type { DocSessionAgentRecord, DocSessionAgentState, DocSessionCredentialCleanup } from '../../core/operator/doc-session-agent-record';
 // Doc session agent lifecycle (PRD G5; issue #1021). One docs host process
 // per session runs the OAR runtime inside the docs host boundary
 // (oar-docs-host.ts). The server starts it after the session record exists,
@@ -26,29 +27,6 @@ import { operatorStateDir } from './write-audit';
 export const DOC_SESSION_AGENT_LIMITS = Object.freeze({ start_ms: 120_000, turn_ms: 30 * 60_000, idle_ms: 30 * 60_000, lifetime_ms: 4 * 60 * 60_000 });
 /** The copied model credential must outlive the whole session. */
 export const DOC_SESSION_CREDENTIAL_WINDOW_MS = DOC_SESSION_AGENT_LIMITS.lifetime_ms + 120_000;
-
-export type DocSessionAgentState = 'starting' | 'running' | 'idle' | 'stopped' | 'failed';
-export type DocSessionCredentialCleanup = 'removed' | 'absent' | 'cleanup_pending';
-
-/** `<session>/agent.json`, mode 0600. Server state only; no route serves it. */
-export interface DocSessionAgentRecord {
-  readonly protocol: 1;
-  readonly kind: 'docs_session_agent';
-  readonly session_id: string;
-  readonly epoch: number;
-  readonly state: DocSessionAgentState;
-  readonly failure: DocSessionFailureCategory | null;
-  /** An error code, never a message with paths or text. */
-  readonly reason: string | null;
-  readonly updated_at: string;
-  /** The model the runtime reported (D7); never in events. */
-  readonly actual_model: string | null;
-  readonly credential: DocSessionCredentialCleanup | null;
-  /** `<os temp>/repo-harness-docs-host/<sid>`: profile, launcher, git link and the writable scratch. Null when it could not be planned. */
-  readonly control: string | null;
-  /** The error code of a failure record the server could not append to the event log; the log is kept as it is. */
-  readonly events_error: string | null;
-}
 
 export type DocSessionControl = 'stop' | 'cancel';
 /** `refused`: the runtime rejected the interrupt, so the turn may still run. */

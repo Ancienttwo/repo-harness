@@ -54,7 +54,6 @@ interface HarnessOptions {
   readonly session_id?: () => string;
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
-  /** Serve only the production GET inventory, without the test session events entry. */
   /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
   readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
   /** The runtimes with the docs use in the agent settings; codex by default. */
