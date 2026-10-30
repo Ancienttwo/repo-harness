@@ -80,7 +80,7 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
-  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
+  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin', launch_agent: () => 'starting' });
   const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route], ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
