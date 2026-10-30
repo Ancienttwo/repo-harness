@@ -691,6 +691,48 @@ describe('shipped Herdr notify event handler', () => {
     return { ...f, send, records, configText: readFileSync(join(f.config, '.env'), 'utf8') };
   }
 
+  test('Pi shadow events produce blind records that can be labeled without changing the source log', async () => {
+    const f = shadowFixture();
+    try {
+      const event = JSON.parse(f.env.HERDR_PLUGIN_EVENT_JSON);
+      event.data.agent = 'pi';
+      f.env.HERDR_PLUGIN_EVENT_JSON = JSON.stringify(event);
+      await notify(f.env, f.send);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(true);
+      const records = f.records();
+      expect(records).toHaveLength(1);
+      expect(records[0].agent).toBe('pi');
+      const modelCalls = f.calls.filter(call => call.url.startsWith('https://api.cloudflare.com/'));
+      expect(modelCalls.map(call => JSON.parse(String(call.init.body)).model)).toEqual(['clef-flash', 'clef']);
+      expect(modelCalls.every(call => JSON.parse(String(call.init.body)).state.agent === 'pi')).toBe(true);
+      expect(records[0].models.map((model: { model: string; status: string }) => [model.model, model.status]))
+        .toEqual([['clef-flash', 'ok'], ['clef', 'ok']]);
+      const original = readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8');
+      const blind = await labelDecision({ next: true, stateDir: f.state });
+      expect(blind).toEqual({ event_id: records[0].event_id, agent: 'pi', herdr_status: 'done', tail: records[0].tail });
+      expect(await labelDecision({ eventId: records[0].event_id, option: 'quota', stateDir: f.state }))
+        .toMatchObject({ event_id: records[0].event_id, label: 'quota', labeler: 'bot' });
+      expect(await labelDecision({ next: true, stateDir: f.state })).toBeNull();
+      expect(readFileSync(join(f.state, 'decision-shadow.jsonl'), 'utf8')).toBe(original);
+    } finally { f.cleanup(); }
+  });
+
+  test('unknown agents stay outside the shadow producer and blind-record reader', async () => {
+    const f = shadowFixture();
+    try {
+      const event = JSON.parse(f.env.HERDR_PLUGIN_EVENT_JSON);
+      event.data.agent = 'unknown-host';
+      f.env.HERDR_PLUGIN_EVENT_JSON = JSON.stringify(event);
+      await notify(f.env, f.send);
+      expect(existsSync(join(f.state, 'decision-shadow.jsonl'))).toBe(false);
+      expect(f.calls.some(call => call.url.startsWith('https://api.cloudflare.com/'))).toBe(false);
+      writeFileSync(join(f.state, 'decision-shadow.jsonl'), JSON.stringify({
+        event_id: '00000000-0000-4000-8000-000000000110', agent: 'unknown-host', herdr_status: 'done', tail: null, tail_sha256: null,
+      }) + '\n', { mode: 0o600 });
+      await expect(labelDecision({ next: true, stateDir: f.state })).rejects.toThrow('Invalid shadow record.');
+    } finally { f.cleanup(); }
+  });
+
   test('shadow delivers identical channel requests before both models and writes a private redacted record', async () => {
     const f = shadowFixture();
     const clock = spyOn(Date, 'now').mockReturnValue(1792663200000);
@@ -757,7 +799,7 @@ describe('shipped Herdr notify event handler', () => {
   test.each(['agent', 'blocked', 'off', 'missing-mode', 'missing-token', 'missing-account'])('out-of-scope shadow does no read, call or record: %s', async condition => {
     const f = shadowFixture();
     try {
-      if (condition === 'agent') f.env.HERDR_PLUGIN_EVENT_JSON = f.env.HERDR_PLUGIN_EVENT_JSON.replace('codex', 'pi');
+      if (condition === 'agent') f.env.HERDR_PLUGIN_EVENT_JSON = f.env.HERDR_PLUGIN_EVENT_JSON.replace('codex', 'unknown-host');
       else if (condition === 'blocked') f.env.HERDR_PLUGIN_EVENT_JSON = f.env.HERDR_PLUGIN_EVENT_JSON.replace('done', 'blocked');
       else writeFileSync(join(f.config, '.env'), f.configText.replace(
         condition === 'off' ? 'CLEF_MODE=shadow' : condition === 'missing-mode' ? 'CLEF_MODE=shadow' : condition === 'missing-token' ? 'CLOUDFLARE_API_TOKEN=fixture-clef-token' : 'CLOUDFLARE_ACCOUNT_ID=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

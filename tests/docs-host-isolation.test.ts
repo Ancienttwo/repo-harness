@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { darwinTest } from './helpers/darwin-test';
 import { tmpWorkspace } from './helpers/repo-fixture';
 import {
-  assertDocsHostPlatform, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy, prepareDocsHostScratch,
+  assertDocsHostPlatform, isDocsHostWritablePath, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy, prepareDocsHostScratch,
   proveDocsHostBoundary, writeDocsHostPolicy, type DocsHostAdmission,
 } from '../src/effects/review/docs-host-isolation';
 import { admitClientHello, startModelApiProxy, type ModelApiProxy } from '../src/effects/review/docs-host-proxy';
@@ -450,4 +450,29 @@ darwinTest('docs host denies the pasteboard and LaunchServices lookups and Apple
   expect(launchServices.stderr).not.toContain('execvp');
   expect(launchServices).toMatchObject({ status: 0, stdoutBytes: 0 });
   expect(run('launchservices-control', `${exec}\n${lookup('com.apple.coreservices.launchservicesd')}`, '/usr/bin/lsappinfo', 'list').stdoutBytes).toBeGreaterThan(0);
+}, 60_000);
+
+
+test('the shared docs host writable-path predicate refuses instruction/config directories and non-doc paths', () => {
+  for (const path of ['docs/guide.md', 'docs/new/page.md', 'docs/examples/settings.md', 'docs/credentials-guide.md']) expect(isDocsHostWritablePath(path), path).toBe(true);
+  for (const path of ['docs', 'src/a.ts', '../docs/a.md', '/docs/a.md', 'docs/../a.md', 'docs/AGENTS.md', 'docs/sub/CLAUDE.md',
+    'docs/settings.local.json', 'docs/config.toml', 'docs/.env', 'docs/.envrc', 'docs/.env.local', 'docs/auth.json', 'docs/.credentials.json',
+    'docs/secrets.json', 'docs/token.json', 'docs/.git', 'docs/.claude.json']) expect(isDocsHostWritablePath(path), path).toBe(false);
+  for (const name of ['hooks', 'agents', 'skills', 'rules', 'plugins', 'commands', 'prompts', 'git']) {
+    for (const prefix of name === 'git' ? ['.'] : ['', '.']) expect(isDocsHostWritablePath(`docs/${prefix}${name}/nested/file.md`)).toBe(false);
+  }
+});
+
+darwinTest('the shared writable-path predicate agrees with the actual Seatbelt file and directory deny rules', async () => {
+  const f = await seedFixture();
+  const scratch = prepareDocsHostScratch(f.admission, 60_000);
+  const policy = writeDocsHostPolicy(f.admission);
+  const paths = ['docs/guide.md', 'docs/new-page.md', 'docs/AGENTS.md', 'docs/config.toml', 'docs/settings.local.json', 'docs/.envrc',
+    'docs/.credentials.json', 'docs/sub/CLAUDE.md', 'docs/hooks/file.md', 'docs/.plugins/file.md', 'docs/prompts/file.md'];
+  for (const path of paths) mkdirSync(dirname(join(f.worktree, path)), { recursive: true });
+  const probe = `const fs=require('node:fs'); const paths=JSON.parse(process.argv[1]); console.log(JSON.stringify(paths.map(path=>{try{fs.writeFileSync(path,'fixture');return true}catch(error){if(error.code==='EPERM'||error.code==='EACCES')return false;throw error}})))`;
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policy, f.admission.node, '-e', probe, JSON.stringify(paths.map(path => join(f.worktree, path)))],
+    { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual(paths.map(isDocsHostWritablePath));
 }, 60_000);

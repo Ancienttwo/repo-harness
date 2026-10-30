@@ -31,6 +31,10 @@ const RECORD_MAX_BYTES = 1024 * 1024;
 /** A changed file is read once to hash it; a larger one is refused rather than hashed. */
 const FILE_MAX_BYTES = 16 * 1024 * 1024;
 const ZERO_OID = /^0+$/u;
+// `ls-files --stage -z`: mode(6), spaces(2), SHA-256 oid(64), stage(1), tab(1).
+const INDEX_ENTRY_HEADER_MAX_BYTES = 74;
+// Each nonempty path needs at least one byte plus NUL in the existing name cap.
+const INDEX_OUTPUT_MAX_BYTES = DOC_SESSION_PATCH_MAX_BYTES * (1 + INDEX_ENTRY_HEADER_MAX_BYTES / 2);
 
 export class DocSessionReadError extends Error {
   constructor(readonly code: DocSessionReadFailure) { super(code); }
@@ -48,8 +52,8 @@ type Git = (cwd: string, args: string[], allowNoMatch?: boolean) => string;
 export interface DocSessionGitRunner {
   /** UTF-8 stdout; a path that is not UTF-8 is refused. Exit 1 is empty output when `allowNoMatch`. */
   readonly text: Git;
-  /** Raw stdout for the listed exit statuses. */
-  readonly bytes: (cwd: string, args: string[], statuses?: readonly number[], input?: Buffer) => Buffer;
+  /** Raw stdout. A larger derived limit is allowed only for staged index metadata. */
+  readonly bytes: (cwd: string, args: string[], statuses?: readonly number[], input?: Buffer, maxOutputBytes?: number) => Buffer;
 }
 
 /**
@@ -58,9 +62,12 @@ export interface DocSessionGitRunner {
  */
 export function docSessionGitRunner(env: NodeJS.ProcessEnv): DocSessionGitRunner {
   const gitEnv = withoutRepositorySelectingGitEnv({ ...env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' });
-  const bytes: DocSessionGitRunner['bytes'] = (cwd, args, statuses = [0], input) => {
+  const bytes: DocSessionGitRunner['bytes'] = (cwd, args, statuses = [0], input, maxOutputBytes = DOC_SESSION_PATCH_MAX_BYTES) => {
+    const indexMetadata = args.length === 3 && args[0] === 'ls-files' && args[1] === '--stage' && args[2] === '-z';
+    const ceiling = indexMetadata ? INDEX_OUTPUT_MAX_BYTES : DOC_SESSION_PATCH_MAX_BYTES;
+    if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 0 || maxOutputBytes > ceiling) return fail('too_large');
     const result = gitSpawnSync(['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
-      cwd, env: gitEnv, gitBin: configuredGitBinary(env), timeout: GIT_TIMEOUT_MS, maxBuffer: DOC_SESSION_PATCH_MAX_BYTES,
+      cwd, env: gitEnv, gitBin: configuredGitBinary(env), timeout: GIT_TIMEOUT_MS, maxBuffer: maxOutputBytes,
       stdio: ['pipe', 'pipe', 'pipe'], ...(input === undefined ? {} : { input }),
     });
     if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS') return fail('too_large');
@@ -182,13 +189,57 @@ function filterDrivers(runner: DocSessionGitRunner, worktree: string): Set<strin
 function refuseUsedFilters(runner: DocSessionGitRunner, worktree: string, paths: readonly string[]): void {
   const drivers = filterDrivers(runner, worktree);
   if (drivers.size === 0 || paths.length === 0) return;
-  const output = new TextDecoder().decode(runner.bytes(worktree, ['check-attr', '-z', '--stdin', 'filter'], [0], Buffer.from(`${paths.join('\0')}\0`)));
-  const fields = output === '' ? [] : output.slice(0, -1).split('\0');
-  if (fields.length !== paths.length * 3) return fail('unavailable');
-  for (let index = 2; index < fields.length; index += 3) if (drivers.has(fields[index]!)) fail('filters_unsupported');
+  // Each reply repeats its path and adds the attribute name and value. Bound
+  // both batch bytes and path count; keep the existing whole-list input caps
+  // and per-command output cap, including for an oversized attribute value.
+  for (let offset = 0; offset < paths.length;) {
+    const batch: string[] = [];
+    let bytes = 0;
+    while (offset < paths.length && batch.length < 256) {
+      const path = paths[offset]!;
+      const size = Buffer.byteLength(path) + 1;
+      if (batch.length > 0 && bytes + size > 64 * 1024) break;
+      batch.push(path);
+      bytes += size;
+      offset += 1;
+    }
+    const output = new TextDecoder().decode(runner.bytes(worktree, ['check-attr', '-z', '--stdin', 'filter'], [0], Buffer.from(`${batch.join('\0')}\0`)));
+    if (!output.endsWith('\0')) return fail('unavailable');
+    const fields = output.slice(0, -1).split('\0');
+    if (fields.length !== batch.length * 3) return fail('unavailable');
+    for (let index = 0; index < batch.length; index += 1) {
+      if (fields[index * 3] !== batch[index] || fields[index * 3 + 1] !== 'filter') return fail('unavailable');
+      if (drivers.has(fields[index * 3 + 2]!)) fail('filters_unsupported');
+    }
+  }
 }
 
 const pathsFrom = (listed: string): string[] => listed === '' ? [] : listed.slice(0, -1).split('\0');
+
+/** Old Git supports --stage too; no --format capability or version fallback is needed. */
+function admittedIndexPaths(runner: DocSessionGitRunner, worktree: string): string[] {
+  const listed = runner.text(worktree, ['ls-files', '--cached', '-z']);
+  if (listed !== '' && !listed.endsWith('\0')) return fail('unavailable');
+  const paths = pathsFrom(listed);
+  if (paths.some(path => path === '')) return fail('path_unsupported');
+  // Metadata adds a fixed header per name. Derive its bound from the already
+  // bounded name list, so neither long paths nor many short paths lower capacity.
+  const limit = Buffer.byteLength(listed) + paths.length * INDEX_ENTRY_HEADER_MAX_BYTES;
+  const bytes = runner.bytes(worktree, ['ls-files', '--stage', '-z'], [0], undefined, limit);
+  let staged: string;
+  try { staged = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return fail('path_unsupported'); }
+  if (staged !== '' && !staged.endsWith('\0')) return fail('unavailable');
+  const entries = pathsFrom(staged);
+  if (entries.length !== paths.length) return fail('stale');
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    const header = /^([0-7]{6}) (?:[0-9a-f]{40}|[0-9a-f]{64}) [0-3]\t/u.exec(entry);
+    if (header === null) return fail('unavailable');
+    if (header[1] === '160000') return fail('path_unsupported');
+    if (entry.slice(header[0].length) !== paths[index]) return fail('stale');
+  }
+  return paths;
+}
 
 function worktreeFileMode(worktree: string, path: string): string {
   if (!isRepositoryRelativePath(path)) return fail('path_unsupported');
@@ -240,9 +291,11 @@ export function observeDocSessionChanges(runner: DocSessionGitRunner, worktree: 
     const oid = new TextDecoder().decode(runner.bytes(worktree, ['hash-object', '--stdin', `--path=${path}`], [0], input)).trim();
     return oid || fail('unavailable');
   };
-  // ls-files only enumerates names. Raw diff can run clean/process filters even
-  // for a stat-only or racy entry, so admit every candidate before comparing.
-  const tracked = pathsFrom(runner.text(worktree, ['ls-files', '--cached', '-z']));
+  // Read index metadata before a diff can inspect a populated submodule. Its
+  // nested filters are invisible to the top-level attribute/config checks.
+  const tracked = admittedIndexPaths(runner, worktree);
+  // Raw diff can run clean/process filters even for a stat-only or racy entry,
+  // so admit every candidate before comparing.
   const others = pathsFrom(runner.text(worktree, ['ls-files', '--others', '--exclude-standard', '-z']));
   refuseUsedFilters(runner, worktree, [...new Set([...tracked, ...others])]);
   const raw = runner.text(worktree, ['diff', '--raw', '-z', '--no-renames', '--no-abbrev', '--ignore-submodules=none', side, '--']);
@@ -354,7 +407,7 @@ export function observeDocSessionLoss(runner: DocSessionGitRunner, record: DocSe
   const slug = record.branch.slice('docs/'.length);
   const pushed = runner.text(worktree, ['for-each-ref', '--format=%(refname)', 'refs/remotes/']).split('\n')
     .some(ref => new RegExp(`^refs/remotes/[^/]+/docs/${slug}$`, 'u').test(ref));
-  if (lossFiles({ changes, index }).length + leaves.length + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
+  if (lossFiles({ changes, index }).length + Math.max(ignored.length, leaves.length) + commits.length > DOC_SESSION_CHANGES_MAX) return fail('too_large');
   const ignored_leaves = leaves.map(path => ({
     path, mode: worktreeFileMode(worktree, path),
     // Ignored loss binds the bytes removal deletes, without Git conversions.

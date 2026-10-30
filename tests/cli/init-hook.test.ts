@@ -502,6 +502,20 @@ describe('init-hook command', () => {
     });
   });
 
+  test('setup projects Pi integration diagnostics without an install action', () => {
+    withTempHome((home, repo) => {
+      const detail = 'PI_HERDR_INTEGRATION_MISSING: pi: not installed (/fixture/pi); explicit user step: herdr integration install pi';
+      const report = runInitHook({
+        cwd: repo, target: 'both', env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(), toolingReport: baseToolingReport(),
+        doctorReport: baseDoctorReport([{ id: 'pi-herdr-integration', describe: 'Herdr native Pi integration', status: 'fail', detail }]),
+      });
+      expect(report.checks.find(check => check.id === 'doctor.pi-herdr-integration')).toMatchObject({ status: 'fail', source: 'doctor', detail });
+      expect(report.agent_actions.some(action => action.command?.includes('herdr integration install'))).toBe(false);
+      expect(existsSync(join(home, '.pi'))).toBe(false);
+    });
+  });
+
   test('scopes the Codex CLI version doctor check to targets that include Codex', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
