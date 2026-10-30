@@ -3,14 +3,14 @@
 > **Status**: Accepted and implemented by ESA-01..05 / ESA-07
 > **Decision date**: 2026-07-15
 > **Historical ESA baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
-> **Protocol**: `repo-harness-effective-state`, version `1`
+> **Protocol**: `repo-harness-effective-state`, version `2`
 
 > **Current source review**: `cb900a7fe5ebd04830fdfa62e1b18e25ec969148`.
 > See [current sequences](current-architecture.md#runtime-sequences). Historical ESA evidence below is not a new execution result.
 
 ## Decision
 
-The GitHub issue and PR own current task identity, claim, status and dependency. Repository Markdown supplies planning context. Effective State projects the retained local plan, worktree and capability facts. `tasks/current.md` is a replaceable read model and must never feed authority back into resolution.
+The GitHub issue and PR own current task identity, claim, status and dependency. Effective State projects Git, worktree and capability facts. `tasks/current.md` is a replaceable read model and must never feed authority back into resolution.
 
 Current read path: CLI readers, hooks and MCP → stable source collection → pure
 projection → render, with the last published version attached. Only the explicit
@@ -22,10 +22,10 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 
 ## Frozen Invariants
 
-1. GitHub owns task authority. Local planning context remains human-editable.
+1. GitHub owns task authority. No local plan, sprint or contract source enters Effective State.
 2. Effective State has no persisted JSON read model. Every caller resolves from the sources; only the Git common-dir version owner persists. A leftover `.ai/harness/state/effective.json` from an older release has no reader.
-3. `tasks/current.md` is an observed orientation snapshot, never authority. Its bytes may change its own source hash/freshness, `state_revision`/`state_version`, `stale_sources`, and the labeled MCP preview, but never `authority_revision`, task selection, or authoritative plan state.
-4. The public envelope remains `protocol: 1` and `kind: "repo-harness-effective-state"`.
+3. `tasks/current.md` is an observed orientation snapshot, never authority. Its bytes may change its own source hash/freshness, `state_revision`/`state_version` and `stale_sources`, but never `authority_revision` or task selection.
+4. The public envelope is `protocol: 2` and `kind: "repo-harness-effective-state"`. Protocol 1 payloads fail closed with `effective_state_protocol_unsupported`.
 5. `state_revision` is content-derived from the ordered source-hash projection; `state_version` is durable and monotonic for a changed revision and stable for an unchanged revision. `repo-harness state resolve` is the only allocator. Read-only callers report the last allocated version, which can belong to another revision.
 6. Linked worktrees use one Git common-dir version owner rather than independent worktree-local counters. ESA-01 found that the baseline violated this invariant because `git rev-parse --git-path repo-harness/effective-state-version.json` resolved worktree-local paths; ESA-03 corrected it and added concurrent linked-worktree characterization.
 7. Workflow profile resolution is deterministic and fail closed when required risk signals are unavailable, invalid, or below the computed risk floor.
@@ -95,7 +95,7 @@ At `82550779cdccf0575d674ae53bbc95ba63e44743`, `src/cli/hook/state-snapshot.ts` 
 
 1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override; hook and MCP deliberately request the fixed `inspect` policy.
 2. The write path acquires an exclusive directory-token state lock under a canonical repository root. Every ancestor is created and validated one level at a time, and any symlink, non-directory, or identity change fails closed. The read-only path takes no lock.
-3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Every artifact-derived read must also remain lexically and canonically inside the repository; existing external symlinks and missing targets whose nearest existing ancestor resolves outside abort before publication. Only in-repository `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
+3. It reads the worktree marker, policy, capability authority and evidence sources, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Every artifact-derived read must also remain lexically and canonically inside the repository; existing external symlinks and missing targets whose nearest existing ancestor resolves outside abort before publication. Only in-repository `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
 4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected through the policy-selected capability resolver, then pure workflow policy returns a profile or a structured fail-closed error.
 5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. Revision keys use explicit code-unit ordering, not host locale collation. A second read confirms that the exact source-hash set stayed stable.
 6. Under the Git common-dir lock, the write path reads the authority source hashes again. A mismatch retries the whole round once. On a match, an unchanged revision keeps its version and writes nothing, and a changed revision atomically replaces the shared version owner with the next version. An owner write failure consumes no version. The read-only path reads the last published version without the lock.
@@ -106,7 +106,7 @@ At `82550779cdccf0575d674ae53bbc95ba63e44743`, `src/cli/hook/state-snapshot.ts` 
 | Surface | Role | Authority boundary |
 |---|---|---|
 | GitHub issue and PR | current task identity, claim, status, dependency | Human/Bot task decisions |
-| Active plan/worktree markers and plan Markdown | retained local context, ownership, scope and blockers | may affect the local projection; do not replace GitHub task state |
+| Worktree marker | local worktree ownership | may affect the local projection; does not replace GitHub task state |
 | Review and verification evidence | exact-subject acceptance input | owned by review/verification readers; not an Effective State acceptance projection |
 | Handoff/resume | recovery pointers and historical evidence | do not grant task ownership |
 | Policy-selected capability source and workflow policy | ownership and risk input | one resolver per mode; no fallback authority |

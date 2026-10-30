@@ -10,20 +10,18 @@ interface Fixture {
   cleanup(): void;
 }
 
-// Builds a plain (non-git) fixture repo with the two marker files the
-// collector's worktree/active-plan getters read. No git init is needed --
-// neither getter shells out to git; `getWorktreeOwnership` only realpaths
-// the fixture directory and reads the owner marker text.
-function buildFixture(activePlan = 'plans/plan-example.md'): Fixture {
+// Builds a plain (non-git) fixture repo with the worktree marker the
+// collector's ownership getter reads. No git init is needed -- the getter
+// only realpaths the fixture directory and reads the owner marker text.
+function buildFixture(): Fixture {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'state-input-collector-')));
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
-  writeFileSync(join(root, '.ai/harness/active-plan'), `${activePlan}\n`);
   writeFileSync(join(root, '.ai/harness/active-worktree'), `${root}\n`);
   return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-function withFixture(fn: (root: string) => void, activePlan?: string): void {
-  const fixture = buildFixture(activePlan);
+function withFixture(fn: (root: string) => void): void {
+  const fixture = buildFixture();
   try {
     fn(fixture.root);
   } finally {
@@ -51,7 +49,6 @@ function snapshotOf(collector: ReturnType<typeof createStateInputCollector>): un
   return {
     repoRoot: collector.getRepoRoot(),
     worktreeOwnership: collector.getWorktreeOwnership(),
-    activePlanMarker: collector.getActivePlanMarker(),
     effectiveState: collector.getEffectiveState(),
   };
 }
@@ -95,7 +92,6 @@ describe('createStateInputCollector: laziness', () => {
     // construction does hit it, confirming construction truly touched none
     // of them.
     expect(() => collector.getWorktreeOwnership()).toThrow();
-    expect(() => collector.getActivePlanMarker()).toThrow();
     expect(() => collector.getEffectiveState()).toThrow();
     expect(resolveCalls).toBe(1);
   });
@@ -137,7 +133,7 @@ describe('createStateInputCollector: memoization', () => {
     expect(calls).toBe(1);
   });
 
-  test('getWorktreeOwnership and getActivePlanMarker collect at most once each', () => {
+  test('getWorktreeOwnership collects at most once', () => {
     withFixture((root) => {
       const collector = createStateInputCollector({
         repoRoot: root,
@@ -145,16 +141,13 @@ describe('createStateInputCollector: memoization', () => {
       });
 
       const firstOwnership = collector.getWorktreeOwnership();
-      const firstMarker = collector.getActivePlanMarker();
 
-      // Mutate the underlying marker files after the first read. If the
-      // getter re-read on a second call, these calls would observe the new
-      // content; memoization means they must not.
+      // Mutate the underlying marker file after the first read. If the
+      // getter re-read on a second call, this call would observe the new
+      // content; memoization means it must not.
       writeFileSync(join(root, '.ai/harness/active-worktree'), '/tmp/a-different-worktree\n');
-      writeFileSync(join(root, '.ai/harness/active-plan'), 'plans/plan-changed-after-first-read.md\n');
 
       expect(collector.getWorktreeOwnership()).toEqual(firstOwnership);
-      expect(collector.getActivePlanMarker()).toBe(firstMarker);
     });
   });
 });

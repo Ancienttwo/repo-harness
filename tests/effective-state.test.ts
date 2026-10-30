@@ -60,14 +60,6 @@ describe('effective state resolver', () => {
   test('fails closed when artifact-derived paths escape the repository', () => {
     const cases = [
       {
-        name: 'active-plan marker',
-        setup(cwd: string, outsidePath: string, outsideRelative: string) {
-          writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
-          write(cwd, '.ai/harness/active-plan', `${outsideRelative}\n`);
-        },
-        run(cwd: string) { resolveFixtureState(cwd); },
-      },
-      {
         name: 'pending draft path',
         setup(cwd: string, outsidePath: string, outsideRelative: string) {
           writeFileSync(outsidePath, '# Outside draft\n> **Status**: Draft\n');
@@ -113,24 +105,25 @@ describe('effective state resolver', () => {
     })));
   }, 30_000);
 
-  test('fails closed when an in-repo authority path symlinks outside the repository', () => {
+  test('ignores in-repo plan symlinks that point outside the repository', () => {
     if (process.platform === 'win32') return;
     const fixture = createEffectiveStateFixture();
     const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-symlink-plan.md`);
     try {
       writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
-      const linkedPlan = join(fixture.cwd, 'plans/external-plan.md');
-      symlinkSync(outsidePath, linkedPlan);
+      symlinkSync(outsidePath, join(fixture.cwd, 'plans/external-plan.md'));
       write(fixture.cwd, '.ai/harness/active-plan', 'plans/external-plan.md\n');
-      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
-      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+      const state = resolveFixtureState(fixture.cwd);
+      expect(state.protocol).toBe(2);
+      expect(JSON.stringify(state)).not.toContain('plans/external-plan.md');
+      expect(state.source_hashes['.ai/harness/active-plan']).toBeUndefined();
     } finally {
       rmSync(outsidePath, { force: true });
       fixture.cleanup();
     }
   }, 30_000);
 
-  test('fails closed when a missing authority path has an external symlink ancestor', () => {
+  test('ignores a missing plan path below an external symlink ancestor', () => {
     if (process.platform === 'win32') return;
     const fixture = createEffectiveStateFixture();
     const outsideDirectory = join(fixture.cwd, '..', `${basename(fixture.cwd)}-outside-directory`);
@@ -138,40 +131,39 @@ describe('effective state resolver', () => {
       mkdirSync(outsideDirectory);
       symlinkSync(outsideDirectory, join(fixture.cwd, 'plans/external'));
       write(fixture.cwd, '.ai/harness/active-plan', 'plans/external/missing.md\n');
-      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
-      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+      const state = resolveFixtureState(fixture.cwd);
+      expect(state.protocol).toBe(2);
+      expect(JSON.stringify(state)).not.toContain('plans/external/missing.md');
     } finally {
       rmSync(outsideDirectory, { recursive: true, force: true });
       fixture.cleanup();
     }
   }, 30_000);
 
-  test('fails closed when no actual changed or target paths are authoritative', () => {
+  test('defaults to a deterministic inspect resolution when no path or operation is supplied', () => {
     withRepo((cwd) => {
       const state = resolveEffectiveState(cwd);
-      expect(state.workflow_profile).toBeNull();
-      expect(state.risk_floor).toBe('high');
-      expect(state.profile_reasons).toContain('risk-floor:high:signals-unavailable');
-      expect(state.blockers).toContain('workflow_profile:invalid_risk_input');
-      expect(state.phase).toBe('blocked');
+      expect(state.workflow_profile).toBe('routine');
+      expect(state.risk_floor).toBe('routine');
+      expect(state.profile_signals?.operationKind).toBe('inspect');
+      expect(state.blockers).toEqual([]);
+      expect(state.phase).toBe('idle');
     });
   }, 30_000);
 
-  test('steady-state resolution ignores the retired legacy marker', () => {
+  test('plan files and active-plan markers never enter state output', () => {
     withRepo((cwd) => {
       write(cwd, '.claude/.active-plan', 'plans/plan-other.md\n');
       const state = resolveFixtureState(cwd);
-      expect(state.authoritative_plan?.path).toBe(PLAN);
-      expect(state.conflicting_sources).not.toContain('active_plan_markers');
+      expect(state.protocol).toBe(2);
+      expect(Object.hasOwn(state, 'authoritative_plan')).toBe(false);
+      expect(state.task_id).toBeNull();
+      expect(JSON.stringify(state)).not.toContain(PLAN);
+      expect(JSON.stringify(state)).not.toContain('active-plan');
+      expect(state.source_hashes[PLAN]).toBeUndefined();
+      expect(state.source_hashes['.ai/harness/active-plan']).toBeUndefined();
       expect(state.source_hashes['.claude/.active-plan']).toBeUndefined();
-    });
-  }, 30_000);
-
-  test('legacy-only marker is not state authority', () => {
-    withRepo((cwd) => {
-      write(cwd, '.claude/.active-plan', `${PLAN}\n`);
-      rmSync(join(cwd, '.ai/harness/active-plan'));
-      expect(resolveEffectiveState(cwd, Date.now(), { targetPaths: ['src/index.ts'] }).authoritative_plan).toBeNull();
+      expect(state.stale_sources).not.toContain('active_plan_marker');
     });
   }, 30_000);
 
@@ -184,7 +176,7 @@ describe('effective state resolver', () => {
         explicitOverride: 'high',
       });
       expect(state.workflow_profile).toBe('high');
-      expect(state.phase).toBe('executing');
+      expect(state.phase).toBe('idle');
       expect(state.blockers).not.toContain('missing_contract');
     });
   }, 30_000);

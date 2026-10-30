@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { EffectiveState } from '../../src/core/state/types';
+import { decodeEffectiveState, type EffectiveState } from '../../src/core/state/types';
 import {
   resolveStateCommand,
   boardStateCommand,
@@ -9,17 +9,16 @@ import {
 
 function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState {
   return {
-    protocol: 1,
+    protocol: 2,
     kind: 'repo-harness-effective-state',
-    task_id: '20260715-adapter-parity',
-    phase: 'executing',
+    task_id: null,
+    phase: 'idle',
     state_version: 7,
     state_revision: `sha256:${'1'.repeat(64)}`,
     authority_revision: `sha256:${'2'.repeat(64)}`,
     subject_revision: `sha256:${'3'.repeat(64)}`,
     projection_revision: `sha256:${'5'.repeat(64)}`,
     progress_token: `sha256:${'6'.repeat(64)}`,
-    authoritative_plan: { path: 'plans/plan-example.md', status: 'executing' },
     workflow_profile: 'high',
     requested_workflow_profile: 'high',
     risk_floor: 'routine',
@@ -133,6 +132,22 @@ describe('resolveStateCommand', () => {
       stdout: '',
       stderr: 'state lock unavailable\n',
     });
+  });
+
+  test('rejects a protocol-1 Effective State payload', () => {
+    const outcome = resolveStateCommand({}, {
+      repoRoot: '/repo',
+      nowMs: 1234,
+      resolve: () => ({ ...effectiveState(), protocol: 1 }) as unknown as EffectiveState,
+    });
+    expect(outcome).toEqual({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'effective_state_protocol_unsupported\n',
+    });
+    expect(() => decodeEffectiveState({ ...effectiveState(), protocol: 1 }))
+      .toThrow('effective_state_protocol_unsupported');
+    expect(decodeEffectiveState(effectiveState()).protocol).toBe(2);
   });
 });
 

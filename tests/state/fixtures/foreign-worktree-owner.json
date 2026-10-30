@@ -9,7 +9,7 @@
     "stderr": ""
   },
   "state": {
-    "protocol": 1,
+    "protocol": 2,
     "kind": "repo-harness-effective-state",
     "task_id": null,
     "phase": "blocked",
@@ -19,7 +19,6 @@
     "subject_revision": "sha256:afa31343edfe308451aeafc0517c8ee228a915d2cf4798bf391d2cc70e112ebc",
     "projection_revision": "sha256:<dynamic:projection_revision>",
     "progress_token": "sha256:<dynamic:progress_token>",
-    "authoritative_plan": null,
     "workflow_profile": "routine",
     "requested_workflow_profile": null,
     "risk_floor": "routine",
@@ -41,15 +40,12 @@
     "blockers": [
       "conflict:worktree_owner"
     ],
-    "stale_sources": [
-      "current_snapshot"
-    ],
+    "stale_sources": [],
     "conflicting_sources": [
       "worktree_owner"
     ],
     "source_hashes": {
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
-      ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
@@ -74,7 +70,7 @@
     },
     "current_snapshot": {
       "path": "tasks/current.md",
-      "freshness": "stale"
+      "freshness": "fresh"
     }
   },
   "hook": {
@@ -82,13 +78,13 @@
     "kind": "repo-harness-state-snapshot",
     "states": {
       "spec": "present",
-      "plan": "foreign_worktree",
+      "plan": "none",
       "pending": "none",
       "worktree": "foreign_marker",
       "evidence": "unchecked"
     },
     "paths": {
-      "active_plan": "plans/plan-20260712-2327-effective-fixture.md"
+      "active_plan": null
     },
     "marker": {
       "problem": "foreign_worktree"

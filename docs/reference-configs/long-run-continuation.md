@@ -8,7 +8,7 @@ repo-harness ships no scheduler, no daemon, no timer, and no quota or token ledg
 
 One tick, in order:
 
-1. `repo-harness state next --json` — read the opening `ContinuationEnvelopeV1` and retain its `progress_token` as `$BEFORE`.
+1. `repo-harness state next --json` — read the opening `ContinuationEnvelopeV2` and retain its `progress_token` as `$BEFORE`.
 2. Execute **at most one bounded unit**, per the envelope's route (table below).
 3. Run the targeted checks or the acceptance gate that the unit requires.
 4. Finish the unit, or record the halt.
@@ -18,20 +18,19 @@ One tick, in order:
 
 Rules that make the tick safe to repeat:
 
-- `state next` is read-only and deterministic. Identical repo bytes and identical receipt ledger bytes yield byte-identical JSON; it never creates a plan, contract, or worktree, and never advances the sprint. The closing envelope is sampled before its turn receipt exists; only the post-receipt envelope can observe that receipt and trip the breaker.
+- `state next` is read-only and deterministic. Identical repo bytes and identical receipt ledger bytes yield byte-identical JSON; it never creates a workflow artifact or worktree. The closing envelope is sampled before its turn receipt exists; only the post-receipt envelope can observe that receipt and trip the breaker.
 - One tick executes one unit or one halt — never two units, never a unit plus a "while I am here" extra.
-- The tick's working directory is the unit's own worktree. `.ai/harness/active-worktree` is per-tree runtime state, so running `state next` in the primary tree describes the primary tree, not the in-flight contract.
+- The tick's working directory is the unit's own worktree. `.ai/harness/active-worktree` is per-tree runtime state, so running `state next` in the primary tree describes the primary tree, not the in-flight issue branch.
 
 ## Per-Route Host Action
 
 | Route | Meaning | Host action |
 |---|---|---|
-| `continue_active_plan` | The active plan has an open task; `reason` carries `next_action:<step>` | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next task |
-| `verify_or_finish` | The active plan's tasks are all checked off | Run the checks required by the current task. Record the result in the GitHub PR. |
-| `halt` | A blocker, an unapproved or missing plan, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
-| `idle` | No active plan | Stop the loop |
+| `continue` | A fresh handoff names the exact next step; `reason` carries `next_action:<step>` and `unit_ref` is a stable hash of that next action, so projection-only edits do not reset the stall group | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next step |
+| `halt` | A blocker, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
+| `idle` | No next action is available | Stop the loop |
 
-`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `plan_status:<status>`, `stale:active_plan_marker`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker, the contract's Stop Conditions, or the handoff.
+`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker or the handoff.
 
 ## Attempt Receipts
 
@@ -70,7 +69,7 @@ A closeout ownership conflict is a helper-level refusal, not an envelope halt re
 |---|---|
 | `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
 | `attempt_ledger_unreadable` | Run `repo-harness state attempt-repair --json`. It moves an unterminated last line (a torn append) to `attempts.torn-<ms>` beside the ledger and truncates the ledger to its last complete receipt. `state attempt` refuses to append until this repair runs. If `ledger_status` is still `unreadable`, `unreadable_line` names a malformed complete line: inspect `.ai/harness/runs/continuation/attempts.jsonl` and remove that line by hand. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
-| `blockers:*`, `plan_status:*`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State vocabulary; the envelope does not add remedies of its own |
+| `blockers:*` | Fix the named authority artifact. These are the existing Effective State vocabulary; the envelope does not add remedies of its own |
 
 ## The Receipt-Invisibility Invariant
 

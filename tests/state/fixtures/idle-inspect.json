@@ -9,7 +9,7 @@
     "stderr": ""
   },
   "state": {
-    "protocol": 1,
+    "protocol": 2,
     "kind": "repo-harness-effective-state",
     "task_id": null,
     "phase": "idle",
@@ -19,7 +19,6 @@
     "subject_revision": "sha256:afa31343edfe308451aeafc0517c8ee228a915d2cf4798bf391d2cc70e112ebc",
     "projection_revision": "sha256:<dynamic:projection_revision>",
     "progress_token": "sha256:<dynamic:progress_token>",
-    "authoritative_plan": null,
     "workflow_profile": "routine",
     "requested_workflow_profile": null,
     "risk_floor": "routine",
@@ -39,13 +38,10 @@
     "next_action": null,
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
-    "stale_sources": [
-      "current_snapshot"
-    ],
+    "stale_sources": [],
     "conflicting_sources": [],
     "source_hashes": {
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
-      ".ai/harness/active-plan": "sha256:19dfd7499d1dadc4f31d45ec03d9bbfa2ea2ba701e10e1b6dd836330582b3047",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
@@ -70,7 +66,7 @@
     },
     "current_snapshot": {
       "path": "tasks/current.md",
-      "freshness": "stale"
+      "freshness": "fresh"
     }
   },
   "hook": {

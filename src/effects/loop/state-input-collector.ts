@@ -1,7 +1,6 @@
 import type { EffectiveState } from '../../core/state/types';
 import { readTrimmed, safeRealpath } from '../state/collect-state-inputs';
 
-const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 
 /**
@@ -41,8 +40,6 @@ export interface StateInputCollectorDeps {
 export interface StateInputCollector {
   getRepoRoot(): string;
   getWorktreeOwnership(): WorktreeOwnership;
-  /** Raw `.ai/harness/active-plan` marker text, or null when absent. */
-  getActivePlanMarker(): string | null;
   /** Resolves Effective State at most once per event. */
   getEffectiveState(): EffectiveStateResolution;
 }
@@ -68,13 +65,11 @@ export function createStateInputCollector(deps: StateInputCollectorDeps): StateI
       ownedByCurrent: Boolean(owner && safeRealpath(owner) === current),
     };
   });
-  const getActivePlanMarker = once(() => readTrimmed(deps.repoRoot, ACTIVE_PLAN_MARKER));
   const getEffectiveState = once(deps.resolveEffectiveState);
 
   return {
     getRepoRoot: () => deps.repoRoot,
     getWorktreeOwnership,
-    getActivePlanMarker,
     getEffectiveState,
   };
 }

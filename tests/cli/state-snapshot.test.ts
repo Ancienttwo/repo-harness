@@ -59,7 +59,7 @@ describe('state-snapshot hook command', () => {
     });
   }, 30_000);
 
-  test('reads an active plan without opening its retired contract path', () => {
+  test('ignores an active plan and its retired contract path', () => {
     withTempRepo((cwd) => {
       const plan = 'plans/plan-20261018-1200-snapshot.md';
       mkdirSync(join(cwd, 'plans'), { recursive: true });
@@ -67,8 +67,9 @@ describe('state-snapshot hook command', () => {
       writeFileSync(join(cwd, plan), '# Plan: Snapshot\n\n> **Status**: Draft\n');
       writeFileSync(join(cwd, '.ai/harness/active-plan'), `${plan}\n`);
       const snapshot = runSnapshot(cwd);
-      expect(snapshot.states.plan).toBe('draft');
-      expect(snapshot.paths).toEqual({ active_plan: plan });
+      expect(snapshot.states.plan).toBe('none');
+      expect(snapshot.paths).toEqual({ active_plan: null });
+      expect(JSON.stringify(snapshot)).not.toContain(plan);
       expect(snapshot.states).not.toHaveProperty('contract');
       expect(snapshot.states).not.toHaveProperty('contract_path');
     });

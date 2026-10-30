@@ -198,7 +198,6 @@ describe("buildSessionStartSections", () => {
     next_action: null,
     guidance: null,
     blockers: [],
-    authoritative_plan: null,
     capability_ownership: null,
     handoff: { path: ".ai/harness/handoff/current.md", freshness: "missing" },
     resume: { path: RESUME, freshness: "missing" },

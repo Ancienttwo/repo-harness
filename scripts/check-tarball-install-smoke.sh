@@ -70,7 +70,7 @@ const required = [
   "scripts/capability-config.ts",
   "scripts/change-assessment.ts",
   "scripts/runtime-evidence-receipt.ts",
-  "interfaces/effective-state-v1.ts",
+  "interfaces/effective-state-v2.ts",
   "interfaces/types.ts",
   "scripts/verification-plan.ts",
   "scripts/migrate-verification-plan.ts",
@@ -288,8 +288,8 @@ bun - "$TMP_DIR/effective-state.json" "$TMP_DIR/state-snapshot.json" <<'JS_EOF'
 const [, , statePath, snapshotPath] = process.argv;
 const state = await Bun.file(statePath).json();
 const snapshot = await Bun.file(snapshotPath).json();
-if (state.protocol !== 1 || state.kind !== "repo-harness-effective-state") {
-  console.error("[tarball-smoke] ERROR: packed CLI state resolver did not return Effective State v1");
+if (state.protocol !== 2 || state.kind !== "repo-harness-effective-state") {
+  console.error("[tarball-smoke] ERROR: packed CLI state resolver did not return Effective State v2");
   process.exit(1);
 }
 if (snapshot.protocol !== 1 || snapshot.kind !== "repo-harness-state-snapshot") {
@@ -337,8 +337,6 @@ const fields = [
   "requested_workflow_profile",
   "risk_floor",
   "profile_reasons",
-  "authoritative_plan",
-  "contract",
   "blockers",
   "stale_sources",
   "conflicting_sources",
@@ -351,12 +349,13 @@ for (const field of fields) {
   }
 }
 if (
-  mcp.current !== null ||
-  mcp.current_preview !== null ||
-  mcp.current_authority !== "non-authoritative-projection" ||
+  Object.hasOwn(mcp, "authoritative_plan") ||
+  Object.hasOwn(mcp, "current") ||
+  Object.hasOwn(mcp, "current_preview") ||
+  Object.hasOwn(mcp, "current_authority") ||
   mcp.status?.profile_authority !== "mcp-policy"
 ) {
-  console.error("[tarball-smoke] ERROR: MCP compact state obscured projection authority");
+  console.error("[tarball-smoke] ERROR: MCP compact state exposed a retired plan or current projection");
   process.exit(1);
 }
 JS_EOF

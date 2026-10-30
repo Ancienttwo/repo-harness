@@ -1,9 +1,6 @@
-import type { EffectiveStateV1 } from '../../core/state/types';
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { decodeEffectiveState, type EffectiveStateV2 } from '../../core/state/types';
 import { resolveEffectiveStateReadOnly } from '../../effects/state/resolve-effective-state';
 import { currentGitBranch, isRepoHarnessAdopted } from './repo';
-import { redactMcpText } from './redaction';
 import type { McpProfileName } from './types';
 
 export const STATE_SUMMARY_TOOL_NAME = 'summarize_repo_harness_state';
@@ -16,22 +13,21 @@ export interface StateToolDefinition {
 }
 
 export interface CompactEffectiveState {
-  readonly protocol: EffectiveStateV1['protocol'];
-  readonly kind: EffectiveStateV1['kind'];
-  readonly task_id: EffectiveStateV1['task_id'];
-  readonly phase: EffectiveStateV1['phase'];
-  readonly state_version: EffectiveStateV1['state_version'];
-  readonly state_revision: EffectiveStateV1['state_revision'];
-  readonly workflow_profile: EffectiveStateV1['workflow_profile'];
-  readonly requested_workflow_profile: EffectiveStateV1['requested_workflow_profile'];
-  readonly risk_floor: EffectiveStateV1['risk_floor'];
-  readonly profile_reasons: EffectiveStateV1['profile_reasons'];
-  readonly authoritative_plan: EffectiveStateV1['authoritative_plan'];
-  readonly blockers: EffectiveStateV1['blockers'];
-  readonly stale_sources: EffectiveStateV1['stale_sources'];
-  readonly conflicting_sources: EffectiveStateV1['conflicting_sources'];
-  readonly next_action: EffectiveStateV1['next_action'];
-  readonly guidance: EffectiveStateV1['guidance'];
+  readonly protocol: EffectiveStateV2['protocol'];
+  readonly kind: EffectiveStateV2['kind'];
+  readonly task_id: EffectiveStateV2['task_id'];
+  readonly phase: EffectiveStateV2['phase'];
+  readonly state_version: EffectiveStateV2['state_version'];
+  readonly state_revision: EffectiveStateV2['state_revision'];
+  readonly workflow_profile: EffectiveStateV2['workflow_profile'];
+  readonly requested_workflow_profile: EffectiveStateV2['requested_workflow_profile'];
+  readonly risk_floor: EffectiveStateV2['risk_floor'];
+  readonly profile_reasons: EffectiveStateV2['profile_reasons'];
+  readonly blockers: EffectiveStateV2['blockers'];
+  readonly stale_sources: EffectiveStateV2['stale_sources'];
+  readonly conflicting_sources: EffectiveStateV2['conflicting_sources'];
+  readonly next_action: EffectiveStateV2['next_action'];
+  readonly guidance: EffectiveStateV2['guidance'];
 }
 
 export interface StateSummaryResult extends CompactEffectiveState {
@@ -43,22 +39,13 @@ export interface StateSummaryResult extends CompactEffectiveState {
     readonly profile_authority: 'mcp-policy';
     readonly mcp_policy_profile: McpProfileName;
   };
-  /** Existing 0.10.x display projection; never consumed as state authority. */
-  readonly current: string | null;
-  readonly current_authority: 'non-authoritative-projection';
-  /** Additive label that makes the legacy display projection's status explicit. */
-  readonly current_preview: {
-    readonly source: 'tasks/current.md';
-    readonly authority: 'non-authoritative-projection';
-    readonly text: string;
-  } | null;
 }
 
 export type StateToolResolver = (
   repoRoot: string,
   nowMs: number,
   risk: { readonly targetPaths: readonly string[]; readonly operationKind: 'inspect' },
-) => EffectiveStateV1;
+) => EffectiveStateV2;
 
 export interface StateToolContext {
   readonly repoRoot: string;
@@ -70,13 +57,6 @@ export interface StateToolDependencies {
   readonly resolve?: StateToolResolver;
   readonly isAdopted?: (repoRoot: string) => boolean;
   readonly branch?: (repoRoot: string) => string | null;
-}
-
-function readCurrentPreview(repoRoot: string): string | null {
-  const path = join(repoRoot, 'tasks/current.md');
-  if (!existsSync(path)) return null;
-  const preview = readFileSync(path, 'utf-8').split(/\r?\n/).slice(0, 50).join('\n');
-  return preview ? redactMcpText(preview).text : null;
 }
 
 export function buildStateToolDefinitions(): StateToolDefinition[] {
@@ -101,7 +81,7 @@ export function isStateTool(name: string): name is typeof STATE_SUMMARY_TOOL_NAM
   return name === STATE_SUMMARY_TOOL_NAME;
 }
 
-export function projectCompactEffectiveState(state: EffectiveStateV1): CompactEffectiveState {
+export function projectCompactEffectiveState(state: EffectiveStateV2): CompactEffectiveState {
   return {
     protocol: state.protocol,
     kind: state.kind,
@@ -113,7 +93,6 @@ export function projectCompactEffectiveState(state: EffectiveStateV1): CompactEf
     requested_workflow_profile: state.requested_workflow_profile,
     risk_floor: state.risk_floor,
     profile_reasons: state.profile_reasons,
-    authoritative_plan: state.authoritative_plan,
     blockers: state.blockers,
     stale_sources: state.stale_sources,
     conflicting_sources: state.conflicting_sources,
@@ -129,11 +108,10 @@ export function callStateTool(
 ): StateSummaryResult {
   if (!isStateTool(name)) throw new Error(`unknown state tool: ${name}`);
   const resolve = deps.resolve ?? resolveEffectiveStateReadOnly;
-  const effective = resolve(ctx.repoRoot, ctx.nowMs ?? Date.now(), {
+  const effective = decodeEffectiveState(resolve(ctx.repoRoot, ctx.nowMs ?? Date.now(), {
     targetPaths: [],
     operationKind: 'inspect',
-  });
-  const current = readCurrentPreview(ctx.repoRoot);
+  }));
   return {
     ...projectCompactEffectiveState(effective),
     status: {
@@ -142,13 +120,6 @@ export function callStateTool(
       profile: ctx.mcpPolicyProfile,
       profile_authority: 'mcp-policy',
       mcp_policy_profile: ctx.mcpPolicyProfile,
-    },
-    current,
-    current_authority: 'non-authoritative-projection',
-    current_preview: current === null ? null : {
-      source: 'tasks/current.md',
-      authority: 'non-authoritative-projection',
-      text: current,
     },
   };
 }

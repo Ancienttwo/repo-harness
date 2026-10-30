@@ -247,7 +247,8 @@ describe('Stop recovery and safety invariants', () => {
       runStopHandler({ collector: collector(retryRoot), dependencies: { now: () => retryNow } });
       const normalize = (artifacts: Record<string, string>) => Object.fromEntries(Object.entries(artifacts)
         .map(([key, value]) => [key, value.replaceAll(retryRoot, '<repo>').replaceAll(baselineRoot, '<repo>')
-          .replace(/Content hash: sha256:[0-9a-f]+/g, 'Content hash: <normalized>')]));
+          .replace(/Content hash: sha256:[0-9a-f]+/g, 'Content hash: <normalized>')
+          .replace(/HEAD: [0-9a-f]{40}/g, 'HEAD: <normalized>')]));
       expect(normalize(stopArtifacts(retryRoot))).toEqual(normalize(baseline));
     }
   }, 60_000);

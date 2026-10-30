@@ -8,7 +8,6 @@ import {
   type CapabilityOwnershipBlocker,
 } from '../capabilities/ownership-blocker';
 import {
-  firstOpenTask,
   markdownBullet,
   markdownHeader,
   parseIsoOrLocalTimestamp,
@@ -17,7 +16,6 @@ import type {
   CapabilityOwnership,
   EffectiveState,
   FreshnessState,
-  SnapshotPlanState,
 } from './types';
 
 const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
@@ -27,10 +25,6 @@ const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
 
 export interface EffectiveStateInputs {
   readonly nowMs: number;
-  readonly taskId: string | null;
-  readonly planPath: string | null;
-  readonly planStatus: SnapshotPlanState;
-  readonly planText: string | null;
   readonly riskResolution: WorkflowProfileResult;
   readonly requestedWorkflowProfile: string | null;
   readonly capabilityReasons: readonly string[];
@@ -61,37 +55,20 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-// The audit's progress-token recipe wants "completed task markers derived
-// from the plan text" (plans/sprints/20260715-harness-loop-audit-and-optimization.md:834-844).
-// This repo's plans have no formal task-id scheme, so each completed
-// checkbox line stands in as its own stable marker: it changes only when a
-// task is actually checked off (or its recorded line changes), never when an
-// open task's wording changes or projection files are rewritten.
-function completedTaskMarkers(planText: string | null): string[] {
-  if (!planText) return [];
-  return (planText.match(/^\s*- \[[xX]\]\s+.+$/gm) ?? []).map((line) => line.trim());
-}
-
 /** Pure projection over already-read repository content and effect observations. */
 export function projectEffectiveState(input: EffectiveStateInputs): EffectiveState {
   const staleSources = [...input.staleSources];
   const conflictingSources = [...input.conflictingSources];
-  const handoffTaskId = input.handoffText
-    ? markdownHeader(input.handoffText, 'Task ID') ?? markdownBullet(input.handoffText, 'Task ID')
-    : null;
   const handoffRevision = input.handoffText
     ? markdownHeader(input.handoffText, 'Source State Revision') ?? markdownBullet(input.handoffText, 'Source State Revision')
     : null;
   const handoffFreshness: FreshnessState = !input.handoffText
     ? 'missing'
-    : input.taskId && handoffTaskId === input.taskId && handoffRevision === input.authorityRevision
+    : handoffRevision === input.authorityRevision
       ? 'fresh'
       : 'stale';
   if (handoffFreshness === 'stale') staleSources.push('handoff');
 
-  const resumeTaskId = input.resumeText
-    ? markdownHeader(input.resumeText, 'Task ID') ?? markdownBullet(input.resumeText, 'Task ID')
-    : null;
   const resumeRevision = input.resumeText
     ? markdownHeader(input.resumeText, 'Source State Revision') ?? markdownBullet(input.resumeText, 'Source State Revision')
     : null;
@@ -100,25 +77,18 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     : null;
   const resumeFreshness: FreshnessState = !input.resumeText
     ? 'missing'
-    : input.taskId &&
-        resumeTaskId === input.taskId &&
-        resumeRevision === input.authorityRevision &&
+    : resumeRevision === input.authorityRevision &&
         resumeHandoffHash === input.sourceHashes[input.handoffPath]
       ? 'fresh'
       : 'stale';
   if (resumeFreshness === 'stale') staleSources.push('resume');
 
-  const currentPlan = input.currentSnapshotText
-    ? markdownBullet(input.currentSnapshotText, 'Active Plan')
-    : null;
   const currentUpdated = input.currentSnapshotText
     ? parseIsoOrLocalTimestamp(markdownHeader(input.currentSnapshotText, 'Updated At'))
     : null;
   const currentFreshness: FreshnessState = !input.currentSnapshotText
     ? 'missing'
-    : currentUpdated !== null &&
-        input.nowMs - currentUpdated <= 24 * 60 * 60 * 1000 &&
-        ((!input.planPath && (!currentPlan || currentPlan === '(none)')) || currentPlan === input.planPath)
+    : currentUpdated !== null && input.nowMs - currentUpdated <= 24 * 60 * 60 * 1000
       ? 'fresh'
       : 'stale';
   if (currentFreshness === 'stale') staleSources.push('current_snapshot');
@@ -135,28 +105,23 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   // recipe. It composes revisions and values the resolver/projector already
   // computed -- no re-hashing of source content, no projection, time, or PID
   // input -- so rendering-only churn (handoff/resume/current-snapshot) can
-  // never move it, only real subject/task/blocker progress can.
+  // never move it, only real subject or blocker progress can.
   const progressToken = `sha256:${createHash('sha256').update(JSON.stringify({
     subject_revision: input.subjectRevision,
-    completed_task_markers: completedTaskMarkers(input.planText),
     hard_blockers: blockers,
   })).digest('hex')}`;
 
-  const phase = blockers.length > 0
-    ? 'blocked'
-    : input.planPath ? input.planStatus : 'idle';
+  const phase = blockers.length > 0 ? 'blocked' : 'idle';
   const nextAction = blockers.length > 0
     ? input.capabilityBlocker ? capabilityOwnershipNextAction(input.capabilityBlocker) : 'resolve blockers'
-    : firstOpenTask(input.planText) ?? (
-      handoffFreshness === 'fresh' && input.handoffText
-        ? markdownBullet(input.handoffText, 'Exact Next Step')
-        : null
-    );
+    : handoffFreshness === 'fresh' && input.handoffText
+      ? markdownBullet(input.handoffText, 'Exact Next Step')
+      : null;
 
   return {
-    protocol: 1,
+    protocol: 2,
     kind: 'repo-harness-effective-state',
-    task_id: input.taskId,
+    task_id: null,
     phase,
     state_version: input.stateVersion,
     state_revision: input.stateRevision,
@@ -164,9 +129,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     subject_revision: input.subjectRevision,
     projection_revision: input.projectionRevision,
     progress_token: progressToken,
-    authoritative_plan: input.planPath
-      ? { path: input.planPath, status: input.planStatus }
-      : null,
     workflow_profile: workflowProfile,
     requested_workflow_profile: input.requestedWorkflowProfile,
     risk_floor: input.riskResolution.riskFloor,
