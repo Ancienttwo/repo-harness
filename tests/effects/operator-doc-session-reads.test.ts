@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
+import { DOC_SESSION_PATCH_MAX_BYTES, docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
 import {
   docSessionDiffSha256, docSessionGitRunner, docSessionLossSha256, observeDocSessionChanges, observeDocSessionLoss, resolveDocSession,
@@ -46,13 +46,19 @@ interface Session {
  * the production route inventory, so the reads run in the
  * bounded task-read child as in `operator serve`.
  */
-async function session(): Promise<Session> {
+async function session(prepare?: (repo: string) => void, gitBin?: string): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
   writeFileSync(join(repo, 'docs', 'old.md'), 'old\n');
   writeFileSync(join(repo, '.gitignore'), '*.log\n');
-  commitAll(repo, 'docs');
+  if (prepare) {
+    prepare(repo);
+    git(['add', '.'], repo);
+    // Large unchanged-tree fixtures must not overflow the setup command's
+    // stdout buffer with Git's per-file commit summary.
+    git(['commit', '--quiet', '-m', 'docs'], repo);
+  } else commitAll(repo, 'docs');
   git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
   const home = tmpWorkspace('doc-session-reads-home');
   const worktrees = realpathSync(tmpWorkspace('doc-session-reads-worktrees'));
@@ -66,7 +72,8 @@ async function session(): Promise<Session> {
   }] }));
   mkdirSync(join(userHome, '.repo-harness'), { recursive: true });
   writeFileSync(join(userHome, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: ['codex'], uses: { docs: ['codex'], review: [] }, default_docs: null } }));
-  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
+  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees,
+    ...(gitBin === undefined ? {} : { REPO_HARNESS_GIT_BIN: gitBin }) };
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
@@ -289,6 +296,127 @@ test.each(['changed', 'stat-only', 'racy'])('filter admission precedes every con
   expect(executions).toEqual([0, 0, 0, 0]);
 });
 
+test.each(['staged', 'committed'])('a %s populated gitlink is refused before its nested clean filter can run', async state => {
+  const s = await session();
+  // The fixture owner installs this state, including both indexes and the
+  // nested config. The docs host cannot create .git entries or edit an index.
+  const nested = join(s.worktree, 'docs', 'nested');
+  mkdirSync(nested);
+  initGitRepo(nested);
+  writeFileSync(join(nested, 'guide.md'), 'before\n');
+  writeFileSync(join(nested, '.gitignore'), '*.log\n');
+  writeFileSync(join(nested, '.gitattributes'), 'guide.md filter=marker\n');
+  commitAll(nested, 'nested docs');
+  const oid = git(['rev-parse', 'HEAD'], nested).trim();
+  git(['update-index', '--add', '--cacheinfo', `160000,${oid},docs/nested`], s.worktree);
+  if (state === 'committed') git(['commit', '-m', 'nested gitlink'], s.worktree);
+  git(['config', 'filter.marker.clean', 'printf x >> filter-marker.log; cat'], nested);
+  // Keep the size: status must compare the bytes, not just detect a size change.
+  writeFileSync(join(nested, 'guide.md'), 'after!\n');
+  const marker = join(nested, 'filter-marker.log');
+  const executions: number[] = [];
+  for (const effect of [readDocSessionDiff, readDocSessionLoss]) {
+    writeFileSync(marker, '');
+    expect(() => effect(s.env, s.sid)).toThrow('path_unsupported');
+    executions.push(readFileSync(marker).length);
+  }
+  for (const route of [diffOf, lossOf]) {
+    writeFileSync(marker, '');
+    expect(await route(s)).toMatchObject({ status: 422, body: { code: 'path_unsupported' } });
+    executions.push(readFileSync(marker).length);
+  }
+  expect(executions).toEqual([0, 0, 0, 0]);
+});
+
+test('filter admission handles bounded path lists whose attribute replies exceed the single-command buffer', async () => {
+  const pathAt = (index: number) => `capacity/${String(index).padStart(5, '0')}-${'x'.repeat(35)}.md`;
+  const pathBytes = Buffer.byteLength(`${pathAt(0)}\0`);
+  const replyBytes = pathBytes + Buffer.byteLength('filter\0unspecified\0');
+  const count = Math.floor(DOC_SESSION_PATCH_MAX_BYTES / replyBytes) + 1;
+  expect(count * pathBytes).toBeLessThan(DOC_SESSION_PATCH_MAX_BYTES);
+  expect(count * replyBytes).toBeGreaterThan(DOC_SESSION_PATCH_MAX_BYTES);
+  const s = await session(repo => {
+    // Unchanged repository paths outside docs also participate in admission.
+    // Keep the independent DocsReader tree cap out of this fixture.
+    mkdirSync(join(repo, 'capacity'));
+    for (let index = 0; index < count; index += 1) writeFileSync(join(repo, pathAt(index)), 'same\n');
+  });
+  const beforeDiff = await diffOf(s);
+  const beforeLoss = await lossOf(s);
+  expect(beforeDiff.status).toBe(200);
+  expect(beforeLoss.status).toBe(200);
+  git(['config', 'filter.marker.clean', 'printf x >> filter-marker.log; cat'], s.repo);
+  const marker = join(s.worktree, 'filter-marker.log');
+  // An unused installed driver must not change either observation or digest.
+  const afterDiff = await diffOf(s);
+  const afterLoss = await lossOf(s);
+  expect(afterDiff.status).toBe(200);
+  expect(afterLoss.status).toBe(200);
+  expect(afterDiff.body.diff_sha256).toBe(beforeDiff.body.diff_sha256);
+  expect(afterLoss.body.loss_sha256).toBe(beforeLoss.body.loss_sha256);
+
+  // Matching paths near the end of the tracked list, and then the untracked
+  // list, must still be checked. Neither refusal may run the configured filter.
+  for (const path of [pathAt(count - 1), 'docs/zz-untracked.md']) {
+    writeFileSync(join(s.worktree, path), 'changed\n');
+    writeFileSync(join(s.worktree, '.gitattributes'), `${path} filter=marker\n`);
+    writeFileSync(marker, '');
+    expect(await diffOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+    expect(await lossOf(s)).toMatchObject({ status: 422, body: { code: 'filters_unsupported' } });
+    expect(readFileSync(marker).length).toBe(0);
+  }
+});
+
+test('index admission preserves the name-list capacity for unchanged short paths', async () => {
+  // 75,000 mode records would exceed 512 KiB, while the existing name and
+  // hidden-entry lists fit. Avoid case aliases and Windows reserved names.
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789!#$%&()+,-;=@[]^_{}~';
+  const names: string[] = [];
+  for (const a of alphabet) for (const b of alphabet) for (const c of alphabet) {
+    const name = `${a}${b}${c}`;
+    if (names.length < 75_000 && !['aux', 'con', 'nul', 'prn'].includes(name)) names.push(name);
+  }
+  expect(names.length * 7).toBeGreaterThan(DOC_SESSION_PATCH_MAX_BYTES);
+  expect(names.length * 6).toBeLessThan(DOC_SESSION_PATCH_MAX_BYTES);
+  const s = await session(repo => {
+    for (const name of names) writeFileSync(join(repo, name), '');
+  });
+  expect(await diffOf(s)).toMatchObject({ status: 200, body: { files: [], patch: '' } });
+});
+
+test('session reads use the portable staged-index interface without ls-files format fields', async () => {
+  // This is an option-surface constraint around real Git, not an old Git
+  // emulator. Every accepted command executes Git against the actual fixture.
+  const realGit = Bun.which('git');
+  expect(realGit).not.toBeNull();
+  const root = tmpWorkspace('doc-session-portable-git');
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+  const wrapper = join(root, 'git');
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const observed = join(root, 'stage-reads');
+  writeFileSync(observed, '');
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    'is_ls_files=0',
+    'for arg do if [ "$arg" = ls-files ]; then is_ls_files=1; fi; done',
+    'if [ "$is_ls_files" = 1 ]; then',
+    '  for arg do',
+    '    case "$arg" in',
+    '      --format*) echo "unsupported ls-files format" >&2; exit 129 ;;',
+    `      --stage) printf x >> ${quote(observed)} ;;`,
+    '    esac',
+    '  done',
+    'fi',
+    `exec ${quote(realGit!)} "$@"`,
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const s = await session(undefined, wrapper);
+  writeFileSync(join(s.worktree, 'docs', 'guide.md'), `${GUIDE}Changed.\n`);
+  expect(await diffOf(s)).toMatchObject({ status: 200, body: { files: [{ path: 'docs/guide.md', status: 'modified' }] } });
+  expect(await lossOf(s)).toMatchObject({ status: 200, body: { files: [{ path: 'docs/guide.md', status: 'modified' }] } });
+  expect(readFileSync(observed).length).toBeGreaterThan(0);
+});
+
 test.each(['edit', 'add', 'mode'])('the loss digest binds ignored leaves when they %s inside an existing directory', async action => {
   const s = await session();
   writeFileSync(join(s.worktree, '.gitignore'), '*.log\ndocs/cache/\n');
@@ -317,6 +445,24 @@ test('ignored leaves count toward the loss cap and ignored symlinks are never fo
   for (let index = 0; index < 1000; index += 1) writeFileSync(join(s.worktree, 'docs', 'cache', `${index}.md`), 'x\n');
   // The changed .gitignore plus 1000 leaves exceeds the existing loss limit.
   expect(await lossOf(s)).toMatchObject({ status: 413, body: { code: 'too_large' } });
+});
+
+test('empty ignored directories at the loss cap remain readable; exceeding it refuses too_large through HTTP and CLI', async () => {
+  const s = await session();
+  for (let index = 0; index < 1000; index += 1) mkdirSync(join(s.worktree, 'docs', `${index}.log`));
+  const atLimit = await lossOf(s);
+  expect(atLimit.status).toBe(200);
+  expect(atLimit.body.ignored).toHaveLength(1000);
+  expect(atLimit.body.files).toEqual([]);
+
+  mkdirSync(join(s.worktree, 'docs', 'overflow.log'));
+  const overLimit = await lossOf(s);
+  expect(overLimit).toMatchObject({ status: 413, body: { code: 'too_large' } });
+  expectNoPrivatePath(s, overLimit.text);
+  const cli = s.cli('loss', s.sid, '--json');
+  expect(cli.status).toBe(2);
+  expect(cli.stdout).toBe('');
+  expect(JSON.parse(cli.stderr as string)).toEqual({ error: { code: 'too_large' } });
 });
 
 test.each(['modified', 'added', 'deleted'])('staged-only %s data changes the loss digest and public list', async status => {

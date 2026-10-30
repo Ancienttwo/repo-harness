@@ -30,7 +30,7 @@ const QUESTIONS = {
 };
 
 export function paneStatusRequest(state, model = 'clef-flash') {
-  if (!['clef-flash', 'clef'].includes(model) || !['claude', 'codex'].includes(state.agent)
+  if (!['clef-flash', 'clef'].includes(model) || !['claude', 'codex', 'pi'].includes(state.agent)
     || state.herdr_status !== 'done' || typeof state.pane_title !== 'string'
     || !Number.isInteger(state.tail_lines) || state.tail_lines < 0 || state.tail_lines > 120
     || typeof state.tail_truncated !== 'boolean' || typeof state.tail !== 'string'

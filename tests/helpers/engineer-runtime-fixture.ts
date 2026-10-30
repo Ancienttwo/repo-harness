@@ -10,6 +10,7 @@ import { observeAgentRuntimeEndpoint } from '../../src/effects/engineers/agent-r
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage } from '../../src/effects/fleet/task-inbox';
 import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
+import type { ExecutionHost } from '../../src/core/operator/execution-state';
 
 /** In-process Herdr transport double for one task agent. The test process is the
  * observed provider. The caller restores the returned spy. */
@@ -71,11 +72,12 @@ export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, t
 export interface EngineerRuntimeFixtureOptions {
   authorityHome: string; task?: string; role?: string; claim?: TaskClaimReference;
   repositoryId?: string; issueId?: string;
+  harness_kind?: ExecutionHost;
 }
 /** Public binding lifecycle with injected offline transport; no live service is claimed. */
 export async function bindTaskRuntimeFixture(root: string, options: EngineerRuntimeFixtureOptions, engineerId?: string) {
   const task = options.task ?? '1'.repeat(64), role = options.role ?? 'deep-reasoner';
-  const spec = { task, role, harness_kind: 'codex' };
+  const spec = { task, role, harness_kind: options.harness_kind ?? 'codex' };
   const approved = seedReviewAdmissionFixture(root, options.authorityHome, { repositoryId: options.repositoryId, issueId: options.issueId });
   const selected = engineerId === undefined ? undefined : loadEngineerProfile(root, engineerId);
   const profile = selected === undefined ? undefined : { engineer_id: selected.profile.engineer_id, engineer_contract_revision: selected.engineer_contract_revision };

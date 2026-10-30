@@ -8,7 +8,7 @@ import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lo
 
 const runFile = promisify(execFile);
 const LOG_LIMIT = 20 * 1024 * 1024;
-interface BlindRecord { event_id: string; agent: 'claude' | 'codex'; herdr_status: 'done'; tail: string | null }
+interface BlindRecord { event_id: string; agent: 'claude' | 'codex' | 'pi'; herdr_status: 'done'; tail: string | null }
 interface Label { event_id: string; label: PaneOption; labeler: 'bot'; ts: string }
 
 function readPrivate(path: string, limit: number, optional = false): string {
@@ -44,7 +44,7 @@ function shadowRecords(dir: string): BlindRecord[] {
   return readPrivate(join(dir, 'decision-shadow.jsonl'), LOG_LIMIT).split('\n').filter(Boolean).map(line => {
     const record = JSON.parse(line);
     if (typeof record.event_id !== 'string' || !/^[a-f0-9-]{36}$/.test(record.event_id) || seen.has(record.event_id)
-      || !['claude', 'codex'].includes(record.agent) || record.herdr_status !== 'done'
+      || !['claude', 'codex', 'pi'].includes(record.agent) || record.herdr_status !== 'done'
       || !((record.tail === null && record.tail_sha256 === null) || (typeof record.tail === 'string' && Buffer.byteLength(record.tail) <= 16 * 1024
         && createHash('sha256').update(record.tail).digest('hex') === record.tail_sha256))) throw new Error('Invalid shadow record.');
     seen.add(record.event_id);
