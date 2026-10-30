@@ -18,7 +18,15 @@ import type { McpProcessSessionManager } from './process-sessions';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
-import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import {
+  PUBLICATION_MERGE_TOOL_NAME,
+  buildFleetToolDefinitions,
+  buildPublicationMergeToolDefinitions,
+  callFleetTool,
+  callPublicationMergeTool,
+  fleetToolArgumentError,
+  isFleetTool,
+} from './fleet-tools';
 import { buildHerdrToolDefinitions, callHerdrTool, isHerdrTool } from './herdr-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
@@ -27,6 +35,14 @@ export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
   enableChatgptBrowser?: boolean;
+  /**
+   * The local config records the publicationMerge consent of this profile.
+   * Set by `createMcpToolContext`; `false` hides the merge tool from listing
+   * and refuses its call, so a grant that predates the capability cannot use
+   * it without rerunning setup. Test-built contexts without the field follow
+   * the policy capability alone.
+   */
+  publicationMergeConsented?: boolean;
   workspaceManager?: WorkspaceManager;
   codingWorkspaceManager?: CodingWorkspaceManager;
   processManager?: McpProcessSessionManager;
@@ -812,9 +828,23 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
   throw new Error(`invalid browser channel: ${String(value)}`);
 }
 
+/**
+ * The listing surface of one context. A grant that predates the
+ * publicationMerge capability hides the merge tool here as well as at call
+ * time, so tools/list cannot advertise a merge the consent never covered.
+ */
+export function visibleMcpToolDefinitions(ctx: McpToolContext): McpToolDefinition[] {
+  const definitions = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true });
+  if (ctx.policy.capabilities.publicationMerge && ctx.publicationMergeConsented === false) {
+    return definitions.filter((definition) => definition.name !== PUBLICATION_MERGE_TOOL_NAME);
+  }
+  return definitions;
+}
+
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
+  const mergeTools = policy.capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [];
   // The dispatch surface is exclusive: a task-dispatch token reaches no workflow, file or shell tool.
-  if (policy.capabilities.taskDispatch) return buildHerdrToolDefinitions();
+  if (policy.capabilities.taskDispatch) return [...buildHerdrToolDefinitions(), ...mergeTools];
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -952,6 +982,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
     ...buildFleetToolDefinitions(),
+    ...mergeTools,
     { name: 'write_prd', description: 'Write a PRD under plans/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under plans/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
     { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
@@ -1043,6 +1074,17 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (name === PUBLICATION_MERGE_TOOL_NAME) {
+      if (ctx.publicationMergeConsented === false) {
+        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
+        return errorResult('TOOL_NOT_AVAILABLE', `${name} requires rerunning setup for the ${ctx.policy.profile} profile: the recorded grant predates the publicationMerge capability.`);
+      }
+      if (!ctx.policy.capabilities.publicationMerge) {
+        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
+        return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
+      }
+      return callPublicationMergeTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, args);
+    }
     if (ctx.policy.capabilities.taskDispatch) {
       if (isHerdrTool(name)) return await callHerdrTool({ repoRoot: ctx.repoRoot }, name, args);
       audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');

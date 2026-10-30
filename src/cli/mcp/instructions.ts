@@ -1,9 +1,12 @@
-export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean; taskDispatchEnabled?: boolean } = {}): string {
+export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codingEnabled?: boolean; taskDispatchEnabled?: boolean; publicationMergeEnabled?: boolean } = {}): string {
   if (opts.taskDispatchEnabled === true) {
     return [
       'repo-harness orchestrator profile: dispatch work to Claude and Codex agent panes in local Herdr.',
       'Call list_task_agents first. It returns only agents whose working directory is in a read_write granted repo.',
       'prompt_task_agent submits text and returns without waiting; poll read_task_agent for progress.',
+      ...(opts.publicationMergeEnabled === true
+        ? ['merge_pull_request squash-merges one same-repository PR of a read_write granted repo only when publication.acceptance_merge is "on" in the policy at the PR base and every merge gate passes. It never retries; merge_outcome_unknown means the owner must check the PR.']
+        : []),
       'This profile has no file, workflow or shell tools. Never put secrets or credentials in a prompt.',
     ].join(' ');
   }

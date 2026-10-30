@@ -520,7 +520,7 @@ describe('mcp setup', () => {
       expect(config).toMatchObject({
         version: 3,
         profile: 'coding',
-        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true, taskDispatch: false },
+        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true, taskDispatch: false, publicationMerge: false },
         coding: { environmentAllowlist: [] },
       });
       expect(config.coding.enabled).toBeUndefined();
@@ -564,7 +564,7 @@ describe('mcp setup', () => {
         version: 3,
         profile: 'orchestrator',
         authorizationRevision: 1,
-        capabilities: { workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false, taskDispatch: true },
+        capabilities: { workspaceReader: false, workflowPlanner: false, workflowExecutor: false, workspaceCoder: false, taskDispatch: true, publicationMerge: true },
       });
       const ctx = createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' });
       expect(ctx.policy.capabilities.taskDispatch).toBe(true);
@@ -581,6 +581,28 @@ describe('mcp setup', () => {
 
       setRepoHarnessAccessMode(repoRoot, 'read_only');
       expect(() => createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' })).toThrow('explicit read_write grant');
+    });
+  });
+
+  test('an orchestrator grant from before the merge capability is stale until setup re-authorizes it', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator', grantReadWrite: [repoRoot], endpoint: 'https://orchestrator.example.com/mcp' });
+      const configPath = join(userHome, 'mcp.local.json');
+      const current = JSON.parse(readFileSync(configPath, 'utf-8'));
+      expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]).mcp.capabilityGrant).toBe('current');
+      const { publicationMerge: _merge, ...olderCapabilities } = current.capabilities;
+      writeFileSync(configPath, `${JSON.stringify({ ...current, capabilities: olderCapabilities }, null, 2)}\n`);
+
+      expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]).mcp.capabilityGrant).toBe('stale');
+      expect(runMcpDoctor({ repo: repoRoot }).lines.join('\n')).toContain('Capability grant: stale');
+
+      // Rerunning setup bumps the authorization revision, so tokens consented to the smaller surface go stale.
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' });
+      const reauthorized = JSON.parse(readFileSync(configPath, 'utf-8'));
+      expect(reauthorized).toMatchObject({ authorizationRevision: current.authorizationRevision + 1, capabilities: { publicationMerge: true } });
+      expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]).mcp.capabilityGrant).toBe('current');
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'orchestrator' });
+      expect(JSON.parse(readFileSync(configPath, 'utf-8')).authorizationRevision).toBe(reauthorized.authorizationRevision);
     });
   });
 
