@@ -1,5 +1,5 @@
 import { projectContinuationEnvelope } from '../../core/state/project-continuation-envelope';
-import type { ContinuationEnvelopeV1 } from '../../core/state/types';
+import type { ContinuationEnvelopeV2 } from '../../core/state/types';
 import { readAttemptLedger } from './attempt-ledger-store';
 import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
 
@@ -19,7 +19,7 @@ import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
 export function resolveContinuationEnvelope(
   cwd = process.cwd(),
   nowMs = Date.now(),
-): ContinuationEnvelopeV1 {
+): ContinuationEnvelopeV2 {
   const state = resolveEffectiveStateReadOnly(cwd, nowMs, {
     targetPaths: [],
     operationKind: 'inspect',

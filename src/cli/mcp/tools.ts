@@ -141,7 +141,7 @@ function audit(ctx: McpToolContext, tool: string, status: 'ok' | 'blocked' | 'fa
 }
 
 function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; branch: string | null; workflowRoots: Array<{ path: string; exists: boolean }> } {
-  const roots = ['docs/spec.md', 'plans', 'tasks/current.md', '.ai/harness/handoff', '.ai/harness/checks'];
+  const roots = ['docs/spec.md', 'plans', '.ai/harness/handoff', '.ai/harness/checks'];
   return {
     repoRoot,
     adopted: isRepoHarnessAdopted(repoRoot),

@@ -26,11 +26,7 @@ import type {
   EffectiveStateRiskInput,
   StateSnapshot,
 } from '../../core/state/types';
-import {
-  artifactStemFromPlan,
-  evidenceContractComplete,
-  planStatusFromText,
-} from '../../core/state/artifact-parsers';
+import { planStatusFromText } from '../../core/state/artifact-parsers';
 import { projectEffectiveState } from '../../core/state/project-effective-state';
 import {
   projectStateSnapshot,
@@ -56,7 +52,6 @@ import {
 } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
 
-const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
 const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
@@ -138,7 +133,6 @@ export interface HarnessPaths {
   readonly resume: string;
   readonly runsDir: string;
   readonly contextMap: string;
-  readonly todoFile: string;
   /** Display text only; nothing reads or writes through it. */
   readonly researchDir: string;
 }
@@ -154,7 +148,6 @@ export function resolveHarnessPaths(cwd: string): HarnessPaths {
     resume: policyPath(policy, '.handoff_resume.resume_packet_file', '.ai/harness/handoff/resume.md'),
     runsDir: policyPath(policy, '.harness.runs_dir', '.ai/harness/runs'),
     contextMap: policyPath(policy, '.context.map_file', '.ai/context/context-map.json', '.ai/context'),
-    todoFile: policyPath(policy, '.tasks.todo_file', 'tasks/todos.md', 'tasks'),
     researchDir: policyString(policy, '.tasks.research_dir', 'docs/researches'),
   };
 }
@@ -309,9 +302,9 @@ const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
  * .ai/harness/runs/hook-guard-stability/). These sources are still read
  * once per unlocked resolution and reported in `source_hashes` exactly as
  * before; only their participation in the stability-abort DECISION changes.
- * Workflow-authority surfaces (active-plan/active-worktree
- * markers, the plan, policy, capability registry, and the
- * derived authority_revision) keep the full stability contract unchanged.
+ * Workflow-authority surfaces (the active-worktree marker, policy, the
+ * capability registry, and the derived authority_revision) keep the full
+ * stability contract unchanged.
  */
 const NON_AUTHORITY_SOURCE_HASH_KEYS: ReadonlySet<string> = new Set([
   'review_subject',
@@ -628,20 +621,12 @@ function policyReviewBase(policy: WorkflowPolicy): string {
 }
 
 function collectStateSnapshotFacts(
-  state: EffectiveState,
   cwd: string,
   nowMs: number,
 ): StateSnapshotCompatibilityFacts {
-  const policy = readWorkflowPolicy(cwd);
-  const planPath = state.authoritative_plan?.path ?? null;
-  const planText = readText(cwd, planPath);
   return {
     spec: fileExists(cwd, 'docs/spec.md') ? 'present' : 'missing',
-    pending: pendingState(cwd, nowMs, policy),
-    activePlanMarker: readTrimmed(cwd, ACTIVE_PLAN_MARKER),
-    evidence: planPath
-      ? evidenceContractComplete(planText) ? 'complete' : 'incomplete'
-      : 'unchecked',
+    pending: pendingState(cwd, nowMs, readWorkflowPolicy(cwd)),
   };
 }
 
@@ -671,23 +656,14 @@ function resolveEffectiveStateUnlocked(
   };
   const policy = readWorkflowPolicy(cwd, readSource);
   const capabilitySource = capabilitySourceMode(policy);
-  const preferredMarker = readTrimmed(cwd, ACTIVE_PLAN_MARKER);
   const owner = readTrimmed(cwd, ACTIVE_WORKTREE_MARKER);
   const conflictingSources: string[] = [];
   const staleSources: string[] = [];
-  let planPath = preferredMarker;
 
-  if (planPath && !fileExists(cwd, planPath)) {
-    staleSources.push('active_plan_marker');
-    planPath = null;
-  }
   if (owner && safeRealpath(owner) !== currentWorktree) {
     conflictingSources.push('worktree_owner');
-    planPath = null;
   }
 
-  const planText = readText(cwd, planPath);
-  const planStatus = planPath ? planStatusFromText(planText) : 'none';
   const reviewSubject = reviewSubjectFor(policyReviewBase(policy));
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
   const implementationDiffPaths = reviewSubject.status === 'ok' ? reviewSubject.paths : [];
@@ -756,7 +732,7 @@ function resolveEffectiveStateUnlocked(
     capabilityIds: observedCapabilityIds,
     capabilityCount: declaredCapabilityCount,
     operationKind: options.risk?.operationKind ?? (
-      observedTargetPaths && observedTargetPaths.length > 0 ? 'edit' : planPath ? undefined : 'inspect'
+      observedTargetPaths && observedTargetPaths.length > 0 ? 'edit' : 'inspect'
     ),
     explicitOverride: options.risk?.explicitOverride,
   });
@@ -790,16 +766,12 @@ function resolveEffectiveStateUnlocked(
   }
 
   const reviewSubjectSha256 = reviewSubject.status === 'ok' ? reviewSubject.review_subject_sha256 : null;
-  const taskId = planPath ? artifactStemFromPlan(planPath, planText) : null;
 
   // Keep authority, observed Git subject and display projections separate.
   const authorityRevision = contentRevision({
-    active_plan: sourceHash(cwd, ACTIVE_PLAN_MARKER),
     active_worktree: sourceHash(cwd, ACTIVE_WORKTREE_MARKER),
-    plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
     policy: captured ? hashSource(POLICY_PATH) : sourceHash(cwd, POLICY_PATH),
     capability_registry: capabilityAuthorityHash(cwd, capabilitySource, captured ? hashSource : undefined),
-    task_identity: sha256(taskId ?? 'missing:task-id'),
   });
   const subjectRevision = contentRevision({
     review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
@@ -815,11 +787,9 @@ function resolveEffectiveStateUnlocked(
   });
 
   const sourcePaths = [
-    ACTIVE_PLAN_MARKER,
     ACTIVE_WORKTREE_MARKER,
     POLICY_PATH,
     ...capabilityAuthoritySourcePaths(cwd, capabilitySource),
-    ...(planPath ? [planPath] : []),
     HANDOFF_PATH,
     RESUME_PATH,
     CURRENT_SNAPSHOT_PATH,
@@ -833,10 +803,6 @@ function resolveEffectiveStateUnlocked(
   const stateRevision = collected.stateRevision;
   return projectEffectiveState({
     nowMs,
-    taskId,
-    planPath,
-    planStatus,
-    planText,
     riskResolution,
     requestedWorkflowProfile: options.risk?.explicitOverride ?? null,
     capabilityReasons,
@@ -1017,7 +983,7 @@ export function buildStateSnapshotFromEffectiveState(
   cwd = process.cwd(),
   nowMs = Date.now(),
 ): StateSnapshot {
-  return projectStateSnapshot(state, collectStateSnapshotFacts(state, cwd, nowMs));
+  return projectStateSnapshot(state, collectStateSnapshotFacts(cwd, nowMs));
 }
 
 export function buildStateSnapshot(

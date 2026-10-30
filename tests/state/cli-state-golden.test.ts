@@ -68,18 +68,13 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
     if (path === 'review_subject' || path === 'authority_revision' || path === 'evidence_revision') continue;
     expect(value).toBe(sourceHash(cwd, path));
   }
-  // LSC-04: authority_revision now composes policy/capability-registry/
-  // active-sprint marker+file/task identity and excludes the review-subject
-  // fingerprint (that moved to subject_revision, checked separately below).
+  // LSC-04: authority_revision composes the worktree marker, policy and the
+  // capability registry, and excludes the review-subject fingerprint (that
+  // moved to subject_revision, checked separately below).
   const expectedAuthorityRevision = contentRevision({
-    active_plan: sourceHash(cwd, '.ai/harness/active-plan'),
     active_worktree: sourceHash(cwd, '.ai/harness/active-worktree'),
-    plan: state.authoritative_plan
-      ? sourceHash(cwd, state.authoritative_plan.path)
-      : sha256('missing:plan'),
     policy: sourceHash(cwd, '.ai/harness/policy.json'),
     capability_registry: sourceHash(cwd, '.ai/context/capabilities.json'),
-    task_identity: sha256(state.task_id ?? 'missing:task-id'),
   });
   expect(state.source_hashes.authority_revision).toBe(expectedAuthorityRevision);
   expect(state.authority_revision).toBe(expectedAuthorityRevision);

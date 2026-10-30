@@ -3,11 +3,12 @@ import {
   ATTEMPT_OUTCOME_VALUES,
   buildAttemptReceipt,
 } from '../../core/state/attempt-ledger';
-import type {
-  AttemptReceiptV1,
-  ContinuationEnvelopeV1,
-  EffectiveState,
-  EffectiveStateRiskInput,
+import {
+  decodeEffectiveState,
+  type AttemptReceiptV1,
+  type ContinuationEnvelopeV2,
+  type EffectiveState,
+  type EffectiveStateRiskInput,
 } from '../../core/state/types';
 import type { CommandOutcome } from '../../core/state/command-outcome';
 import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
@@ -53,11 +54,11 @@ export function resolveStateCommand(
 ): CommandOutcome {
   let effective: EffectiveState;
   try {
-    effective = deps.resolve(deps.repoRoot, deps.nowMs, {
+    effective = decodeEffectiveState(deps.resolve(deps.repoRoot, deps.nowMs, {
       targetPaths: options.targetPath,
       operationKind: options.operation as WorkflowOperationKind | undefined,
       explicitOverride: options.profile as WorkflowProfile | undefined,
-    });
+    }));
   } catch (error) {
     return operationalFailure(error);
   }
@@ -92,7 +93,7 @@ export function resolveStateCommand(
 export type ResolveContinuationEnvelope = (
   repoRoot: string,
   nowMs: number,
-) => ContinuationEnvelopeV1;
+) => ContinuationEnvelopeV2;
 
 export interface ContinuationCommandDependencies {
   readonly repoRoot: string;
@@ -106,7 +107,7 @@ export interface ContinuationCommandDependencies {
  * operational resolution error produces a non-zero exit.
  */
 export function nextStateCommand(deps: ContinuationCommandDependencies): CommandOutcome {
-  let envelope: ContinuationEnvelopeV1;
+  let envelope: ContinuationEnvelopeV2;
   try {
     envelope = deps.resolveEnvelope(deps.repoRoot, deps.nowMs);
   } catch (error) {
@@ -242,7 +243,7 @@ export function buildStateCommand(): Command {
     .command('attempt')
     .description('Append one continuation attempt receipt to the ignored runtime ledger')
     .requiredOption('--json', 'Output the appended receipt as JSON')
-    .requiredOption('--unit-ref <path>', 'Repo-relative plan or sprint path the attempt ran against')
+    .requiredOption('--unit-ref <ref>', 'Unit reference printed by `repo-harness state next --json`')
     .requiredOption('--outcome <outcome>', `One of: ${ATTEMPT_OUTCOME_VALUES.join(', ')}`)
     .option(
       '--before-progress-token <token>',

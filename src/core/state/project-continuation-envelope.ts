@@ -1,20 +1,16 @@
 import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import type {
-  ContinuationEnvelopeV1,
+  ContinuationEnvelopeV2,
   ContinuationRoute,
   EffectiveState,
 } from './types';
 
-/** Existing commands the envelope points at; never re-implemented here. */
+/** Existing command the envelope points at; never re-implemented here. */
 const CONTINUE_COMMAND = 'repo-harness state resolve --json';
-const VERIFY_COMMAND = 'repo-harness run verify-sprint';
-
-const EXECUTABLE_PLAN_STATUS: ReadonlySet<string> = new Set(['approved', 'executing']);
 
 /** Routes that hand the caller work to do, and so can be circuit-broken. */
 const ACTIONABLE_ROUTES: ReadonlySet<ContinuationRoute> = new Set<ContinuationRoute>([
-  'continue_active_plan',
-  'verify_or_finish',
+  'continue',
 ]);
 
 export interface ContinuationEnvelopeInputs {
@@ -23,20 +19,25 @@ export interface ContinuationEnvelopeInputs {
   readonly attemptLedger: AttemptLedgerRead;
 }
 
-/** Resolve the plan route before applying the no-progress circuit breaker. */
+/**
+ * Resolve the continuation route before applying the no-progress circuit
+ * breaker. The route is a projection of Effective State alone: a hard blocker
+ * halts, a fresh handoff next action continues, and every other state idles.
+ * The unit reference is the state revision, so no plan or sprint path enters
+ * the output.
+ */
 function projectRoutedEnvelope(
   input: ContinuationEnvelopeInputs,
-): ContinuationEnvelopeV1 {
+): ContinuationEnvelopeV2 {
   const { state } = input;
-  const plan = state.authoritative_plan;
 
   const envelope = (
     route: ContinuationRoute,
     unitRef: string | null,
     command: string | null,
     reason: string,
-  ): ContinuationEnvelopeV1 => ({
-    protocol: 1,
+  ): ContinuationEnvelopeV2 => ({
+    protocol: 2,
     kind: 'repo-harness-continuation-envelope',
     route,
     unit_ref: unitRef,
@@ -47,30 +48,27 @@ function projectRoutedEnvelope(
   });
 
   if (state.blockers.length > 0) {
-    return envelope('halt', plan?.path ?? null, null, `blockers:${state.blockers.join(',')}`);
+    return envelope('halt', null, null, `blockers:${state.blockers.join(',')}`);
   }
-  if (state.stale_sources.includes('active_plan_marker')) {
-    return envelope('halt', null, null, 'stale:active_plan_marker');
+  if (state.next_action !== null) {
+    return envelope(
+      'continue',
+      state.state_revision,
+      CONTINUE_COMMAND,
+      `next_action:${state.next_action}`,
+    );
   }
-  if (plan) {
-    if (!EXECUTABLE_PLAN_STATUS.has(plan.status)) {
-      return envelope('halt', plan.path, null, `plan_status:${plan.status}`);
-    }
-    return state.next_action === null
-      ? envelope('verify_or_finish', plan.path, VERIFY_COMMAND, 'complete_approved_work_package')
-      : envelope('continue_active_plan', plan.path, CONTINUE_COMMAND, `next_action:${state.next_action}`);
-  }
-  return envelope('idle', null, null, 'no_active_plan');
+  return envelope('idle', null, null, 'no_next_action');
 }
 
 /**
  * Deterministic projection: no time, PID, locale, or filesystem input. Given
- * identical effective state, identical ledger bytes,
- * the output is byte-identical.
+ * identical effective state and identical ledger bytes, the output is
+ * byte-identical.
  */
 export function projectContinuationEnvelope(
   input: ContinuationEnvelopeInputs,
-): ContinuationEnvelopeV1 {
+): ContinuationEnvelopeV2 {
   const routed = projectRoutedEnvelope(input);
   if (!ACTIONABLE_ROUTES.has(routed.route)) return routed;
 

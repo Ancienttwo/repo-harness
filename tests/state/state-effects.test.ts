@@ -16,8 +16,6 @@ import {
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import {
-  CONTRACT,
-  PLAN,
   createEffectiveStateFixture,
   resolveFixtureState,
   writeFixture,
@@ -175,9 +173,9 @@ describe('Effective State authority read faults', () => {
   test('an authoritative path read error fails closed before version publication', () => {
     const fixture = createEffectiveStateFixture();
     try {
-      const planPath = join(fixture.cwd, PLAN);
-      rmSync(planPath);
-      mkdirSync(planPath);
+      const policyPath = join(fixture.cwd, '.ai/harness/policy.json');
+      rmSync(policyPath, { force: true });
+      mkdirSync(policyPath, { recursive: true });
       expect(() => resolveFixtureState(fixture.cwd)).toThrow('EISDIR');
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
@@ -191,8 +189,7 @@ describe('Effective State version publication transaction', () => {
   const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
 
   function mutateAuthority(cwd: string): void {
-    const plan = readFileSync(join(cwd, PLAN), 'utf-8');
-    writeFixture(cwd, PLAN, `${plan}\n<!-- publication fault revision -->\n`);
+    writeFixture(cwd, '.ai/harness/policy.json', '{"worktree_strategy":{"review_base":"main"}}\n');
   }
 
   function tempNames(directory: string): string[] {
@@ -288,15 +285,13 @@ describe('Effective State authority metadata failures', () => {
       && (typeof process.getuid !== 'function' || process.getuid() !== 0);
   }
 
-  for (const authority of ['plan-directory', 'policy', 'capability-registry'] as const) {
+  for (const authority of ['policy', 'capability-registry'] as const) {
     test(`${authority} EACCES fails closed before version publication`, () => {
       if (!supportsPermissionProof()) return;
       const fixture = createEffectiveStateFixture();
       let restrictedPath = '';
       try {
-        if (authority === 'plan-directory') {
-          restrictedPath = join(fixture.cwd, 'plans');
-        } else if (authority === 'policy') {
+        if (authority === 'policy') {
           restrictedPath = join(fixture.cwd, '.ai/harness/policy.json');
           writeFileSync(restrictedPath, '{}\n');
         } else {
@@ -307,7 +302,7 @@ describe('Effective State authority metadata failures', () => {
         expect(() => resolveFixtureState(fixture.cwd)).toThrow();
         expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
       } finally {
-        if (restrictedPath) chmodSync(restrictedPath, authority === 'plan-directory' ? 0o700 : 0o600);
+        if (restrictedPath) chmodSync(restrictedPath, 0o600);
         fixture.cleanup();
       }
     }, 30_000);

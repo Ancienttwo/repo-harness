@@ -47,7 +47,6 @@ const MCP_COMPACT_FIELDS = [
   'requested_workflow_profile',
   'risk_floor',
   'profile_reasons',
-  'authoritative_plan',
   'blockers',
   'stale_sources',
   'conflicting_sources',
@@ -69,7 +68,6 @@ const AUTHORITY_FIELDS = [
   'authority_revision',
   'subject_revision',
   'projection_revision',
-  'authoritative_plan',
   'stale_sources',
   'conflicting_sources',
 ] as const satisfies readonly (keyof EffectiveState)[];
@@ -190,8 +188,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       });
       const ownerPath = stateVersionOwnerPath(fixture.cwd);
       const ownerBefore = readFileSync(ownerPath);
-      const plan = readFileSync(join(fixture.cwd, PLAN), 'utf-8');
-      writeFixture(fixture.cwd, PLAN, `${plan}\n<!-- authority mutation -->\n`);
+      writeFixture(fixture.cwd, '.ai/harness/policy.json', '{"worktree_strategy":{"review_base":"main"}}\n');
       const projected = callStateTool({
         repoRoot: fixture.cwd,
         mcpPolicyProfile: 'planner',
@@ -213,7 +210,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     }
   });
 
-  test('public MCP dispatch keeps canonical authority independent from its labeled current preview', async () => {
+  test('public MCP dispatch exposes no plan or tasks/current.md projection', async () => {
     const fixture = createEffectiveStateFixture();
     try {
       const policy = getMcpPolicy('planner', { allowedRoots: [fixture.cwd] });
@@ -221,14 +218,11 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       const beforeRaw = await callMcpTool(ctx, 'summarize_repo_harness_state');
       const before = JSON.parse(beforeRaw.content[0].text) as Record<string, any>;
       expect(before.kind).toBe('repo-harness-effective-state');
-      expect(before.authoritative_plan.path).toBe(PLAN);
-      expect(before.current).toContain(`Active Plan: ${PLAN}`);
-      expect(before.current_preview).toEqual({
-        source: 'tasks/current.md',
-        authority: 'non-authoritative-projection',
-        text: before.current,
-      });
-      expect(before.current_authority).toBe('non-authoritative-projection');
+      expect(before.protocol).toBe(2);
+      expect(before.task_id).toBeNull();
+      for (const field of ['authoritative_plan', 'current', 'current_authority', 'current_preview']) {
+        expect(Object.hasOwn(before, field)).toBe(false);
+      }
 
       writeFixture(fixture.cwd, 'tasks/current.md', [
         '# Forged projection',
@@ -237,10 +231,9 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       ].join('\n'));
       const afterRaw = await callMcpTool(ctx, 'summarize_repo_harness_state');
       const after = JSON.parse(afterRaw.content[0].text) as Record<string, any>;
-      expect(after.authoritative_plan.path).toBe(PLAN);
+      expect(after.kind).toBe('repo-harness-effective-state');
+      expect(JSON.stringify(after)).not.toContain('SHOULD_NOT_APPEAR_IN_MCP_STATE');
       expect(Object.hasOwn(after, 'contract')).toBe(false);
-      expect(after.current).toContain('SHOULD_NOT_APPEAR_IN_MCP_STATE');
-      expect(after.current_preview.authority).toBe('non-authoritative-projection');
       expect(after.status.profile_authority).toBe('mcp-policy');
       expect(after.status.profile).toBe('planner');
     } finally {

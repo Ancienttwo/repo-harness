@@ -7,8 +7,6 @@ import { projectStateSnapshot } from '../../src/core/state/project-state-snapsho
 import { capabilityOwnershipBlocker } from '../../src/core/capabilities/ownership-blocker';
 
 const NOW = Date.parse('2026-07-15T12:00:00Z');
-const PLAN = 'plans/plan-20260715-1200-fixture.md';
-const CONTRACT = 'tasks/contracts/20260715-1200-fixture.contract.md';
 const AUTHORITY = 'sha256:authority';
 const SUBJECT_REVISION = 'sha256:subject';
 const PROJECTION_REVISION = 'sha256:projection';
@@ -24,10 +22,6 @@ const UNAVAILABLE_OWNERSHIP = capabilityOwnershipBlocker(
 function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInputs {
   return {
     nowMs: NOW,
-    taskId: '20260715-1200-fixture',
-    planPath: PLAN,
-    planStatus: 'executing',
-    planText: '# Plan\n\n- [ ] run parity tests\n',
     riskResolution: {
       ok: true,
       profile: 'routine',
@@ -68,9 +62,23 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
   };
 }
 
+function freshHandoff(nextStep = 'resume adapter parity'): string {
+  return [
+    `> **Source State Revision**: ${AUTHORITY}`,
+    `- Exact Next Step: ${nextStep}`,
+  ].join('\n');
+}
+
+function freshResume(): string {
+  return [
+    `> **Source State Revision**: ${AUTHORITY}`,
+    '> **Handoff Hash**: sha256:handoff',
+  ].join('\n');
+}
+
 describe('pure Effective State projection', () => {
   test('snapshot age changes freshness without changing workflow admission authority', () => {
-    const snapshot = `> **Updated At**: 2026-07-15T12:00:00Z\n- Active Plan: ${PLAN}\n`;
+    const snapshot = '> **Updated At**: 2026-07-15T12:00:00Z\n';
     const before = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 }));
     const after = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 + 1 }));
     expect(before.current_snapshot.freshness).toBe('fresh');
@@ -84,33 +92,22 @@ describe('pure Effective State projection', () => {
 
     const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityBlocker: INVALID_REGISTRY }));
     expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
-
   });
 
-  test('projects phase, profile, and first open task without I/O', () => {
-    const state = projectEffectiveState(input());
-    expect(state.phase).toBe('executing');
-    expect(state.next_action).toBe('run parity tests');
+  test('projects idle phase, profile, and only the handoff next action without I/O', () => {
+    const state = projectEffectiveState(input({ handoffText: freshHandoff() }));
+    expect(state.protocol).toBe(2);
+    expect(state.phase).toBe('idle');
+    expect(state.next_action).toBe('resume adapter parity');
     expect(state.workflow_profile).toBe('routine');
     expect(state.guidance).toContain('verify typecheck and affected tests once');
-
   });
 
   test('projects fresh handoff/resume/current branches and handoff next action', () => {
-    const handoff = [
-      '> **Task ID**: 20260715-1200-fixture',
-      `> **Source State Revision**: ${AUTHORITY}`,
-      '- Exact Next Step: resume adapter parity',
-    ].join('\n');
     const state = projectEffectiveState(input({
-      planText: '# Plan\n',
-      handoffText: handoff,
-      resumeText: [
-        '> **Task ID**: 20260715-1200-fixture',
-        `> **Source State Revision**: ${AUTHORITY}`,
-        '> **Handoff Hash**: sha256:handoff',
-      ].join('\n'),
-      currentSnapshotText: `> **Updated At**: 2026-07-15T11:30:00Z\n- Active Plan: ${PLAN}\n`,
+      handoffText: freshHandoff(),
+      resumeText: freshResume(),
+      currentSnapshotText: '> **Updated At**: 2026-07-15T11:30:00Z\n',
     }));
     expect(state.next_action).toBe('resume adapter parity');
 
@@ -131,7 +128,7 @@ describe('pure Effective State projection', () => {
         reasons: ['risk-floor:strict:signals-unavailable'],
       },
       capabilityBlocker: INVALID_REGISTRY,
-      staleSources: ['active_plan_marker', 'active_plan_marker'],
+      staleSources: ['handoff', 'handoff'],
       conflictingSources: ['worktree_owner', 'worktree_owner'],
     }));
     expect(state.phase).toBe('blocked');
@@ -145,7 +142,7 @@ describe('pure Effective State projection', () => {
       'workflow_profile:invalid_risk_input',
       'capability_registry:invalid',
     ]);
-    expect(state.stale_sources).toEqual(['active_plan_marker']);
+    expect(state.stale_sources).toEqual(['handoff']);
     expect(state.conflicting_sources).toEqual(['worktree_owner']);
     expect(state.guidance).toBeNull();
   });
@@ -177,41 +174,26 @@ describe('pure Effective State projection', () => {
     expect(state.next_action).toBe('resolve blockers');
   });
 
-  test('binds resume independently to task id, authority revision, and handoff hash', () => {
-    const taskId = '20260715-1200-fixture';
-    const resume = (candidateTaskId: string, revision: string, handoffHash: string) => [
-      `> **Task ID**: ${candidateTaskId}`,
+  test('binds resume independently to authority revision and handoff hash', () => {
+    const resume = (revision: string, handoffHash: string) => [
       `> **Source State Revision**: ${revision}`,
       `> **Handoff Hash**: ${handoffHash}`,
     ].join('\n');
-    const fresh = resume(taskId, AUTHORITY, 'sha256:handoff');
-    expect(projectEffectiveState(input({ resumeText: fresh })).resume.freshness).toBe('fresh');
+    expect(projectEffectiveState(input({ resumeText: resume(AUTHORITY, 'sha256:handoff') })).resume.freshness)
+      .toBe('fresh');
 
     for (const stale of [
-      resume('other-task', AUTHORITY, 'sha256:handoff'),
-      resume(taskId, 'sha256:other-authority', 'sha256:handoff'),
-      resume(taskId, AUTHORITY, 'sha256:other-handoff'),
+      resume('sha256:other-authority', 'sha256:handoff'),
+      resume(AUTHORITY, 'sha256:other-handoff'),
     ]) {
       expect(projectEffectiveState(input({ resumeText: stale })).resume.freshness).toBe('stale');
     }
   });
 
-  test('covers every non-blocked phase and the null next-action branch', () => {
-    expect(projectEffectiveState(input({
-      taskId: null,
-      planPath: null,
-      planStatus: 'none',
-      planText: null,
-      worktreeOwner: null,
-      worktreeOwnerIsCurrent: false,
-    })).phase).toBe('idle');
-    for (const status of ['draft', 'annotating', 'approved', 'executing', 'unknown'] as const) {
-      const state = projectEffectiveState(input({
-        planStatus: status,
-      }));
-      expect(state.phase).toBe(status);
-    }
-    expect(projectEffectiveState(input({ planText: '# Plan\n', handoffText: null })).next_action).toBeNull();
+  test('covers the blocked and idle phase branches and the null next-action branch', () => {
+    expect(projectEffectiveState(input()).phase).toBe('idle');
+    expect(projectEffectiveState(input({ conflictingSources: ['worktree_owner'] })).phase).toBe('blocked');
+    expect(projectEffectiveState(input({ handoffText: null })).next_action).toBeNull();
   });
 
   test('covers missing, unavailable, stale, and not-applicable freshness branches', () => {
@@ -224,8 +206,8 @@ describe('pure Effective State projection', () => {
     const stale = projectEffectiveState(input({
       worktreeOwner: '/other',
       worktreeOwnerIsCurrent: false,
-      handoffText: '> **Task ID**: other\n',
-      resumeText: '> **Task ID**: other\n',
+      handoffText: '> **Source State Revision**: sha256:other\n',
+      resumeText: '> **Source State Revision**: sha256:other\n',
       currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
     }));
 
@@ -262,15 +244,12 @@ describe('pure Effective State projection', () => {
     expect(state.progress_token).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  test('progress_token depends only on subject revision, completed tasks and blockers -- never projection text, time, or state version', () => {
+  test('progress_token depends only on subject revision and blockers -- never projection text, time, or state version', () => {
     const base = projectEffectiveState(input());
 
-    // Projection-only churn (handoff/resume/current-snapshot text, plus the
-    // clock and the untouched state_version/state_revision) must never move
-    // it: none of those are in the recipe.
     const projectionChurned = projectEffectiveState(input({
-      handoffText: '> **Task ID**: other\n',
-      resumeText: '> **Task ID**: other\n',
+      handoffText: '> **Source State Revision**: other\n',
+      resumeText: '> **Source State Revision**: other\n',
       currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
       nowMs: NOW + 999_999,
       stateVersion: 999,
@@ -278,14 +257,6 @@ describe('pure Effective State projection', () => {
     }));
     expect(projectionChurned.progress_token).toBe(base.progress_token);
 
-    // Checking off a task is real progress: the completed-task marker set
-    // changes, so the token moves.
-    const taskCompleted = projectEffectiveState(input({
-      planText: '# Plan\n\n- [x] run parity tests\n',
-    }));
-    expect(taskCompleted.progress_token).not.toBe(base.progress_token);
-
-    // A new hard blocker is real (regressive) progress: the token moves.
     const blocked = projectEffectiveState(input({
       riskResolution: {
         ok: false,
@@ -298,12 +269,11 @@ describe('pure Effective State projection', () => {
     }));
     expect(blocked.progress_token).not.toBe(base.progress_token);
 
-    // A changed subject is progress.
     expect(projectEffectiveState(input({ subjectRevision: 'sha256:moved-subject' })).progress_token)
       .not.toBe(base.progress_token);
   });
 
-  test('preserves the protocol v1 JSON field order', () => {
+  test('preserves the protocol v2 JSON field order', () => {
     const keys = Object.keys(projectEffectiveState(input()));
     expect(keys.slice(0, 6)).toEqual([
       'protocol',
@@ -324,36 +294,30 @@ describe('pure Effective State projection', () => {
 });
 
 describe('state-snapshot compatibility projection', () => {
-  test('owns draft, approved, and stale-marker branch mapping', () => {
-    const facts = {
+  test('keeps a plan-free protocol-1 snapshot shape', () => {
+    const snapshot = projectStateSnapshot(projectEffectiveState(input()), {
       spec: 'present',
       pending: 'none',
-      activePlanMarker: PLAN,
-      evidence: 'complete',
-    } as const;
-    const activeCases = [
-      { status: 'draft', expected: 'draft' },
-      { status: 'approved', expected: 'approved' },
-    ] as const;
+    });
+    expect(snapshot).toEqual({
+      protocol: 1,
+      kind: 'repo-harness-state-snapshot',
+      states: {
+        spec: 'present',
+        plan: 'none',
+        pending: 'none',
+        worktree: 'current',
+        evidence: 'unchecked',
+      },
+      paths: { active_plan: null },
+      marker: { problem: 'none' },
+    });
 
-    for (const entry of activeCases) {
-      const snapshot = projectStateSnapshot(
-        projectEffectiveState(input({ planStatus: entry.status })),
-        facts,
-      );
-      expect(snapshot.states.plan).toBe(entry.expected);
-      expect(snapshot.paths.active_plan).toBe(PLAN);
-      expect(snapshot.marker.problem).toBe('none');
-    }
-
-    const stale = projectStateSnapshot(projectEffectiveState(input({
-      planPath: null,
-      planStatus: 'none',
-      planText: null,
-      staleSources: ['active_plan_marker'],
-    })), facts);
-    expect(stale.states.plan).toBe('stale_marker');
-    expect(stale.paths).toEqual({ active_plan: PLAN });
-    expect(stale.marker.problem).toBe('deleted');
+    const foreign = projectStateSnapshot(projectEffectiveState(input({
+      worktreeOwner: '/other',
+      worktreeOwnerIsCurrent: false,
+    })), { spec: 'missing', pending: 'stale' });
+    expect(foreign.states.worktree).toBe('foreign_marker');
+    expect(foreign.marker.problem).toBe('foreign_worktree');
   });
 });

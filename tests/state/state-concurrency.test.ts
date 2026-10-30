@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
 import { spawn, spawnSync } from 'child_process';
-import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock, PLAN } from './effective-state-fixture';
+import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock } from './effective-state-fixture';
 import { ROOT } from './effective-state-fixture';
 import { stateVersionOwnerPath, type StateVersionWriteEffects } from '../../src/effects/state/git-state-version-store';
 import {
@@ -44,7 +44,7 @@ describe('Effective State lock and source-stability characterization', () => {
       const started = performance.now();
       const state = resolveFixtureState(fixture.cwd);
       const elapsedMs = performance.now() - started;
-      expect(state.task_id).toBe('20260712-2327-effective-fixture');
+      expect(state.protocol).toBe(2);
       expect(elapsedMs).toBeGreaterThanOrEqual(80);
       expect(elapsedMs).toBeLessThan(5_000);
       expect(existsSync(lockPath)).toBe(false);
@@ -63,7 +63,7 @@ describe('Effective State lock and source-stability characterization', () => {
         created_at: Date.now() - 60_000,
         token: '99999999-0-00000000-0000-4000-8000-000000000001',
       });
-      expect(resolveFixtureState(fixture.cwd).task_id).toBe('20260712-2327-effective-fixture');
+      expect(resolveFixtureState(fixture.cwd).protocol).toBe(2);
       expect(existsSync(lockPath)).toBe(false);
     } finally {
       fixture.cleanup();
@@ -571,10 +571,12 @@ describe('Effective State lock and source-stability characterization', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
+      const policyPath = '.ai/harness/policy.json';
+      writeFixture(fixture.cwd, policyPath, '{}\n');
       const first = resolveEffectiveState(fixture.cwd, Date.now(), risk);
       const ownerPath = stateVersionOwnerPath(fixture.cwd);
       const lockDirPath = `${ownerPath}.lock`;
-      const planAbsPath = join(fixture.cwd, PLAN);
+      const policyAbsPath = join(fixture.cwd, policyPath);
       const token = `${process.pid}-0-00000000-0000-4000-8000-000000000010`;
       const ownerJsonPath = join(lockDirPath, `${token}.json`);
       mkdirSync(lockDirPath, { recursive: true, mode: 0o700 });
@@ -582,10 +584,10 @@ describe('Effective State lock and source-stability characterization', () => {
 
       const mutator = spawn('sh', [
         '-c',
-        'sleep "$1"; printf "\\n<!-- confirm-window mutation -->\\n" >> "$2"; rm -f "$3"; rmdir "$4"',
+        'sleep "$1"; printf " " >> "$2"; rm -f "$3"; rmdir "$4"',
         'confirm-window-single-mutation',
         '0.2',
-        planAbsPath,
+        policyAbsPath,
         ownerJsonPath,
         lockDirPath,
       ], { stdio: 'ignore' });
@@ -604,7 +606,7 @@ describe('Effective State lock and source-stability characterization', () => {
       expect(result.state_version).toBe(first.state_version + 1);
       expect(ownerWriteTempCount).toBe(1);
       expect(ownerPublishCount).toBe(1);
-      expect(result.source_hashes[PLAN]).toBe(sourceHash(fixture.cwd, PLAN));
+      expect(result.source_hashes[policyPath]).toBe(sourceHash(fixture.cwd, policyPath));
       expect(JSON.parse(readFileSync(ownerPath, 'utf-8')).revision).toBe(result.state_revision);
     } finally {
       fixture.cleanup();
@@ -615,7 +617,9 @@ describe('Effective State lock and source-stability characterization', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
-      const planAbsPath = join(fixture.cwd, PLAN);
+      const policyPath = '.ai/harness/policy.json';
+      writeFixture(fixture.cwd, policyPath, '{}\n');
+      const policyAbsPath = join(fixture.cwd, policyPath);
       const lockPath = join(fixture.cwd, '.ai/harness/state/effective.lock');
       const startedPath = join(fixture.cwd, '.ai/harness/state/mutator-started');
       const stopPath = join(fixture.cwd, '.ai/harness/state/mutator-stop');
@@ -642,7 +646,7 @@ describe('Effective State lock and source-stability characterization', () => {
           'printf "%s\\n" "$i" > "$5"',
         ].join('\n'),
         'mutate-effective-state-source',
-        planAbsPath,
+        policyAbsPath,
         startedPath,
         ownerPath,
         lockPath,

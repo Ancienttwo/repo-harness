@@ -9,20 +9,16 @@
     "stderr": ""
   },
   "state": {
-    "protocol": 1,
+    "protocol": 2,
     "kind": "repo-harness-effective-state",
-    "task_id": "20260712-2327-effective-fixture",
-    "phase": "executing",
+    "task_id": null,
+    "phase": "idle",
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
     "subject_revision": "sha256:611ad84ed54754aa0afeb9d13ce4e9a0fdc5bc65321ee5707b54863c6d7dc890",
     "projection_revision": "sha256:<dynamic:projection_revision>",
     "progress_token": "sha256:<dynamic:progress_token>",
-    "authoritative_plan": {
-      "path": "plans/plan-20260712-2327-effective-fixture.md",
-      "status": "executing"
-    },
     "workflow_profile": "routine",
     "requested_workflow_profile": null,
     "risk_floor": "routine",
@@ -39,7 +35,7 @@
       "crossCapability": false
     },
     "capability_ownership": null,
-    "next_action": "implement resolver",
+    "next_action": null,
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
     "stale_sources": [
@@ -49,12 +45,10 @@
     "conflicting_sources": [],
     "source_hashes": {
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
-      ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
-      "plans/plan-20260712-2327-effective-fixture.md": "sha256:b2320675859fb4584b5602730cf3c21388f92b26d360c6fefff820b331395d50",
       "tasks/current.md": "sha256:e16cda27c0a53e5a4f839011c5e47480be01ab0bee30e75576a62bc2732e9d30",
       "review_subject": "sha256:8d1ea67b10188cb888564a019394712072bc46c65903acacf936b803358466c4",
       "authority_revision": "sha256:<dynamic:authority_revision>"
@@ -83,13 +77,13 @@
     "kind": "repo-harness-state-snapshot",
     "states": {
       "spec": "present",
-      "plan": "executing",
+      "plan": "none",
       "pending": "none",
       "worktree": "current",
-      "evidence": "complete"
+      "evidence": "unchecked"
     },
     "paths": {
-      "active_plan": "plans/plan-20260712-2327-effective-fixture.md"
+      "active_plan": null
     },
     "marker": {
       "problem": "none"

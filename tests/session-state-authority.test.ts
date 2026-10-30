@@ -31,15 +31,14 @@ type StateResolver = (
 
 function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
   return {
-    task_id: 'T-session-state',
-    phase: 'executing',
+    task_id: null,
+    phase: 'idle',
     state_version: 7,
     state_revision: `sha256:${'a'.repeat(64)}`,
     workflow_profile: 'high',
     next_action: 'continue',
     guidance: null,
     blockers: [],
-    authoritative_plan: { path: 'plans/plan-fixture.md', status: 'executing' },
     handoff: { path: '.ai/harness/handoff/current.md', freshness: 'fresh' },
     resume: { path: '.ai/harness/handoff/resume.md', freshness: 'fresh' },
     ...overrides,
@@ -238,12 +237,12 @@ interface CountedHookRun {
 
 /**
  * Run one real hook event against a real fixture and count resolution passes.
- * With `mutatePlanEachPass`, every pass appends to the plan, so the stability
- * loop never sees two equal authority snapshots.
+ * With `mutateAuthorityEachPass`, every pass appends whitespace to the policy,
+ * so the stability loop never sees two equal authority snapshots.
  */
 function runCountedHook(root: string, options: {
   readonly event: 'SessionStart' | 'SubagentStart';
-  readonly mutatePlanEachPass?: boolean;
+  readonly mutateAuthorityEachPass?: boolean;
   readonly compareWritePath?: boolean;
 }): CountedHookRun {
   const worker = `
@@ -257,7 +256,7 @@ function runCountedHook(root: string, options: {
       ...projector,
       projectEffectiveState(input) {
         passes += 1;
-        if (process.env.MUTATE_PLAN) appendFileSync(process.env.MUTATE_PLAN, ' ');
+        if (process.env.MUTATE_AUTHORITY) appendFileSync(process.env.MUTATE_AUTHORITY, ' ');
         return project(input);
       },
     }));
@@ -290,6 +289,7 @@ function runCountedHook(root: string, options: {
       result, passes: hookPasses, writePathPasses, stateDirectoryCreated, versionOwnerDirectoryCreated,
     }) + '\\n');
   `;
+  if (options.mutateAuthorityEachPass) writeAt(root, '.ai/harness/policy.json', '{}\n');
   const child = spawnSync(process.execPath, ['-e', worker], {
     cwd: root,
     encoding: 'utf8',
@@ -297,7 +297,7 @@ function runCountedHook(root: string, options: {
       ...process.env,
       FIXTURE_ROOT: root,
       HOOK_EVENT: options.event,
-      MUTATE_PLAN: options.mutatePlanEachPass ? join(root, PLAN) : '',
+      MUTATE_AUTHORITY: options.mutateAuthorityEachPass ? join(root, '.ai/harness/policy.json') : '',
       COMPARE_WRITE_PATH: options.compareWritePath ? '1' : '',
       VERSION_OWNER_DIRECTORY: dirname(stateVersionOwnerPath(root)),
       PROJECTOR_MODULE: resolve(import.meta.dir, '../src/core/state/project-effective-state.ts'),
@@ -417,11 +417,8 @@ describe('SessionStart Effective State authority', () => {
 
   test('projects idle, active and blocked-but-resolved state, and never hides the state section', () => {
     const actionable = fixtureState();
-    const nonActionable = fixtureState({
-      task_id: null,
-      blockers: [],
-    });
-    const blocked = fixtureState({ task_id: null, blockers: ['contract:missing'] });
+    const nonActionable = fixtureState({ blockers: [] });
+    const blocked = fixtureState({ blockers: ['capability_registry:invalid'] });
     const resolveSession = (state: EffectiveState) =>
       resolveHookEffectiveState('/repo-b', 123, (() => state) as StateResolver);
     expect(resolveSession(actionable)).toEqual({ ok: true, state: actionable });
@@ -533,7 +530,7 @@ describe('SessionStart Effective State authority', () => {
   test('SessionStart retries stability exhaustion three times, four passes each, without a state write', () => {
     const fixture = optedInFixture();
     try {
-      const run = runCountedHook(fixture.cwd, { event: 'SessionStart', mutatePlanEachPass: true });
+      const run = runCountedHook(fixture.cwd, { event: 'SessionStart', mutateAuthorityEachPass: true });
       expect(run.result).toMatchObject({ exitCode: 0, reason: 'context-unavailable', handler: 'session-context' });
       expect(run.passes).toBe(12);
       expect(run.stateDirectoryCreated).toBe(false);

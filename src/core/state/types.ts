@@ -61,9 +61,10 @@ export interface CapabilityOwnership {
   readonly unowned_paths: readonly string[];
 }
 
-export interface EffectiveStateV1 {
-  readonly protocol: 1;
+export interface EffectiveStateV2 {
+  readonly protocol: 2;
   readonly kind: 'repo-harness-effective-state';
+  /** No local task identity remains; GitHub owns the task. */
   readonly task_id: string | null;
   readonly phase: string;
   readonly state_version: number;
@@ -76,14 +77,10 @@ export interface EffectiveStateV1 {
   readonly subject_revision: string;
   readonly projection_revision: string;
   /**
-   * Pure content hash over exactly {subject_revision, completed-task markers
-   * derived from the plan text, the hard blocker set}. No projection, time, or PID input feeds it.
+   * Pure content hash over exactly {subject_revision, the hard blocker set}.
+   * No projection, time, or PID input feeds it.
    */
   readonly progress_token: string;
-  readonly authoritative_plan: {
-    readonly path: string;
-    readonly status: SnapshotPlanState;
-  } | null;
   readonly workflow_profile: WorkflowProfile | null;
   readonly requested_workflow_profile: string | null;
   readonly risk_floor: WorkflowProfile;
@@ -109,16 +106,31 @@ export interface EffectiveStateV1 {
   readonly current_snapshot: EffectiveStateSource;
 }
 
-export type EffectiveState = EffectiveStateV1;
+export type EffectiveState = EffectiveStateV2;
+
+/**
+ * Decode one public Effective State payload. Protocol 1 is retired and fails
+ * closed; there is no compatibility branch.
+ */
+export function decodeEffectiveState(value: unknown): EffectiveStateV2 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('effective_state_invalid');
+  }
+  const record = value as Record<string, unknown>;
+  if (record.protocol !== 2) throw new Error('effective_state_protocol_unsupported');
+  if (record.kind !== 'repo-harness-effective-state') {
+    throw new Error('effective_state_kind_unsupported');
+  }
+  return value as EffectiveStateV2;
+}
 
 /**
  * The continuation routes. There is deliberately no `ask`/`wait` member:
  * blocked and needs-user states collapse into `halt`, whose `reason` carries
- * the blocker or plan status.
+ * the blocker or the missing next action.
  */
 export type ContinuationRoute =
-  | 'continue_active_plan'
-  | 'verify_or_finish'
+  | 'continue'
   | 'halt'
   | 'idle';
 
@@ -129,11 +141,11 @@ export type ContinuationRoute =
  * one halt. Identical repo bytes yield byte-identical JSON -- no time, PID,
  * locale, or absolute path enters this document.
  */
-export interface ContinuationEnvelopeV1 {
-  readonly protocol: 1;
+export interface ContinuationEnvelopeV2 {
+  readonly protocol: 2;
   readonly kind: 'repo-harness-continuation-envelope';
   readonly route: ContinuationRoute;
-  /** Repo-relative plan or sprint path identifying the unit; null only for `idle`. */
+  /** Content identity of the actionable unit; null only for `idle`. */
   readonly unit_ref: string | null;
   readonly authority_revision: string;
   readonly progress_token: string;
