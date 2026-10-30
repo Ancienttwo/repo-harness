@@ -9,8 +9,8 @@
 // in the map HTML, or from a JSON file. Shape:
 //   { "modules": [ { "id", "label"?, "include": [glob], "exclude"?: [glob], "nodes"?: [nodeId] } ] }
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
-// Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file (exports/module/main/src/index), and the edge goes to the module owning that file; when no file resolves, the module owning most source files under the package directory is used, else the import is counted under `unownedWorkspace`.
-// Limits: tsconfig path aliases are not resolved; only tracked files (git ls-files) are scanned.
+// Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact `exports` key (deterministic conditions: import/default/bun/types) or the direct subpath. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
+// Limits: tsconfig path aliases are not resolved; `exports` wildcard (`*`) patterns are not resolved; only tracked files (git ls-files) are scanned.
 
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -138,6 +138,21 @@ function resolveRelative(from: string, spec: string, tracked: Set<string>): stri
   return resolveBase(path.posix.join(path.posix.dirname(from), spec), tracked);
 }
 
+// First determinable string target of an exports value: the value itself, or the
+// deterministic condition order shared with the "." entry. Custom-only conditions
+// have no determinable target.
+function conditionValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "object" && value !== null) {
+    const conditions = value as Record<string, unknown>;
+    for (const key of ["import", "default", "bun", "types"]) {
+      const target = conditions[key];
+      if (typeof target === "string" && target !== "") return target;
+    }
+  }
+  return undefined;
+}
+
 // Entry-point candidates of a workspace package, in resolution order. Only string-valued fields count.
 function entryCandidates(pkg: Record<string, unknown>): string[] {
   const out: string[] = [];
@@ -147,20 +162,31 @@ function entryCandidates(pkg: Record<string, unknown>): string[] {
   const exp = pkg.exports;
   if (typeof exp === "string") add(exp);
   else if (typeof exp === "object" && exp !== null) {
-    const dot = (exp as Record<string, unknown>)["."];
-    if (typeof dot === "string") add(dot);
-    else if (typeof dot === "object" && dot !== null) {
-      for (const key of ["import", "default", "bun", "types"]) add((dot as Record<string, unknown>)[key]);
-    }
+    add(conditionValue((exp as Record<string, unknown>)["."]));
   }
   add(pkg.module);
   add(pkg.main);
   return out;
 }
 
+// Exact, wildcard-free `exports` subpath keys with a determinable target. A key
+// this map misses has no deterministic resolution and stays unresolved.
+function exportSubpaths(pkg: Record<string, unknown>): Map<string, string> {
+  const subpaths = new Map<string, string>();
+  const exp = pkg.exports;
+  if (typeof exp !== "object" || exp === null || Array.isArray(exp)) return subpaths;
+  for (const [key, value] of Object.entries(exp as Record<string, unknown>)) {
+    if (!key.startsWith("./") || key.includes("*")) continue;
+    const target = conditionValue(value);
+    if (target !== undefined) subpaths.set(key.slice(2), target);
+  }
+  return subpaths;
+}
+
 interface WorkspacePackage {
   dir: string;
   entries: string[];
+  subpaths: ReadonlyMap<string, string>;
 }
 
 function workspacePackages(root: string, files: string[]): Map<string, WorkspacePackage> {
@@ -172,7 +198,7 @@ function workspacePackages(root: string, files: string[]): Map<string, Workspace
     if (dir === ".") continue;
     try {
       const pkg = JSON.parse(readFileSync(path.join(root, file), "utf8"));
-      if (typeof pkg.name === "string" && pkg.name !== "") packages.set(pkg.name, { dir, entries: entryCandidates(pkg) });
+      if (typeof pkg.name === "string" && pkg.name !== "") packages.set(pkg.name, { dir, entries: entryCandidates(pkg), subpaths: exportSubpaths(pkg) });
     } catch {
       // A tracked package.json that does not parse cannot name a workspace package.
     }
@@ -225,25 +251,6 @@ function main(): void {
   const packages = workspacePackages(root, files);
   const packageNames = [...packages.keys()].sort((a, b) => b.length - a.length);
   const unassigned: { path: string; loc: number }[] = [];
-  const unownedWorkspace: string[] = [];
-
-  // Module owning the most source files under a package directory (ties: declared order).
-  const dominantOwner = new Map<string, number>();
-  const ownerUnder = (dir: string): number => {
-    const cached = dominantOwner.get(dir);
-    if (cached !== undefined) return cached;
-    const counts = new Array<number>(modules.length).fill(0);
-    for (const f of universe) {
-      const o = owner.get(f) ?? -1;
-      if (o >= 0 && f.startsWith(`${dir}/`) && path.posix.extname(f) in LOADERS) counts[o]!++;
-    }
-    let best = -1;
-    counts.forEach((c, i) => {
-      if (c > 0 && (best < 0 || c > counts[best]!)) best = i;
-    });
-    dominantOwner.set(dir, best);
-    return best;
-  };
   const entryFile = new Map<string, string | null>();
   const resolveEntry = (name: string, pkg: WorkspacePackage): string | null => {
     if (entryFile.has(name)) return entryFile.get(name)!;
@@ -302,15 +309,15 @@ function main(): void {
         const name = packageNames.find((n) => spec === n || spec.startsWith(`${n}/`));
         if (name !== undefined) {
           const pkg = packages.get(name)!;
-          const target =
-            spec === name ? resolveEntry(name, pkg) : resolveBase(path.posix.join(pkg.dir, spec.slice(name.length + 1)), tracked);
+          const sub = spec.slice(name.length + 1);
+          const declared = pkg.subpaths.get(sub);
+          const base = path.posix.join(pkg.dir, declared ?? sub);
+          const target = spec === name ? resolveEntry(name, pkg) : resolveBase(base, tracked);
+          // Reported, not guessed: no edge is invented from the package directory's file counts.
           if (target !== null) targetOwner = owner.get(target);
           else {
-            targetOwner = ownerUnder(pkg.dir);
-            if (targetOwner < 0) {
-              unownedWorkspace.push(`${file} -> ${spec}`);
-              continue;
-            }
+            unresolved.push(`${file} -> ${spec}`);
+            continue;
           }
         }
       }
@@ -336,7 +343,6 @@ function main(): void {
       .sort((a, b) => moduleOrder.get(a.from)! - moduleOrder.get(b.from)! || moduleOrder.get(a.to)! - moduleOrder.get(b.to)!),
     unresolved: { count: unresolved.length, examples: unresolved.slice(0, EXAMPLE_LIMIT) },
     unparsed: { count: unparsed.length, examples: unparsed.slice(0, EXAMPLE_LIMIT) },
-    unownedWorkspace: { count: unownedWorkspace.length, examples: unownedWorkspace.slice(0, EXAMPLE_LIMIT) },
     overlaps: { total: overlaps.length, examples: overlaps.sort(byPath).slice(0, LIST_LIMIT) },
     unassigned: {
       count: unassigned.length,
