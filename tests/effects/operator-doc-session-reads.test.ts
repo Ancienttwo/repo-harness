@@ -1,5 +1,7 @@
 import { boundedDocSessionFinalizeOperation } from '../../src/effects/operator/doc-session-finalize-routes';
 import { decodeDocSessionFinalizeResponse } from '../../src/core/operator/doc-session-finalize-wire';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
+import { DOC_SESSION_AGENT_LOCK } from '../../src/effects/operator/doc-session-agent';
 import { runOperatorWrite } from '../../src/effects/operator/write-run';
 import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSION_LIST_MAX } from '../../src/core/operator/doc-session-views';
 import { afterEach, expect, test } from 'bun:test';
@@ -530,7 +532,7 @@ test('public decoders reject added fields, wrong identities and private paths', 
 });
 
 
-test('production commit/discard worker refuses unknown cleanup, with HTTP/CLI replay and no lifecycle or Git effects', async () => {
+test('production finalize enforces the darwin commit occupancy gate; discard and other platforms refuse unknown cleanup', async () => {
   const s = await session();
   agentRecord(s, 'stopped');
   const directory = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions', s.sid);
@@ -538,11 +540,24 @@ test('production commit/discard worker refuses unknown cleanup, with HTTP/CLI re
   const fields = { expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: 'Private commit explanation' };
   const requestId = randomUUID();
   const answer = await s.post('commit', { request_id: requestId, ...fields });
-  expect(answer).toMatchObject({ status: 503, body: { error: { code: 'quiescence_unavailable' } } });
+  // macOS passes the occupancy gate and reaches the core, which refuses the
+  // unknown digest; every other platform still refuses inside the gate.
+  const commitOutcome = process.platform === 'darwin' ? { status: 409, code: 'diff_changed' } : { status: 503, code: 'quiescence_unavailable' };
+  expect(answer).toMatchObject({ status: commitOutcome.status, body: { error: { code: commitOutcome.code } } });
   expectNoPrivatePath(s, answer.text);
   const replay = s.cli('commit', s.sid, '--expected-head', s.base, '--expected-diff-sha256', fields.expected_diff_sha256, '--message', fields.message, '--request-id', requestId, '--json');
   expect(replay.status).toBe(2);
-  expect(JSON.parse(replay.stderr as string)).toEqual({ request_id: requestId, status: 503, ...answer.body });
+  expect(JSON.parse(replay.stderr as string)).toEqual({ request_id: requestId, status: commitOutcome.status, ...answer.body });
+  if (process.platform === 'darwin') {
+    // A host that still holds agent.lock has not finished: specific refusal, not the generic blocker.
+    const lock = acquireExclusiveDirectoryLock(directory, DOC_SESSION_AGENT_LOCK, { waitTimeoutMs: 1000 });
+    try {
+      lock.assertOwned();
+      const held = await s.post('commit', { request_id: randomUUID(), ...fields });
+      expect(held).toMatchObject({ status: 503, body: { error: { code: 'session_host_active' } } });
+      expectNoPrivatePath(s, held.text);
+    } finally { lock.release(); }
+  }
   const discardId = randomUUID();
   const discard = s.cli('discard', s.sid, '--expected-head', s.base, '--expected-loss-sha256', 'b'.repeat(64), '--request-id', discardId, '--json');
   expect(discard.status).toBe(2);

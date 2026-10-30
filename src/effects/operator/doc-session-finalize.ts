@@ -16,7 +16,7 @@ import { gitExecFileSync, configuredGitBinary, withoutRepositorySelectingGitEnv 
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { withWorktreeTopologyLockAsync, assertNoOwner, assertWorktreeBinding, entries } from '../state/coordination-worktree-topology';
-import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
+import { occupiesWorktree, worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
 import {
   docSessionGitRunner, docSessionDiffSha256, docSessionLossSha256, observeDocSessionChanges,
   observeDocSessionLoss, readDocSessionDiff, resolveDocSession,
@@ -31,9 +31,11 @@ export interface DocSessionFinalizeDependencies {
    * REQUIRED host adapter. Hold the same lifecycle exclusion used by messages/resume
    * until action settles. Refuse an active turn. Prove the host and descendants have
    * stopped; a stopped session must not be restarted. Missing/unknown proof refuses.
-   * Never implement this as merely reading events or returning action().
+   * The macOS commit path accepts the owner-decided occupancy proof (2026-10-31);
+   * discard never proceeds without the upstream cleanup capability. Never implement
+   * this as merely reading events or returning action().
    */
-  readonly with_quiesced_session: <T>(sessionId: string, action: () => Promise<T>) => Promise<T>;
+  readonly with_quiesced_session: <T>(sessionId: string, action: () => Promise<T>, kind: 'commit' | 'discard') => Promise<T>;
   /** REQUIRED authoritative scope and architecture hand-edits check. Throw before
    * mutation, including for instruction files, generated targets and generated regions.
    * Run against this resolved worktree and these complete base-relative changes.
@@ -338,7 +340,7 @@ async function discardLocked(sid: string, input: DocSessionDiscardInput, deps: D
     if (entries(repo.path, { gitBin: configuredGitBinary(deps.env) }).some(entry => entry.branch === `refs/heads/${record.branch}` && entry.path !== worktree)) throw refusal('worktree_in_use');
     assertNoOwner(repo.path, worktree, { gitBin: configuredGitBinary(deps.env) });
     const processes = (deps.processes ?? worktreeProcesses)(Date.now() + 5000);
-    if (processes === null || processes.some(p => p.cwd === worktree || p.cwd.startsWith(worktree + '/'))) throw refusal('worktree_in_use');
+    if (processes === null || occupiesWorktree(processes, worktree)) throw refusal('worktree_in_use');
     const target = await deps.publication_target(record); validateTarget(target);
     const url = remoteUrl(deps.env, worktree, target);
     const runner = docSessionGitRunner(deps.env);
@@ -378,7 +380,7 @@ function operation(sid: string, kind: 'commit' | 'discard', input: DocSessionCom
           lock.assertOwned();
           if (readDocSessionEvents(deps.env, sid, null).activity === 'running') throw refusal('turn_active');
           return kind === 'commit' ? commitLocked(sid, input as DocSessionCommitInput, deps, directory) : discardLocked(sid, input as DocSessionDiscardInput, deps, directory);
-        });
+        }, kind);
       } catch (error) {
         if (error instanceof DocSessionScopeRefusal) return {
           status: error.status, body: { error: { code: error.code, message: error.message, next_action: error.next_action, files: [...error.files] } },

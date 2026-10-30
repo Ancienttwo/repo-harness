@@ -2,8 +2,10 @@
 
 This is the shared HTTP/CLI composition of #1023. It depends on the core in
 #1163, adapters in #1168, host policy in #1171 and lifecycle in #1169.
-The production success path remains blocked on verified runtime cleanup.
-No test injection or environment switch enables it.
+Discard stays blocked on verified runtime cleanup on every platform.
+Commit proceeds on macOS only under the weaker occupancy proof defined in
+"Darwin commit-path acceptance" below. No test injection or environment
+switch enables any of it.
 
 ## Requests and outcomes
 
@@ -30,7 +32,9 @@ message; the supervised child receives it only through bounded stdin.
 | 409 `turn_active` | Host or events show an active turn | Stop and review again |
 | 503 `busy` | Host startup or another target write | Follow `next_action` |
 | 503 `session_state_unavailable` | State identity or event observation failed | Restore the state |
-| 503 `quiescence_unavailable` | No complete runtime cleanup proof | Disable finalization until runtime support exists |
+| 503 `quiescence_unavailable` | Quiescence unprovable: non-macOS, discard, no host record, or the process inventory returned unknown | Disable finalization until runtime support exists |
+| 503 `session_host_active` | The host still holds `agent.lock`, so it has not finished | Wait for the host, then retry with a new request_id |
+| 503 `session_occupied` | A process runs with its cwd inside the session worktree | Stop that process, then retry with a new request_id |
 | 409 `request_mismatch` | Request UUID bound to other fields | Use a new UUID for a changed request |
 | 409 `reconcile_required` | Child failed, timed out or returned invalid output | Reconcile; do not auto-retry |
 
@@ -56,6 +60,10 @@ remain the existing authorities.
 ```json
 {"protocol":1,"kind":"operator_docs_session_finalization_state","session_id":"<sid>","availability":{"state":"blocked","code":"quiescence_unavailable"},"progress":null}
 ```
+
+The `availability` field reports the missing upstream cleanup capability, not
+the per-action gate: on macOS the commit route applies the weaker occupancy
+proof and may succeed while the upstream capability stays unavailable.
 
 GET uses the existing bounded task-read process. It never starts or resumes a
 host, executes finalization or reconciles unknown provider results. `progress`
@@ -83,7 +91,8 @@ either operation's existing proof requirement or bypass it for PR retries.
 | Known PGID termination | That known group is absent | Other detached groups are absent |
 | Worktree cwd inventory | Observable current occupancy | All historic descendants are gone |
 
-Installed OAR 0.75.0 exposes no owned-process identity or verified cleanup result.
+Installed OAR exposes no owned-process identity or verified cleanup result
+(verified up to 0.79.0).
 Its resource reader returns null after the root exits. A cloud Linux fixture
 spawned a detached descendant, let its root exit 0, then called the installed
 `processTreeResources(root.pid)` and `treeResourcesReader(root, exited)`.
@@ -91,6 +100,31 @@ Both returned null while the same-start-identity descendant remained alive in
 its own process group. The fixture killed only that verified child afterward.
 This is a resource-observation counterexample, not a claim that a real provider's
 dispose failed. No native provider credentials were used.
+
+### Darwin commit-path acceptance (owner decision, 2026-10-31)
+
+On macOS only, the commit route accepts this observable proof in place of the
+upstream capability, checked in order after the existing turn and state
+refusals:
+
+1. `agent.json` exists and its state is `idle`, `stopped` or `failed`.
+2. `agent.lock` acquires within a bounded wait. The host holds the lock from
+   process start to its final block, so acquiring it proves the host process
+   finished; a proven-dead holder is reclaimed, contention refuses
+   `session_host_active`.
+3. The shared worktree cwd inventory (`worktreeProcesses`) lists no process
+   whose cwd is the session worktree or below it. A null inventory means
+   occupancy could not be proved and refuses `quiescence_unavailable`; a
+   non-empty occupancy refuses `session_occupied`.
+
+The gate holds `agent.lock` until the action settles and records each passed
+proof as a `docs_finalize_quiescence` intent and result pair in the operator
+audit log; the record carries the platform, the agent state and zero
+occupancy, never a filesystem path. The proof runs again before every
+attempt, including retries. Discard never uses this proof and still requires
+the upstream capability on every platform. Residual risk: a descendant that
+left the worktree cwd, or one that starts after the inventory snapshot, is
+unobservable to this proof.
 
 Minimum upstream capability: return an explicit confirmed, unknown or unsupported
 cleanup outcome bound to the native session and exact launch identity. Confirmed

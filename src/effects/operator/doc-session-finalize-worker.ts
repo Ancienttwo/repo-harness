@@ -24,7 +24,7 @@ async function main(): Promise<void> {
   const env = process.env;
   const deps = { env, ...createDocSessionGithubAdapters(env),
     validate_changes: createDocSessionScopeValidator({ is_writable_path: isDocsHostWritablePath }),
-    with_quiesced_session: <T>(sid: string, effect: () => Promise<T>) => withQuiescedDocSession(env, sid, effect),
+    with_quiesced_session: <T>(sid: string, effect: () => Promise<T>, kind: 'commit' | 'discard') => withQuiescedDocSession(env, sid, effect, { kind }),
   };
   let response;
   try {
