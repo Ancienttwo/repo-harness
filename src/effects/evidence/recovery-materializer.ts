@@ -9,7 +9,7 @@
  * `resolveLastPublishedCheckpoint`'s already-validated projection (EPC-06,
  * read-only import) -- this module never reads `.ai/harness/checks/*` or the
  * event ledger directly. Workflow CONTEXT (goal, next step, changed files,
- * active plan) is a different kind
+ * branch, HEAD, issue) is a different kind
  * of fact -- "where work stands," not "what was proven" -- and is read fresh
  * from the live repo on every call, exactly as the retired writers did.
  *
@@ -27,7 +27,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { escapeDecisionMarkdown, type CheckpointDecision } from '../../core/evidence/checkpoint';
 import { resolveHarnessPaths } from '../state/resolve-effective-state';
-import { createStateInputCollector, type StateInputCollector } from '../loop/state-input-collector';
 import {
   CheckpointResolutionError,
   resolveLastPublishedCheckpoint,
@@ -76,127 +75,58 @@ function yymmdd(date: Date): string {
   return `${String(date.getFullYear()).slice(-2)}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`;
 }
 
-function readJson(path: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-function metadataValue(path: string, label: string): string {
-  try {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = readFileSync(path, 'utf8').match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+)$`, 'm'));
-    return match?.[1]?.replace(/`/g, '').trim() ?? '';
-  } catch {
-    return '';
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Workflow context (ported verbatim from `stop-handler.ts`'s prior private
 // `projection()` helpers -- single source of truth going forward; the Stop
 // handler now imports these instead of keeping its own copies).
 // ---------------------------------------------------------------------------
 
-export interface RecoveryArtifactPaths {
-  readonly plan: string;
+export interface RecoveryRepositoryIdentity {
+  readonly branch: string;
+  readonly head: string;
+  /** The GitHub issue in `<type>/<number>-<slug>`; null when the branch has none. */
+  readonly issue: number | null;
 }
 
-/** A recovery view names no plan when another worktree owns the marker. */
-export function activePlanForRecovery(
-  collector: Pick<StateInputCollector, 'getWorktreeOwnership' | 'getActivePlanMarker'>,
-): string | null {
-  const ownership = collector.getWorktreeOwnership();
-  return ownership.owner === null || ownership.ownedByCurrent ? collector.getActivePlanMarker() : null;
+function gitValue(repoRoot: string, args: readonly string[]): string {
+  try {
+    return gitExecFileSync(['-C', repoRoot, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
 }
 
-/** `activePlanForRecovery` outside a hook event, which has no collector. */
-export function readActivePlanForRecovery(repoRoot: string): string | null {
-  return activePlanForRecovery(createStateInputCollector({
-    repoRoot,
-    resolveEffectiveState: () => { throw new Error('recovery views do not resolve Effective State'); },
-  }));
+/** Parse only `<type>/<number>-<slug>`; never infer an issue from anything else. */
+function issueFromBranch(branch: string): number | null {
+  const match = /^[^/]+\/(\d+)(?:-|$)/.exec(branch);
+  if (!match) return null;
+  const issue = Number(match[1]);
+  return Number.isSafeInteger(issue) && issue > 0 ? issue : null;
 }
 
-export interface RecoveryStatus extends RecoveryArtifactPaths {
+/** Current branch, HEAD and branch-derived issue; unknown when Git cannot answer. */
+export function resolveRecoveryRepository(repoRoot: string): RecoveryRepositoryIdentity {
+  const declaredBranch = gitValue(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const branch = declaredBranch === 'HEAD' ? '(detached)' : declaredBranch || '(unknown)';
+  return {
+    branch,
+    head: gitValue(repoRoot, ['rev-parse', 'HEAD']) || '(unknown)',
+    issue: issueFromBranch(branch),
+  };
+}
+
+export interface RecoveryStatus extends RecoveryRepositoryIdentity {
   readonly handoff: string;
   readonly resume: string;
 }
 
-/** The active artifacts and view paths, without rendering a view. */
-export function recoveryStatus(repoRoot: string, activePlan: string | null): RecoveryStatus {
+/** The repository identity and view paths, without rendering a view. */
+export function recoveryStatus(repoRoot: string): RecoveryStatus {
   const paths = resolveHarnessPaths(repoRoot);
-  return { ...recoveryArtifacts(repoRoot, activePlan), handoff: paths.handoff, resume: paths.resume };
-}
-
-export function recoveryArtifacts(
-  repoRoot: string,
-  activePlan: string | null,
-): RecoveryArtifactPaths {
-  return { plan: activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '' };
-}
-
-function todoSourcePlan(repoRoot: string, todoFile: string): string {
-  const value = metadataValue(join(repoRoot, todoFile), 'Source Plan');
-  return value === '(none)' ? '' : value;
-}
-
-function firstTaskBreakdown(planText: string): { total: number; done: number; next: string } {
-  const lines = planText.split('\n');
-  let inSection = false;
-  let total = 0;
-  let done = 0;
-  let next = '';
-  for (const line of lines) {
-    if (!inSection && /^## Task Breakdown\s*$/.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^## /.test(line)) break;
-    const match = inSection ? line.match(/^\s*-\s*\[([ xX])\]\s+(.+)$/) : null;
-    if (!match) continue;
-    total += 1;
-    if (match[1].toLowerCase() === 'x') done += 1;
-    else if (!next) next = match[2].replace(/\r/g, '');
-  }
-  return { total, done, next };
-}
-
-export interface RecoveryNextAction {
-  readonly stage: string;
-  readonly command: string;
-  readonly message: string;
-}
-
-function nextAction(repoRoot: string, artifacts: RecoveryArtifactPaths): RecoveryNextAction {
-  if (!artifacts.plan) return { stage: 'none', command: '', message: '(none)' };
-  let taskState = { total: 0, done: 0, next: '' };
-  try {
-    taskState = firstTaskBreakdown(readFileSync(join(repoRoot, artifacts.plan), 'utf8'));
-  } catch {
-    // Missing/unreadable plan is treated as no active execution checklist.
-  }
-  if (taskState.total > taskState.done) {
-    const pending = taskState.next || 'continue active plan Task Breakdown';
-    return {
-      stage: 'task',
-      command: '',
-      message: `If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: ${pending}`,
-    };
-  }
-  return {
-    stage: 'check',
-    command: '/check',
-    message: 'Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next.',
-  };
-}
-
-function supersededPlan(repoRoot: string): string {
-  const state = readJson(join(repoRoot, '.claude/.task-state.json'));
-  return typeof state?.source_plan === 'string' && state.source_plan ? state.source_plan : '(none)';
+  return { ...resolveRecoveryRepository(repoRoot), handoff: paths.handoff, resume: paths.resume };
 }
 
 function changedFiles(repoRoot: string): { files: string; summary: string } {
@@ -259,20 +189,16 @@ export interface RecoveryWorkflowContext {
   readonly generatedAtDisplay: string;
   readonly generatedAtIso: string;
   readonly workingDirectory: string;
-  readonly artifacts: RecoveryArtifactPaths;
-  readonly sourcePlan: string;
-  readonly action: RecoveryNextAction;
+  readonly repository: RecoveryRepositoryIdentity;
   readonly nextTask: string;
   readonly goal: string;
   readonly changed: { readonly files: string; readonly summary: string };
-  readonly supersedes: string;
   readonly paths: {
     readonly handoff: string;
     readonly resume: string;
     readonly policyFile: string;
     readonly contextMap: string;
     readonly researchDir: string;
-    readonly todoFile: string;
   };
   readonly globalHandoffPath: string;
 }
@@ -291,7 +217,6 @@ export interface BuildRecoveryContextOptions {
  * evidence claim. */
 export function buildRecoveryContext(
   repoRoot: string,
-  activePlan: string | null,
   env: NodeJS.ProcessEnv,
   options: BuildRecoveryContextOptions = {},
 ): RecoveryWorkflowContext {
@@ -299,18 +224,16 @@ export function buildRecoveryContext(
   const reason = options.reason ?? 'session-stop';
   const harnessPaths = resolveHarnessPaths(repoRoot);
   const runId = options.runId ?? null;
-  const artifacts = recoveryArtifacts(repoRoot, activePlan);
+  const repository = resolveRecoveryRepository(repoRoot);
   const changed = changedFiles(repoRoot);
-  const sourcePlan = todoSourcePlan(repoRoot, harnessPaths.todoFile);
-  const action = nextAction(repoRoot, artifacts);
-  const nextTask = action.command ? `${action.message} Command: ${action.command}` : action.message;
-  const goal = sourcePlan
-    ? `Continue task checklist sourced from ${sourcePlan}.`
-    : artifacts.plan
-      ? `Continue active plan ${artifacts.plan}.`
-      : nextTask !== '(none)'
-        ? nextTask
-        : 'No active plan. Continue from the latest user request and filesystem state.';
+  const goal = repository.issue !== null
+    ? `Continue GitHub issue #${repository.issue} on branch ${repository.branch}.`
+    : repository.branch !== '(unknown)' && repository.branch !== '(detached)'
+      ? `Continue work on branch ${repository.branch}.`
+      : 'Continue from the latest user request and filesystem state.';
+  const nextTask = repository.issue !== null
+    ? `Continue GitHub issue #${repository.issue}; read the issue and filesystem state.`
+    : 'Continue from the latest user request and filesystem state.';
   const codexHome = options.codexHome ?? env.CODEX_HOME ?? join(env.HOME ?? '', '.codex');
 
   return {
@@ -320,20 +243,16 @@ export function buildRecoveryContext(
     generatedAtDisplay: formatDisplay(now),
     generatedAtIso: now.toISOString(),
     workingDirectory: repoRoot,
-    artifacts,
-    sourcePlan,
-    action,
+    repository,
     nextTask,
     goal,
     changed,
-    supersedes: supersededPlan(repoRoot),
     paths: {
       handoff: harnessPaths.handoff,
       resume: harnessPaths.resume,
       policyFile: '.ai/harness/policy.json',
       contextMap: harnessPaths.contextMap,
       researchDir: harnessPaths.researchDir,
-      todoFile: harnessPaths.todoFile,
     },
     globalHandoffPath: latestGlobalHandoff(codexHome),
   };
@@ -535,9 +454,11 @@ export function renderRecoveryHandoff(
     '',
     '- (none recorded)',
     '',
-    '## Active Artifacts',
+    '## Repository',
     '',
-    `- Active plan: ${context.artifacts.plan || '(none)'}`,
+    `- Branch: ${context.repository.branch}`,
+    `- HEAD: ${context.repository.head}`,
+    `- Issue: ${context.repository.issue ?? 'none'}`,
     `- Resume packet: ${context.paths.resume}`,
     '',
     '## Exact Next Step',
@@ -552,19 +473,14 @@ export function renderRecoveryHandoff(
     '## Source Artifacts',
     '',
     '- Spec: docs/spec.md',
-    `- Plan: ${context.artifacts.plan || '(none)'}`,
-    `- Todo Source Plan: ${context.sourcePlan || '(none)'}`,
     `- Resume Packet: ${context.paths.resume}`,
     `- Policy: ${context.paths.policyFile}`,
     `- Context Map: ${context.paths.contextMap}`,
     '',
     '## Current Status',
     '',
-    `- Next action stage: ${context.action.stage}`,
-    `- Next recommended action: ${context.nextTask}`,
     `- Working tree: ${context.changed.summary}`,
     `- Parent Run ID: ${context.runId ?? '(unresolved)'}`,
-    `- Supersedes: ${context.supersedes}`,
     '',
     '## Changed Files',
     '',
@@ -590,6 +506,12 @@ export function renderRecoveryResume(
     `> **Reason**: ${context.reason}`,
     `> **Working Directory**: ${context.workingDirectory}`,
     '',
+    '## Repository',
+    '',
+    `- Branch: ${context.repository.branch}`,
+    `- HEAD: ${context.repository.head}`,
+    `- Issue: ${context.repository.issue ?? 'none'}`,
+    '',
     '## Resume Prompt',
     '',
     'You are starting a fresh Codex session for an existing long-running task. Do not rely on prior chat history or Codex auto-compact. First read the source artifacts listed below, then continue from the exact next step in the repo handoff.',
@@ -601,11 +523,9 @@ export function renderRecoveryResume(
     'Required first reads:',
     '- AGENTS.md',
     `- ${context.paths.handoff}`,
-    `- ${context.paths.todoFile}`,
     `- ${context.paths.researchDir}/`,
     '',
     'Conditional first reads:',
-    `- Active plan: ${context.artifacts.plan || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
     'Execution rules:',
@@ -619,9 +539,7 @@ export function renderRecoveryResume(
     '',
     `- Repo handoff: ${context.paths.handoff}`,
     `- Resume packet: ${context.paths.resume}`,
-    `- Todo: ${context.paths.todoFile}`,
     `- Research: ${context.paths.researchDir}/`,
-    `- Plan: ${context.artifacts.plan || '(none)'}`,
     `- Global handoff: ${context.globalHandoffPath || '(none)'}`,
     '',
   ];
@@ -741,11 +659,10 @@ export interface MaterializeRecoveryViewsResult {
 
 export function materializeRecoveryViews(
   repoRoot: string,
-  activePlan: string | null,
   env: NodeJS.ProcessEnv,
   options: BuildRecoveryContextOptions = {},
 ): MaterializeRecoveryViewsResult {
-  const context = buildRecoveryContext(repoRoot, activePlan, env, options);
+  const context = buildRecoveryContext(repoRoot, env, options);
   const evidence = resolveRecoveryEvidence(repoRoot);
   return {
     handoff: renderRecoveryHandoff(context, evidence),

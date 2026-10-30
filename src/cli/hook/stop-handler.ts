@@ -5,7 +5,6 @@ import { collectAgentNotice } from './agent-notice';
 import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
-  activePlanForRecovery,
   buildRecoveryContext,
   renderRecoveryHandoff,
   renderRecoveryResume,
@@ -15,7 +14,7 @@ import type { StateInputCollector } from '../../effects/loop/state-input-collect
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
 
-export type StopCollector = Pick<StateInputCollector, 'getRepoRoot' | 'getWorktreeOwnership' | 'getActivePlanMarker'>;
+export type StopCollector = Pick<StateInputCollector, 'getRepoRoot'>;
 
 export interface StopProjectionTarget {
   readonly kind: 'handoff' | 'resume';
@@ -47,13 +46,12 @@ export interface StopHandlerResult {
 /** Writes handoff then resume; each write replaces the whole file, so a retry converges. */
 function writeRecoveryViews(
   repoRoot: string,
-  activePlan: string | null,
   env: NodeJS.ProcessEnv,
   identity: HookIdentity,
   now: Date,
   dependencies: StopHandlerDependencies,
 ): void {
-  const context = buildRecoveryContext(repoRoot, activePlan, env, { reason: 'session-stop', now: () => now, runId: identity.runId });
+  const context = buildRecoveryContext(repoRoot, env, { reason: 'session-stop', now: () => now, runId: identity.runId });
   const evidence = resolveRecoveryEvidence(repoRoot);
   const views: readonly [StopProjectionTarget, string][] = [
     [{ kind: 'handoff', path: context.paths.handoff }, renderRecoveryHandoff(context, evidence)],
@@ -80,11 +78,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (stopHookActive === true || stopHookActive === 'true') {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
-  const activePlan = activePlanForRecovery(opts.collector);
   // The views name the checkpoint they read, so a failed publish renders the
   // last published one.
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
-  writeRecoveryViews(repoRoot, activePlan, env, opts.identity, now, dependencies);
+  writeRecoveryViews(repoRoot, env, opts.identity, now, dependencies);
   return opts.identity.host === 'claude' ? claudeNotices(repoRoot, env) : codexNotices(repoRoot, env);
 }
 

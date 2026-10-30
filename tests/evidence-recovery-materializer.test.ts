@@ -10,7 +10,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { run } from "./helpers/repo-fixture";
+import { commitAll, initGitRepo, run } from "./helpers/repo-fixture";
 
 import type { SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import { publishCheckpointFromLedger } from "../src/effects/evidence/checkpoint-store";
@@ -77,31 +77,65 @@ function seedEvent(
 }
 
 
-describe("recovery-materializer: active artifact paths", () => {
-  test("a plan names no contract even when a matching task contract file exists", () => {
-    withTempRepo("recovery-artifacts-transient", (repoRoot) => {
-      const plan = "plans/plan-20260101-1200-think-plan-123.md";
+describe("recovery-materializer: repository identity", () => {
+  test("records branch, HEAD and the issue from <type>/<number>-<slug> and no plan or todos", () => {
+    withTempRepo("recovery-repository-identity", (repoRoot) => {
+      writeFileSync(join(repoRoot, "README.md"), "# Fixture\n");
       mkdirSync(join(repoRoot, "plans"), { recursive: true });
-      mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
-      writeFileSync(join(repoRoot, plan), "# Plan: Real Title\n\n> **Status**: Executing\n");
-      writeFileSync(join(repoRoot, "tasks/contracts/20260101-1200-real-title.contract.md"), "# Task Contract: real title\n");
-      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({
-        tasks: { reviews_dir: "tasks/custom-reviews", notes_dir: "tasks/custom-notes" },
-      }));
+      writeFileSync(join(repoRoot, "plans/plan-20260101-1200-think-plan-123.md"), "# Plan: Real Title\n");
+      mkdirSync(join(repoRoot, "tasks"), { recursive: true });
+      writeFileSync(join(repoRoot, "tasks/todos.md"), "# Deferred\n> **Source Plan**: plans/plan-20260101-1200-think-plan-123.md\n");
+      initGitRepo(repoRoot);
+      commitAll(repoRoot, "fixture");
+      expect(run("git", ["checkout", "-b", "feat/1178-hook-recovery"], repoRoot).status).toBe(0);
+      const head = run("git", ["rev-parse", "HEAD"], repoRoot).stdout.trim();
 
-      const context = buildRecoveryContext(repoRoot, plan, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
 
-      expect(context.artifacts).toEqual({ plan });
+      expect(context.repository).toEqual({ branch: "feat/1178-hook-recovery", head, issue: 1178 });
+      expect(context.goal).toBe("Continue GitHub issue #1178 on branch feat/1178-hook-recovery.");
       const evidence = resolveRecoveryEvidence(repoRoot);
-      expect(renderRecoveryHandoff(context, evidence)).not.toContain("tasks/contracts/");
-      expect(renderRecoveryResume(context, evidence)).not.toContain("tasks/contracts/");
+      const handoff = renderRecoveryHandoff(context, evidence);
+      const resume = renderRecoveryResume(context, evidence);
+      expect(handoff).toContain("- Branch: feat/1178-hook-recovery");
+      expect(handoff).toContain(`- HEAD: ${head}`);
+      expect(handoff).toContain("- Issue: 1178");
+      expect(resume).toContain("- Issue: 1178");
+      expect(handoff).not.toContain("plans/plan-20260101-1200-think-plan-123.md");
+      expect(handoff).not.toContain("tasks/todos.md");
+      expect(handoff).not.toContain("Active plan:");
+      expect(resume).not.toContain("Plan:");
+      expect(resume).not.toContain("Todo:");
+    });
+  });
+
+  test("writes issue: none without guessing when the branch has no issue number", () => {
+    withTempRepo("recovery-repository-no-issue", (repoRoot) => {
+      writeFileSync(join(repoRoot, "README.md"), "# Fixture\n");
+      initGitRepo(repoRoot);
+      commitAll(repoRoot, "fixture");
+
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
+
+      expect(context.repository).toMatchObject({ branch: "main", issue: null });
+      expect(context.goal).toBe("Continue work on branch main.");
+      const handoff = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot));
+      expect(handoff).toContain("- Issue: none");
+      expect(handoff).not.toContain("Continue GitHub issue");
+    });
+  });
+
+  test("records unknown branch and HEAD outside a Git repository", () => {
+    withTempRepo("recovery-repository-not-git", (repoRoot) => {
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
+      expect(context.repository).toEqual({ branch: "(unknown)", head: "(unknown)", issue: null });
     });
   });
 
   test("a policy path outside its root fails closed instead of taking the default", () => {
     withTempRepo("recovery-artifacts-unsafe-policy", (repoRoot) => {
       writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({ harness: { handoff_file: "../handoff.md" } }));
-      expect(() => buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW }))
+      expect(() => buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW }))
         .toThrow("unsafe workflow policy path .harness.handoff_file: ../handoff.md");
     });
   });
@@ -110,7 +144,7 @@ describe("recovery-materializer: active artifact paths", () => {
 describe("recovery-materializer: determinism", () => {
   test("same context + evidence + injected clock renders byte-identical handoff and resume", () => {
     withTempRepo("recovery-determinism", (repoRoot) => {
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const evidence = resolveRecoveryEvidence(repoRoot);
 
       const handoffA = renderRecoveryHandoff(context, evidence);
@@ -128,8 +162,8 @@ describe("recovery-materializer: determinism", () => {
 
   test("a different injected clock changes the rendered generated-at text (and, since the display timestamp is part of the hashed body, its content_hash) but not the rest of the workflow-context fields", () => {
     withTempRepo("recovery-determinism-clock", (repoRoot) => {
-      const contextA = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW, runId: "fixed-run-id" });
-      const contextB = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: () => new Date("2026-07-23T00:00:00.000Z"), runId: "fixed-run-id" });
+      const contextA = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW, runId: "fixed-run-id" });
+      const contextB = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: () => new Date("2026-07-23T00:00:00.000Z"), runId: "fixed-run-id" });
       const evidence = resolveRecoveryEvidence(repoRoot);
 
       const handoffA = renderRecoveryHandoff(contextA, evidence);
@@ -156,7 +190,7 @@ describe("recovery-materializer: evidence (single hop: checkpoint -> view)", () 
       expect(evidence.available).toBe(false);
       if (!evidence.available) expect(evidence.reason).toBe("no-checkpoint");
 
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const handoff = renderRecoveryHandoff(context, evidence);
       expect(handoff).toContain("- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)");
       expect(handoff).toContain("- Covered events: 0");
@@ -180,7 +214,7 @@ describe("recovery-materializer: evidence (single hop: checkpoint -> view)", () 
       expect(evidence.available).toBe(false);
       if (!evidence.available) expect(evidence.reason).toBe("checkpoint-invalid");
 
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const handoff = renderRecoveryHandoff(context, evidence);
       expect(handoff).toContain("- Checkpoint: (unavailable");
     });
@@ -199,7 +233,7 @@ describe("recovery-materializer: evidence (single hop: checkpoint -> view)", () 
       expect(evidence.coveredEventCount).toBe(1);
       expect(evidence.sourceEventIds).toEqual([event.event_id]);
 
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const handoff = renderRecoveryHandoff(context, evidence);
       expect(handoff).toContain(`- Checkpoint: ${evidence.checkpointId}`);
       expect(handoff).toContain(`verify_sprint.result: ${event.event_id}`);
@@ -213,7 +247,7 @@ describe("recovery-materializer: evidence (single hop: checkpoint -> view)", () 
 describe("recovery-materializer: checkpoint decisions", () => {
   test("shows no decisions without a checkpoint", () => {
     withTempRepo("recovery-no-decisions", repoRoot => {
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const handoff = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot));
       expect(handoff).toContain("## Decisions\n\n- (none recorded)\n");
     });
@@ -235,7 +269,7 @@ describe("recovery-materializer: checkpoint decisions", () => {
         payload: { kind: "json", value: { phase: "build", decision: "Use revised choice", why: "New evidence",
           evidence: ["src/core/evidence/types.ts:42"], result: "Implemented" } },
       });
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const stale = renderRecoveryHandoff(context, resolveRecoveryEvidence(repoRoot));
       expect(stale).toContain("Use first choice");
       expect(stale).not.toContain("Use revised choice");
@@ -255,7 +289,7 @@ describe("recovery-materializer: checkpoint decisions", () => {
 describe("recovery-materializer: resume view carries the preserved external-observable contract", () => {
   test("resume keeps the legacy marker and a Resume Prompt header the EPC-08 SessionStart reader depends on", () => {
     withTempRepo("recovery-resume-contract", (repoRoot) => {
-      const context = buildRecoveryContext(repoRoot, null, {}, { reason: "unit-test", now: FIXED_NOW });
+      const context = buildRecoveryContext(repoRoot, {}, { reason: "unit-test", now: FIXED_NOW });
       const evidence = resolveRecoveryEvidence(repoRoot);
       const resume = renderRecoveryResume(context, evidence);
       expect(resume).toContain("<!-- generated-by: repo-harness codex-handoff-resume v1 -->");

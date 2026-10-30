@@ -12,12 +12,9 @@
 
 import type { SessionContextSection } from './session-context-budget';
 import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
-import { buildStateSnapshotFromEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 
 const STATE_SOURCE = 'repo-harness state resolve --json';
-/** The resolver reads the pending capture record at this default path. */
-const PENDING_PLAN_SOURCE = '.ai/harness/planning/pending.json';
 
 export function projectEffectiveStateSessionSection(state: EffectiveState): SessionContextSection {
   const compact = {
@@ -30,7 +27,6 @@ export function projectEffectiveStateSessionSection(state: EffectiveState): Sess
     guidance: state.guidance,
     blockers: state.blockers,
     references: {
-      plan: state.authoritative_plan?.path ?? null,
       handoff: state.handoff.path,
       resume: state.resume.path,
     },
@@ -95,34 +91,12 @@ export interface SessionContextProvider {
   readonly render: (input: SessionContextProviderInput) => SessionContextBody | null;
 }
 
-/** A fresh pending plan capture with no active plan. Freshness is the resolver's own rule. */
-function pendingPlanCaptureBody({ repoRoot, state, nowMs }: SessionContextProviderInput): SessionContextBody | null {
-  if (state.authoritative_plan) return null;
-  if (buildStateSnapshotFromEffectiveState(state, repoRoot, nowMs).states.pending !== 'fresh') return null;
-  return {
-    content: [
-      '# Pending Plan Capture',
-      '',
-      'A host/thread planning discussion is pending capture and no active repo plan is selected.',
-      '',
-      `- Record: \`${PENDING_PLAN_SOURCE}\` (kind, slug and draft path)`,
-      '- Rule: continue discussion freely, but do not edit implementation files until the final plan body is captured into `plans/`.',
-      "- Capture: `printf '%s\\n' '<decision-complete plan body>' | repo-harness run capture-plan --slug <slug> --title <title>`",
-    ].join('\n'),
-    source: PENDING_PLAN_SOURCE,
-  };
-}
-
-export const SESSION_CONTEXT_PROVIDERS: readonly SessionContextProvider[] = Object.freeze([
-  { id: 'pending-plan-capture', priority: 3, render: pendingPlanCaptureBody },
-]);
-
 /** All SessionStart sections, state first. The runtime budgets them once. */
 export function buildSessionStartSections(
   repoRoot: string,
   resolution: EffectiveStateResolution,
   nowMs: number,
-  providers: readonly SessionContextProvider[] = SESSION_CONTEXT_PROVIDERS,
+  providers: readonly SessionContextProvider[] = [],
 ): SessionContextSection[] {
   if (!resolution.ok) return [projectUnavailableStateSessionSection(resolution)];
   const sections = [projectEffectiveStateSessionSection(resolution.state)];

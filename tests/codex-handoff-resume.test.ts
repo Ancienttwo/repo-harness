@@ -78,8 +78,10 @@ describe("codex-handoff-resume helper integration", () => {
 
       expect(res.status).toBe(0);
       const resume = readFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "utf-8");
-      expect(resume).toContain("Active plan: (none)");
-      expect(resume).toContain("Plan: (none)");
+      expect(resume).toContain("- Issue: none");
+      expect(resume).not.toContain("Active plan:");
+      expect(resume).not.toContain("Plan: (none)");
+      expect(resume).not.toContain("tasks/todos.md");
       expect(resume).not.toContain("plans/plan-20260602-0034-old-work.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });

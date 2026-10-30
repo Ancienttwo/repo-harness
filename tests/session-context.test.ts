@@ -2,11 +2,10 @@ import { agentNoticeFixture, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureGit, fixtureCommit } from './helpers/module-repository';
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import {
-  SESSION_CONTEXT_PROVIDERS,
   buildSessionStartSections,
   type SessionContextProvider,
 } from "../src/cli/hook/session-context";
@@ -131,12 +130,16 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("an idle repository still gets the state and edit guard scope sections and nothing else, with no side files", () => {
+  test("an idle repository still gets the state and edit guard scope sections and nothing else, with no plan or todo references and no side files", () => {
     const f = fixture("session-idle");
     try {
       const context = sessionStartContext(f);
       expect(context).toStartWith("[HarnessState] ");
       expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
+      expect(context).not.toContain("plans/");
+      expect(context).not.toContain("capture-plan");
+      expect(context).not.toContain("references.plan");
+      expect(Object.hasOwn(stateReferences(context), "plan")).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/state/session-context-budget.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/state/session-run-identity.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/security"))).toBe(false);
@@ -161,29 +164,15 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("a provider that throws becomes one failure line after the state section", () => {
-    const f = fixture("session-provider-throws");
-    try {
-      // The pending-plan provider refuses a capture record that escapes the repository.
-      writeFileSync(join(f.home, "pending.json"), "{}\n");
-      mkdirSync(join(f.root, ".ai/harness/planning"), { recursive: true });
-      symlinkSync(join(f.home, "pending.json"), join(f.root, ".ai/harness/planning/pending.json"));
-      const context = sessionStartContext(f);
-      const lines = context.split("\n");
-      expect(lines[0]).toStartWith("[HarnessState] ");
-      expect(lines).toEqual([lines[0], EDIT_GUARD_SCOPE, "[SessionContextProviderFailed] pending-plan-capture"]);
-    } finally { f.cleanup(); }
-  }, 30_000);
-
-  test("a fresh pending plan capture with no active plan names the capture command", () => {
+  test("a pending plan record no longer renders any capture guidance", () => {
     const f = fixture("session-pending-plan");
     try {
       f.write(".ai/harness/planning/pending.json", JSON.stringify({ kind: "host-plan", host: "codex", prompt_slug: "fixture-plan" }));
       const context = sessionStartContext(f);
-      expect(context).toContain("# Pending Plan Capture");
-      expect(context).toContain("`.ai/harness/planning/pending.json`");
-      expect(context).toContain("repo-harness run capture-plan --slug <slug> --title <title>");
-      expect(context).toContain("do not edit implementation files");
+      expect(context).not.toContain("# Pending Plan Capture");
+      expect(context).not.toContain(".ai/harness/planning/pending.json");
+      expect(context).not.toContain("capture-plan");
+      expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
     } finally { f.cleanup(); }
   }, 30_000);
 
@@ -243,10 +232,6 @@ describe("buildSessionStartSections", () => {
     expect(context).toContain("[SessionContextProviderFailed] boom");
     expect(context).toContain("later body");
     expect(context).not.toContain("/private/path");
-  });
-
-  test("the provider ids are stable and name no retired script", () => {
-    expect(SESSION_CONTEXT_PROVIDERS.map(({ id }) => id)).toEqual(["pending-plan-capture"]);
   });
 });
 

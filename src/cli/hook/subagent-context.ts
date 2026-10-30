@@ -27,7 +27,7 @@ import { payloadIdentityField, type HookIdentity, type HookPayload } from './hoo
 import { appendStandingOrders } from './standing-orders-context';
 
 export interface SubagentContextInput {
-  readonly collector: Pick<StateInputCollector, 'getRepoRoot' | 'getActivePlanMarker' | 'getEffectiveState'>;
+  readonly collector: Pick<StateInputCollector, 'getRepoRoot' | 'getEffectiveState'>;
   readonly payload: HookPayload;
   readonly identity: HookIdentity;
   readonly env: NodeJS.ProcessEnv;
