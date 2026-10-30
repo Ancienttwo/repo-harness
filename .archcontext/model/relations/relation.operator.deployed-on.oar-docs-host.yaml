@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.deployed-on.oar-docs-host"
+kind: "deployed-on"
+source: "capability.runtime-harness.operator"
+target: "process.oar-docs-host"
+intent: "The operator board runs doc session agents in the docs host."

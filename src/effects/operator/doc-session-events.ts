@@ -102,7 +102,9 @@ function storedEvent(input: DocSessionEventInput): DocSessionEventV1 {
   let record: Record<string, unknown>;
   if (input.type === 'message') {
     if (typeof value.text !== 'string') return fail('invalid_event');
-    record = { ...value, protocol: 1, ...storedDocSessionText(value.text) };
+    if (value.truncated !== undefined && value.truncated !== true) return fail('invalid_event');
+    const stored = storedDocSessionText(value.text);
+    record = { ...value, protocol: 1, text: stored.text, truncated: stored.truncated || value.truncated === true };
   } else if (input.type === 'tool') {
     if (!Array.isArray(value.paths) || !value.paths.every(path => typeof path === 'string')) return fail('invalid_event');
     record = { ...value, protocol: 1, paths: (value.paths as string[]).map(redactDocSessionPath) };
@@ -139,6 +141,7 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
   const data = Buffer.from(records.map(record => `${JSON.stringify(record)}\n`).join(''), 'utf8');
   const path = join(directory, EVENTS_FILE);
   try {
+    // A writer that died during an append leaves its lock; only a proven dead owner's lock is taken over.
     withExclusiveDirectoryLock(realpathSync(directory), 'events.lock', () => {
       let created = false;
       let fd: number;
@@ -168,7 +171,7 @@ export function appendDocSessionEvents(env: NodeJS.ProcessEnv, sessionId: string
       } finally { closeSync(fd); }
       // A new directory entry survives a crash only after its parent is synced.
       if (created) syncDirectoryDurably(directory);
-    });
+    }, { reclaimStaleOwner: true });
   } catch (error) {
     if (error instanceof ExclusiveLockContentionError) fail('events_busy');
     throw error;

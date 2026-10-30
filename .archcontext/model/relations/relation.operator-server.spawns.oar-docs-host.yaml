@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator-server.spawns.oar-docs-host"
+kind: "spawns"
+source: "process.operator-server"
+target: "process.oar-docs-host"
+intent: "Start one detached docs host per doc session with a new environment."

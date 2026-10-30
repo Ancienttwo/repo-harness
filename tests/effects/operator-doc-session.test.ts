@@ -42,6 +42,8 @@ interface Harness {
   readonly home: string;
   readonly url: string;
   readonly env: NodeJS.ProcessEnv;
+  /** Session ids whose agent the route started, in order. */
+  readonly launches: string[];
   head: () => string;
   commit: (text: string) => Promise<void>;
   post: (body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, any>; text: string }>;
@@ -85,7 +87,10 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
+  const launches: string[] = [];
   const route = docSessionCreateRoute({
+    // The route test records the launch; tests/doc-session-agent.test.ts runs the real docs host.
+    launch_agent: (sessionId) => { launches.push(sessionId); return 'starting'; },
     env, docs_reader: (id) => {
       if (id !== repositoryId) return null;
       const around = options.around_file;
@@ -103,7 +108,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     for (const dir of [repo, home, userHome, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
   return {
-    repo, repositoryId, worktrees, home, url: server.url, env,
+    repo, repositoryId, worktrees, home, url: server.url, env, launches,
     head: () => git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(),
     commit: async (text) => {
       writeFileSync(join(repo, 'docs', 'guide.md'), text);
@@ -158,7 +163,9 @@ test('the session worktree is a direct child of the managed root on a docs branc
   expect(answer.status).toBe(201);
   const { session_id, branch, worktree } = answer.body;
   expect(answer.body).toEqual({ protocol: 1, kind: 'operator_docs_session', session_id, state: 'created', repository_id: h.repositoryId, runtime: 'codex',
-    branch, worktree, base_commit: base, citations: [{ path: 'docs/guide.md', start_line: 3, end_line: 4, relocated: false }] });
+    branch, worktree, base_commit: base, citations: [{ path: 'docs/guide.md', start_line: 3, end_line: 4, relocated: false }], agent: 'starting' });
+  // The agent starts once, after the session record exists.
+  expect(h.launches).toEqual([session_id]);
   expect(branch).toMatch(/^docs\/[0-9a-f]{12}$/u);
   expect(worktree).toBe(`${basename(h.repo)}-wt-docs-${branch.slice('docs/'.length)}`);
   const path = join(h.worktrees, worktree);
@@ -270,6 +277,7 @@ test('the same request_id returns the stored session and creates one worktree', 
   const second = await h.post(body);
   expect(first.status).toBe(201);
   expect(second).toEqual(first);
+  expect(h.launches).toHaveLength(1);
   expect(readdirSync(h.worktrees)).toHaveLength(1);
   expect(h.branches()).toHaveLength(1);
 });
@@ -278,6 +286,7 @@ test('a runtime without verified docs isolation or without the docs use is refus
   const unverified = await harness({ docs_runtimes: ['claude', 'codex'] });
   const refused = await unverified.post(request(unverified, [cite(GUIDE, 'docs/guide.md', 1, 1, unverified.head())], { runtime: 'claude' }));
   expect([refused.status, refused.body.error.code]).toEqual([422, 'docs_isolation_unverified']);
+  expect(unverified.launches).toEqual([]);
   expect(readdirSync(unverified.worktrees)).toEqual([]);
   expect(existsSync(sessionsDir(unverified))).toBe(false);
 
@@ -297,8 +306,8 @@ test('doc sessions are macOS only for now', async () => {
   expect(readdirSync(h.worktrees)).toEqual([]);
 });
 
-test('production routes admit exactly the settings, worktree cleanup and session create writes', () => {
-  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create']);
+test('production routes admit exactly the settings, worktree cleanup, session create, message and stop writes', () => {
+  expect(OPERATOR_ROUTES.filter(route => route.write).map(route => route.id)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_stop']);
 });
 
 test('a citation check finds the cited lines, a unique move, or nothing', () => {
@@ -808,8 +817,10 @@ test('the production inventory binds POST /api/v1/sessions to the server-built r
     files: [{ path: 'docs/guide.md', size: Buffer.byteLength(GUIDE), sha256: hex(GUIDE) }],
   };
   // No write_routes injection: the production OPERATOR_ROUTES entry binds the server-built handler.
+  const launches: string[] = [];
   const server = await startOperatorServer({
     port: 0, static_root: staticRoot, env, docs_session_platform: 'darwin',
+    docs_agent_launcher: (sessionId) => { launches.push(sessionId); return 'starting'; },
     read_docs: () => ({ state: 'ready', tree, reader }),
   });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
@@ -839,5 +850,6 @@ test('the production inventory binds POST /api/v1/sessions to the server-built r
   expect(answer.body.branch).toBe(`docs/${sid.slice(0, 12)}`);
   expect(readdirSync(worktrees)).toEqual([`${basename(repo)}-wt-docs-${sid.slice(0, 12)}`]);
   expect(readFileSync(join(home, 'operator', 'sessions', sid, 'session.json'), 'utf8')).toContain('"docs_session"');
+  expect([answer.body.agent, launches]).toEqual(['starting', [sid]]);
 });
 

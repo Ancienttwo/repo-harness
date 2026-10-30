@@ -25,9 +25,12 @@ interface DocSessionEventCursorV1 {
   readonly at: string;
 }
 
-/** What the host hands to the writer: unredacted text, no protocol, no truncation flag. */
+/**
+ * What the host hands to the writer: unredacted text and no protocol. The writer sets `truncated`; a message
+ * whose producer already dropped text passes `truncated: true`, which the writer keeps.
+ */
 export type DocSessionEventInput = DocSessionEventV1 extends infer E
-  ? E extends { readonly type: 'message' } ? Omit<E, 'protocol' | 'truncated'> : Omit<E, 'protocol'>
+  ? E extends { readonly type: 'message' } ? Omit<E, 'protocol' | 'truncated'> & { readonly truncated?: true } : Omit<E, 'protocol'>
   : never;
 
 export const DOC_SESSION_MESSAGE_ROLES = ['agent', 'user'] as const;

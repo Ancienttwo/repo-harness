@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.oar-docs-host.runs-in.host"
+kind: "runs-in"
+source: "process.oar-docs-host"
+target: "namespace.host.developer"
+intent: "Runs on the developer host."

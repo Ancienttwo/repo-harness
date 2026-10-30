@@ -2740,6 +2740,7 @@
     "src/",
     "docs/",
     "dist/hook-entry.js",
+    "dist/oar-docs-host.js",
     "dist/oar-review-host.js",
     "dist/operator-ui/"
   ]
