@@ -9,8 +9,8 @@
 // in the map HTML, or from a JSON file. Shape:
 //   { "modules": [ { "id", "label"?, "include": [glob], "exclude"?: [glob], "nodes"?: [nodeId] } ] }
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
-// Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact `exports` key (deterministic conditions: import/default/bun/types) or the direct subpath. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
-// Limits: tsconfig path aliases are not resolved; `exports` wildcard (`*`) patterns are not resolved; only tracked files (git ls-files) are scanned.
+// Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact or single-star `exports` key (deterministic conditions: import/default/bun/types), and a present `exports` field gates subpaths — undeclared, null, or indeterminable subpaths stay unresolved. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
+// Limits: tsconfig path aliases are not resolved; nested condition objects resolve only through their fixed condition order; only tracked files (git ls-files) are scanned.
 
 import { execFileSync } from "node:child_process";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -139,8 +139,9 @@ function resolveRelative(from: string, spec: string, tracked: Set<string>): stri
 }
 
 // First determinable string target of an exports value: the value itself, or the
-// deterministic condition order shared with the "." entry. Custom-only conditions
-// have no determinable target.
+// deterministic condition order shared with the "." entry (a fixed heuristic:
+// conditional exports match in declaration order at runtime). Custom-only
+// conditions have no determinable target.
 function conditionValue(value: unknown): string | undefined {
   if (typeof value === "string" && value !== "") return value;
   if (typeof value === "object" && value !== null) {
@@ -169,24 +170,56 @@ function entryCandidates(pkg: Record<string, unknown>): string[] {
   return out;
 }
 
-// Exact, wildcard-free `exports` subpath keys with a determinable target. A key
-// this map misses has no deterministic resolution and stays unresolved.
-function exportSubpaths(pkg: Record<string, unknown>): Map<string, string> {
-  const subpaths = new Map<string, string>();
+// `exports` gates subpaths the way Node resolves them: when the field is
+// present, only declared subpaths resolve — an exact `./key`, or a single-star
+// key with the captured segment substituted into the target. A null value, a
+// nested-only condition object, or an undeclared subpath stays unresolved;
+// no direct-path fallback runs behind an `exports` field. Without the field,
+// the direct tracked path is used.
+interface WorkspaceSubpaths {
+  exact: ReadonlyMap<string, string>;
+  patterns: ReadonlyArray<{ readonly prefix: string; readonly suffix: string; readonly target: string }>;
+  gated: boolean;
+}
+
+function exportSubpaths(pkg: Record<string, unknown>): WorkspaceSubpaths {
+  const exact = new Map<string, string>();
+  const patterns: { prefix: string; suffix: string; target: string }[] = [];
   const exp = pkg.exports;
-  if (typeof exp !== "object" || exp === null || Array.isArray(exp)) return subpaths;
+  if (exp === undefined) return { exact, patterns, gated: false };
+  if (typeof exp !== "object" || exp === null || Array.isArray(exp)) return { exact, patterns, gated: true };
   for (const [key, value] of Object.entries(exp as Record<string, unknown>)) {
-    if (!key.startsWith("./") || key.includes("*")) continue;
+    if (!key.startsWith("./")) continue;
     const target = conditionValue(value);
-    if (target !== undefined) subpaths.set(key.slice(2), target);
+    if (target === undefined) continue;
+    const star = key.indexOf("*");
+    if (star >= 0) {
+      if (target.includes("*")) patterns.push({ prefix: key.slice(2, star), suffix: key.slice(star + 1), target });
+      continue;
+    }
+    exact.set(key.slice(2), target);
   }
-  return subpaths;
+  return { exact, patterns, gated: true };
+}
+
+function resolveWorkspaceSubpath(pkg: WorkspacePackage, sub: string, tracked: Set<string>): string | null {
+  const declared = pkg.subpaths.exact.get(sub);
+  if (declared !== undefined) return resolveBase(path.posix.join(pkg.dir, declared), tracked);
+  for (const pattern of pkg.subpaths.patterns) {
+    if (sub.startsWith(pattern.prefix) && sub.endsWith(pattern.suffix)
+      && sub.length >= pattern.prefix.length + pattern.suffix.length) {
+      const captured = sub.slice(pattern.prefix.length, sub.length - pattern.suffix.length);
+      return resolveBase(path.posix.join(pkg.dir, pattern.target.replace("*", captured)), tracked);
+    }
+  }
+  if (pkg.subpaths.gated) return null;
+  return resolveBase(path.posix.join(pkg.dir, sub), tracked);
 }
 
 interface WorkspacePackage {
   dir: string;
   entries: string[];
-  subpaths: ReadonlyMap<string, string>;
+  subpaths: WorkspaceSubpaths;
 }
 
 function workspacePackages(root: string, files: string[]): Map<string, WorkspacePackage> {
@@ -310,9 +343,7 @@ function main(): void {
         if (name !== undefined) {
           const pkg = packages.get(name)!;
           const sub = spec.slice(name.length + 1);
-          const declared = pkg.subpaths.get(sub);
-          const base = path.posix.join(pkg.dir, declared ?? sub);
-          const target = spec === name ? resolveEntry(name, pkg) : resolveBase(base, tracked);
+          const target = spec === name ? resolveEntry(name, pkg) : resolveWorkspaceSubpath(pkg, sub, tracked);
           // Reported, not guessed: no edge is invented from the package directory's file counts.
           if (target !== null) targetOwner = owner.get(target);
           else {

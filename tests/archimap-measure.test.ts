@@ -8,27 +8,28 @@ import { fixtureGit, fixtureWrite } from './helpers/module-repository';
 // committed script through Bun against a real committed Git repository, with
 // no mocked transpiler or dependency resolution.
 const MEASURE = join(import.meta.dir, '..', 'assets/skills/repo-harness-archimap/scripts/measure.ts');
-const MODULES = `${JSON.stringify({ modules: [
-  { id: 'app', include: ['apps/app/**'] },
-  { id: 'client', include: ['packages/shared/src/client.ts'] },
-  { id: 'server', include: ['packages/shared/src/server/**'] },
-  { id: 'shared', include: ['packages/shared/src/main.ts'] },
-] })}\n`;
+function moduleDefs() {
+  return [
+    { id: 'app', include: ['apps/app/**'] },
+    { id: 'client', include: ['packages/shared/src/client.ts'] },
+    { id: 'server', include: ['packages/shared/src/server/**'] },
+    { id: 'shared', include: ['packages/shared/src/main.ts'] },
+  ];
+}
 
-interface MeasureOutput {
-  edges: { from: string; to: string; value: number }[];
+interface MeasureOutput {  edges: { from: string; to: string; value: number }[];
   unresolved: { count: number; examples: string[] };
 }
 
 const roots: string[] = [];
-function fixture(files: Record<string, string>): string {
+function fixture(files: Record<string, string>, modules: unknown = moduleDefs()): string {
   const root = mkdtempSync('/tmp/rh-archimap-measure-');
   roots.push(root);
   fixtureGit(root, ['init', '-q']);
   fixtureGit(root, ['config', 'maintenance.auto', 'false']);
   fixtureGit(root, ['config', 'gc.auto', '0']);
   for (const [path, content] of Object.entries(files)) fixtureWrite(root, path, content);
-  fixtureWrite(root, 'modules.json', MODULES);
+  fixtureWrite(root, 'modules.json', `${JSON.stringify({ modules })}\n`);
   fixtureGit(root, ['add', '.']);
   fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Fixture']);
   return root;
@@ -103,5 +104,44 @@ describe('archimap measure workspace resolution', () => {
     const result = measure(root);
     expect(result.edges).toEqual([{ from: 'app', to: 'shared', value: 1 }]);
     expect(result.unresolved.count).toBe(0);
+  });
+
+  test('a null exports subpath stays unresolved and does not fall back to a direct file', () => {
+    const root = sharedFixture({ exports: { './client': null } }, '@example/shared/client');
+    // The direct path exists and is owned by another module; a fallback here would invent an edge.
+    fixtureWrite(root, 'packages/shared/client.ts', 'export const stray = 1;\n');
+    fixtureGit(root, ['add', '.']);
+    fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Stray']);
+    const result = measure(root);
+    expect(result.edges).toEqual([]);
+    expect(result.unresolved.count).toBe(1);
+    expect(result.unresolved.examples.some((entry) => entry.includes('@example/shared/client'))).toBe(true);
+  });
+
+  test('a single-star exports pattern resolves with the captured segment', () => {
+    const root = fixture({
+      'apps/app/main.ts': appImport('@example/shared/features/client'),
+      'packages/shared/package.json': sharedPackage({ name: '@example/shared', exports: { './features/*': './src/features/*.ts' } }),
+      'packages/shared/src/features/client.ts': 'export const client = 1;\n',
+      'packages/shared/src/server/a.ts': 'export const a = 1;\n',
+      'packages/shared/src/server/b.ts': 'export const b = 1;\n',
+    }, [
+      { id: 'app', include: ['apps/app/**'] },
+      { id: 'client', include: ['packages/shared/src/features/**'] },
+      { id: 'server', include: ['packages/shared/src/server/**'] },
+    ]);
+    const result = measure(root);
+    expect(result.edges).toEqual([{ from: 'app', to: 'client', value: 1 }]);
+    expect(result.unresolved.count).toBe(0);
+  });
+
+  test('an undeclared subpath under exports stays unresolved without a direct fallback', () => {
+    const root = sharedFixture({ exports: { './client': './src/client.ts' } }, '@example/shared/undeclared');
+    fixtureWrite(root, 'packages/shared/undeclared.ts', 'export const stray = 1;\n');
+    fixtureGit(root, ['add', '.']);
+    fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Stray']);
+    const result = measure(root);
+    expect(result.edges).toEqual([]);
+    expect(result.unresolved.count).toBe(1);
   });
 });
