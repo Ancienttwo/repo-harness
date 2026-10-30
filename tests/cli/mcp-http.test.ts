@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash, randomBytes } from 'crypto';
 import { createServer } from 'net';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -770,10 +770,17 @@ describe('mcp http transport', () => {
       const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase as string;
 
       // A tripwire gh: every provider call is recorded, so the assertion proves
-      // the refused call sent no merge request and ran no readiness read.
+      // the refused call sent no merge request and ran no readiness read. The
+      // positive control runs it once first, so a missing log line means the
+      // provider was truly never invoked, not that the tripwire cannot write.
       const ghLog = join(repoRoot, 'gh-calls.log');
       writeFileSync(join(repoRoot, 'tripwire-gh.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}\nexit 1\n`);
       const ghBin = join(repoRoot, 'tripwire-gh.sh');
+      chmodSync(ghBin, 0o755);
+      const control = Bun.spawnSync([ghBin, '--version'], { stdout: 'pipe', stderr: 'pipe' });
+      expect(control.exitCode).toBe(1);
+      expect(readFileSync(ghLog, 'utf-8')).toContain('--version');
+      unlinkSync(ghLog);
 
       proc = Bun.spawn(
         ['bun', 'src/cli/index.ts', 'mcp', 'serve', '--repo', repoRoot, '--transport', 'http', '--host', '127.0.0.1',
