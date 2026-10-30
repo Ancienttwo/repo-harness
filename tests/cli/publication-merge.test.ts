@@ -106,6 +106,8 @@ describe('publication merge refusals send no mergePullRequest', () => {
     ['enforce_admins=false', { protection: { strict: true, enforce_admins: false } }, 'base_protection_insufficient'],
     ['unprotected branch', { protection: null }, 'base_protection_insufficient'],
     ['merge queue rule', { rules: [{ type: 'pull_request' }, { type: 'merge_queue' }] }, 'base_protection_insufficient'],
+    ['merge queue from classic protection', { rules: [], mergeQueueEnabled: true }, 'base_protection_insufficient'],
+    ['unreported merge queue state', { mergeQueueEnabled: 'missing' }, 'base_protection_insufficient'],
   ] as const)('%s is refused', (_label, overrides, error) => {
     const { result, mutations } = mergeInProcess(passingScenario(overrides));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error });
@@ -134,6 +136,21 @@ describe('publication merge refusals send no mergePullRequest', () => {
     const { result, mutations } = mergeInProcess(passingScenario({ title: 'Ship it, fixes #9', body: '', closing: [] }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'closing_references_mismatch' });
     expect(failureOf(result).message).toContain(`commit message closes [${REPOSITORY}#9]`);
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('a closing keyword before a pull request URL is refused and names the target', () => {
+    const pull = 'https://github.com/o/r/pull/9#issuecomment-123';
+    const { result, mutations } = mergeInProcess(passingScenario({ body: `Closes #7\nFixes ${pull}` }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'closing_references_mismatch' });
+    expect(failureOf(result).message).toContain(`unsupported targets [${pull}]`);
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('an unreadable protection endpoint names the missing Administration read', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ protection: null }));
+    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'base_protection_insufficient' });
+    expect(failureOf(result).message).toContain('protection is absent or the token cannot read it (needs Administration read)');
     expect(mutations).toHaveLength(0);
   });
 
@@ -231,13 +248,41 @@ describe('publication merge execution', () => {
     expect(calls.at(-1)).toEqual(mutations[0]);
   });
 
-  test('an explicit GraphQL rejection exits 6 with the provider error', () => {
-    const run = mergeCli(passingScenario({ merge: 'graphql_error' }));
+  test('an explicit GraphQL rejection with the PR still open exits 6 with the provider error', () => {
+    const run = mergeCli(passingScenario({ merge: 'graphql_error', readback: 'open' }));
     expect(run.status).toBe(6);
     expect(run.document).toMatchObject({ ok: false, exit_code: 6, error: 'provider_rejected' });
     expect(run.document.message).toContain('Head branch was modified');
     expect(run.mutations).toHaveLength(1);
   }, 120_000);
+
+  test('an error response with the PR still open at the expected head is a proven rejection', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ merge: 'internal_error', readback: 'open' }));
+    expect(failureOf(result)).toMatchObject({ exit_code: 6, error: 'provider_rejected' });
+    expect(failureOf(result).message).toContain('INTERNAL');
+    expect(mutations).toHaveLength(1);
+  });
+
+  test('an error response followed by a proven merge exits 0 and keeps the provider error', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ merge: 'internal_error' }));
+    expect(result.exit_code).toBe(0);
+    expect(result.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_sha: BASE });
+    expect(result.exit_code === 0 && result.document.provider_errors).toContain('INTERNAL');
+    expect(mutations).toHaveLength(1);
+  });
+
+  test('a malformed error response with a failed readback exits 5', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ merge: 'null_errors', readback: 'fail' }));
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('provider errors: [null]');
+    expect(mutations).toHaveLength(1);
+  });
+
+  test('an error response followed by an unproven merge exits 5', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ merge: 'null_errors', parents: [BASE, HEAD] }));
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(mutations).toHaveLength(1);
+  });
 
   test('a merge commit with two parents exits 5', () => {
     const run = mergeCli(passingScenario({ parents: [BASE, HEAD] }));

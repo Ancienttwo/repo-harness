@@ -187,10 +187,18 @@ describe('closing reference check', () => {
       'close #1', 'Closes #2', 'CLOSED: #3', 'fix #4', 'Fixes #5', 'fixed:#6', 'resolve #7', 'Resolves #8', 'resolved Other/Repo#9',
       'fixes https://github.com/example/repo-harness/issues/10', 'Refs #11', 'prefix #12', 'closed-loop #13',
     ].join('\n');
-    expect(parseClosingReferences(repository, text)).toEqual([
+    expect(parseClosingReferences(repository, text)).toEqual({ references: [
       ...[1, 2, 3, 4, 5, 6, 7, 8, 10].map((n) => `${repository}#${n}`),
       'other/repo#9',
-    ].sort());
+    ].sort(), unsupported: [] });
+  });
+
+  test('a closing keyword before a pull request URL is an unsupported target, with or without a fragment', () => {
+    const pull = 'https://github.com/o/r/pull/9#issuecomment-123';
+    expect(parseClosingReferences(repository, `Fixes ${pull}\ncloses http://www.github.com/o/r/pull/10`))
+      .toEqual({ references: [], unsupported: [pull, 'http://www.github.com/o/r/pull/10'].sort() });
+    expect(checkClosingReferences({ repository, commit_headline: 'Ship (#42)', commit_body: `Fixes ${pull}`, linked: linked([]) }))
+      .toMatchObject({ ok: false, code: 'closing_references_mismatch', message_only: [], linked_only: [], unsupported: [pull] });
   });
 
   test('accepts equal repository-qualified sets from the headline and body', () => {

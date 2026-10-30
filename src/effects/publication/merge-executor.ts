@@ -2,9 +2,11 @@
  * The only automated merge path to the default branch.
  *
  * Every step before the mutation reads; a refusal at any step sends no merge
- * request. The mutation is sent once. After it is sent, any result other than
- * an explicit GraphQL rejection or a proven single-parent squash commit is an
- * unknown outcome, and the executor never retries it.
+ * request. The mutation is sent once. After it is sent, the result is a
+ * rejection only when an error response is followed by a readback of the PR
+ * still open at the expected head, and a merge only when the single-parent
+ * squash commit is proven. Everything else is an unknown outcome, and the
+ * executor never retries it.
  */
 
 import { spawnSync } from 'child_process';
@@ -58,6 +60,8 @@ export interface PublicationMergeDocument {
   readonly parent_sha: string;
   readonly policy_ref: string;
   readonly revert: string;
+  /** GraphQL errors that came with a merge the readback proved. */
+  readonly provider_errors?: string;
 }
 
 export interface PublicationMergeFailure {
@@ -154,6 +158,8 @@ interface MergeTarget {
   readonly body: string;
   readonly state: string;
   readonly is_cross_repository: boolean;
+  /** null when the provider omits the field; that fails closed like an enabled queue. */
+  readonly merge_queue_enabled: boolean | null;
   readonly auto_merge_enabled: boolean;
   readonly head_sha: string;
   readonly base_sha: string;
@@ -162,7 +168,7 @@ interface MergeTarget {
   readonly closing_has_next_page: boolean;
 }
 
-const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid baseRefOid baseRefName autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
+const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid baseRefOid baseRefName isMergeQueueEnabled autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
 
 /** One read of the PR fields the executor owns: fork, auto-merge, message text and closing links. */
 function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
@@ -197,6 +203,7 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
     body: pr.body,
     state: String(pr.state),
     is_cross_repository: pr.isCrossRepository,
+    merge_queue_enabled: typeof pr.isMergeQueueEnabled === 'boolean' ? pr.isMergeQueueEnabled : null,
     auto_merge_enabled: pr.autoMergeRequest !== null,
     head_sha: pr.headRefOid,
     base_sha: pr.baseRefOid,
@@ -230,11 +237,23 @@ function readDefaultBranch(input: PullRequestReadinessInput): string {
   return repository.default_branch;
 }
 
+/** Classic branch protection does not report a merge queue; the PR field does, whichever setting enables it. */
+function assertNoMergeQueue(target: MergeTarget): void {
+  if (target.merge_queue_enabled !== false) {
+    throw new Refusal('base_protection_insufficient', target.merge_queue_enabled === null
+      ? 'the provider did not report whether the base branch requires a merge queue'
+      : 'the base branch requires a merge queue');
+  }
+}
+
 /** D7: GitHub pins only the head. Strict status checks turn a moved base into a provider-side rejection. */
-function assertBaseProtection(input: PullRequestReadinessInput, branch: string): void {
+function assertBaseProtection(input: PullRequestReadinessInput, branch: string, target: MergeTarget): void {
   const root = `repos/${input.repository}/branches/${encodeURIComponent(branch)}`;
   const value = read(input, ['api', `${root}/protection`], true);
-  if (value === null) throw new Refusal('base_protection_insufficient', `${branch} has no branch protection`);
+  if (value === null) {
+    throw new Refusal('base_protection_insufficient',
+      `the protection endpoint for ${branch} returned 404: protection is absent or the token cannot read it (needs Administration read)`);
+  }
   const protection = field(value, 'branch protection');
   const checks = protection.required_status_checks;
   const admins = protection.enforce_admins;
@@ -249,6 +268,7 @@ function assertBaseProtection(input: PullRequestReadinessInput, branch: string):
   if (rules.some((rule) => (rule as Record<string, unknown>).type === 'merge_queue')) {
     throw new Refusal('base_protection_insufficient', `${branch} requires a merge queue`);
   }
+  assertNoMergeQueue(target);
 }
 
 function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { readonly ok: true } {
@@ -265,9 +285,9 @@ function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { rea
 
 const MERGE_MUTATION = 'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:SQUASH,commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}';
 
-type MutationOutcome = { readonly merged: string } | { readonly rejected: string };
+type MutationOutcome = { readonly merged: string } | { readonly provider_errors: string };
 
-/** Sent once. Only an explicit GraphQL error with no merge payload counts as a rejection. */
+/** Sent once. An error response is not proof of a rejection; the caller reads the PR back. */
 function sendMerge(input: PullRequestReadinessInput, target: MergeTarget, headline: string): MutationOutcome {
   // -f keeps every value a raw string; -F would read a body that starts with "@" as a file.
   const args = ['api', 'graphql', '-f', `query=${MERGE_MUTATION}`, '-f', `pullRequestId=${target.id}`,
@@ -276,11 +296,10 @@ function sendMerge(input: PullRequestReadinessInput, target: MergeTarget, headli
   if (result.failure || result.status === null) throw new UnknownOutcome(`merge request did not complete: ${describeCall(args, result)}`);
   const value = parseJson(result.stdout);
   if (!isObject(value)) throw new UnknownOutcome(`merge response is not a JSON object: ${describeCall(args, result)}`);
-  const payload = isObject(value.data) ? value.data.mergePullRequest : undefined;
-  if (Array.isArray(value.errors) && value.errors.length > 0) {
-    if (payload === null || payload === undefined) return { rejected: JSON.stringify(value.errors) };
-    throw new UnknownOutcome(`merge response has errors and a payload: ${JSON.stringify(value.errors)}`);
+  if (value.errors !== undefined && !(Array.isArray(value.errors) && value.errors.length === 0)) {
+    return { provider_errors: JSON.stringify(value.errors) };
   }
+  const payload = isObject(value.data) ? value.data.mergePullRequest : undefined;
   if (result.status !== 0) throw new UnknownOutcome(`merge request failed: ${describeCall(args, result)}`);
   const pr = isObject(payload) ? payload.pullRequest : undefined;
   const commit = isObject(pr) ? pr.mergeCommit : undefined;
@@ -289,6 +308,22 @@ function sendMerge(input: PullRequestReadinessInput, target: MergeTarget, headli
     throw new UnknownOutcome('merge response is incomplete');
   }
   return { merged: commit.oid };
+}
+
+type ErrorReadback = { readonly state: 'open' } | { readonly state: 'merged'; readonly merge_commit_sha: string };
+
+/** After an error response: OPEN at the expected head proves no merge; MERGED needs the normal proof. */
+function readBackAfterError(input: PullRequestReadinessInput): ErrorReadback {
+  const args = ['api', `repos/${input.repository}/pulls/${input.pr_number}`];
+  const result = runGh(input, args);
+  const pr = result.failure || result.status !== 0 ? undefined : parseJson(result.stdout);
+  if (!isObject(pr)) throw new UnknownOutcome(`PR readback after the error response failed: ${describeCall(args, result)}`);
+  const head = isObject(pr.head) ? pr.head.sha : undefined;
+  if (pr.number === input.pr_number && pr.state === 'open' && pr.merged === false && head === input.expected_head_sha) return { state: 'open' };
+  if (pr.number === input.pr_number && pr.merged === true && typeof pr.merge_commit_sha === 'string' && SHA.test(pr.merge_commit_sha)) {
+    return { state: 'merged', merge_commit_sha: pr.merge_commit_sha };
+  }
+  throw new UnknownOutcome('PR readback after the error response is neither open at the expected head nor merged');
 }
 
 /** Readback: the PR is merged by exactly one commit whose only parent is the expected base. */
@@ -334,10 +369,11 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   } catch (error) {
     throw new Refusal('invalid_selection', error instanceof Error ? error.message : String(error));
   }
-  assertSameRepositoryTarget(readMergeTarget(input));
+  const initial = readMergeTarget(input);
+  assertSameRepositoryTarget(initial);
   readPolicy(input);
   const defaultBranch = readDefaultBranch(input);
-  assertBaseProtection(input, defaultBranch);
+  assertBaseProtection(input, defaultBranch, initial);
   const verdict = collectPullRequestMergeReadiness(input);
   if (!verdict.ready) {
     throw new Refusal('merge_readiness_blocked', `readiness blockers: ${verdict.blockers.map((blocker) => blocker.code).join(', ')}`, verdict.blockers);
@@ -345,6 +381,7 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   // Message text and closing links come from one read bound to the expected head and base.
   const target = readMergeTarget(input);
   assertSameRepositoryTarget(target);
+  assertNoMergeQueue(target);
   if (target.state !== 'OPEN' || target.head_sha !== input.expected_head_sha
     || target.base_sha !== input.expected_base_sha || target.base_ref !== defaultBranch) {
     throw new Refusal('pr_changed_after_readiness', 'the PR state, head or base changed after the readiness verdict');
@@ -366,14 +403,22 @@ export function executePublicationMerge(input: PullRequestReadinessInput): Publi
     return failure(4, code, error instanceof Error ? error.message : String(error));
   }
   let mergeCommitSha: string;
+  let providerErrors: string | undefined;
   try {
     const outcome = sendMerge(input, prepared.target, prepared.headline);
-    if ('rejected' in outcome) return failure(6, 'provider_rejected', `GitHub rejected mergePullRequest: ${outcome.rejected}`);
-    mergeCommitSha = outcome.merged;
+    if ('provider_errors' in outcome) {
+      providerErrors = outcome.provider_errors;
+      const readback = readBackAfterError(input);
+      if (readback.state === 'open') return failure(6, 'provider_rejected', `GitHub rejected mergePullRequest: ${providerErrors}`);
+      mergeCommitSha = readback.merge_commit_sha;
+    } else {
+      mergeCommitSha = outcome.merged;
+    }
     proveMerge(input, mergeCommitSha, prepared.base_ref);
   } catch (error) {
     // The request may have reached GitHub. The owner checks the PR; the executor does not retry.
-    return failure(5, 'merge_outcome_unknown', error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    return failure(5, 'merge_outcome_unknown', providerErrors ? `${message}; provider errors: ${providerErrors}` : message);
   }
   return {
     exit_code: 0,
@@ -390,6 +435,7 @@ export function executePublicationMerge(input: PullRequestReadinessInput): Publi
       parent_sha: input.expected_base_sha,
       policy_ref: input.expected_base_sha,
       revert: `git revert ${mergeCommitSha}`,
+      ...(providerErrors ? { provider_errors: providerErrors } : {}),
     },
   };
 }

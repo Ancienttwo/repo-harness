@@ -24,6 +24,8 @@ export interface PublicationMergeScenario {
   readonly policyHead: string | null;
   readonly isCrossRepository?: boolean;
   readonly autoMerge?: boolean;
+  /** `missing` omits the field from the PR read. */
+  readonly mergeQueueEnabled?: boolean | 'missing';
   /** null is an unprotected branch (404). */
   readonly protection?: { readonly strict: boolean; readonly enforce_admins: boolean } | null;
   readonly rules?: readonly { readonly type: string }[];
@@ -35,7 +37,9 @@ export interface PublicationMergeScenario {
   /** `owner/repo#n` identifiers that closingIssuesReferences returns. */
   readonly closing?: readonly string[];
   readonly closingHasNextPage?: boolean;
-  readonly merge?: 'ok' | 'graphql_error' | 'kill' | 'truncated';
+  readonly merge?: 'ok' | 'graphql_error' | 'internal_error' | 'null_errors' | 'kill' | 'truncated';
+  /** The PR that `repos/<repo>/pulls/<n>` returns after the mutation; `fail` is a failed read. */
+  readonly readback?: 'merged' | 'open' | 'fail';
   readonly parents?: readonly string[];
 }
 
@@ -86,12 +90,17 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       if (scenario.merge === 'graphql_error') {
         return { status: 1, stdout: JSON.stringify({ data: { mergePullRequest: null }, errors: [{ type: 'UNPROCESSABLE', message: 'Head branch was modified. Review and try the merge again.' }] }), stderr: 'gh: Head branch was modified.' };
       }
+      if (scenario.merge === 'internal_error') {
+        return { status: 1, stdout: JSON.stringify({ data: null, errors: [{ type: 'INTERNAL', message: 'Something went wrong while executing your query.' }] }), stderr: 'gh: Something went wrong' };
+      }
+      if (scenario.merge === 'null_errors') return { status: 1, stdout: JSON.stringify({ errors: [null] }), stderr: 'gh: error' };
       return ok({ data: { mergePullRequest: { pullRequest: { number: PR, state: 'MERGED', mergeCommit: { oid: MERGE_COMMIT } } } } });
     }
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
         id: PR_NODE, number: PR, title: scenario.title ?? '', body: scenario.body ?? '', state: 'OPEN',
         isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main',
+        ...(scenario.mergeQueueEnabled === 'missing' ? {} : { isMergeQueueEnabled: scenario.mergeQueueEnabled ?? false }),
         autoMergeRequest: scenario.autoMerge ? { enabledAt: '2026-10-30T00:00:00Z' } : null,
         closingIssuesReferences: { pageInfo: { hasNextPage: scenario.closingHasNextPage ?? false },
           nodes: (scenario.closing ?? []).map((reference) => {
@@ -120,7 +129,11 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ required_status_checks: { strict: protection.strict, contexts: ['Required / CI'] }, enforce_admins: { enabled: protection.enforce_admins } });
   }
   if (sub === `${root}/rules/branches/main?per_page=100`) return ok(scenario.rules ?? []);
-  if (sub === `${root}/pulls/${PR}`) return ok({ number: PR, merged: true, merge_commit_sha: MERGE_COMMIT, head: { sha: HEAD }, base: { ref: 'main' } });
+  if (sub === `${root}/pulls/${PR}`) {
+    if (scenario.readback === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
+    if (scenario.readback === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: HEAD }, base: { ref: 'main' } });
+    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: MERGE_COMMIT, head: { sha: HEAD }, base: { ref: 'main' } });
+  }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
   }
