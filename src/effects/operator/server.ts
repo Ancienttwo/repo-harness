@@ -32,7 +32,6 @@ import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModu
 export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
-import { decodeOperatorTaskHistory, parseTaskHistoryRequest, TASK_HISTORY_FAILURES, type OperatorTaskHistoryRequest, type OperatorTaskHistory } from '../../core/operator/task-history';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
@@ -99,7 +98,6 @@ export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
 export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/context$/u;
-export const OPERATOR_TASK_HISTORY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/context$/u;
 export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/activity$/u;
 export const OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/history\/activity$/u;
 export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
@@ -147,7 +145,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
     pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source,
     write: false,
   }),
-  Object.freeze({ id: 'task_history', method: 'GET', pattern: OPERATOR_TASK_HISTORY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
   Object.freeze({ id: 'historical_task_activity', method: 'GET', pattern: OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
@@ -202,7 +199,6 @@ export interface OperatorServerOptions {
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
-  readonly read_task_history?: (input: OperatorTaskHistoryRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskHistory>;
   readonly read_task_context?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
   readonly read_admitted_task_activity?: (input: AdmittedTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskActivity>;
   readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
@@ -1549,7 +1545,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -2004,14 +2000,6 @@ export async function startOperatorServer(
       try{input=parseTaskDiffRequest(contextRoute[1]!,url.searchParams);}
       catch{sendRefusal(request,response,400,errorBody('invalid_request','Context requires an explicit admitted session selector.'),headOnly);return;}
       handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskContext,SESSION_OBSERVATION_FAILURES,'context',options.read_task_context);
-      return;
-    }
-    const historyRoute=OPERATOR_TASK_HISTORY_ROUTE.exec(pathname);
-    if(historyRoute!==null){
-      let input:OperatorTaskHistoryRequest;
-      try{input=parseTaskHistoryRequest(historyRoute[1]!,historyRoute[2]!,url.searchParams);}
-      catch{sendRefusal(request,response,400,errorBody('invalid_request','History requires an explicit historical selector.'),headOnly);return;}
-      handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskHistory,TASK_HISTORY_FAILURES,'history',options.read_task_history);
       return;
     }
     const admittedActivityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);

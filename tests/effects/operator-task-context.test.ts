@@ -23,28 +23,22 @@ function fixture() {
   const base=realpathSync(mkdtempSync(join(tmpdir(),'operator-context-')));roots.push(base);
   const root=join(base,'repo'), home=join(base,'home');mkdirSync(root);mkdirSync(home);
   git(root,'init','-q','-b','main');git(root,'config','user.name','Test');git(root,'config','user.email','test@example.invalid');
-  const task='Inspect current task',taskId='a'.repeat(64),sprint='plans/sprints/context.sprint.md';
-  const sprintText=`# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${taskId} | [ ] | ${task} | contract | read only | plans/plan-false.md |\n`;
-  put(join(root,sprint),sprintText);put(join(root,'.ai/harness/sprint/active-sprint'),sprint+'\n');
-  git(root,'add','.');git(root,'commit','-qm','canonical task');
+  const taskId='a'.repeat(64);
+  put(join(root,'.ai/harness/.gitkeep'),'');
+  git(root,'add','.');git(root,'commit','-qm','empty repository');
   const repo=repoHarnessRepoIdFor(root),at='2026-09-22T00:00:00.000Z';
   const entry={id:repo,path:root,accessMode:'read_only',source:'adopt',registeredAt:at,lastSeenAt:at};
   const registryPath=join(home,'registered-repos.json');put(registryPath,JSON.stringify({version:1,authorizationRevision:1,repos:[entry]}));
-  const input={repository_id:repo,task_id:taskId,expected_task_revision:null,env:{REPO_HARNESS_HOME:home}};
-  const planPath='plans/plan-20260922-context.md',contractPath='tasks/contracts/context.contract.md';
-  function plan(status='Approved',source=`sprint:${sprint}#${task}`) {
-    const body=`# Plan\n\n> **Status**: ${status}\n> **Source Ref**: ${source}\n> **Artifact Level**: work-package\n> **Promotion Reason**: verification_boundary\n> **Verification Boundary**: context test\n> **Rollback Surface**: remove context\n> **Task Contract**: ${contractPath}\n\n## Promotion Gate\n- **Merge/PR unit**: context unit\n- **Rollback surface**: remove context\n- **Verification boundary**: context test\n- **Review/acceptance boundary**: context review\n- **High-risk surface**: identity\n- **Why not checklist row**: independent verification\n\n## Evidence Contract\n- **State/progress path**: context plan\n- **Verification evidence**: context tests\n- **Evaluator rubric**: context review\n- **Stop condition**: tests pass\n- **Rollback surface**: remove context\n`;
-    put(join(root,planPath),body);put(join(root,contractPath),`# Contract\n\n> **Plan**: ${planPath}\n\n## Allowed Paths\n\n\`\`\`yaml\nallowed_paths:\n  - src/context.ts\n\`\`\`\n`);
-  }
-  return {root,home,input,task,sprint,sprintText,entry,registryPath,plan,planPath};
+  const input={repository_id:repo,task_id:taskId,env:{REPO_HARNESS_HOME:home}};
+  return {root,home,input,entry,registryPath};
 }
 // Current admitted context coverage shares the protected session fixture in operator-task-diff.test.ts.
 
 // A real Git subprocess blocked on HEAD cannot be interrupted by Worker.terminate.
 // Keep this POSIX fixture out of Windows; the shared Job supervisor has its own native tests.
-test.skipIf(process.platform === 'win32').each(['history', 'activity'] as const)(
-  'blocked native %s Git read releases admission and permits bounded shutdown after timeout',
-  async (kind) => {
+test.skipIf(process.platform === 'win32')(
+  'blocked native activity Git read releases admission and permits bounded shutdown after timeout',
+  async () => {
     const f = fixture();
     const head = join(f.root, '.git', 'HEAD');
     const original = head + '.original', pipe = head + '.blocked';
@@ -54,12 +48,12 @@ test.skipIf(process.platform === 'win32').each(['history', 'activity'] as const)
     const server = await startOperatorServer({port:0,env:f.input.env,timeout_ms:1000,max_concurrency:1});
     let closing: Promise<void> | undefined;
     try {
-      const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/${kind === 'activity' ? 'history/activity' : 'context?view=history'}`);
+      const response = await fetch(`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/history/activity`);
       expect(await response.json()).toEqual({code:'timeout'});
       let status = 503;
       const until = Date.now() + 2200;
       while (Date.now() < until) {
-        status = (await fetch(`${server.url}/api/v1/fleet/tasks/unknown-repo/${f.input.task_id}/${kind === 'activity' ? 'history/activity' : 'context?view=history'}`)).status;
+        status = (await fetch(`${server.url}/api/v1/fleet/tasks/unknown-repo/${f.input.task_id}/history/activity`)).status;
         if (status !== 503) break;
         await Bun.sleep(25);
       }
@@ -98,7 +92,11 @@ function graphFixture() {
   });
   const carrier='.ai/harness/work-graph.v2.json';
   const graph={protocol:2,kind:'repo-harness-provider-work-graph',repository_id:f.entry.id,work_packages:[definition('ready','987654',[]),definition('dependent',secondId,[{repository_id:f.entry.id,work_package_id:'ready',required_state:'provider_closed',acceptance_authority:null}])]};
-  put(join(f.root,carrier),JSON.stringify(graph));git(f.root,'add','.');git(f.root,'commit','-qm','Planning graph');
+  put(join(f.root,carrier),JSON.stringify(graph));
+  const decoySprint='plans/sprints/decoy.sprint.md';
+  put(join(f.root,decoySprint),`# Sprint\n\n> **Status**: Executing\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|--------|------|------|------------|------|\n| 1 | ${'d'.repeat(64)} | [ ] | Decoy task | contract | decoy | (pending) |\n`);
+  put(join(f.root,'plans/sprints/decoy.work-graph.v1.json'),JSON.stringify({protocol:1,kind:'repo-harness-work-graph',repository_id:f.entry.id,sprint_path:decoySprint,lane:'engineering-v2',work_packages:[]}));
+  git(f.root,'add','.');git(f.root,'commit','-qm','Planning graph');
   const entry={...f.entry,accessMode:'read_write'};
   put(f.registryPath,JSON.stringify({version:1,authorizationRevision:2,repos:[entry]}));
   const observations=['987654',secondId].map((id,index)=>buildProviderIssueObservation({
@@ -114,13 +112,13 @@ function graphFixture() {
 test('Planning preserves provider requirements without manufacturing preparation or execution state',()=>{
   const f=graphFixture();git(f.root,'rm',f.carrier);git(f.root,'commit','-qm','graph not authored');
   const before=tree(f.root),r=readOperatorPlanningSnapshot(f.input);
+  expect(readFileSync(join(f.root,'plans/sprints/decoy.sprint.md'),'utf8')).toContain('Decoy task');
+  expect(readFileSync(join(f.root,'plans/sprints/decoy.work-graph.v1.json'),'utf8')).toContain('repo-harness-work-graph');
   expect(r.scheduling.tasks).toHaveLength(2);
   expect(r.scheduling.tasks[0]!.issue).toMatchObject({title:'Original requirement',body:'Original provider acceptance requirements',state:'closed'});
   expect(r.scheduling.tasks.every(task=>task.sessions.length===0)).toBe(true);
   expect(r.graph).toEqual({status:'unavailable',code:'needs_provider_graph'});
   expect(tree(f.root)).toBe(before);expect(decodeOperatorPlanningSnapshot(r,f.entry.id)).toEqual(r);
-  rmSync(join(f.root,'.ai/harness/sprint/active-sprint'));
-  expect(readOperatorPlanningSnapshot(f.input).scheduling).toEqual(r.scheduling);
 });
 
 test('Planning reads immutable provider graph references and freshly observes dependency closure',()=>{
@@ -169,123 +167,16 @@ test('Planning refuses changing provider evidence, authorization drift and overs
   }
 });
 
-// Historical definition is independent from current activity/claim state.
-import { readOperatorTaskHistory } from '../../src/effects/operator/task-history';
-import { decodeOperatorTaskHistory, isTaskHistoryRequest, TASK_HISTORY_MAX_BLOB_BYTES } from '../../src/core/operator/task-history';
-
-test('historical Task survives archive and deletion through exact canonical commit evidence without writes', () => {
-  const f=fixture(); const original=git(f.root,'rev-parse','HEAD');
-  const originalText=readFileSync(join(f.root,f.sprint),'utf8');
-  git(f.root,'mv',f.sprint,'plans/sprints/renamed.sprint.md');git(f.root,'commit','-qm','rename carrier');
-  const renamed=git(f.root,'rev-parse','HEAD');
-  mkdirSync(join(f.root,'plans/archive'),{recursive:true});
-  git(f.root,'mv','plans/sprints/renamed.sprint.md','plans/archive/unrelated-name.md');git(f.root,'commit','-qm','archive carrier');
-  const target=git(f.root,'rev-parse','HEAD'); const before=tree(f.root);
-  const value=readOperatorTaskHistory(f.input);
-  expect(value.source).toEqual({target_ref:'main',target_commit:target,commit:renamed,sprint_path:'plans/sprints/renamed.sprint.md',blob_sha256:`sha256:${createHash('sha256').update(originalText).digest('hex')}`});
-  expect(value.task_id).toBe(f.input.task_id);expect(value.task.title).toBe('Inspect current task');
-  expect(value.source.commit).not.toBe(original);expect(value.coverage.commits_examined).toBe(2);
-  expect(JSON.stringify(value)).not.toContain(f.root);expect(JSON.stringify(value)).not.toContain('execution');
-  expect(tree(f.root)).toBe(before);
-});
-
-test('history selects persisted ID across title changes and honors an explicit historical revision', () => {
-  const f=fixture(),original=git(f.root,'rev-parse','HEAD');
-  const old=readOperatorTaskHistory(f.input);
-  put(join(f.root,f.sprint),readFileSync(join(f.root,f.sprint),'utf8').replace('Inspect current task','Renamed canonical task'));
-  git(f.root,'add','.');git(f.root,'commit','-qm','rename task');
-  expect(readOperatorTaskHistory(f.input).task.title).toBe('Renamed canonical task');
-  const historical=readOperatorTaskHistory({...f.input,expected_task_revision:old.task_revision});
-  expect(historical.source.commit).toBe(original);expect(historical.task.title).toBe(old.task.title);
-  expect(()=>readOperatorTaskHistory({...f.input,task_id:'f'.repeat(64)})).toThrow('history_unavailable');
-  expect(()=>readOperatorTaskHistory({...f.input,expected_task_revision:'f'.repeat(64)})).toThrow('history_unavailable');
-});
-
-test('uncommitted history lookalikes and client source coordinates cannot supply Task identity', () => {
+test('the retired task history selector is not routed',async()=>{
   const f=fixture();
-  git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','remove task');
-  put(join(f.root,'plans/archive/title-match.md'),`# Inspect current task\n${f.input.task_id}`);
-  const value=readOperatorTaskHistory(f.input);expect(value.coverage.commits_examined).toBe(2);
-  expect(()=>readOperatorTaskHistory({...f.input,repository_id:'missing'})).toThrow('history_unavailable');
-  expect(isTaskHistoryRequest({...f.input,env:undefined})).toBe(false);
-  expect(()=>readOperatorTaskHistory({...f.input,target_ref:'HEAD'} as never)).toThrow('unavailable');
-  expect(()=>readOperatorTaskHistory({...f.input,sprint_path:f.sprint} as never)).toThrow('unavailable');
-});
-
-test('history checks every carrier before returning an exact match and refuses oversized evidence', () => {
-  const f=fixture(),text=readFileSync(join(f.root,f.sprint),'utf8');
-  put(join(f.root,'plans/sprints/duplicate.sprint.md'),text);git(f.root,'add','.');git(f.root,'commit','-qm','ambiguous ID');
-  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_ambiguous');
-  git(f.root,'rm','plans/sprints/duplicate.sprint.md');
-  put(join(f.root,f.sprint),text+'\n'+'x'.repeat(TASK_HISTORY_MAX_BLOB_BYTES));
-  git(f.root,'add','.');git(f.root,'commit','-qm','oversize carrier');
-  expect(()=>readOperatorTaskHistory(f.input)).toThrow('too_large');
-});
-
-test('history uses the Sprint directory policy from each immutable commit', () => {
-  const f=fixture();mkdirSync(join(f.root,'work'),{recursive:true});
-  git(f.root,'mv',f.sprint,'work/canonical.sprint.md');
-  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({sprints:{dir:'work'}}));
-  git(f.root,'add','.');git(f.root,'commit','-qm','configured carrier directory');
-  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({sprints:{dir:'wrong-local-directory'}}));
-  const value=readOperatorTaskHistory(f.input);expect(value.source.sprint_path).toBe('work/canonical.sprint.md');
-  const {env,...request}=f.input;
-  expect(decodeOperatorTaskHistory(value,request)).toEqual(value);
-  for (const bad of [{...value,protocol:2},{...value,source:{...value.source,sprint_path:'/private/secret'}},{...value,task:{...value.task,title:42}},{...value,task_revision:'invalid'},{...value,ready:true}]) {
-    expect(()=>decodeOperatorTaskHistory(bad,request)).toThrow('Invalid task history response');
-  }
-});
-
-test('schema1 history cannot manufacture a persisted Task ID from its title', () => {
-  const f=fixture();git(f.root,'checkout','--orphan','legacy');
-  put(join(f.root,f.sprint),'# Legacy\n\n## Backlog\n| # | Status | Task | Mode | Acceptance | Plan |\n|---|--------|------|------|------------|------|\n| 1 | [ ] | Inspect current task | contract | read only | |\n');
-  git(f.root,'add','.');git(f.root,'commit','-qm','legacy source');
-  put(join(f.root,'.ai/harness/policy.json'),JSON.stringify({worktree_strategy:{merge_back:{target:'legacy'}}}));
-  expect(()=>readOperatorTaskHistory(f.input)).toThrow('history_unavailable');
-});
-
-test('history refuses an otherwise valid Task beyond its64 canonical-commit budget', () => {
-  const f=fixture();git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','delete task');
-  for(let i=0;i<63;i++)git(f.root,'commit','--allow-empty','-qm',`later${i}`);
-  // The reader starts two Git processes per commit; slow process start-up (Windows) must not turn the budget refusal into a timeout.
-  expect(()=>readOperatorTaskHistory(f.input,{deadline_ms:60_000})).toThrow('history_unavailable');
-});
-
-import * as registryModule from '../../src/effects/repo-registry';
-test('history rejects registry or canonical-target changes during its read', () => {
-  for(const change of ['registry','target']) {
-    const f=fixture();const original=registryModule.readRepoHarnessRegistryStrictSnapshot;let calls=0;
-    const spy=spyOn(registryModule,'readRepoHarnessRegistryStrictSnapshot').mockImplementation(options=>{
-      calls++;
-      if(calls===2) {
-        if(change==='registry') { const value=JSON.parse(readFileSync(f.registryPath,'utf8'));value.authorizationRevision++;put(f.registryPath,JSON.stringify(value)); }
-        else git(f.root,'commit','--allow-empty','-qm','target moved');
-      }
-      return original(options);
-    });
-    try {expect(()=>readOperatorTaskHistory(f.input)).toThrow('stale');} finally {spy.mockRestore();}
-  }
-});
-
-test('history digest binds the actual UTF-8 blob including a byte-order mark', () => {
-  const f=fixture(),text='\ufeff'+readFileSync(join(f.root,f.sprint),'utf8');
-  put(join(f.root,f.sprint),text);git(f.root,'add','.');git(f.root,'commit','-qm','source byte marker');
-  expect(readOperatorTaskHistory(f.input).source.blob_sha256).toBe(`sha256:${createHash('sha256').update(readFileSync(join(f.root,f.sprint))).digest('hex')}`);
-});
-
-test('the existing context GET explicitly serves archived history with all selector and origin guards',async()=>{
-  const f=fixture();git(f.root,'rm',f.sprint);git(f.root,'commit','-qm','archive current task');
   const before=tree(f.root),server=await startOperatorServer({port:0,env:f.input.env});
   try {
     const url=`${server.url}/api/v1/fleet/tasks/${f.input.repository_id}/${f.input.task_id}/context`;
-    const response=await fetch(url+'?view=history');expect(response.status).toBe(200);
-    const {env,...request}=f.input;expect(decodeOperatorTaskHistory(await response.json(),request).task.title).toBe(f.task);
-    // Historical reads require explicit selection; missing view never invokes a fallback reader.
-    expect((await fetch(url)).status).toBe(400);
-    expect((await fetch(url+'?view=history&task_revision='+'f'.repeat(64))).status).toBe(404);
-    for(const q of ['view=history&view=history','view=history&ref=HEAD','view=history&path=/private','view=unknown','view=history&task_revision=invalid'])expect((await fetch(url+'?'+q)).status).toBe(400);
-    expect((await fetch(url+'?view=history',{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
-    expect((await fetch(url+'?view=history',{method:'POST',headers:{Origin:server.url,'Sec-Fetch-Site':'same-origin'}})).status).toBe(405);
+    for(const query of ['?view=history','?view=history&task_revision='+'f'.repeat(64)]){
+      const response=await fetch(url+query);
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({error:{code:'not_found'}});
+    }
     expect(tree(f.root)).toBe(before);
   } finally {await server.close();}
 });

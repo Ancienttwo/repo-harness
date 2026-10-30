@@ -1634,85 +1634,22 @@ for (const transition of ['service epoch', 'explicit refresh'] as const) {
   });
 }
 
-async function historyValue(repositoryId:string,taskId:string) {
-  const {deriveTaskRevision}=await import('../../src/core/state/coordination-identity');
-  const title='Archived task '+taskId.slice(0,4),mode='contract',acceptance='Recorded acceptance';
-  return {protocol:1 as const,kind:'operator_task_history' as const,repository_id:repositoryId,task_id:taskId,
-    task_revision:deriveTaskRevision({taskId,taskCell:title,modeCell:mode,acceptanceCell:acceptance}),task:{title,mode,acceptance,recorded_status:'[x]'},
-    source:{target_ref:'main',target_commit:'a'.repeat(40),commit:'b'.repeat(40),sprint_path:'plans/sprints/old.sprint.md',blob_sha256:'sha256:'+'c'.repeat(64)},
-    coverage:{scope:'canonical_first_parent' as const,commits_examined:2,blobs_examined:1},observed_at:'2026-09-22T00:00:00.000Z'};
-}
-
-test('an old exact Task URL shows committed history without constructing current actions',async()=>{
-  const id='f'.repeat(64),repo=stableSnapshot.repositories[0]!.repository_id;
-  const history = await historyValue(repo, id);
-  window.history.replaceState(null,'',`?repository=${repo}&task=${id}&view=history`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
-    readTaskHistory={async()=>history} />);
-  expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
-  expect(document.querySelector('.task-history')?.textContent).toContain('b'.repeat(40));
-  expect(document.querySelector('.composer')).toBeNull();expect(document.querySelector('.task-diff')).toBeNull();
-  expect(document.activeElement?.id).toBe('task-history-title');
-  await act(async()=>document.querySelector<HTMLButtonElement>('.task-history button')!.click());
-  expect(document.querySelector('.task-history')).toBeNull();expect(new URLSearchParams(window.location.search).has('task')).toBe(false);
-});
-
 test('current Task links open current detail and selecting cards writes only navigation identifiers',async()=>{
   const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
   window.history.replaceState(null,'',`?repository=${card.repository_id}&provider_repository_id=${card.provider_repository_id}&issue_id=${card.provider_issue_id}&session_binding_sha256=${card.execution!.selector.session_binding_sha256}`);
   await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
-  expect(paneText()).toContain(fixtureTasks.blocked.task_label);expect(document.querySelector('.task-history')).toBeNull();
+  expect(paneText()).toContain(fixtureTasks.blocked.task_label);
   await act(async()=>document.querySelector<HTMLButtonElement>('.detail-pane__actions button[aria-label]')!.click());
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
   expect(new URLSearchParams(window.location.search).get('issue_id')).toBe(card.provider_issue_id);
   expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual(['issue_id','provider_repository_id','repository','session_binding_sha256']);
 });
 
-test('history navigation rejects late responses and preserves a removed repository scope',async()=>{
-  const pending:Array<{request:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest;signal:AbortSignal;finish:(value:Awaited<ReturnType<typeof historyValue>>)=>void}>=[];
-  const repo=stableSnapshot.repositories[0]!.repository_id;
-  window.history.replaceState(null,'',`?repository=${repo}&task=${'e'.repeat(64)}&view=history`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
-    readTaskHistory={(request,signal)=>new Promise(resolve=>pending.push({request,signal,finish:resolve}))} />);
-  await act(async()=>{window.history.pushState(null,'',`?repository=removed-repo&task=${'f'.repeat(64)}&view=history`);window.dispatchEvent(new window.PopStateEvent('popstate'));});
-  expect(pending[0]!.signal.aborted).toBe(true);expect(pending[1]!.request.repository_id).toBe('removed-repo');
-  await act(async()=>pending[1]!.finish(await historyValue('removed-repo','f'.repeat(64))));
-  await act(async()=>pending[0]!.finish(await historyValue(repo,'e'.repeat(64))));
-  expect(document.querySelector('.task-history')?.textContent).toContain('removed-repo');
-  expect(document.querySelector('.task-history')?.textContent).toContain('Archived task ffff');
-  expect(document.querySelector('.task-history')?.textContent).not.toContain('Archived task eeee');
-  expect(document.querySelector('.composer')).toBeNull();
-});
-
-test('malformed Task URLs expose refusal without requesting history',async()=>{
-  let calls=0;window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
-    readTaskHistory={async()=>{calls++;throw new Error('unexpected');}} />);
-  expect(document.body.textContent).toContain('Invalid Task link');expect(calls).toBe(0);expect(document.querySelector('.composer')).toBeNull();
-});
-
-test('a disappearing selected Task keeps its original identity while history is unavailable',async()=>{
-  const {emptySnapshot}=await import('../../src/operator-web/fixture');
-  const calls:import('../../src/core/operator/task-history').OperatorTaskHistoryRequest[]=[];
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
-    fetchSnapshot={async()=>({...emptySnapshot,service_epoch:stableSnapshot.service_epoch,sequence:stableSnapshot.sequence+1})}
-    readTaskHistory={async request=>{calls.push(request);throw new Error('history_unavailable');}} />);
-  await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
-  const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
-  await act(async()=>buttonWithText('Refresh').click());
-  expect(calls).toEqual([]);
-  expect(document.querySelector('.task-history')).toBeNull();
-  expect(document.body.textContent).toContain('no longer in the current observation');
-  expect(document.querySelector('.composer')).toBeNull();
-  expect(new URLSearchParams(window.location.search).get('issue_id')).toBe(card.provider_issue_id);
-});
-
-test('an explicit historical revision remains a historical read even when the Task is currently visible',async()=>{
-  const card=stableSnapshot.repositories[0]!.cards.find(card=>card.task_id!==null)!,value=await historyValue(card.repository_id,card.task_id!);let calls=0;
-  window.history.replaceState(null,'',`?repository=${card.repository_id}&task=${card.task_id}&view=history&task_revision=${value.task_revision}`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}}
-    readTaskHistory={async request=>{calls++;expect(request.expected_task_revision).toBe(value.task_revision);return value;}} />);
-  expect(calls).toBe(1);expect(document.querySelector('.task-history')?.textContent).toContain(value.task.title);expect(document.querySelector('.detail-pane')).toBeNull();
+test('an invalid Task URL shows the link refusal without a task drawer',async()=>{
+  window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  expect(document.body.textContent).toContain('Invalid Task link');
+  expect(document.querySelector('.detail-pane')).toBeNull();
 });
 
 test('refresh removes stale acceptance readiness without creating Done or a merge action',async()=>{

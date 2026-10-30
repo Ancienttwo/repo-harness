@@ -69,7 +69,6 @@ function snapshot(sequence = 1) {
 }
 
 const TASK_ID = 'a'.repeat(64);
-const TASK_REVISION = 'b'.repeat(64);
 const CLAIM_ID = '123e4567-e89b-42d3-a456-426614174012';
 function registryHome(entries: readonly { readonly path: string; readonly accessMode: 'read_only' | 'read_write' }[]): {
   readonly env: NodeJS.ProcessEnv;
@@ -261,7 +260,6 @@ describe('operator serve command and HTTP boundary', () => {
       read_task_context: async () => { reads++; throw new Error('unexpected read'); },
       read_task_activity: async () => { reads++; throw new Error('unexpected read'); },
       read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
-      read_task_history: async () => { reads++; throw new Error('unexpected read'); },
     });
     try {
       const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/dev-activity', '/api/v1/setup',
@@ -1522,23 +1520,6 @@ test('repository identities bind responses and partition single-flight within th
     expect(refused.status).toBe(500);
     expect(await refused.json()).toMatchObject({ error: { code: 'repository_mismatch' } });
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
-});
-
-test('history context inherits pre-reader guards and holds shared capacity until retirement',async()=>{
-  let started!:()=>void,retire!:()=>void;const entered=new Promise<void>(resolve=>{started=resolve;});let signal:AbortSignal|undefined,calls=0;
-  const server=await startOperatorServer({port:0,max_concurrency:1,timeout_ms:1000,
-    read_task_history:input=>{calls++;signal=input.signal;started();return new Promise((_,reject)=>{retire=()=>reject(new Error('retired'));});},
-  });
-  const path='/api/v1/fleet/tasks/repo-a/'+ 'a'.repeat(64)+'/context?view=history';
-  try {
-    expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
-    expect((await fetch(server.url+path+'&path=/private')).status).toBe(400);expect(calls).toBe(0);
-    const pending=fetch(server.url+path);await entered;
-    expect(await(await fetch(server.url+path+'&task_revision='+TASK_REVISION)).json()).toEqual({code:'busy'});
-    expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBe(true);
-    expect(await(await fetch(server.url+path)).json()).toEqual({code:'busy'});expect(calls).toBe(1);
-    retire();await new Promise(resolve=>setTimeout(resolve,0));
-  } finally {retire?.();await server.close();}
 });
 
 // Phase B uses the real Phase A fixture and the production worker/supervisor.

@@ -433,29 +433,6 @@ test('Fleet protocol8 requires a valid service epoch and rejects protocol6', () 
   expect(decodeOperatorFleetSnapshot(payload).service_epoch).toBe('00000000-0000-4000-8000-000000000001');
 });
 
-test('Task URL selectors reject ambiguity, source paths and revisions without explicit history mode',async()=>{
-  const {parseTaskLocation,taskLocationSearch}=await import('../../src/operator-web/task-location');
-  const id='a'.repeat(64),revision='b'.repeat(64);
-  const selected=parseTaskLocation(`?repository=repo-1&task=${id}&view=history&task_revision=${revision}`);
-  expect(selected).toMatchObject({invalid:false,repositoryId:'repo-1',selection:{taskId:id,revision,historical:true}});
-  expect(parseTaskLocation(taskLocationSearch(selected.repositoryId,selected.selection))).toEqual(selected);
-  for(const query of [`?repository=repo-1&task=${id}&task=${id}`,`?repository=repo-1&task=${id}&ref=HEAD`,`?repository=repo-1&task=${id}&task_revision=${revision}`,'?task='+id,'?repository=../private','?repository=repo-1&task=old-title'])expect(parseTaskLocation(query).invalid).toBe(true);
-  expect(parseTaskLocation('?repository=missing-repo')).toEqual({repositoryId:'missing-repo',selection:null,invalid:false});
-});
-
-test('history transport uses only the explicit context mode, uncached signal and named refusal',async()=>{
-  const {fetchTaskHistory}=await import('../../src/operator-web/task-history');
-  const original=globalThis.fetch,controller=new AbortController();
-  try {
-    globalThis.fetch=(async(input,init)=>{
-      expect(String(input)).toBe('/api/v1/fleet/tasks/repo-1/'+ 'a'.repeat(64)+'/context?view=history');
-      expect(init?.signal).toBe(controller.signal);expect(init?.cache).toBe('no-store');
-      return Response.json({code:'history_unavailable'},{status:404});
-    }) as typeof fetch;
-    await expect(fetchTaskHistory({repository_id:'repo-1',task_id:'a'.repeat(64),expected_task_revision:null},controller.signal)).rejects.toThrow('history_unavailable');
-  } finally {globalThis.fetch=original;}
-});
-
 test('admitted activity requires a closed selected session and unique pagination keys', async () => {
   const {parseAdmittedTaskActivityRequest,decodeAdmittedTaskActivity} = await import('../../src/core/operator/admitted-task-activity');
   const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:'a'.repeat(64),role:'deep-reasoner',claim_ref:'claim:1',claim_revision:snapshotDigest,grant_sha256:snapshotDigest,policy_sha256:snapshotDigest,actor_id:'owner',session_binding_sha256:snapshotDigest};
@@ -480,4 +457,10 @@ test('current provider links select an exact session without falling back to tas
   const unassigned=parseTaskLocation('?repository=repo-a&provider_repository_id=123&issue_id=456');
   expect(unassigned.selection).toMatchObject({historical:false,sessionBinding:null,key:'repo-a:123:456:unassigned'});
   for(const query of [`?repository=repo-a&task=${taskId}`, '?repository=repo-a&provider_repository_id=123&issue_id=456&issue_id=789', '?repository=repo-a&provider_repository_id=123&issue_id=456&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
+});
+
+test('retired task and history selectors are rejected as invalid locations', async () => {
+  const {parseTaskLocation}=await import('../../src/operator-web/task-location');
+  const id='a'.repeat(64),revision='b'.repeat(64);
+  for(const query of [`?repository=repo-1&task=${id}`,`?repository=repo-1&task=${id}&task_revision=${revision}`,'?repository=repo-1&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
 });

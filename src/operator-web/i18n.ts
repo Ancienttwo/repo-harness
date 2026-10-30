@@ -62,12 +62,6 @@ const en = {
   "runtimeObservation.freshness.stale": "Stale observation",
   "runtimeObservation.freshness.disconnected": "Source disconnected",
 
-  "history.title": "Historical Task definition",
-  "history.boundary": "Recorded canonical evidence only. This is not a current Claim, execution state, or permission to act.",
-  "history.unavailable": "Historical evidence could not be established within the bounded source.",
-  "history.recordedStatus": "Status recorded at this commit",
-  "history.coverage": "Canonical first-parent history: {count} commits examined.",
-  "history.source": "Exact committed source",
   "history.invalidLink": "Invalid Task link. Repository and Task selectors must be unique and valid; paths and Git refs are not accepted.",
 
   "planning.loading": "Reading Planning observations…",
@@ -1609,12 +1603,6 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   "runtimeObservation.freshness.stale": "过期观测",
   "runtimeObservation.freshness.disconnected": "来源已断开",
 
-  "history.title": "历史 Task 定义",
-  "history.boundary": "这里只展示已记录的 canonical 证据，不代表当前 Claim、执行状态或操作权限。",
-  "history.unavailable": "未能在有界来源中确认历史证据。",
-  "history.recordedStatus": "该 commit 记录的状态",
-  "history.coverage": "Canonical first-parent 历史：已检查 {count} 个 commit。",
-  "history.source": "确切的已提交来源",
   "history.invalidLink": "Task 链接无效。仓库与 Task 选择器必须唯一且有效；不接受路径或 Git ref。",
 
   "planning.loading": "正在读取规划观测…",
