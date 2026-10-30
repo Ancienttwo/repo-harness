@@ -45,10 +45,21 @@ function label(value: string): string {
   return storedDocSessionText(storedDocSessionText(value).text.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim().slice(0, 160)).text || 'Doc session';
 }
 
-function metadata(env: NodeJS.ProcessEnv, sid: string, repositoryNames: ReadonlyMap<string, string>, seen: string | null) {
+function registeredRecord(env: NodeJS.ProcessEnv, sid: string, repositoryNames: ReadonlyMap<string, string>): DocSessionRecordV1 {
   const directory = sessionDirectory(env, sid);
   const record = decodeDocSessionRecord(readJson(join(directory, 'session.json')));
   if (record.session_id !== sid || !repositoryNames.has(record.repository_id)) return fail('unavailable');
+  return record;
+}
+
+/** The shared metadata admission does not require an extant worktree or host. */
+export function readRegisteredDocSessionRecord(env: NodeJS.ProcessEnv, sid: string): DocSessionRecordV1 {
+  return registeredRecord(env, sid, repositoryNames(env));
+}
+
+function metadata(env: NodeJS.ProcessEnv, sid: string, repositoryNames: ReadonlyMap<string, string>, seen: string | null) {
+  const record = registeredRecord(env, sid, repositoryNames);
+  const directory = sessionDirectory(env, sid);
   const raw = readJson(join(directory, 'agent.json'), true);
   // The host owns this private schema. Project only its identity, state, epoch and timestamp.
   // The public decoder below validates each projected value; no private object is serialized.

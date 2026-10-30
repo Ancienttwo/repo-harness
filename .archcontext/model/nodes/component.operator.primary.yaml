@@ -16,6 +16,7 @@ responsibilities:
   - Own the doc session creation operation: refuse a runtime without verified docs isolation or without the docs use, verify each citation against one commit of the served docs view, then create the session's docs/<slug> branch and worktree under the managed worktree root and its session record; the production sessions_create route runs it after the local config write (#1017) opened, and it starts no agent.
   - Own the doc session event log: append redacted, schema-checked events to the session's events.jsonl under a per-session lock, each one moving the epoch.seq cursor forward, and serve the production cursor read through the bounded task-read process.
   - Serve the public doc session list and detail from persisted session, host and redacted event records through the bounded task-read process; expose only safe metadata, branch, worktree directory name and HEAD, and compare browser-provided read cursors without persisting browser state.
+  - Serve saved finalization journal progress through bounded HTTP and CLI reads after session identity and repository registration admission; preserve reads after worktree removal, omit private journal fields and make no inference about live write capability or audited completion.
 source:
   include:
     - src/effects/operator/**
