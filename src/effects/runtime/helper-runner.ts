@@ -121,7 +121,6 @@ function helperId(fileName: string): string {
 
 export function helperTimeoutMs(helper: string): number {
   switch (helperId(helper)) {
-    case 'verify-contract':
     case 'verify-sprint':
       return VERIFIER_HELPER_TIMEOUT_MS;
     case 'contract-worktree':

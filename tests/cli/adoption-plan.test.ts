@@ -415,10 +415,10 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
       mkdirSync(join(repo, ".codex"), { recursive: true });
-      writeFileSync(join(repo, "scripts", "check-task-workflow.sh"), "#!/bin/bash\necho repo-harness custom\n");
+      writeFileSync(join(repo, "scripts", "check-deploy-sql-order.sh"), "#!/bin/bash\necho repo-harness custom\n");
       writeFileSync(join(repo, ".codex", "hooks.json"), '{"hooks":{"PostToolUse":"bash scripts/custom-hook.sh"}}\n');
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
-      expect(plan.operations.some((operation) => operation.path === "scripts/check-task-workflow.sh")).toBe(false);
+      expect(plan.operations.some((operation) => operation.path === "scripts/check-deploy-sql-order.sh")).toBe(false);
       expect(plan.operations.some((operation) => operation.path === ".codex/hooks.json")).toBe(false);
       expect(applyAdoptionPlan(plan).ok).toBe(true);
       expect(readFileSync(join(repo, ".codex", "hooks.json"), "utf-8")).toContain("custom-hook.sh");
@@ -794,8 +794,8 @@ describe("canonical adoption plan", () => {
     const repo = tempRepo();
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
+      const helper = "scripts/check-deploy-sql-order.sh";
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-deploy-sql-order.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
@@ -813,8 +813,8 @@ describe("canonical adoption plan", () => {
     const repo = tempRepo();
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      const helper = "scripts/check-task-workflow.sh";
-      const canonical = readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8");
+      const helper = "scripts/check-deploy-sql-order.sh";
+      const canonical = readFileSync(join(ROOT, "scripts", "check-deploy-sql-order.sh"), "utf-8");
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       writeFileSync(join(repo, helper), "#!/bin/sh\necho staged custom helper\n");
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
@@ -841,8 +841,8 @@ describe("canonical adoption plan", () => {
     const repo = tempRepo();
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      const helper = "scripts/check-task-workflow.sh";
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
+      const helper = "scripts/check-deploy-sql-order.sh";
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-deploy-sql-order.sh"), "utf-8"));
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" }).stdout;
@@ -862,12 +862,12 @@ describe("canonical adoption plan", () => {
   }, 30_000);
 
   describe("git untrack fail-closed boundaries", () => {
-    const helper = "scripts/check-task-workflow.sh";
+    const helper = "scripts/check-deploy-sql-order.sh";
 
     function helperRepo(): { repo: string; git: (...args: string[]) => ReturnType<typeof spawnSync> } {
       const repo = tempRepo();
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-task-workflow.sh"), "utf-8"));
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "scripts", "check-deploy-sql-order.sh"), "utf-8"));
       const git = (...args: string[]) => spawnSync("git", args, { cwd: repo, encoding: "utf-8" });
       expect(git("init", "-q").status).toBe(0);
       return { repo, git };

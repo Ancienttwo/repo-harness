@@ -19,7 +19,6 @@ export interface McpPolicy {
   allowAbsoluteRead?: boolean;
   maxFileBytes: number;
   execution: {
-    fixedWorkflowCheck: boolean;
     codingShell: boolean;
   };
 }

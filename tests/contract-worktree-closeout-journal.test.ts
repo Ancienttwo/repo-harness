@@ -265,10 +265,6 @@ function installFixture(container: string): Fixture {
   );
   writeExecutable(join(primary, "scripts/check-architecture-sync.sh"), "#!/bin/bash\nexit 0\n");
   writeExecutable(join(primary, "scripts/verify-sprint.sh"), "#!/bin/bash\nexit 0\n");
-  writeExecutable(
-    join(primary, "scripts/refresh-current-status.sh"),
-    "#!/bin/bash\nprintf '# Current Status Snapshot\\n\\n> **Status**: Idle\\n' > tasks/current.md\n",
-  );
   writeFileSync(
     join(primary, PLAN),
     [

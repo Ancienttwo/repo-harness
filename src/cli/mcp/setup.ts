@@ -50,7 +50,6 @@ const REQUIRED_CODEX_TOOLS = [
   'latest_handoff',
   'latest_checks',
   'write_task_goal',
-  'run_workflow_check',
 ];
 
 const CHATGPT_MCP_ENDPOINT_PLACEHOLDER = '<https-tunnel-url>/mcp';
@@ -891,8 +890,7 @@ enabled_tools = [
   "read_workflow_file",
   "latest_handoff",
   "latest_checks",
-  "write_task_goal",
-  "run_workflow_check"
+  "write_task_goal"
 ]
 default_tools_approval_mode = "prompt"
 `;

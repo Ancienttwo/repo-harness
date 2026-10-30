@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { homedir } from 'os';
 import { basename, dirname, isAbsolute, join, resolve } from 'path';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
-import { runHelper } from '../../effects/runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
@@ -835,9 +834,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     },
   ];
 
-  if (policy.execution.fixedWorkflowCheck) {
-    tools.push({ name: 'run_workflow_check', description: 'Run the fixed repo-harness strict workflow check in the current or target registered repo.', inputSchema: optionalRepoSchema, annotations: write });
-  }
   if (policy.capabilities.workspaceReader) {
     tools.push(...buildReaderToolDefinitions(policy));
   }
@@ -1103,29 +1099,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         appendFileSync(decision.absolutePath, block, 'utf-8');
         audit(ctx, name, 'ok', args, path);
         return textResult({ status: 'appended', repoRoot: target.repoRoot, path });
-      }
-      case 'run_workflow_check': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const result = runHelper({
-          helper: 'check-task-workflow',
-          args: [],
-          cwd: target.repoRoot,
-          stdio: 'pipe',
-          timeoutMs: 60_000,
-          maxOutputBytes: 96 * 1024,
-        });
-        const stdout = redactMcpText(result.stdout ?? '');
-        const stderr = redactMcpText(result.stderr ?? '');
-        audit(ctx, name, result.exitCode === 0 ? 'ok' : 'failed', args, undefined, stderr.text);
-        return textResult({
-          repoRoot: target.repoRoot,
-          exitCode: result.exitCode,
-          reason: result.reason,
-          stdout: stdout.text,
-          stderr: stderr.text,
-          helper: result.resolved ? { source: result.resolved.source, fileName: basename(result.resolved.path) } : null,
-        });
       }
       case 'run_chatgpt_browser_consult': {
         if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');

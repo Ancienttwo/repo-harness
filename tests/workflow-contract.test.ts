@@ -62,8 +62,8 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
     expect(contract.helpers.scripts).toContain("ship-worktrees.sh");
     expect(contract.helpers.scripts).toContain("heartbeat-triage.sh");
-    expect(contract.helpers.scripts).toContain("capture-plan.sh");
-    expect(contract.helpers.scripts).toContain("switch-plan.sh");
+    expect(contract.helpers.scripts).toContain("prepare-handoff.sh");
+    expect(contract.helpers.scripts).toContain("verify-sprint.sh");
     expect(contract.helpers.scripts).not.toContain("context-budget.ts");
     expect(contract.helpers.scripts).toContain("capability-resolver.ts");
     expect(contract.helpers.scripts).not.toContain("architecture-event.ts");
@@ -71,8 +71,6 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).not.toContain("architecture-queue.sh");
     expect(contract.helpers.scripts).not.toContain("archive-architecture-request.sh");
     expect(contract.helpers.scripts).not.toContain("context-contract-sync.sh");
-    expect(contract.helpers.scripts).toContain("workstream-sync.sh");
-    expect(contract.helpers.scripts).toContain("refresh-current-status.sh");
     expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");

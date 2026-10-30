@@ -32,14 +32,14 @@ describe("adoption migration cutover", () => {
     const root = join(import.meta.dir, "..");
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      const generated = readFileSync(join(root, "scripts/check-task-sync.sh"), "utf-8");
-      writeFileSync(join(repo, "scripts/check-task-sync.sh"), generated);
+      const generated = readFileSync(join(root, "scripts/check-deploy-sql-order.sh"), "utf-8");
+      writeFileSync(join(repo, "scripts/check-deploy-sql-order.sh"), generated);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
-      const removed = apply.results.find((result) => result.path === "scripts/check-task-sync.sh" && result.kind === "remove");
+      const removed = apply.results.find((result) => result.path === "scripts/check-deploy-sql-order.sh" && result.kind === "remove");
       expect(removed?.status).toBe("applied");
       expect(removed?.backupPath).toContain(".ai/harness/backups/fs-transaction/");
-      expect(existsSync(join(repo, "scripts/check-task-sync.sh"))).toBe(false);
+      expect(existsSync(join(repo, "scripts/check-deploy-sql-order.sh"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

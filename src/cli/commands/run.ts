@@ -9,14 +9,9 @@ export const RUN_HELP_GROUPS = [
     label: 'Planning & execution',
     helpers: [
       'new-spec',
-      'new-plan',
-      'capture-plan',
-      'plan-to-todo',
       'cutover-closure',
       'contract-worktree',
       'contract-worktree-runtime',
-      'switch-plan',
-      'ensure-task-workflow',
     ],
   },
   {
@@ -28,9 +23,6 @@ export const RUN_HELP_GROUPS = [
       'merge-gate',
       'ship-worktrees',
       'worktree-merge-lib',
-      'archive-workflow',
-      'classify-historical-plans',
-      'verify-contract',
       'verify-sprint',
       'harness-trace-grade',
     ],
@@ -38,7 +30,6 @@ export const RUN_HELP_GROUPS = [
   {
     label: 'State & handoff',
     helpers: [
-      'refresh-current-status',
       'prepare-handoff',
       'prepare-codex-handoff',
       'codex-handoff-resume',
@@ -52,16 +43,13 @@ export const RUN_HELP_GROUPS = [
     label: 'Verification & maintenance',
     helpers: [
       'verification-plan',
-      'migrate-verification-plan',
       'validate-harness-profile-benchmark',
       'summarize-failures',
-      'check-task-sync',
       'check-deploy-sql-order',
       'check-agent-tooling',
       'check-context-files',
       'check-protected-paths',
       'check-skill-version',
-      'check-task-workflow',
       'maintenance-triage',
       'heartbeat-triage',
       'evidence-gc',
@@ -73,7 +61,6 @@ export const RUN_HELP_GROUPS = [
       'select-agent-context-blocks',
       'capability-resolver',
       'capability-config',
-      'workstream-sync',
     ],
   },
   {
@@ -137,7 +124,7 @@ export function buildRunCommand(): Command {
     .allowUnknownOption(true);
 
   run
-    .argument('<helper>', 'Helper id, for example check-task-workflow')
+    .argument('<helper>', 'Helper id, for example verify-sprint')
     .argument('[args...]', 'Arguments passed to the helper')
     .action((helper: string, args: string[]) => {
       const replacement = RETIRED_HELPERS.get(helper);

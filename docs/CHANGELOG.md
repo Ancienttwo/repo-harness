@@ -19,6 +19,9 @@ All notable changes to this skill are documented here.
   `tasks/reviews/**` and `tasks/contracts/**` are no longer readable or
   writable through those surfaces. Existing PRD files are not moved here.
   (#1181, #1184)
+- Remove the MCP `run_workflow_check` tool. Its `check-task-workflow`
+  helper is retired, so the tool would fail as an unknown helper. The old
+  name now returns the MCP unknown-tool error. (#1182)
 
 ## [0.24.3] - 2026-10-26
 

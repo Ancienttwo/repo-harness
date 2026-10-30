@@ -101,7 +101,6 @@ function withWorkspacePrefixGlobs(globs: string[]): string[] {
 
 function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPolicy['execution'] {
   return {
-    fixedWorkflowCheck: false,
     codingShell: false,
     ...overrides,
   };
@@ -134,9 +133,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
-      execution: executionPolicy({
-        fixedWorkflowCheck: true,
-      }),
+      execution: executionPolicy(),
     };
   }
 
@@ -151,9 +148,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
-      execution: executionPolicy({
-        fixedWorkflowCheck: true,
-      }),
+      execution: executionPolicy(),
     };
   }
 
@@ -186,7 +181,6 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: true,
         codingShell: true,
       }),
     };

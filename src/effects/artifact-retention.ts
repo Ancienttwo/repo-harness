@@ -1,21 +1,14 @@
 /**
- * Local retention for closed harness artifacts (#697).
+ * Local retention for finished harness artifacts (#697).
  *
- * Closed plans stay committed for the retention window and then leave Git.
- * Closed task records also leave Git after the window. Check logs, run records
- * and finished fs-transaction backups accumulate on disk. This module moves all
- * of them into a gitignored local archive root once they are older than the
- * window. An archived entry is deleted once its newest file is older than the
- * archive window; nothing outside the archive root is ever deleted.
+ * Check logs, run records and finished fs-transaction backups accumulate on
+ * disk. This module moves them into a gitignored local archive root once they
+ * are older than the window. An archived entry is deleted once its newest file
+ * is older than the archive window; nothing outside the archive root is ever
+ * deleted.
  *
- * "Closed" is not inferred from file content. `archive-workflow.sh` is the only
- * writer that closes a plan and its task records, and it writes them as new
- * files under `plans/archive/` and `tasks/archive/`, so membership there is the
- * closed signal. For an untracked file the file time is the close time. For a
- * tracked artifact it is the last commit time, because a checkout resets file
- * times. A check log under
- * `.ai/harness/checks/` is finished once nothing has written to it for the
- * window. Open work lives elsewhere and is never scanned.
+ * A check log under `.ai/harness/checks/` is finished once nothing has written
+ * to it for the window. Open work lives elsewhere and is never scanned.
  *
  * Most of `.ai/harness/runs/` must stay in place. Verification records
  * (`verification-vx-*.json`) are bound by sha256 in the evidence ledger, and a
@@ -28,12 +21,8 @@
  * `contract-run-*` output directories that finished (`manifest.json` is the
  * last write of a run).
  *
- * Closed plans and task records leave Git. The move removes a tracked
- * artifact from the working tree. The command does not stage or commit; the
- * operator commits the removal. A plan with uncommitted changes is skipped, so
- * the move never hides work that Git does not hold. In every other class an
- * entry with any tracked file is skipped, because those classes are local-only
- * and a move would be an unexpected deletion.
+ * Every class is local-only: an entry with any tracked file is skipped, because
+ * a move would be an unexpected deletion. The command does not stage or commit.
  *
  * An fs-transaction backup is a rollback source only while its transaction can
  * still be rolled back by manifest. After the window the operator restores an
@@ -54,15 +43,13 @@ const POLICY_FILE = '.ai/harness/policy.json';
 const CONFIG_KEYS = new Set(['days', 'archive_days', 'archive_root', 'keep']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type RetentionClassId = 'closed-plans' | 'closed-task-records' | 'check-logs' | 'run-records' | 'transaction-backups';
+export type RetentionClassId = 'check-logs' | 'run-records' | 'transaction-backups';
 
 interface RetentionClass {
   readonly id: RetentionClassId;
   readonly dir: string;
   /** Which direct children of `dir` belong to the class. */
   readonly accepts: (name: string, entry: Stats, absolute: string) => boolean;
-  /** True when a tracked entry leaves Git once it is past the window. */
-  readonly leavesGit?: true;
 }
 
 function isRunRecord(name: string, entry: Stats, absolute: string): boolean {
@@ -70,14 +57,7 @@ function isRunRecord(name: string, entry: Stats, absolute: string): boolean {
   return entry.isDirectory() && name.startsWith('contract-run-') && existsSync(join(absolute, 'manifest.json'));
 }
 
-/** Any closed record; the `.gitkeep` scaffold keeps the directory and is not one. */
-function isClosedRecord(name: string, entry: Stats): boolean {
-  return name !== '.gitkeep' && (entry.isFile() || entry.isDirectory());
-}
-
 export const RETENTION_CLASSES: readonly RetentionClass[] = [
-  { id: 'closed-plans', dir: 'plans/archive', accepts: isClosedRecord, leavesGit: true },
-  { id: 'closed-task-records', dir: 'tasks/archive', accepts: isClosedRecord, leavesGit: true },
   { id: 'check-logs', dir: '.ai/harness/checks', accepts: (name, entry) => entry.isFile() && name.endsWith('.log') },
   // The writers hard-code this directory, so `harness.runs_dir` does not apply.
   { id: 'run-records', dir: '.ai/harness/runs', accepts: isRunRecord },
@@ -103,7 +83,7 @@ export interface RetentionEntry {
   readonly path: string;
   /** Repo-relative destination under the archive root. */
   readonly destination: string;
-  /** Whole days since the newest file in the entry was written or committed. */
+  /** Whole days since the newest file in the entry was written. */
   readonly ageDays: number;
   /** The entry holds a Git-tracked file; an apply leaves its removal to commit. */
   readonly tracked: boolean;
@@ -230,33 +210,17 @@ function occupied(path: string): boolean {
   }
 }
 
-/** Last commit time in ms of every path under `dir`, newest commit first wins. */
-function commitTimes(repoRoot: string, dir: string): Map<string, number> {
-  const times = new Map<string, number>();
-  // A repository without commits has no commit times; git log would fail.
-  if (gitSpawnSync(['-C', repoRoot, 'rev-parse', '--verify', '--quiet', 'HEAD']).status !== 0) return times;
-  let current = 0;
-  const log = git(repoRoot, ['-c', 'core.quotePath=false', 'log', '--format=@%ct', '--name-only', '--', dir]);
-  for (const line of log.split('\n')) {
-    if (line.startsWith('@')) current = Number(line.slice(1)) * 1000;
-    else if (line !== '' && !times.has(line)) times.set(line, current);
-  }
-  return times;
-}
-
 /**
- * Newest time of any file in the entry, without following links. A tracked
- * file counts by its last commit; an untracked file by its mtime. An empty
+ * Newest time of any file in the entry, without following links. An empty
  * directory counts by its own mtime.
  */
-function newestTimeMs(absolute: string, path: string, entry: Stats, committed: ReadonlyMap<string, number>): number {
-  if (!entry.isDirectory()) return committed.get(path) ?? entry.mtimeMs;
+function newestTimeMs(absolute: string, entry: Stats): number {
+  if (!entry.isDirectory()) return entry.mtimeMs;
   const names = readdirSync(absolute);
   if (names.length === 0) return entry.mtimeMs;
   let newest = 0;
   for (const name of names) {
-    const child = join(absolute, name);
-    newest = Math.max(newest, newestTimeMs(child, `${path}/${name}`, lstatSync(child), committed));
+    newest = Math.max(newest, newestTimeMs(join(absolute, name), lstatSync(join(absolute, name))));
   }
   return newest;
 }
@@ -289,7 +253,7 @@ function selectPurges(repoRoot: string, config: RetentionConfig, now: number): R
       const absolute = join(dir, name);
       const path = `${archived}/${name}`;
       if (config.keep.some((kept) => overlaps(`${retentionClass.dir}/${name}`, kept))) continue;
-      const ageDays = Math.floor((now - newestTimeMs(absolute, path, lstatSync(absolute), new Map())) / DAY_MS);
+      const ageDays = Math.floor((now - newestTimeMs(absolute, lstatSync(absolute))) / DAY_MS);
       if (ageDays >= config.archiveDays) purges.push({ class: retentionClass.id, path, ageDays });
     }
   }
@@ -329,18 +293,17 @@ export function runArtifactRetention(input: RetentionInput): RetentionReport {
   for (const retentionClass of RETENTION_CLASSES) {
     const dir = resolveInsideRepo(repoRoot, retentionClass.dir).path!;
     if (!existsSync(dir)) continue;
-    const committed = retentionClass.leavesGit ? commitTimes(repoRoot, retentionClass.dir) : new Map<string, number>();
     for (const name of readdirSync(dir).sort()) {
       const absolute = join(dir, name);
       const stats = lstatSync(absolute);
       if (!retentionClass.accepts(name, stats, absolute)) continue;
       const path = `${retentionClass.dir}/${name}`;
       const destination = `${config.archiveRoot}/${path}`;
-      const ageDays = Math.floor((now - newestTimeMs(absolute, path, stats, committed)) / DAY_MS);
+      const ageDays = Math.floor((now - newestTimeMs(absolute, stats)) / DAY_MS);
       const entry: RetentionEntry = { class: retentionClass.id, path, destination, ageDays, tracked: touches(tracked, path) };
 
       if (config.keep.some((kept) => overlaps(path, kept))) { skipped.push({ ...entry, reason: 'kept' }); continue; }
-      if (entry.tracked && !retentionClass.leavesGit) { skipped.push({ ...entry, reason: 'tracked' }); continue; }
+      if (entry.tracked) { skipped.push({ ...entry, reason: 'tracked' }); continue; }
       if (touches(changed, path)) { skipped.push({ ...entry, reason: 'modified' }); continue; }
       if (ageDays < config.days) { skipped.push({ ...entry, reason: 'recent' }); continue; }
       if (occupied(resolveInsideRepo(repoRoot, destination).path!)) { skipped.push({ ...entry, reason: 'destination-exists' }); continue; }

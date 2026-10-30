@@ -74,7 +74,7 @@ describe('mcp policy and paths', () => {
       const executor = getMcpPolicy('executor');
       expect(executor.allowAbsoluteRead).toBe(false);
       expect(executor.readGlobs).not.toContain('**');
-      expect(executor.execution.fixedWorkflowCheck).toBe(true);
+      expect(executor.execution).toEqual({ codingShell: false });
       expect(resolveMcpPath(tmp, 'tasks/secrets/token.txt', executor, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, '.ai/harness/nested/private.key', executor, 'read')).toMatchObject({ ok: false });
     } finally {
@@ -97,7 +97,7 @@ describe('mcp policy and paths', () => {
       const scoped = getMcpPolicy('planner');
       expect(scoped.allowAbsoluteRead).toBe(false);
       expect(scoped.readGlobs).not.toContain('**');
-      expect(scoped.execution.fixedWorkflowCheck).toBe(true);
+      expect(scoped.execution).toEqual({ codingShell: false });
       expect(resolveMcpPath(tmp, join(tmp, '.env'), scoped, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/readme.md', scoped, 'read')).toMatchObject({
         ok: true,
@@ -180,13 +180,13 @@ describe('mcp policy and paths', () => {
       const executor = getMcpPolicy('executor');
       expect(executor.allowAbsoluteRead).toBe(false);
       expect(executor.readGlobs).not.toContain('**');
-      expect(executor.execution.fixedWorkflowCheck).toBe(true);
+      expect(executor.execution).toEqual({ codingShell: false });
       const executorTools = buildMcpToolDefinitions(executor).map((tool) => tool.name);
       expect(executor.capabilities).toMatchObject({
         workspaceReader: false,
         workflowExecutor: true,
       });
-      expect(executorTools).toContain('run_workflow_check');
+      expect(executorTools).not.toContain('run_workflow_check');
       expect(executorTools).not.toContain('reader_status');
       expect(executorTools).not.toContain('tree');
       expect(executorTools).not.toContain('read_text');
@@ -227,7 +227,7 @@ describe('mcp policy and paths', () => {
         taskDispatch: true,
         publicationMerge: true,
       });
-      expect(orchestrator.execution).toEqual({ fixedWorkflowCheck: false, codingShell: false });
+      expect(orchestrator.execution).toEqual({ codingShell: false });
       const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'merge_pull_request'];
       expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
       expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
@@ -260,7 +260,7 @@ describe('mcp policy and paths', () => {
       workspaceCoder: true,
     });
     expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(20);
+    expect(definitions).toHaveLength(19);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
     for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {

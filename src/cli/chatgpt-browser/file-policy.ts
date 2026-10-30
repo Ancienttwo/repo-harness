@@ -64,7 +64,7 @@ const BROWSER_READ_POLICY: McpPolicy = {
     taskDispatch: false,
     publicationMerge: false,
   },
-  execution: { fixedWorkflowCheck: false, codingShell: false },
+  execution: { codingShell: false },
 };
 
 const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
@@ -81,7 +81,7 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
     taskDispatch: false,
     publicationMerge: false,
   },
-  execution: { fixedWorkflowCheck: false, codingShell: false },
+  execution: { codingShell: false },
 };
 
 const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
@@ -103,7 +103,7 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
     taskDispatch: false,
     publicationMerge: false,
   },
-  execution: { fixedWorkflowCheck: false, codingShell: false },
+  execution: { codingShell: false },
 };
 
 function isProbablyBinary(bytes: Buffer): boolean {

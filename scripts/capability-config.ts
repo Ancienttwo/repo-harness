@@ -30,7 +30,6 @@ type Args = {
   verificationHints: string[];
   createPrefix: boolean;
   createArchitectureModule: boolean;
-  createWorkstream: boolean;
   dryRun: boolean;
   format: Format;
 };
@@ -63,7 +62,6 @@ function usage(): never {
       "  --verification-hint <command>    Repeatable local verification hint",
       "  --create-prefix                  Create the prefix directory when missing",
       "  --create-architecture-module     Create a minimal architecture module when missing",
-      "  --create-workstream              Create a durable workstream ledger",
       "  --dry-run                        Print planned changes without writing",
       "  --format text|json               Output format (default: text)",
     ].join("\n")
@@ -87,7 +85,6 @@ function parseArgs(argv: string[]): Args {
     verificationHints: [],
     createPrefix: false,
     createArchitectureModule: false,
-    createWorkstream: false,
     dryRun: false,
     format: "text",
   };
@@ -133,9 +130,6 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--create-architecture-module":
         args.createArchitectureModule = true;
-        break;
-      case "--create-workstream":
-        args.createWorkstream = true;
         break;
       case "--dry-run":
         args.dryRun = true;
@@ -308,10 +302,6 @@ function createArchitectureModule(repo: string, capability: Capability): void {
   );
 }
 
-function createWorkstream(repo: string, capability: Capability): void {
-  runChecked(repo, "bash", [helperPath("workstream-sync.sh"), "ensure", "--block", capability.prefixes[0]]);
-}
-
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const repo = repoRoot(args.repo);
@@ -340,13 +330,11 @@ function main(): void {
   actions.push(`${status}:${capability.id}`);
 
   if (args.createArchitectureModule) actions.push(`create-architecture-module:${capability.architecture_module}`);
-  if (args.createWorkstream) actions.push(`create-workstream:${capability.workstream_dir}`);
   actions.push("validate:capability-registry");
 
   if (!args.dryRun) {
     if (status === "added") writeRegistry(repo, registry);
     if (args.createArchitectureModule) createArchitectureModule(repo, capability);
-    if (args.createWorkstream) createWorkstream(repo, capability);
     validateRegistry(repo);
   }
 
