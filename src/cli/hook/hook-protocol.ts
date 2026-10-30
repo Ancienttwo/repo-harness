@@ -55,11 +55,15 @@ function renderCodexOutput(outcome: HookOutcome): HostOutput {
   return outcome.event === 'Stop' ? { ...output, stdout: '' } : output;
 }
 
-/** Version of the single JSON object that the Pi renderer writes to stdout. */
-export const PI_HOOK_PROTOCOL = 1 as const;
+/**
+ * Version of the single JSON object that a direct package host bridge reads
+ * from stdout. Pi and DSH share this wire format; each bridge supplies `host`
+ * through its child environment.
+ */
+export const BRIDGE_HOOK_PROTOCOL = 1 as const;
 
-export interface PiHookOutput {
-  readonly protocol: typeof PI_HOOK_PROTOCOL;
+export interface BridgeHookOutput {
+  readonly protocol: typeof BRIDGE_HOOK_PROTOCOL;
   readonly event: HookEvent;
   readonly route_id: RouteId;
   readonly exit_code: number;
@@ -72,14 +76,14 @@ export interface PiHookOutput {
 }
 
 /**
- * The repo-harness Pi extension reads exactly one JSON object from stdout.
+ * A direct package host bridge reads exactly one JSON object from stdout.
  * Exit 2 or a deny permission is a block. Operator text stays on stderr.
  */
-function renderPiOutput(outcome: HookOutcome): HostOutput {
+function renderBridgeOutput(outcome: HookOutcome): HostOutput {
   const permission = outcome.exitCode === 0 ? outcome.permission?.decision : undefined;
   const decision = outcome.exitCode === 2 || permission === 'deny' ? 'block' : permission === 'allow' ? 'allow' : 'none';
-  const output: PiHookOutput = {
-    protocol: PI_HOOK_PROTOCOL,
+  const output: BridgeHookOutput = {
+    protocol: BRIDGE_HOOK_PROTOCOL,
     event: outcome.event,
     route_id: outcome.routeId,
     exit_code: outcome.exitCode,
@@ -88,7 +92,7 @@ function renderPiOutput(outcome: HookOutcome): HostOutput {
     additional_context: outcome.exitCode === 0 ? outcome.additionalContext : null,
     system_message: outcome.exitCode === 0 ? outcome.systemMessage ?? null : null,
     diagnostics: boundedHookDiagnostic(outcome.diagnostics),
-    // Preserve requested changes on the wire. A block is the only allowed outcome until Pi can apply them.
+    // Preserve requested changes on the wire. A block is the only allowed outcome until a bridge can apply them.
     ...(outcome.permission?.updatedInput ? { updated_input: outcome.permission.updatedInput } : {}),
   };
   return { stdout: `${JSON.stringify(output)}\n`, stderr: outcome.diagnostics };
@@ -97,5 +101,6 @@ function renderPiOutput(outcome: HookOutcome): HostOutput {
 export const HOST_RENDERERS: Readonly<Record<RouteHost, (outcome: HookOutcome) => HostOutput>> = Object.freeze({
   claude: (outcome) => renderHookSpecificOutput(outcome, outcome.systemMessage),
   codex: renderCodexOutput,
-  pi: renderPiOutput,
+  pi: renderBridgeOutput,
+  dsh: renderBridgeOutput,
 });

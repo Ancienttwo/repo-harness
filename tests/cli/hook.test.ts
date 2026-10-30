@@ -62,6 +62,12 @@ describe('hook host output fields', () => {
       decision: 'allow', reason: 'x', updatedInput: { file_path: 'changed.txt' },
     } }).stdout).updated_input).toEqual({ file_path: 'changed.txt' });
   });
+
+  test('DSH reads the same bridge protocol object as Pi', () => {
+    expect(HOST_RENDERERS.dsh(outcome)).toEqual(HOST_RENDERERS.pi(outcome));
+    const edit = { ...outcome, event: 'PreToolUse' as const, routeId: 'edit' as const, additionalContext: null, systemMessage: undefined };
+    expect(JSON.parse(HOST_RENDERERS.dsh({ ...edit, exitCode: 2, reason: 'blocked' }).stdout).decision).toBe('block');
+  });
 });
 
 function repo(optIn = true): string {
