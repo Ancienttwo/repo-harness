@@ -1,12 +1,15 @@
 import { dlopen, FFIType, toArrayBuffer, type Pointer } from 'bun:ffi';
-import { closeSync, constants, fstatSync, openSync, type Stats } from 'node:fs';
+import { closeSync, constants, fsyncSync, fstatSync, openSync, type Stats } from 'node:fs';
 
 export class UnsupportedCleanupPath extends Error {}
 export class CleanupDirectoryTooLarge extends Error {}
 
 /** POSIX descriptor-relative reads. No child lookup can follow a substituted ancestor. */
 interface Native {
-  openat(fd: number, path: Buffer, flags: number): number;
+  openat(fd: number, path: Buffer, flags: number, mode: number): number;
+  mkdirat(fd: number, path: Buffer, mode: number): number;
+  linkat(fromFd: number, from: Buffer, toFd: number, to: Buffer, flags: number): number;
+  unlinkat(fd: number, path: Buffer, flags: number): number;
   readlinkat(fd: number, path: Buffer, output: Buffer, size: number): number;
   dup(fd: number): number;
   fdopendir(fd: number): Pointer | null;
@@ -22,7 +25,10 @@ function native(): Native {
   const readdir = process.platform === 'darwin' ? 'readdir$INODE64' : 'readdir';
   const errno = process.platform === 'darwin' ? '__error' : '__errno_location';
   const loaded = dlopen(process.platform === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6', {
-    openat: { args: ['i32', 'ptr', 'i32'], returns: 'i32' },
+    openat: { args: ['i32', 'ptr', 'i32', 'u32'], returns: 'i32' },
+    mkdirat: { args: ['i32', 'ptr', 'u32'], returns: 'i32' },
+    linkat: { args: ['i32', 'ptr', 'i32', 'ptr', 'i32'], returns: 'i32' },
+    unlinkat: { args: ['i32', 'ptr', 'i32'], returns: 'i32' },
     readlinkat: { args: ['i32', 'ptr', 'ptr', 'u64'], returns: FFIType.i64_fast },
     dup: { args: ['i32'], returns: 'i32' }, fdopendir: { args: ['i32'], returns: 'ptr' },
     [readdir]: { args: ['ptr'], returns: 'ptr' }, rewinddir: { args: ['ptr'], returns: 'void' },
@@ -46,7 +52,7 @@ export function openCleanupDirectory(path: string): number {
   let fd = openSync('/', flags | constants.O_DIRECTORY);
   try {
     for (const part of path.split('/').filter(Boolean)) {
-      const next = api.openat(fd, cName(part), flags | constants.O_DIRECTORY);
+      const next = api.openat(fd, cName(part), flags | constants.O_DIRECTORY, 0);
       if (next < 0) throw new Error('cleanup root open failed');
       closeSync(fd); fd = next;
     }
@@ -88,14 +94,14 @@ export function cleanupDirectoryNames(fd: number, limit = 20_000): string[] {
 export interface CleanupOpenedFile { readonly fd: number; readonly stat: Stats; readonly link: Buffer | null }
 export function openCleanupChild(parent: number, name: string): CleanupOpenedFile {
   const api = native(), encoded = cName(name);
-  let fd = api.openat(parent, encoded, flags);
+  let fd = api.openat(parent, encoded, flags, 0);
   if (fd >= 0) {
     try { return { fd, stat: fstatSync(fd), link: null }; }
     catch (error) { closeSync(fd); throw error; }
   }
   // O_PATH on Linux and O_SYMLINK on Darwin both have this numeric value.
   // These descriptors identify the link itself. No target file is opened.
-  fd = api.openat(parent, encoded, 0x00200000 | (process.platform === 'linux' ? constants.O_NOFOLLOW : 0) | closeOnExec);
+  fd = api.openat(parent, encoded, 0x00200000 | (process.platform === 'linux' ? constants.O_NOFOLLOW : 0) | closeOnExec, 0);
   if (fd < 0) throw new Error('cleanup child open failed');
   try {
     const stat = fstatSync(fd); if (!stat.isSymbolicLink()) throw new Error('cleanup child unreadable');
@@ -104,4 +110,31 @@ export function openCleanupChild(parent: number, name: string): CleanupOpenedFil
     if (count < 0 || count >= output.length) throw new Error('cleanup link read failed');
     return { fd, stat, link: Buffer.from(output.subarray(0, count)) };
   } catch (error) { closeSync(fd); throw error; }
+}
+
+/** Archive writers only create children of an already held private directory. */
+export function ensureCleanupPrivateDirectory(parent: number, name: string): number {
+  const api = native(); api.mkdirat(parent, cName(name), 0o700);
+  const child = openCleanupChild(parent, name);
+  if (!child.stat.isDirectory() || child.stat.uid !== process.getuid?.() || (child.stat.mode & 0o077) !== 0) {
+    closeSync(child.fd); throw new Error('cleanup archive directory unsafe');
+  }
+  try { fsyncSync(child.fd); fsyncSync(parent); return child.fd; }
+  catch (error) { closeSync(child.fd); throw error; }
+}
+export function createCleanupPrivateFile(parent: number, name: string): number {
+  // Apple arm64 passes variadic arguments on the stack. Bun's fixed FFI
+  // declaration cannot pass openat's creation mode there. Reads omit O_CREAT.
+  if (process.platform === 'darwin' && process.arch === 'arm64') throw new UnsupportedCleanupPath('archive creation needs a native openat wrapper on Apple arm64');
+  const fd = native().openat(parent, cName(name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | closeOnExec, 0o600);
+  if (fd < 0) throw new Error('cleanup archive create failed');
+  return fd;
+}
+/** Hard-link publication never replaces an existing archive artifact. */
+export function publishCleanupPrivateFile(parent: number, temporary: string, name: string): boolean {
+  return native().linkat(parent, cName(temporary), parent, cName(name), 0) === 0;
+}
+/** Only the unpublished random temporary name created by this operation may be passed. */
+export function unlinkCleanupTemporary(parent: number, name: string): void {
+  if (!/^\.partial-[a-f0-9-]{36}$/u.test(name) || native().unlinkat(parent, cName(name), 0) !== 0) throw new Error('cleanup archive temporary removal failed');
 }
