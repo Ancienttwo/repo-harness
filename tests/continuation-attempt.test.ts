@@ -8,10 +8,13 @@
  * receipts never move the state they describe.
  */
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { createHash } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { dirname, join, relative } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import type { AttemptReceiptV1, ContinuationEnvelopeV2 } from '../src/core/state/types';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
+import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
 import {
   buildAttemptReceipt,
   evaluateAttemptStall,
@@ -20,7 +23,6 @@ import {
 import {
   CLI,
   createEffectiveStateFixture,
-  resolveFixtureState,
   runStateCli,
   withRepo,
   writeFixture as write,
@@ -47,7 +49,7 @@ function attemptArgv(args: AttemptArgs): string[] {
 }
 
 function writeHandoff(cwd: string, nextStep = 'implement resolver'): void {
-  const authority = resolveFixtureState(cwd).authority_revision;
+  const authority = resolveEffectiveStateReadOnly(cwd).authority_revision;
   write(cwd, '.ai/harness/handoff/current.md', [
     '> **Source State Revision**: ' + authority,
     '- Exact Next Step: ' + nextStep,
@@ -78,6 +80,26 @@ function recordStalled(cwd: string, token: string, unitRef?: string): AttemptRec
 
 function ledgerLines(cwd: string): string[] {
   return readFileSync(join(cwd, LEDGER), 'utf-8').split('\n').filter((line) => line !== '');
+}
+
+function treeFingerprint(root: string): string {
+  const entries: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    ))) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (relative(root, full) === '.git') continue;
+        entries.push(`d ${relative(root, full)}`);
+        walk(full);
+        continue;
+      }
+      entries.push(`f ${relative(root, full)} ${createHash('sha256').update(readFileSync(full)).digest('hex')}`);
+    }
+  };
+  walk(root);
+  return entries.join('\n');
 }
 
 function withLedgerRepo(fn: (cwd: string) => void): void {
@@ -390,6 +412,209 @@ describe('circuit breaker scope', () => {
 
       write(cwd, LEDGER, '{not json\n');
       expect(envelopeFrom(cwd)).toEqual(blocked);
+    });
+  }, 30_000);
+});
+
+const REPAIR_COMMAND = 'repo-harness state attempt-repair --json';
+const QUARANTINE = /^\.ai\/harness\/runs\/continuation\/attempts\.torn-\d+$/;
+
+interface RepairDocument {
+  readonly ledger_path: string;
+  readonly quarantined_path: string | null;
+  readonly ledger_status: 'ok' | 'unreadable';
+  readonly unreadable_line: number | null;
+}
+
+function ledgerBytes(cwd: string): Buffer {
+  return readFileSync(join(cwd, LEDGER));
+}
+
+function receiptLine(unitRef = 'sha256:fixture-unit'): string {
+  return JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-attempt-receipt',
+    unit_ref: unitRef,
+    before_progress_token: null,
+    after_progress_token: null,
+    outcome: 'resumed',
+    recorded_at: '2026-10-23T00:00:00.000Z',
+  });
+}
+
+/** A receipt cut inside a multi-byte character, as a crashed append can leave it. */
+function tornReceiptBytes(): Buffer {
+  const line = Buffer.from(receiptLine('unit with 計畫'), 'utf-8');
+  return line.subarray(0, line.indexOf(Buffer.from('計', 'utf-8')) + 1);
+}
+
+/** Append raw bytes after the complete receipts; returns the bytes before the tear. */
+function tearLedger(cwd: string, torn: Buffer): Buffer {
+  const intact = existsSync(join(cwd, LEDGER)) ? ledgerBytes(cwd) : Buffer.alloc(0);
+  mkdirSync(dirname(join(cwd, LEDGER)), { recursive: true });
+  writeFileSync(join(cwd, LEDGER), Buffer.concat([intact, torn]));
+  return intact;
+}
+
+function repair(cwd: string): RepairDocument {
+  const run = runStateCli(cwd, ['state', 'attempt-repair', '--json']);
+  expect(run.stderr).toBe('');
+  expect(run.status).toBe(0);
+  return JSON.parse(run.stdout) as RepairDocument;
+}
+
+describe('unterminated ledger tail', () => {
+  test('an append onto a torn tail is refused and leaves the ledger bytes unchanged', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      recordStalled(cwd, token);
+      const intact = ledgerBytes(cwd);
+
+      // A cut inside a receipt, and a whole receipt that lost only its "\n".
+      for (const torn of [tornReceiptBytes(), Buffer.from(receiptLine(), 'utf-8')]) {
+        writeFileSync(join(cwd, LEDGER), Buffer.concat([intact, torn]));
+        const before = ledgerBytes(cwd);
+        for (const args of [
+          { outcome: 'completed', before: token, after: token },
+          { outcome: 'resumed' },
+        ]) {
+          const run = runStateCli(cwd, attemptArgv(args));
+          expect(run.status).toBe(1);
+          expect(run.stdout).toBe('');
+          expect(run.stderr).toContain(LEDGER);
+          expect(run.stderr).toContain(REPAIR_COMMAND);
+          expect(ledgerBytes(cwd).equals(before)).toBe(true);
+        }
+      }
+    });
+  }, 60_000);
+
+  test('a complete receipt without its newline is unreadable, so the breaker cannot go blind', () => {
+    const line = receiptLine();
+    expect(parseAttemptLedger(`${line}\n${line}`)).toEqual({ status: 'unreadable', line: 2 });
+    expect(parseAttemptLedger(line)).toEqual({ status: 'unreadable', line: 1 });
+
+    withLedgerRepo((cwd) => {
+      tearLedger(cwd, Buffer.from(line, 'utf-8'));
+      const halted = envelopeFrom(cwd);
+      expect(halted.route).toBe('halt');
+      expect(halted.reason).toBe('attempt_ledger_unreadable');
+
+      const repaired = repair(cwd);
+      expect(repaired.ledger_status).toBe('ok');
+      expect(ledgerBytes(cwd).length).toBe(0);
+      expect(repaired.quarantined_path).toMatch(QUARANTINE);
+      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).toString('utf-8')).toBe(line);
+      expect(envelopeFrom(cwd).route).toBe('continue');
+    });
+  }, 30_000);
+
+  test('the repair quarantines the torn bytes and keeps every complete receipt', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      recordStalled(cwd, token);
+      record(cwd, { outcome: 'halted', before: token, after: token });
+      const torn = tornReceiptBytes();
+      const intact = tearLedger(cwd, torn);
+      expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
+
+      const { quarantined_path: quarantinedPath, ...repaired } = repair(cwd);
+      expect(repaired).toEqual({ ledger_path: LEDGER, ledger_status: 'ok', unreadable_line: null });
+      expect(quarantinedPath).toMatch(QUARANTINE);
+      expect(ledgerBytes(cwd).equals(intact)).toBe(true);
+      expect(readFileSync(join(cwd, quarantinedPath ?? '')).equals(torn)).toBe(true);
+      expect(envelopeFrom(cwd).route).toBe('continue');
+
+      recordStalled(cwd, token);
+      expect(ledgerLines(cwd)).toHaveLength(3);
+
+      const settled = ledgerBytes(cwd);
+      expect(repair(cwd)).toEqual({
+        ledger_path: LEDGER,
+        quarantined_path: null,
+        ledger_status: 'ok',
+        unreadable_line: null,
+      });
+      expect(ledgerBytes(cwd).equals(settled)).toBe(true);
+    });
+  }, 60_000);
+
+  test('the repair removes only the torn tail; a malformed middle line stays unreadable', () => {
+    withLedgerRepo((cwd) => {
+      const intact = Buffer.from(`{not json\n${receiptLine()}\n`, 'utf-8');
+      const torn = tornReceiptBytes();
+      tearLedger(cwd, Buffer.concat([intact, torn]));
+
+      const repaired = repair(cwd);
+      expect(repaired.ledger_status).toBe('unreadable');
+      expect(repaired.unreadable_line).toBe(1);
+      expect(repaired.quarantined_path).toMatch(QUARANTINE);
+      expect(ledgerBytes(cwd).equals(intact)).toBe(true);
+      expect(readFileSync(join(cwd, repaired.quarantined_path ?? '')).equals(torn)).toBe(true);
+      expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
+    });
+  }, 30_000);
+});
+
+describe('attempt ledger authority fences', () => {
+  test('receipts never move state_revision, progress_token, or authority_revision', () => {
+    withLedgerRepo((cwd) => {
+      const authorityFields = (): Record<string, unknown> => {
+        const run = runStateCli(cwd, ['state', 'resolve', '--json']);
+        const state = JSON.parse(run.stdout) as Record<string, unknown>;
+        return {
+          state_revision: state.state_revision,
+          progress_token: state.progress_token,
+          authority_revision: state.authority_revision,
+          blockers: state.blockers,
+        };
+      };
+      const before = authorityFields();
+      const envelopeBefore = envelopeFrom(cwd);
+
+      recordStalled(cwd, envelopeBefore.progress_token);
+      recordStalled(cwd, envelopeBefore.progress_token);
+      record(cwd, { outcome: 'resumed' });
+
+      expect(authorityFields()).toEqual(before);
+      const envelopeAfter = envelopeFrom(cwd);
+      expect(envelopeAfter.progress_token).toBe(envelopeBefore.progress_token);
+      expect(envelopeAfter.authority_revision).toBe(envelopeBefore.authority_revision);
+    });
+  }, 30_000);
+
+  test('`state next` still performs no writes while reading the ledger', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      recordStalled(cwd, token);
+      recordStalled(cwd, token);
+
+      const before = treeFingerprint(cwd);
+      const beforeStatus = spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout;
+      const run = runStateCli(cwd, ['state', 'next', '--json']);
+
+      expect(run.status).toBe(0);
+      expect(treeFingerprint(cwd)).toBe(before);
+      expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(beforeStatus);
+      expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
+    });
+  }, 30_000);
+
+  test('identical repo bytes plus identical ledger bytes yield byte-identical output', () => {
+    withLedgerRepo((cwd) => {
+      const token = envelopeFrom(cwd).progress_token;
+      const receipt = recordStalled(cwd, token);
+      recordStalled(cwd, token);
+
+      const first = runStateCli(cwd, ['state', 'next', '--json']);
+      const second = runStateCli(cwd, ['state', 'next', '--json']);
+      expect(first.status).toBe(0);
+      expect(second.stdout).toBe(first.stdout);
+      expect(first.stdout).toContain('no_progress');
+      expect(first.stdout).not.toContain(receipt.recorded_at);
+      expect(first.stdout).not.toContain('recorded_at');
+      expect(first.stdout).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+      expect(first.stdout).not.toContain(cwd);
     });
   }, 30_000);
 });

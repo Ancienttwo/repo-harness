@@ -149,7 +149,7 @@ export interface ContinuationEnvelopeV2 {
   readonly unit_ref: string | null;
   readonly authority_revision: string;
   readonly progress_token: string;
-  /** Exact existing command for actionable routes; null for `halt`/`complete`/`idle`. */
+  /** Exact existing command for the `continue` route; null for `halt`/`idle`. */
   readonly command: string | null;
   readonly reason: string;
 }

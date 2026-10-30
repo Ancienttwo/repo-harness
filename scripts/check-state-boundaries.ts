@@ -116,7 +116,7 @@ const CANONICAL_SYMBOL_OWNERS: Readonly<Record<string, string>> = {
   planSlugFromPath: 'src/core/state/artifact-parsers.ts',
   artifactStemFromPlan: 'src/core/state/artifact-parsers.ts',
   evidenceContractComplete: 'src/core/state/artifact-parsers.ts',
-  EffectiveStateV1: 'src/core/state/types.ts',
+  EffectiveStateV2: 'src/core/state/types.ts',
   EffectiveState: 'src/core/state/types.ts',
   EffectiveStateInputs: 'src/core/state/project-effective-state.ts',
   projectEffectiveState: 'src/core/state/project-effective-state.ts',
