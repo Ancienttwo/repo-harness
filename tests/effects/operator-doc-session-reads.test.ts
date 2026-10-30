@@ -2,7 +2,8 @@ import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSI
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { decodeDocSessionFinalizationView } from '../../src/core/operator/doc-session-finalization-view';
 import { join, resolve } from 'node:path';
 import { DOC_SESSION_PATCH_MAX_BYTES, docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
@@ -48,7 +49,7 @@ interface Session {
  * the production route inventory, so the reads run in the
  * bounded task-read child as in `operator serve`.
  */
-async function session(prepare?: (repo: string) => void, gitBin?: string, instruction = 'Tighten the intro.'): Promise<Session> {
+async function session(prepare?: (repo: string) => void, gitBin?: string, instruction = 'Tighten the intro.', timeoutMs?: number): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
@@ -80,7 +81,7 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   reader.start();
   await reader.refresh();
   const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route] });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route], ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
     await server.close();
@@ -110,6 +111,134 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
 
 const diffOf = (s: Session) => s.get(`/api/v1/sessions/${s.sid}/diff`);
 const lossOf = (s: Session) => s.get(`/api/v1/sessions/${s.sid}/loss`);
+
+test('finalization public reads share closed progress without creating a journal or a write capability', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const directory = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid);
+  const audit = join(s.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl');
+  const before = readFileSync(audit, 'utf8');
+  const empty = await s.get(path);
+  expect(empty).toMatchObject({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: s.sid, progress: null } });
+  const cli = s.cli('finalization', s.sid, '--json');
+  expect(cli.status).toBe(0); expect(cli.stderr).toBe(''); expect(JSON.parse(cli.stdout as string)).toEqual(empty.body);
+  const head = await fetch(`${s.url}${path}`, { method: 'HEAD' });
+  expect(head.status).toBe(200); expect(await head.text()).toBe('');
+  expect((await fetch(`${s.url}${path}`, { headers: { Origin: 'https://example.invalid' } })).status).toBe(403);
+  expect((await s.get(`${path}?force=true`)).status).toBe(400);
+  expect((await s.get(`/api/v1/sessions/${'f'.repeat(32)}/finalization`)).status).toBe(404);
+  expect(s.cli('finalization', 'invalid', '--json').status).toBe(2);
+  for (const action of ['commit', 'discard']) {
+    const response = await fetch(`${s.url}/api/v1/sessions/${s.sid}/${action}`, {
+      method: 'POST', headers: { Origin: s.url, 'Sec-Fetch-Site': 'same-origin' }, body: '{}',
+    });
+    expect(response.status).toBe(405);
+  }
+  expect(existsSync(join(directory, 'finalize.json'))).toBe(false);
+  expect(existsSync(join(directory, 'agent.json'))).toBe(false);
+  expect(readFileSync(audit, 'utf8')).toBe(before);
+  expect(git(['rev-parse', 'HEAD'], s.worktree).trim()).toBe(s.base);
+});
+
+test('finalization reads saved atomic stages and redacts private fields after worktree removal', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const journal = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'finalize.json');
+  const save = (value: object) => {
+    writeFileSync(`${journal}.fixture`, JSON.stringify(value), { mode: 0o600 });
+    renameSync(`${journal}.fixture`, journal);
+  };
+  const commit = { protocol: 1, kind: 'commit', audit: null, commit: s.base,
+    input: { expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: 'private commit message' },
+    target: { remote: 'origin', repository: 'fixture/docs', base_branch: 'main' }, remote_url: s.repo };
+  for (const stage of ['prepared', 'committed', 'pushed', 'creating_pr', 'pr_failed', 'complete']) {
+    const pr = stage === 'complete' ? { number: 12, url: 'https://github.com/fixture/docs/pull/12' } : null;
+    save({ ...commit, stage, pr });
+    const answer = await s.get(path);
+    expect(answer.status).toBe(200);
+    expect(answer.body.progress).toEqual({ protocol: 1, kind: 'operator_docs_session_finalize', operation: 'commit', stage,
+      commit: s.base, pushed: ['pushed', 'creating_pr', 'pr_failed', 'complete'].includes(stage), pr });
+    expectNoPrivatePath(s, answer.text); expect(answer.text).not.toContain('private commit message');
+    expect(answer.text).not.toContain('audit'); expect(answer.text).not.toContain('remote_url');
+  }
+  // The fixture moves its worktree. Saved stages prove read projection, not successful deletion.
+  renameSync(s.worktree, `${s.worktree}-fixture-away`);
+  for (const stage of ['removing', 'removed', 'complete']) {
+    save({ protocol: 1, kind: 'discard', stage, audit: null, input: { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) } });
+    const before = readFileSync(journal, 'utf8');
+    const answer = await s.get(path);
+    expect(answer).toMatchObject({ status: 200, body: { progress: { operation: 'discard', stage } } });
+    const cli = s.cli('finalization', s.sid, '--json');
+    expect(cli.status).toBe(0); expect(JSON.parse(cli.stdout as string)).toEqual(answer.body);
+    expect(readFileSync(journal, 'utf8')).toBe(before);
+  }
+  expect(existsSync(s.worktree)).toBe(false);
+});
+
+test('finalization admission refuses mismatched metadata and revoked repositories even without a worktree', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const recordPath = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'session.json');
+  const original = readFileSync(recordPath, 'utf8');
+  const record = JSON.parse(original);
+  const registryPath = join(s.env.REPO_HARNESS_HOME!, 'registered-repos.json');
+  const registry = readFileSync(registryPath, 'utf8');
+  renameSync(s.worktree, `${s.worktree}-fixture-away`);
+  const refused = async () => {
+    const answer = await s.get(path);
+    expect(answer).toMatchObject({ status: 503, body: { code: 'unavailable' } });
+    expectNoPrivatePath(s, answer.text);
+    const cli = s.cli('finalization', s.sid, '--json');
+    expect(cli.status).not.toBe(0); expect(cli.stdout).toBe('');
+    expect(JSON.parse(cli.stderr as string)).toEqual({ error: { code: 'unavailable' } });
+  };
+  for (const value of [{ ...record, session_id: 'f'.repeat(32) }, { ...record, repository_id: 'unregistered' }, {}]) {
+    writeFileSync(recordPath, JSON.stringify(value)); await refused();
+  }
+  writeFileSync(recordPath, original);
+  writeFileSync(registryPath, JSON.stringify({ ...JSON.parse(registry), repos: [], authorizationRevision: 2 })); await refused();
+  writeFileSync(registryPath, '{invalid'); await refused();
+  writeFileSync(registryPath, registry);
+  expect((await s.get(path))).toMatchObject({ status: 200, body: { progress: null } });
+});
+
+test('finalization public reads reject malformed, oversized and symlink journals without leaking their contents', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const journal = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'finalize.json');
+  for (const contents of ['{invalid', 'x'.repeat(32769), JSON.stringify({ protocol: 1, kind: 'discard', stage: 'complete', audit: null, input: {} })]) {
+    writeFileSync(journal, contents);
+    expect(await s.get(path)).toMatchObject({ status: 503, body: { code: 'unavailable' } });
+    const cli = s.cli('finalization', s.sid, '--json');
+    expect(cli.status).not.toBe(0); expect(cli.stdout).toBe('');
+    expect(JSON.parse(cli.stderr as string)).toEqual({ error: { code: 'unavailable' } });
+    expect(readFileSync(journal, 'utf8')).toBe(contents);
+  }
+  rmSync(journal);
+  symlinkSync(join(s.worktree, 'docs/guide.md'), journal);
+  expect(await s.get(path)).toMatchObject({ status: 503, body: { code: 'unavailable' } });
+});
+
+test.skipIf(process.platform === 'win32')('finalization HTTP bounds a blocked journal read and remains responsive', async () => {
+  const s = await session(undefined, undefined, 'Read finalization.', 1000);
+  const journal = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'finalize.json');
+  expect(run('mkfifo', [journal], s.repo).status).toBe(0);
+  const blocked = await s.get(`/api/v1/sessions/${s.sid}/finalization`);
+  expect(blocked).toMatchObject({ status: 504, body: { code: 'timeout' } });
+  expectNoPrivatePath(s, blocked.text);
+  expect((await fetch(`${s.url}/healthz`)).status).toBe(200);
+});
+
+test('finalization decoder rejects mismatched identities, private fields and contradictory progress', () => {
+  const request = { session_id: 'a'.repeat(32) };
+  const view = { protocol: 1, kind: 'operator_docs_session_finalization_state', ...request, progress: null } as const;
+  expect(decodeDocSessionFinalizationView(view, request)).toEqual(view);
+  for (const changed of [{ ...view, session_id: 'b'.repeat(32) }, { ...view, private: 'secret' },
+    { ...view, progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete', input: {} } },
+    { ...view, progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'commit', stage: 'complete', commit: 'a'.repeat(40), pushed: true, pr: null } }]) {
+    expect(() => decodeDocSessionFinalizationView(changed, request)).toThrow();
+  }
+});
 
 /** No absolute location of the fixture leaves the server. */
 function expectNoPrivatePath(s: Session, text: string): void {

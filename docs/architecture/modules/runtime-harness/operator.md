@@ -480,4 +480,27 @@ GET 不保存已读状态，跨 epoch 比较沿用事件游标规则。
 已停止会话可以读详情，不会为读取而重新启动。
 
 宿主记录类型在 `src/core/operator/doc-session-agent-record.ts`；它只声明持久化格式，不创建或授权宿主。
+
+### Finalization journal reads
+
+`GET/HEAD /api/v1/sessions/{sid}/finalization` and
+`operator doc-sessions finalization <sid> --json` return the same closed body:
+`protocol: 1`, `kind: operator_docs_session_finalization_state`, `session_id`,
+and `progress`. Both use the bounded task-read child. The CLI has a 30-second
+deadline; HTTP uses the existing read deadline, admission limit and shutdown cleanup.
+
+The reader shares session-record decoding and repository registration admission
+with the session metadata views. It requires neither a live host nor an extant
+worktree. It reads the canonical atomic journal once and projects its saved stage,
+commit SHA, pushed flag and public PR identity. An absent journal yields null.
+Input fields, commit messages, remote URLs and step audit IDs stay private.
+The decoder rejects unknown fields and contradictory stages at the process boundary.
+
+Unknown sessions return 404; invalid metadata, revoked registration or malformed
+journals fail closed. Query fields return 400. No read creates a journal or starts
+an agent. A saved stage is not live capability or proof that the corresponding
+audit result exists. Complete cleanup proof and production commit/discard remain
+separate requirements of #1023. The read contract lives in
+`src/core/operator/doc-session-finalization-view.ts` and its effect in
+`src/effects/operator/doc-session-finalization-view.ts`.
 G5 合入时应让宿主导入这个唯一类型并删除原内联声明。当前主线创建会话后仍不启动 agent；读接口不替代真实 provider 的 D1 验收。
