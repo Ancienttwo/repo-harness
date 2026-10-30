@@ -117,6 +117,27 @@ read_metadata_branch() {
   sed -n 's/^  "branch": "\([^"]*\)",$/\1/p' "$metadata_file" | head -1
 }
 
+# Start writes metadata inside the new worktree, not in the primary checkout.
+# Cleanup runs from the primary, so resolve the branch from the Git worktree
+# list by the exact slug suffix when the primary metadata is absent.
+find_branch_for_slug() {
+  local slug="$1" line branch="" found="" matches=0
+  while IFS= read -r line; do
+    case "$line" in
+      "branch refs/heads/"*)
+        branch="${line#branch refs/heads/}"
+        if [[ "${branch##*/}" == "$slug" ]]; then
+          matches=$((matches + 1))
+          found="$branch"
+        fi
+        ;;
+      "") branch="" ;;
+    esac
+  done < <(git worktree list --porcelain)
+  [[ "$matches" -eq 1 ]] || return 1
+  printf '%s' "$found"
+}
+
 derive_issue_slug() {
   local issue_number="$1"
   local title="$2"
@@ -530,6 +551,9 @@ cleanup_worktree() {
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   metadata_file=".ai/harness/worktrees/${slug}.json"
   branch_name="$(read_metadata_branch "$metadata_file" || true)"
+  if [[ -z "$branch_name" ]]; then
+    branch_name="$(find_branch_for_slug "$slug" || true)"
+  fi
   [[ -n "$branch_name" ]] || branch_name="${branch_prefix}${slug}"
   target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
   [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }

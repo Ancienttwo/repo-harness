@@ -273,7 +273,7 @@ describe("contract-worktree helper integration", () => {
     }
   }, 15000);
 
-  test("contract-worktree cleanup resolves a feat branch from start metadata", () => {
+  test("contract-worktree cleanup removes a feat worktree created by start", () => {
     const cwd = tmpWorkspace("helper-contract-cleanup-feat");
     const worktreePath = `${cwd}-wt-feat`;
     const slug = "123-feat-cleanup";
@@ -281,11 +281,11 @@ describe("contract-worktree helper integration", () => {
       copyHelpers(cwd);
       initGitRepo(cwd);
       writeFileSync(join(cwd, "README.md"), "# demo\n");
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n.ai/harness/active-worktree\n");
       commitAll(cwd, "init cleanup feat");
-      expect(run("git", ["worktree", "add", worktreePath, "-b", `feat/${slug}`], cwd).status).toBe(0);
-      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`),
-        `{\n  "slug": "${slug}",\n  "branch": "feat/${slug}",\n  "worktree": "${worktreePath}"\n}\n`);
+      const started = start(["--issue", "123", "--path", worktreePath, "--json"], cwd, {}, { title: "Feat cleanup" });
+      expect(started.status, started.stderr).toBe(0);
+      expect(JSON.parse(started.stdout).branch).toBe(`feat/${slug}`);
 
       const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", slug, "--dry-run"], cwd);
       expect(dryRun.status, dryRun.stderr).toBe(0);
