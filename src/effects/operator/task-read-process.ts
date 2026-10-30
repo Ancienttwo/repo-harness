@@ -11,14 +11,12 @@ import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
 import { isTaskActivityRequest } from '../../core/operator/task-activity';
 import { isAdmittedSessionSelector } from '../../core/sessions/session-selector';
-import { isTaskHistoryRequest } from '../../core/operator/task-history';
 import { OperatorTaskActivityError, readOperatorTaskActivity } from './task-activity';
 import { readOperatorTaskContext } from './task-context';
 import { SessionObservationError } from '../sessions/admitted-source';
 import { readOperatorTaskDiff } from './task-diff';
 import { isDocSessionReadRequest } from '../../core/operator/doc-session-changes';
 import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from './doc-session-changes';
-import { OperatorTaskHistoryError, readOperatorTaskHistory } from './task-history';
 
 // Stay inert until the supervisor has assigned this process to its ownership boundary.
 function run(): void {
@@ -63,8 +61,6 @@ function run(): void {
         finish({ok:true,snapshot:readAdmittedTaskSessions({...message.request,env})});
       } else if (message.kind === 'diff' && isAdmittedSessionSelector(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
-      } else if (message.kind === 'history' && isTaskHistoryRequest(message.request)) {
-        finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
       } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
@@ -80,7 +76,7 @@ function run(): void {
       } else throw new Error('invalid reader');
     } catch (error) {
       finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof SessionObservationError
-        || error instanceof OperatorTaskHistoryError || error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
+        || error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
     }
   });
 }

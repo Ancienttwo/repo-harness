@@ -121,7 +121,6 @@ export function fixtureProps(name: string): OperatorAppProps {
       ? Promise.resolve(repositorySnapshot) : Promise.reject(new Error('fixture repository snapshot unavailable')),
     readTaskContext: request => Promise.resolve(admittedTaskContextFixture(request)),
     readTaskActivity: request => Promise.resolve(taskActivityFixture(request)),
-    readTaskHistory: unavailable('task history'),
     readNotifyStatus: () => Promise.resolve(notifyStatus),
     initialNotifyStatus: notifyStatus,
     readSetup: () => Promise.resolve(setup),

@@ -195,9 +195,9 @@
 
 
   .task-evidence { @apply flex flex-col gap-4; }
-  .task-evidence h3, .task-history h2, .task-diff h3 { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
+  .task-evidence h3, .task-diff h3 { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
   .task-evidence h4 { @apply text-sm font-medium text-kumo-strong; }
-  .task-evidence p, .task-evidence li, .task-history p { @apply text-sm; overflow-wrap: anywhere; }
+  .task-evidence p, .task-evidence li { @apply text-sm; overflow-wrap: anywhere; }
   .task-evidence ul { @apply m-0 flex list-none flex-col gap-1 p-0; }
   .task-evidence__facts { @apply grid gap-x-4 gap-y-1 text-sm; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); }
   .task-evidence__facts > div { display: contents; }
@@ -206,8 +206,7 @@
   .task-evidence__message { @apply flex flex-col gap-1.5 rounded-lg border border-kumo-hairline p-3; }
   .task-evidence__body { white-space: pre-wrap; }
   .task-evidence__historical { @apply text-kumo-warning; }
-  .task-evidence button, .task-history button, .task-diff button { @apply inline-flex h-7 w-fit cursor-pointer items-center rounded-md border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium hover:bg-kumo-tint disabled:opacity-60; }
-  .task-history { @apply flex flex-col gap-3 rounded-xl border border-kumo-line bg-kumo-base p-4; }
+  .task-evidence button, .task-diff button { @apply inline-flex h-7 w-fit cursor-pointer items-center rounded-md border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium hover:bg-kumo-tint disabled:opacity-60; }
   .task-diff__patch { max-height: 28rem; }
 
   .notify-status__heading p { @apply text-xs text-kumo-subtle; }

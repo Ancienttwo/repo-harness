@@ -19,7 +19,6 @@ import { PlanningView } from './PlanningView';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { TaskDiff, TaskSessions } from './TaskDiff';
 import { type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
-import { TaskHistory, type TaskHistoryReader } from './TaskHistory';
 import type { TaskLocation } from './task-location';
 import {
   OPERATOR_COLUMNS,
@@ -759,7 +758,6 @@ export interface RepositoryWorkspaceProps {
   readonly onCloseSelection: () => void;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
-  readonly readTaskHistory?: TaskHistoryReader;
   readonly onBack: () => void;
   readonly now: number;
   readonly t: OperatorTranslate;
@@ -781,10 +779,7 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
         <FleetFacts snapshot={snapshot} stale={state.kind === 'stale'} now={props.now} t={t} />
       </header>
       {props.location.invalid && <p role="alert" className="text-sm text-kumo-danger">{t('history.invalidLink')}</p>}
-      {selection?.historical && <TaskHistory
-        repositoryId={props.activeRepositoryId} taskId={selection.taskId} revision={selection.revision}
-        generation={props.refreshGeneration} read={props.readTaskHistory} readActivity={props.readTaskActivity} onClose={props.onCloseSelection} t={t} />}
-      {selection && !selection.historical && snapshot !== null && !selectedCard && <p role="status">{t('sessions.selectionStale')}</p>}
+      {selection && snapshot !== null && !selectedCard && <p role="status">{t('sessions.selectionStale')}</p>}
       {activeRepository && <TaskSessions key={JSON.stringify([snapshot?.service_epoch, activeRepository.repository_id, props.refreshGeneration])} repositoryId={activeRepository.repository_id} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
       <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">

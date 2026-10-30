@@ -68,7 +68,6 @@ import { ToolsPage } from './ToolsPage';
 import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
 import type { TaskActivityReader, TaskContextReader } from './TaskEvidence';
-import type { TaskHistoryReader } from './TaskHistory';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useTheme } from './theme';
 import {
@@ -109,7 +108,6 @@ export interface OperatorAppProps {
   readonly initialDevActivity?: DevActivitySnapshotV2;
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
-  readonly readTaskHistory?: TaskHistoryReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readTaskActivity?: TaskActivityReader;
   readonly readNotifyStatus?: NotifyStatusReader;
@@ -261,7 +259,6 @@ export function OperatorApp({
   initialRuntimeOverlay,
   readTaskContext,
   readTaskActivity,
-  readTaskHistory,
   readNotifyStatus,
   initialNotifyStatus,
   readSetup = fetchSetup,
@@ -537,7 +534,7 @@ export function OperatorApp({
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
             view={view} onView={setView} repositorySnapshot={repositorySnapshot}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
-            readTaskContext={readTaskContext} readTaskActivity={readTaskActivity} readTaskHistory={readTaskHistory}
+            readTaskContext={readTaskContext} readTaskActivity={readTaskActivity}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}
           {workspace === 'architecture' && <>
             <header className="border-b border-kumo-hairline pb-4">

@@ -109,7 +109,6 @@ export function inspectRepo(repo: string): InspectionResult {
   ];
 
   const runtimeManifest = join(repo, contract.artifacts.runtimeManifest);
-  const legacyTaskSprintDir = join(repo, "tasks", "sprints");
   const policyFile = join(repo, ".ai", "harness", "policy.json");
   const generatedClaudeHookPaths = [
     ".claude/hooks/run-hook.sh",
@@ -135,9 +134,6 @@ export function inspectRepo(repo: string): InspectionResult {
   }
   if (existsSync(join(repo, "docs", "TODO.md"))) {
     driftSignals.push("legacy-docs-todo");
-  }
-  if (existsSync(legacyTaskSprintDir)) {
-    driftSignals.push("legacy-task-sprint-prds");
   }
   if (
     existsSync(join(repo, ".claude", "skill-factory")) ||
@@ -172,9 +168,6 @@ export function inspectRepo(repo: string): InspectionResult {
   }
   if (driftSignals.includes("legacy-docs-plan") || driftSignals.includes("legacy-docs-todo")) {
     requiredDecisions.push("Run legacy document migration before template refresh");
-  }
-  if (driftSignals.includes("legacy-task-sprint-prds")) {
-    requiredDecisions.push("Move legacy tasks/sprints/*.sprint.md into plans/sprints/*.sprint.md");
   }
   if (driftSignals.includes("legacy-docs-progress")) {
     requiredDecisions.push("Archive legacy docs/PROGRESS.md into research report or changelog surfaces");

@@ -88,7 +88,6 @@
     "tests/contract-worktree-closeout-journal.test.ts": 88137.38,
     "tests/contract-worktree-squash-cleanup.test.ts": 38603.01,
     "tests/contract-worktree.test.ts": 4859.35,
-    "tests/coordination-identity.test.ts": 1.8,
     "tests/coordination-lease-store.test.ts": 41558.39,
     "tests/create-project-dirs.runtime.test.ts": 6482.95,
     "tests/effective-state.test.ts": 17746.56,
