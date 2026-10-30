@@ -231,6 +231,21 @@ Checks: <commands and results>; CI <state>
 Acceptance reuse: <valid, delta does not touch reviewed source | new round needed because ...>
 ```
 
+Merge result (integrator, after `repo-harness publication merge`):
+
+```text
+repo-harness integration status
+Re: <PR URL>
+To: <owner | head owner #<p>>
+Merge: exit <0|3|4|5|6> <merged | acceptance_merge_off | <error> | merge_outcome_unknown | provider_rejected>
+Merge SHA: <merge_commit_sha>, parent <parent_sha>
+Revert: <revert command from the output>
+Detail: <exit 3: "PR ready, owner merges" | exit 4: the blockers | exit 5, 6: the error as it is>
+```
+
+Write `Merge SHA` and `Revert` only for exit 0. For exit 4, `<error>` is the
+error code in the executor JSON.
+
 ## Dispatch packet
 
 Send through the host channel. Never restate the issue.

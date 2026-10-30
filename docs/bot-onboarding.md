@@ -105,6 +105,21 @@ Cursor Worker:
 
 Formal production coding stays with Worker-Herdr (Herdr), not cloud.
 
+## Dispatch and merge modes
+
+| Mode | Dispatch | Acceptance | Merge |
+| --- | --- | --- | --- |
+| Local Herdr | MCP `orchestrator` profile Herdr tools, or a Herdr pane | The worker produces check results locally; acceptance panes review them | MCP `merge_pull_request` |
+| Cloud only | GitHub issues and comments | CI and the `acceptance record` on the PR | Cloud sandbox with repo-harness, working `gh auth` (token with Administration read permission) and a checkout runs `repo-harness publication merge` |
+
+A Bot record does not grant merge permission. The executor merges only when
+`publication.acceptance_merge` is `on` on the PR base, and it needs strict
+required checks and enforce_admins on the default branch. The Bot owner
+manages the GitHub token permissions. A cloud-only token needs Administration
+read permission to let the executor read branch protection; without it the
+executor refuses with `base_protection_insufficient`. See
+[Control Bot integration boundary](control-bot-boundary.md#bot-modes-and-merge).
+
 ## Lean load and exclusions
 
 Use [Control Bot integration boundary](control-bot-boundary.md) for lean

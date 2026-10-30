@@ -17,7 +17,7 @@ claim comment. One seat has at most one active holder.
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review round of one PR | Read-only reviewer | Review threads and the acceptance record row | The acceptance record row for its round |
-| Integrator | Main branch publication | Coordinator by default | Merge, main sync of a PR (only with the head-owner seat) | Merge done, or handoff |
+| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner seat) | Merge done, or handoff |
 
 Rules that keep the topology safe:
 
@@ -32,6 +32,10 @@ Rules that keep the topology safe:
   turns out to be large becomes a parent. Its claimant becomes the
   coordinator of that sub-tree, opens grandchildren and dispatches them.
   It does not also implement them.
+- **One merge path.** The integrator merges only with
+  `repo-harness publication merge`. When `publication.acceptance_merge` is
+  `off` on the PR base, the executor does not merge. The integrator posts
+  that the PR is ready, and the owner merges.
 - **Earliest claim wins.** For two claims on one seat without an explicit
   handoff, the earliest comment wins. Break ties by comment ID. The later
   claimant posts a released status and stops.
@@ -104,7 +108,7 @@ lines, then at most a short free-text body. The exact shapes are in
 | `acceptance claim` | PR | Acceptor | Take a review round: seat, round, subject SHA, tier |
 | `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
-| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI |
+| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; or a merge result with the executor exit code |
 
 Board rules:
 
