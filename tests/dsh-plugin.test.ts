@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Context } from '@deepseek-ai/cordis';
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
@@ -306,5 +306,15 @@ describe('DSH plugin', () => {
     const stop = harness.bridge.calls.find((call) => call.event === 'Stop');
     expect(stop?.routeId).toBe('default');
     expect(stop?.payload).toMatchObject({ session_id: 'session-1', aborted: true });
+  });
+
+  test('bundle patch row matches the package wiring and the bundle name', () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8')) as {
+      dsh?: { bundle?: { patch?: string } };
+    };
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml');
+    const patch = readFileSync(join(import.meta.dir, '../cordis.patch.yml'), 'utf8');
+    expect(patch).toContain('id: repo-harness');
+    expect(patch).toContain("'repo-harness/dist/dsh-plugin.js'");
   });
 });
