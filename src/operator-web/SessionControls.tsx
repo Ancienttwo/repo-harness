@@ -203,7 +203,10 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
     } else binding.awaitRead();
     onAnswered();
   };
-  const first = async () => {
+  // Another tab may have stored and sent a first body since this render: read the store again at click time, and resend that body.
+  const submit = async () => {
+    const current = storedFinalizeRequest(sessionId, 'commit');
+    if (current !== null) { await send(current, false); return; }
     if (diff === null) return;
     const body: DocSessionCommitInput = { expected_head: diff.head_commit, expected_diff_sha256: diff.diff_sha256, message: text };
     storeFinalizeRequest(sessionId, 'commit', body);
@@ -222,7 +225,7 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
               className="h-9 rounded-md border border-kumo-line bg-kumo-base px-3 text-sm text-kumo-default outline-none focus-visible:ring-2 focus-visible:ring-kumo-brand disabled:cursor-not-allowed disabled:opacity-60" />
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <Button variant="primary" onClick={() => void (stored !== null ? send(stored, false) : first())} disabled={!ready || sending} loading={sending} data-commit-submit="commit">
+            <Button variant="primary" onClick={() => void submit()} disabled={!ready || sending} loading={sending} data-commit-submit="commit">
               {t(sending ? 'docSession.commit.sending' : 'docSession.commit.submit')}
             </Button>
             {hint !== null && <span className="text-sm text-kumo-subtle" data-commit-hint>{t(hint)}</span>}

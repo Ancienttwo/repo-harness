@@ -187,7 +187,9 @@ function Discard({ sessionId, progress, finalizationRead, readLoss, writeDiscard
   const pushed = (loss?.state === 'ok' && loss.value.pushed) || (answered?.state === 'refused' && answered.refusal.code === 'branch_pushed');
   if (!open) return <Button variant="secondary-destructive" className="w-fit" onClick={() => setOpen(true)} data-discard-open>{t('docSession.discard')}</Button>;
   const confirm = async () => {
-    if (stored !== null) { await send(stored, false); return; }
+    // Another tab may have stored and sent a first body since this render: read the store again at click time, and resend that body.
+    const current = storedFinalizeRequest(sessionId, 'discard');
+    if (current !== null) { await send(current, false); return; }
     if (loss?.state !== 'ok') return;
     const body: DocSessionDiscardInput = { expected_head: loss.value.head_commit, expected_loss_sha256: loss.value.loss_sha256 };
     storeFinalizeRequest(sessionId, 'discard', body);

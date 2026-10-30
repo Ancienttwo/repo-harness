@@ -468,6 +468,21 @@ describe('doc session page', () => {
     expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
   });
 
+  test('4-DSES-F2: a first body stored by another tab after this render is resent at click time; the edited message does not build a new body', async () => {
+    const page = await mount({ finalization: [finalization(), UNANSWERED], commit: [UNANSWERED] });
+    expect(page.$<HTMLInputElement>('[data-commit-message]')?.disabled).toBe(false);
+    // The other tab stored and sent its body after this tab rendered the editable form.
+    const other = { ...FIRST_COMMIT, message: 'Written by the other tab' };
+    storeFinalizeRequest(SID, 'commit', other);
+    await type(page.$<HTMLInputElement>('[data-commit-message]'), 'Written by this tab');
+    await click(page.$('[data-commit-submit]'));
+    expect(page.sent.commit.length).toBe(1);
+    expect(withoutId(page.sent.commit[0])).toEqual(other);
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(other);
+    const input = page.$<HTMLInputElement>('[data-commit-message]')!;
+    expect([input.disabled, input.value]).toEqual([true, other.message]);
+  });
+
   test('4-DSES-F2: a lost answer is released once a /finalization read after it shows no progress; a first-send refusal that saved nothing releases at once', async () => {
     const lost = await mount({ commit: [UNANSWERED, refused(409, 'busy')], finalization: [finalization(), finalization()] });
     await click(lost.$('[data-commit-submit]'));
@@ -602,6 +617,18 @@ describe('doc session page', () => {
     await click(page.$('[data-discard-confirm]'));
     expect(withoutId(page.sent.discard[1])).toEqual(first);
     expect(storedFinalizeRequest(SID, 'discard')).toEqual(first);
+  });
+
+  test('4-DSES-F4: a first discard body stored by another tab after this render is resent at click time', async () => {
+    const page = await mount({ finalization: [finalization(), UNANSWERED], discard: [UNANSWERED] });
+    await click(page.$('[data-discard-open]'));
+    // The other tab stored and sent its body after this tab read the loss.
+    const other = { expected_head: LOSS_HEAD, expected_loss_sha256: '5'.repeat(64) };
+    storeFinalizeRequest(SID, 'discard', other);
+    await click(page.$('[data-discard-confirm]'));
+    expect(page.sent.discard.length).toBe(1);
+    expect(withoutId(page.sent.discard[0])).toEqual(other);
+    expect(storedFinalizeRequest(SID, 'discard')).toEqual(other);
   });
 
   test('4-DSES-F4: a lost discard answer is released by a /finalization read with no progress, and a retry refusal does not release it', async () => {
