@@ -39,7 +39,7 @@ import {
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
 import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
-import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
+import { CLAUDE_ONLY_AGENTS, MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
@@ -79,7 +79,9 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
 
 export const INSTALL_PROFILES = ['minimal', 'full'] as const;
 export const INSTALL_HOSTS = ['claude', 'codex', 'pi'] as const;
-const AGENT_FLEET_FILE = new RegExp(`/(?:\\.codex|\\.claude)/agents/(?:${MANAGED_AGENTS.join('|')})\\.(?:toml|md)$`);
+const AGENT_FLEET_FILE = new RegExp(
+  `/(?:\\.claude/agents/(?:${MANAGED_AGENTS.join('|')})\\.md|\\.codex/agents/(?:${MANAGED_AGENTS.filter((agent) => !CLAUDE_ONLY_AGENTS.has(agent)).join('|')})\\.toml)$`,
+);
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
 export type LegacyInstallProfile = (typeof LEGACY_INSTALL_PROFILES)[number];
@@ -529,7 +531,7 @@ export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface, e
 export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   return MANAGED_AGENTS.flatMap((agent) => [
-    join(home, '.codex', 'agents', `${agent}.toml`),
+    ...(CLAUDE_ONLY_AGENTS.has(agent) ? [] : [join(home, '.codex', 'agents', `${agent}.toml`)]),
     join(home, '.claude', 'agents', `${agent}.md`),
   ]);
 }
@@ -1278,8 +1280,8 @@ function completeHostSkillSetEvidence(home: string, names: readonly string[]): s
 }
 
 function completeAgentFleetEvidence(home: string): string[] {
-  const agents = MANAGED_AGENTS;
   for (const [root, extension] of [[join(home, '.codex', 'agents'), '.toml'], [join(home, '.claude', 'agents'), '.md']] as const) {
+    const agents = extension === '.toml' ? MANAGED_AGENTS.filter((agent) => !CLAUDE_ONLY_AGENTS.has(agent)) : MANAGED_AGENTS;
     const paths = agents.map((agent) => join(root, `${agent}${extension}`));
     if (paths.every(existsSync)) return paths;
   }
