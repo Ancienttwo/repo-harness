@@ -27,7 +27,7 @@ executes them or stops and asks.
 
 | Role | Model fit | Seats it holds | Never does |
 |---|---|---|---|
-| Orchestrator | The strongest planning model available | Coordinator of the parent issue; integrator by default | Implements a child issue in its own sub-tree |
+| Orchestrator | Fleet role `orchestrator`: a long-lived Claude session, started with `claude --agent orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
 | Gap reviewer | A different model family from the orchestrator | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot; head owner of its PR | Widens scope, merges, pushes to another owner's branch |
 | Acceptor | Fresh context, read-only; a different family for the High tier | Acceptor of one review round | Reviews its own code, pushes code |
@@ -98,5 +98,8 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
 - Never weaken or delete a test assertion to pass CI.
 - CI is the verification authority. A local pass does not replace a red
   required check.
-- Only the orchestrator merges, and only under the owner's publication
-  authorization.
+- Only the orchestrator merges, and only with
+  `repo-harness publication merge`. The owner turns that on with
+  `publication.acceptance_merge` in the policy on the PR base. When it is
+  off, the executor does not merge and the owner merges. Exit codes:
+  `references/orchestrator.md` §9.

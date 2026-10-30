@@ -163,8 +163,35 @@ host's PR events or check when the worker reports.
 
 ## 9. Merge and integrate
 
-- Merge only under the owner's publication authorization, after the
-  required checks pass and no review thread or change request is open.
+You are the integrator. Do the risk-tier review (§8) before you call the
+executor. The workers produce the check results and CI. The acceptor reviews
+those results. The executor does not read the acceptance record. It checks
+CI, review threads, change requests, closing references and branch
+protection itself.
+
+Merge only with:
+
+```bash
+repo-harness publication merge --repository <owner/name> --repository-id <id> --pr <n> --head <sha> --base <sha> --json
+```
+
+`--head` and `--base` are the SHAs you reviewed. The MCP tool
+`merge_pull_request` (profile `orchestrator`) calls the same executor.
+`publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
+decides whether the executor merges. The default branch needs strict
+required checks and enforce_admins. If it does not, the executor refuses
+with `base_protection_insufficient`.
+
+Act on the exit code. Post every result as `integration status` on the PR.
+
+| Exit | Meaning | Action |
+|---|---|---|
+| 0 | Merged | Post the merge SHA, the parent SHA and the revert command. Post `unblocked` on each dependent PR |
+| 3 | Switch is off (`acceptance_merge_off`) | Post `To: owner`: the PR is ready, the owner merges. Do not merge another way |
+| 4 | Refused before any merge request | Hand the PR to its head owner with the `blockers`. For `base_protection_insufficient`, hand it to the owner |
+| 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
+| 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
+
 - Merge in the parent's order. After each merge, the next PR merges or
   rebases onto the current main. A PR that passed review on an old base
   needs its affected checks again on the new base. It does not need a new
@@ -172,7 +199,8 @@ host's PR events or check when the worker reports.
 - Use `Closes #N` only in the PR that finishes the issue. Earlier PRs of a
   multi-PR issue use `Refs #N`. Before merge, check
   `gh pr view <n> --json closingIssuesReferences`. An edited body can keep
-  an old closing link.
+  an old closing link. The executor also checks the closing references and
+  refuses with `closing_references_mismatch`.
 
 ## 10. Close out
 
