@@ -86,7 +86,8 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
-  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
+  // No-op launch seam: the reads never start a host; tests that need host state write agent.json directly.
+  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin', launch_agent: () => 'starting' });
   const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route], ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
@@ -146,8 +147,9 @@ test('finalization public reads share closed progress without creating a journal
     const response = await fetch(`${s.url}/api/v1/sessions/${s.sid}/${action}`, {
       method: 'POST', headers: { Origin: s.url, 'Sec-Fetch-Site': 'same-origin' }, body: '{}',
     });
-    // The write routes exist; an empty body refuses at the schema, before any journal or audit write.
-    expect(response.status).toBe(400);
+    // The write routes exist; a POST without a JSON content type refuses at the
+    // media-type check, before any journal or audit write.
+    expect(response.status).toBe(415);
   }
   expect(existsSync(join(directory, 'finalize.json'))).toBe(false);
   expect(existsSync(join(directory, 'agent.json'))).toBe(false);
