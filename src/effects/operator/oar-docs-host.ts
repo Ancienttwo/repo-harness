@@ -121,6 +121,15 @@ class EventSink {
 
 interface OpenedRuntime { readonly session: Session; readonly close: () => Promise<void> }
 
+/**
+ * The OAR options for one docs host session. Codex refuses `appendSystemPrompt`
+ * together with `resume`; a resumed thread keeps the developer instructions
+ * saved at its first open, so only a new session sets them.
+ */
+export function docsHostSessionOptions(worktree: string, env: Readonly<Record<string, string | null>>, resume?: string): SessionOptions {
+  return { cwd: worktree, env, ...(resume === undefined ? { appendSystemPrompt: DOCS_HOST_INSTRUCTIONS } : { resume }) };
+}
+
 /** Admission, profile, proof, launcher and the isolated installation, in that order. Any step that fails is `boundary_denied`. */
 async function openCodex(record: SessionRecord, control: string, env: NodeJS.ProcessEnv, epoch: number, resume?: string): Promise<OpenedRuntime> {
   if (process.platform !== 'darwin') throw new HostFailure('boundary_denied', 'platform_unsupported');
@@ -147,8 +156,7 @@ async function openCodex(record: SessionRecord, control: string, env: NodeJS.Pro
     if (isolated.kind !== 'available' || isolated.via !== 'executable' || isolated.command !== launcher) throw new HostFailure('boundary_denied', 'docs_host_isolated_installation_unverified');
     // Seatbelt is the boundary; codex's own sandbox cannot nest inside it (OAR's default `danger-full-access`).
     delete process.env.OAR_CODEX_SANDBOX;
-    const options: SessionOptions = { cwd: record.worktree, ...(resume === undefined ? {} : { resume }), env: docsEnv, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS };
-    const session = await runtime.session(isolated as AvailableInstallation, options);
+    const session = await runtime.session(isolated as AvailableInstallation, docsHostSessionOptions(record.worktree, docsEnv, resume));
     const opened = proxy;
     return { session, close: () => opened.close() };
   } catch (error) {
