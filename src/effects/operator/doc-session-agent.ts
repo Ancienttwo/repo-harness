@@ -65,8 +65,15 @@ export function docsHostControlRoot(env: NodeJS.ProcessEnv): string {
 
 /** Removes the session's model credential copy (the review copy lifecycle). A control directory or scratch that does not exist holds no copy. */
 export function removeDocSessionCredential(record: DocSessionAgentRecord): DocSessionCredentialCleanup {
-  const scratch = record.control === null ? null : join(record.control, 'scratch');
-  return scratch !== null && existsSync(scratch) ? removeCopiedAuth(scratch).status : 'absent';
+  if (record.control === null) return 'absent';
+  try {
+    const scratch = join(record.control, 'scratch');
+    for (const directory of [record.control, scratch]) {
+      const stat = lstatSync(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(directory) !== directory || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) return 'cleanup_pending';
+    }
+    return removeCopiedAuth(scratch).status;
+  } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'cleanup_pending'; }
 }
 
 export function readDocSessionAgent(sessionDirectory: string): DocSessionAgentRecord | null {
@@ -101,7 +108,7 @@ export function docsHostExecutable(env: NodeJS.ProcessEnv): DocsHostExecutable {
  * other credential reaches it. PATH and the OAR install variables let OAR find
  * the same runtime the settings probe found.
  */
-const HOST_ENV_KEYS = ['HOME', 'PATH', 'LANG', 'TMPDIR', 'REPO_HARNESS_HOME', 'OAR_CODEX_BIN', 'CODEX_INSTALL_DIR', 'REPO_HARNESS_OAR_SCRIPTED_FIXTURE', 'REPO_HARNESS_DOCS_HOST_TURN_MS'];
+const HOST_ENV_KEYS = ['HOME', 'PATH', 'LANG', 'TMPDIR', 'REPO_HARNESS_HOME', 'OAR_CODEX_BIN', 'CODEX_INSTALL_DIR', 'REPO_HARNESS_OAR_SCRIPTED_FIXTURE', 'REPO_HARNESS_DOCS_HOST_TURN_MS', 'REPO_HARNESS_DOCS_HOST_IDLE_MS'];
 function hostEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(HOST_ENV_KEYS.flatMap(key => (env[key] ? [[key, env[key]!]] : [])));
 }
@@ -118,7 +125,7 @@ export function startDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string, 
   try { control = join(docsHostControlRoot(env), sessionId); } catch (error) { planning = error; }
   writeSessionArtifact(join(directory, AGENT_FILE), {
     protocol: 1, kind: 'docs_session_agent', session_id: sessionId, epoch: 1, state: 'starting', failure: null, reason: null,
-    updated_at: new Date().toISOString(), actual_model: null, credential: null, control, events_error: null,
+    updated_at: new Date().toISOString(), actual_model: null, native_session_id: null, credential: null, control, events_error: null,
   } satisfies DocSessionAgentRecord);
   try {
     if (planning !== null) throw planning;
@@ -139,6 +146,39 @@ export function startDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string, 
     failDocSessionAgent(env, sessionId, 'runtime_error', errorCode(error));
     return readDocSessionAgent(directory)?.state ?? 'failed';
   }
+}
+
+/** No implicit restart of cancelled, failed, or historical hosts without a native identity. */
+export function canResumeDocSessionAgent(record: DocSessionAgentRecord | null): record is DocSessionAgentRecord & { native_session_id: string; control: string } {
+  return record !== null && record.state === 'stopped' && record.reason === 'docs_host_idle'
+    && record.failure === null && record.events_error === null && record.credential === 'removed'
+    && Number.isSafeInteger(record.epoch) && record.epoch > 0 && record.epoch < Number.MAX_SAFE_INTEGER
+    && typeof record.control === 'string' && typeof record.native_session_id === 'string'
+    && record.native_session_id.length > 0 && record.native_session_id.length <= 256 && !/[\0\r\n]/u.test(record.native_session_id);
+}
+
+/** Called only inside the messages target lock. The child claims and advances the epoch under agent.lock. */
+export async function resumeDocSessionAgent(env: NodeJS.ProcessEnv, sessionId: string): Promise<DocSessionAgentRecord | null> {
+  const directory = docSessionDirectory(env, sessionId);
+  const before = readDocSessionAgent(directory);
+  if (!canResumeDocSessionAgent(before)) return null;
+  const { node, entry } = docsHostExecutable(env);
+  const log = openSync(join(directory, 'host.log'), constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW);
+  let child;
+  try {
+    child = spawn(node, ['--disable-sigusr1', entry, directory, '--resume-epoch', String(before.epoch)], { detached: true, stdio: ['ignore', log, log], env: hostEnvironment(env) });
+  } finally { closeSync(log); }
+  let exited = false;
+  const settle = () => { exited = true; try { reconcileDocSessionAgent(env, sessionId); } catch { /* next server start reconciles */ } };
+  child.once('error', settle); child.once('exit', settle); child.unref();
+  for (const deadline = Date.now() + DOC_SESSION_AGENT_LIMITS.start_ms + 2_000; Date.now() < deadline;) {
+    const current = readDocSessionAgent(directory);
+    if (current?.epoch === before.epoch + 1 && (current.state === 'idle' || current.state === 'running')) return current;
+    if (exited || current === null || current.epoch > before.epoch + 1 || (current.epoch === before.epoch + 1 && isTerminalAgentState(current.state))) throw new Error('doc_session_resume_failed');
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  // A delayed child may still start. Keep the audit intent unresolved; never spawn a retry automatically.
+  throw new Error('doc_session_resume_unanswered');
 }
 
 /** The leading `snake_case` code of an error message; never the rest, which can hold paths or text. */

@@ -9,7 +9,7 @@ import { DOC_SESSION_MESSAGE_HOLD_CHARS, DocSessionAdapter, docSessionRepository
 import { DOC_SESSION_EVENT_MAX_PATHS, DOC_SESSION_TEXT_WITHHELD } from '../src/core/operator/doc-session-events';
 import { containsSecret } from '../src/core/security/secret-patterns';
 import { appendDocSessionEvents } from '../src/effects/operator/doc-session-events';
-import { DOC_SESSION_ABORT_GRACE_MS, DocsTurnControl, scriptedDocsTurn } from '../src/effects/operator/oar-docs-host';
+import { DOCS_HOST_INSTRUCTIONS, DOC_SESSION_ABORT_GRACE_MS, DocsTurnControl, docsHostSessionOptions, scriptedDocsTurn } from '../src/effects/operator/oar-docs-host';
 import { tmpWorkspace } from './helpers/repo-fixture';
 
 const SESSION_ID = 'c'.repeat(32);
@@ -305,4 +305,12 @@ test('explicit now with no steer support refuses without queueing on the real sc
     expect(events.filter(event => event.kind === 'turn_started')).toHaveLength(1);
     expect(events.filter(event => event.kind === 'user_message').map(event => JSON.stringify(event)).join('')).not.toContain('Do not queue this.');
   } finally { await session.dispose(); }
+});
+
+test('docs host options append the instructions on a new session and omit them on resume', () => {
+  const env = { DOCS_HOST_FIXTURE: '1' };
+  expect(docsHostSessionOptions('/private/tmp/wt', env)).toEqual({ cwd: '/private/tmp/wt', env, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS });
+  const resumed = docsHostSessionOptions('/private/tmp/wt', env, 'native-session-1');
+  expect(resumed).toEqual({ cwd: '/private/tmp/wt', env, resume: 'native-session-1' });
+  expect(Object.keys(resumed).sort()).toEqual(['cwd', 'env', 'resume']);
 });

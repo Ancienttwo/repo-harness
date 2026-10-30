@@ -18,6 +18,8 @@ export interface DocSessionAgentRecord {
   readonly updated_at: string;
   /** The model the runtime reported (D7); never in events. */
   readonly actual_model: string | null;
+  /** Native OAR identity, private and required to resume an idle-disposed host. */
+  readonly native_session_id?: string | null;
   readonly credential: DocSessionCredentialCleanup | null;
   /** `<os temp>/repo-harness-docs-host/<sid>`: profile, launcher, git link and the writable scratch. Null when it could not be planned. */
   readonly control: string | null;

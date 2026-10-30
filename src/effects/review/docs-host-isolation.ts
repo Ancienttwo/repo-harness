@@ -307,9 +307,10 @@ export function docsHostEnvironment(scratch: DocsHostScratch, proxyPort: number)
 }
 
 /** Owner-only profile file in the control directory; an existing file must match exactly. */
-export function writeDocsHostPolicy(admission: DocsHostAdmission): string {
+export function writeDocsHostPolicy(admission: DocsHostAdmission, epoch = 1): string {
+  if (!Number.isSafeInteger(epoch) || epoch < 1) throw new Error('docs_host_epoch_invalid');
   const content = docsHostPolicy(admission);
-  const file = join(admission.control, 'docs-host.sb');
+  const file = join(admission.control, `docs-host-${epoch}.sb`);
   if (!existsSync(file)) writeFileSync(file, content, { flag: 'wx', mode: 0o600 });
   const stat = lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600
@@ -356,7 +357,8 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
  * applies the admitted profile. OAR owns every vendor argument. An existing
  * launcher must match exactly.
  */
-export function writeDocsHostLauncher(admission: DocsHostAdmission, policyFile: string, env: Readonly<Record<string, string>>): string {
+export function writeDocsHostLauncher(admission: DocsHostAdmission, policyFile: string, env: Readonly<Record<string, string>>, epoch = 1): string {
+  if (!Number.isSafeInteger(epoch) || epoch < 1) throw new Error('docs_host_epoch_invalid');
   if (readFileSync(policyFile, 'utf8') !== docsHostPolicy(admission)) throw new Error('docs_host_profile_changed');
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   const assignments = Object.entries(env).map(([name, value]) => {
@@ -364,7 +366,7 @@ export function writeDocsHostLauncher(admission: DocsHostAdmission, policyFile: 
     return quote(`${name}=${value}`);
   });
   const content = `#!/bin/sh\nexec /usr/bin/env -i ${assignments.join(' ')} /usr/bin/sandbox-exec -f ${quote(policyFile)} ${quote(realpathSync(admission.executable))} "$@"\n`;
-  const launcher = join(admission.control, 'runtime-launcher');
+  const launcher = join(admission.control, `runtime-launcher-${epoch}`);
   if (!existsSync(launcher)) writeFileSync(launcher, content, { flag: 'wx', mode: 0o700 });
   const stat = lstatSync(launcher);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700
