@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:31c751486e957f6b6b47e2018b6e89cfcd9888f3b7c13b06a33ca04a5b2db87f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7ed1d7214e9ff73b354a2d99b61ba8632f167afb4d1357107d988581a21dca4d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -65,7 +65,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `5000–10000` 行
+- 規模量級:`20–50` 個文件 / `10k–20k` 行
 - 匹配前綴:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
 - 排除前綴:`src/effects/architecture/archcontext-owners.ts`、`src/effects/architecture/archcontext-resolve-cache.ts`、`src/effects/architecture/capability-resolver.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
@@ -169,7 +169,7 @@ flowchart LR
 | `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.primary-cli` | Global Runtime Reconciler (cli) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.primary-scripts` | Global Runtime Reconciler (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.release-packaging` | Release Packaging | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.release-packaging-assets` | Release Packaging (assets) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.release-packaging-core` | Release Packaging (core) | `1–2` 個文件 / `10–20` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.release-packaging-effects` | Release Packaging (effects) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
